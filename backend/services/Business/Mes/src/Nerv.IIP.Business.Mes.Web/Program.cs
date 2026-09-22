@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using FastEndpoints;
+using Nerv.IIP.Business.Mes.Web.Endpoints.DeadLetters;
 using Nerv.IIP.Business.Mes.Web.Application.Andon;
 using FastEndpoints.Swagger;
 using FluentValidation;
@@ -248,9 +249,16 @@ app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
     c.Endpoints.NameGenerator = ctx =>
-        MesEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-            ? contract.OperationId
+    {
+        if (MesEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+        {
+            return contract.OperationId;
+        }
+
+        return MesDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+            ? deadLetterContract.OperationId
             : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+    };
 }).UseSwaggerGen();
 
 var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");

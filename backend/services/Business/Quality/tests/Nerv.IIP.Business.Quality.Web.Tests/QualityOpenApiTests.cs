@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Nerv.IIP.Business.Quality.Web.Endpoints.DeadLetters;
 using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
@@ -40,6 +41,17 @@ public sealed class QualityOpenApiTests
         }
 
         foreach (var contract in QualityReasonEndpointContracts.All)
+        {
+            Assert.Equal(
+                contract.OperationId,
+                GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
+        }
+
+        // #3738：死信登记表是 operationId 的唯一产出方，本服务 NameGenerator 通过
+        // QualityDeadLetterEndpointContracts.TryGet 直接取它。这一圈钉的是那条链真的接上了——
+        // 漏接则 swagger 回落到类型名、与登记值分叉，这里红，而不是等 #3739 按矩阵去快照里找不到 operation。
+        // 证明范围：只有 Quality 一个服务有这条实跑对照，另外 8 个服务的链是否接上无门禁（#3750）。
+        foreach (var contract in QualityDeadLetterEndpointContracts.All)
         {
             Assert.Equal(
                 contract.OperationId,

@@ -12,7 +12,7 @@ public static class MesIntegrationEventConsumerRegistrationExtensions
         services.AddScoped<AssetUnavailableIntegrationEventHandlerForReschedule>();
         services.AddScoped<AssetUnavailableV2IntegrationEventHandlerForReschedule>();
         services.AddScoped<IIntegrationEventDeadLetterReplayHandler, MesAssetUnavailableDeadLetterReplayHandler>();
-        services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
+        services.AddIntegrationEventDeadLetterEndpoints();
         services.AddScoped<AssetRestoredIntegrationEventHandlerForReschedule>();
         services.AddScoped<NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect>();
         services.AddScoped<PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder>();

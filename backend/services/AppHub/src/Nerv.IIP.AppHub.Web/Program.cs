@@ -83,6 +83,7 @@ builder.Services.Configure<AppHubHeartbeatTimeoutScanOptions>(
     builder.Configuration.GetSection(AppHubHeartbeatTimeoutScanOptions.SectionName));
 builder.Services.AddNervIipLocalization();
 builder.Services.AddAppHubIntegrationEventDeadLetterStore(usePostgreSql);
+builder.Services.AddIntegrationEventDeadLetterEndpoints();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState>();
 builder.Services.AddScoped<AppHubPublishedEventSink>();

@@ -822,6 +822,16 @@ public interface IIntegrationEventDeadLetterReplayHandler
     Task ReplayAsync(IntegrationEventDeadLetterMessage message, CancellationToken cancellationToken);
 }
 
+/// <summary>重放结果里非 <see cref="IntegrationEventDeadLetterStatus"/> 的取值。</summary>
+public static class IntegrationEventDeadLetterReplayStatuses
+{
+    /// <summary>目标死信行不存在。HTTP 出口按它判 404。</summary>
+    public const string NotFound = "NotFound";
+
+    /// <summary>本服务没有能处理该事件的重放 handler，因此一次都没有尝试过；原行保持原状。</summary>
+    public const string NoHandler = "NoHandler";
+}
+
 public sealed class IntegrationEventDeadLetterReplayExecutor(
     IIntegrationEventDeadLetterStore deadLetterStore,
     IEnumerable<IIntegrationEventDeadLetterReplayHandler> handlers,
@@ -835,7 +845,11 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
         var message = await deadLetterStore.GetAsync(id, cancellationToken);
         if (message is null)
         {
-            return new IntegrationEventDeadLetterReplayResult(id, false, "NotFound", "Dead-letter message was not found.");
+            return new IntegrationEventDeadLetterReplayResult(
+                id,
+                false,
+                IntegrationEventDeadLetterReplayStatuses.NotFound,
+                "Dead-letter message was not found.");
         }
 
         try
@@ -843,13 +857,15 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
             var handler = handlers.FirstOrDefault(handler => handler.CanReplay(message));
             if (handler is null)
             {
-                await deadLetterStore.MarkFailedAsync(
+                // 没有可用 handler = 一次都没有尝试过，因此**不得改写原行**。写 Failed 会做两件不可逆的事：
+                // 把 Pending 挤出可重放集合（store 没有任何回到 Pending 的方法），并用
+                // "replay-handler-not-found" 覆盖掉原始 FailureCode/FailureMessage——那是这条死信仅存的取证。
+                // 一次无参的批量重放会对整批 Pending 同时做这件事（#3738 审核规格轴阻断）。
+                return new IntegrationEventDeadLetterReplayResult(
                     id,
-                    "replay-handler-not-found",
-                    $"No replay handler is registered for '{message.EventClrType}'.",
-                    timeProvider.GetUtcNow(),
-                    cancellationToken);
-                return new IntegrationEventDeadLetterReplayResult(id, false, IntegrationEventDeadLetterStatus.Failed.ToString(), "No replay handler is registered.");
+                    false,
+                    IntegrationEventDeadLetterReplayStatuses.NoHandler,
+                    $"No replay handler is registered for '{message.EventClrType}'.");
             }
 
             await handler.ReplayAsync(message, cancellationToken);

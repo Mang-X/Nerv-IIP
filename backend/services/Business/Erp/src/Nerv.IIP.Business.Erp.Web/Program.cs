@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.Erp.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
@@ -86,6 +87,7 @@ try
 
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddScoped<OperationLaborSettlementOrchestrator>();
     builder.Services.AddScoped<OperationMachineOverheadSettlementOrchestrator>();
     builder.Services.AddScoped<ErpCodingService>();
@@ -153,9 +155,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            ErpEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (ErpEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return ErpDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

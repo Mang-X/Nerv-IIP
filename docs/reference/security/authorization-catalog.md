@@ -162,6 +162,11 @@
 - `business.maintenance.plans.manage`
 - `business.maintenance.downtime-reasons.read`
 
+### 业务服务死信（跨域）
+
+- `business.dlq.read`
+- `business.dlq.manage`
+
 ### Notification
 
 - `notifications.intents.submit`

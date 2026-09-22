@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.Maintenance.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
@@ -74,6 +75,7 @@ try
     builder.Services.AddNervIipLocalization();
     builder.Services.Configure<MaintenanceCompletionOptions>(builder.Configuration.GetSection("Maintenance:Completion"));
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
     builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
@@ -224,9 +226,16 @@ try
     {
         c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
         c.Endpoints.NameGenerator = ctx =>
-            MaintenanceEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (MaintenanceEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return MaintenanceDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

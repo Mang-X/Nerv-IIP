@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.Wms.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
@@ -87,6 +88,7 @@ try
         WmsFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddHttpClient<IWcsCancellationAdapter, HttpWcsCancellationAdapter>().UseHttpClientMetrics();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
@@ -290,9 +292,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            WmsEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (WmsEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return WmsDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

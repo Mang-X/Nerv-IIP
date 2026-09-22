@@ -17,6 +17,8 @@ public sealed class PermissionCodeVocabularyContractTests
             ["ApprovalsManage"] = "business.approvals.manage",
             ["ApprovalsRead"] = "business.approvals.read",
             ["BarcodePrint"] = "business.barcodes.print",
+            ["BusinessDlqManage"] = "business.dlq.manage",
+            ["BusinessDlqRead"] = "business.dlq.read",
             ["BarcodeScansWrite"] = "business.barcodes.scans.write",
             ["BarcodeTemplatesManage"] = "business.barcodes.templates.manage",
             ["BarcodeTemplateAssetsRetire"] = "business.barcodes.template-assets.retire",
