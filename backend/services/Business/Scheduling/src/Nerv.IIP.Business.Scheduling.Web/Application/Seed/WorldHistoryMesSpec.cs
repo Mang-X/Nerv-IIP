@@ -155,8 +155,11 @@ public static class WorldHistoryMesSpec
 
     /// <summary>
     /// 工序任务的排产时长（分钟）：<c>ceil(单件工时 × 数量) + 收尾</c>，与排程运行时
-    /// <c>SchedulingProblemProducer.CalculateDurationMinutes</c> 同一公式、同一取值口径——
-    /// 不除并行工位数，也不夹取上限。
+    /// <c>SchedulingProblemProducer.CalculateDurationMinutes</c> **同一公式**，且同样取路线原值
+    /// ——不除并行工位数，也不夹取上限。
+    ///
+    /// 注意「同一公式」不等于「与 ProductEngineering 路线的常量逐位相同」：这份路线镜像
+    /// 与 PE 侧 <c>WorldBibleSpec</c> 的取值一致性没有任何断言钉住，归 #3723。
     ///
     /// 并行性在运行时由「每个工作中心若干台 <c>DEV-*</c> 设备」建模，种子再摊一次并行工位
     /// 等于把产能算两遍，只会让种子快照在测试里好看，对用户真实走的「生成」路径零影响（#3594）。

@@ -126,7 +126,9 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
         }
 
         output.WriteLine($"duration-parity-operations={compared}");
-        Assert.Equal(seededOrders.Sum(x => x.Operations.Count), compared);
+        // 下界哨兵：比对面若被 SmallScale 或工序子集悄悄缩到个位数，上面的逐道等式仍会全绿。
+        // （对 seededOrders 求和当哨兵是恒真的——两边同源。）
+        Assert.InRange(compared, 1000, 2000);
     }
 
     [Fact]
