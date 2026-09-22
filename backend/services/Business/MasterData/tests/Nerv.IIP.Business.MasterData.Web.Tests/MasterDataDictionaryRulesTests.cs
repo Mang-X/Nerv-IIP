@@ -30,11 +30,12 @@ public sealed class MasterDataDictionaryRulesTests
     /// 与工厂方法同在实现一侧，两边一起改坏时这条断言会静默变绿。
     ///
     /// 护栏实际宽度（已实测，非票面转抄）：这里的 <c>Assert.Contains</c> 只钉「落在集合里」，不钉「等于
-    /// 文档规定的那个值」。把 `Sku.Create` 的默认值单独换成同码集里任意另一个合法码（例如
-    /// batch-tracking-policy 从 "none" 换成 "optional"、serial-tracking-policy 从 "none" 换成
-    /// "on-receipt"），不动 <see cref="ExpectedDictionaryCodes"/> 也不动 `StandardReferenceData`，
-    /// 本类全部 12 条用例照样全绿——单点改坏即可绕过，不需要三处联动。
-    /// 取值对不对，最终只能回 `docs/reference/master-data/dictionary.md` 人工核对。
+    /// 哪个值」。只改 <c>Sku.Create</c> 一个字段就够——例如只把 batchTrackingPolicy 从 "none" 单独换成
+    /// 同码集内的 "mandatory"（serialTrackingPolicy 原样不动），不动 <see cref="ExpectedDictionaryCodes"/>
+    /// 也不动 `StandardReferenceData`，本类全部 12 条用例照样全绿；不需要两个字段一起换，更不需要三处联动。
+    /// 「取哪个值才对」这件事，<see cref="ExpectedDictionaryCodes"/> 和
+    /// `docs/reference/master-data/dictionary.md` 都钉不住：文档把 "none"/"optional"/"mandatory"
+    /// 平级列为标准码值，没有标注哪个是默认值；文档自身也明确自述不是运行时权威（见 `dictionary.md:3`）。
     /// </summary>
     [Fact]
     public void Sku_create_defaults_stay_inside_their_own_dictionary_code_sets()
@@ -442,8 +443,13 @@ public sealed class MasterDataDictionaryRulesTests
     }
 
     /// <summary>
-    /// 手抄自 `docs/reference/master-data/dictionary.md`，供本文件用作独立 oracle。两者之间没有任何
-    /// 机器校验，只靠这条注释指过去——码表的最终权威永远是那份人工文档，不是这里。
+    /// 多数码集手抄自 `docs/reference/master-data/dictionary.md`，供本文件用作独立 oracle；两者之间
+    /// 没有任何机器校验，只靠这条注释指过去。已知例外：`uom-dimension` 这里是 10 码，文档
+    /// （`dictionary.md:44`）只列 6 码（count/length/area/volume/weight/time），另外 4 码
+    /// （force/torque/pressure/ratio）照抄的是同文件 producer 侧 `MasterDataDictionaryRules.cs:80-83`，
+    /// 与文档存在真实漂移（登记为独立事项，不在本 PR 修）。
+    /// `dictionary.md` 自身也不是运行时权威：其 `:3` 明确自述「不是独立运行时事实源」，最终以 seed /
+    /// ReferenceData 独立目录 API / 领域校验器 / 前端消费代码为准；这份手抄表同样不是权威，只是复核入口。
     /// 本类断言拿它验的是「内部各处一致」（seed 与它集合相等、`Sku.Create` 的默认值落在其码集内），
     /// 不是「抄得对不对」；把这里的取值和文档一起抄错，全类照样绿。
     /// </summary>
