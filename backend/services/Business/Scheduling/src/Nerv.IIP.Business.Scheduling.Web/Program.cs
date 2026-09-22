@@ -212,23 +212,14 @@ try
             WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
             WorldHistoryConfiguration.ResolveScale(builder.Configuration));
         app.Logger.LogInformation(
-            "World-history scheduling seed completed: {Problems} problem snapshots, {Plans} schedule plans, " +
-            "{Assignments} assignments, {ResourceLoads} resource loads, {Conflicts} conflicts, " +
-            "{Unscheduled} unscheduled operations, {Urgencies} order urgency snapshots; " +
-            "validator checked {CheckedPlans} plans ({Generated} generated / {Released} released / " +
-            "{Superseded} superseded / {Revoked} revoked) and {CheckedUrgencies} urgency snapshots.",
+            "World-history scheduling seed completed: {Problems} problem snapshots, " +
+            "{Urgencies} order urgency snapshots; schedule plans are left to the engine. " +
+            "Validator checked {CheckedProblems} problem snapshots ({Operations} operations) " +
+            "and {CheckedUrgencies} urgency snapshots.",
             report.ScheduleProblemsWritten,
-            report.SchedulePlansWritten,
-            report.AssignmentsWritten,
-            report.ResourceLoadsWritten,
-            report.ConflictsWritten,
-            report.UnscheduledOperationsWritten,
             report.OrderUrgencySnapshotsWritten,
-            report.Validation.PlansChecked,
-            report.Validation.GeneratedChecked,
-            report.Validation.ReleasedChecked,
-            report.Validation.SupersededChecked,
-            report.Validation.RevokedChecked,
+            report.Validation.ProblemsChecked,
+            report.Validation.OperationsChecked,
             report.Validation.UrgencySnapshotsChecked);
         foreach (var line in report.Validation.Sample)
         {
