@@ -64420,13 +64420,41 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState"
           },
           "reason": {
-            "type": "string",
-            "nullable": true
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason"
+              }
+            ]
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Available",
+          "Unavailable"
+        ],
+        "enum": [
+          "available",
+          "unavailable"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "SourceTimeout",
+          "SourceUnavailable"
+        ],
+        "enum": [
+          "sourceTimeout",
+          "sourceUnavailable"
+        ]
       },
       "NervIIPBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterListRequest": {
         "type": "object",

@@ -8182,9 +8182,13 @@ export type NervIipMessagingCapIntegrationEventDeadLetterStatus = 'pending' | 'r
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceStatus = {
     service?: string;
-    status?: string;
-    reason?: string | null;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState;
+    reason?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason | null;
 };
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState = 'available' | 'unavailable';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason = 'sourceTimeout' | 'sourceUnavailable';
 
 export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterListRequest = {
     [key: string]: never;

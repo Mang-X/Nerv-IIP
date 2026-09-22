@@ -8,6 +8,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -57,7 +58,7 @@ public sealed class BusinessGatewayDeadLetterFacadeTests
                 node => (node!["status"]!.GetValue<string>(), node["reason"]?.GetValue<string>()),
                 StringComparer.Ordinal);
         Assert.Equal(IntegrationEventDeadLetterServices.All.Count, statuses.Count);
-        Assert.Equal(("unavailable", "source-unavailable"), statuses[broken]);
+        Assert.Equal(("unavailable", "sourceUnavailable"), statuses[broken]);
         Assert.All(
             statuses.Where(entry => entry.Key != broken),
             entry => Assert.Equal(("available", (string?)null), entry.Value));
@@ -72,7 +73,12 @@ public sealed class BusinessGatewayDeadLetterFacadeTests
         using var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await client.GetAsync($"/api/business-console/v1/dead-letters?{Scope}");
+        // 「不挂住」是本用例要证的事实之一，因此请求本身走受治理的超时原语：
+        // 扇出若漏掉逐源上限，这里会以命名超时失败，而不是把整条 lane 拖死。
+        var response = await TestTimeout.RunAsync(
+            "business-console dead-letter fan-out with a source that never answers",
+            async token => await client.GetAsync($"/api/business-console/v1/dead-letters?{Scope}", token),
+            TimeSpan.FromSeconds(30));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var data = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"]!;
@@ -80,7 +86,7 @@ public sealed class BusinessGatewayDeadLetterFacadeTests
             data["sourceStatuses"]!.AsArray(),
             node => node!["service"]!.GetValue<string>() == slow);
         Assert.Equal("unavailable", status!["status"]!.GetValue<string>());
-        Assert.Equal("source-timeout", status["reason"]!.GetValue<string>());
+        Assert.Equal("sourceTimeout", status["reason"]!.GetValue<string>());
         Assert.DoesNotContain(
             data["items"]!.AsArray(),
             item => item!["service"]!.GetValue<string>() == slow);
@@ -468,9 +474,14 @@ public sealed class BusinessGatewayDeadLetterFacadeTests
 
             if (NeverAnsweringServices.Contains(source.Name))
             {
-                // 这个来源永远不回答。等待上限由扇出自己施加，因此这里不设时限——
-                // 若扇出没有真的施加上限，测试会挂住而不是悄悄变绿。
-                await Task.Delay(Timeout.Infinite, cancellationToken);
+                // 这个来源永远不主动回答：它**等扇出放弃自己**，而不是睡一段时间去猜对方好了没有
+                // （后者正是 determinism 治理里禁的固定 sleep）。等待上限只能由被测对象施加，
+                // 这里不设自有时限——扇出若没真的施加上限，本用例会由 TestTimeout 判超时，
+                // 不会悄悄变绿。
+                var abandoned = new TaskCompletionSource();
+                await using var registration = cancellationToken.Register(() => abandoned.TrySetResult());
+                await abandoned.Task;
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
 

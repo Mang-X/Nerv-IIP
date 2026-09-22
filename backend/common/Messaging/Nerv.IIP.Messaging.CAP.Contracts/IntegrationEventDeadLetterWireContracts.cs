@@ -6,6 +6,9 @@ namespace Nerv.IIP.Messaging.CAP;
 /// <summary>
 /// 死信行的状态。既是持久化取值（EF <c>HasConversion&lt;string&gt;</c> 存成员名），也是 HTTP 出口
 /// 与 Gateway facade 的公开取值——**同一个类型**，因此服务、网关和生成客户端不可能各拿一份会漂移的集合。
+///
+/// ⚠️ 由此带来的约束：**改成员名就是改列值**。重命名任一成员都要配一次数据迁移，
+/// 不能只当作一次改名。
 /// </summary>
 [JsonConverter(typeof(CamelCaseJsonStringEnumConverter<IntegrationEventDeadLetterStatus>))]
 public enum IntegrationEventDeadLetterStatus

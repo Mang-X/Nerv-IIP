@@ -10,9 +10,14 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 /// <remarks>
 /// <para><b>权限只在一处把关</b>：10 个来源共用同一对权限码（<c>business.dlq.read</c> /
 /// <c>business.dlq.manage</c>），端点基类 <c>AuthorizedBusinessProxyEndpoint</c> 已就该码对当前主体
-/// 做过一次实时检查。再按来源各查一次是同一个调用重复 10 遍，不会多回答任何一个问题。
-/// 这与「聚合 API 必须对每个来源分别做权限检查」不冲突：那条规则针对的是**各来源权限码不同**
-/// 的聚合面（例如全局搜索），无权来源要单独标出而不是泄漏内容。</para>
+/// 检查过一次。再按来源各查一次是同一个调用重复 10 遍，不会多回答任何一个问题。
+/// （该检查的实时性由 <c>AuthorizationContinuityMode</c> 决定：本面三条读路由都是 GET，
+/// 未 override，因而取默认的 <c>ReadCacheAllowed</c>，走的是 TTL 缓存判定而不是每次直连 IAM。）</para>
+///
+/// <para><c>contracts-and-codegen.md:35</c>「聚合多个来源的页面级 API 必须对每个来源分别做当前主体
+/// 权限检查」是**无条件句**，这里不改写它的适用范围：本实现只在**10 源同码**这一前提下与逐源检查
+/// 等价——同码逐源复查得到的是同一个答案。前提一旦不成立（任一来源换用自己的权限码），
+/// 这段等价性随即失效，必须改为逐源检查并对无权来源只返回不泄密的来源状态。</para>
 ///
 /// <para><b>take 是逐来源窗口</b>：扇出没有跨服务的全局游标，也不返回 <c>total</c>，
 /// 因此不存在「对已分页结果再过滤却表现为全量搜索」的形态。筛选条件全部下推到各服务查询里执行。</para>
@@ -116,8 +121,8 @@ public sealed class BusinessConsoleDeadLetterService(
             .Select(outcome => new BusinessConsoleDeadLetterSourceStatus(
                 outcome.Source.Name,
                 outcome.Value is null
-                    ? BusinessConsoleDeadLetterSourceStatuses.Unavailable
-                    : BusinessConsoleDeadLetterSourceStatuses.Available,
+                    ? BusinessConsoleDeadLetterSourceState.Unavailable
+                    : BusinessConsoleDeadLetterSourceState.Available,
                 outcome.Reason))
             .ToArray();
 
@@ -125,11 +130,16 @@ public sealed class BusinessConsoleDeadLetterService(
         ex is BusinessServiceProxyException or HttpRequestException or TimeoutException
         || (ex is TaskCanceledException && !requestCancellationToken.IsCancellationRequested);
 
-    private static string FailureReason(Exception ex, CancellationToken requestCancellationToken) =>
+    private static BusinessConsoleDeadLetterSourceFailureReason FailureReason(
+        Exception ex,
+        CancellationToken requestCancellationToken) =>
         ex is TimeoutException || (ex is TaskCanceledException && !requestCancellationToken.IsCancellationRequested)
-            ? BusinessConsoleDeadLetterSourceStatuses.SourceTimeout
-            : BusinessConsoleDeadLetterSourceStatuses.SourceUnavailable;
+            ? BusinessConsoleDeadLetterSourceFailureReason.SourceTimeout
+            : BusinessConsoleDeadLetterSourceFailureReason.SourceUnavailable;
 
-    private sealed record SourceOutcome<TValue>(BusinessDeadLetterSource Source, TValue? Value, string? Reason)
+    private sealed record SourceOutcome<TValue>(
+        BusinessDeadLetterSource Source,
+        TValue? Value,
+        BusinessConsoleDeadLetterSourceFailureReason? Reason)
         where TValue : class;
 }
