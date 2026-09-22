@@ -378,6 +378,18 @@
       "sourcePath": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/RedisSubscriptionRecoveryRedisCapTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP subscribe-recovery proof\\.\";$"
+    },
+    {
+      "id": "messaging-cap-dead-letter-filter-postgres",
+      "sourcePath": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/IntegrationEventDeadLetterPostgresFilterTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL dead-letter filter tests\\.\";$"
+    },
+    {
+      "id": "maintenance-dead-letter-filter-postgres",
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceDeadLetterFilterPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance dead-letter filter tests\\.\";$"
     }
   ],
   "rules": [
@@ -1434,7 +1446,9 @@
       "classification": "environment-gated",
       "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.AndonCallPostgresTests\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
-      "allowedLanes": ["backend"],
+      "allowedLanes": [
+        "backend"
+      ],
       "requiredLane": "postgres",
       "allowedOperatingSystems": [],
       "responsibilityIssue": null,
@@ -1861,6 +1875,44 @@
         "Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_timeout_at_subscribe_never_reports_a_subscription_and_recovers_through_the_existing_transport_check"
       ],
       "expectedRuntimeTestCount": 2
+    },
+    {
+      "id": "messaging-cap-dead-letter-filter-postgres",
+      "sourceId": "messaging-cap-dead-letter-filter-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Messaging\\.CAP\\.Tests\\.IntegrationEventDeadLetterPostgresFilterTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL dead-letter filter tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Messaging.CAP.Tests.IntegrationEventDeadLetterPostgresFilterTests.Failure_code_and_dead_lettered_window_are_filtered_by_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "maintenance-dead-letter-filter-postgres",
+      "sourceId": "maintenance-dead-letter-filter-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Maintenance\\.Web\\.Tests\\.MaintenanceDeadLetterFilterPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL Maintenance dead-letter filter tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterFilterPostgresTests.Failure_code_and_dead_lettered_window_are_filtered_by_the_maintenance_store"
+      ],
+      "expectedRuntimeTestCount": 1
     }
   ]
 }

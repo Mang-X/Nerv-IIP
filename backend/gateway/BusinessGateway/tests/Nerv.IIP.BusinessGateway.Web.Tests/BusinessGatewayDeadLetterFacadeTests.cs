@@ -474,14 +474,26 @@ public sealed class BusinessGatewayDeadLetterFacadeTests
 
             if (NeverAnsweringServices.Contains(source.Name))
             {
-                // 这个来源永远不主动回答：它**等扇出放弃自己**，而不是睡一段时间去猜对方好了没有
-                // （后者正是 determinism 治理里禁的固定 sleep）。等待上限只能由被测对象施加，
-                // 这里不设自有时限——扇出若没真的施加上限，本用例会由 TestTimeout 判超时，
-                // 不会悄悄变绿。
-                var abandoned = new TaskCompletionSource();
-                await using var registration = cancellationToken.Register(() => abandoned.TrySetResult());
+                // 这个来源永远不主动回答。等待上限只能由被测对象施加，这里不设自有时限。
+                //
+                // 不睡固定时长（determinism 治理禁的就是那个）。#3739 第 2 轮 CI 回归的成因是
+                // 这里曾经抛裸 OperationCanceledException：扇出在同一个 deadline 上有两条出路
+                // （WaitAsync 超时 / 逐源 token 取消），而降级判据只认 TaskCanceledException 与
+                // TimeoutException，于是哪条先到决定这次是 200 还是 500（本地 WaitAsync 先到、
+                // CI 取消先到）。
+                //
+                // 修法不是让假下游去模仿 HttpClient 的异常类型，而是让**两条出路给出同一个可观察
+                // 结果**：被放弃时抛 TimeoutException——与 WaitAsync 抛的是同一个类型，也正是
+                // 「在上限内没有回答」这件事本身。于是不存在「哪条先到」能改变的结果。
+                //
+                // 为什么不能干脆不观察取消：那样这次请求在服务端永远挂着，删掉扇出上限后整条 lane
+                // 会挂死而不是报错（实测 600s 无输出），哨兵读数就没了。观察取消让它能收尾。
+                // RunContinuationsAsynchronously 是必须的：默认情况下 TrySetResult 会让本方法的后续
+                // **同步跑在取消回调那个线程上**，而 registration 的释放要等该回调结束——自锁。
+                var abandoned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                using var registration = cancellationToken.Register(() => abandoned.TrySetResult());
                 await abandoned.Task;
-                cancellationToken.ThrowIfCancellationRequested();
+                throw new TimeoutException("The fake source never answers; the fan-out abandoned it.");
             }
         }
 
