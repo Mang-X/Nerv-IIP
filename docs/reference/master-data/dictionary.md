@@ -45,6 +45,8 @@
 
 `inventory-location` 是跨域配置候选码，不拥有 Inventory `StockLocation` 事实；实际库存库位仍由 Inventory 维护。
 
+`serial-tracking-policy` 另有一份契约层可引用副本 `Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies`（MES 领域校验与业务网关报工的 `production-serial-policy-invalid` 判定都引它）；字典种子本身也引这份常量，二者由 `MasterDataDictionaryRulesTests` 钉住与本表逐值相等。新增该码集的码值时三处必须一起改。
+
 ### 2.2 业务伙伴 / 组织 / 人员
 
 | CodeSet | 中文名 | 类别 | 标准码值 / 样例 |
