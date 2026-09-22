@@ -153,6 +153,13 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
     to: { path: '/approval' },
     requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.approval],
   },
+  {
+    id: 'ops',
+    title: '集成运维',
+    icon: ShieldAlertIcon,
+    to: { path: '/ops/dead-letters' },
+    requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.ops],
+  },
 ]
 
 /** Domain-local side navigation (the left of the T), per domain id. */
@@ -858,6 +865,18 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       ],
     },
   ],
+  ops: [
+    {
+      items: [
+        {
+          title: '集成事件死信',
+          icon: ShieldAlertIcon,
+          to: { path: '/ops/dead-letters' },
+          requiredPermissions: [P.deadLettersRead],
+        },
+      ],
+    },
+  ],
 }
 
 /** True when `path` is exactly `base` or a descendant route of it (segment-boundary safe). */
@@ -881,6 +900,7 @@ export function resolveDomainId(path: string): string {
   if (isUnder(path, '/equipment')) return 'equipment'
   if (isUnder(path, '/maintenance')) return 'equipment'
   if (isUnder(path, '/approval')) return 'approval'
+  if (isUnder(path, '/ops')) return 'ops'
   return 'workbench'
 }
 

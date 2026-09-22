@@ -200,10 +200,11 @@ public sealed class BusinessGatewayDeadLetterFacadeTests
         BusinessGatewayTestHost.Authenticated(client);
         var deadLetterId = Guid.CreateVersion7();
 
-        // 作用域走请求体，与生成客户端对 POST facade 的调用形状一致（既有 mark-read facade 同形）。
-        var response = await client.PostAsJsonAsync(
-            $"/api/business-console/v1/dead-letters/{IntegrationEventDeadLetterServices.Erp.Name}/{deadLetterId}/replay",
-            new { organizationId = "org-001", environmentId = "env-dev" },
+        // 作用域走 query：本条 POST 没有业务负载，只有权限作用域，与既有同形共用 DTO 的
+        // scheduling release / revoke 两条 POST 一致，也是生成客户端唯一能发出的形状。
+        var response = await client.PostAsync(
+            $"/api/business-console/v1/dead-letters/{IntegrationEventDeadLetterServices.Erp.Name}/{deadLetterId}/replay?{Scope}",
+            content: null,
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

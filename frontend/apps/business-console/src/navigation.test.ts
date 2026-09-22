@@ -194,6 +194,19 @@ describe('business console WMS count navigation', () => {
   })
 })
 
+describe('business console dead-letter ops navigation', () => {
+  it('只对持有死信读权限的人露出集成运维入口', () => {
+    const opsItems = DOMAIN_SIDE_NAV.ops?.flatMap((section) => section.items) ?? []
+    const deadLetters = opsItems.find((item) => pathOf(item.to) === '/ops/dead-letters')
+
+    expect(resolveDomainId('/ops/dead-letters')).toBe('ops')
+    expect(deadLetters?.title).toBe('集成事件死信')
+    expect(deadLetters?.requiredPermissions).toEqual([P.deadLettersRead])
+    expect(permittedBy([deadLetters!], [P.deadLettersRead])).toEqual([deadLetters])
+    expect(permittedBy([deadLetters!], [P.approvalsRead])).toEqual([])
+  })
+})
+
 function pathOf(to: unknown) {
   return typeof to === 'object' && to !== null && 'path' in to ? String(to.path) : ''
 }

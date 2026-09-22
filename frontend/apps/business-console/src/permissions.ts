@@ -70,6 +70,8 @@ export const BUSINESS_PERMISSION_CODES = {
   approvalsManage: 'business.approvals.manage',
   notificationMessagesRead: 'notifications.messages.read',
   notificationTasksRead: 'notifications.tasks.read',
+  deadLettersRead: 'business.dlq.read',
+  deadLettersManage: 'business.dlq.manage',
 } as const
 
 export type BusinessPermissionCode =
@@ -144,4 +146,5 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
   ],
   barcode: [P.barcodeTemplatesManage],
   approval: [P.approvalsRead, P.approvalsManage],
+  ops: [P.deadLettersRead, P.deadLettersManage],
 } as const satisfies Record<string, readonly BusinessPermissionCode[]>
