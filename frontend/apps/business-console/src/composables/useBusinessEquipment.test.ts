@@ -78,6 +78,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleProductionLineMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleShiftMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleSiteMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  createBusinessConsoleStationMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleBusinessPartnerMutationOptions: vi.fn(() => ({
     key: [],
     mutation: vi.fn(),

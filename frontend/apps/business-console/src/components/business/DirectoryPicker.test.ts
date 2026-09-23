@@ -48,7 +48,7 @@ const StubCreateDialog = defineComponent({
 
 vi.mock('./directoryCreators', () => ({
   directoryCreatorFor: (type: string) =>
-    type === 'work-center' || type === 'shift'
+    type === 'work-center' || type === 'shift' || type === 'station'
       ? { permission: 'business.masterdata.resources.manage', dialog: StubCreateDialog }
       : undefined,
 }))
@@ -62,9 +62,12 @@ const mounted: Array<ReturnType<typeof mount>> = []
 
 function harness(props: {
   creatable?: boolean
-  directoryType?: 'work-center' | 'shift' | 'workshop'
+  directoryType?: 'work-center' | 'shift' | 'workshop' | 'station'
   placeholder?: string
   createContext?: Record<string, string>
+  parent?: Record<string, string>
+  /** 目录 / 列表的行（默认一条工作中心）；新建项刷新回来时挂在 LINE-A 下。 */
+  rows?: Array<{ code: string; displayName: string; lineCode?: string }>
   /** 新建之后的刷新结果里带上新建项（现实里的列表 / 目录会把它刷回来）。 */
   refreshIncludesCreated?: boolean
 }) {
@@ -83,9 +86,11 @@ function harness(props: {
         })
       }
       // 目录第一页里没有新建项（目录比一页多、或还没刷新到），选中后仍须显示名称。
-      const items = [{ code: 'WC-0001', displayName: '冲压一线工作中心' }]
+      const items: Array<{ code: string; displayName: string; lineCode?: string }> = [
+        ...(props.rows ?? [{ code: 'WC-0001', displayName: '冲压一线工作中心' }]),
+      ]
       if (created && props.refreshIncludesCreated) {
-        items.unshift({ code: 'WC-0042', displayName: '总装二线工作中心' })
+        items.unshift({ code: 'WC-0042', displayName: '总装二线工作中心', lineCode: 'LINE-A' })
       }
       // 可搜目录回 `items`，基础数据资源列表回 `resources`。
       const rows = url.pathname.includes('/directories/') ? { items } : { resources: items }
@@ -95,6 +100,7 @@ function harness(props: {
   const pinia = createPinia()
   const model = ref('')
   const createContext = ref(props.createContext)
+  const parent = ref(props.parent)
   const wrapper = mount(
     defineComponent({
       setup() {
@@ -105,6 +111,7 @@ function harness(props: {
             creatable: props.creatable,
             placeholder: props.placeholder,
             createContext: createContext.value,
+            parent: parent.value,
             modelValue: model.value,
             'onUpdate:modelValue': (value: string) => (model.value = value),
           })
@@ -113,7 +120,7 @@ function harness(props: {
     { global: { plugins: [pinia, PiniaColada] }, attachTo: document.body },
   )
   mounted.push(wrapper)
-  return { createContext, model, requests, wrapper }
+  return { createContext, model, parent, requests, wrapper }
 }
 
 async function openPicker(wrapper: ReturnType<typeof mount>) {
@@ -271,5 +278,64 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
 
     const save = document.body.querySelector<HTMLButtonElement>('[data-testid="save"]')!
     expect(JSON.parse(save.dataset.context!)).toEqual({ lineCode: 'LINE-02' })
+  })
+
+  // 设备表单里选了产线，工位只列这条产线下的；目录没有按产线收窄的参数，改取整表在本地收窄。
+  it('按上级收窄：只列所选产线下的工位，换产线候选跟着换', async () => {
+    state.permissionCodes = []
+    const { parent, requests, wrapper } = harness({
+      directoryType: 'station',
+      parent: { lineCode: 'LINE-A' },
+      rows: [
+        { code: 'ST-A1', displayName: '前桥线一号工位', lineCode: 'LINE-A' },
+        { code: 'ST-B1', displayName: '后桥线一号工位', lineCode: 'LINE-B' },
+      ],
+    })
+    await flushPromises()
+    expect(
+      requests.some(
+        (r) =>
+          r.url.pathname.endsWith('/master-data/resources') &&
+          r.url.searchParams.get('resourceType') === 'station',
+      ),
+    ).toBe(true)
+    await openPicker(wrapper)
+    const optionText = () =>
+      [...document.body.querySelectorAll('[role="option"]')].map((row) => row.textContent)
+    expect(optionText().join()).toContain('ST-A1')
+    expect(optionText().join()).not.toContain('ST-B1')
+
+    parent.value = { lineCode: 'LINE-B' }
+    await flushPromises()
+    expect(optionText().join()).toContain('ST-B1')
+    expect(optionText().join()).not.toContain('ST-A1')
+  })
+
+  // 新建项在列表刷新回来之前先补进候选；刷新回来后同样按上级收窄，换了产线就不能再出现。
+  it('新建项刷新回来后按上级收窄，换产线后不再出现', async () => {
+    state.permissionCodes = ['business.masterdata.resources.manage']
+    const { model, parent, wrapper } = harness({
+      creatable: true,
+      directoryType: 'station',
+      parent: { lineCode: 'LINE-A' },
+      rows: [{ code: 'ST-B1', displayName: '后桥线一号工位', lineCode: 'LINE-B' }],
+      refreshIncludesCreated: true,
+    })
+    await flushPromises()
+    await openPicker(wrapper)
+    createEntry('工位')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="save"]')!.click()
+    await flushPromises()
+    expect(model.value).toBe('WC-0042')
+
+    parent.value = { lineCode: 'LINE-B' }
+    await flushPromises()
+    await openPicker(wrapper)
+    const optionText = [...document.body.querySelectorAll('[role="option"]')]
+      .map((row) => row.textContent)
+      .join()
+    expect(optionText).toContain('ST-B1')
+    expect(optionText).not.toContain('WC-0042')
   })
 })

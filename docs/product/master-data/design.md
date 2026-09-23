@@ -34,7 +34,7 @@
 - **生命周期完整**：主数据价值在「能改、能停用、能追溯版本」，不止新增。
 - **诚实暴露后端边界**：后端没有的能力/字段，前端**不伪造、不猜**，用禁用入口 + 说明占位。
 
-**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；工装与模具（ToolingAsset，含适用工作中心/SKU、寿命、使用累计与专用状态）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
+**进（In Scope）**：物料与产品（Sku）；工厂/车间/产线/工位/工作中心/设备（Site/Workshop/ProductionLine/Station/WorkCenter/DeviceAsset）；工装与模具（ToolingAsset，含适用工作中心/SKU、寿命、使用累计与专用状态）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
 
 **不进（Non-Goals）**：BOM/工艺路线/工序版本（属产品工程，`/master-data/process` 归 engineering，不动）；库存余额/库位实物（inventory/wms）；价格/合同/账期（ERP）；用户/权限（平台管理）；主数据审批工作流、数据质量评分、跨组织主数据治理（远期）。
 
@@ -48,18 +48,23 @@
 Site 工厂/厂区                  一个物理生产基地；库存/组织/报表的顶层边界
  └─ Workshop 车间（组织/区域层，待 #348）  组织/区域/权限/看板分组单元；不承载排产
      └─ ProductionLine 产线     一条物料/工艺流（SMT 线、总装线）；排产主承载单元
-         └─ WorkCenter 工作中心  一组能力等价、可互换的产能（排产/报工/产能/成本/工序执行的核心资源单元）
-             └─ DeviceAsset 设备 具体一台机器；OEE/点检/防错追溯的采集点
+         ├─ Station 工位         产线上的一个作业位置（ISA-95 工作单元）；层级上的下级，可选关联一个工作中心
+         │   └─ DeviceAsset 设备 具体一台机器，装在某个工位上；OEE/点检/防错追溯的采集点
+         └─ WorkCenter 工作中心  一组能力等价、可互换的产能（排产/报工/产能/成本/工序执行的核心资源单元）；
+                                同样挂在产线下，是产能与成本口径，不是工位的上级
 ```
+
+工位的上级是产线（owner 2026-09-23 按 GB/T 20720.1 / ISA-95 与国内 MES「工厂 → 车间 → 产线 → 工位」口径裁定），厂区与车间沿产线继承。工作中心只是工位和设备的产能、成本归集关联，不作为层级上级。
 
 | 层级 | 制造业语义 | 在 MES/排程中的角色 | 维护方 |
 |---|---|---|---|
 | Site 工厂 | 物理生产基地 | 工单归属厂区、库存组织边界 | 工厂运营 |
 | ProductionLine 产线 | 有节拍/产能的物料流 | **排产主承载**：工单下达到产线 | 生产技术/工艺 |
+| Station 工位 | 产线上的作业位置 | 设备安装位置、按工位追溯；可选关联工作中心供排产与成本归集 | 生产技术/工艺 |
 | WorkCenter 工作中心 | 能力等价可互换的产能桶 | **APS 有限产能调度对象**；工艺路线工序指向它 | 工艺/车间 |
 | DeviceAsset 设备 | 具体机台 | 精排到机台、OEE、点检保养、追溯 | 设备/TPM |
 
-**层级靠字符串 code 关联**（非数据库外键）：`production-line.siteCode→site`；`work-center.plantCode→site`、`lineCode→production-line`；`device.lineCode→production-line`、`workCenterCode→work-center`。
+**层级靠字符串 code 关联**（非数据库外键）：`production-line.siteCode→site`；`work-center.plantCode→site`、`lineCode→production-line`；`station.lineCode→production-line`、`workCenterCode→work-center`（可选）；`device.lineCode→production-line`、`workCenterCode→work-center`、`stationCode→station`。
 
 **术语澄清（中文工厂语境，2026-06-08 修订）**：「车间」(Workshop) 与「工作中心」(Work Center) 是**两个不同层级**，不可混为一谈——
 - **工作中心(WorkCenter)** = 排产/报工/产能/成本/工序执行的**核心资源单元**（与 SAP/Oracle/D365 一致；我们后端已如此建模：带 `CapacityMinutesPerDay/DefaultCalendarCode/FiniteCapacity`，MES 工序任务挂 `workCenterId`）。**保留「工作中心」术语，不改名、不重构。**
@@ -94,7 +99,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 【主对象】
 ├── 物料与产品    /master-data/skus           [Sku]            列表-重详情(分组表单)
 ├── 业务伙伴      /master-data/partners       [BusinessPartner] 单主体+多角色(对标 S/4 BP)
-├── 工厂结构      /master-data/facilities     [Site/Workshop/Line/WorkCenter] 左树+右详情+就地建子级
+├── 工厂结构      /master-data/facilities     [Site/Workshop/Line/WorkCenter/Station] 左树+右详情+就地建子级
 ├── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
 └── 工装与模具    /master-data/tooling        [ToolingAsset]   服务端分页维护台(寿命/状态/适用范围)
 【组织与排班】
@@ -107,7 +112,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 └── 数据字典      /master-data/reference-data [ReferenceDataCode CodeSet 主从]（最佳示范页，不动）
 ```
 
-> **取舍**：① 工厂结构是 4 层父子链 → 左树右详情,选中父级就地建子级（归属自动带入，消除手填 siteCode/lineCode 的心智断裂）；设备量大、归属常变 → 仍独立成页，树里给下钻出口。② 原「组织与日历」5-Tab 杂物抽屉拆 3 页——部门(树)+班组、班次+日历(设置表/月历)、技能(矩阵)**三种载体不同,合页逼用户切三种心智**,宁可 3 个纯粹轻页。③ Tab 只用于"同对象多视图/真平级"，**永不进菜单树**。
+> **取舍**：① 工厂结构是父子链（工厂 ▸ 车间 ▸ 产线 ▸ 工位，按 GB/T 20720.1 / ISA-95 与国内 MES 口径，工位的上级是产线；工作中心是排产与成本口径的产能单元，同样挂在产线下，工位只可选关联它） → 左树右详情,选中父级就地建子级（归属自动带入，消除手填 siteCode/lineCode 的心智断裂）；设备量大、归属常变 → 仍独立成页，树里给下钻出口。② 原「组织与日历」5-Tab 杂物抽屉拆 3 页——部门(树)+班组、班次+日历(设置表/月历)、技能(矩阵)**三种载体不同,合页逼用户切三种心智**,宁可 3 个纯粹轻页。③ Tab 只用于"同对象多视图/真平级"，**永不进菜单树**。
 
 ### 3.2 各页载体 / 改动量 / 关键交互
 
@@ -115,8 +120,8 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 |---|---|---|---|
 | 物料与产品 | 列表-重详情 | 微调(加分类/类型列+筛选) | 分组折叠表单、基本单位实时取 UoM 实体 |
 | 业务伙伴 | 列表 + 角色叠加 | 基本保留(删过时"按编码推断"文案) | 角色筛选/列、多选角色新建 |
-| **工厂结构** | **左树+右详情** | **大改(Tab→树)** | 选中父级「+新建子级」预填归属、面包屑、树搜索、设备下钻出口 |
-| 设备台账 | 平表 + 详情/编辑 | 已深化 | 厂区/车间/产线/工位归属，购置/保修/供应商/退役台账，父设备与关键部件清单；维修工单读面展示保修状态 |
+| **工厂结构** | **左树+右详情** | **大改(Tab→树)** | 选中父级「+新建子级」预填归属、面包屑、树搜索、设备下钻出口；工位挂在产线下（与工作中心并列），在产线上新建工位时产线带出为只读归属，工位可编辑（改挂产线、改关联工作中心或取消关联）、停用 |
+| 设备台账 | 平表 + 详情/编辑 | 已深化 | 厂区/车间/产线/工作中心/工位归属，购置/保修/供应商/退役台账，父设备与关键部件清单；维修工单读面展示保修状态。归属五个字段都只能从基础数据里选、不能手填：下级候选按已选上级收窄，改了上级就清空下级；工位下拉里没有想要的，可点「新增工位」就地建好并自动选中（产线带出为只读归属） |
 | **工装与模具** | **平表 + 注册 Sheet + 状态/使用动作** | **新页** | 关键字与状态走服务端筛选；注册时按名称/编码服务端搜索真实工作中心与 SKU 目录，目录超过一页仍可继续检索并登记组合；展示累计使用/寿命预警与排程资格；可用→保养、完成保养→可用、退役终态，状态原因必填；完成保养时，只有累计使用已达到保养寿命才会清零计数，页面须在确认前披露；`resources.read` 可查看，`resources.manage` 才可写 |
 | **员工** | 平表 + 新建/编辑弹窗 | **新页** | 「人」的业务权威源（IAM 只管账号）。工号由编码引擎分配（EMP-）；姓名/部门/岗位/在岗状态可维护，班组与技能只读展示（分别在「组织与班组」「人员技能」维护）；停用后不再进入派工与班组候选 |
 | **组织与班组** | 部门树 + 班组列表-详情 | **中改** | 部门树(按 parentCode 拼)、班组挂部门、**班组挂车间**（班组是车间级的，派工按「工作中心→车间→班组」找人）、成员主从 |
@@ -304,7 +309,7 @@ DataTablePagination（服务端 total）
 - 前端 Phase 1:保留工作中心、「工厂与产线」页预留「车间」Tab（占位待 #348）、补人员技能矩阵、各页加 工厂→车间→产线→工作中心→设备 层级提示。
 
 ### 7.5 业务规则（落地铁律）
-- **引用完整性**：产线 siteCode 必填且指向启用工厂；工作中心 plantCode 必填、lineCode 选填且需属于同工厂；设备 lineCode/workCenterCode 至少一项且需存在；保存做跨级一致性校验。
+- **引用完整性**：产线 siteCode 必填且指向启用工厂；工作中心 plantCode 必填、lineCode 选填且需属于同工厂；工位 lineCode 必填且指向启用产线、workCenterCode 选填且需存在；设备装在工位上，stationCode 须引用存在且未停用的工位（界面上工位按所选产线收窄）；保存做跨级一致性校验。
 - **Code 唯一性**：在 (org, env, 实体类型) 内唯一；ReferenceData 在 (org, env, CodeSet) 内唯一；伙伴税号在 (org, env) 内唯一。Code 创建后不可改（被下游引用），Name 可改。
 - **停用而非删除**：主数据与字典一律软删除（置停用）；停用前校验下游无启用引用；新单据只能引用启用项，历史单据保留对停用项引用。
 - **生命周期原因必填**（#878）：停用与重新启用都必须带业务原因——界面在确认框收集（空或纯空白则「确认」`disabled`，不发请求），网关 validator 与 MasterData handler 两侧同口径校验非空且不超 500 字，原因连同 actor / 对象 / 动作 / 时间写入生命周期审计表，可按对象强标识回读。前端**不得**代填或写死原因。

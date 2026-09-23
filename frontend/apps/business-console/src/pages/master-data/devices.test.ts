@@ -180,7 +180,17 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
   toast: { success: stub.toastSuccess, error: stub.toastError },
 }))
 
-const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
+const layoutStub = {
+  BusinessLayout: { template: '<main><slot /></main>' },
+  // 层级字段的目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖）桩成带同名 id 的输入位，
+  // `data-parent` 记下调用方给的上级收窄条件，`data-create-context` 记下交给新增弹窗的上下文。
+  DirectoryPicker: {
+    props: ['modelValue', 'id', 'parent', 'createContext'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" :data-parent="JSON.stringify(parent ?? null)" :data-create-context="JSON.stringify(createContext ?? null)" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}
 
 // 把 RowActions 的下拉（reka-ui，懒挂载到 body）换成同步渲染插槽的轻量桩，
 // 让「编辑」菜单项可直接点击，从而断言行操作触发 @edit 后对话框进入编辑态。
@@ -250,7 +260,7 @@ const selectStubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
-// 打开「新建设备」并把默认空的必填项填成合法值（型号/厂商/SN/资产类为文本，产线/工作中心为 Select）。
+// 打开「新建设备」并把默认空的必填项填成合法值。
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper
     .findAll('button')
@@ -262,22 +272,10 @@ async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper.find('#dev-maker').setValue('KUKA')
   await wrapper.find('#dev-serial').setValue('SN-9001')
   await wrapper.find('#dev-class').setValue('ROBOT')
-  const siteSelect = wrapper
-    .findAll('select')
-    .find((s) => s.findAll('option').some((o) => o.text().includes('宁波工厂')))
-  await siteSelect!.setValue('PLANT-A')
-  const workshopSelect = wrapper
-    .findAll('select')
-    .find((s) => s.findAll('option').some((o) => o.text().includes('总装车间')))
-  await workshopSelect!.setValue('WS-A')
-  const lineSelect = wrapper
-    .findAll('select')
-    .find((s) => s.findAll('option').some((o) => o.text().includes('前桥线')))
-  await lineSelect!.setValue('LINE-A')
-  const wcSelect = wrapper
-    .findAll('select')
-    .find((s) => s.findAll('option').some((o) => o.text().includes('焊接中心')))
-  await wcSelect!.setValue('WC-A')
+  await wrapper.find('#dev-site').setValue('PLANT-A')
+  await wrapper.find('#dev-workshop').setValue('WS-A')
+  await wrapper.find('#dev-line').setValue('LINE-A')
+  await wrapper.find('#dev-wc').setValue('WC-A')
   await wrapper.find('#dev-station').setValue('ST-01')
   await wrapper.find('#dev-purchase-date').setValue('2025-01-15')
   await wrapper.find('#dev-purchase-cost').setValue('125000')
@@ -434,6 +432,50 @@ describe('master-data devices page', () => {
       { componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1.5, critical: false },
     ])
     expect(stub.toastError).not.toHaveBeenCalled()
+  })
+
+  // 工位只能从所选产线下选；换了产线，原先选的工位、工作中心不再属于它，要清掉让用户重选，
+  // 不能留着一个界面上看不见、提交时却带上去的旧值。
+  // 就地新增工位时，产线由表单带给新增弹窗（弹窗据此把产线只读带出，见 facilities.test），
+  // 建出来的工位才一定挂在设备已选的产线下。
+  it('工位的新增弹窗拿到的是表单当前选的产线', async () => {
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+    const stationContext = () =>
+      JSON.parse(wrapper.get('#dev-station').attributes('data-create-context')!)
+    expect(stationContext()).toEqual({ lineCode: 'LINE-A' })
+
+    await wrapper.find('#dev-line').setValue('LINE-B')
+    await flushPromises()
+    expect(stationContext()).toEqual({ lineCode: 'LINE-B' })
+  })
+
+  it('换产线后工位、工作中心清空并按新产线收窄，不带旧工位提交', async () => {
+    stub.create.mockClear()
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+    expect(JSON.parse(wrapper.get('#dev-station').attributes('data-parent')!)).toEqual({
+      lineCode: 'LINE-A',
+    })
+
+    await wrapper.find('#dev-line').setValue('LINE-B')
+    await flushPromises()
+
+    expect((wrapper.find('#dev-station').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.find('#dev-wc').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.find('#dev-workshop').element as HTMLInputElement).value).toBe('WS-A')
+    expect(JSON.parse(wrapper.get('#dev-station').attributes('data-parent')!)).toEqual({
+      lineCode: 'LINE-B',
+    })
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(stub.create).not.toHaveBeenCalled()
   })
 
   it('提交失败：弹错误 toast（人话）且不重置表单', async () => {

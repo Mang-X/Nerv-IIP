@@ -2,16 +2,19 @@
 import type {
   BusinessConsoleCreateProductionLineRequest,
   BusinessConsoleCreateSiteRequest,
+  BusinessConsoleCreateStationRequest,
   BusinessConsoleCreateWorkCenterRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import StationCreateDialog from '@/components/masterData/StationCreateDialog.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
@@ -75,21 +78,24 @@ const sites = useMasterDataResource<BusinessConsoleCreateSiteRequest>('site')
 const workshops = useBusinessWorkshops()
 const lines = useMasterDataResource<BusinessConsoleCreateProductionLineRequest>('production-line')
 const workCenters = useMasterDataResource<BusinessConsoleCreateWorkCenterRequest>('work-center')
+const stations = useMasterDataResource<BusinessConsoleCreateStationRequest>('station')
 const siteActions = useMasterDataResourceActions('site')
 const workshopActions = useMasterDataResourceActions('workshop')
 const lineActions = useMasterDataResourceActions('production-line')
 const wcActions = useMasterDataResourceActions('work-center')
+const stationActions = useMasterDataResourceActions('station')
 // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
 const lifecycle = useMasterDataLifecycleConfirm()
 
 // 拉大每类的 take，尽量一页拼全树（不做假分页，超上限处给提示）。
-for (const r of [sites, lines, workCenters]) r.filters.take = TREE_TAKE
-// 停用后的节点默认不在树里，「启用」入口就永远够不到；四层共用一个开关（#1594）。
+for (const r of [sites, lines, workCenters, stations]) r.filters.take = TREE_TAKE
+// 停用后的节点默认不在树里，「启用」入口就永远够不到；各层共用一个开关（#1594）。
 const includeDisabled = useIncludeDisabledFilter([
   sites.filters,
   workshops.filters,
   lines.filters,
   workCenters.filters,
+  stations.filters,
 ])
 workshops.filters.take = TREE_TAKE
 
@@ -108,6 +114,9 @@ const workshopNameByCode = computed(
 const lineNameByCode = computed(
   () => new Map(lines.items.value.map((l) => [l.code ?? '', l.displayName ?? l.code ?? ''])),
 )
+const wcNameByCode = computed(
+  () => new Map(workCenters.items.value.map((w) => [w.code ?? '', w.displayName ?? w.code ?? ''])),
+)
 const calendarNameByCode = computed(
   () => new Map(calendars.items.value.map((c) => [c.code ?? '', c.displayName ?? c.code ?? ''])),
 )
@@ -115,8 +124,11 @@ function nameOf(map: Map<string, string>, code: string): string {
   return code ? (map.get(code) ?? code) : ''
 }
 
-// 节点类型与其在层级中的角色。
-type NodeType = 'site' | 'workshop' | 'production-line' | 'work-center'
+// 节点类型与其在层级中的角色。工位和工作中心都挂在产线下：工位是层级上的下级（工厂 ▸ 车间 ▸
+// 产线 ▸ 工位），工作中心是排产与成本口径的产能单元。
+type NodeType = 'site' | 'workshop' | 'production-line' | 'work-center' | 'station'
+// 走本页通用新建框的类型；工位用单独的新建弹窗（设备表单里就地新增也用它）。
+type CreateType = Exclude<NodeType, 'station'>
 interface TreeNode {
   type: NodeType
   code: string
@@ -131,12 +143,13 @@ const NODE_LABEL: Record<NodeType, string> = {
   workshop: '车间',
   'production-line': '产线',
   'work-center': '工作中心',
+  station: '工位',
 }
-// 各父类型可就地新建的子级类型。
-const CHILD_OF: Partial<Record<NodeType, NodeType>> = {
-  site: 'workshop',
-  workshop: 'production-line',
-  'production-line': 'work-center',
+// 各父类型可就地新建的子级类型；树节点上的「+」建第一种。
+const CHILD_TYPES: Partial<Record<NodeType, NodeType[]>> = {
+  site: ['workshop'],
+  workshop: ['production-line'],
+  'production-line': ['work-center', 'station'],
 }
 
 function toNode(item: BusinessConsoleResourceItem, type: NodeType): TreeNode {
@@ -189,6 +202,10 @@ const tree = computed<TreeNode[]>(() => {
     if (site) site.children.push(wc)
   }
 
+  for (const station of stations.items.value) {
+    lineByCode.get(station.lineCode ?? '')?.children.push(toNode(station, 'station'))
+  }
+
   return siteNodes
 })
 
@@ -197,14 +214,16 @@ const totalNodes = computed(
     sites.total.value +
     workshops.workshopsTotal.value +
     lines.total.value +
-    workCenters.total.value,
+    workCenters.total.value +
+    stations.total.value,
 )
 const treePending = computed(
   () =>
     sites.pending.value ||
     workshops.workshopsPending.value ||
     lines.pending.value ||
-    workCenters.pending.value,
+    workCenters.pending.value ||
+    stations.pending.value,
 )
 // 任一类命中分页上限：树可能不全，提示需后端全量端点（#373）。
 const treeTruncated = computed(() =>
@@ -213,6 +232,7 @@ const treeTruncated = computed(() =>
     workshops.workshopsTotal.value,
     lines.total.value,
     workCenters.total.value,
+    stations.total.value,
   ].some((t) => t > TREE_TAKE),
 )
 const treeListError = computed(() => {
@@ -220,7 +240,8 @@ const treeListError = computed(() => {
     sites.error.value ??
     workshops.workshopsError.value ??
     lines.error.value ??
-    workCenters.error.value
+    workCenters.error.value ??
+    stations.error.value
   return inlineErrorMessage(e, '层级数据加载失败，请刷新重试。')
 })
 
@@ -367,6 +388,7 @@ const ACTIONS_BY_TYPE = {
   workshop: workshopActions,
   'production-line': lineActions,
   'work-center': wcActions,
+  station: stationActions,
 } as const
 
 watch(selectedNode, async (node) => {
@@ -427,6 +449,14 @@ const detailFields = computed(() => {
         { label: '日产能（分钟）', value: pick('capacityMinutesPerDay') },
         { label: '更新时间', value: formatDateTime(item.snapshotVersion) },
       ]
+    case 'station':
+      return [
+        { label: '工位编码', value: node.code },
+        { label: '工位名称', value: node.displayName },
+        { label: '所属产线', value: nameOf(lineNameByCode.value, pick('lineCode')) },
+        { label: '关联工作中心', value: nameOf(wcNameByCode.value, pick('workCenterCode')) },
+        { label: '更新时间', value: formatDateTime(item.snapshotVersion) },
+      ]
   }
 })
 
@@ -439,12 +469,13 @@ function refreshAll() {
   void workshops.refreshWorkshops()
   void lines.refresh()
   void workCenters.refresh()
+  void stations.refresh()
 }
 
 // ================= 新建（含就地建子级，父 code 预填只读） =================
 // 单一对话框，按目标 NodeType 切换字段。父归属在打开时确定且只读。
 const createOpen = ref(false)
-const createType = shallowRef<NodeType>('site')
+const createType = shallowRef<CreateType>('site')
 const createShowErrors = ref(false)
 // 父归属（就地建子级时带入，只读）。
 const parentCtx = reactive({ siteCode: '', workshopCode: '', lineCode: '', plantCode: '' })
@@ -472,10 +503,23 @@ function openCreateRoot() {
   createShowErrors.value = false
   createOpen.value = true
 }
+// 工位新建弹窗：每次打开递增 key 重新挂载，按当次的产线带出归属。
+const stationCreateSession = shallowRef(0)
+const stationCreateOpen = shallowRef(false)
+const stationCreateLine = shallowRef('')
+
 // 选中父节点 → 「+ 新建<子级>」，父 code 预填且只读。
-function openCreateChild(parent: TreeNode | MasterDataTreeNodeData) {
-  const childType = CHILD_OF[parent.type as NodeType]
+function openCreateChild(
+  parent: TreeNode | MasterDataTreeNodeData,
+  childType = CHILD_TYPES[parent.type as NodeType]?.[0],
+) {
   if (!childType) return
+  if (childType === 'station') {
+    stationCreateLine.value = parent.code
+    stationCreateSession.value += 1
+    stationCreateOpen.value = true
+    return
+  }
   resetCreateForm()
   createType.value = childType
   // 用选中路径回填完整归属链（plantCode = 路径上的工厂 code）。
@@ -646,11 +690,13 @@ const editCode = shallowRef('')
 const editForm = reactive({
   name: '',
   timezone: DEFAULT_TIMEZONE,
-  // 归属（可改挂上级）：车间→siteCode；产线→workshopCode/siteCode；工作中心→lineCode/plantCode。
+  // 归属（可改挂上级）：车间→siteCode；产线→workshopCode/siteCode；工作中心→lineCode/plantCode；
+  // 工位→lineCode（工作中心只是可选关联）。
   siteCode: '',
   workshopCode: '',
   plantCode: '',
   lineCode: '',
+  workCenterCode: '',
   defaultCalendarCode: '',
   capacityMinutesPerDay: '480',
 })
@@ -675,6 +721,8 @@ const canEdit = computed(() => {
       return isNonEmpty(editForm.siteCode)
     case 'work-center':
       return isNonEmpty(editForm.plantCode) && isNonEmpty(editForm.lineCode)
+    case 'station':
+      return isNonEmpty(editForm.lineCode)
     default:
       return true
   }
@@ -728,6 +776,16 @@ watch(
   },
 )
 
+// 工位改挂产线后，原关联的工作中心属于旧产线，清掉让用户重选。同步触发：打开编辑回填
+// 归属时 editCascadeReady 还是 false，不会把刚载入的关联清掉。
+watch(
+  () => editForm.lineCode,
+  () => {
+    if (editType.value === 'station' && editCascadeReady.value) editForm.workCenterCode = ''
+  },
+  { flush: 'sync' },
+)
+
 watch(editOpen, (open) => {
   if (open) editShowErrors.value = false
 })
@@ -748,6 +806,7 @@ async function openEdit(node: TreeNode) {
     workshopCode: '',
     plantCode: '',
     lineCode: '',
+    workCenterCode: '',
     defaultCalendarCode: '',
     capacityMinutesPerDay: '480',
   })
@@ -766,6 +825,7 @@ async function openEdit(node: TreeNode) {
       workshopCode: str('workshopCode'),
       plantCode: str('plantCode'),
       lineCode: str('lineCode'),
+      workCenterCode: str('workCenterCode'),
       defaultCalendarCode: str('defaultCalendarCode'),
       capacityMinutesPerDay: str('capacityMinutesPerDay') || '480',
     })
@@ -809,6 +869,14 @@ async function submitEdit() {
           finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
         })
         break
+      case 'station':
+        // 工作中心传空串表示取消关联（不传则保留原值）。
+        await stationActions.update(code, {
+          name,
+          lineCode: editForm.lineCode.trim(),
+          workCenterCode: editForm.workCenterCode,
+        })
+        break
     }
     notifySuccess(`${NODE_LABEL[editType.value]}「${name}」已更新。`)
     editShowErrors.value = false
@@ -834,13 +902,16 @@ function requestLifecycle(row: BusinessConsoleResourceItem) {
   lifecycle.request(row, actions, NODE_LABEL[node.type])
 }
 
-// 选中节点能否就地建子级。
-const childTypeOfSelected = computed(() =>
-  selectedNode.value ? CHILD_OF[selectedNode.value.type] : undefined,
+// 选中节点能就地新建的子级，以及各类子级的数量。
+const childTypesOfSelected = computed(() =>
+  selectedNode.value ? (CHILD_TYPES[selectedNode.value.type] ?? []) : [],
 )
+function childCount(type: NodeType) {
+  return selectedNode.value?.children.filter((child) => child.type === type).length ?? 0
+}
 // 通用树节点的 childLabelOf 回调（参数为开放 string）：映射到本页的子级中文名。
 function childLabelOf(type: string): string | undefined {
-  const child = CHILD_OF[type as NodeType]
+  const child = CHILD_TYPES[type as NodeType]?.[0]
   return child ? NODE_LABEL[child] : undefined
 }
 </script>
@@ -884,6 +955,7 @@ function childLabelOf(type: string): string | undefined {
           unit: '个',
           meta: '排产与报工的产能单元',
         },
+        { key: 'station', label: '工位', value: stations.total.value, unit: '个' },
       ]"
     />
 
@@ -901,7 +973,7 @@ function childLabelOf(type: string): string | undefined {
           <NvInput
             v-model="treeSearch"
             class="pl-8"
-            placeholder="搜索工厂、车间、产线、工作中心"
+            placeholder="搜索工厂、车间、产线、工作中心、工位"
             aria-label="搜索树"
           />
         </div>
@@ -1009,13 +1081,14 @@ function childLabelOf(type: string): string | undefined {
             </div>
             <div class="flex items-center gap-2">
               <NvButton
-                v-if="childTypeOfSelected"
+                v-for="childType in childTypesOfSelected"
+                :key="childType"
                 size="sm"
                 type="button"
-                @click="openCreateChild(selectedNode)"
+                @click="openCreateChild(selectedNode, childType)"
               >
                 <PlusIcon aria-hidden="true" />
-                新建{{ NODE_LABEL[childTypeOfSelected] }}
+                新建{{ NODE_LABEL[childType] }}
               </NvButton>
               <MasterDataRowActions
                 v-if="selectedActions"
@@ -1037,24 +1110,28 @@ function childLabelOf(type: string): string | undefined {
           </dl>
 
           <!-- 子级计数 / 空子级出路 -->
-          <div v-if="childTypeOfSelected" class="border-t border-border/60 pt-3">
-            <p v-if="selectedNode.children.length" class="text-sm text-muted-foreground">
-              该{{ NODE_LABEL[selectedNode.type] }}下有 {{ selectedNode.children.length }} 个{{
-                NODE_LABEL[childTypeOfSelected]
+          <div
+            v-for="childType in childTypesOfSelected"
+            :key="childType"
+            class="border-t border-border/60 pt-3"
+          >
+            <p v-if="childCount(childType)" class="text-sm text-muted-foreground">
+              该{{ NODE_LABEL[selectedNode.type] }}下有 {{ childCount(childType) }} 个{{
+                NODE_LABEL[childType]
               }}。
             </p>
             <div v-else class="flex flex-wrap items-center gap-2">
               <p class="text-sm text-muted-foreground">
-                该{{ NODE_LABEL[selectedNode.type] }}下还没有{{ NODE_LABEL[childTypeOfSelected] }}。
+                该{{ NODE_LABEL[selectedNode.type] }}下还没有{{ NODE_LABEL[childType] }}。
               </p>
               <NvButton
                 size="sm"
                 variant="outline"
                 type="button"
-                @click="openCreateChild(selectedNode)"
+                @click="openCreateChild(selectedNode, childType)"
               >
                 <PlusIcon aria-hidden="true" />
-                新建{{ NODE_LABEL[childTypeOfSelected] }}
+                新建{{ NODE_LABEL[childType] }}
               </NvButton>
             </div>
           </div>
@@ -1281,6 +1358,38 @@ function childLabelOf(type: string): string | undefined {
                   </NvSelect>
                 </NvField>
               </template>
+              <template v-if="editType === 'station'">
+                <NvField :data-invalid="editShowErrors && !isNonEmpty(editForm.lineCode)">
+                  <NvFieldLabel for="edit-station-line"
+                    >所属产线 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvSelect v-model="editForm.lineCode">
+                    <NvSelectTrigger id="edit-station-line"
+                      ><NvSelectValue placeholder="请选择产线"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="l in lines.items.value"
+                        :key="l.code"
+                        :value="l.code ?? NONE_OPTION"
+                      >
+                        {{ l.displayName ?? l.code }}
+                      </NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="edit-station-wc">关联工作中心</NvFieldLabel>
+                  <DirectoryPicker
+                    id="edit-station-wc"
+                    v-model="editForm.workCenterCode"
+                    directory-type="work-center"
+                    :parent="{ lineCode: editForm.lineCode }"
+                    placeholder="无"
+                    clearable
+                  />
+                </NvField>
+              </template>
               <template v-if="editType === 'work-center'">
                 <NvField :data-invalid="editShowErrors && !isNonEmpty(editForm.plantCode)">
                   <NvFieldLabel for="edit-wc-plant"
@@ -1333,6 +1442,12 @@ function childLabelOf(type: string): string | undefined {
         </form>
       </NvDialogContent>
     </NvDialog>
+    <StationCreateDialog
+      v-if="stationCreateSession"
+      :key="stationCreateSession"
+      v-model:open="stationCreateOpen"
+      :context="{ lineCode: stationCreateLine }"
+    />
     <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>

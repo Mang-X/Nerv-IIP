@@ -3,8 +3,9 @@
  * 目录选择器：`NvEntityPicker` 接业务目录，只能从目录里选、不接受自由文本。
  * `v-model` 回传目录项的人读编码，与过去手填提交的值同口径。
  *
- * - 工作中心 / 物料 / 设备 / 车间 / 批次 / 序列号走网关可搜目录（服务端搜索）；
- * - 班次、产线不在可搜目录里，取基础数据资源列表，由选择器自带的本地过滤搜索。
+ * - 工作中心 / 工位 / 物料 / 设备 / 车间 / 批次 / 序列号走网关可搜目录（服务端搜索）；
+ * - 班次、产线、工厂不在可搜目录里，取基础数据资源列表，由选择器自带的本地过滤搜索；
+ * - 传了 `parent`（表单里的层级字段按已选上级收窄）也取资源列表，见 `useMasterDataListPicker`。
  *
  * `creatable`：表单里的选择器可以就地新增（筛选区不开）。该类型在 `directoryCreators.ts`
  * 注册了新增弹窗、且当前用户有对应新增权限时才出现入口；建好后自动选中新建项。
@@ -14,6 +15,7 @@ import { computed, shallowRef, watch } from 'vue'
 import {
   useMasterDataListPicker,
   useSearchableDirectoryPicker,
+  type DirectoryParent,
 } from '@/composables/useSearchableDirectoryPicker'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -22,11 +24,19 @@ import {
   type DirectoryCreatedItem,
 } from './directoryCreators'
 
-type ListType = 'shift' | 'production-line'
-type SearchableType = 'work-center' | 'material' | 'equipment' | 'workshop' | 'batch' | 'serial'
+type ListType = 'shift' | 'production-line' | 'site'
+type SearchableType =
+  | 'work-center'
+  | 'station'
+  | 'material'
+  | 'equipment'
+  | 'workshop'
+  | 'batch'
+  | 'serial'
 
 const DIRECTORY_TEXT: Record<SearchableType | ListType, { noun: string; source: string }> = {
   'work-center': { noun: '工作中心', source: '数据来自基础数据工作中心' },
+  station: { noun: '工位', source: '数据来自基础数据工位' },
   material: { noun: '物料', source: '数据来自基础数据物料主数据' },
   equipment: { noun: '设备', source: '数据来自基础数据设备台账' },
   workshop: { noun: '车间', source: '数据来自基础数据车间' },
@@ -34,6 +44,7 @@ const DIRECTORY_TEXT: Record<SearchableType | ListType, { noun: string; source: 
   serial: { noun: '序列号', source: '数据来自库存中有在库量的序列号' },
   shift: { noun: '班次', source: '数据来自基础数据班次' },
   'production-line': { noun: '产线', source: '数据来自基础数据产线' },
+  site: { noun: '工厂', source: '数据来自基础数据工厂' },
 }
 
 // 其余 `NvEntityPicker` 属性（id / placeholder / clearable / disabled / invalid / aria-label / class）
@@ -48,16 +59,20 @@ const props = defineProps<{
   creatable?: boolean
   /** 传给新增弹窗的上下文，用来预填父级（如已选的产线）。 */
   createContext?: DirectoryCreateContext
+  /** 层级字段按已选上级收窄候选（如工位只列所选产线下的）；只对层级类型有效。 */
+  parent?: DirectoryParent
 }>()
 const model = defineModel<string>({ default: '' })
 
-const text = DIRECTORY_TEXT[props.directoryType]
-const source = isListType(props.directoryType)
-  ? useMasterDataListPicker(props.directoryType)
-  : useSearchableDirectoryPicker(props.directoryType, {
-      selected: model,
-      skuCode: () => props.skuCode,
-    })
+const type = props.directoryType
+const text = DIRECTORY_TEXT[type]
+const source =
+  isListType(type) || (props.parent && isHierarchyType(type))
+    ? useMasterDataListPicker(type, () => props.parent)
+    : useSearchableDirectoryPicker(type, {
+        selected: model,
+        skuCode: () => props.skuCode,
+      })
 const { options, pending } = source
 const serverSearch = source.serverSearch
 const search = computed(() => (source.serverSearch ? source.search.value : undefined))
@@ -71,10 +86,10 @@ if (source.serverSearch) {
   watch(model, () => updateSearch(''))
 }
 // 批次 / 序列号目录的名称就是「编码 · 物料」，再印一行编码是重复。
-const showCode = props.directoryType !== 'batch' && props.directoryType !== 'serial'
+const showCode = type !== 'batch' && type !== 'serial'
 
 const auth = useAuthStore()
-const creator = props.creatable ? directoryCreatorFor(props.directoryType) : undefined
+const creator = props.creatable ? directoryCreatorFor(type) : undefined
 const canCreate = computed(
   () => !!creator && (auth.principal?.permissionCodes ?? []).includes(creator.permission),
 )
@@ -94,7 +109,12 @@ function onCreated(item: DirectoryCreatedItem) {
 }
 
 function isListType(type: SearchableType | ListType): type is ListType {
-  return type === 'shift' || type === 'production-line'
+  return type === 'shift' || type === 'production-line' || type === 'site'
+}
+
+/** 可搜目录里能按上级收窄的层级类型（产线本来就取资源列表）。 */
+function isHierarchyType(type: SearchableType): type is 'workshop' | 'work-center' | 'station' {
+  return type === 'workshop' || type === 'work-center' || type === 'station'
 }
 </script>
 
