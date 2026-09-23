@@ -44,6 +44,7 @@ public static class MasterDataPersistenceServiceCollectionExtensions
         services.AddScoped<ISiteRepository, SiteRepository>();
         services.AddScoped<IWorkshopRepository, WorkshopRepository>();
         services.AddScoped<IProductionLineRepository, ProductionLineRepository>();
+        services.AddScoped<IStationRepository, StationRepository>();
         services.AddScoped<IShiftRepository, ShiftRepository>();
         services.AddScoped<IWorkCenterRepository, WorkCenterRepository>();
         services.AddScoped<IWorkCalendarRepository, WorkCalendarRepository>();

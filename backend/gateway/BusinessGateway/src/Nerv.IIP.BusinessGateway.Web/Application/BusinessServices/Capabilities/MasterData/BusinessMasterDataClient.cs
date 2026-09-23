@@ -153,6 +153,11 @@ public interface IBusinessMasterDataClient
         BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleResourceItem> CreateStationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateStationRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
         string internalBearerToken,
         BusinessConsoleCreateWorkCenterRequest request,
@@ -640,6 +645,12 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
         CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", request, cancellationToken, auditContext);
+
+    public Task<BusinessConsoleResourceItem> CreateStationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateStationRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/stations", request, cancellationToken);
 
     public Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
         string internalBearerToken,

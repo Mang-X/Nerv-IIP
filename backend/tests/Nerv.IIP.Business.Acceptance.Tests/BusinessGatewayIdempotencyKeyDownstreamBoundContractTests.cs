@@ -860,6 +860,7 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleCreateWorkshopRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateSiteRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateProductionLineRequest)] = [MasterDataCodeKeyColumn],
+        [typeof(BusinessConsoleCreateStationRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateWorkCenterRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleRegisterDeviceAssetRequest)] = [MasterDataCodeKeyColumn],
         [typeof(BusinessConsoleCreateShiftRequest)] = [MasterDataCodeKeyColumn],

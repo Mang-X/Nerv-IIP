@@ -53,6 +53,7 @@ public sealed class MasterDataApiContractTests
     [InlineData(typeof(ListPersonnelSkillMatrixEndpoint))]
     [InlineData(typeof(CreateSiteEndpoint))]
     [InlineData(typeof(CreateProductionLineEndpoint))]
+    [InlineData(typeof(CreateStationEndpoint))]
     [InlineData(typeof(CreateShiftEndpoint))]
     [InlineData(typeof(CreateWorkCalendarEndpoint))]
     [InlineData(typeof(CreateWorkCenterEndpoint))]
@@ -108,7 +109,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(50, contracts.Count);
+        Assert.Equal(51, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -863,6 +864,7 @@ public sealed class MasterDataApiContractTests
         dbContext.Workshops.Add(Workshop.Create("org-001", "env-dev", "WS-001", "Mixing Workshop", "SITE-001", "manager-001", "Wet process"));
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
+        dbContext.Stations.Add(Domain.AggregatesModel.StationAggregate.Station.Create("org-001", "env-dev", "ST-001", "Mixing Station", "LINE-001", "WC-001"));
         dbContext.DeviceAssets.Add(
             Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>())
                 .WithLedger(new DateOnly(2024, 1, 15), 125000m, "CNY", new DateOnly(2027, 1, 14), "SUP-001", "SITE-001", "WS-001", "LINE-001", "ST-001", "DEV-PARENT-01", null)
@@ -917,8 +919,8 @@ public sealed class MasterDataApiContractTests
         var station = Assert.Single((await handler.Handle(
             new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: "WC-001"),
             CancellationToken.None)).Resources);
-        Assert.Equal("station:7:org-0017:env-dev8:SITE-0016:WS-0018:LINE-0016:WC-0016:ST-001", station.Code);
-        Assert.Equal("ST-001", station.DisplayName);
+        Assert.Equal("ST-001", station.Code);
+        Assert.Equal("Mixing Station", station.DisplayName);
         Assert.Equal("ST-001", station.StationCode);
         Assert.Equal("SITE-001", station.SiteCode);
         Assert.Equal("WS-001", station.WorkshopCode);
@@ -1000,91 +1002,6 @@ public sealed class MasterDataApiContractTests
 
         Assert.Contains("无法唯一确定", exception.Message, StringComparison.Ordinal);
     }
-
-    [Fact]
-    public async Task Station_directory_keeps_local_codes_distinct_and_pages_deterministically()
-    {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.DeviceAssets.AddRange(
-            StationAsset("DEV-A", "LINE-A", "WC-A", "ST-01"),
-            StationAsset("DEV-B", "LINE-B", "WC-B", "ST-01"),
-            StationAsset("DEV-C", "LINE-A", "WC-A", "ST-02"));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
-        var firstPage = await handler.Handle(
-            new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Skip: 0, Take: 2),
-            CancellationToken.None);
-        var secondPage = await handler.Handle(
-            new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Skip: 2, Take: 2),
-            CancellationToken.None);
-
-        Assert.Equal(3, firstPage.Total);
-        Assert.Equal(2, firstPage.Resources.Count);
-        Assert.Single(secondPage.Resources);
-        var resources = firstPage.Resources.Concat(secondPage.Resources).ToArray();
-        Assert.Equal(3, resources.Select(resource => resource.Code).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(2, resources.Count(resource => resource.StationCode == "ST-01"));
-        Assert.Contains(resources, resource => resource.Code.Contains("4:WC-A5:ST-01", StringComparison.Ordinal));
-        Assert.Contains(resources, resource => resource.Code.Contains("4:WC-B5:ST-01", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task Station_directory_id_is_stable_and_collision_safe_for_opaque_component_values()
-    {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.DeviceAssets.AddRange(
-            StationAsset("DEV-COLON-A", "LINE-01", "WC:0", "工位 站"),
-            StationAsset("DEV-COLON-B", "LINE-01", "WC", "0:工位 站"));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
-        var request = new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Take: 10);
-        var first = await handler.Handle(request, CancellationToken.None);
-        var repeated = await handler.Handle(request, CancellationToken.None);
-
-        Assert.Equal(2, first.Total);
-        Assert.Equal(
-            first.Resources.Select(resource => resource.Code),
-            repeated.Resources.Select(resource => resource.Code));
-        Assert.Equal(2, first.Resources.Select(resource => resource.Code).Distinct(StringComparer.Ordinal).Count());
-        Assert.All(first.Resources, resource =>
-        {
-            Assert.StartsWith("station:", resource.Code, StringComparison.Ordinal);
-            Assert.NotEqual(resource.StationCode, resource.Code);
-        });
-        Assert.Contains(first.Resources, resource => resource.WorkCenterCode == "WC:0" && resource.StationCode == "工位 站");
-        Assert.Contains(first.Resources, resource => resource.WorkCenterCode == "WC" && resource.StationCode == "0:工位 站");
-    }
-
-    private static Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset StationAsset(
-        string deviceCode,
-        string lineCode,
-        string workCenterCode,
-        string stationCode) =>
-        Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset
-            .RegisterCapability(
-                "org-001",
-                "env-dev",
-                deviceCode,
-                "Station asset",
-                lineCode,
-                workCenterCode,
-                "station",
-                "ACME",
-                "SN-" + deviceCode,
-                1m,
-                1m,
-                "unit",
-                "normal",
-                true,
-                false,
-                new Dictionary<string, string>())
-            .WithLedger(null, null, "", null, "", "SITE-001", "WS-001", lineCode, stationCode, null, null);
 
     [Fact]
     public async Task List_resources_all_mode_reports_truncation_when_limit_is_reached()

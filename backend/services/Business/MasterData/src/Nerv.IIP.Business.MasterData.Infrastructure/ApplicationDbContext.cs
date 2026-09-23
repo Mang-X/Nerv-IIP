@@ -13,6 +13,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.StationAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
@@ -48,6 +49,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<Site> Sites => Set<Site>();
     public DbSet<Workshop> Workshops => Set<Workshop>();
     public DbSet<ProductionLine> ProductionLines => Set<ProductionLine>();
+    public DbSet<Station> Stations => Set<Station>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ReferenceDataCode> ReferenceDataCodes => Set<ReferenceDataCode>();
     public DbSet<WorkCenter> WorkCenters => Set<WorkCenter>();
