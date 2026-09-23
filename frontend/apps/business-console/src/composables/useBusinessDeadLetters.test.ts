@@ -107,6 +107,15 @@ vi.mock('@pinia/colada', () => ({
   useQueryCache: vi.fn(() => ({ invalidateQueries: coladaState.invalidateQueries })),
 }))
 
+/** 构造一次重放的目标；点击前行状态默认待处理。 */
+function target(
+  service: string,
+  deadLetterId: string,
+  statusAtAttempt: 'pending' | 'failed' = 'pending',
+) {
+  return { service, deadLetterId, statusAtAttempt }
+}
+
 /** 取出「收到了答复」那一档的受控状态；未答复或没点过返回 undefined。 */
 function answeredStatus(result: unknown) {
   const r = result as { answered?: boolean; outcome?: { status?: string } } | undefined
@@ -159,8 +168,8 @@ describe('死信运维 composable', () => {
     const deadLetters = useBusinessDeadLetters()
 
     await deadLetters.replaySelected([
-      { service: 'Erp', deadLetterId: 'dl-1' },
-      { service: 'Wms', deadLetterId: 'dl-3' },
+      { service: 'Erp', deadLetterId: 'dl-1', statusAtAttempt: 'pending' },
+      { service: 'Wms', deadLetterId: 'dl-3', statusAtAttempt: 'pending' },
     ])
 
     expect(
@@ -172,7 +181,7 @@ describe('死信运维 composable', () => {
     seedList([{ service: 'Erp', id: 'dl-1' }])
     const deadLetters = useBusinessDeadLetters()
 
-    await deadLetters.replayOne('Erp', 'dl-1')
+    await deadLetters.replayOne(target('Erp', 'dl-1'))
 
     expect(apiState.replayCalls[0]?.query).toEqual({
       organizationId: 'org-001',
@@ -188,7 +197,7 @@ describe('死信运维 composable', () => {
     apiState.replayResults.set('Erp/shared-id', { succeeded: false, status: 'noHandler' })
     const deadLetters = useBusinessDeadLetters()
 
-    await deadLetters.replayOne('Erp', 'shared-id')
+    await deadLetters.replayOne(target('Erp', 'shared-id'))
 
     expect(answeredStatus(deadLetters.replayResults.get('Erp/shared-id'))).toBe('noHandler')
     expect(deadLetters.replayResults.get('Mes/shared-id')).toBeUndefined()
@@ -243,10 +252,10 @@ describe('死信运维 composable', () => {
     apiState.replayThrows.set('Mes/dl-2', networkError())
     const deadLetters = useBusinessDeadLetters()
 
-    const { outcomes, firstError, unansweredCount } = await deadLetters.replaySelected([
-      { service: 'Erp', deadLetterId: 'dl-1' },
-      { service: 'Mes', deadLetterId: 'dl-2' },
-      { service: 'Wms', deadLetterId: 'dl-3' },
+    const results = await deadLetters.replaySelected([
+      { service: 'Erp', deadLetterId: 'dl-1', statusAtAttempt: 'pending' },
+      { service: 'Mes', deadLetterId: 'dl-2', statusAtAttempt: 'pending' },
+      { service: 'Wms', deadLetterId: 'dl-3', statusAtAttempt: 'pending' },
     ])
 
     // 第 2 行失败没有挡住第 3 行
@@ -255,9 +264,7 @@ describe('死信运维 composable', () => {
       'Mes/dl-2',
       'Wms/dl-3',
     ])
-    expect(outcomes.map(({ outcome }) => outcome.status)).toEqual(['replayed', 'replayed'])
-    expect(firstError).toBeDefined()
-    expect(unansweredCount).toBe(1)
+    expect(results.map((r) => r.kind)).toEqual(['answered', 'unanswered', 'answered'])
     // 半应用状态的解药：无论成败，列表与计数都回到服务端的说法
     expect(coladaState.invalidateQueries).toHaveBeenCalled()
   })
@@ -267,13 +274,17 @@ describe('死信运维 composable', () => {
     apiState.replayThrows.set('Mes/dl-2', networkError())
     const deadLetters = useBusinessDeadLetters()
 
-    const { unansweredCount } = await deadLetters.replaySelected([
-      { service: 'Mes', deadLetterId: 'dl-2' },
+    const results = await deadLetters.replaySelected([
+      { service: 'Mes', deadLetterId: 'dl-2', statusAtAttempt: 'pending' },
     ])
 
-    expect(unansweredCount).toBe(1)
+    expect(results.map((r) => r.kind)).toEqual(['unanswered'])
     // 严格等于「未答复」：写成 failed 是伪造服务端取值；留白则与「从没点过」同形。
-    expect(deadLetters.replayResults.get('Mes/dl-2')).toStrictEqual({ answered: false })
+    // statusAtAttempt 是**行状态**枚举取值，记下的是发起这次重放时的状态。
+    expect(deadLetters.replayResults.get('Mes/dl-2')).toStrictEqual({
+      answered: false,
+      statusAtAttempt: 'pending',
+    })
   })
 
   it('单条：网关 502 同样记为「未知」并把错误抛给调用方——与整批同形', async () => {
@@ -281,9 +292,14 @@ describe('死信运维 composable', () => {
     apiState.replayThrows.set('Mes/dl-2', httpError(502))
     const deadLetters = useBusinessDeadLetters()
 
-    await expect(deadLetters.replayOne('Mes', 'dl-2')).rejects.toBeDefined()
+    // 点击前是「重放失败」（N1 那一类行）。与整批用例的 'pending' 取值互不相等：
+    // 记下的值必须来自入参——若实现把它写死成某个常量，两条用例不可能同时绿。
+    await expect(deadLetters.replayOne(target('Mes', 'dl-2', 'failed'))).rejects.toBeDefined()
 
-    expect(deadLetters.replayResults.get('Mes/dl-2')).toStrictEqual({ answered: false })
+    expect(deadLetters.replayResults.get('Mes/dl-2')).toStrictEqual({
+      answered: false,
+      statusAtAttempt: 'failed',
+    })
     expect(coladaState.invalidateQueries).toHaveBeenCalled()
   })
 
@@ -296,16 +312,45 @@ describe('死信运维 composable', () => {
     apiState.replayThrows.set('Erp/dl-1', httpError(400))
     const deadLetters = useBusinessDeadLetters()
 
-    await expect(deadLetters.replayOne('Mes', 'dl-2')).rejects.toBeDefined()
-    const { unansweredCount, firstError } = await deadLetters.replaySelected([
-      { service: 'Erp', deadLetterId: 'dl-1' },
+    await expect(deadLetters.replayOne(target('Mes', 'dl-2'))).rejects.toBeDefined()
+    const results = await deadLetters.replaySelected([
+      { service: 'Erp', deadLetterId: 'dl-1', statusAtAttempt: 'pending' },
     ])
 
     // 把已知的拒绝说成「不确定、请去核实」，是与伪造 failed 反方向的同一种错。
     expect(deadLetters.replayResults.get('Mes/dl-2')).toBeUndefined()
     expect(deadLetters.replayResults.get('Erp/dl-1')).toBeUndefined()
-    expect(unansweredCount).toBe(0)
-    expect(firstError).toBeDefined()
+    expect(results.map((r) => r.kind)).toEqual(['rejected'])
+  })
+
+  it('T3 混合批次（成功 + 502 + 429）：逐行恰好各归一类，批次后只保留被拒绝那一行的选中', async () => {
+    seedList([
+      { service: 'Erp', id: 'dl-1' },
+      { service: 'Mes', id: 'dl-2' },
+      { service: 'Wms', id: 'dl-3' },
+    ])
+    apiState.replayThrows.set('Mes/dl-2', httpError(502))
+    apiState.replayThrows.set('Wms/dl-3', httpError(429))
+    const deadLetters = useBusinessDeadLetters()
+    deadLetters.selectedRowKeys.value = ['Erp/dl-1', 'Mes/dl-2', 'Wms/dl-3']
+
+    const results = await deadLetters.replaySelected([
+      target('Erp', 'dl-1'),
+      target('Mes', 'dl-2'),
+      target('Wms', 'dl-3'),
+    ])
+
+    expect(results.map((r) => `${r.rowKey}:${r.kind}`)).toEqual([
+      'Erp/dl-1:answered',
+      'Mes/dl-2:unanswered',
+      'Wms/dl-3:rejected',
+    ])
+    // 批次不变量：每行要么有「重放结果」记录，要么仍选中。
+    expect(deadLetters.selectedRowKeys.value).toEqual(['Wms/dl-3'])
+    expect(deadLetters.replayResults.has('Erp/dl-1')).toBe(true)
+    expect(deadLetters.replayResults.has('Mes/dl-2')).toBe(true)
+    // 被拒绝的行不写记录（确定没重放，行上 `—` 是真话），靠保留选中交代。
+    expect(deadLetters.replayResults.has('Wms/dl-3')).toBe(false)
   })
 
   it('答不上来的来源在列表与计数里各报一次，合并后只提示一次', () => {

@@ -62,13 +62,43 @@ export interface DeadLetterReplayOutcome {
  */
 export type DeadLetterReplayResult =
   | { answered: true; outcome: DeadLetterReplayOutcome }
-  | { answered: false }
+  | {
+      answered: false
+      /**
+       * 发起这次重放时该行的**行状态**（`IntegrationEventDeadLetterStatus`，不是重放结果枚举）。
+       * 让位判据看的是「状态是否发生了转移」，所以必须记下转移之前的值——只看当前值，
+       * 点击前就是「重放失败」的行会被当成「服务端已给出确定结果」而错误让位（N1）。
+       */
+      statusAtAttempt: IntegrationEventDeadLetterStatus | undefined
+    }
 
 /** 一行死信的定位坐标：id 只在它自己的服务内唯一。 */
-export interface DeadLetterTarget {
+export interface DeadLetterCoordinate {
   service: string
   deadLetterId: string
 }
+
+/** 一次重放的目标：坐标 + 发起时的行状态（让位判据要用）。 */
+export interface DeadLetterTarget extends DeadLetterCoordinate {
+  /**
+   * 调用方看到的该行当前状态。由调用方传入、而不是在这里按 rowKey 回查列表：
+   * 回查会让 `replay()` 隐式依赖列表缓存的读取时机。
+   */
+  statusAtAttempt: IntegrationEventDeadLetterStatus | undefined
+}
+
+/**
+ * 整批里一行的归类，三类互斥且穷尽：
+ * - `answered`：收到服务端答复（行上按受控枚举记录）；
+ * - `unanswered`：未收到答复（行上记「未知」）；
+ * - `rejected`：网关明确拒绝（4xx，现实中即 429 限流）——**确定没有重放**，行上不写记录，
+ *   改为批次结束后**保留选中**，让运维能直接再点一次。
+ *
+ * 汇总 toast 的计数与保留选中都从这一份列表派生，不另记计数。
+ */
+export type DeadLetterBatchRowResult =
+  | { rowKey: string; kind: 'answered'; outcome: DeadLetterReplayOutcome }
+  | { rowKey: string; kind: 'unanswered' | 'rejected'; error: unknown }
 
 export interface DeadLetterUnavailableSource {
   service: string
@@ -181,7 +211,7 @@ export function useBusinessDeadLetters() {
     unwrapData(detailQuery.data.value as BusinessConsoleDeadLetterDetailEnvelope | undefined),
   )
   /** 当前选中行的坐标。行键的格式由本文件拥有，调用方不再各自拆一遍。 */
-  const selectedTarget = computed<DeadLetterTarget | undefined>(() =>
+  const selectedTarget = computed<DeadLetterCoordinate | undefined>(() =>
     parseRowKey(selectedRowKey.value),
   )
 
@@ -241,7 +271,7 @@ export function useBusinessDeadLetters() {
    * 逐行调单条重放、而不是调 `replay-batch`：批量端点按**筛选条件**重放（服务 + 条件 + 上限），
    * 表达不了「就这几行」。用它来兑现复选框会连用户没勾的行一起重放。
    */
-  async function replay(service: string, deadLetterId: string) {
+  async function replay({ service, deadLetterId, statusAtAttempt }: DeadLetterTarget) {
     const rowKey = deadLetterRowKey(service, deadLetterId)
     let envelope: BusinessConsoleDeadLetterReplayEnvelope
     try {
@@ -251,7 +281,9 @@ export function useBusinessDeadLetters() {
       })) as BusinessConsoleDeadLetterReplayEnvelope
     } catch (error) {
       // 单条与整批共用这一处，两条路径因此同形：谁也不会漏记、也不会一个记一个不记。
-      if (isReplayUnanswered(error)) replayResults.set(rowKey, { answered: false })
+      if (isReplayUnanswered(error)) {
+        replayResults.set(rowKey, { answered: false, statusAtAttempt })
+      }
       throw error
     }
     const result = unwrapData(envelope)
@@ -269,34 +301,37 @@ export function useBusinessDeadLetters() {
    * 串行是为了不对 10 个下游同时放大流量。
    *
    * **一行失败不中断整批**：中断会留下「前几行后端已经重放、而列表与计数不刷新」的半应用状态。
-   * 收到答复的行按答复记结果；没收到答复的行记为「未知」（见 `replay()` 与 `isReplayUnanswered`）。
-   * 整批走完后统一失效缓存；传输层错误经 `firstError` 回给调用方上屏，不吞。
+   *
+   * 批次不变量：所选的每一行，批次结束后**要么有「重放结果」列的记录，要么仍在选中状态**。
+   * `answered` / `unanswered` 由 `replay()` 写行上记录；`rejected` 没有记录，所以保留选中。
+   * 错误原文随每行带回，由调用方透传上屏，不吞。
    */
   async function replaySelected(rows: DeadLetterTarget[]) {
-    const outcomes: Array<{ rowKey: string; outcome: DeadLetterReplayOutcome }> = []
-    let firstError: unknown
-    /** 没收到服务端答复的行数。它们**不是**「重放失败」，而是结果未知，需要人去刷新核实。 */
-    let unansweredCount = 0
+    const results: DeadLetterBatchRowResult[] = []
     try {
-      for (const { service, deadLetterId } of rows) {
-        const rowKey = deadLetterRowKey(service, deadLetterId)
+      for (const target of rows) {
+        const rowKey = deadLetterRowKey(target.service, target.deadLetterId)
         try {
-          outcomes.push({ rowKey, outcome: await replay(service, deadLetterId) })
+          results.push({ rowKey, kind: 'answered', outcome: await replay(target) })
         } catch (error) {
-          // 行上的「未知」已由 replay() 记下；这里只汇总给调用方上屏，不中断整批。
-          firstError ??= error
-          if (isReplayUnanswered(error)) unansweredCount += 1
+          // 与 replay() 写行上记录用的是同一个判定，两边的分类因此不会分叉。
+          results.push({
+            rowKey,
+            kind: isReplayUnanswered(error) ? 'unanswered' : 'rejected',
+            error,
+          })
         }
       }
     } finally {
       await invalidateDeadLetters()
     }
-    return { outcomes, firstError, unansweredCount }
+    selectedRowKeys.value = results.filter((r) => r.kind === 'rejected').map((r) => r.rowKey)
+    return results
   }
 
-  async function replayOne(service: string, deadLetterId: string) {
+  async function replayOne(target: DeadLetterTarget) {
     try {
-      return await replay(service, deadLetterId)
+      return await replay(target)
     } finally {
       // 与整批同一条不变量：无论这次成不成，列表与计数都要回到服务端的说法。
       await invalidateDeadLetters()

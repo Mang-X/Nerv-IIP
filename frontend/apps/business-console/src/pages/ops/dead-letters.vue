@@ -11,6 +11,7 @@ import {
   deadLetterRowKey,
   isReplayUnanswered,
   useBusinessDeadLetters,
+  type DeadLetterBatchRowResult,
   type DeadLetterReplayOutcome,
   type DeadLetterUnavailableSource,
 } from '@/composables/useBusinessDeadLetters'
@@ -199,22 +200,23 @@ const UNANSWERED_DISPLAY = {
  * 这行的重放结果，包装成 0 或 1 个元素的数组——模板里用 `v-for` 渲染，
  * 「有没有」和「是什么」因此读自同一次取值，不需要在模板里断言非空。
  *
- * 「未知」**只在行状态仍是待处理时显示**；一旦刷新后服务端给出确定状态（已重放 / 重放失败 /
- * 已忽略），它就让位，由「状态」列说话。理由：「未知」的含义是「服务端还没告诉我们结果」，
- * 行状态变成确定值恰恰就是服务端告诉了——此时再挂着「未知」，会与「状态」列自相矛盾
- * （例如网关返 502 而下游其实已重放：刷新后「状态=已重放」旁边不能还写着「待核实」）。
- * 让位是在渲染时按当前行状态推导的，不去改 `replayResults`，因此不需要额外的同步时机。
+ * 「未知」在**行状态自发起这次重放以来没有发生转移**时显示，一旦转移就让位，由「状态」列说话。
+ * 判的是**转移**，不是当前值：「未知」的含义是「服务端还没告诉我们这次的结果」，而状态转移
+ * 才是服务端对这次尝试的答复。只看当前值会出错——点击前就是「重放失败」的行，刷新后仍是
+ * 「重放失败」，那是这次尝试**之前**的状态，不是对它的答复（N1）。
+ * 网关返 502 而下游其实已重放时，状态必然转成「已重放」，「未知」必然让位，不会与之并存。
+ * 让位在渲染时推导，不去改 `replayResults`，因此不需要额外的同步时机。
  */
 function replayDisplay(row: DeadLetterRow) {
   const result = replayResults.get(rowKeyOf(row))
   if (!result) return []
   if (!result.answered) {
-    return row.deadLetter.status === 'pending' ? [UNANSWERED_DISPLAY] : []
+    return row.deadLetter.status === result.statusAtAttempt ? [UNANSWERED_DISPLAY] : []
   }
   return [{ value: result.outcome.status, ...REPLAY_LABELS[result.outcome.status] }]
 }
 
-/** 失败的 toast：未知与已确认的拒绝是两句话，单条与整批共用，两条路径的口径因此不会分叉。 */
+/** 单条重放失败的 toast：未知与已确认的拒绝是两句话。整批走 `notifyBatchReplaySummary`。 */
 function notifyReplayError(error: unknown, unansweredCount: number) {
   if (unansweredCount > 0) {
     notifyOperationFailure(
@@ -225,6 +227,39 @@ function notifyReplayError(error: unknown, unansweredCount: number) {
     return
   }
   notifyOperationFailure('重放失败', error, '重放请求被拒绝，请稍后重试。')
+}
+
+function targetOf(row: DeadLetterRow) {
+  return {
+    service: row.service,
+    deadLetterId: row.deadLetterId,
+    statusAtAttempt: row.deadLetter.status,
+  }
+}
+
+/**
+ * 整批汇总。计数全部取自 composable 返回的**同一份逐行结果**，不另记。
+ *
+ * 汇总串同时作 `action` 与兜底句传入：`notifyOperationFailure` 在共享映射解析出非空文案时
+ * 上屏 `action：message`、解析为空时**只**上屏兜底句（`utils/notify.ts:270`）。
+ * 5xx / 断网映射非空，429 限流无正文映射为空——只放一处，总有一条分支会把计数丢掉。
+ */
+function notifyBatchReplaySummary(results: DeadLetterBatchRowResult[]) {
+  const answered = results.filter((r) => r.kind === 'answered').length
+  const unanswered = results.filter((r) => r.kind === 'unanswered').length
+  const rejected = results.filter((r) => r.kind === 'rejected').length
+  const segments = [`已答复 ${answered} 条`]
+  if (unanswered > 0) {
+    segments.push(`未确认 ${unanswered} 条（请刷新列表核实是否已重放，勿直接重试）`)
+  }
+  if (rejected > 0) {
+    segments.push(`被拒绝 ${rejected} 条（已保留选中，请稍后重试）`)
+  }
+  const summary = `重放未全部完成：${segments.join('，')}`
+  // 服务端原文只透传第一条出错行的；汇总串里的计数已覆盖每一行。
+  const firstFailure = results.find((r) => r.kind !== 'answered')
+  const firstError = firstFailure && 'error' in firstFailure ? firstFailure.error : undefined
+  notifyOperationFailure(summary, firstError, summary)
 }
 
 function canReplay(row: DeadLetterRow) {
@@ -256,23 +291,22 @@ async function handleRefresh() {
 
 async function handleReplayRow(row: DeadLetterRow) {
   try {
-    announce(await replayOne(row.service, row.deadLetterId), '该死信')
+    announce(await replayOne(targetOf(row)), '该死信')
   } catch (error) {
     notifyReplayError(error, isReplayUnanswered(error) ? 1 : 0)
   }
 }
 
 async function handleReplaySelected() {
-  // 整批走完才返回，列表与计数已在 composable 里统一失效——这里不会留下「部分已重放但屏上没变」。
-  const { outcomes, firstError, unansweredCount } = await replaySelected(selectedRows.value)
-  selectedRowKeys.value = []
+  // 整批走完才返回：列表与计数已统一失效，选中也已由 composable 收成「仅被拒绝的行」。
+  const results = await replaySelected(selectedRows.value.map(targetOf))
 
-  if (firstError) {
-    // 「没收到答复」不等于「重放失败」：结果未知，要引导去核实，而不是说它失败了。
-    notifyReplayError(firstError, unansweredCount)
+  if (results.some((r) => r.kind !== 'answered')) {
+    notifyBatchReplaySummary(results)
     return
   }
 
+  const outcomes = results.flatMap((r) => (r.kind === 'answered' ? [r] : []))
   const replayed = outcomes.filter(({ outcome }) => outcome.status === 'replayed').length
   if (replayed === outcomes.length) {
     notifySuccess(`已重放 ${replayed} 条死信`)

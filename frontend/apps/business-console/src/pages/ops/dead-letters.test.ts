@@ -4,25 +4,29 @@ import { computed, reactive, ref, shallowRef } from 'vue'
 
 import DeadLettersPage from './dead-letters.vue'
 import type {
+  DeadLetterBatchRowResult,
   DeadLetterReplayOutcome,
   DeadLetterReplayResult,
+  DeadLetterTarget,
 } from '@/composables/useBusinessDeadLetters'
 import { deadLetterRowKey } from '@/composables/useBusinessDeadLetters'
 
-const notify = vi.hoisted(() => ({
-  notifySuccess: vi.fn(),
-  notifyWarning: vi.fn(),
-  notifyOperationFailure: vi.fn(),
+/**
+ * 截获层在 `@nerv-iip/ui` 的 `toast`，**不在** `@/utils/notify`：真实的 notify 要跑完共享文案映射。
+ * 断言的是「映射之后、交给 toast 组件的最终字符串」——经过文案映射，但不是渲染后的 DOM。
+ * 在 notify 层截获只能证明「传了什么参数」，而 `notifyOperationFailure` 的兜底句在映射非空时
+ * 根本不上屏（`utils/notify.ts:270`），那样会再一次证明一句用户看不到的话。
+ */
+const toastSpy = vi.hoisted(() => ({
+  success: vi.fn(),
+  warning: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
 }))
 
-// 部分 mock：只截 toast 出口。`errorStatusCode` 等纯函数要走真实现——
-// 「未知 / 已拒绝」的分类正是靠它读状态码，桩掉它等于测不到分类本身。
-vi.mock('@/utils/notify', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/utils/notify')>()),
-  notifySuccess: notify.notifySuccess,
-  notifyWarning: notify.notifyWarning,
-  notifyOperationFailure: notify.notifyOperationFailure,
-  inlineErrorMessage: (error: unknown) => (error ? '加载失败' : ''),
+vi.mock('@nerv-iip/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/ui')>()),
+  toast: toastSpy,
 }))
 
 const state = vi.hoisted(() => ({
@@ -33,6 +37,8 @@ const state = vi.hoisted(() => ({
   nextReplayError: undefined as unknown,
   /** 下一次重放的返回值——`noHandler` 是「按了也不会有任何变化」那一档。 */
   nextOutcome: { status: 'replayed', succeeded: true } as DeadLetterReplayOutcome,
+  /** 下一次「重放选中」返回的逐行结果（由 composable 的单测另证其分类）。 */
+  nextBatchResults: [] as DeadLetterBatchRowResult[],
   filters: { service: 'all', eventType: '', status: 'all' },
   permissionCodes: ['business.dlq.read', 'business.dlq.manage'] as string[],
   /** 与真实契约同宽：四张卡各取一个字段，mock 比真类型窄就等于那两张卡零覆盖。 */
@@ -76,12 +82,15 @@ vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
         metricsError: computed(() => state.metricsError),
         metricsPending: ref(false),
         refresh: vi.fn(async () => undefined),
-        replayOne: vi.fn(async (service: string, deadLetterId: string) => {
-          const rowKey = deadLetterRowKey(service, deadLetterId)
+        replayOne: vi.fn(async (target: DeadLetterTarget) => {
+          const rowKey = deadLetterRowKey(target.service, target.deadLetterId)
           if (state.nextReplayError) {
             // 行上记录由 composable 负责（其单测另证）；这里照同一分类复刻，只为给页面喂状态。
             if (actual.isReplayUnanswered(state.nextReplayError)) {
-              state.replayResults.set(rowKey, { answered: false })
+              state.replayResults.set(rowKey, {
+                answered: false,
+                statusAtAttempt: target.statusAtAttempt,
+              })
             }
             throw state.nextReplayError
           }
@@ -90,7 +99,7 @@ vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
         }),
         replayResults: state.replayResults,
         replayPending: ref(false),
-        replaySelected: vi.fn(async () => ({ outcomes: [], firstError: undefined })),
+        replaySelected: vi.fn(async () => state.nextBatchResults),
         selectedDeadLetter: computed(() => state.selectedDeadLetter),
         detailError: shallowRef(),
         detailPending: ref(false),
@@ -170,6 +179,7 @@ describe('集成事件死信运维页', () => {
     // 真实 composable 暴露的是 reactive Map；用普通 Map 会让「结果写进去了但没重渲染」看起来像页面缺陷。
     state.replayResults = reactive(new Map())
     state.nextReplayError = undefined
+    state.nextBatchResults = []
     state.nextOutcome = { status: 'replayed', succeeded: true }
     state.filters = { service: 'all', eventType: '', status: 'all' }
     state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
@@ -178,9 +188,10 @@ describe('集成事件死信运维页', () => {
     state.selectedRowKeys = []
     state.selectedDeadLetter = undefined
     state.selectedTarget = undefined
-    notify.notifySuccess.mockClear()
-    notify.notifyWarning.mockClear()
-    notify.notifyOperationFailure.mockClear()
+    toastSpy.success.mockClear()
+    toastSpy.warning.mockClear()
+    toastSpy.error.mockClear()
+    toastSpy.info.mockClear()
   })
 
   it('有来源没答上来时点名该服务，并说明计数不含它', async () => {
@@ -229,8 +240,8 @@ describe('集成事件死信运维页', () => {
     await wrapper.find('[aria-label^="重放死信"]').trigger('click')
     await flushPromises()
 
-    expect(notify.notifySuccess).not.toHaveBeenCalled()
-    expect(notify.notifyWarning).toHaveBeenCalledWith(expect.stringContaining('该服务无重放能力'))
+    expect(toastSpy.success).not.toHaveBeenCalled()
+    expect(toastSpy.warning).toHaveBeenCalledWith(expect.stringContaining('该服务无重放能力'))
     expect(wrapper.text()).toContain('该服务无重放能力')
   })
 
@@ -319,7 +330,10 @@ describe('集成事件死信运维页', () => {
 
   it('「未知」与「重放失败」在屏上是两回事：文案不同、也不是红色', async () => {
     seedRow()
-    state.replayResults.set(deadLetterRowKey('Erp', 'dl-1'), { answered: false })
+    state.replayResults.set(deadLetterRowKey('Erp', 'dl-1'), {
+      answered: false,
+      statusAtAttempt: 'pending',
+    })
     const wrapper = await mountPage()
 
     const badge = wrapper.find('[aria-label="状态：未收到答复，待核实"]')
@@ -331,10 +345,13 @@ describe('集成事件死信运维页', () => {
     expect(badge.classes().join(' ')).not.toContain('destructive')
   })
 
-  it('刷新后服务端给出确定状态，「未知」让位——不与「状态」列并存矛盾', async () => {
-    // 网关返 502 而下游其实已重放：刷新后行状态已是 replayed。
+  it('T2 待处理 × 未答复：刷新后状态转成已重放，「未知」让位——不与「状态」列并存矛盾', async () => {
+    // 网关返 502 而下游其实已重放：发起时是 pending，刷新后行状态已转成 replayed。
     seedRow('Erp', 'dl-1', 'replayed')
-    state.replayResults.set(deadLetterRowKey('Erp', 'dl-1'), { answered: false })
+    state.replayResults.set(deadLetterRowKey('Erp', 'dl-1'), {
+      answered: false,
+      statusAtAttempt: 'pending',
+    })
     const wrapper = await mountPage()
     // 只看这一行：概览卡也叫「已重放」，整页 toContain 恒真、没有鉴别力。
     const row = wrapper.findAll('tr').find((tr) => tr.text().includes('Erp'))
@@ -351,11 +368,12 @@ describe('集成事件死信运维页', () => {
     await wrapper.find('[aria-label^="重放死信"]').trigger('click')
     await flushPromises()
 
-    expect(notify.notifyOperationFailure).toHaveBeenCalledWith(
-      '重放未确认',
-      state.nextReplayError,
-      expect.stringContaining('请刷新列表核实是否已重放，勿直接重试'),
-    )
+    // 交给 toast 的最终串：断网映射非空，屏上是「重放未确认：网络异常…请刷新列表核实…」。
+    // 兜底句（含「勿直接重试」）在这条分支上**不上屏**——单条路径按裁定不在本轮范围。
+    const shown = toastSpy.error.mock.calls.at(-1)?.[0] as string
+    expect(shown.startsWith('重放未确认：')).toBe(true)
+    expect(shown).toContain('请刷新列表核实')
+    expect(shown).not.toContain('重放失败')
     expect(wrapper.find('[aria-label="状态：未收到答复，待核实"]').exists()).toBe(true)
   })
 
@@ -367,11 +385,8 @@ describe('集成事件死信运维页', () => {
     await wrapper.find('[aria-label^="重放死信"]').trigger('click')
     await flushPromises()
 
-    expect(notify.notifyOperationFailure).toHaveBeenCalledWith(
-      '重放失败',
-      state.nextReplayError,
-      expect.any(String),
-    )
+    const shown = toastSpy.error.mock.calls.at(-1)?.[0] as string
+    expect(shown.startsWith('重放失败')).toBe(true)
     expect(wrapper.text()).not.toContain('待核实')
   })
 
@@ -383,7 +398,80 @@ describe('集成事件死信运维页', () => {
     await wrapper.find('[aria-label^="重放死信"]').trigger('click')
     await flushPromises()
 
-    expect(notify.notifyWarning).not.toHaveBeenCalled()
-    expect(notify.notifySuccess).toHaveBeenCalledWith(expect.stringContaining('已重放'))
+    expect(toastSpy.warning).not.toHaveBeenCalled()
+    expect(toastSpy.success).toHaveBeenCalledWith(expect.stringContaining('已重放'))
+  })
+
+  it('T1 重放失败 × 未答复：刷新后仍是重放失败，「未知」继续显示——状态没有转移', async () => {
+    seedRow('Erp', 'dl-1', 'failed')
+    state.replayResults.set(deadLetterRowKey('Erp', 'dl-1'), {
+      answered: false,
+      statusAtAttempt: 'failed',
+    })
+    const wrapper = await mountPage()
+    const row = wrapper.findAll('tr').find((tr) => tr.text().includes('Erp'))
+
+    // 点击前就是「重放失败」：这不是服务端对这次尝试的答复，不能让位。
+    expect(row?.find('[aria-label="状态：未收到答复，待核实"]').exists()).toBe(true)
+  })
+
+  it('T3 混合批次（成功 + 5xx + 429）：交给 toast 的串里三类计数都在', async () => {
+    seedRow()
+    state.selectedRowKeys.splice(0, state.selectedRowKeys.length, deadLetterRowKey('Erp', 'dl-1'))
+    state.nextBatchResults = [
+      { rowKey: 'Erp/a', kind: 'answered', outcome: { status: 'replayed', succeeded: true } },
+      { rowKey: 'Mes/b', kind: 'unanswered', error: new Error('Failed to fetch') },
+      { rowKey: 'Wms/c', kind: 'rejected', error: rateLimited() },
+    ]
+    const wrapper = await mountPage()
+
+    await clickReplaySelected(wrapper)
+
+    const shown = toastSpy.error.mock.calls.at(-1)?.[0] as string
+    expect(shown).toContain('已答复 1 条')
+    expect(shown).toContain('未确认 1 条')
+    expect(shown).toContain('被拒绝 1 条')
+  })
+
+  it('T4/T6 仅被拒绝（429 无正文、映射为空）：串里有被拒绝计数、没有「未确认」', async () => {
+    // T4（区分 C5：未确认段只在计数 > 0 时出现）与 T6（区分 C7：汇总串也作兜底句）
+    // 的可达输入是同一个——网关限流不写正文，429 必然映射为空——故合为一条，不按格重复。
+    seedRow()
+    state.selectedRowKeys.splice(0, state.selectedRowKeys.length, deadLetterRowKey('Erp', 'dl-1'))
+    state.nextBatchResults = [{ rowKey: 'Erp/dl-1', kind: 'rejected', error: rateLimited() }]
+    const wrapper = await mountPage()
+
+    await clickReplaySelected(wrapper)
+
+    const shown = toastSpy.error.mock.calls.at(-1)?.[0] as string
+    expect(shown).toContain('被拒绝 1 条')
+    expect(shown).not.toContain('未确认')
+  })
+
+  it('T5 仅未答复：串里有未确认计数、没有「被拒绝」', async () => {
+    seedRow()
+    state.selectedRowKeys.splice(0, state.selectedRowKeys.length, deadLetterRowKey('Erp', 'dl-1'))
+    state.nextBatchResults = [
+      { rowKey: 'Erp/dl-1', kind: 'unanswered', error: new Error('Failed to fetch') },
+    ]
+    const wrapper = await mountPage()
+
+    await clickReplaySelected(wrapper)
+
+    const shown = toastSpy.error.mock.calls.at(-1)?.[0] as string
+    expect(shown).toContain('未确认 1 条')
+    expect(shown).not.toContain('被拒绝')
   })
 })
+
+/** 网关限流的 429：只有状态码、没有可解析正文——与 `BusinessGateway/Program.cs` 的限流一致。 */
+function rateLimited() {
+  return { response: { status: 429 } }
+}
+
+async function clickReplaySelected(wrapper: ReturnType<typeof mount>) {
+  const bulk = wrapper.findAll('button').find((b) => b.text().includes('重放选中'))
+  if (!bulk) throw new Error('动作栏「重放选中」未渲染——没有选中行')
+  await bulk.trigger('click')
+  await flushPromises()
+}
