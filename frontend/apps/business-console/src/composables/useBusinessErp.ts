@@ -3,6 +3,8 @@ import {
   listBusinessConsoleErpWorkCenterMachineOverheadReconciliationsQueryOptions,
   listBusinessConsoleErpWorkCenterCostRatesQueryOptions,
   configureBusinessConsoleErpWorkCenterCostRateMutationOptions,
+  listBusinessConsoleErpWorkCenterMachineOverheadRatesQueryOptions,
+  configureBusinessConsoleErpWorkCenterMachineOverheadRateMutationOptions,
   approveBusinessConsoleErpQuotationMutationOptions,
   createBusinessConsoleErpSalesOrderMutationOptions,
   createBusinessConsoleErpQuotationMutationOptions,
@@ -31,6 +33,7 @@ import {
   recordBusinessConsoleErpPurchaseReceiptMutationOptions,
   releaseBusinessConsoleErpDeliveryOrderMutationOptions,
   releaseBusinessConsoleErpSalesOrderCreditHoldMutationOptions,
+  type BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest,
   type BusinessConsoleCreateErpSalesOrderResponse,
   type BusinessConsoleErpCostCandidateItem,
   type BusinessConsoleErpCostCandidateListEnvelope,
@@ -161,6 +164,57 @@ export function useErpWorkCenterCostRates() {
           organizationId: context.organizationId,
           environmentId: context.environmentId,
           workCenterId: workCenterId.value,
+          ...payload,
+        },
+      }),
+    addRevisionPending: configureMutation.isLoading,
+    addRevisionError: configureMutation.error,
+  }
+}
+
+// 机器制造费用率：按工作中心 + 会计期间读修订，新增修订（只追加，不改不删）。
+export function useErpWorkCenterMachineOverheadRates() {
+  const context = useBusinessContextStore()
+  const workCenterId = shallowRef('')
+  const accountingPeriodCode = shallowRef('')
+  const ready = computed(() => hasBusinessContext(context))
+  const ratesQuery = useQuery(() => ({
+    ...listBusinessConsoleErpWorkCenterMachineOverheadRatesQueryOptions({
+      query: {
+        organizationId: context.organizationId,
+        environmentId: context.environmentId,
+        workCenterId: workCenterId.value,
+        accountingPeriodCode: accountingPeriodCode.value,
+      },
+    }),
+    enabled: ready.value && Boolean(workCenterId.value) && Boolean(accountingPeriodCode.value),
+  }))
+  const configureMutation = useMutation({
+    ...configureBusinessConsoleErpWorkCenterMachineOverheadRateMutationOptions(),
+    onSuccess() {
+      void refetchWithBusinessContext(context, ratesQuery)
+    },
+  })
+  return {
+    ready,
+    workCenterId,
+    accountingPeriodCode,
+    rates: computed(() => (ready.value ? unwrapData(ratesQuery.data.value) : undefined)),
+    pending: ratesQuery.isLoading,
+    error: ratesQuery.error,
+    refresh: () => refetchWithBusinessContext(context, ratesQuery),
+    addRevision: (
+      payload: Omit<
+        BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest,
+        'organizationId' | 'environmentId' | 'workCenterId' | 'accountingPeriodCode'
+      >,
+    ) =>
+      configureMutation.mutateAsync({
+        body: {
+          organizationId: context.organizationId,
+          environmentId: context.environmentId,
+          workCenterId: workCenterId.value,
+          accountingPeriodCode: accountingPeriodCode.value,
           ...payload,
         },
       }),
