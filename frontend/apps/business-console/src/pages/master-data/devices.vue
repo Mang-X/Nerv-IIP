@@ -271,19 +271,16 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
 
 // 层级字段逐级收窄：改了上级，下级原先选的值可能已不在新上级下，一律清空让用户重选
 // （选择器按上级收窄后，留着旧值会在界面上显示成未选、提交时却仍带着它）。
-const HIERARCHY_LEVELS = [
-  'siteCode',
-  'workshopCode',
-  'lineCode',
-  'workCenterCode',
-  'stationCode',
-] as const
-function setLevel(level: (typeof HIERARCHY_LEVELS)[number], value: string) {
+// 工作中心和工位都挂在产线下、彼此不是上下级。
+const LOWER_LEVELS = {
+  siteCode: ['workshopCode', 'lineCode', 'workCenterCode', 'stationCode'],
+  workshopCode: ['lineCode', 'workCenterCode', 'stationCode'],
+  lineCode: ['workCenterCode', 'stationCode'],
+} as const
+function setLevel(level: keyof typeof LOWER_LEVELS, value: string) {
   if (createForm[level] === value) return
   createForm[level] = value
-  for (const lower of HIERARCHY_LEVELS.slice(HIERARCHY_LEVELS.indexOf(level) + 1)) {
-    createForm[lower] = ''
-  }
+  for (const lower of LOWER_LEVELS[level]) createForm[lower] = ''
 }
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()

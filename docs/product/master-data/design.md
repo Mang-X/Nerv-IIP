@@ -34,7 +34,7 @@
 - **生命周期完整**：主数据价值在「能改、能停用、能追溯版本」，不止新增。
 - **诚实暴露后端边界**：后端没有的能力/字段，前端**不伪造、不猜**，用禁用入口 + 说明占位。
 
-**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；工装与模具（ToolingAsset，含适用工作中心/SKU、寿命、使用累计与专用状态）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
+**进（In Scope）**：物料与产品（Sku）；工厂/车间/产线/工位/工作中心/设备（Site/Workshop/ProductionLine/Station/WorkCenter/DeviceAsset）；工装与模具（ToolingAsset，含适用工作中心/SKU、寿命、使用累计与专用状态）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
 
 **不进（Non-Goals）**：BOM/工艺路线/工序版本（属产品工程，`/master-data/process` 归 engineering，不动）；库存余额/库位实物（inventory/wms）；价格/合同/账期（ERP）；用户/权限（平台管理）；主数据审批工作流、数据质量评分、跨组织主数据治理（远期）。
 
@@ -48,18 +48,23 @@
 Site 工厂/厂区                  一个物理生产基地；库存/组织/报表的顶层边界
  └─ Workshop 车间（组织/区域层，待 #348）  组织/区域/权限/看板分组单元；不承载排产
      └─ ProductionLine 产线     一条物料/工艺流（SMT 线、总装线）；排产主承载单元
-         └─ WorkCenter 工作中心  一组能力等价、可互换的产能（排产/报工/产能/成本/工序执行的核心资源单元）
-             └─ DeviceAsset 设备 具体一台机器；OEE/点检/防错追溯的采集点
+         ├─ Station 工位         产线上的一个作业位置（ISA-95 工作单元）；层级上的下级，可选关联一个工作中心
+         │   └─ DeviceAsset 设备 具体一台机器，装在某个工位上；OEE/点检/防错追溯的采集点
+         └─ WorkCenter 工作中心  一组能力等价、可互换的产能（排产/报工/产能/成本/工序执行的核心资源单元）；
+                                同样挂在产线下，是产能与成本口径，不是工位的上级
 ```
+
+工位的上级是产线（owner 2026-09-23 按 GB/T 20720.1 / ISA-95 与国内 MES「工厂 → 车间 → 产线 → 工位」口径裁定），厂区与车间沿产线继承。工作中心只是工位和设备的产能、成本归集关联，不作为层级上级。
 
 | 层级 | 制造业语义 | 在 MES/排程中的角色 | 维护方 |
 |---|---|---|---|
 | Site 工厂 | 物理生产基地 | 工单归属厂区、库存组织边界 | 工厂运营 |
 | ProductionLine 产线 | 有节拍/产能的物料流 | **排产主承载**：工单下达到产线 | 生产技术/工艺 |
+| Station 工位 | 产线上的作业位置 | 设备安装位置、按工位追溯；可选关联工作中心供排产与成本归集 | 生产技术/工艺 |
 | WorkCenter 工作中心 | 能力等价可互换的产能桶 | **APS 有限产能调度对象**；工艺路线工序指向它 | 工艺/车间 |
 | DeviceAsset 设备 | 具体机台 | 精排到机台、OEE、点检保养、追溯 | 设备/TPM |
 
-**层级靠字符串 code 关联**（非数据库外键）：`production-line.siteCode→site`；`work-center.plantCode→site`、`lineCode→production-line`；`device.lineCode→production-line`、`workCenterCode→work-center`。
+**层级靠字符串 code 关联**（非数据库外键）：`production-line.siteCode→site`；`work-center.plantCode→site`、`lineCode→production-line`；`station.lineCode→production-line`、`workCenterCode→work-center`（可选）；`device.lineCode→production-line`、`workCenterCode→work-center`、`stationCode→station`。
 
 **术语澄清（中文工厂语境，2026-06-08 修订）**：「车间」(Workshop) 与「工作中心」(Work Center) 是**两个不同层级**，不可混为一谈——
 - **工作中心(WorkCenter)** = 排产/报工/产能/成本/工序执行的**核心资源单元**（与 SAP/Oracle/D365 一致；我们后端已如此建模：带 `CapacityMinutesPerDay/DefaultCalendarCode/FiniteCapacity`，MES 工序任务挂 `workCenterId`）。**保留「工作中心」术语，不改名、不重构。**

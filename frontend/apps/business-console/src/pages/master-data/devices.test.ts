@@ -183,12 +183,12 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 const layoutStub = {
   BusinessLayout: { template: '<main><slot /></main>' },
   // 层级字段的目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖）桩成带同名 id 的输入位，
-  // `data-parent` 记下调用方给的上级收窄条件。
+  // `data-parent` 记下调用方给的上级收窄条件，`data-create-context` 记下交给新增弹窗的上下文。
   DirectoryPicker: {
-    props: ['modelValue', 'id', 'parent'],
+    props: ['modelValue', 'id', 'parent', 'createContext'],
     emits: ['update:modelValue'],
     template:
-      '<input :id="id" :value="modelValue" :data-parent="JSON.stringify(parent ?? null)" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input :id="id" :value="modelValue" :data-parent="JSON.stringify(parent ?? null)" :data-create-context="JSON.stringify(createContext ?? null)" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
 }
 
@@ -436,6 +436,23 @@ describe('master-data devices page', () => {
 
   // 工位只能从所选产线下选；换了产线，原先选的工位、工作中心不再属于它，要清掉让用户重选，
   // 不能留着一个界面上看不见、提交时却带上去的旧值。
+  // 就地新增工位时，产线由表单带给新增弹窗（弹窗据此把产线只读带出，见 facilities.test），
+  // 建出来的工位才一定挂在设备已选的产线下。
+  it('工位的新增弹窗拿到的是表单当前选的产线', async () => {
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+    const stationContext = () =>
+      JSON.parse(wrapper.get('#dev-station').attributes('data-create-context')!)
+    expect(stationContext()).toEqual({ lineCode: 'LINE-A' })
+
+    await wrapper.find('#dev-line').setValue('LINE-B')
+    await flushPromises()
+    expect(stationContext()).toEqual({ lineCode: 'LINE-B' })
+  })
+
   it('换产线后工位、工作中心清空并按新产线收窄，不带旧工位提交', async () => {
     stub.create.mockClear()
     const wrapper = mount(DevicesPage, {

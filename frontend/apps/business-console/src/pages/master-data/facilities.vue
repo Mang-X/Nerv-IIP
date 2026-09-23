@@ -8,6 +8,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
@@ -739,9 +740,6 @@ const editWorkshopOptions = computed(() =>
 const editLineOptions = computed(() =>
   lines.items.value.filter((l) => !editForm.plantCode || (l.siteCode ?? '') === editForm.plantCode),
 )
-const editWorkCenterOptions = computed(() =>
-  workCenters.items.value.filter((w) => (w.lineCode ?? '') === editForm.lineCode),
-)
 // reka 的 SelectItem 不允许空串 value。“无车间（直挂工厂）”用哨兵值表示，仅作用于下拉绑定；
 // 提交仍按 空串→null 处理（见保存逻辑）。
 const NONE_OPTION = '__none__'
@@ -749,12 +747,6 @@ const editWorkshopValue = computed({
   get: () => editForm.workshopCode || NONE_OPTION,
   set: (v) => {
     editForm.workshopCode = v === NONE_OPTION ? '' : v
-  },
-})
-const editWorkCenterValue = computed({
-  get: () => editForm.workCenterCode || NONE_OPTION,
-  set: (v) => {
-    editForm.workCenterCode = v === NONE_OPTION ? '' : v
   },
 })
 // 改挂工厂后，原车间 / 产线可能不再归属该工厂——置空让用户重选，避免归属错配。
@@ -784,17 +776,14 @@ watch(
   },
 )
 
+// 工位改挂产线后，原关联的工作中心属于旧产线，清掉让用户重选。同步触发：打开编辑回填
+// 归属时 editCascadeReady 还是 false，不会把刚载入的关联清掉。
 watch(
   () => editForm.lineCode,
   () => {
-    if (editType.value !== 'station' || !editCascadeReady.value) return
-    if (
-      editForm.workCenterCode &&
-      !editWorkCenterOptions.value.some((w) => (w.code ?? '') === editForm.workCenterCode)
-    ) {
-      editForm.workCenterCode = ''
-    }
+    if (editType.value === 'station' && editCascadeReady.value) editForm.workCenterCode = ''
   },
+  { flush: 'sync' },
 )
 
 watch(editOpen, (open) => {
@@ -1391,21 +1380,14 @@ function childLabelOf(type: string): string | undefined {
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="edit-station-wc">关联工作中心</NvFieldLabel>
-                  <NvSelect v-model="editWorkCenterValue">
-                    <NvSelectTrigger id="edit-station-wc"
-                      ><NvSelectValue placeholder="无"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem :value="NONE_OPTION">无</NvSelectItem>
-                      <NvSelectItem
-                        v-for="w in editWorkCenterOptions"
-                        :key="w.code"
-                        :value="w.code ?? NONE_OPTION"
-                      >
-                        {{ w.displayName ?? w.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="edit-station-wc"
+                    v-model="editForm.workCenterCode"
+                    directory-type="work-center"
+                    :parent="{ lineCode: editForm.lineCode }"
+                    placeholder="无"
+                    clearable
+                  />
                 </NvField>
               </template>
               <template v-if="editType === 'work-center'">

@@ -50,6 +50,13 @@ const LINE_ROWS = [
     siteCode: 'PLANT-A',
     workshopCode: 'WS-A',
   },
+  {
+    resourceType: 'production-line',
+    code: 'LINE-B',
+    displayName: '后桥线',
+    active: true,
+    siteCode: 'PLANT-A',
+  },
 ]
 const WC_ROWS = [
   {
@@ -634,15 +641,50 @@ describe('master-data facilities tree page', () => {
     })
 
     await openEdit()
-    await wrapper
-      .findAll('select')
-      .find((select) => select.html().includes('焊接中心'))!
-      .setValue('__none__')
+    await wrapper.find('#edit-station-wc').setValue('')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(actionStub.update).toHaveBeenLastCalledWith('ST-A1', {
       name: '前桥一号工位',
       lineCode: 'LINE-A',
+      workCenterCode: '',
+    })
+  })
+
+  it('编辑工位改挂产线后清空原关联的工作中心', async () => {
+    actionStub.update.mockClear()
+    const detail = { name: '前桥一号工位', lineCode: 'LINE-A', workCenterCode: 'WC-A' }
+    for (let i = 0; i < 2; i++) actionStub.fetchDetail.mockResolvedValueOnce(detail)
+    const wrapper = mount(FacilitiesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...routerLinkStub,
+          ...formSelectStubs,
+          ...editStubs,
+        },
+      },
+    })
+    await flushPromises()
+    await findNodeButton(wrapper, '前桥一号工位')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '编辑')!
+      .trigger('click')
+    await flushPromises()
+
+    // 原生 select 桩只能选已有选项：改挂到同工厂的另一条产线（直挂工厂、无车间）。
+    await wrapper
+      .findAll('select')
+      .find((select) => select.html().includes('后桥线'))!
+      .setValue('LINE-B')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(actionStub.update).toHaveBeenLastCalledWith('ST-A1', {
+      name: '前桥一号工位',
+      lineCode: 'LINE-B',
       workCenterCode: '',
     })
   })
