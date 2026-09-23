@@ -832,16 +832,26 @@
       "method": "GET",
       "route": "/api/business/v1/erp/finance/work-center-machine-overhead-rates",
       "operationId": "listErpWorkCenterMachineOverheadRates",
-      "classification": "deferred",
-      "followUp": "#1957：机器制造费用率的 Gateway 与 UI 另行交付；#2679 仅交付 ERP HTTP 契约。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpWorkCenterMachineOverheadRates"
+      ]
     },
     {
       "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/finance/work-center-machine-overhead-rates",
       "operationId": "configureErpWorkCenterMachineOverheadRate",
-      "classification": "deferred",
-      "followUp": "#1957：机器制造费用率的 Gateway 与 UI 另行交付；#2679 仅交付 ERP HTTP 契约。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "configureBusinessConsoleErpWorkCenterMachineOverheadRate"
+      ]
     },
     {
       "service": "Erp",
@@ -849,7 +859,7 @@
       "route": "/api/business/v1/erp/finance/work-center-machine-overhead-rates/current",
       "operationId": "getCurrentErpWorkCenterMachineOverheadRate",
       "classification": "deferred",
-      "followUp": "#1957：机器制造费用率的 Gateway 与 UI 另行交付；#2679 仅交付 ERP HTTP 契约。"
+      "followUp": "#3793 只代理列表与配置两个接口；控制台以列表的最高修订为当前值，单独的当前修订读面暂无消费方。"
     },
     {
       "service": "Erp",
@@ -2635,6 +2645,19 @@
       ],
       "gatewayOperationIds": [
         "createBusinessConsoleProductionLine"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/stations",
+      "operationId": "createBusinessMasterDataStation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleStation"
       ]
     },
     {

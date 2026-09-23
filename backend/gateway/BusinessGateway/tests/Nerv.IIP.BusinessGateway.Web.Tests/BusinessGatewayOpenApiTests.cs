@@ -198,6 +198,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/master-data/teams/{teamCode}/members/{userId}", "delete", "reason", 500);
         AssertOperationId(paths, "/api/business-console/v1/master-data/sites", "post", "createBusinessConsoleSite");
         AssertOperationId(paths, "/api/business-console/v1/master-data/production-lines", "post", "createBusinessConsoleProductionLine");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/stations", "post", "createBusinessConsoleStation");
         AssertOperationId(paths, "/api/business-console/v1/master-data/work-centers", "post", "createBusinessConsoleWorkCenter");
         AssertOperationId(paths, "/api/business-console/v1/master-data/device-assets", "get", "listBusinessConsoleDeviceAssets");
         AssertOperationId(paths, "/api/business-console/v1/master-data/device-assets", "post", "registerBusinessConsoleDeviceAsset");
@@ -668,6 +669,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "post", "configureBusinessConsoleErpWorkCenterCostRate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "get", "listBusinessConsoleErpWorkCenterCostRates");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates", "post", "configureBusinessConsoleErpWorkCenterMachineOverheadRate");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates", "get", "listBusinessConsoleErpWorkCenterMachineOverheadRates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}", "get", "getBusinessConsoleErpWorkOrderCostVariance");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-order-costs", "get", "listBusinessConsoleErpWorkOrderCosts");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations", "get", "listBusinessConsoleErpWorkCenterMachineOverheadReconciliations");

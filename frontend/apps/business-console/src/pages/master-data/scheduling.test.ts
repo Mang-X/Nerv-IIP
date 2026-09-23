@@ -78,6 +78,15 @@ function stubActions(resourceType: string) {
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useMasterDataResourceActions: (resourceType: string) => stubActions(resourceType),
+  useCreateMasterDataResource: () => ({
+    create: stub.create,
+    error: shallowRef(undefined),
+    pending: shallowRef(false),
+  }),
+}))
+
+vi.mock('@/stores/businessContext', () => ({
+  useBusinessContextStore: () => ({ organizationId: 'org-001', environmentId: 'env-dev' }),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({

@@ -23394,6 +23394,61 @@
         ]
       }
     },
+    "/api/business-console/v1/master-data/stations": {
+      "post": {
+        "tags": [
+          "Business Console MasterData",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleStation",
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateStationRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/master-data/work-centers": {
       "post": {
         "tags": [
@@ -27905,6 +27960,155 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMachineOverheadReconciliationListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates": {
+      "post": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "configureBusinessConsoleErpWorkCenterMachineOverheadRate",
+        "requestBody": {
+          "x-name": "BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleErpWorkCenterMachineOverheadRates",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workCenterId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "accountingPeriodCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageNumber",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1,
+              "nullable": false
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterMachineOverheadRateListResponse"
                 }
               }
             }
@@ -55576,6 +55780,60 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "name",
+          "lineCode"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "lineCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "workCenterCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
+          }
+        }
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -61097,6 +61355,274 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpMachineOverheadReconciliationsRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workCenterMachineOverheadRateId"
+        ],
+        "properties": {
+          "workCenterMachineOverheadRateId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "workCenterId",
+          "accountingPeriodCode",
+          "reason"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "workCenterId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "accountingPeriodCode": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
+          },
+          "applicability": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability"
+          },
+          "fixedOverheadBudget": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0
+          },
+          "variableOverheadBudget": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0
+          },
+          "normalCapacityMachineHours": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Applicable",
+          "NotApplicable"
+        ],
+        "enum": [
+          "applicable",
+          "notApplicable"
+        ]
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterMachineOverheadRateListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "workCenterId",
+          "accountingPeriodCode",
+          "currentRevision",
+          "pageNumber",
+          "pageSize",
+          "totalCount",
+          "items"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "environmentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workCenterId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accountingPeriodCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "currentRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workCenterMachineOverheadRateId",
+          "accountingPeriodCode",
+          "applicability",
+          "fixedOverheadBudget",
+          "variableOverheadBudget",
+          "normalCapacityMachineHours",
+          "fixedHourlyRate",
+          "variableHourlyRate",
+          "totalHourlyRate",
+          "currencyCode",
+          "revision",
+          "changedBy",
+          "reason",
+          "changedAtUtc"
+        ],
+        "properties": {
+          "workCenterMachineOverheadRateId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accountingPeriodCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "applicability": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability"
+          },
+          "fixedOverheadBudget": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "variableOverheadBudget": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "normalCapacityMachineHours": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "fixedHourlyRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "variableHourlyRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "totalHourlyRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "currencyCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "changedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "changedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "minLength": 1
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkCenterMachineOverheadRatesRequest": {
         "type": "object",
         "additionalProperties": false
       },

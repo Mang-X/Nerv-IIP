@@ -85,6 +85,62 @@ public sealed class ListBusinessConsoleErpMachineOverheadReconciliationsEndpoint
         erp.ListMachineOverheadReconciliationsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/work-center-machine-overhead-rates")]
+[BusinessGatewayOperationId("configureBusinessConsoleErpWorkCenterMachineOverheadRate")]
+public sealed class ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpCostingClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<
+        BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest,
+        BusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest request) =>
+        request.EnvironmentId;
+
+    protected override Task<BusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse> ForwardAsync(
+        BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ConfigureWorkCenterMachineOverheadRateAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/work-center-machine-overhead-rates")]
+[BusinessGatewayOperationId("listBusinessConsoleErpWorkCenterMachineOverheadRates")]
+public sealed class ListBusinessConsoleErpWorkCenterMachineOverheadRatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpCostingClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<
+        BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest,
+        BusinessConsoleErpWorkCenterMachineOverheadRateListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest request) =>
+        request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpWorkCenterMachineOverheadRateListResponse> ForwardAsync(
+        BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListWorkCenterMachineOverheadRatesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
 public sealed class BusinessConsoleListErpWorkOrderCostsRequestValidator
     : Validator<BusinessConsoleListErpWorkOrderCostsRequest>
 {
@@ -120,6 +176,42 @@ public sealed class BusinessConsoleListErpMachineOverheadReconciliationsRequestV
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.AccountingPeriodCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100).When(x => x.WorkCenterId is not null);
+        RuleFor(x => x.PageNumber).GreaterThanOrEqualTo(1);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
+    }
+}
+
+public sealed class BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequestValidator
+    : Validator<BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest>
+{
+    public BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AccountingPeriodCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Applicability).IsInEnum();
+        RuleFor(x => x.FixedOverheadBudget).GreaterThanOrEqualTo(0m);
+        RuleFor(x => x.VariableOverheadBudget).GreaterThanOrEqualTo(0m);
+        RuleFor(x => x.NormalCapacityMachineHours).GreaterThanOrEqualTo(0m);
+        RuleFor(x => x.CurrencyCode)
+            .Must(value => !string.IsNullOrWhiteSpace(value)
+                && value.Trim().Length == 3
+                && value.Trim().All(character => character is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z')))
+            .WithMessage("CurrencyCode must contain exactly three ASCII letters.");
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class BusinessConsoleListErpWorkCenterMachineOverheadRatesRequestValidator
+    : Validator<BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest>
+{
+    public BusinessConsoleListErpWorkCenterMachineOverheadRatesRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AccountingPeriodCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.PageNumber).GreaterThanOrEqualTo(1);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
     }

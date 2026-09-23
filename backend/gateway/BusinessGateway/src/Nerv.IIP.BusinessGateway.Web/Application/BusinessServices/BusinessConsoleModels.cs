@@ -570,6 +570,15 @@ public sealed record BusinessConsoleCreateProductionLineRequest(
     string? WorkshopCode = null,
     string? IdempotencyKey = null);
 
+public sealed record BusinessConsoleCreateStationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Code,
+    string Name,
+    string LineCode,
+    string? WorkCenterCode = null,
+    string? IdempotencyKey = null);
+
 public sealed record BusinessConsoleCreateWorkCenterRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -3341,6 +3350,67 @@ public sealed record BusinessConsoleErpWorkCenterCostRateItem(
     string EffectiveStatus,
     bool IsEffectiveAtUtc,
     bool IsCurrentEffectiveRevision);
+
+public sealed record BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string AccountingPeriodCode,
+    BusinessConsoleErpMachineOverheadApplicability Applicability,
+    decimal FixedOverheadBudget,
+    decimal VariableOverheadBudget,
+    decimal NormalCapacityMachineHours,
+    string CurrencyCode,
+    string Reason);
+
+public sealed record BusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse(
+    [property: Required, JsonRequired] string WorkCenterMachineOverheadRateId);
+
+public sealed record BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterId,
+    string AccountingPeriodCode,
+    int PageNumber = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleErpWorkCenterMachineOverheadRateListResponse(
+    [property: Required, JsonRequired] string OrganizationId,
+    [property: Required, JsonRequired] string EnvironmentId,
+    [property: Required, JsonRequired] string WorkCenterId,
+    [property: Required, JsonRequired] string AccountingPeriodCode,
+    [property: Required, JsonRequired] int? CurrentRevision,
+    [property: Required, JsonRequired] int PageNumber,
+    [property: Required, JsonRequired] int PageSize,
+    [property: Required, JsonRequired] int TotalCount,
+    [property: Required, JsonRequired] IReadOnlyCollection<BusinessConsoleErpWorkCenterMachineOverheadRateItem> Items);
+
+public sealed record BusinessConsoleErpWorkCenterMachineOverheadRateItem(
+    [property: Required, JsonRequired] string WorkCenterMachineOverheadRateId,
+    [property: Required, JsonRequired] string AccountingPeriodCode,
+    [property: Required, JsonRequired] BusinessConsoleErpMachineOverheadApplicability Applicability,
+    [property: Required, JsonRequired] decimal FixedOverheadBudget,
+    [property: Required, JsonRequired] decimal VariableOverheadBudget,
+    [property: Required, JsonRequired] decimal NormalCapacityMachineHours,
+    [property: Required, JsonRequired] decimal FixedHourlyRate,
+    [property: Required, JsonRequired] decimal VariableHourlyRate,
+    [property: Required, JsonRequired] decimal TotalHourlyRate,
+    [property: Required, JsonRequired] string CurrencyCode,
+    [property: Required, JsonRequired] int Revision,
+    [property: Required, JsonRequired] string ChangedBy,
+    [property: Required, JsonRequired] string Reason,
+    [property: Required, JsonRequired] DateTimeOffset ChangedAtUtc);
+
+/// <summary>工作中心在该会计期间是否计机器制造费用；不适用时预算、产能与费率均为 0。</summary>
+[JsonConverter(typeof(BusinessConsoleErpMachineOverheadApplicabilityJsonConverter))]
+public enum BusinessConsoleErpMachineOverheadApplicability
+{
+    Applicable,
+    NotApplicable,
+}
+
+public sealed class BusinessConsoleErpMachineOverheadApplicabilityJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleErpMachineOverheadApplicability>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
 
 public sealed record BusinessConsoleGetErpWorkOrderCostVarianceRequest(
     string WorkOrderId,

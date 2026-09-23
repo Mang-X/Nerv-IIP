@@ -36,6 +36,7 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 public sealed class MasterDataPostgresProfileTests
 {
     private const string TrackingPolicyNormalizationPredecessor = "20260825081539_AddToolingOperationAudit";
+    private const string StationBackfillPredecessor = "20260922083128_NormalizeSkuTrackingPolicyCodes";
 
     [PostgresFact]
     public async Task Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references()
@@ -330,6 +331,125 @@ public sealed class MasterDataPostgresProfileTests
                 persisted.Select(x => (x.Code, x.BatchTrackingPolicy, x.SerialTrackingPolicy)));
         }
     }
+
+    /// <summary>
+    /// `AddStations` 从存量设备的 `station_code` 回填工位：迁移前目录里能看到的工位，迁移后一条不少也不多；
+    /// 同一工位的设备工作中心不一致时只留空这条可选关联，不挑其中一条，而按其中任一工作中心收窄的目录仍能看到它（工位挂在产线下）；
+    /// 只挂在已停用设备上的工位回填为停用，启用与停用设备混挂的工位保持启用。
+    /// </summary>
+    [PostgresFact]
+    public async Task Postgres_migration_backfills_stations_from_legacy_device_station_codes()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var provider = BuildPersistenceProvider(connectionString);
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
+            await DropMasterDataSchemaAsync(db);
+            await db.GetService<IMigrator>().MigrateAsync(StationBackfillPredecessor);
+            await AssertMigrationsHistoryTableInSchemaAsync(db, MasterDataFacts.Schema);
+
+            var retired = LegacyStationDevice("org-001", "DEV-C", "LINE-2", "WC-3", "ST-B");
+            retired.Disable("retired");
+            var mixedRetired = LegacyStationDevice("org-001", "DEV-G", "LINE-2", "WC-3", "ST-C");
+            mixedRetired.Disable("retired");
+            db.WorkCenters.AddRange(
+                WorkCenter.CreateResource("org-001", "env-dev", "WC-1", "WC 1", 480, "work-center", "SITE-1", "LINE-1", "WS-1", "CAL-1", "minute", true),
+                WorkCenter.CreateResource("org-001", "env-dev", "WC-2", "WC 2", 480, "work-center", "SITE-1", "LINE-1", "WS-1", "CAL-1", "minute", true));
+            db.DeviceAssets.AddRange(
+                mixedRetired,
+                LegacyStationDevice("org-001", "DEV-F", "LINE-2", "WC-3", "ST-C"),
+                LegacyStationDevice("org-001", "DEV-A", "LINE-1", "WC-1", "ST-A"),
+                LegacyStationDevice("org-001", "DEV-B", "LINE-1", "WC-2", "ST-A"),
+                retired,
+                LegacyStationDevice("org-001", "DEV-D", "LINE-1", "WC-1", string.Empty),
+                LegacyStationDevice("org-other", "DEV-E", "LINE-9", "WC-9", "ST-A"));
+            await db.SaveChangesAsync();
+        }
+
+        using (var upgradeScope = provider.CreateScope())
+        {
+            var db = upgradeScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.MigrateAsync();
+
+            var stations = await db.Stations
+                .AsNoTracking()
+                .OrderBy(x => x.OrganizationId)
+                .ThenBy(x => x.Code)
+                .Select(x => new { x.OrganizationId, x.Code, x.Name, x.LineCode, x.WorkCenterCode, x.Disabled })
+                .ToArrayAsync();
+            Assert.Equal(
+                [
+                    ("org-001", "ST-A", "ST-A", "LINE-1", (string?)null, false),
+                    ("org-001", "ST-B", "ST-B", "LINE-2", "WC-3", true),
+                    ("org-001", "ST-C", "ST-C", "LINE-2", "WC-3", false),
+                    ("org-other", "ST-A", "ST-A", "LINE-9", "WC-9", false),
+                ],
+                stations.Select(x => (x.OrganizationId, x.Code, x.Name, x.LineCode, x.WorkCenterCode, x.Disabled)));
+
+            var directory = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                new ListMasterDataResourcesQuery("org-001", "env-dev", "station"),
+                CancellationToken.None);
+            Assert.Equal(["ST-A", "ST-C"], directory.Resources.Select(x => x.StationCode));
+
+            foreach (var workCenter in new[] { "WC-1", "WC-2" })
+            {
+                var scoped = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                    new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: workCenter),
+                    CancellationToken.None);
+                Assert.Equal(["ST-A"], scoped.Resources.Select(x => x.StationCode));
+            }
+
+            // WC-3 在 work_centers 里没有行，ST-C 只凭自身关联的工作中心命中。
+            var unregisteredWorkCenter = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: "WC-3"),
+                CancellationToken.None);
+            Assert.Equal(["ST-C"], unregisteredWorkCenter.Resources.Select(x => x.StationCode));
+        }
+    }
+
+    [PostgresFact]
+    public async Task Postgres_station_backfill_aborts_and_lists_codes_attached_to_different_lines()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var provider = BuildPersistenceProvider(connectionString);
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
+            await DropMasterDataSchemaAsync(db);
+            await db.GetService<IMigrator>().MigrateAsync(StationBackfillPredecessor);
+            db.DeviceAssets.AddRange(
+                LegacyStationDevice("org-001", "DEV-A", "LINE-1", "WC-1", "ST-X"),
+                LegacyStationDevice("org-001", "DEV-B", "LINE-2", "WC-2", "ST-X"),
+                LegacyStationDevice("org-001", "DEV-C", "LINE-1", "WC-1", "ST-OK"));
+            await db.SaveChangesAsync();
+        }
+
+        using (var upgradeScope = provider.CreateScope())
+        {
+            var db = upgradeScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => db.Database.MigrateAsync());
+
+            Assert.Contains("org-001/env-dev/ST-X -> lines [LINE-1, LINE-2]", exception.MessageText, StringComparison.Ordinal);
+            Assert.DoesNotContain("ST-OK", exception.MessageText, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "20260923110913_AddStations",
+                (await db.Database.GetAppliedMigrationsAsync()).ToArray());
+        }
+    }
+
+    private static DeviceAsset LegacyStationDevice(
+        string organizationId,
+        string code,
+        string lineCode,
+        string workCenterCode,
+        string stationCode) =>
+        DeviceAsset.Register(organizationId, "env-dev", code, code, lineCode, workCenterCode)
+            .WithLedger(null, null, string.Empty, null, string.Empty, "SITE-1", "WS-1", lineCode, stationCode, null, null);
 
     private static Sku LegacySku(string code, string batchTrackingPolicy, string serialTrackingPolicy)
     {

@@ -10,6 +10,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.StationAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
@@ -333,6 +334,24 @@ public sealed class ProductionLineRepository(ApplicationDbContext context)
     public async Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default)
     {
         return await DbContext.ProductionLines.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.Code == code,
+            cancellationToken);
+    }
+}
+
+public interface IStationRepository : IRepository<Station, StationId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+}
+
+public sealed class StationRepository(ApplicationDbContext context)
+    : RepositoryBase<Station, StationId, ApplicationDbContext>(context), IStationRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Stations.AnyAsync(x =>
             x.OrganizationId == organizationId &&
             x.EnvironmentId == environmentId &&
             x.Code == code,

@@ -38,8 +38,6 @@ const skuRow = {
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({
-    createSku: stub.createSku,
-    createSkuPending: shallowRef(false),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
     refreshSkus: vi.fn(),
     skus: computed(() => [skuRow]),
@@ -47,6 +45,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     skusPending: shallowRef(false),
     skusTotal: computed(() => 1),
   }),
+  useCreateSku: () => ({ create: stub.createSku, pending: shallowRef(false) }),
   useMasterDataResourceActions: () => ({
     update: stub.update,
     disable: vi.fn(),
@@ -61,6 +60,10 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     stub.resourcesCalls.push({ resourceType, codeSet: options.codeSet })
     return { resources: shallowRef([]), resourcesPending: shallowRef(false) }
   },
+}))
+
+vi.mock('@/stores/businessContext', () => ({
+  useBusinessContextStore: () => ({ organizationId: 'org-001', environmentId: 'env-dev' }),
 }))
 
 // 产品分类已升为主数据（#400）：electronic → 电子料。

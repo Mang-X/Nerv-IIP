@@ -572,7 +572,7 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("station_code")
-                        .HasComment("Station code or local position inside the production line.");
+                        .HasComment("Code of the stations master data row the device is bound to; blank when not bound to a station.");
 
                     b.Property<string>("SupplierPartnerCode")
                         .IsRequired()
@@ -1684,6 +1684,84 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                     b.ToTable("skus", "business_masterdata", t =>
                         {
                             t.HasComment("Business master data stock keeping units used for material and product identification.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.StationAggregate.Station", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Station aggregate id.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code")
+                        .HasComment("Business unique station code.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the station was created.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the station from new device and execution references.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the station is valid.");
+
+                    b.Property<string>("LineCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("line_code")
+                        .HasComment("Parent production line code; site and workshop are inherited from the line.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name")
+                        .HasComment("Station display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the station.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the station was last updated.");
+
+                    b.Property<string>("WorkCenterCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_code")
+                        .HasComment("Optional capacity/cost work center association; not a hierarchy parent.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LineCode", "Disabled");
+
+                    b.HasIndex("WorkCenterCode", "Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("stations", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data stations (work units) under a production line.");
                         });
                 });
 

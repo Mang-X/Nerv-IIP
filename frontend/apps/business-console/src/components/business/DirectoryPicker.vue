@@ -5,13 +5,22 @@
  *
  * - 工作中心 / 物料 / 设备 / 车间 / 批次 / 序列号走网关可搜目录（服务端搜索）；
  * - 班次、产线不在可搜目录里，取基础数据资源列表，由选择器自带的本地过滤搜索。
+ *
+ * `creatable`：表单里的选择器可以就地新增（筛选区不开）。该类型在 `directoryCreators.ts`
+ * 注册了新增弹窗、且当前用户有对应新增权限时才出现入口；建好后自动选中新建项。
  */
 import { NvEntityPicker } from '@nerv-iip/ui'
-import { computed, watch } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import {
   useMasterDataListPicker,
   useSearchableDirectoryPicker,
 } from '@/composables/useSearchableDirectoryPicker'
+import { useAuthStore } from '@/stores/auth'
+import {
+  directoryCreatorFor,
+  type DirectoryCreateContext,
+  type DirectoryCreatedItem,
+} from './directoryCreators'
 
 type ListType = 'shift' | 'production-line'
 type SearchableType = 'work-center' | 'material' | 'equipment' | 'workshop' | 'batch' | 'serial'
@@ -28,11 +37,17 @@ const DIRECTORY_TEXT: Record<SearchableType | ListType, { noun: string; source: 
 }
 
 // 其余 `NvEntityPicker` 属性（id / placeholder / clearable / disabled / invalid / aria-label / class）
-// 直接透传到根组件，调用方给的值覆盖这里的默认文案。
+// 透传给选择器（模板里放在最后，调用方给的值覆盖这里的默认文案）。新增弹窗与选择器并列成两个
+// 根节点，所以关掉自动透传、显式绑定。
+defineOptions({ inheritAttrs: false })
 const props = defineProps<{
   directoryType: SearchableType | ListType
   /** 批次 / 序列号按物料收窄。 */
   skuCode?: string
+  /** 允许就地新增（只在表单里开，筛选区不开）。 */
+  creatable?: boolean
+  /** 传给新增弹窗的上下文，用来预填父级（如已选的产线）。 */
+  createContext?: DirectoryCreateContext
 }>()
 const model = defineModel<string>({ default: '' })
 
@@ -58,6 +73,26 @@ if (source.serverSearch) {
 // 批次 / 序列号目录的名称就是「编码 · 物料」，再印一行编码是重复。
 const showCode = props.directoryType !== 'batch' && props.directoryType !== 'serial'
 
+const auth = useAuthStore()
+const creator = props.creatable ? directoryCreatorFor(props.directoryType) : undefined
+const canCreate = computed(
+  () => !!creator && (auth.principal?.permissionCodes ?? []).includes(creator.permission),
+)
+const createOpen = shallowRef(false)
+// 每次点入口递增，作弹窗的 key：每次打开都是全新实例，按当次的 context 预填、表单从空白开始。
+// 0 表示还没点过，弹窗不挂载（异步组件首次点入口时才加载，之后有缓存）。
+const createSession = shallowRef(0)
+
+function openCreate() {
+  createSession.value += 1
+  createOpen.value = true
+}
+
+function onCreated(item: DirectoryCreatedItem) {
+  source.remember({ value: item.code, label: item.name })
+  model.value = item.code
+}
+
 function isListType(type: SearchableType | ListType): type is ListType {
   return type === 'shift' || type === 'production-line'
 }
@@ -78,6 +113,17 @@ function isListType(type: SearchableType | ListType): type is ListType {
     :total-count="total"
     :show-code="showCode"
     :aria-label="text.noun"
+    :create-text="canCreate ? `新增${text.noun}` : undefined"
     @update:search="updateSearch"
+    v-bind="$attrs"
+    @create="openCreate"
+  />
+  <component
+    :is="creator.dialog"
+    v-if="creator && createSession"
+    :key="createSession"
+    v-model:open="createOpen"
+    :context="createContext"
+    @created="onCreated"
   />
 </template>

@@ -5807,6 +5807,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     idempotencyKey?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest = {
+    organizationId: string;
+    environmentId: string;
+    code?: string | null;
+    name: string;
+    lineCode: string;
+    workCenterCode?: string | null;
+    idempotencyKey?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest = {
     organizationId: string;
     environmentId: string;
@@ -7192,6 +7202,66 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpMachineOverheadReconciliationsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse = {
+    workCenterMachineOverheadRateId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest = {
+    organizationId: string;
+    environmentId: string;
+    workCenterId: string;
+    accountingPeriodCode: string;
+    applicability?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability;
+    fixedOverheadBudget?: number;
+    variableOverheadBudget?: number;
+    normalCapacityMachineHours?: number;
+    currencyCode?: string;
+    reason: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability = 'applicable' | 'notApplicable';
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterMachineOverheadRateListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateListResponse = {
+    organizationId: string;
+    environmentId: string;
+    workCenterId: string;
+    accountingPeriodCode: string;
+    currentRevision: number;
+    pageNumber: number;
+    pageSize: number;
+    totalCount: number;
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateItem = {
+    workCenterMachineOverheadRateId: string;
+    accountingPeriodCode: string;
+    applicability: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability;
+    fixedOverheadBudget: number;
+    variableOverheadBudget: number;
+    normalCapacityMachineHours: number;
+    fixedHourlyRate: number;
+    variableHourlyRate: number;
+    totalHourlyRate: number;
+    currencyCode: string;
+    revision: number;
+    changedBy: string;
+    reason: string;
+    changedAtUtc: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkCenterMachineOverheadRatesRequest = {
     [key: string]: never;
 };
 
@@ -19026,6 +19096,39 @@ export type CreateBusinessConsoleProductionLineResponses = {
 
 export type CreateBusinessConsoleProductionLineResponse = CreateBusinessConsoleProductionLineResponses[keyof CreateBusinessConsoleProductionLineResponses];
 
+export type CreateBusinessConsoleStationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/stations';
+};
+
+export type CreateBusinessConsoleStationErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleStationError = CreateBusinessConsoleStationErrors[keyof CreateBusinessConsoleStationErrors];
+
+export type CreateBusinessConsoleStationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem;
+};
+
+export type CreateBusinessConsoleStationResponse = CreateBusinessConsoleStationResponses[keyof CreateBusinessConsoleStationResponses];
+
 export type CreateBusinessConsoleWorkCenterData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest;
     path?: never;
@@ -21242,6 +21345,79 @@ export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsRespon
 };
 
 export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponse = ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses[keyof ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        workCenterId: string;
+        accountingPeriodCode: string;
+        pageNumber?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-center-machine-overhead-rates';
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesError = ListBusinessConsoleErpWorkCenterMachineOverheadRatesErrors[keyof ListBusinessConsoleErpWorkCenterMachineOverheadRatesErrors];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterMachineOverheadRateListResponse;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponse = ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponses[keyof ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponses];
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/work-center-machine-overhead-rates';
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateError = ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateErrors[keyof ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateErrors];
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponse = ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponses[keyof ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponses];
 
 export type ListBusinessConsoleErpRequestsForQuotationData = {
     body?: never;

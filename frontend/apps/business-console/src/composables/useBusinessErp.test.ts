@@ -9,11 +9,11 @@ import {
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation } from '@pinia/colada'
+import { useBusinessErp, useErpPurchaseRequisitions } from './useBusinessErp'
 import {
-  useBusinessErp,
-  useErpPurchaseRequisitions,
   useErpWorkCenterCostRates,
-} from './useBusinessErp'
+  useErpWorkCenterMachineOverheadRates,
+} from './useErpCostAccounting'
 
 const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
@@ -28,6 +28,13 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleErpWorkCenterCostRatesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleErpWorkCenterCostRates' }],
+    query: vi.fn(),
+  })),
+  configureBusinessConsoleErpWorkCenterMachineOverheadRateMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+  })),
+  listBusinessConsoleErpWorkCenterMachineOverheadRatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleErpWorkCenterMachineOverheadRates' }],
     query: vi.fn(),
   })),
   convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions: vi.fn(() => ({
@@ -231,6 +238,52 @@ describe('business ERP composable', () => {
       },
     })
     const refetch = coladaState.refetchById.get('listBusinessConsoleErpWorkCenterCostRates')
+    expect(refetch).not.toHaveBeenCalled()
+    const options = vi.mocked(useMutation).mock.calls.at(-1)?.[0] as { onSuccess?: () => void }
+    options.onSuccess?.()
+    expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('机器制造费用率按工作中心和会计期间读取，新增修订带上期间并在成功后重拉', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const rates = useErpWorkCenterMachineOverheadRates()
+    rates.workCenterId.value = 'WC-CNC-01'
+    rates.accountingPeriodCode.value = '2026-09'
+
+    const factory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleErpWorkCenterMachineOverheadRates',
+    ) as () => { enabled: boolean }
+    expect(factory().enabled).toBe(true)
+    rates.accountingPeriodCode.value = ''
+    expect(factory().enabled).toBe(false)
+    rates.accountingPeriodCode.value = '2026-09'
+
+    await rates.addRevision({
+      applicability: 'applicable',
+      fixedOverheadBudget: 12000,
+      variableOverheadBudget: 3600,
+      normalCapacityMachineHours: 400,
+      currencyCode: 'CNY',
+      reason: '九月预算核定',
+    })
+    expect(coladaState.mutateAsync).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workCenterId: 'WC-CNC-01',
+        accountingPeriodCode: '2026-09',
+        applicability: 'applicable',
+        fixedOverheadBudget: 12000,
+        variableOverheadBudget: 3600,
+        normalCapacityMachineHours: 400,
+        currencyCode: 'CNY',
+        reason: '九月预算核定',
+      },
+    })
+    const refetch = coladaState.refetchById.get(
+      'listBusinessConsoleErpWorkCenterMachineOverheadRates',
+    )
     expect(refetch).not.toHaveBeenCalled()
     const options = vi.mocked(useMutation).mock.calls.at(-1)?.[0] as { onSuccess?: () => void }
     options.onSuccess?.()

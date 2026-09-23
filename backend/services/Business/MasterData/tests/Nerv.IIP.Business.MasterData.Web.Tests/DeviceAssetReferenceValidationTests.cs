@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.StationAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
@@ -123,6 +124,78 @@ public sealed class DeviceAssetReferenceValidationTests
                 CancellationToken.None));
 
         Assert.Contains("父设备", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Create_WithEnabledStation_PersistsTrimmedStationCode()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Stations.Add(Station.Create(OrganizationId, EnvironmentId, "ST-01", "工位 1", "LINE-1"));
+        await dbContext.SaveChangesAsync();
+
+        await CreateHandler(dbContext).Handle(CreateCommand("DEV-STATION", stationCode: "  ST-01  "), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal("ST-01", (await dbContext.DeviceAssets.SingleAsync(x => x.Code == "DEV-STATION")).StationCode);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("disabled")]
+    [InlineData("wrong-organization")]
+    [InlineData("wrong-environment")]
+    public async Task Create_WithInvalidStationReference_ThrowsKnownException(string scenario)
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stationCode = $"ST-{scenario}";
+        if (scenario != "missing")
+        {
+            var station = Station.Create(
+                scenario == "wrong-organization" ? "org-other" : OrganizationId,
+                scenario == "wrong-environment" ? "env-other" : EnvironmentId,
+                stationCode,
+                scenario,
+                "LINE-1");
+            if (scenario == "disabled")
+            {
+                station.Disable("test setup");
+            }
+
+            dbContext.Stations.Add(station);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            CreateHandler(dbContext).Handle(
+                CreateCommand($"DEV-{scenario}", stationCode: stationCode),
+                CancellationToken.None));
+
+        Assert.Contains("工位", exception.Message, StringComparison.Ordinal);
+        Assert.False(await dbContext.DeviceAssets.AnyAsync());
+    }
+
+    [Fact]
+    public async Task Update_WithMissingStation_ThrowsBeforeMutation()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var device = NewDevice("DEV-UPDATE-STATION");
+        dbContext.DeviceAssets.Add(device);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            UpdateHandler(dbContext).Handle(
+                UpdateCommand(device.Code, model: "must-not-apply", stationCode: "ST-TYPO"),
+                CancellationToken.None));
+
+        Assert.Contains("工位", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("Test device", device.Model);
+        Assert.Empty(device.StationCode);
     }
 
     [Fact]
@@ -442,7 +515,7 @@ public sealed class DeviceAssetReferenceValidationTests
         var legacy = NewDevice("DEV-LEGACY")
             .WithLedger(
                 null, null, string.Empty, null, "MISSING-LEGACY-SUPPLIER",
-                string.Empty, string.Empty, "LINE-1", string.Empty, "LEGACY-PARENT-CODE", null);
+                string.Empty, string.Empty, "LINE-1", "MISSING-LEGACY-STATION", "LEGACY-PARENT-CODE", null);
         dbContext.DeviceAssets.Add(legacy);
         await dbContext.SaveChangesAsync();
 
@@ -454,6 +527,7 @@ public sealed class DeviceAssetReferenceValidationTests
         Assert.Equal("Updated model", legacy.Model);
         Assert.Equal("MISSING-LEGACY-SUPPLIER", legacy.SupplierPartnerCode);
         Assert.Equal("LEGACY-PARENT-CODE", legacy.ParentDeviceId);
+        Assert.Equal("MISSING-LEGACY-STATION", legacy.StationCode);
     }
 
     private static RegisterDeviceAssetCommandHandler CreateHandler(ApplicationDbContext dbContext) =>
@@ -466,7 +540,8 @@ public sealed class DeviceAssetReferenceValidationTests
         string code,
         string? model = null,
         string? supplierPartnerCode = null,
-        string? parentDeviceId = null) =>
+        string? parentDeviceId = null,
+        string? stationCode = null) =>
         new(
             OrganizationId,
             EnvironmentId,
@@ -474,6 +549,7 @@ public sealed class DeviceAssetReferenceValidationTests
             code,
             Model: model,
             SupplierPartnerCode: supplierPartnerCode,
+            StationCode: stationCode,
             ParentDeviceId: parentDeviceId);
 
     private static DeviceAsset NewDevice(string code) =>
@@ -488,7 +564,8 @@ public sealed class DeviceAssetReferenceValidationTests
     private static RegisterDeviceAssetCommand CreateCommand(
         string code,
         string? supplierPartnerCode = null,
-        string? parentDeviceId = null) =>
+        string? parentDeviceId = null,
+        string? stationCode = null) =>
         new(
             OrganizationId,
             EnvironmentId,
@@ -507,6 +584,7 @@ public sealed class DeviceAssetReferenceValidationTests
             false,
             new Dictionary<string, string>(),
             SupplierPartnerCode: supplierPartnerCode,
+            StationCode: stationCode,
             ParentDeviceId: parentDeviceId);
 
     private static ServiceProvider CreateProvider()
