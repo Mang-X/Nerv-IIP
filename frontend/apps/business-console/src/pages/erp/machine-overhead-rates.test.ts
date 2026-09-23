@@ -172,6 +172,9 @@ describe('机器制造费用率', () => {
     const currency = wrapper.get<HTMLInputElement>('#erp-mor-currency')
     expect(currency.element.value).toBe('USD')
     expect(currency.attributes('disabled')).toBeDefined()
+    // 预算与产能从当前修订（第 2 版）带出，而不是已被取代的第 1 版。
+    expect(wrapper.get<HTMLInputElement>('#erp-mor-fixed').element.value).toBe('12000')
+    expect(wrapper.get<HTMLInputElement>('#erp-mor-variable').element.value).toBe('4000')
 
     await wrapper.get('#erp-mor-capacity').setValue('0')
     await wrapper.get('#erp-mor-reason').setValue('十月预算')
@@ -239,5 +242,11 @@ describe('机器制造费用率', () => {
     const wrapper = render()
     await flushPromises()
     expect(wrapper.text()).not.toContain('新增修订')
+
+    data.rates.value = listResponse([])
+    const empty = render()
+    await flushPromises()
+    expect(empty.text()).toContain('请联系财务维护人员录入')
+    expect(empty.text()).not.toContain('新增修订')
   })
 })
