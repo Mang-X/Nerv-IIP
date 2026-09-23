@@ -19,6 +19,8 @@ const StubCreateDialog = defineComponent({
   props: { open: Boolean, context: { type: Object, default: undefined } },
   emits: ['update:open', 'created'],
   setup(props, { emit }) {
+    // 真实弹窗在 setup 里按 context 预填表单：这里同样只在创建实例时读一次。
+    const prefilled = JSON.stringify(props.context ?? null)
     const workCenters = useMasterDataResource<Record<string, unknown>>('work-center')
     async function save() {
       const response = await workCenters.create({ name: '总装二线工作中心' })
@@ -27,12 +29,19 @@ const StubCreateDialog = defineComponent({
     }
     return () =>
       props.open
-        ? h('button', {
-            type: 'button',
-            'data-testid': 'save',
-            'data-context': JSON.stringify(props.context ?? null),
-            onClick: save,
-          })
+        ? h('div', [
+            h('button', {
+              type: 'button',
+              'data-testid': 'save',
+              'data-context': prefilled,
+              onClick: save,
+            }),
+            h('button', {
+              type: 'button',
+              'data-testid': 'cancel',
+              onClick: () => emit('update:open', false),
+            }),
+          ])
         : null
   },
 })
@@ -85,6 +94,7 @@ function harness(props: {
   })
   const pinia = createPinia()
   const model = ref('')
+  const createContext = ref(props.createContext)
   const wrapper = mount(
     defineComponent({
       setup() {
@@ -94,7 +104,7 @@ function harness(props: {
             directoryType: props.directoryType ?? 'work-center',
             creatable: props.creatable,
             placeholder: props.placeholder,
-            createContext: props.createContext,
+            createContext: createContext.value,
             modelValue: model.value,
             'onUpdate:modelValue': (value: string) => (model.value = value),
           })
@@ -103,7 +113,7 @@ function harness(props: {
     { global: { plugins: [pinia, PiniaColada] }, attachTo: document.body },
   )
   mounted.push(wrapper)
-  return { model, requests, wrapper }
+  return { createContext, model, requests, wrapper }
 }
 
 async function openPicker(wrapper: ReturnType<typeof mount>) {
@@ -236,5 +246,30 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
 
     const save = document.body.querySelector<HTMLButtonElement>('[data-testid="save"]')!
     expect(JSON.parse(save.dataset.context!)).toEqual({ lineCode: 'LINE-01' })
+  })
+
+  // 取消后上级改了再点新增，弹窗要按新的上级预填，而不是沿用上一次的实例。
+  it('取消后换一个 context 再打开，弹窗拿到的是新的 context', async () => {
+    state.permissionCodes = ['business.masterdata.resources.manage']
+    const { wrapper, createContext } = harness({
+      creatable: true,
+      createContext: { lineCode: 'LINE-01' },
+    })
+    await flushPromises()
+    await openPicker(wrapper)
+    createEntry()!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="cancel"]')!.click()
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="save"]')).toBeNull()
+
+    createContext.value = { lineCode: 'LINE-02' }
+    await flushPromises()
+    await openPicker(wrapper)
+    createEntry()!.click()
+    await flushPromises()
+
+    const save = document.body.querySelector<HTMLButtonElement>('[data-testid="save"]')!
+    expect(JSON.parse(save.dataset.context!)).toEqual({ lineCode: 'LINE-02' })
   })
 })

@@ -79,11 +79,12 @@ const canCreate = computed(
   () => !!creator && (auth.principal?.permissionCodes ?? []).includes(creator.permission),
 )
 const createOpen = shallowRef(false)
-// 弹窗首次点入口时才挂载（异步组件随之加载），之后留着，关开只切 open。
-const createMounted = shallowRef(false)
+// 每次点入口递增，作弹窗的 key：每次打开都是全新实例，按当次的 context 预填、表单从空白开始。
+// 0 表示还没点过，弹窗不挂载（异步组件首次点入口时才加载，之后有缓存）。
+const createSession = shallowRef(0)
 
 function openCreate() {
-  createMounted.value = true
+  createSession.value += 1
   createOpen.value = true
 }
 
@@ -119,7 +120,8 @@ function isListType(type: SearchableType | ListType): type is ListType {
   />
   <component
     :is="creator.dialog"
-    v-if="creator && createMounted"
+    v-if="creator && createSession"
+    :key="createSession"
     v-model:open="createOpen"
     :context="createContext"
     @created="onCreated"

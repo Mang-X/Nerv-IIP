@@ -9,6 +9,8 @@ import type { BusinessPermissionCode } from '@/permissions'
  *
  * 弹窗约定：
  * - `v-model:open` 控制开关；
+ * - 每次点入口，选择器都会重新挂载一个全新的弹窗实例（递增 `key`），所以弹窗在 setup 里按
+ *   `context` 初始化表单即可，不用自己写「重新打开时重置」；
  * - 可选的 `context` 属性收调用方给的上下文（`DirectoryPicker` 的 `create-context` 原样传入），
  *   用来预填父级，如设备表单已选产线时新增工位传 `{ lineCode: 'LINE-01' }`；键由各类弹窗自己定义；
  * - 建好后发出 `created`，带上新建项的编码和名称（`DirectoryCreatedItem`），选择器据此自动选中
@@ -17,7 +19,7 @@ import type { BusinessPermissionCode } from '@/permissions'
 export interface DirectoryCreator {
   /** 有这个权限才出现「新增」入口。 */
   permission: BusinessPermissionCode
-  /** 新增弹窗；用 `defineAsyncComponent` 包一层，首次点入口时才挂载、加载。 */
+  /** 新增弹窗；用 `defineAsyncComponent` 包一层，首次点入口时才加载。 */
   dialog: Component
 }
 
