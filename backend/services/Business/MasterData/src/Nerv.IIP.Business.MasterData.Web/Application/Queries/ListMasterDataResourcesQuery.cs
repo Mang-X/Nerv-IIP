@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Contracts.MasterData;
-using System.Text;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
@@ -88,13 +87,12 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         };
         return query is null
             ? new ListMasterDataResourcesResponse([], 0)
-            : await ToPageAsync(query, request, tenant, page, cancellationToken);
+            : await ToPageAsync(query, request, page, cancellationToken);
     }
 
     private static async Task<ListMasterDataResourcesResponse> ToPageAsync(
         IQueryable<MasterDataResourceItem> query,
         ListMasterDataResourcesQuery request,
-        TenantScope tenant,
         OffsetPage page,
         CancellationToken cancellationToken)
     {
@@ -104,38 +102,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Skip(request.All ? 0 : page.Skip)
             .Take(limit)
             .ToListAsync(cancellationToken);
-        if (string.Equals(request.ResourceType, "station", StringComparison.OrdinalIgnoreCase))
-        {
-            resources = resources
-                .Select(resource => resource with
-                {
-                    Code = StableStationId(
-                        tenant.OrganizationId,
-                        tenant.EnvironmentId,
-                        resource.SiteCode,
-                        resource.WorkshopCode,
-                        resource.LineCode,
-                        resource.WorkCenterCode,
-                        resource.StationCode),
-                })
-                .ToList();
-        }
-
         return new ListMasterDataResourcesResponse(resources, total, request.All && total > limit, request.All ? limit : null);
-    }
-
-    private static string StableStationId(params string?[] components)
-    {
-        var builder = new StringBuilder("station:");
-        foreach (var component in components)
-        {
-            var value = component ?? string.Empty;
-            builder.Append(Encoding.UTF8.GetByteCount(value));
-            builder.Append(':');
-            builder.Append(value);
-        }
-
-        return builder.ToString();
     }
 
     private IQueryable<MasterDataResourceItem> ListSkus(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
@@ -367,32 +334,42 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
 
     private IQueryable<MasterDataResourceItem> ListStations(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        return dbContext.DeviceAssets
+        // 厂区与车间沿产线继承，不在工位上冗余；上级产线缺失时两列留空而不是丢行。
+        return dbContext.Stations
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
-            .Where(x => x.StationCode != null && x.StationCode != "")
-            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
-            .Where(x => keyword == null || x.StationCode!.ToLower().Contains(keyword))
-            .GroupBy(x => new { x.SiteCode, x.WorkshopCode, x.LineCode, x.WorkCenterCode, StationCode = x.StationCode! })
-            .OrderBy(x => x.Key.StationCode)
-            .ThenBy(x => x.Key.SiteCode)
-            .ThenBy(x => x.Key.WorkshopCode)
-            .ThenBy(x => x.Key.LineCode)
-            .ThenBy(x => x.Key.WorkCenterCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
+            // 工位挂在产线下：按工作中心收窄时给出该工作中心所在产线下的全部工位，
+            // 另并回工位自身关联到该工作中心的工位（工作中心改挂产线、未登记或无产线时不丢）。
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) ||
+                x.WorkCenterCode == request.WorkCenterCode ||
+                dbContext.WorkCenters.Any(workCenter =>
+                    workCenter.OrganizationId == x.OrganizationId &&
+                    workCenter.EnvironmentId == x.EnvironmentId &&
+                    workCenter.Code == request.WorkCenterCode &&
+                    workCenter.LineCode == x.LineCode))
+            .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
+            .GroupJoin(
+                dbContext.ProductionLines.AsNoTracking(),
+                station => new { station.OrganizationId, station.EnvironmentId, Code = station.LineCode },
+                line => new { line.OrganizationId, line.EnvironmentId, line.Code },
+                (station, lines) => new { station, lines })
+            .SelectMany(x => x.lines.DefaultIfEmpty(), (x, line) => new { x.station, line })
+            .OrderBy(x => x.station.Code)
             .Select(x => new MasterDataResourceItem(
                 resourceType,
-                x.Key.StationCode,
-                x.Key.StationCode,
-                true,
-                x.Max(asset => asset.UpdatedAtUtc).ToString("O"))
+                x.station.Code,
+                x.station.Name,
+                !x.station.Disabled,
+                x.station.UpdatedAtUtc.ToString("O"))
             {
-                SiteCode = x.Key.SiteCode,
-                WorkshopCode = x.Key.WorkshopCode,
-                LineCode = x.Key.LineCode,
-                WorkCenterCode = x.Key.WorkCenterCode,
-                StationCode = x.Key.StationCode,
-                Status = "active",
+                SiteCode = x.line == null ? null : x.line.SiteCode,
+                WorkshopCode = x.line == null ? null : x.line.WorkshopCode,
+                LineCode = x.station.LineCode,
+                WorkCenterCode = x.station.WorkCenterCode,
+                StationCode = x.station.Code,
+                Status = x.station.Disabled ? "disabled" : "active",
             });
     }
 
