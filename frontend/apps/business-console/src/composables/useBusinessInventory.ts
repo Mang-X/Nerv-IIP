@@ -2,14 +2,18 @@ import {
   cancelBusinessConsoleInventoryCountTaskMutationOptions,
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   createBusinessConsoleInventoryCountTaskMutationOptions,
+  createOrUpdateBusinessConsoleInventoryLocationMutationOptions,
   restartBusinessConsoleInventoryCountTaskMutationOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
   listBusinessConsoleInventoryCountAdjustmentsQueryOptions,
   listBusinessConsoleInventoryCountTasksQueryOptions,
   listBusinessConsoleInventoryExpiryAlertsQueryOptions,
+  listBusinessConsoleInventoryLocations,
+  listBusinessConsoleInventoryLocationsQueryOptions,
   listBusinessConsoleInventoryMovementsQueryOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   type BusinessConsoleConfirmStockCountAdjustmentRequest,
+  type BusinessConsoleCreateOrUpdateInventoryLocationRequest,
   type BusinessConsoleCreateStockCountTaskRequest,
   type BusinessConsoleInventoryAvailabilityEnvelope,
   type BusinessConsoleInventoryAvailabilityLineResponse,
@@ -20,6 +24,8 @@ import {
   type BusinessConsoleInventoryCountTaskListResponse,
   type BusinessConsoleInventoryExpiryAlertLineResponse,
   type BusinessConsoleInventoryExpiryAlertsResponse,
+  type BusinessConsoleInventoryLocationListResponse,
+  type BusinessConsoleInventoryLocationResponse,
   type BusinessConsoleInventoryMovementLineResponse,
   type BusinessConsoleInventoryMovementListResponse,
   type BusinessConsolePostStockMovementRequest,
@@ -496,5 +502,92 @@ export function useInventoryCounts() {
     ),
     refreshCountTasks: () => (enabled.value ? countTasksQuery.refetch() : Promise.resolve()),
     filters,
+  }
+}
+
+export interface InventoryLocationFilters extends BusinessContextFields {
+  keyword?: string
+}
+
+/**
+ * 库位主数据维护（#3770）：列出全部库位（含停用），新增与编辑都走 Inventory 的库位 upsert。
+ */
+export function useInventoryLocations() {
+  const filters = bindBusinessContext(
+    reactive<InventoryLocationFilters>({
+      organizationId: '',
+      environmentId: '',
+    }),
+  )
+  const page = shallowRef(1)
+  const pageSize = shallowRef(20)
+  const enabled = computed(() => hasBusinessScope(filters))
+
+  const locationsQuery = useQuery(() => ({
+    ...listBusinessConsoleInventoryLocationsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('keyword', filters.keyword?.trim()),
+        page: page.value,
+        pageSize: pageSize.value,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+  const locations = computed<BusinessConsoleInventoryLocationListResponse | undefined>(() => {
+    if (!locationsQuery.data.value?.success) return undefined
+    return locationsQuery.data.value.data ?? undefined
+  })
+
+  watch(
+    () => [filters.organizationId, filters.environmentId, filters.keyword],
+    () => {
+      page.value = 1
+    },
+    { flush: 'sync' },
+  )
+
+  const refreshLocations = () => (enabled.value ? locationsQuery.refetch() : Promise.resolve())
+  const saveLocationMutation = useMutation({
+    ...createOrUpdateBusinessConsoleInventoryLocationMutationOptions(),
+    onSuccess: () => {
+      void refreshLocations()
+    },
+  })
+
+  /**
+   * 库位保存是 upsert：新建时若编码已存在会直接改写那条库位。
+   * 新建前按编码精确查一次，让页面把「已存在」挡在提交之前。
+   */
+  async function locationCodeExists(locationCode: string) {
+    const { data } = await listBusinessConsoleInventoryLocations({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        keyword: locationCode,
+        page: 1,
+        pageSize: 100,
+      },
+      throwOnError: true,
+    })
+    return (data.data?.items ?? []).some((item) => item.locationCode === locationCode)
+  }
+
+  return {
+    filters,
+    locationRows: computed<BusinessConsoleInventoryLocationResponse[]>(
+      () => locations.value?.items ?? [],
+    ),
+    locationsError: locationsQuery.error,
+    locationsPending: locationsQuery.isLoading,
+    locationsPage: page,
+    locationsPageSize: pageSize,
+    locationsTotal: computed(() => locations.value?.totalCount ?? 0),
+    locationCodeExists,
+    refreshLocations,
+    saveLocation: (body: BusinessConsoleCreateOrUpdateInventoryLocationRequest) =>
+      saveLocationMutation.mutateAsync({ body }),
+    saveLocationPending: saveLocationMutation.isLoading,
   }
 }

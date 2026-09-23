@@ -94,6 +94,7 @@ public static class BusinessGatewayPermissions
     public const string InventoryLedgerRead = "business.inventory.ledger.read";
     public const string InventoryMovementsCreate = "business.inventory.movements.create";
     public const string InventoryCountsManage = "business.inventory.counts.manage";
+    public const string InventoryLocationsManage = "business.inventory.locations.manage";
     public const string InventoryExpiredStockOverride = "business.inventory.expired-stock.override";
     public const string QualityInspectionRecordsRead = "business.quality.inspection-records.read";
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";

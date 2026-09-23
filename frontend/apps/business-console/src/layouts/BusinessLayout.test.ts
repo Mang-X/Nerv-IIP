@@ -83,7 +83,7 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('currentDomainId')).toBe('inventory')
     const sideNav = shell.props('sideNav') as SideGroup[]
     const sideTitles = sideNav.flatMap((g) => g.items.map((i) => i.title))
-    expect(sideTitles).toEqual(['库存可用量', '批次与预留', '库存移动', '库存盘点'])
+    expect(sideTitles).toEqual(['库存可用量', '批次与预留', '库存移动', '库存盘点', '库位'])
   })
 
   it('trims top domains and side navigation by principal permissions', () => {

@@ -74,6 +74,50 @@ public sealed class ListBusinessConsoleInventoryMovementsEndpoint(
 }
 
 [Tags("Business Console Inventory")]
+[HttpGet("/api/business-console/v1/inventory/locations")]
+[BusinessGatewayOperationId("listBusinessConsoleInventoryLocations")]
+public sealed class ListBusinessConsoleInventoryLocationsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleInventoryLocationListRequest, BusinessConsoleInventoryLocationListResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryLocationsManage)
+{
+    protected override string OrganizationId(BusinessConsoleInventoryLocationListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleInventoryLocationListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleInventoryLocationListResponse> ForwardAsync(
+        BusinessConsoleInventoryLocationListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.ListLocationsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
+[HttpPost("/api/business-console/v1/inventory/locations")]
+[BusinessGatewayOperationId("createOrUpdateBusinessConsoleInventoryLocation")]
+public sealed class CreateOrUpdateBusinessConsoleInventoryLocationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateOrUpdateInventoryLocationRequest, BusinessConsoleCreateOrUpdateInventoryLocationResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryLocationsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateOrUpdateInventoryLocationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateOrUpdateInventoryLocationRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCreateOrUpdateInventoryLocationResponse> ForwardAsync(
+        BusinessConsoleCreateOrUpdateInventoryLocationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.CreateOrUpdateLocationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
 [HttpGet("/api/business-console/v1/inventory/count-tasks")]
 [BusinessGatewayOperationId("listBusinessConsoleInventoryCountTasks")]
 public sealed class ListBusinessConsoleInventoryCountTasksEndpoint(

@@ -43,7 +43,7 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(19, contracts.Length);
+        Assert.Equal(20, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/inventory/v1/line-side-balances"
             && x.PermissionCode == InventoryPermissionCodes.LedgerRead
@@ -75,6 +75,11 @@ public sealed class InventoryEndpointContractTests
             && x.PermissionCode == InventoryPermissionCodes.LocationsManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "createOrUpdateInventoryLocation");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/locations"
+            && x.PermissionCode == InventoryPermissionCodes.LocationsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryLocations");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/movements"
             && x.PermissionCode == InventoryPermissionCodes.MovementsCreate

@@ -65,6 +65,13 @@ public sealed record CreateOrUpdateStockLocationRequest(
 
 public sealed record CreateOrUpdateStockLocationResponse(StockLocationId LocationId);
 
+public sealed record ListStockLocationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Page = 1,
+    int PageSize = 50);
+
 public sealed record ListInventoryDirectoryRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -321,6 +328,26 @@ public sealed class CreateOrUpdateStockLocationEndpoint(ISender sender)
             req.ParentLocationCode,
             req.Status), ct);
         await Send.OkAsync(new CreateOrUpdateStockLocationResponse(result.LocationId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListStockLocationsEndpoint(ISender sender)
+    : InventoryEndpoint<ListStockLocationsRequest, ResponseData<StockLocationListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<ListStockLocationsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListStockLocationsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListStockLocationsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Keyword,
+            req.Page,
+            req.PageSize), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -808,6 +835,7 @@ public static class InventoryEndpointContracts
         new(typeof(ListInventoryDirectoryEndpoint), "GET", "/api/inventory/v1/directory", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryDirectory"),
         new(typeof(ListLineSideInventoryBalancesEndpoint), "GET", "/api/inventory/v1/line-side-balances", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryLineSideBalances"),
         new(typeof(CreateOrUpdateStockLocationEndpoint), "POST", "/api/inventory/v1/locations", InventoryPermissionCodes.LocationsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateInventoryLocation"),
+        new(typeof(ListStockLocationsEndpoint), "GET", "/api/inventory/v1/locations", InventoryPermissionCodes.LocationsManage, InternalServiceAuthorizationPolicy.Name, "listInventoryLocations"),
         new(typeof(PostStockMovementEndpoint), "POST", "/api/inventory/v1/movements", InventoryPermissionCodes.MovementsCreate, InternalServiceAuthorizationPolicy.Name, "postInventoryMovement"),
         new(typeof(ListStockMovementsEndpoint), "GET", "/api/inventory/v1/movements", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryMovements"),
         new(typeof(GetStockAvailabilityEndpoint), "GET", "/api/inventory/v1/availability", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "getInventoryAvailability"),
