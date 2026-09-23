@@ -439,20 +439,22 @@ const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
 ]
 
 const operationTaskOptions = computed<EntityPickerOption[]>(() =>
-  operationTasks.value.flatMap((task) => {
-    const value = task.operationTaskId?.trim()
-    if (!value) return []
-    const sequence = `第 ${task.operationSequence ?? 0} 道工序`
-    const taskNo = task.operationTaskNo?.trim()
-    const workCenter = task.workCenterName?.trim() || task.workCenterCode?.trim()
-    return [
-      {
-        value,
-        label: taskNo || sequence,
-        hint: [taskNo ? sequence : '', workCenter].filter(Boolean).join(' · '),
-      },
-    ]
-  }),
+  [...operationTasks.value]
+    .sort((a, b) => (a.operationSequence ?? 0) - (b.operationSequence ?? 0))
+    .flatMap((task) => {
+      const value = task.operationTaskId?.trim()
+      if (!value) return []
+      const sequence = `第 ${task.operationSequence ?? 0} 道工序`
+      const taskNo = task.operationTaskNo?.trim()
+      const workCenter = task.workCenterName?.trim() || task.workCenterCode?.trim()
+      return [
+        {
+          value,
+          label: taskNo || sequence,
+          hint: [taskNo ? sequence : '', workCenter].filter(Boolean).join(' · '),
+        },
+      ]
+    }),
 )
 
 const issueUomCode = computed(() => resolveBaseUom(issueForm.materialId.trim()))

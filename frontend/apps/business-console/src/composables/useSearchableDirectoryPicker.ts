@@ -121,11 +121,12 @@ export function useMasterDataListPicker(resourceType: 'shift' | 'production-line
   }
 }
 
-/** 辅助识别：批次 / 序列号带所属物料，主数据带所属工作中心或车间（不重复自身编码）。 */
+/** 辅助识别：所属工作中心 / 车间 / 工厂（不重复自身编码；批次、序列号的名称里已带物料）。 */
 function directoryHint(code: string, context: Record<string, string | null> | undefined) {
   if (!context) return ''
-  const parent = [context.workCenterCode, context.workshopCode, context.siteCode]
-    .map((part) => part?.trim())
-    .find((part) => part && part !== code)
-  return [context.skuCode?.trim(), parent].filter(Boolean).join(' · ')
+  return (
+    [context.workCenterCode, context.workshopCode, context.siteCode]
+      .map((part) => part?.trim())
+      .find((part) => part && part !== code) ?? ''
+  )
 }

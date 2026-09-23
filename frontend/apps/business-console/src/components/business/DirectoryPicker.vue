@@ -50,6 +50,8 @@ const source = (directory ?? list)!
 const options = computed(() => source.options.value)
 const pending = computed(() => source.pending.value)
 const total = computed(() => directory?.total.value)
+// 批次 / 序列号目录的名称就是「编码 · 物料」，再印一行编码是重复。
+const showCode = props.directoryType !== 'batch' && props.directoryType !== 'serial'
 // 本地搜索时面板自己持有搜索词，这里的值不会被读取。
 const search = directory?.search ?? ref('')
 </script>
@@ -67,6 +69,7 @@ const search = directory?.search ?? ref('')
     :loading="pending"
     :server-search="!listType"
     :total-count="total"
+    :show-code="showCode"
     :aria-label="text.noun"
   />
 </template>
