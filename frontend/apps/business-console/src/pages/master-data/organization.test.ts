@@ -202,6 +202,13 @@ const formSelectStubs = {
   NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  // 班组表单的「所属班次」是班次选择器（就地新增由 DirectoryPicker 自己的测试覆盖），这里换成原生 <select>。
+  DirectoryPicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="SHIFT-A">白班</option></select>',
+  },
 }
 
 // 找到树里某节点的「选中」按钮（按文本，排除带「新建」aria-label 的 + 按钮）。
@@ -382,7 +389,7 @@ describe('master-data organization (department tree) page', () => {
     // 新建态不再有编码输入框（编码由系统自动生成）。
     expect(wrapper.find('#team-code').exists()).toBe(false)
     await wrapper.find('#team-name').setValue('夜班班组')
-    // 班次 Select 桩渲染为 <select>；按其 SHIFT-A 选项定位（id 落在 SelectTrigger span 上）。
+    // 班次选择器桩渲染为 <select>；按其 SHIFT-A 选项定位。
     const shiftSelect = wrapper.findAll('select').find((s) => s.html().includes('SHIFT-A'))!
     await shiftSelect.setValue('SHIFT-A')
     await flushPromises()

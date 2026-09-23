@@ -11,6 +11,7 @@ import type { DirectoryCreatedItem } from '@/components/business/directoryCreato
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useCreateSku, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import { useSkuReferenceOptions } from '@/composables/useSkuReferenceOptions'
+import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
@@ -43,6 +44,7 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ created: [item: DirectoryCreatedItem] }>()
 
 const context = useBusinessContextStore()
+const returnFocus = useReturnFocusOnClose()
 const creation = useCreateSku()
 const skuActions = useMasterDataResourceActions('sku')
 const {
@@ -190,7 +192,7 @@ async function submit() {
 
 <template>
   <NvDialog v-model:open="open">
-    <NvDialogContent class="sm:max-w-3xl">
+    <NvDialogContent class="sm:max-w-3xl" @close-auto-focus="returnFocus">
       <NvDialogHeader>
         <NvDialogTitle>{{ editingCode ? `编辑物料 · ${editingCode}` : '新建物料' }}</NvDialogTitle>
         <NvDialogDescription class="sr-only">

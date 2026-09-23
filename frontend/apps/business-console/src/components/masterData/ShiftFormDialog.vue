@@ -15,6 +15,7 @@ import {
   useCreateMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
+import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
@@ -42,6 +43,7 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ created: [item: DirectoryCreatedItem] }>()
 
 const context = useBusinessContextStore()
+const returnFocus = useReturnFocusOnClose()
 const creation = useCreateMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
 const shiftActions = useMasterDataResourceActions('shift')
 
@@ -127,7 +129,7 @@ async function submit() {
 
 <template>
   <NvDialog v-model:open="open">
-    <NvDialogContent class="sm:max-w-lg">
+    <NvDialogContent class="sm:max-w-lg" @close-auto-focus="returnFocus">
       <NvDialogHeader>
         <NvDialogTitle>{{ editingCode ? `编辑班次 · ${editingCode}` : '新建班次' }}</NvDialogTitle>
         <NvDialogDescription class="sr-only">{{

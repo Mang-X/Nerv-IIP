@@ -167,6 +167,7 @@ describe('已注册的新增弹窗（#3797）', () => {
     setInput('#shift-name', '中班')
     setInput('#shift-start', '16:00')
     setInput('#shift-end', '00:00')
+    setInput('#shift-paid', '450')
     await flushPromises()
     document.body.querySelector('form')!.requestSubmit()
     await flushPromises()
@@ -178,7 +179,7 @@ describe('已注册的新增弹窗（#3797）', () => {
       name: '中班',
       startsAt: '16:00',
       endsAt: '00:00',
-      paidMinutes: 480,
+      paidMinutes: 450,
     })
     expect(model.value).toBe('SHIFT-0042')
     expect(wrapper.get('button[aria-haspopup]').text()).toContain('中班')
