@@ -225,7 +225,6 @@ function withCreateIdempotency<TBody>(resourceType: string, body: TBody): TBody 
 
 export function useBusinessSkus() {
   const filters = defaultListFilters()
-  const queryCache = useQueryCache()
 
   const skusQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -242,21 +241,26 @@ export function useBusinessSkus() {
     ),
   )
 
-  const createSkuMutation = useMutation({
-    ...createBusinessConsoleSkuMutationOptions(),
-    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleSkus']),
-  })
-
   return {
-    createSku: (body: BusinessConsoleCreateSkuRequest) => createSkuMutation.mutateAsync({ body }),
-    createSkuError: createSkuMutation.error,
-    createSkuPending: createSkuMutation.isLoading,
     filters,
     refreshSkus: () => refetchWithBusinessContext(filters, skusQuery),
     skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(skusQuery.data.value)),
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,
     skusTotal: computed(() => resourceTotal(skusQuery.data.value)),
+  }
+}
+
+/** 新建物料。与列表分开：新增弹窗只要新建，不必连带拉一份物料列表。 */
+export function useCreateSku() {
+  const queryCache = useQueryCache()
+  const mutation = useMutation({
+    ...createBusinessConsoleSkuMutationOptions(),
+    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleSkus']),
+  })
+  return {
+    create: (body: BusinessConsoleCreateSkuRequest) => mutation.mutateAsync({ body }),
+    pending: mutation.isLoading,
   }
 }
 
@@ -557,7 +561,6 @@ export type MasterDataResourceType = keyof typeof RESOURCE_CREATE_OPTIONS
  */
 export function useMasterDataResource<TBody>(resourceType: MasterDataResourceType) {
   const filters = defaultResourceFilters(resourceType)
-  const queryCache = useQueryCache()
 
   const listQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -584,11 +587,7 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
     ),
   )
 
-  // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
-  const createMutation = useMutation({
-    ...RESOURCE_CREATE_OPTIONS[resourceType](),
-    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleMasterDataResources']),
-  } as unknown as UseMutationOptions)
+  const creation = useCreateMasterDataResource<TBody>(resourceType)
 
   return {
     filters,
@@ -597,16 +596,32 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
     error: listQuery.error,
     pending: listQuery.isLoading,
     refresh: () => refetchWithBusinessContext(filters, listQuery),
+    create: creation.create,
+    createError: creation.error,
+    createPending: creation.pending,
+  }
+}
+
+/** 单类基础数据资源的「新建」。与列表分开：新增弹窗只要新建，不必连带拉一份列表。 */
+export function useCreateMasterDataResource<TBody>(resourceType: MasterDataResourceType) {
+  const queryCache = useQueryCache()
+  // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
+  const mutation = useMutation({
+    ...RESOURCE_CREATE_OPTIONS[resourceType](),
+    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleMasterDataResources']),
+  } as unknown as UseMutationOptions)
+
+  return {
     create: (body: TBody) =>
       (
-        createMutation.mutateAsync as unknown as (vars: {
+        mutation.mutateAsync as unknown as (vars: {
           body: TBody
         }) => Promise<BusinessConsoleResourceItemEnvelope>
       )({
         body: withCreateIdempotency(resourceType, body),
       }),
-    createError: createMutation.error,
-    createPending: createMutation.isLoading,
+    error: mutation.error,
+    pending: mutation.isLoading,
   }
 }
 
