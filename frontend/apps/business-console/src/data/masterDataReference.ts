@@ -42,16 +42,7 @@ export const BATCH_TRACKING_OPTIONS: RefOption[] = [
   { value: 'mandatory', label: '强制批次' },
 ]
 
-/**
- * 序列号追踪策略（CodeSet: serial-tracking-policy，系统枚举）。
- *
- * ⚠️ 失效方向（#3747 未收敛项）：本表是**下拉选项**（码值 + 中文名），权威码集在
- * `MasterDataDictionaryRules.StandardReferenceData`，契约层副本是
- * `Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies`，二者已由
- * `MasterDataDictionaryRulesTests` 钉住相等。本表与它们没有任何门禁相连：
- * 字典新增策略码时，这里漏加的症状是**物料维护页的下拉选不到新码**（不是报工 400，
- * 报工侧的码集判定已收敛到网关的那一份）。按文件头的 Phase 2 计划改为 `?codeSet=` 实时拉取后消失。
- */
+/** 序列号追踪策略（CodeSet: serial-tracking-policy，系统枚举）。 */
 export const SERIAL_TRACKING_OPTIONS: RefOption[] = [
   { value: 'none', label: '不管理' },
   { value: 'on-receipt', label: '入库赋序' },
