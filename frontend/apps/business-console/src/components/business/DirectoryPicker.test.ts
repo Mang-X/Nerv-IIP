@@ -16,7 +16,7 @@ vi.mock('@/stores/auth', () => ({
 
 // 新增弹窗的替身：走真实的 `useMasterDataResource.create`，按约定把新建项的编码和名称发回去。
 const StubCreateDialog = defineComponent({
-  props: { open: Boolean },
+  props: { open: Boolean, context: { type: Object, default: undefined } },
   emits: ['update:open', 'created'],
   setup(props, { emit }) {
     const workCenters = useMasterDataResource<Record<string, unknown>>('work-center')
@@ -26,7 +26,14 @@ const StubCreateDialog = defineComponent({
       emit('update:open', false)
     }
     return () =>
-      props.open ? h('button', { type: 'button', 'data-testid': 'save', onClick: save }) : null
+      props.open
+        ? h('button', {
+            type: 'button',
+            'data-testid': 'save',
+            'data-context': JSON.stringify(props.context ?? null),
+            onClick: save,
+          })
+        : null
   },
 })
 
@@ -42,28 +49,38 @@ interface Recorded {
   url: URL
 }
 
+const mounted: Array<ReturnType<typeof mount>> = []
+
 function harness(props: {
   creatable?: boolean
   directoryType?: 'work-center' | 'shift' | 'workshop'
   placeholder?: string
+  createContext?: Record<string, string>
+  /** 新建之后的刷新结果里带上新建项（现实里的列表 / 目录会把它刷回来）。 */
+  refreshIncludesCreated?: boolean
 }) {
   const requests: Recorded[] = []
+  let created = false
   configureApiClient({
     baseUrl: 'http://gateway.local',
     fetch: (async (request: Request) => {
       const url = new URL(request.url)
       requests.push({ method: request.method, url })
       if (request.method === 'POST') {
+        created = true
         return Response.json({
           success: true,
           data: { resourceType: 'work-center', code: 'WC-0042', displayName: '总装二线工作中心' },
         })
       }
       // 目录第一页里没有新建项（目录比一页多、或还没刷新到），选中后仍须显示名称。
-      return Response.json({
-        success: true,
-        data: { items: [{ code: 'WC-0001', displayName: '冲压一线工作中心' }], total: 120 },
-      })
+      const items = [{ code: 'WC-0001', displayName: '冲压一线工作中心' }]
+      if (created && props.refreshIncludesCreated) {
+        items.unshift({ code: 'WC-0042', displayName: '总装二线工作中心' })
+      }
+      // 可搜目录回 `items`，基础数据资源列表回 `resources`。
+      const rows = url.pathname.includes('/directories/') ? { items } : { resources: items }
+      return Response.json({ success: true, data: { ...rows, total: 120 } })
     }) as typeof fetch,
   })
   const pinia = createPinia()
@@ -77,6 +94,7 @@ function harness(props: {
             directoryType: props.directoryType ?? 'work-center',
             creatable: props.creatable,
             placeholder: props.placeholder,
+            createContext: props.createContext,
             modelValue: model.value,
             'onUpdate:modelValue': (value: string) => (model.value = value),
           })
@@ -84,6 +102,7 @@ function harness(props: {
     }),
     { global: { plugins: [pinia, PiniaColada] }, attachTo: document.body },
   )
+  mounted.push(wrapper)
   return { model, requests, wrapper }
 }
 
@@ -100,6 +119,8 @@ function createEntry(noun = '工作中心') {
 
 describe('DirectoryPicker 就地新增（#3796）', () => {
   afterEach(() => {
+    // 用例中途失败也要卸载，免得残留节点把后面的用例连带弄崩。
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
     configureApiClient()
     document.body.innerHTML = ''
   })
@@ -117,7 +138,7 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
       await flushPromises()
       await openPicker(wrapper)
       expect(createEntry() !== undefined).toBe(shown)
-      wrapper.unmount()
+      for (const wrapper of mounted.splice(0)) wrapper.unmount()
     }
   })
 
@@ -127,7 +148,6 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
     const { wrapper } = harness({ creatable: true, placeholder: '全部工作中心' })
     await flushPromises()
     expect(wrapper.get('button[aria-haspopup]').text()).toBe('全部工作中心')
-    wrapper.unmount()
   })
 
   it('没注册新增弹窗的类型即使 creatable 也没有入口', async () => {
@@ -138,13 +158,20 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
     expect(
       [...document.body.querySelectorAll('button')].some((b) => b.textContent?.includes('新增')),
     ).toBe(false)
-    wrapper.unmount()
   })
 
   // 工作中心走网关可搜目录；班次走基础数据资源列表。两条取数路径都要在新建后刷新、并显示名称。
   it.each([
-    { directoryType: 'work-center' as const, noun: '工作中心', read: '/directories/work-center' },
-    { directoryType: 'shift' as const, noun: '班次', read: '/master-data/resources' },
+    {
+      directoryType: 'work-center' as const,
+      noun: '工作中心',
+      read: { path: '/directories/work-center' },
+    },
+    {
+      directoryType: 'shift' as const,
+      noun: '班次',
+      read: { path: '/master-data/resources', resourceType: 'shift' },
+    },
   ])('$noun：新建后自动选中新建项、显示名称，并刷新候选', async ({ directoryType, noun, read }) => {
     state.permissionCodes = ['business.masterdata.resources.manage']
     const { model, requests, wrapper } = harness({ creatable: true, directoryType })
@@ -153,7 +180,12 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
 
     createEntry(noun)!.click()
     await flushPromises()
-    const readsBefore = requests.filter((r) => r.method === 'GET' && r.url.pathname.endsWith(read))
+    const readsBefore = requests.filter(
+      (r) =>
+        r.method === 'GET' &&
+        r.url.pathname.endsWith(read.path) &&
+        (!read.resourceType || r.url.searchParams.get('resourceType') === read.resourceType),
+    )
     expect(readsBefore.length).toBeGreaterThan(0)
     document.body.querySelector<HTMLButtonElement>('[data-testid="save"]')!.click()
     await flushPromises()
@@ -162,8 +194,47 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
     const trigger = wrapper.get('button[aria-haspopup]')
     expect(trigger.text()).toContain('总装二线工作中心')
     expect(trigger.text()).toContain('WC-0042')
-    const readsAfter = requests.filter((r) => r.method === 'GET' && r.url.pathname.endsWith(read))
+    const readsAfter = requests.filter(
+      (r) =>
+        r.method === 'GET' &&
+        r.url.pathname.endsWith(read.path) &&
+        (!read.resourceType || r.url.searchParams.get('resourceType') === read.resourceType),
+    )
     expect(readsAfter.length).toBeGreaterThan(readsBefore.length)
-    wrapper.unmount()
+  })
+
+  // 刷新回来的列表里已经有新建项时，候选里只出现一次。
+  it('班次：刷新结果带回新建项时候选里只有一条', async () => {
+    state.permissionCodes = ['business.masterdata.resources.manage']
+    const { wrapper } = harness({
+      creatable: true,
+      directoryType: 'shift',
+      refreshIncludesCreated: true,
+    })
+    await flushPromises()
+    await openPicker(wrapper)
+    createEntry('班次')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="save"]')!.click()
+    await flushPromises()
+
+    await openPicker(wrapper)
+    const rows = [...document.body.querySelectorAll('[role="option"]')].filter((row) =>
+      row.textContent?.includes('WC-0042'),
+    )
+    expect(rows).toHaveLength(1)
+  })
+
+  // 父级预填：调用方给的上下文原样交给新增弹窗（如设备表单已选产线，新增工位时带上它）。
+  it('create-context 原样传给新增弹窗', async () => {
+    state.permissionCodes = ['business.masterdata.resources.manage']
+    const { wrapper } = harness({ creatable: true, createContext: { lineCode: 'LINE-01' } })
+    await flushPromises()
+    await openPicker(wrapper)
+    createEntry()!.click()
+    await flushPromises()
+
+    const save = document.body.querySelector<HTMLButtonElement>('[data-testid="save"]')!
+    expect(JSON.parse(save.dataset.context!)).toEqual({ lineCode: 'LINE-01' })
   })
 })

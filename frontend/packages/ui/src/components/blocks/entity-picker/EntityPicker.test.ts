@@ -289,7 +289,9 @@ describe('NvEntityPicker', () => {
       await wrapper.get('button[aria-haspopup]').trigger('click')
       await flushPromises()
 
-      expect(createEntry()).toBeUndefined()
+      // 不按文案找：没给文案时文案本来就不会出现。面板里除候选项之外不该有任何按钮。
+      const panel = document.body.querySelector('[role="listbox"]')!.parentElement!
+      expect(panel.querySelectorAll('button:not([role="option"])')).toHaveLength(0)
       wrapper.unmount()
     })
 

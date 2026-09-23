@@ -16,7 +16,11 @@ import {
   useSearchableDirectoryPicker,
 } from '@/composables/useSearchableDirectoryPicker'
 import { useAuthStore } from '@/stores/auth'
-import { directoryCreatorFor, type DirectoryCreatedItem } from './directoryCreators'
+import {
+  directoryCreatorFor,
+  type DirectoryCreateContext,
+  type DirectoryCreatedItem,
+} from './directoryCreators'
 
 type ListType = 'shift' | 'production-line'
 type SearchableType = 'work-center' | 'material' | 'equipment' | 'workshop' | 'batch' | 'serial'
@@ -42,6 +46,8 @@ const props = defineProps<{
   skuCode?: string
   /** 允许就地新增（只在表单里开，筛选区不开）。 */
   creatable?: boolean
+  /** 传给新增弹窗的上下文，用来预填父级（如已选的产线）。 */
+  createContext?: DirectoryCreateContext
 }>()
 const model = defineModel<string>({ default: '' })
 
@@ -73,6 +79,13 @@ const canCreate = computed(
   () => !!creator && (auth.principal?.permissionCodes ?? []).includes(creator.permission),
 )
 const createOpen = shallowRef(false)
+// 弹窗首次点入口时才挂载（异步组件随之加载），之后留着，关开只切 open。
+const createMounted = shallowRef(false)
+
+function openCreate() {
+  createMounted.value = true
+  createOpen.value = true
+}
 
 function onCreated(item: DirectoryCreatedItem) {
   source.remember({ value: item.code, label: item.name })
@@ -102,12 +115,13 @@ function isListType(type: SearchableType | ListType): type is ListType {
     :create-text="canCreate ? `新增${text.noun}` : undefined"
     @update:search="updateSearch"
     v-bind="$attrs"
-    @create="createOpen = true"
+    @create="openCreate"
   />
   <component
     :is="creator.dialog"
-    v-if="creator && canCreate"
+    v-if="creator && createMounted"
     v-model:open="createOpen"
+    :context="createContext"
     @created="onCreated"
   />
 </template>
