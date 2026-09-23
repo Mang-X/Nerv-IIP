@@ -29,7 +29,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { useErpWorkCenterMachineOverheadRates } from '@/composables/useBusinessErp'
+import { useErpWorkCenterMachineOverheadRates } from '@/composables/useErpCostAccounting'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -240,9 +240,21 @@ async function submit() {
         !rates.ready.value || !rates.workCenterId.value || !rates.accountingPeriodCode.value
       "
       awaiting-scope-message="请选择工作中心并填写会计期间。"
-      empty-message="该工作中心在本期还没有机器制造费用率。"
       @retry="rates.refresh"
     >
+      <template #empty>
+        <p class="text-sm font-medium">该工作中心在本期还没有机器制造费用率</p>
+        <p class="max-w-md text-sm text-muted-foreground">
+          {{
+            canManage
+              ? '录入前，本期带设备的工序完工无法结算机器费用；不产生机器费用的工作中心也要录入一条“不适用”。'
+              : '录入前，本期带设备的工序完工无法结算机器费用，请联系财务维护人员录入。'
+          }}
+        </p>
+        <NvButton v-if="canManage" size="sm" type="button" @click="openSheet"
+          ><PlusIcon aria-hidden="true" />新增修订</NvButton
+        >
+      </template>
       <template #cell-rate="{ row }">
         <div v-if="applicable(row)" class="space-y-1 tabular-nums">
           <p>固定 {{ machineAmount(row.fixedHourlyRate, row.currencyCode) }}</p>

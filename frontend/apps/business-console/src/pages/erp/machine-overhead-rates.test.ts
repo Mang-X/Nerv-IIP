@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   current: undefined as unknown,
   permissionCodes: [] as string[],
 }))
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/useErpCostAccounting', () => ({
   useErpWorkCenterMachineOverheadRates: () => state.current,
 }))
 vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
@@ -180,6 +180,14 @@ describe('机器制造费用率', () => {
     expect(data.addRevision).not.toHaveBeenCalled()
 
     await wrapper.get('#erp-mor-capacity').setValue('500')
+    await wrapper.get('#erp-mor-fixed').setValue('0')
+    await wrapper.get('#erp-mor-variable').setValue('0')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(data.addRevision).not.toHaveBeenCalled()
+
+    await wrapper.get('#erp-mor-fixed').setValue('12000')
+    await wrapper.get('#erp-mor-variable').setValue('4000')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(data.addRevision).toHaveBeenCalledWith({
@@ -213,6 +221,17 @@ describe('机器制造费用率', () => {
       currencyCode: 'USD',
       reason: '该线本期停用设备',
     })
+  })
+
+  it('本期没有修订时，空态直接提供新增修订', async () => {
+    data.rates.value = listResponse([])
+    const wrapper = render()
+    await flushPromises()
+    const emptyAction = wrapper
+      .findAll('tbody button')
+      .find((button) => button.text().includes('新增修订'))
+    await emptyAction!.trigger('click')
+    expect(wrapper.find('.sheet').exists()).toBe(true)
   })
 
   it('没有财务维护权限时不提供新增修订', async () => {

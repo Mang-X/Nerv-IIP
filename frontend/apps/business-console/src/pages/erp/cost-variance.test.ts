@@ -5,7 +5,7 @@ import { reactive, shallowRef } from 'vue'
 import CostVariancePage from './finance/cost-variance.vue'
 
 const state = vi.hoisted(() => ({ current: undefined as unknown }))
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/useErpCostAccounting', () => ({
   useErpWorkOrderCostVariance: () => state.current,
 }))
 

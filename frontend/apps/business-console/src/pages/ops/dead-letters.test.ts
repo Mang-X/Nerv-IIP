@@ -236,7 +236,7 @@ describe('集成事件死信运维页', () => {
     },
     {
       failureCode: 'missing-machine-overhead-rate',
-      reasonFragment: '该工作中心在结算时点没有生效的机器制造费用率',
+      reasonFragment: '该工作中心在完工日期所属的会计期间没有机器制造费用率',
       linkLabel: '去补充机器制造费用率',
       linkPath: '/erp/finance/machine-overhead-rates',
     },
