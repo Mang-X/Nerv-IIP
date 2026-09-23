@@ -49,14 +49,25 @@ public sealed class BusinessConsoleDeadLetterMetricsRequest
     public string? Service { get; set; }
 }
 
+/// <remarks>
+/// 绑定来源写成显式的 <see cref="RouteParamAttribute"/> / <see cref="QueryParamAttribute"/>：
+/// 本 DTO 同时挂在一个 GET（详情）与一个 POST（重放）上，不标注时 POST 那条的作用域两字段
+/// 在导出的 OpenAPI 里既不落进 query 也不落进 body，生成客户端于是无法发出一次合法调用
+/// （服务端校验要求两者非空）。同形共用 DTO 的既有样板 <c>BusinessConsoleSchedulingPlanRequest</c>
+/// 正是这样标注的，其 release / revoke 两条 POST 因此带着 query 作用域。
+/// </remarks>
 public sealed class BusinessConsoleDeadLetterItemRequest
 {
+    [QueryParam]
     public string OrganizationId { get; set; } = string.Empty;
 
+    [QueryParam]
     public string EnvironmentId { get; set; } = string.Empty;
 
+    [RouteParam]
     public string Service { get; set; } = string.Empty;
 
+    [RouteParam]
     public Guid DeadLetterId { get; set; }
 }
 

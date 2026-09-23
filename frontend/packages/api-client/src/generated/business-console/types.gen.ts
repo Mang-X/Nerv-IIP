@@ -22957,7 +22957,10 @@ export type ReplayBusinessConsoleDeadLetterData = {
         service: string;
         deadLetterId: string;
     };
-    query?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
     url: '/api/business-console/v1/dead-letters/{service}/{deadLetterId}/replay';
 };
 

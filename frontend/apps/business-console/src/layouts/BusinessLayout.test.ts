@@ -77,6 +77,7 @@ describe('BusinessLayout (T-shaped)', () => {
       'barcode',
       'equipment',
       'approval',
+      'ops',
     ])
     // Current domain resolved from the route, with its domain-local side nav.
     expect(shell.props('currentDomainId')).toBe('inventory')
