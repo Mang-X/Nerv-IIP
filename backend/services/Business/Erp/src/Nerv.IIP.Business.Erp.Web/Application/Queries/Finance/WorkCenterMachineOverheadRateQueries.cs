@@ -155,23 +155,14 @@ public sealed class ResolveWorkCenterMachineOverheadRateForSettlementQueryHandle
         var organizationId = request.OrganizationId.Trim();
         var environmentId = request.EnvironmentId.Trim();
         var workCenterId = request.WorkCenterId.Trim();
-        var completionDate = DateOnly.FromDateTime(request.CompletedAtUtc.UtcDateTime);
-        var periods = await dbContext.AccountingPeriods
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.StartDate <= completionDate
-                && x.EndDate >= completionDate)
-            .Select(x => new { x.PeriodCode, x.Status })
-            .Take(2)
-            .ToListAsync(cancellationToken);
-        if (periods.Count != 1)
-        {
-            throw new KnownException(
+        var period = await MachineOverheadAccountingPeriods.MatchUniqueAsync(
+                dbContext,
+                organizationId,
+                environmentId,
+                DateOnly.FromDateTime(request.CompletedAtUtc.UtcDateTime),
+                cancellationToken)
+            ?? throw new KnownException(
                 $"结算完成时点『{request.CompletedAtUtc:O}』未唯一匹配会计期间『{organizationId}·{environmentId}』。");
-        }
-
-        var period = periods[0];
         if (period.Status != AccountingPeriodStatus.Open)
             throw new ClosedAccountingPeriodForMachineOverheadSettlementException(period.PeriodCode);
 
@@ -196,5 +187,84 @@ public sealed class ResolveWorkCenterMachineOverheadRateForSettlementQueryHandle
 
         return resolved ?? throw new KnownException(
             $"工作中心『{organizationId}·{environmentId}·{workCenterId}』在会计期间『{periodCode}』缺少适用或明确不适用的机器制造费用率。");
+    }
+}
+
+/// <summary>
+/// 机器制造费用按日期取会计期间的唯一判定：期间必须唯一匹配，没有或重叠都视为无期间。
+/// 结算与生产准备检查共用这一处，保证准备检查说「已就绪」时结算也取得到同一个期间。
+/// </summary>
+internal static class MachineOverheadAccountingPeriods
+{
+    public sealed record MatchedPeriod(string PeriodCode, AccountingPeriodStatus Status);
+
+    public static async Task<MatchedPeriod?> MatchUniqueAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        DateOnly date,
+        CancellationToken cancellationToken)
+    {
+        var periods = await dbContext.AccountingPeriods
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.StartDate <= date
+                && x.EndDate >= date)
+            .Select(x => new MatchedPeriod(x.PeriodCode, x.Status))
+            .Take(2)
+            .ToListAsync(cancellationToken);
+        return periods.Count == 1 ? periods[0] : null;
+    }
+}
+
+/// <summary>
+/// 按日期返回当前会计期间，以及该期间已配置机器制造费用率（适用或明确不适用）的工作中心，供 MES 生产准备检查消费（#3795）。
+/// 期间未唯一匹配时 <see cref="MachineOverheadRatePeriodCoverageResponse.AccountingPeriodCode"/> 为空。
+/// </summary>
+public sealed record GetMachineOverheadRatePeriodCoverageQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly Date) : IQuery<MachineOverheadRatePeriodCoverageResponse>;
+
+public sealed class GetMachineOverheadRatePeriodCoverageQueryValidator
+    : AbstractValidator<GetMachineOverheadRatePeriodCoverageQuery>
+{
+    public GetMachineOverheadRatePeriodCoverageQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+        RuleFor(x => x.Date).NotEmpty();
+    }
+}
+
+public sealed record MachineOverheadRatePeriodCoverageResponse(
+    string? AccountingPeriodCode,
+    IReadOnlyList<string> ConfiguredWorkCenterIds);
+
+public sealed class GetMachineOverheadRatePeriodCoverageQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetMachineOverheadRatePeriodCoverageQuery, MachineOverheadRatePeriodCoverageResponse>
+{
+    public async Task<MachineOverheadRatePeriodCoverageResponse> Handle(
+        GetMachineOverheadRatePeriodCoverageQuery request,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = request.OrganizationId.Trim();
+        var environmentId = request.EnvironmentId.Trim();
+        var period = await MachineOverheadAccountingPeriods.MatchUniqueAsync(
+            dbContext, organizationId, environmentId, request.Date, cancellationToken);
+        if (period is null)
+            return new MachineOverheadRatePeriodCoverageResponse(null, []);
+
+        var workCenterIds = await dbContext.WorkCenterMachineOverheadRates
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.AccountingPeriodCode == period.PeriodCode)
+            .Select(x => x.WorkCenterId)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToListAsync(cancellationToken);
+        return new MachineOverheadRatePeriodCoverageResponse(period.PeriodCode, workCenterIds);
     }
 }

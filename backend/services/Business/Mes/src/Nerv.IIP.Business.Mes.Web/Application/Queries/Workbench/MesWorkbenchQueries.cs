@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -65,6 +66,8 @@ public sealed class MesFoundationReadinessService(
     MesFinishedGoodsReceiptLocationOptions finishedGoodsReceiptLocation)
 {
     private const string WorkCenterCostRateMissing = "WORK_CENTER_COST_RATE_MISSING";
+    private const string AccountingPeriodMissing = "ACCOUNTING_PERIOD_MISSING";
+    private const string WorkCenterMachineOverheadRateMissing = "WORK_CENTER_MACHINE_OVERHEAD_RATE_MISSING";
     private const string InventoryLocationMissing = "INVENTORY_LOCATION_MISSING";
     private const string LineSideLocationTypeInvalid = "LINE_SIDE_LOCATION_TYPE_INVALID";
     private const string OperationTaskDeviceUnassigned = "OPERATION_TASK_DEVICE_UNASSIGNED";
@@ -79,7 +82,7 @@ public sealed class MesFoundationReadinessService(
         {
             "quality" => await BuildQualityIssuesAsync(request, cancellationToken),
             "equipment" => await BuildEquipmentIssuesAsync(request, cancellationToken),
-            "erp" => await BuildWorkCenterCostRateIssuesAsync(request, cancellationToken),
+            "erp" => await BuildCostRateIssuesAsync(request, cancellationToken),
             "inventory" => await BuildInventoryLocationIssuesAsync(request, cancellationToken),
             _ => [],
         };
@@ -240,11 +243,7 @@ public sealed class MesFoundationReadinessService(
             .ToArray();
     }
 
-    /// <summary>
-    /// 工作中心在当前时点没有生效的成本费率时，报工的人工成本会以 <c>missing-work-center-cost-rate</c>
-    /// 进 ERP 死信，成本归集不发布，完工入库停在待入库。
-    /// </summary>
-    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildWorkCenterCostRateIssuesAsync(
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildCostRateIssuesAsync(
         GetMesFoundationReadinessAreaQuery request,
         CancellationToken cancellationToken)
     {
@@ -255,6 +254,22 @@ public sealed class MesFoundationReadinessService(
             request.LineCode,
             request.WorkCenterCode,
             cancellationToken);
+        return
+        [
+            .. await BuildWorkCenterCostRateIssuesAsync(request, workCenters, cancellationToken),
+            .. await BuildMachineOverheadRateIssuesAsync(request, workCenters, cancellationToken),
+        ];
+    }
+
+    /// <summary>
+    /// 工作中心在当前时点没有生效的成本费率时，报工的人工成本会以 <c>missing-work-center-cost-rate</c>
+    /// 进 ERP 死信，成本归集不发布，完工入库停在待入库。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildWorkCenterCostRateIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        IReadOnlyCollection<MesFoundationWorkCenter> workCenters,
+        CancellationToken cancellationToken)
+    {
         var rated = await Task.WhenAll(workCenters.Select(async workCenter => (
             WorkCenter: workCenter,
             HasRate: await foundationSourceReader.HasEffectiveWorkCenterCostRateAsync(
@@ -273,6 +288,50 @@ public sealed class MesFoundationReadinessService(
                 x.WorkCenter.Code,
                 "在「经营管理 ▸ 财务 ▸ 工作中心费率」为该工作中心新增费率修订",
                 referenceDisplayName: x.WorkCenter.DisplayName))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// 机器制造费用率按会计期间取值：工序完工日所在的会计期间必须唯一存在，且工作中心在该期间有费率修订
+    /// （适用或明确不适用），否则机器费用以 <c>missing-machine-overhead-rate</c> 进 ERP 死信。
+    /// 判定与 ERP 结算同一套，由 ERP 按今天的日期给出。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildMachineOverheadRateIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        IReadOnlyCollection<MesFoundationWorkCenter> workCenters,
+        CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        var coverage = await foundationSourceReader.GetMachineOverheadRateCoverageAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            today,
+            cancellationToken);
+        if (coverage.AccountingPeriodCode is not { } periodCode)
+        {
+            return
+            [
+                NewIssue(
+                    AccountingPeriodMissing,
+                    $"今天（{today:yyyy-MM-dd}）没有唯一对应的会计期间：完工工序的机器制造费用无法结算。",
+                    "ERP",
+                    "AccountingPeriod",
+                    today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    "请财务开立覆盖今天的会计期间，再为各工作中心录入该期间的机器制造费用率"),
+            ];
+        }
+
+        var configured = coverage.ConfiguredWorkCenterIds.ToHashSet(StringComparer.Ordinal);
+        return workCenters
+            .Where(x => !configured.Contains(x.Code))
+            .Select(x => NewIssue(
+                WorkCenterMachineOverheadRateMissing,
+                $"工作中心 {x.Code}（{x.DisplayName}）在会计期间 {periodCode} 没有机器制造费用率：完工工序的机器费用无法结算。",
+                "ERP",
+                "WorkCenter",
+                x.Code,
+                $"在「经营管理 ▸ 财务 ▸ 机器制造费用率」为该工作中心录入 {periodCode} 的费率；不产生机器费用的工作中心也要录入一条「不适用」",
+                referenceDisplayName: x.DisplayName))
             .ToArray();
     }
 

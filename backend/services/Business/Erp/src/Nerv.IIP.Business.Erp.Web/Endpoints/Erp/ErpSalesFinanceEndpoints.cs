@@ -595,6 +595,7 @@ public static class ErpFinanceEndpointContracts
         new(typeof(OpenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "openErpAccountingPeriod"),
         new(typeof(CloseAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/close", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "closeErpAccountingPeriod"),
         new(typeof(ReopenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/reopen", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "reopenErpAccountingPeriod"),
+        new(typeof(GetMachineOverheadRatePeriodCoverageEndpoint), "GET", "/api/business/v1/erp/finance/machine-overhead-rate-coverage", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpMachineOverheadRatePeriodCoverage"),
         new(typeof(ListJournalVouchersEndpoint), "GET", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpJournalVouchers"),
         new(typeof(GetTrialBalanceEndpoint), "GET", "/api/business/v1/erp/finance/trial-balance", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpTrialBalance"),
         new(typeof(GetMonthEndChecklistEndpoint), "GET", "/api/business/v1/erp/finance/month-end-checklist", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpMonthEndChecklist"),
