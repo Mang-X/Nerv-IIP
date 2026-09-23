@@ -511,6 +511,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["operation"] = ["assembly", "cnc-operation", "inspection", "packaging", "welding"],
             ["quality-reason"] = ["dimension-ng", "missing-part", "scratch", "solder-defect"],
             ["compliance-tag"] = ["msd", "reach", "rohs", "ul"],
+            ["asset-class"] = ["general-equipment", "logistics-equipment", "power-equipment", "special-equipment", "testing-equipment", "tooling-fixture"],
             ["device-status"] = ["fault", "idle", "maintenance", "running", "scrapped"],
             ["line-type"] = ["cell", "discrete", "flow"],
             ["work-center-type"] = ["section", "station-group", "work-center"]

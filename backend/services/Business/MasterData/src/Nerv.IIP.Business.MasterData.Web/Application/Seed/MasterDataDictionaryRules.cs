@@ -118,6 +118,17 @@ public static class MasterDataDictionaryRules
         new("compliance-tag", "msd", "湿敏元件"),
         new("compliance-tag", "ul", "UL认证"),
 
+        // 设备类别：#3809 补登。取 GB/T 14885《固定资产等资产基础分类与代码》设备门类下的两个
+        // 大类"通用设备""专用设备"作基础分类，另加 MES 行业设备台账常用的功能性类别（检测/物流/
+        // 动力/工装夹具），覆盖工厂常见设备资产。不带系统行为语义，登记为平台预置+可维护（默认
+        // Kind），口径同 product-category：平台给常用值，租户可继续新增。
+        new("asset-class", "general-equipment", "通用设备"),
+        new("asset-class", "special-equipment", "专用设备"),
+        new("asset-class", "testing-equipment", "检测设备"),
+        new("asset-class", "logistics-equipment", "物流设备"),
+        new("asset-class", "power-equipment", "动力设备"),
+        new("asset-class", "tooling-fixture", "工装夹具"),
+
         new("device-status", "running", "运行", ReferenceDataCodeSetKind.SystemEnum),
         new("device-status", "idle", "待机", ReferenceDataCodeSetKind.SystemEnum),
         new("device-status", "maintenance", "保养", ReferenceDataCodeSetKind.SystemEnum),
