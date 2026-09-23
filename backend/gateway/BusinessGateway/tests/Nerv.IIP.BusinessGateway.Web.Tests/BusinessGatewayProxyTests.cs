@@ -7269,6 +7269,174 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_machine_overhead_rate_facades_forward_authenticated_actor_scope_and_period()
+    {
+        var erp = new RecordingErpClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var configure = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                workCenterId = "WC-001",
+                accountingPeriodCode = "2026-09",
+                applicability = "applicable",
+                fixedOverheadBudget = 30000m,
+                variableOverheadBudget = 10000m,
+                normalCapacityMachineHours = 1000m,
+                currencyCode = "CNY",
+                reason = "monthly budget",
+            });
+        var list = await client.GetAsync(
+            "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates"
+            + "?organizationId=org-001&environmentId=env-dev&workCenterId=WC-001&accountingPeriodCode=2026-09&pageNumber=2&pageSize=10");
+
+        Assert.Equal(HttpStatusCode.OK, configure.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("user:user-admin", erp.LastConfigureMachineOverheadRateActor);
+        Assert.Equal(
+            new BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest(
+                "org-001", "env-dev", "WC-001", "2026-09",
+                BusinessConsoleErpMachineOverheadApplicability.Applicable,
+                30000m, 10000m, 1000m, "CNY", "monthly budget"),
+            erp.LastConfigureMachineOverheadRateRequest);
+        Assert.Equal(
+            new BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest("org-001", "env-dev", "WC-001", "2026-09", 2, 10),
+            erp.LastListMachineOverheadRatesRequest);
+
+        using var configureDocument = JsonDocument.Parse(await configure.Content.ReadAsStringAsync());
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2e01", configureDocument.RootElement.GetProperty("data").GetProperty("workCenterMachineOverheadRateId").GetString());
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var item = listDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("notApplicable", item.GetProperty("applicability").GetString());
+        Assert.Equal("user:user-admin", item.GetProperty("changedBy").GetString());
+    }
+
+    [Fact]
+    public async Task Erp_machine_overhead_rate_http_client_sends_body_scope_integer_applicability_and_actor_header()
+    {
+        string? postedJson = null;
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                postedJson = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return JsonResponse(HttpStatusCode.OK, new
+                {
+                    data = new { workCenterMachineOverheadRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2e01" },
+                    success = true,
+                    message = string.Empty,
+                    code = 0,
+                });
+            }
+
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    workCenterId = "WC-001",
+                    accountingPeriodCode = "2026-09",
+                    currentRevision = 2,
+                    pageNumber = 1,
+                    pageSize = 50,
+                    totalCount = 2,
+                    items = new[]
+                    {
+                        new
+                        {
+                            workCenterMachineOverheadRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2e02",
+                            accountingPeriodCode = "2026-09",
+                            applicability = 1,
+                            fixedOverheadBudget = 0m,
+                            variableOverheadBudget = 0m,
+                            normalCapacityMachineHours = 0m,
+                            fixedHourlyRate = 0m,
+                            variableHourlyRate = 0m,
+                            totalHourlyRate = 0m,
+                            currencyCode = "CNY",
+                            revision = 2,
+                            changedBy = "user:user-admin",
+                            reason = "no machines",
+                            changedAtUtc = "2026-09-23T02:00:00Z",
+                        },
+                        new
+                        {
+                            workCenterMachineOverheadRateId = "018f4b87-9a0c-7a6b-9a3a-5fd5825c2e01",
+                            accountingPeriodCode = "2026-09",
+                            applicability = 0,
+                            fixedOverheadBudget = 30000m,
+                            variableOverheadBudget = 10000m,
+                            normalCapacityMachineHours = 1000m,
+                            fixedHourlyRate = 30m,
+                            variableHourlyRate = 10m,
+                            totalHourlyRate = 40m,
+                            currencyCode = "CNY",
+                            revision = 1,
+                            changedBy = "user:user-admin",
+                            reason = "monthly budget",
+                            changedAtUtc = "2026-09-23T01:00:00Z",
+                        },
+                    },
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
+        var subject = new HttpBusinessErpCostingClient(httpClient);
+
+        var configured = await subject.ConfigureWorkCenterMachineOverheadRateAsync(
+            "internal-test-token",
+            new BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest(
+                "org-001", "env-dev", "WC-001", "2026-09",
+                BusinessConsoleErpMachineOverheadApplicability.NotApplicable,
+                0m, 0m, 0m, "CNY", "no machines"),
+            "user:user-admin",
+            CancellationToken.None);
+        var listed = await subject.ListWorkCenterMachineOverheadRatesAsync(
+            "internal-test-token",
+            new BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest("org-001", "env-dev", "WC-001", "2026-09"),
+            CancellationToken.None);
+
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2e01", configured.WorkCenterMachineOverheadRateId);
+        Assert.Equal("/api/business/v1/erp/finance/work-center-machine-overhead-rates", handler.Requests[0].RequestUri!.PathAndQuery);
+        Assert.Equal("user:user-admin", handler.Requests[0].Headers.GetValues("X-Authenticated-Actor").Single());
+        Assert.Equal("internal-test-token", handler.Requests[0].Headers.Authorization!.Parameter);
+        Assert.False(handler.Requests[0].Headers.Contains("X-Organization-Id"));
+        using (var posted = JsonDocument.Parse(postedJson!))
+        {
+            Assert.Equal("org-001", posted.RootElement.GetProperty("organizationId").GetString());
+            Assert.Equal("env-dev", posted.RootElement.GetProperty("environmentId").GetString());
+            Assert.Equal(1, posted.RootElement.GetProperty("applicability").GetInt32());
+            Assert.False(posted.RootElement.TryGetProperty("actor", out _));
+        }
+        Assert.Equal(
+            "/api/business/v1/erp/finance/work-center-machine-overhead-rates?organizationId=org-001&environmentId=env-dev&workCenterId=WC-001&accountingPeriodCode=2026-09&pageNumber=1&pageSize=50",
+            handler.Requests[1].RequestUri!.PathAndQuery);
+        Assert.Equal(2, listed.CurrentRevision);
+        Assert.Equal(
+            new[] { BusinessConsoleErpMachineOverheadApplicability.NotApplicable, BusinessConsoleErpMachineOverheadApplicability.Applicable },
+            listed.Items.Select(x => x.Applicability));
+        Assert.Equal(40m, listed.Items.Last().TotalHourlyRate);
+    }
+
+    [Fact]
     public void Erp_work_center_cost_rate_validator_rejects_an_omitted_effective_start()
     {
         var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
@@ -18706,6 +18874,54 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
     public BusinessConsoleListErpWorkCenterCostRatesRequest? LastListWorkCenterCostRatesRequest { get; private set; }
 
     public string? LastConfigureWorkCenterCostRateActor { get; private set; }
+
+    public BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest? LastConfigureMachineOverheadRateRequest { get; private set; }
+
+    public string? LastConfigureMachineOverheadRateActor { get; private set; }
+
+    public BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest? LastListMachineOverheadRatesRequest { get; private set; }
+
+    public Task<BusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse> ConfigureWorkCenterMachineOverheadRateAsync(
+        string internalBearerToken,
+        BusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastConfigureMachineOverheadRateRequest = request;
+        LastConfigureMachineOverheadRateActor = actor;
+        return Task.FromResult(new BusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse("018f4b87-9a0c-7a6b-9a3a-5fd5825c2e01"));
+    }
+
+    public Task<BusinessConsoleErpWorkCenterMachineOverheadRateListResponse> ListWorkCenterMachineOverheadRatesAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkCenterMachineOverheadRatesRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastListMachineOverheadRatesRequest = request;
+        return Task.FromResult(new BusinessConsoleErpWorkCenterMachineOverheadRateListResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkCenterId,
+            request.AccountingPeriodCode,
+            1,
+            request.PageNumber,
+            request.PageSize,
+            1,
+            [
+                new BusinessConsoleErpWorkCenterMachineOverheadRateItem(
+                    "018f4b87-9a0c-7a6b-9a3a-5fd5825c2e01",
+                    request.AccountingPeriodCode,
+                    BusinessConsoleErpMachineOverheadApplicability.NotApplicable,
+                    0m, 0m, 0m, 0m, 0m, 0m,
+                    "CNY",
+                    1,
+                    "user:user-admin",
+                    "no machines",
+                    DateTimeOffset.Parse("2026-09-23T01:00:00Z", CultureInfo.InvariantCulture)),
+            ]));
+    }
 
     public BusinessServiceProxyException? ConfigureWorkCenterCostRateFailure { get; init; }
 
