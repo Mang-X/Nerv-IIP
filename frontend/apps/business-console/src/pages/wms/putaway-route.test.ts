@@ -122,6 +122,13 @@ vi.mock('@/composables/useBusinessWms', async () => {
       inboundOrdersPending: shallowRef(false),
       inboundOrdersTotal: computed(() => 1),
       refreshInboundOrders: vi.fn(),
+      // 入库单的收货行（含免检行）：上架行号只能从所选入库单的这些行里挑。
+      receivingQualityGates: computed(() => [
+        { inboundOrderId: 'ib-1', lineNo: '1', skuCode: 'SKU-001', receivedQuantity: 5 },
+        { inboundOrderId: 'ib-1', lineNo: '2', skuCode: 'SKU-002', receivedQuantity: 3 },
+        { inboundOrderId: 'ib-2', lineNo: '9', skuCode: 'SKU-009', receivedQuantity: 1 },
+      ]),
+      receivingQualityGatesPending: shallowRef(false),
     }),
   }
 })
@@ -197,6 +204,15 @@ describe('WMS putaway route handoff', () => {
     wrapper.unmount()
   })
 
+  it('入库单行只从所选入库单的收货行里挑，不混入别的入库单', async () => {
+    const wrapper = mountPutaway()
+    await flushPromises()
+
+    const line = document.body.querySelector<HTMLInputElement>('#wms-putaway-line')
+    expect(line?.dataset.options).toBe('1,2')
+    wrapper.unmount()
+  })
+
   it('requires a positive quantity before calling the create endpoint', async () => {
     const wrapper = mountPutaway()
     await flushPromises()
@@ -262,7 +278,7 @@ function wmsStubs() {
       props: ['modelValue', 'options', 'id'],
       emits: ['update:modelValue'],
       template:
-        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        '<input :id="id" :value="modelValue" :data-options="options.map((o) => o.value).join(\',\')" @input="$emit(\'update:modelValue\', $event.target.value)" />',
     },
     NvSearchSelect: {
       props: ['modelValue', 'options', 'id'],

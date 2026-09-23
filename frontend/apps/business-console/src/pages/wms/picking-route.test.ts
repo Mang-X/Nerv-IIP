@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { computed, reactive, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -60,6 +60,7 @@ const routeState = vi.hoisted(() => ({
 const wmsState = vi.hoisted(() => ({
   filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
   completePicking: vi.fn(async () => undefined),
+  createPicking: vi.fn(async () => undefined),
   refreshPickingTasks: vi.fn(async () => undefined),
 }))
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
@@ -125,7 +126,12 @@ vi.mock('@/composables/useBusinessWms', () => ({
   useWmsOutboundOrders: () => ({
     filters: reactive({ skip: 0, take: 200 }),
     outboundOrders: computed(() => [
-      { outboundOrderId: 'ob-1', outboundOrderNo: 'OB-001', siteCode: 'S1' },
+      {
+        outboundOrderId: 'ob-1',
+        outboundOrderNo: 'OB-001',
+        siteCode: 'S1',
+        lines: [{ lineNo: '1', skuCode: 'SKU-001', requestedQuantity: 5, uomCode: 'EA' }],
+      },
     ]),
     outboundOrdersError: shallowRef(undefined),
     outboundOrdersPending: shallowRef(false),
@@ -144,7 +150,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     wmsState.filters = filters
 
     return {
-      createPicking: vi.fn(),
+      createPicking: wmsState.createPicking,
       createPickingError: shallowRef(undefined),
       createPickingPending: shallowRef(false),
       filters,
@@ -271,6 +277,46 @@ describe('WMS picking route context', () => {
 
     expect(wmsState.refreshPickingTasks).toHaveBeenCalledOnce()
     expect(candidateState.refresh).toHaveBeenCalledOnce()
+  })
+
+  it('选了出库单后行号从它的明细行里带出，提交体的行号不变', async () => {
+    const wrapper = mount(PickingPage, {
+      global: {
+        stubs: {
+          ...uiStubs,
+          // 选择器桩成带同名 id 的输入位；data-options 暴露候选，便于断言行号来自所选出库单。
+          NvEntityPicker: {
+            props: ['modelValue', 'options', 'id'],
+            emits: ['update:modelValue'],
+            template:
+              '<input :id="id" :value="modelValue" :data-options="options.map((o) => o.value).join(\',\')" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+        },
+      },
+    })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '新建拣货任务')!
+      .trigger('click')
+
+    expect(wrapper.get('#wms-picking-line').attributes('data-options')).toBe('')
+    await wrapper.get('#wms-picking-outbound').setValue('OB-001')
+    expect(wrapper.get('#wms-picking-line').attributes('data-options')).toBe('1')
+    expect((wrapper.get('#wms-picking-line').element as HTMLInputElement).value).toBe('1')
+
+    await wrapper.get('#wms-picking-no').setValue('PICK-OB-001-01')
+    await wrapper.get('#wms-picking-from').setValue('A-01')
+    await wrapper.get('#wms-picking-to').setValue('STAGE-01')
+    await wrapper.get('#wms-picking-no').element.closest('form')!.dispatchEvent(new Event('submit'))
+    await flushPromises()
+
+    expect(wmsState.createPicking).toHaveBeenCalledWith('ob-1', {
+      taskNo: 'PICK-OB-001-01',
+      lineNo: '1',
+      fromLocationCode: 'A-01',
+      toLocationCode: 'STAGE-01',
+      quantity: undefined,
+    })
   })
 
   it('超拣不超过计划量 110% 时要求差异原因，填写后才提交', async () => {

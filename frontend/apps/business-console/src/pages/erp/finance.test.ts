@@ -60,6 +60,7 @@ const state = vi.hoisted(() => ({
   payables: [] as Array<Record<string, unknown>>,
   vouchers: [] as Array<Record<string, unknown>>,
   costCandidates: [] as Array<Record<string, unknown>>,
+  createCostCandidate: vi.fn(async (_body: Record<string, unknown>) => undefined),
 }))
 
 function listShape(itemsRef: () => Array<Record<string, unknown>>) {
@@ -115,7 +116,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
   }),
   useErpCostCandidates: () => ({
     ...listShape(() => state.costCandidates),
-    createCostCandidate: vi.fn(),
+    createCostCandidate: state.createCostCandidate,
     createCostCandidatePending: shallowRef(false),
     createCostCandidateError: shallowRef(undefined),
   }),
@@ -207,5 +208,54 @@ describe('ERP finance voucher and cost pages', () => {
         select.findAll('option').some((option) => option.attributes('value') === 'all'),
       )
     expect(allSentinelSelects).toHaveLength(0)
+  })
+
+  it('成本候选的来源单据按成本大类取经营管理已有单据目录，选中的单号原样提交，换大类清掉已选单据', async () => {
+    state.createCostCandidate.mockClear()
+    const wrapper = mount(CostCandidatesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...selectStubs,
+          NvDialog: { template: '<div><slot /></div>' },
+          NvDialogContent: { template: '<div><slot /></div>' },
+          NvDialogHeader: { template: '<div><slot /></div>' },
+          NvDialogTitle: { template: '<h2><slot /></h2>' },
+          NvDialogDescription: { template: '<p><slot /></p>' },
+          NvDialogFooter: { template: '<div><slot /></div>' },
+          NvDialogClose: { template: '<div><slot /></div>' },
+          // 选择器桩成带同名 id 的输入位；data-options 暴露候选。
+          NvEntityPicker: {
+            props: ['modelValue', 'options', 'id'],
+            emits: ['update:modelValue'],
+            template:
+              '<input :id="id" data-picker :value="modelValue" :data-options="options.map((o) => o.value).join(\',\')" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+        },
+      },
+    })
+    await flushPromises()
+    const typeSelect = () => wrapper.get('form select')
+    // 生产成本的单据（生产工单）不在经营管理目录里，仍是手填框（第二波 #3775 处理）。
+    expect(wrapper.find('#erp-cc-source[data-picker]').exists()).toBe(false)
+
+    await typeSelect().setValue('procurement')
+    expect(wrapper.get('#erp-cc-source').attributes('data-options')).toBe('PO-001')
+    await wrapper.get('#erp-cc-source').setValue('PO-001')
+
+    await typeSelect().setValue('logistics')
+    expect(wrapper.get('#erp-cc-source').attributes('data-options')).toBe('SO-001')
+    expect((wrapper.get('#erp-cc-source').element as HTMLInputElement).value).toBe('')
+
+    await wrapper.get('#erp-cc-source').setValue('SO-001')
+    await wrapper.get('#erp-cc-amount').setValue('120.5')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.createCostCandidate).toHaveBeenCalledWith({
+      sourceType: 'logistics',
+      sourceDocumentNo: 'SO-001',
+      amount: 120.5,
+      currencyCode: 'CNY',
+    })
   })
 })

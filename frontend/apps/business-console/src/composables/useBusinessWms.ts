@@ -89,6 +89,8 @@ async function fetchAllReceivingQualityGates(query: {
   organizationId: string
   environmentId: string
   includeNotRequired: boolean
+  scopeKind?: string
+  scopeId?: string
 }) {
   return fetchAllWmsPages(
     (skip) =>
@@ -389,29 +391,26 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     inboundOrdersScopeReady,
     () => inboundOrdersQuery.isLoading.value,
   )
-  const receivingQualityGatesQuery = useQuery(() =>
-    withBusinessContextEnabled(
+  // 收货行读面与入库单列表同样按作业范围授权（网关 ResolveScope），不带范围会被下游拒绝。
+  const receivingQualityGatesQuery = useQuery(() => {
+    const scopedQuery = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      includeNotRequired: true,
+      ...optionalQuery('scopeKind', filters.scopeKind),
+      ...optionalQuery('scopeId', filters.scopeId),
+    }
+    return withWmsListScopeEnabled(
       {
         ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
-          query: {
-            organizationId: filters.organizationId,
-            environmentId: filters.environmentId,
-            skip: 0,
-            take: RECEIVING_QUALITY_PAGE_SIZE,
-            includeNotRequired: true,
-          },
+          query: { ...scopedQuery, skip: 0, take: RECEIVING_QUALITY_PAGE_SIZE },
         }),
-        query: () =>
-          fetchAllReceivingQualityGates({
-            organizationId: filters.organizationId,
-            environmentId: filters.environmentId,
-            includeNotRequired: true,
-          }),
+        query: () => fetchAllReceivingQualityGates(scopedQuery),
         autoRefetch: () => RECEIVING_QUALITY_POLL_INTERVAL_MS,
       },
       filters,
-    ),
-  )
+    )
+  })
   const supplierReturnsQuery = useQuery(() =>
     withBusinessContextEnabled(
       {
@@ -436,7 +435,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
 
   function refreshAll() {
     void refetchWithWmsListScope(filters, inboundOrdersQuery)
-    void refetchWithBusinessContext(filters, receivingQualityGatesQuery)
+    void refetchWithWmsListScope(filters, receivingQualityGatesQuery)
     void refetchWithBusinessContext(filters, supplierReturnsQuery)
   }
 
@@ -589,7 +588,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     supplierReturnsError: supplierReturnsQuery.error,
     refreshReceivingQuality: () =>
       Promise.all([
-        refetchWithBusinessContext(filters, receivingQualityGatesQuery),
+        refetchWithWmsListScope(filters, receivingQualityGatesQuery),
         refetchWithBusinessContext(filters, supplierReturnsQuery),
       ]),
     completeInbound: completeInboundOrder,

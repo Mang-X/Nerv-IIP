@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpCostCandidates, useErpFinanceSummary } from '@/composables/useBusinessErp'
+import {
+  useErpPayableSourceCatalog,
+  useErpReceivableSourceCatalog,
+} from '@/composables/useErpPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -14,6 +18,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -30,7 +35,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, readCount } from '../shared'
 
@@ -142,6 +147,45 @@ const invalid = computed(() => ({
   amount: !(Number(form.amount) > 0),
 }))
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
+
+// 来源单据按成本大类从经营管理已有的单据目录里挑：采购成本挂采购订单，物流成本挂销售订单 / 发货单。
+// 生产、维护成本的单据（生产工单、维修工单）不在经营管理的单据目录里，仍按单号录入。
+const { payableSourceOptions, payableSourcesPending } = useErpPayableSourceCatalog()
+const { receivableSourceOptions, receivableSourcesPending } = useErpReceivableSourceCatalog()
+const sourceDocumentCatalog = computed<{
+  options: EntityPickerOption[]
+  pending: boolean
+  placeholder: string
+  sourceText: string
+  emptyText: string
+} | null>(() => {
+  if (form.sourceType === 'procurement') {
+    return {
+      options: payableSourceOptions.value,
+      pending: payableSourcesPending.value,
+      placeholder: '选择采购订单',
+      sourceText: '数据来自采购订单',
+      emptyText: '暂无采购订单',
+    }
+  }
+  if (form.sourceType === 'logistics') {
+    return {
+      options: receivableSourceOptions.value,
+      pending: receivableSourcesPending.value,
+      placeholder: '选择销售订单或发货单',
+      sourceText: '数据来自销售订单与发货单',
+      emptyText: '暂无销售订单或发货单',
+    }
+  }
+  return null
+})
+// 换了成本大类，原先挑的单据就不再是这一类的来源。
+watch(
+  () => form.sourceType,
+  () => {
+    form.sourceDocumentNo = ''
+  },
+)
 
 function openDialog() {
   form.sourceType = 'production'
@@ -266,7 +310,21 @@ async function submit() {
               <NvFieldLabel for="erp-cc-source">
                 来源单据 <span class="text-destructive">*</span>
               </NvFieldLabel>
+              <NvEntityPicker
+                v-if="sourceDocumentCatalog"
+                id="erp-cc-source"
+                v-model="form.sourceDocumentNo"
+                :options="sourceDocumentCatalog.options"
+                title="选择来源单据"
+                :placeholder="sourceDocumentCatalog.placeholder"
+                :source-text="sourceDocumentCatalog.sourceText"
+                :empty-text="sourceDocumentCatalog.emptyText"
+                :loading="sourceDocumentCatalog.pending"
+                aria-label="来源单据"
+                :invalid="showErrors && invalid.sourceDocumentNo"
+              />
               <NvInput
+                v-else
                 id="erp-cc-source"
                 v-model="form.sourceDocumentNo"
                 :data-invalid="showErrors && invalid.sourceDocumentNo ? '' : undefined"

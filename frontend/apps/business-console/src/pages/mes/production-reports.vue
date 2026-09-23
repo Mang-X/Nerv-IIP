@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type {
+  BusinessConsoleMesProductionReportRow,
+  BusinessConsoleMesWorkOrderItem,
+} from '@nerv-iip/api-client'
+import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
@@ -8,7 +11,13 @@ import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
+  useMesWorkOrders,
 } from '@/composables/useBusinessMes'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
+import {
+  buildOperationTaskPickerOptions,
+  buildWorkOrderPickerOptions,
+} from '@/composables/mes/workOrderPickerOptions'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
@@ -31,6 +40,7 @@ import {
   NvAlertDialogTitle,
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -50,7 +60,7 @@ import {
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -91,15 +101,52 @@ const candidateWorkOrderId = ref('')
 const candidateOperationTaskId = ref('')
 const dismissalReason = ref('')
 const selectedCandidateId = ref<string | null>(null)
-function resetCandidateAction() {
-  candidateWorkOrderId.value = ''
-  candidateOperationTaskId.value = ''
+
+// 转正要挑工单和它下面的工序任务。工单是持续新增的大目录，走服务端搜索（同追溯查询页）；
+// 工序任务取已选工单自带的工序，不另起一份目录。
+const workOrderCatalog = useMesWorkOrders({ initialTake: 50 })
+const { keyword: workOrderSearch } = useMesKeywordFilter(workOrderCatalog.filters)
+const candidateWorkOrderOptions = computed<EntityPickerOption[]>(() =>
+  buildWorkOrderPickerOptions(workOrderCatalog.workOrders.value, candidateWorkOrderId.value),
+)
+// 工序取自已选工单那一行。工单目录走服务端搜索，改搜别的单号后已选工单会滑出结果集，
+// 所以记住最后一次在结果里见到的那一行，别让已选工序凭空变成「未选择」。
+const candidateWorkOrder = shallowRef<BusinessConsoleMesWorkOrderItem>()
+watch(
+  [() => workOrderCatalog.workOrders.value, candidateWorkOrderId],
+  ([orders, workOrderId]) => {
+    const found = orders.find((order) => order.workOrderId?.trim() === workOrderId)
+    if (found) candidateWorkOrder.value = found
+    else if (candidateWorkOrder.value?.workOrderId?.trim() !== workOrderId)
+      candidateWorkOrder.value = undefined
+  },
+  { immediate: true },
+)
+const candidateOperationTaskOptions = computed<EntityPickerOption[]>(() =>
+  buildOperationTaskPickerOptions(candidateWorkOrder.value),
+)
+// 换了工单，上一张工单的工序任务就不再成立，跟着清掉。
+const candidateWorkOrderModel = computed({
+  get: () => candidateWorkOrderId.value,
+  set: (value: string) => {
+    if (value === candidateWorkOrderId.value) return
+    candidateWorkOrderId.value = value
+    candidateOperationTaskId.value = ''
+  },
+})
+
+function resetCandidateAction(candidate?: TelemetryCandidate) {
+  // 候选自带的工单 / 工序任务就是默认选中，操作员只在需要改派时才动。
+  candidateWorkOrderId.value = candidate?.workOrderId?.trim() ?? ''
+  candidateOperationTaskId.value = candidate?.operationTaskId?.trim() ?? ''
   dismissalReason.value = ''
+  // 选择器一页装不下整个工单目录：用候选自带的工单号当搜索词，让服务端把它和它的工序捞回来。
+  workOrderSearch.value = candidateWorkOrderId.value
 }
-function toggleCandidate(candidateId?: string) {
-  resetCandidateAction()
-  selectedCandidateId.value =
-    selectedCandidateId.value === candidateId ? null : (candidateId ?? null)
+function toggleCandidate(candidate: TelemetryCandidate) {
+  const opening = selectedCandidateId.value !== candidate.candidateId
+  resetCandidateAction(opening ? candidate : undefined)
+  selectedCandidateId.value = opening ? (candidate.candidateId ?? null) : null
 }
 
 // 冲销是写操作(网关按 business.mes.reporting.write 鉴权)。页面准入只需 read,故写权限需单独门控:
@@ -405,16 +452,12 @@ function formatDateTime(value?: string | null) {
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
-async function promoteCandidate(candidate: {
-  candidateId?: string
-  workOrderId?: string | null
-  operationTaskId?: string | null
-}) {
-  if (!candidate.candidateId) return
-  const workOrderId = candidateWorkOrderId.value.trim() || candidate.workOrderId?.trim()
-  const operationTaskId = candidateOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
+async function promoteCandidate(candidateId?: string) {
+  if (!candidateId) return
+  const workOrderId = candidateWorkOrderId.value
+  const operationTaskId = candidateOperationTaskId.value
   if (!workOrderId || !operationTaskId) return
-  await candidateQueue.promote(candidate.candidateId, workOrderId, operationTaskId)
+  await candidateQueue.promote(candidateId, workOrderId, operationTaskId)
   selectedCandidateId.value = null
   resetCandidateAction()
 }
@@ -808,7 +851,7 @@ async function dismissCandidate(candidateId?: string) {
                 {{ candidateStateText(candidate) }}
               </p>
             </div>
-            <NvButton size="sm" variant="outline" @click="toggleCandidate(candidate.candidateId)"
+            <NvButton size="sm" variant="outline" @click="toggleCandidate(candidate)"
               >处理</NvButton
             >
           </div>
@@ -816,26 +859,58 @@ async function dismissCandidate(candidateId?: string) {
             v-if="selectedCandidateId === candidate.candidateId"
             class="mt-4 grid gap-3 md:grid-cols-2"
           >
-            <label class="text-sm"
-              >工单<NvInput
-                v-model="candidateWorkOrderId"
-                :placeholder="readFaceText(candidate.workOrderId, '输入真实工单号')"
-                class="mt-1"
-            /></label>
-            <label class="text-sm"
-              >工序任务<NvInput
+            <div class="grid gap-1 text-sm">
+              <NvFieldLabel :for="`candidate-work-order-${candidate.candidateId}`"
+                >工单</NvFieldLabel
+              >
+              <NvEntityPicker
+                :id="`candidate-work-order-${candidate.candidateId}`"
+                v-model="candidateWorkOrderModel"
+                v-model:search="workOrderSearch"
+                :options="candidateWorkOrderOptions"
+                title="选择工单"
+                placeholder="选择工单"
+                search-placeholder="搜索工单号 / 物料…"
+                source-text="数据来自制造执行工单列表"
+                empty-text="当前范围内没有匹配的工单"
+                :loading="workOrderCatalog.workOrdersPending.value"
+                server-search
+                :total-count="workOrderCatalog.workOrdersTotal.value"
+                clearable
+                aria-label="工单"
+              />
+            </div>
+            <div class="grid gap-1 text-sm">
+              <NvFieldLabel :for="`candidate-operation-task-${candidate.candidateId}`"
+                >工序任务</NvFieldLabel
+              >
+              <NvEntityPicker
+                :id="`candidate-operation-task-${candidate.candidateId}`"
                 v-model="candidateOperationTaskId"
-                :placeholder="readFaceText(candidate.operationTaskId, '输入真实工序任务号')"
-                class="mt-1"
-            /></label>
+                :options="candidateOperationTaskOptions"
+                :show-code="false"
+                :disabled="!candidateWorkOrderId"
+                title="选择工序任务"
+                :placeholder="candidateWorkOrderId ? '选择工序任务' : '先选工单'"
+                source-text="数据来自所选工单的工序任务"
+                empty-text="该工单没有工序任务"
+                :loading="workOrderCatalog.workOrdersPending.value"
+                clearable
+                aria-label="工序任务"
+              />
+            </div>
             <label class="text-sm md:col-span-2"
               >忽略原因<NvInput v-model="dismissalReason" placeholder="忽略时必填" class="mt-1"
             /></label>
             <div class="flex gap-2 md:col-span-2">
               <NvButton
                 size="sm"
-                :disabled="candidateQueue.actionPending.value"
-                @click="promoteCandidate(candidate)"
+                :disabled="
+                  candidateQueue.actionPending.value ||
+                  !candidateWorkOrderId ||
+                  !candidateOperationTaskId
+                "
+                @click="promoteCandidate(candidate.candidateId)"
                 >确认并转正</NvButton
               ><NvButton
                 size="sm"

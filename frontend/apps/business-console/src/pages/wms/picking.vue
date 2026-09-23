@@ -149,6 +149,9 @@ const outboundOrderNoById = computed(() => {
   for (const [no, id] of outboundOrderIdByNo.value) map.set(id, no)
   return map
 })
+// 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
 const outboundOrderSelection = computed({
   // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
   get: () =>
@@ -188,11 +191,35 @@ const createForm = reactive({
   toLocationCode: '',
   quantity: '',
 })
+// 行号只能是所选出库单上真实存在的行：出库单列表每张单自带它的行。
+const outboundLineOptions = computed(() =>
+  (
+    outboundOrders.value.find(
+      (order) => order.outboundOrderId?.trim() === createForm.outboundOrderId,
+    )?.lines ?? []
+  ).flatMap((line) => {
+    const lineNo = line.lineNo?.trim()
+    if (!lineNo) return []
+    // 物料名放进主文案（可截断），辅助信息只留数量：辅助信息不截断，放长了会把行号挤没。
+    const sku = line.skuCode ? (resolveSkuName(line.skuCode) ?? line.skuCode) : ''
+    const label = sku ? `第 ${lineNo} 行 · ${sku}` : `第 ${lineNo} 行`
+    const hint =
+      line.requestedQuantity == null
+        ? ''
+        : `需求 ${line.requestedQuantity} ${line.uomCode ?? ''}`.trim()
+    return [{ value: lineNo, label, ...(hint ? { hint } : {}) }]
+  }),
+)
+// 换了出库单，上一张单的行号就不再成立；新单只有一行时直接带上。
+watch(outboundLineOptions, (options) => {
+  if (options.some((option) => option.value === createForm.lineNo)) return
+  createForm.lineNo = options.length === 1 ? options[0]!.value : ''
+})
 
 function openCreate() {
   createForm.outboundOrderId = ''
   createForm.taskNo = ''
-  createForm.lineNo = '1'
+  createForm.lineNo = ''
   createForm.fromLocationCode = ''
   createForm.toLocationCode = ''
   createForm.quantity = ''
@@ -207,7 +234,7 @@ async function submitCreate() {
     !createForm.fromLocationCode.trim() ||
     !createForm.toLocationCode.trim()
   ) {
-    createError.value = '请填写出库单、任务号、行号与起讫库位。'
+    createError.value = '请填写出库单、任务号、出库单行与起讫库位。'
     return
   }
   if (createForm.quantity !== '' && !(Number(createForm.quantity) > 0)) {
@@ -354,10 +381,6 @@ const headerCount = computed(() => {
   if (pickingTasksPending.value) return '加载中'
   return `${pickingTasksTotal.value} 个拣货任务`
 })
-
-// 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
-const { resolveSkuName } = useSkuNames()
-const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
 
 /** 库位展示串：优先中文名，名录查不到就只显编码。 */
 function locationLabel(code?: string | null) {
@@ -689,8 +712,20 @@ function firstQuery(value: unknown) {
               <NvInput id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
             </NvField>
             <NvField>
-              <NvFieldLabel for="wms-picking-line">行号</NvFieldLabel>
-              <NvInput id="wms-picking-line" v-model="createForm.lineNo" autocomplete="off" />
+              <NvFieldLabel for="wms-picking-line">出库单行</NvFieldLabel>
+              <NvEntityPicker
+                id="wms-picking-line"
+                v-model="createForm.lineNo"
+                :options="outboundLineOptions"
+                :show-code="false"
+                :disabled="!createForm.outboundOrderId"
+                title="选择出库单行"
+                :placeholder="createForm.outboundOrderId ? '选择出库单行' : '先选出库单'"
+                source-text="数据来自所选出库单的明细行"
+                empty-text="该出库单没有明细行"
+                :loading="outboundOrdersPending"
+                aria-label="出库单行"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-picking-from">拣货库位</NvFieldLabel>

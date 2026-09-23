@@ -20,6 +20,7 @@ import {
   useBusinessEquipmentAvailability,
   useBusinessEquipmentDevice,
   useBusinessEquipmentOverview,
+  useEquipmentDeviceAlarms,
 } from './useBusinessEquipment'
 import { useBusinessContextStore } from '@/stores/businessContext'
 
@@ -330,6 +331,27 @@ describe('business equipment composables', () => {
     expect(failed.alarms.value).toEqual([])
     expect(failed.alarmsHasSuccessfulResponse.value).toBe(false)
     expect(failed.alarmsHasFailedResponse.value).toBe(true)
+  })
+
+  it('单台设备的报警由服务端按设备过滤，未选设备时不发请求', () => {
+    const none = useEquipmentDeviceAlarms('')
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleEquipmentAlarms')?.enabled).toBe(
+      false,
+    )
+    expect(none.alarms.value).toEqual([])
+
+    coladaState.queryDataById.set('listBusinessConsoleEquipmentAlarms', {
+      success: true,
+      data: { items: [{ alarmEventId: 'alarm-1', deviceAssetId: 'DEV-SMT-01' }] },
+    })
+    const device = useEquipmentDeviceAlarms('DEV-SMT-01')
+    expect(listBusinessConsoleEquipmentAlarmsQueryOptions).toHaveBeenLastCalledWith({
+      query: { organizationId: 'org-001', environmentId: 'env-dev', deviceAssetId: 'DEV-SMT-01' },
+    })
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleEquipmentAlarms')?.enabled).toBe(
+      true,
+    )
+    expect(device.alarms.value.map((alarm) => alarm.alarmEventId)).toEqual(['alarm-1'])
   })
 
   it('posts alarm lifecycle actions with current business context', async () => {
