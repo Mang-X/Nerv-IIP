@@ -121,6 +121,25 @@ public sealed class ReworkWorkOrderCostApplicationTests
     }
 
     [Fact]
+    public async Task Cost_readback_keyword_matches_work_order_or_sku_fragments_inside_the_requested_environment()
+    {
+        await using var db = CreateDb();
+        db.WorkOrderCosts.AddRange(
+            WorkOrderCost.Open("org-001", "env-dev", "WO-2026-0917", "FG-A"),
+            WorkOrderCost.Open("org-001", "env-dev", "WO-2026-0001", "FG-0917-B"),
+            WorkOrderCost.Open("org-001", "env-dev", "WO-2026-0002", "FG-C"),
+            WorkOrderCost.Open("org-001", "env-other", "WO-2026-0917", "FG-A"));
+        await db.SaveChangesAsync();
+
+        var response = await new ListWorkOrderCostsQueryHandler(db).Handle(
+            new ListWorkOrderCostsQuery("org-001", "env-dev", Keyword: " 0917 "),
+            CancellationToken.None);
+
+        Assert.Equal(2, response.Total);
+        Assert.Equal(["WO-2026-0001", "WO-2026-0917"], response.Items.Select(x => x.WorkOrderId));
+    }
+
+    [Fact]
     public void Work_order_cost_readback_is_a_governed_public_finance_contract()
     {
         Assert.NotNull(typeof(ListWorkOrderCostsRequest).GetProperty("WorkOrderId"));

@@ -127,6 +127,10 @@ builder.Services.AddHttpClient<IBusinessErpClient, HttpBusinessErpClient>(client
 {
     client.BaseAddress = erpBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessErpCostingClient, HttpBusinessErpCostingClient>(client =>
+{
+    client.BaseAddress = erpBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessWmsClient, HttpBusinessWmsClient>(client =>
 {
     client.BaseAddress = wmsBaseAddress;

@@ -117,6 +117,12 @@ const render = () =>
       stubs: {
         BusinessLayout: { template: '<main><slot /></main>' },
         RouterLink: { template: '<a><slot /></a>' },
+        WorkOrderCostPicker: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template:
+            '<input aria-label="工单" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        },
       },
     },
   })
@@ -210,7 +216,7 @@ describe('工单成本差异', () => {
     const wrapper = render()
     await flushPromises()
     data.workOrder.page = 2
-    await wrapper.get('input[aria-label="工单编号"]').setValue(' WO-202609-0190 ')
+    await wrapper.get('input[aria-label="工单"]').setValue(' WO-202609-0190 ')
     await wrapper.get('form').trigger('submit')
     expect(data.workOrder.id).toBe('WO-202609-0190')
     expect(data.workOrder.page).toBe(1)

@@ -15,6 +15,7 @@ import {
 import { computed, reactive } from 'vue'
 import { useErpMachineOverhead } from '@/composables/useBusinessErp'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   allocationDifference,
@@ -127,12 +128,7 @@ function resizeMonth(pageSize: number) {
       <form @submit.prevent="queryOrder">
         <NvToolbar :show-search="false">
           <template #filters>
-            <NvInput
-              v-model="draft.workOrderId"
-              class="w-72"
-              aria-label="工单编号"
-              placeholder="工单编号"
-            />
+            <WorkOrderCostPicker v-model="draft.workOrderId" class="w-96" />
             <NvButton
               type="submit"
               :disabled="
@@ -164,7 +160,7 @@ function resizeMonth(pageSize: number) {
         :searchable="false"
         :column-settings="false"
         :awaiting-scope="!costs.ready.value || !costs.workOrder.id"
-        awaiting-scope-message="请选择业务范围并输入工单编号。"
+        awaiting-scope-message="请选择业务范围并选择工单。"
         :empty-message="order ? '没有有效机器结算明细。' : '尚未取得工单费用。'"
         @retry="costs.refreshWorkOrder"
         @update:page="costs.workOrder.page = $event"

@@ -3349,6 +3349,32 @@ public sealed record BusinessConsoleGetErpWorkOrderCostVarianceRequest(
     int PageNumber = 1,
     int PageSize = 50);
 
+public sealed record BusinessConsoleListErpWorkOrderCostsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleErpWorkOrderCostListResponse(
+    [property: Required, JsonRequired] IReadOnlyCollection<BusinessConsoleErpWorkOrderCostItem> Items,
+    [property: Required, JsonRequired] int Total);
+
+public sealed record BusinessConsoleErpWorkOrderCostItem(
+    [property: Required, JsonRequired] string WorkOrderId,
+    [property: Required, JsonRequired] string SkuCode,
+    [property: Required, JsonRequired] BusinessConsoleErpWorkOrderCostKind CostKind);
+
+[JsonConverter(typeof(BusinessConsoleErpWorkOrderCostKindJsonConverter))]
+public enum BusinessConsoleErpWorkOrderCostKind
+{
+    Ordinary,
+    Rework,
+}
+
+public sealed class BusinessConsoleErpWorkOrderCostKindJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleErpWorkOrderCostKind>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
 public sealed record BusinessConsoleListErpMachineOverheadReconciliationsRequest(
     string OrganizationId,
     string EnvironmentId,
