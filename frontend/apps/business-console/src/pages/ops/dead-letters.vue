@@ -9,6 +9,7 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import {
   deadLetterRowKey,
+  isReplayUnanswered,
   useBusinessDeadLetters,
   type DeadLetterReplayOutcome,
   type DeadLetterUnavailableSource,
@@ -66,7 +67,7 @@ const {
   metricsError,
   refresh,
   replayOne,
-  replayOutcomes,
+  replayResults,
   replayPending,
   replaySelected,
   selectedDeadLetter,
@@ -185,12 +186,45 @@ const REPLAY_LABELS: Record<
 }
 
 /**
+ * 「未收到服务端答复」的屏上表示。**不在 `REPLAY_LABELS` 里**：那张表按 wire 受控枚举取键，
+ * 而这一档服务端永远不会返回。色调用 `info` 而不是 `danger`——它不是失败，是不确定。
+ */
+const UNANSWERED_DISPLAY = {
+  value: 'unanswered',
+  label: '未收到答复，待核实',
+  tone: 'info',
+} as const
+
+/**
  * 这行的重放结果，包装成 0 或 1 个元素的数组——模板里用 `v-for` 渲染，
  * 「有没有」和「是什么」因此读自同一次取值，不需要在模板里断言非空。
+ *
+ * 「未知」**只在行状态仍是待处理时显示**；一旦刷新后服务端给出确定状态（已重放 / 重放失败 /
+ * 已忽略），它就让位，由「状态」列说话。理由：「未知」的含义是「服务端还没告诉我们结果」，
+ * 行状态变成确定值恰恰就是服务端告诉了——此时再挂着「未知」，会与「状态」列自相矛盾
+ * （例如网关返 502 而下游其实已重放：刷新后「状态=已重放」旁边不能还写着「待核实」）。
+ * 让位是在渲染时按当前行状态推导的，不去改 `replayResults`，因此不需要额外的同步时机。
  */
 function replayDisplay(row: DeadLetterRow) {
-  const outcome = replayOutcomes.get(rowKeyOf(row))
-  return outcome ? [{ value: outcome.status, ...REPLAY_LABELS[outcome.status] }] : []
+  const result = replayResults.get(rowKeyOf(row))
+  if (!result) return []
+  if (!result.answered) {
+    return row.deadLetter.status === 'pending' ? [UNANSWERED_DISPLAY] : []
+  }
+  return [{ value: result.outcome.status, ...REPLAY_LABELS[result.outcome.status] }]
+}
+
+/** 失败的 toast：未知与已确认的拒绝是两句话，单条与整批共用，两条路径的口径因此不会分叉。 */
+function notifyReplayError(error: unknown, unansweredCount: number) {
+  if (unansweredCount > 0) {
+    notifyOperationFailure(
+      '重放未确认',
+      error,
+      `${unansweredCount} 条未收到服务端答复，结果未知；请刷新列表核实是否已重放，勿直接重试。`,
+    )
+    return
+  }
+  notifyOperationFailure('重放失败', error, '重放请求被拒绝，请稍后重试。')
 }
 
 function canReplay(row: DeadLetterRow) {
@@ -224,7 +258,7 @@ async function handleReplayRow(row: DeadLetterRow) {
   try {
     announce(await replayOne(row.service, row.deadLetterId), '该死信')
   } catch (error) {
-    notifyOperationFailure('重放失败', error, '无法重放该死信，请稍后重试。')
+    notifyReplayError(error, isReplayUnanswered(error) ? 1 : 0)
   }
 }
 
@@ -235,11 +269,7 @@ async function handleReplaySelected() {
 
   if (firstError) {
     // 「没收到答复」不等于「重放失败」：结果未知，要引导去核实，而不是说它失败了。
-    notifyOperationFailure(
-      '重放未确认',
-      firstError,
-      `${unansweredCount} 条未收到服务端答复，结果未知；请刷新列表核实是否已重放，勿直接重试。`,
-    )
+    notifyReplayError(firstError, unansweredCount)
     return
   }
 

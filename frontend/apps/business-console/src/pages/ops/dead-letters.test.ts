@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref, shallowRef } from 'vue'
 
 import DeadLettersPage from './dead-letters.vue'
-import type { DeadLetterReplayOutcome } from '@/composables/useBusinessDeadLetters'
+import type {
+  DeadLetterReplayOutcome,
+  DeadLetterReplayResult,
+} from '@/composables/useBusinessDeadLetters'
 import { deadLetterRowKey } from '@/composables/useBusinessDeadLetters'
 
 const notify = vi.hoisted(() => ({
@@ -12,7 +15,10 @@ const notify = vi.hoisted(() => ({
   notifyOperationFailure: vi.fn(),
 }))
 
-vi.mock('@/utils/notify', () => ({
+// 部分 mock：只截 toast 出口。`errorStatusCode` 等纯函数要走真实现——
+// 「未知 / 已拒绝」的分类正是靠它读状态码，桩掉它等于测不到分类本身。
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifySuccess: notify.notifySuccess,
   notifyWarning: notify.notifyWarning,
   notifyOperationFailure: notify.notifyOperationFailure,
@@ -22,7 +28,9 @@ vi.mock('@/utils/notify', () => ({
 const state = vi.hoisted(() => ({
   items: [] as Array<Record<string, unknown>>,
   unavailableSources: [] as Array<{ service: string; reason?: string }>,
-  replayOutcomes: new Map<string, DeadLetterReplayOutcome>(),
+  replayResults: new Map<string, DeadLetterReplayResult>(),
+  /** 下一次重放直接抛出的错误；设了它，`nextOutcome` 就不生效。 */
+  nextReplayError: undefined as unknown,
   /** 下一次重放的返回值——`noHandler` 是「按了也不会有任何变化」那一档。 */
   nextOutcome: { status: 'replayed', succeeded: true } as DeadLetterReplayOutcome,
   filters: { service: 'all', eventType: '', status: 'all' },
@@ -69,10 +77,18 @@ vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
         metricsPending: ref(false),
         refresh: vi.fn(async () => undefined),
         replayOne: vi.fn(async (service: string, deadLetterId: string) => {
-          state.replayOutcomes.set(deadLetterRowKey(service, deadLetterId), state.nextOutcome)
+          const rowKey = deadLetterRowKey(service, deadLetterId)
+          if (state.nextReplayError) {
+            // 行上记录由 composable 负责（其单测另证）；这里照同一分类复刻，只为给页面喂状态。
+            if (actual.isReplayUnanswered(state.nextReplayError)) {
+              state.replayResults.set(rowKey, { answered: false })
+            }
+            throw state.nextReplayError
+          }
+          state.replayResults.set(rowKey, { answered: true, outcome: state.nextOutcome })
           return state.nextOutcome
         }),
-        replayOutcomes: state.replayOutcomes,
+        replayResults: state.replayResults,
         replayPending: ref(false),
         replaySelected: vi.fn(async () => ({ outcomes: [], firstError: undefined })),
         selectedDeadLetter: computed(() => state.selectedDeadLetter),
@@ -90,7 +106,7 @@ vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
 
 const stubs = { BusinessLayout: { template: '<main><slot /></main>' } }
 
-function seedRow(service = 'Erp', id = 'dl-1') {
+function seedRow(service = 'Erp', id = 'dl-1', status = 'pending') {
   state.items = [
     {
       service,
@@ -99,7 +115,7 @@ function seedRow(service = 'Erp', id = 'dl-1') {
         eventType: 'erp.OperationActualTimeLaborCost',
         consumerName: 'business-erp.operation-actual-time-labor-cost',
         failureCode: 'missing-work-center-cost-rate',
-        status: 'pending',
+        status,
         deadLetteredAtUtc: '2026-09-20T02:00:00Z',
       },
     },
@@ -152,7 +168,8 @@ describe('集成事件死信运维页', () => {
     state.items = []
     state.unavailableSources = []
     // 真实 composable 暴露的是 reactive Map；用普通 Map 会让「结果写进去了但没重渲染」看起来像页面缺陷。
-    state.replayOutcomes = reactive(new Map())
+    state.replayResults = reactive(new Map())
+    state.nextReplayError = undefined
     state.nextOutcome = { status: 'replayed', succeeded: true }
     state.filters = { service: 'all', eventType: '', status: 'all' }
     state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
@@ -298,6 +315,64 @@ describe('集成事件死信运维页', () => {
     expect(text).toContain('重放失败1')
     expect(text).toContain('已重放7')
     expect(text).toContain('已忽略4')
+  })
+
+  it('「未知」与「重放失败」在屏上是两回事：文案不同、也不是红色', async () => {
+    seedRow()
+    state.replayResults.set(deadLetterRowKey('Erp', 'dl-1'), { answered: false })
+    const wrapper = await mountPage()
+
+    const badge = wrapper.find('[aria-label="状态：未收到答复，待核实"]')
+    expect(badge.exists(), '行上应显示「未知」档').toBe(true)
+    // 只看这一行：页面上的概览卡本身就叫「重放失败」，拿整页文本当 oracle 会误报。
+    const row = wrapper.findAll('tr').find((tr) => tr.text().includes('Erp'))
+    expect(row?.text()).not.toContain('重放失败')
+    // 色调不是 danger：它不是失败，是不确定。
+    expect(badge.classes().join(' ')).not.toContain('destructive')
+  })
+
+  it('刷新后服务端给出确定状态，「未知」让位——不与「状态」列并存矛盾', async () => {
+    // 网关返 502 而下游其实已重放：刷新后行状态已是 replayed。
+    seedRow('Erp', 'dl-1', 'replayed')
+    state.replayResults.set(deadLetterRowKey('Erp', 'dl-1'), { answered: false })
+    const wrapper = await mountPage()
+    // 只看这一行：概览卡也叫「已重放」，整页 toContain 恒真、没有鉴别力。
+    const row = wrapper.findAll('tr').find((tr) => tr.text().includes('Erp'))
+
+    expect(row?.find('[aria-label="状态：已重放"]').exists()).toBe(true)
+    expect(row?.text()).not.toContain('待核实')
+  })
+
+  it('单条重放没收到答复：toast 说「未确认、先核实」，不说失败', async () => {
+    seedRow()
+    state.nextReplayError = new Error('Failed to fetch')
+    const wrapper = await mountPage()
+
+    await wrapper.find('[aria-label^="重放死信"]').trigger('click')
+    await flushPromises()
+
+    expect(notify.notifyOperationFailure).toHaveBeenCalledWith(
+      '重放未确认',
+      state.nextReplayError,
+      expect.stringContaining('请刷新列表核实是否已重放，勿直接重试'),
+    )
+    expect(wrapper.find('[aria-label="状态：未收到答复，待核实"]').exists()).toBe(true)
+  })
+
+  it('单条重放被网关明确拒绝（4xx）：说失败，行上不挂「未知」', async () => {
+    seedRow()
+    state.nextReplayError = Object.assign(new Error('HTTP 403'), { response: { status: 403 } })
+    const wrapper = await mountPage()
+
+    await wrapper.find('[aria-label^="重放死信"]').trigger('click')
+    await flushPromises()
+
+    expect(notify.notifyOperationFailure).toHaveBeenCalledWith(
+      '重放失败',
+      state.nextReplayError,
+      expect.any(String),
+    )
+    expect(wrapper.text()).not.toContain('待核实')
   })
 
   it('重放真的成功时才报成功', async () => {

@@ -14,9 +14,17 @@ const apiState = vi.hoisted(() => ({
   replayCalls: [] as Array<{ service: string; deadLetterId: string; query: unknown }>,
   /** 按 `service/id` 给定这次重放的返回；缺省按「已重放」。 */
   replayResults: new Map<string, { succeeded: boolean; status: string }>(),
-  /** 这些行的重放调用直接抛（模拟传输层失败）。 */
-  replayThrows: new Set<string>(),
+  /** 这些行的重放调用直接抛出给定的错误（按 `service/id` 取）。 */
+  replayThrows: new Map<string, unknown>(),
 }))
+
+/**
+ * 三种失败形态。api-client 的错误拦截器把原始 `Response` 挂在 error 的 `response` 上，
+ * `errorStatusCode` 据此读状态码；这里照同一形状造。
+ */
+const networkError = () => new Error('Failed to fetch')
+const httpError = (status: number) =>
+  Object.assign(new Error(`HTTP ${status}`), { response: { status } })
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
@@ -52,13 +60,14 @@ vi.mock('@nerv-iip/api-client', () => ({
   replayBusinessConsoleDeadLetterMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars: { path: { service: string; deadLetterId: string } }) => {
       const { service, deadLetterId } = vars.path
-      if (apiState.replayThrows.has(deadLetterRowKey(service, deadLetterId))) {
+      const thrown = apiState.replayThrows.get(deadLetterRowKey(service, deadLetterId))
+      if (thrown) {
         apiState.replayCalls.push({
           service,
           deadLetterId,
           query: (vars as { query?: unknown }).query,
         })
-        throw new Error('transport boom')
+        throw thrown
       }
       apiState.replayCalls.push({
         service,
@@ -97,6 +106,12 @@ vi.mock('@pinia/colada', () => ({
   }),
   useQueryCache: vi.fn(() => ({ invalidateQueries: coladaState.invalidateQueries })),
 }))
+
+/** 取出「收到了答复」那一档的受控状态；未答复或没点过返回 undefined。 */
+function answeredStatus(result: unknown) {
+  const r = result as { answered?: boolean; outcome?: { status?: string } } | undefined
+  return r?.answered ? r.outcome?.status : undefined
+}
 
 function seedList(
   items: Array<{ service: string; id: string; eventType?: string }>,
@@ -175,8 +190,8 @@ describe('死信运维 composable', () => {
 
     await deadLetters.replayOne('Erp', 'shared-id')
 
-    expect(deadLetters.replayOutcomes.get('Erp/shared-id')?.status).toBe('noHandler')
-    expect(deadLetters.replayOutcomes.get('Mes/shared-id')).toBeUndefined()
+    expect(answeredStatus(deadLetters.replayResults.get('Erp/shared-id'))).toBe('noHandler')
+    expect(deadLetters.replayResults.get('Mes/shared-id')).toBeUndefined()
   })
 
   it('选中某个服务后，可选服务清单不塌缩——否则用户切不到别的服务', () => {
@@ -225,7 +240,7 @@ describe('死信运维 composable', () => {
       { service: 'Mes', id: 'dl-2' },
       { service: 'Wms', id: 'dl-3' },
     ])
-    apiState.replayThrows.add('Mes/dl-2')
+    apiState.replayThrows.set('Mes/dl-2', networkError())
     const deadLetters = useBusinessDeadLetters()
 
     const { outcomes, firstError, unansweredCount } = await deadLetters.replaySelected([
@@ -247,9 +262,9 @@ describe('死信运维 composable', () => {
     expect(coladaState.invalidateQueries).toHaveBeenCalled()
   })
 
-  it('没收到答复的行不写受控枚举——「未知」不能伪装成「试过并失败了」', async () => {
+  it('整批：没收到答复的行记为「未知」——不是 failed，也不是留白', async () => {
     seedList([{ service: 'Mes', id: 'dl-2' }])
-    apiState.replayThrows.add('Mes/dl-2')
+    apiState.replayThrows.set('Mes/dl-2', networkError())
     const deadLetters = useBusinessDeadLetters()
 
     const { unansweredCount } = await deadLetters.replaySelected([
@@ -257,8 +272,40 @@ describe('死信运维 composable', () => {
     ])
 
     expect(unansweredCount).toBe(1)
-    // 行上不留痕迹：留了 `failed` 会与刷新后的「状态」列自相矛盾（502 但下游其实已重放成功）。
-    expect(deadLetters.replayOutcomes.get('Mes/dl-2')).toBeUndefined()
+    // 严格等于「未答复」：写成 failed 是伪造服务端取值；留白则与「从没点过」同形。
+    expect(deadLetters.replayResults.get('Mes/dl-2')).toStrictEqual({ answered: false })
+  })
+
+  it('单条：网关 502 同样记为「未知」并把错误抛给调用方——与整批同形', async () => {
+    seedList([{ service: 'Mes', id: 'dl-2' }])
+    apiState.replayThrows.set('Mes/dl-2', httpError(502))
+    const deadLetters = useBusinessDeadLetters()
+
+    await expect(deadLetters.replayOne('Mes', 'dl-2')).rejects.toBeDefined()
+
+    expect(deadLetters.replayResults.get('Mes/dl-2')).toStrictEqual({ answered: false })
+    expect(coladaState.invalidateQueries).toHaveBeenCalled()
+  })
+
+  it('4xx 是网关的明确拒绝，不是「未知」：可以确定没有重放', async () => {
+    seedList([
+      { service: 'Mes', id: 'dl-2' },
+      { service: 'Erp', id: 'dl-1' },
+    ])
+    apiState.replayThrows.set('Mes/dl-2', httpError(403))
+    apiState.replayThrows.set('Erp/dl-1', httpError(400))
+    const deadLetters = useBusinessDeadLetters()
+
+    await expect(deadLetters.replayOne('Mes', 'dl-2')).rejects.toBeDefined()
+    const { unansweredCount, firstError } = await deadLetters.replaySelected([
+      { service: 'Erp', deadLetterId: 'dl-1' },
+    ])
+
+    // 把已知的拒绝说成「不确定、请去核实」，是与伪造 failed 反方向的同一种错。
+    expect(deadLetters.replayResults.get('Mes/dl-2')).toBeUndefined()
+    expect(deadLetters.replayResults.get('Erp/dl-1')).toBeUndefined()
+    expect(unansweredCount).toBe(0)
+    expect(firstError).toBeDefined()
   })
 
   it('答不上来的来源在列表与计数里各报一次，合并后只提示一次', () => {

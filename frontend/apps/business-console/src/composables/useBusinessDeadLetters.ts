@@ -19,6 +19,7 @@ import {
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import { errorStatusCode } from '@/utils/notify'
 import { hasBusinessContext } from './businessContextBinding'
 
 /**
@@ -43,12 +44,25 @@ export interface DeadLetterFilters {
   status: typeof DEAD_LETTER_FILTER_ALL | IntegrationEventDeadLetterStatus
 }
 
-/** 一次重放的结果。行本身的 `status` 不足以表达它——见 `replayOutcomes`。 */
+/** 服务端对一次重放的答复。`status` 是 wire 受控枚举，只能取自服务端响应。 */
 export interface DeadLetterReplayOutcome {
   status: IntegrationEventDeadLetterReplayStatus
   succeeded: boolean
   message?: string
 }
+
+/**
+ * 一行最近一次重放在屏上的结果。
+ *
+ * - `answered: true`：收到了服务端答复，结果照受控枚举 `IntegrationEventDeadLetterReplayStatus`；
+ * - `answered: false`：**没收到服务端答复**（网络中断、网关 5xx……），服务端做没做不得而知。
+ *
+ * 「未知」**只是前端展示态**，刻意不进 wire 枚举，也不写成 `failed`：服务端永远不会返回它，
+ * 把它塞进受控枚举就是伪造一个服务端取值。它的产出方只有 `replay()` 的 catch 这一处。
+ */
+export type DeadLetterReplayResult =
+  | { answered: true; outcome: DeadLetterReplayOutcome }
+  | { answered: false }
 
 /** 一行死信的定位坐标：id 只在它自己的服务内唯一。 */
 export interface DeadLetterTarget {
@@ -83,9 +97,9 @@ export function useBusinessDeadLetters() {
    * 为什么不能只看刷新后行上的 `status`：`noHandler`（该服务没有这个事件的重放处理器）与
    * `notFound` 都**不会**改写死信行——服务端正确地不去伪造一个「试过了」的状态。只看行状态，
    * 这两种结果和「还没点过」完全无法区分，操作者会反复点一个必然无效的按钮（#3740 承接
-   * 自 PR #3742 第 2 轮审核的登记项）。
+   * 自 PR #3742 第 2 轮审核的登记项）。「未收到答复」同理，也不会出现在行状态上。
    */
-  const replayOutcomes = reactive(new Map<string, DeadLetterReplayOutcome>())
+  const replayResults = reactive(new Map<string, DeadLetterReplayResult>())
 
   const contextReady = computed(() => hasBusinessContext(businessContext))
 
@@ -228,18 +242,25 @@ export function useBusinessDeadLetters() {
    * 表达不了「就这几行」。用它来兑现复选框会连用户没勾的行一起重放。
    */
   async function replay(service: string, deadLetterId: string) {
-    const result = unwrapData(
-      (await replayMutation.mutateAsync({
+    const rowKey = deadLetterRowKey(service, deadLetterId)
+    let envelope: BusinessConsoleDeadLetterReplayEnvelope
+    try {
+      envelope = (await replayMutation.mutateAsync({
         path: { service, deadLetterId },
         query: scopeQuery.value,
-      })) as BusinessConsoleDeadLetterReplayEnvelope,
-    )
+      })) as BusinessConsoleDeadLetterReplayEnvelope
+    } catch (error) {
+      // 单条与整批共用这一处，两条路径因此同形：谁也不会漏记、也不会一个记一个不记。
+      if (isReplayUnanswered(error)) replayResults.set(rowKey, { answered: false })
+      throw error
+    }
+    const result = unwrapData(envelope)
     const outcome: DeadLetterReplayOutcome = {
       status: result?.status ?? 'failed',
       succeeded: result?.succeeded ?? false,
       message: result?.message ?? undefined,
     }
-    replayOutcomes.set(deadLetterRowKey(service, deadLetterId), outcome)
+    replayResults.set(rowKey, { answered: true, outcome })
     return outcome
   }
 
@@ -248,7 +269,7 @@ export function useBusinessDeadLetters() {
    * 串行是为了不对 10 个下游同时放大流量。
    *
    * **一行失败不中断整批**：中断会留下「前几行后端已经重放、而列表与计数不刷新」的半应用状态。
-   * 收到答复的行按答复记结果；**没收到答复的只计数、不在行上写受控枚举**（见下方 catch）。
+   * 收到答复的行按答复记结果；没收到答复的行记为「未知」（见 `replay()` 与 `isReplayUnanswered`）。
    * 整批走完后统一失效缓存；传输层错误经 `firstError` 回给调用方上屏，不吞。
    */
   async function replaySelected(rows: DeadLetterTarget[]) {
@@ -262,14 +283,9 @@ export function useBusinessDeadLetters() {
         try {
           outcomes.push({ rowKey, outcome: await replay(service, deadLetterId) })
         } catch (error) {
-          /*
-           * 没收到答复 ⇒ **不知道**服务端做没做，不能写成 `failed`：那是受控枚举里
-           * 「试过并失败了」的取值，把未知伪造成已知。更具体的坏处是它会与刷新后的状态列打架——
-           * 网关在下游已重放成功后返 502 时，行上会同时出现「重放失败」与「已重放」。
-           * 这里只计数并把错误交给调用方上屏，行上不留痕迹（与单条重放路径一致）。
-           */
+          // 行上的「未知」已由 replay() 记下；这里只汇总给调用方上屏，不中断整批。
           firstError ??= error
-          unansweredCount += 1
+          if (isReplayUnanswered(error)) unansweredCount += 1
         }
       }
     } finally {
@@ -314,7 +330,7 @@ export function useBusinessDeadLetters() {
     metricsPending: metricsQuery.isLoading,
     refresh,
     replayOne,
-    replayOutcomes,
+    replayResults,
     replayPending: replayMutation.isLoading,
     replaySelected,
     selectedDeadLetter,
@@ -326,6 +342,20 @@ export function useBusinessDeadLetters() {
     serviceMetrics,
     unavailableSources,
   }
+}
+
+/**
+ * 这次失败是不是「没收到服务端答复」。
+ *
+ * - 没有 HTTP 状态码（网络中断、请求没发出去/没回来）⇒ 未知；
+ * - 5xx ⇒ 未知：网关在下游**已经重放之后**才出错是可达的（例如下游成功、网关返 502），
+ *   此时说「失败」就是在替服务端下结论；
+ * - 4xx ⇒ **不是**未知：网关收到并拒绝了这次请求（无权限、服务名不认识、校验不过），
+ *   可以确定没有重放。把它写成「未知」是反方向的同一种错——把已知说成未知。
+ */
+export function isReplayUnanswered(error: unknown) {
+  const status = errorStatusCode(error)
+  return status === undefined || status >= 500
 }
 
 function parseRowKey(rowKey: string) {
