@@ -60134,10 +60134,21 @@
             "minLength": 1
           },
           "costKind": {
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostKind"
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostKind": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Ordinary",
+          "Rework"
+        ],
+        "enum": [
+          "ordinary",
+          "rework"
+        ]
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkOrderCostsRequest": {
         "type": "object",

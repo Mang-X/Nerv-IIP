@@ -5,7 +5,7 @@
  */
 import { NvEntityPicker } from '@nerv-iip/ui'
 import { watch } from 'vue'
-import { useErpWorkOrderCostPicker } from '@/composables/useBusinessErp'
+import { useErpWorkOrderCostPicker } from '@/composables/useErpWorkOrderCostPicker'
 
 const model = defineModel<string>({ default: '' })
 const { search, options, pending, total } = useErpWorkOrderCostPicker(model)

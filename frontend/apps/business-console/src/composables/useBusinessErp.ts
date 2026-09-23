@@ -1,7 +1,6 @@
 import {
   getBusinessConsoleErpWorkOrderCostVarianceQueryOptions,
   listBusinessConsoleErpWorkCenterMachineOverheadReconciliationsQueryOptions,
-  listBusinessConsoleErpWorkOrderCostsQueryOptions,
   listBusinessConsoleErpWorkCenterCostRatesQueryOptions,
   configureBusinessConsoleErpWorkCenterCostRateMutationOptions,
   approveBusinessConsoleErpQuotationMutationOptions,
@@ -60,11 +59,9 @@ import {
   type BusinessConsoleErpSupplierQuotationItem,
   type BusinessConsoleErpSupplierQuotationListEnvelope,
 } from '@nerv-iip/api-client'
-import type { EntityPickerOption } from '@nerv-iip/ui'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
-import { refDebounced } from '@vueuse/core'
-import { computed, reactive, ref, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 10
@@ -94,50 +91,6 @@ export function useErpWorkOrderCostVariance() {
     workOrderPending: workOrderQuery.isLoading,
     workOrderError: workOrderQuery.error,
     refreshWorkOrder: () => refetchWithBusinessContext(context, workOrderQuery),
-  }
-}
-
-/** 工单成本候选一次取回的条数；更多的靠搜索收窄，匹配总数如实交给选择器提示。 */
-const WORK_ORDER_COST_PICKER_TAKE = 50
-
-/**
- * 财务页的工单候选：取 ERP 自己归集过成本的工单，财务读权限即可搜到，不依赖制造执行的工单权限。
- * 服务端按工单号 / 物料编码模糊搜索；已选工单不在当前结果里时补一条占位项，避免显示成「未选择」。
- */
-export function useErpWorkOrderCostPicker(selected: MaybeRefOrGetter<string>) {
-  const context = useBusinessContextStore()
-  const search = ref('')
-  const keyword = refDebounced(
-    computed(() => search.value.trim()),
-    300,
-  )
-  const query = useQuery(() => ({
-    ...listBusinessConsoleErpWorkOrderCostsQueryOptions({
-      query: {
-        organizationId: context.organizationId,
-        environmentId: context.environmentId,
-        take: WORK_ORDER_COST_PICKER_TAKE,
-        ...(keyword.value ? { keyword: keyword.value } : {}),
-      },
-    }),
-    enabled: hasBusinessContext(context),
-  }))
-  const response = computed(() => unwrapData(query.data.value))
-  const options = computed<EntityPickerOption[]>(() => {
-    const rows = (response.value?.items ?? []).map((item) => ({
-      value: item.workOrderId,
-      label: item.workOrderId,
-      hint: item.costKind === 'rework' ? `${item.skuCode} · 返工` : item.skuCode,
-    }))
-    const current = toValue(selected).trim()
-    if (!current || rows.some((row) => row.value === current)) return rows
-    return [{ value: current, label: current }, ...rows]
-  })
-  return {
-    search,
-    options,
-    pending: query.isLoading,
-    total: computed(() => response.value?.total ?? 0),
   }
 }
 

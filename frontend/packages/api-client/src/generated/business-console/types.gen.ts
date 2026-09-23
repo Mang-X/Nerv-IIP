@@ -6984,8 +6984,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostItem = {
     workOrderId: string;
     skuCode: string;
-    costKind: string;
+    costKind: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostKind;
 };
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostKind = 'ordinary' | 'rework';
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkOrderCostsRequest = {
     [key: string]: never;

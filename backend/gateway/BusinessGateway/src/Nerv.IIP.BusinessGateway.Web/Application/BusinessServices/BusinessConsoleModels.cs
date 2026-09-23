@@ -3330,7 +3330,17 @@ public sealed record BusinessConsoleErpWorkOrderCostListResponse(
 public sealed record BusinessConsoleErpWorkOrderCostItem(
     [property: Required, JsonRequired] string WorkOrderId,
     [property: Required, JsonRequired] string SkuCode,
-    [property: Required, JsonRequired] string CostKind);
+    [property: Required, JsonRequired] BusinessConsoleErpWorkOrderCostKind CostKind);
+
+[JsonConverter(typeof(BusinessConsoleErpWorkOrderCostKindJsonConverter))]
+public enum BusinessConsoleErpWorkOrderCostKind
+{
+    Ordinary,
+    Rework,
+}
+
+public sealed class BusinessConsoleErpWorkOrderCostKindJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleErpWorkOrderCostKind>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
 
 public sealed record BusinessConsoleListErpMachineOverheadReconciliationsRequest(
     string OrganizationId,
