@@ -60,6 +60,8 @@ public sealed class GetBusinessConsoleMesFoundationReadinessEndpoint(
         "equipment",
         "barcode-coding",
         "iam-context",
+        "erp",
+        "inventory",
     ];
 
     protected override string OrganizationId(BusinessConsoleMesFoundationReadinessRequest request) => request.OrganizationId;

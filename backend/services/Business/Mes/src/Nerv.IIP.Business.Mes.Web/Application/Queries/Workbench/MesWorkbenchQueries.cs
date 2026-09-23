@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
@@ -58,8 +59,17 @@ public sealed class GetMesFoundationReadinessAreaQueryHandler(MesFoundationReadi
 
 public sealed class MesFoundationReadinessService(
     ApplicationDbContext dbContext,
-    IMesQualityInspectionPlanReader qualityInspectionPlanReader)
+    IMesQualityInspectionPlanReader qualityInspectionPlanReader,
+    IMesFoundationSourceReader foundationSourceReader,
+    MesMaterialSupplyLocationOptions materialSupplyLocations,
+    MesFinishedGoodsReceiptLocationOptions finishedGoodsReceiptLocation)
 {
+    private const string WorkCenterCostRateMissing = "WORK_CENTER_COST_RATE_MISSING";
+    private const string InventoryLocationMissing = "INVENTORY_LOCATION_MISSING";
+    private const string LineSideLocationTypeInvalid = "LINE_SIDE_LOCATION_TYPE_INVALID";
+    private const string OperationTaskDeviceUnassigned = "OPERATION_TASK_DEVICE_UNASSIGNED";
+    private const string LineSideLocationType = "line-side";
+
     public async Task<MesReadinessArea> GetAreaAsync(
         GetMesFoundationReadinessAreaQuery request,
         CancellationToken cancellationToken)
@@ -69,6 +79,8 @@ public sealed class MesFoundationReadinessService(
         {
             "quality" => await BuildQualityIssuesAsync(request, cancellationToken),
             "equipment" => await BuildEquipmentIssuesAsync(request, cancellationToken),
+            "erp" => await BuildWorkCenterCostRateIssuesAsync(request, cancellationToken),
+            "inventory" => await BuildInventoryLocationIssuesAsync(request, cancellationToken),
             _ => [],
         };
 
@@ -119,11 +131,70 @@ public sealed class MesFoundationReadinessService(
         GetMesFoundationReadinessAreaQuery request,
         CancellationToken cancellationToken)
     {
+        var deviceIssues = await BuildDeviceBindingIssuesAsync(request, cancellationToken);
         if (string.IsNullOrWhiteSpace(request.WorkCenterCode))
         {
-            // No execution context supplied; context-specific checks are handled by the execution workbench.
-            return [];
+            // 停机/维修占用只在给定工作中心时检查；设备绑定不依赖范围。
+            return deviceIssues;
         }
+
+        return
+        [
+            .. await BuildEquipmentUnavailabilityIssuesAsync(request, request.WorkCenterCode.Trim(), cancellationToken),
+            .. deviceIssues,
+        ];
+    }
+
+    /// <summary>
+    /// 待开工工序没绑设备时，开工后机器工时没有执行设备，机器制造费用会以
+    /// <c>unavailable-machine-time-fact</c> 进 ERP 死信。开工本身不受阻，所以是警告。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildDeviceBindingIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Status == OperationTaskLifecycleStatus.Queued &&
+                x.DeviceAssetId == null);
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterCode))
+        {
+            var workCenterCode = request.WorkCenterCode.Trim();
+            query = query.Where(x => x.WorkCenterId == workCenterCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SkuId))
+        {
+            var skuCode = request.SkuId.Trim();
+            query = query.Where(x => x.SkuCode == skuCode);
+        }
+
+        var unassigned = await query
+            .GroupBy(x => x.WorkOrderId)
+            .Select(x => new { WorkOrderId = x.Key, Count = x.Count() })
+            .ToArrayAsync(cancellationToken);
+
+        return unassigned
+            .OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .Select(x => NewIssue(
+                OperationTaskDeviceUnassigned,
+                $"工单 {x.WorkOrderId} 有 {x.Count} 道待开工工序未绑定设备：开工后采集不到机器工时，机器制造费用无法结算。",
+                "MES",
+                "WorkOrder",
+                x.WorkOrderId,
+                "在「制造执行 ▸ 计划与工单 ▸ 派工看板」给这些工序派工时选择设备",
+                severity: "Warning"))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildEquipmentUnavailabilityIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        string workCenterCode,
+        CancellationToken cancellationToken)
+    {
 
         var windowStart = request.PlannedStartUtc ?? DateTimeOffset.UtcNow;
         var windowEnd = request.PlannedEndUtc ?? windowStart;
@@ -132,7 +203,6 @@ public sealed class MesFoundationReadinessService(
             (windowStart, windowEnd) = (windowEnd, windowStart);
         }
 
-        var workCenterCode = request.WorkCenterCode.Trim();
         var unavailabilities = await dbContext.WorkCenterUnavailabilities
             .AsNoTracking()
             .Where(x =>
@@ -170,6 +240,96 @@ public sealed class MesFoundationReadinessService(
             .ToArray();
     }
 
+    /// <summary>
+    /// 工作中心在当前时点没有生效的成本费率时，报工的人工成本会以 <c>missing-work-center-cost-rate</c>
+    /// 进 ERP 死信，成本归集不发布，完工入库停在待入库。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildWorkCenterCostRateIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        var workCenters = await foundationSourceReader.ListActiveWorkCentersAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SiteCode,
+            request.LineCode,
+            request.WorkCenterCode,
+            cancellationToken);
+        var rated = await Task.WhenAll(workCenters.Select(async workCenter => (
+            WorkCenter: workCenter,
+            HasRate: await foundationSourceReader.HasEffectiveWorkCenterCostRateAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                workCenter.Code,
+                cancellationToken))));
+
+        return rated
+            .Where(x => !x.HasRate)
+            .Select(x => NewIssue(
+                WorkCenterCostRateMissing,
+                $"工作中心 {x.WorkCenter.Code}（{x.WorkCenter.DisplayName}）当前没有生效的成本费率：报工算不出人工成本，完工入库会停在待入库。",
+                "ERP",
+                "WorkCenter",
+                x.WorkCenter.Code,
+                "在「经营管理 ▸ 财务 ▸ 工作中心费率」为该工作中心新增费率修订",
+                referenceDisplayName: x.WorkCenter.DisplayName))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// MES 部署配置里用到的库位（线边收料来源库位、线边库位、成品入库库位）必须在 Inventory 库位表里存在；
+    /// 线边库存读面按「站点 + 库位 + 类型 line-side」连库位表，任一对不上读面就恒空、也不报错。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildInventoryLocationIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        var supplySiteCode = materialSupplyLocations.SiteCode.Trim();
+        var lineSideSiteCode = string.IsNullOrWhiteSpace(materialSupplyLocations.LineSideSiteCode)
+            ? supplySiteCode
+            : materialSupplyLocations.LineSideSiteCode.Trim();
+        var configured = materialSupplyLocations.SourceLocationCodes
+            .Select(code => (Role: "线边收料来源库位", SiteCode: supplySiteCode, LocationCode: code, RequireLineSide: false))
+            .Append((Role: "线边库位", SiteCode: lineSideSiteCode, LocationCode: materialSupplyLocations.LineSideLocationCode, RequireLineSide: true))
+            .Append((Role: "成品入库库位", SiteCode: finishedGoodsReceiptLocation.SiteCode.Trim(), LocationCode: finishedGoodsReceiptLocation.LocationCode, RequireLineSide: false))
+            .Where(x => !string.IsNullOrWhiteSpace(x.LocationCode))
+            .Select(x => x with { LocationCode = x.LocationCode.Trim() })
+            .ToArray();
+
+        var issues = new List<MesReadinessIssue>();
+        foreach (var location in configured)
+        {
+            var found = await foundationSourceReader.FindStockLocationAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                location.LocationCode,
+                cancellationToken);
+            if (found is null || !string.Equals(found.SiteCode, location.SiteCode, StringComparison.Ordinal))
+            {
+                issues.Add(NewIssue(
+                    InventoryLocationMissing,
+                    $"{location.Role} {location.LocationCode}（工厂 {location.SiteCode}）在库位主数据中不存在，相关库存过账与线边库存查询会落空。",
+                    "Inventory",
+                    "StockLocation",
+                    location.LocationCode,
+                    $"在「库存管理 ▸ 库位」新建库位 {location.LocationCode}，工厂选 {location.SiteCode}"));
+            }
+            else if (location.RequireLineSide &&
+                !string.Equals(found.LocationType, LineSideLocationType, StringComparison.Ordinal))
+            {
+                issues.Add(NewIssue(
+                    LineSideLocationTypeInvalid,
+                    $"线边库位 {location.LocationCode} 的库位类型不是线边，线边库存查询会一直为空。",
+                    "Inventory",
+                    "StockLocation",
+                    location.LocationCode,
+                    $"在「库存管理 ▸ 库位」把库位 {location.LocationCode} 的类型改为线边"));
+            }
+        }
+
+        return issues;
+    }
+
     private static string StatusFromIssues(IReadOnlyCollection<MesReadinessIssue> issues)
     {
         if (issues.Any(x => string.Equals(x.Severity, "Blocked", StringComparison.Ordinal)))
@@ -189,10 +349,11 @@ public sealed class MesFoundationReadinessService(
         string fixHint,
         DateTimeOffset? effectiveFromUtc = null,
         DateTimeOffset? effectiveToUtc = null,
-        string? referenceDisplayName = null) =>
+        string? referenceDisplayName = null,
+        string severity = "Blocked") =>
         new(
             code,
-            "Blocked",
+            severity,
             message,
             sourceSystem,
             referenceType,

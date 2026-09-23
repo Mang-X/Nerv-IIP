@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import type {
+  BusinessConsoleMesReadinessArea,
+  BusinessConsoleMesReadinessIssue,
+} from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesFoundationReadiness } from '@/composables/useBusinessMes'
 import {
@@ -78,12 +82,7 @@ watch(skuValue, () => {
   productionVersionValue.value = ''
 })
 
-interface ReadinessArea {
-  areaCode?: string
-  status?: string
-  issues?: Array<{ code?: string; referenceId?: string; message?: string }>
-}
-const areas = computed(() => (readiness.value?.areas ?? []) as ReadinessArea[])
+const areas = computed(() => readiness.value?.areas ?? [])
 const blockingIssues = computed(() => readiness.value?.blockingIssues ?? [])
 const warningIssues = computed(() => readiness.value?.warningIssues ?? [])
 const errorMessage = computed(() => inlineErrorMessage(readinessError.value))
@@ -129,11 +128,11 @@ const readinessStatusPill = computed(() => {
   return { label: '可以开工', tone: 'success' as const }
 })
 
-function issueText(issue: { code?: string; message?: string }) {
+function issueText(issue: BusinessConsoleMesReadinessIssue) {
   return issue.message ?? issue.code ?? '未命名问题'
 }
 
-const columns: NvDataTableColumn<ReadinessArea>[] = [
+const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
   { key: 'areaCode', header: '检查区域', cellClass: 'font-medium', width: 'w-40' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'issues', header: '问题' },
@@ -282,7 +281,12 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
         >{{ blockingIssues.length }} 项阻塞，需先处理：</span
       >
       <ul class="ml-4 list-disc text-destructive/90">
-        <li v-for="(issue, i) in blockingIssues" :key="i">{{ issueText(issue) }}</li>
+        <li v-for="(issue, i) in blockingIssues" :key="i">
+          {{ issueText(issue) }}
+          <span v-if="issue.fixHint" class="block text-destructive/80"
+            >去处理：{{ issue.fixHint }}</span
+          >
+        </li>
       </ul>
     </div>
 
@@ -304,7 +308,12 @@ const columns: NvDataTableColumn<ReadinessArea>[] = [
       </template>
       <template #cell-issues="{ row }">
         <div v-if="row.issues?.length" class="grid gap-1">
-          <span v-for="(issue, i) in row.issues" :key="i">{{ issueText(issue) }}</span>
+          <div v-for="(issue, i) in row.issues" :key="i">
+            <span>{{ issueText(issue) }}</span>
+            <span v-if="issue.fixHint" class="block text-xs text-muted-foreground"
+              >去处理：{{ issue.fixHint }}</span
+            >
+          </div>
         </div>
         <span v-else class="text-muted-foreground">无问题</span>
       </template>
