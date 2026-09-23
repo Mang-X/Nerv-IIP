@@ -6370,6 +6370,46 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Finished_goods_receipt_list_still_returns_receipts_when_erp_progress_read_fails()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReceiptRequests =
+            [
+                Receipt("Requested") with { RequestNo = "FGR-001", UnitCost = null },
+                Receipt("Requested") with { RequestNo = "FGR-002", WorkOrderId = "WO-002", UnitCost = null },
+            ]
+        };
+        var erp = new RecordingErpClient
+        {
+            WorkOrderCostProgress = new(StringComparer.Ordinal)
+            {
+                ["WO-002"] = new BusinessConsoleMesReceiptCostCapitalizationProgress(true, 2, 8, 1, 3, false),
+            },
+            WorkOrderCostProgressFailures = new(StringComparer.Ordinal) { "WO-001" },
+        };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rows = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
+            .ToDictionary(row => row.GetProperty("requestNo").GetString()!, row => row.GetProperty("costCapitalization"));
+        Assert.Equal(JsonValueKind.Null, rows["FGR-001"].ValueKind);
+        Assert.Equal(2, rows["FGR-002"].GetProperty("receivedReportCount").GetInt32());
+    }
+
+    [Fact]
     public async Task Finished_goods_receipt_list_skips_erp_progress_without_erp_finance_read_permission()
     {
         var mes = new RecordingMesClient { ReceiptRequests = [Receipt("Requested") with { UnitCost = null }] };
@@ -18618,6 +18658,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public List<BusinessConsoleErpWorkOrderCostProgressRequest> WorkOrderCostProgressRequests { get; } = [];
 
+    public HashSet<string> WorkOrderCostProgressFailures { get; init; } = new(StringComparer.Ordinal);
+
     public Task<BusinessConsoleMesReceiptCostCapitalizationProgress?> GetWorkOrderCostProgressAsync(
         string internalBearerToken,
         BusinessConsoleErpWorkOrderCostProgressRequest request,
@@ -18625,6 +18667,10 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     {
         LastInternalToken = internalBearerToken;
         WorkOrderCostProgressRequests.Add(request);
+        if (WorkOrderCostProgressFailures.Contains(request.WorkOrderId))
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.BadGateway, "downstream-unavailable");
+        }
         return Task.FromResult(WorkOrderCostProgress.GetValueOrDefault(request.WorkOrderId));
     }
 

@@ -154,9 +154,11 @@ export function receiptPendingReason(
   const progress = row.costCapitalization
   if (!progress) return '等待 ERP 成本归集回传单位成本'
   if (progress.capitalizationPublished) return 'ERP 已完成成本归集，等待单位成本回传'
-  if (!progress.workOrderCompleted) return '等待 ERP 收到工单完工后归集成本'
+  // 归集停住（完工或报工事件被 ERP 拒绝）只有管理员能在死信里处理，业务用户能做的是找管理员。
+  const escalate = '长时间不变请联系系统管理员'
+  if (!progress.workOrderCompleted) return `等待 ERP 收到工单完工后归集成本；${escalate}`
   const counts = `报工成本 ${progress.receivedReportCount ?? 0}/${progress.expectedReportCount ?? 0}，物料过账 ${progress.receivedMaterialMovementCount ?? 0}/${progress.expectedMaterialMovementCount ?? 0}`
-  return `等待 ERP 成本归集（${counts}）；长时间不变时请到「集成事件死信」查看被拒绝的事件`
+  return `等待 ERP 成本归集（${counts}）；${escalate}`
 }
 
 export const mesDowntimeStatusOptions = statusOptions(['open', 'recovered'])

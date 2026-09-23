@@ -522,7 +522,10 @@ describe('MES receipts — why a receipt is still waiting (#3728)', () => {
   beforeEach(() => {
     routeState.query = {}
     receiptState.rows = [
-      requested('FGR-cost-stalled', { unitCost: null, costCapitalization: progress({}) }),
+      requested('FGR-cost-stalled', {
+        unitCost: null,
+        costCapitalization: progress({ receivedMaterialMovementCount: 1 }),
+      }),
       requested('FGR-no-erp-permission', { unitCost: null, costCapitalization: null }),
       requested('FGR-not-completed', {
         unitCost: null,
@@ -561,9 +564,12 @@ describe('MES receipts — why a receipt is still waiting (#3728)', () => {
   it('names the stage each Requested receipt is stuck on', () => {
     const reasons = reasonsByRequestNo()
     expect(reasons.get('FGR-cost-stalled')).toContain('报工成本 0/8')
-    expect(reasons.get('FGR-cost-stalled')).toContain('集成事件死信')
+    expect(reasons.get('FGR-cost-stalled')).toContain('物料过账 1/3')
+    expect(reasons.get('FGR-cost-stalled')).toContain('联系系统管理员')
     expect(reasons.get('FGR-no-erp-permission')).toBe('等待 ERP 成本归集回传单位成本')
-    expect(reasons.get('FGR-not-completed')).toBe('等待 ERP 收到工单完工后归集成本')
+    expect(reasons.get('FGR-not-completed')).toBe(
+      '等待 ERP 收到工单完工后归集成本；长时间不变请联系系统管理员',
+    )
     expect(reasons.get('FGR-cost-published')).toBe('ERP 已完成成本归集，等待单位成本回传')
     expect(reasons.get('FGR-posting')).toBe('已提交库存过账，等待库存确认')
   })

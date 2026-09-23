@@ -2185,25 +2185,37 @@ public sealed class ListBusinessConsoleMesFinishedGoodsReceiptRequestsEndpoint(
             return response;
         }
 
-        var progressByWorkOrder = new Dictionary<string, BusinessConsoleMesReceiptCostCapitalizationProgress?>(StringComparer.Ordinal);
-        foreach (var workOrderId in awaitingWorkOrderIds)
-        {
-            progressByWorkOrder[workOrderId] = await erp.GetWorkOrderCostProgressAsync(
-                tokenProvider.BearerToken,
-                new BusinessConsoleErpWorkOrderCostProgressRequest(request.OrganizationId, request.EnvironmentId, workOrderId),
-                cancellationToken);
-        }
-
-        // ERP 还没有该工单的成本记录 = 一条报工成本都没收到、也没收到完工。
-        var nothingReceived = new BusinessConsoleMesReceiptCostCapitalizationProgress(false, 0, 0, 0, 0, false);
+        var progress = await Task.WhenAll(awaitingWorkOrderIds.Select(ReadProgressAsync));
+        var progressByWorkOrder = progress
+            .Where(x => x.Progress is not null)
+            .ToDictionary(x => x.WorkOrderId, x => x.Progress!, StringComparer.Ordinal);
         return response with
         {
             Items = response.Items
                 .Select(item => IsAwaitingCostCapitalization(item)
-                    ? item with { CostCapitalization = progressByWorkOrder[item.WorkOrderId] ?? nothingReceived }
+                    ? item with { CostCapitalization = progressByWorkOrder.GetValueOrDefault(item.WorkOrderId) }
                     : item)
                 .ToArray(),
         };
+
+        async Task<(string WorkOrderId, BusinessConsoleMesReceiptCostCapitalizationProgress? Progress)> ReadProgressAsync(
+            string workOrderId)
+        {
+            try
+            {
+                var read = await erp.GetWorkOrderCostProgressAsync(
+                    tokenProvider.BearerToken,
+                    new BusinessConsoleErpWorkOrderCostProgressRequest(request.OrganizationId, request.EnvironmentId, workOrderId),
+                    cancellationToken);
+                // ERP 还没有该工单的成本记录 = 一条报工成本都没收到、也没收到完工。
+                return (workOrderId, read ?? new BusinessConsoleMesReceiptCostCapitalizationProgress(false, 0, 0, 0, 0, false));
+            }
+            catch (BusinessServiceProxyException)
+            {
+                // 进度只是附加说明：ERP 读不到时这些行不挂进度（与无权限同一条路），入库单列表本身照常返回。
+                return (workOrderId, null);
+            }
+        }
     }
 
     private static bool IsAwaitingCostCapitalization(BusinessConsoleMesReceiptRequestRow item) =>
