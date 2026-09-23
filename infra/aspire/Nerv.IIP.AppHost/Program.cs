@@ -804,6 +804,22 @@ var businessErp = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WaitFor(businessApproval)
     .WaitFor(businessWms)
     .WaitFor(iam);
+// 工单成本差异、机器制造费用核对这组 ERP 端点只认 scoped caller 名单（每个令牌绑定一个
+// organization/environment），不认通用内部服务策略。BusinessGateway 用会话内部服务令牌转发，
+// 所以本地栈要把这枚令牌登记成绑定演示租户的只读调用方，否则两页恒 401（#3784）。
+// 下标用 1：0 号是 appsettings.Development.json 里的固定本地调用方，写 0 会与它逐字段合并。
+// 非 Development 的名单属于部署配置，不在这里下发。
+if (localDevelopmentAppHost)
+{
+    const string gatewayScopedCaller = "Erp__MachineOverheadReconciliation__ScopedCallers__Profiles__1__";
+    businessErp = businessErp
+        .WithEnvironment(gatewayScopedCaller + "Name", "business-gateway")
+        .WithEnvironment(gatewayScopedCaller + "BearerToken", internalServiceBearerToken)
+        .WithEnvironment(gatewayScopedCaller + "Subject", "business-gateway")
+        .WithEnvironment(gatewayScopedCaller + "OrganizationId", "org-001")
+        .WithEnvironment(gatewayScopedCaller + "EnvironmentId", "env-dev")
+        .WithEnvironment(gatewayScopedCaller + "Permissions__0", "business.erp.finance.read");
+}
 businessErp = WithRedisMessagingTransport(businessErp);
 if (rabbitmq is not null)
 {
