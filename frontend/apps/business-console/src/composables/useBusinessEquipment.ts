@@ -26,7 +26,8 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { refDebounced } from '@vueuse/core'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import {
   useListFreshness,
   useListResponseState,
@@ -407,6 +408,35 @@ export function useBusinessEquipmentDevice(deviceAssetId?: string) {
     devicePending: deviceQuery.isLoading,
     filters,
     refreshDevice: () => (deviceEnabled.value ? deviceQuery.refetch() : Promise.resolve()),
+  }
+}
+
+/**
+ * 一台设备的活动报警，**由服务端按设备过滤**：报警是全组织共用的大列表，
+ * 拉一页再在前端按设备筛，排在后面的设备会被误报成「没有报警」。没选设备时不发请求。
+ */
+export function useEquipmentDeviceAlarms(deviceAssetId: MaybeRefOrGetter<string>) {
+  const businessContext = useBusinessContextStore()
+  const current = computed(() => toValue(deviceAssetId).trim())
+  // 设备框允许直接敲编号，逐键发请求没有意义：停手 300ms 再查。
+  const device = refDebounced(current, 300)
+  const alarmsQuery = useQuery(() => ({
+    ...listBusinessConsoleEquipmentAlarmsQueryOptions({
+      query: { ...toContextQuery(businessContext), deviceAssetId: device.value },
+    }),
+    enabled: hasBusinessContext(businessContext) && Boolean(device.value),
+  }))
+  return {
+    // 还在等去抖时，结果属于上一台设备，不能拿来当这台设备的报警。
+    alarms: computed<BusinessConsoleTelemetryAlarmEventItem[]>(() =>
+      device.value && device.value === current.value
+        ? listItems<
+            BusinessConsoleTelemetryAlarmEventItem,
+            BusinessConsoleEquipmentAlarmListEnvelope
+          >(alarmsQuery.data.value)
+        : [],
+    ),
+    alarmsPending: alarmsQuery.isLoading,
   }
 }
 
