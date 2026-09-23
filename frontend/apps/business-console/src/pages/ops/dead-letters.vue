@@ -167,6 +167,39 @@ function reasonText(source: DeadLetterUnavailableSource) {
   return source.reason === 'sourceTimeout' ? '响应超时，可能只是慢' : '服务不可用'
 }
 
+/**
+ * 三种基础数据缺失类失败码的中文说明与「去补数据」入口。
+ * 只覆盖 #3772 票面点名的三种——其余失败码仍只显示原始码与消息，不在本票范围内猜译。
+ *
+ * `unavailable-machine-time-fact` 指向派工看板而非机器制造费用页：机器工时事实来自 MES
+ * 设备上报，「重放」需要的是把工时事实核实/补齐到 MES 侧，费用页本身不产生工时数据
+ * （见 `OperationMachineOverheadSettlementIntegrationEventHandlers.AddUnavailableDeadLetterAsync`）。
+ */
+const KNOWN_FAILURE_REASONS: Record<
+  string,
+  { reason: string; linkPath: string; linkLabel: string }
+> = {
+  'missing-work-center-cost-rate': {
+    reason: '该工作中心在报工时点没有生效的人工费率修订。',
+    linkPath: '/erp/finance/work-center-cost-rates',
+    linkLabel: '去补充工作中心费率',
+  },
+  'missing-machine-overhead-rate': {
+    reason: '该工作中心在结算时点没有生效的机器制造费用率。',
+    linkPath: '/erp/finance/machine-overhead',
+    linkLabel: '去查看机器制造费用',
+  },
+  'unavailable-machine-time-fact': {
+    reason: 'MES 未提供或未确认权威的机器工时数据，机器制造费用暂无法结算。',
+    linkPath: '/mes/dispatch',
+    linkLabel: '去派工看板核实',
+  },
+}
+
+function knownFailureReason(failureCode: string | null | undefined) {
+  return failureCode ? KNOWN_FAILURE_REASONS[failureCode] : undefined
+}
+
 const STATUS_LABELS: Record<IntegrationEventDeadLetterStatus, { label: string; tone: StatusTone }> =
   {
     pending: { label: '待处理', tone: 'warning' },
@@ -484,6 +517,21 @@ function formatPayload(value: string | null | undefined) {
           {{ formatTime(row.deadLetter.deadLetteredAtUtc) }}
         </template>
 
+        <template #cell-failureCode="{ row }">
+          <span>{{ row.deadLetter.failureCode ?? '' }}</span>
+          <template v-if="knownFailureReason(row.deadLetter.failureCode)">
+            <p class="mt-1 text-xs text-muted-foreground">
+              {{ knownFailureReason(row.deadLetter.failureCode)!.reason }}
+            </p>
+            <RouterLink
+              :to="knownFailureReason(row.deadLetter.failureCode)!.linkPath"
+              class="mt-1 inline-block text-xs underline"
+            >
+              {{ knownFailureReason(row.deadLetter.failureCode)!.linkLabel }}
+            </RouterLink>
+          </template>
+        </template>
+
         <template #cell-status="{ row }">
           <NvStatusBadge
             v-if="row.deadLetter.status"
@@ -562,6 +610,18 @@ function formatPayload(value: string | null | undefined) {
             <dd class="break-all">{{ selectedDeadLetter.failureCode ?? '—' }}</dd>
             <dt class="text-muted-foreground">失败原因</dt>
             <dd class="break-words">{{ selectedDeadLetter.failureMessage ?? '—' }}</dd>
+            <template v-if="knownFailureReason(selectedDeadLetter.failureCode)">
+              <dt class="text-muted-foreground">中文说明</dt>
+              <dd class="break-words">
+                {{ knownFailureReason(selectedDeadLetter.failureCode)!.reason }}
+                <RouterLink
+                  :to="knownFailureReason(selectedDeadLetter.failureCode)!.linkPath"
+                  class="mt-1 block text-sm underline"
+                >
+                  {{ knownFailureReason(selectedDeadLetter.failureCode)!.linkLabel }}
+                </RouterLink>
+              </dd>
+            </template>
             <dt class="text-muted-foreground">死信时间</dt>
             <dd>{{ formatTime(selectedDeadLetter.deadLetteredAtUtc) }}</dd>
             <dt class="text-muted-foreground">重放时间</dt>

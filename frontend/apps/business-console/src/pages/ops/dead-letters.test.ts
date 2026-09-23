@@ -203,6 +203,51 @@ describe('集成事件死信运维页', () => {
     expect(text).toContain('计数因此偏小')
   })
 
+  it('三类基础数据缺失死信在列表里显示中文原因和补数据入口', async () => {
+    seedRow()
+    const text = (await mountPage()).text()
+
+    expect(text).toContain('该工作中心在报工时点没有生效的人工费率修订')
+    expect(text).toContain('去补充工作中心费率')
+  })
+
+  it('未点名的失败码不编造中文原因，只显示原始码', async () => {
+    seedRow()
+    state.items[0]!.deadLetter = {
+      ...(state.items[0]!.deadLetter as Record<string, unknown>),
+      failureCode: 'closed-accounting-period',
+    }
+    const text = (await mountPage()).text()
+
+    expect(text).toContain('closed-accounting-period')
+    expect(text).not.toContain('去补充')
+    expect(text).not.toContain('去查看机器制造费用')
+    expect(text).not.toContain('去派工看板核实')
+  })
+
+  it('详情抽屉里同样显示中文原因和补数据入口', async () => {
+    seedRow()
+    state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
+    state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-1' }
+    state.selectedDeadLetter = {
+      id: 'dl-1',
+      status: 'pending',
+      eventType: 'erp.OperationActualTimeLaborCost',
+      failureCode: 'missing-machine-overhead-rate',
+    }
+    const wrapper = await mountPage()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('详情'))
+      ?.trigger('click')
+    await flushPromises()
+
+    const detailText = document.body.textContent ?? ''
+    expect(detailText).toContain('该工作中心在结算时点没有生效的机器制造费用率')
+    expect(detailText).toContain('去查看机器制造费用')
+  })
+
   it('超时与不可用对用户不是同一句话', async () => {
     state.unavailableSources = [{ service: 'Erp', reason: 'sourceTimeout' }]
     const timeoutText = (await mountPage()).text()
