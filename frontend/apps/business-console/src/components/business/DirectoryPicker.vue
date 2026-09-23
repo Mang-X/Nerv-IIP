@@ -4,11 +4,10 @@
  * `v-model` 回传目录项的人读编码，与过去手填提交的值同口径。
  *
  * - 工作中心 / 物料 / 设备 / 车间 / 批次 / 序列号走网关可搜目录（服务端搜索）；
- * - 班次、产线不在可搜目录里，取基础数据资源列表在本地按搜索词过滤。
- * 两种来源返回同一形状，选择器统一按「调用方持有搜索词」的模式接。
+ * - 班次、产线不在可搜目录里，取基础数据资源列表，由选择器自带的本地过滤搜索。
  */
 import { NvEntityPicker } from '@nerv-iip/ui'
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 import {
   useMasterDataListPicker,
   useSearchableDirectoryPicker,
@@ -38,16 +37,24 @@ const props = defineProps<{
 const model = defineModel<string>({ default: '' })
 
 const text = DIRECTORY_TEXT[props.directoryType]
-const { search, options, pending, total } = isListType(props.directoryType)
-  ? useMasterDataListPicker(props.directoryType, model)
+const source = isListType(props.directoryType)
+  ? useMasterDataListPicker(props.directoryType)
   : useSearchableDirectoryPicker(props.directoryType, {
       selected: model,
       skuCode: () => props.skuCode,
     })
-// 搜索词由这里持有，面板关闭不会清空它；选定后清掉，下次打开从完整候选开始。
-watch(model, () => {
-  search.value = ''
-})
+const { options, pending } = source
+const serverSearch = source.serverSearch
+const search = computed(() => (source.serverSearch ? source.search.value : undefined))
+const total = computed(() => (source.serverSearch ? source.total.value : undefined))
+function updateSearch(value: string) {
+  if (source.serverSearch) source.search.value = value
+}
+// 服务端搜索的搜索词由这里持有，面板关闭不会清空它；选定后清掉，下次打开从完整候选开始。
+// 本地过滤时面板每次打开重新挂载，搜索词自然重置。
+if (source.serverSearch) {
+  watch(model, () => updateSearch(''))
+}
 // 批次 / 序列号目录的名称就是「编码 · 物料」，再印一行编码是重复。
 const showCode = props.directoryType !== 'batch' && props.directoryType !== 'serial'
 
@@ -59,7 +66,7 @@ function isListType(type: SearchableType | ListType): type is ListType {
 <template>
   <NvEntityPicker
     v-model="model"
-    v-model:search="search"
+    :search="search"
     :options="options"
     :title="`选择${text.noun}`"
     :placeholder="`选择${text.noun}`"
@@ -67,9 +74,10 @@ function isListType(type: SearchableType | ListType): type is ListType {
     :source-text="text.source"
     :empty-text="`没有匹配的${text.noun}`"
     :loading="pending"
-    server-search
+    :server-search="serverSearch"
     :total-count="total"
     :show-code="showCode"
     :aria-label="text.noun"
+    @update:search="updateSearch"
   />
 </template>
