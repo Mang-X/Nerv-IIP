@@ -1,4 +1,7 @@
-import type { ListBusinessConsoleMesWorkOrdersData } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleMesReceiptRequestRow,
+  ListBusinessConsoleMesWorkOrdersData,
+} from '@nerv-iip/api-client'
 import type { StatusTone } from '@nerv-iip/ui'
 
 type MesStatusValue = NonNullable<
@@ -135,6 +138,25 @@ export function receiptStatusTone(status?: string | null): StatusTone {
 }
 export function isFailedReceiptStatus(status?: string | null) {
   return normalizeReceiptStatus(status) === 'inventorypostingfailed'
+}
+
+// 「待入库」卡在哪一环（#3728）。Requested 是两段等待：先等 ERP 成本归集回传单位成本，
+// 拿到单位成本后才提交库存过账。成本归集卡住时 MES 没有失败码，所以每个待入库行都要在这里给出原因；
+// costCapitalization 由网关按调用者 ERP 财务读权限附带，没有时只能说明在等哪一环。
+export function receiptPendingReason(
+  row: Pick<
+    BusinessConsoleMesReceiptRequestRow,
+    'receiptStatus' | 'unitCost' | 'costCapitalization'
+  >,
+): string | null {
+  if (normalizeReceiptStatus(row.receiptStatus) !== 'requested') return null
+  if (row.unitCost !== undefined && row.unitCost !== null) return '已提交库存过账，等待库存确认'
+  const progress = row.costCapitalization
+  if (!progress) return '等待 ERP 成本归集回传单位成本'
+  if (progress.capitalizationPublished) return 'ERP 已完成成本归集，等待单位成本回传'
+  if (!progress.workOrderCompleted) return '等待 ERP 收到工单完工后归集成本'
+  const counts = `报工成本 ${progress.receivedReportCount ?? 0}/${progress.expectedReportCount ?? 0}，物料过账 ${progress.receivedMaterialMovementCount ?? 0}/${progress.expectedMaterialMovementCount ?? 0}`
+  return `等待 ERP 成本归集（${counts}）；长时间不变时请到「集成事件死信」查看被拒绝的事件`
 }
 
 export const mesDowntimeStatusOptions = statusOptions(['open', 'recovered'])

@@ -2141,6 +2141,7 @@ public sealed class ListBusinessConsoleMesRelatedQualityItemsEndpoint(
 public sealed class ListBusinessConsoleMesFinishedGoodsReceiptRequestsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessErpClient erp,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesReceiptRequestListResponse>(
         auth,
@@ -2150,11 +2151,64 @@ public sealed class ListBusinessConsoleMesFinishedGoodsReceiptRequestsEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesReceiptRequestListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesReceiptRequestListResponse> ForwardAsync(
         BusinessConsoleMesListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListFinishedGoodsReceiptRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.ListFinishedGoodsReceiptRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);
+
+        // #3728：Requested 且尚无单位成本 = 在等 ERP 成本归集。把 ERP 的归集进度挂到行上，
+        // 让「报工成本 0/8 不前进」在入库单上直接可见。进度是 ERP 财务数据，按调用者自身的
+        // ERP 财务读权限决定是否挂（内部 token 不提升最终主体权限）；无权限时行保持原样。
+        var awaitingWorkOrderIds = response.Items
+            .Where(IsAwaitingCostCapitalization)
+            .Select(item => item.WorkOrderId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (awaitingWorkOrderIds.Length == 0)
+        {
+            return response;
+        }
+
+        var financeRead = await AuthorizationClient.CheckAsync(
+            bearerToken,
+            new BusinessGatewayPermissionRequirement(
+                BusinessGatewayPermissions.ErpFinanceRead,
+                request.OrganizationId,
+                request.EnvironmentId,
+                null,
+                null),
+            cancellationToken);
+        if (!financeRead.IsAllowed)
+        {
+            return response;
+        }
+
+        var progressByWorkOrder = new Dictionary<string, BusinessConsoleMesReceiptCostCapitalizationProgress?>(StringComparer.Ordinal);
+        foreach (var workOrderId in awaitingWorkOrderIds)
+        {
+            progressByWorkOrder[workOrderId] = await erp.GetWorkOrderCostProgressAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleErpWorkOrderCostProgressRequest(request.OrganizationId, request.EnvironmentId, workOrderId),
+                cancellationToken);
+        }
+
+        // ERP 还没有该工单的成本记录 = 一条报工成本都没收到、也没收到完工。
+        var nothingReceived = new BusinessConsoleMesReceiptCostCapitalizationProgress(false, 0, 0, 0, 0, false);
+        return response with
+        {
+            Items = response.Items
+                .Select(item => IsAwaitingCostCapitalization(item)
+                    ? item with { CostCapitalization = progressByWorkOrder[item.WorkOrderId] ?? nothingReceived }
+                    : item)
+                .ToArray(),
+        };
+    }
+
+    private static bool IsAwaitingCostCapitalization(BusinessConsoleMesReceiptRequestRow item) =>
+        item.UnitCost is null
+        && string.Equals(item.ReceiptStatus, "Requested", StringComparison.Ordinal);
 }
 
 [Tags("Business Console MES")]

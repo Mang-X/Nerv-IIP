@@ -5458,7 +5458,26 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     string? InventoryPostingFailureMessage = null,
     DateTimeOffset? InventoryPostingFailedAtUtc = null,
     decimal? PostedQuantity = null,
-    decimal? RemainingQuantity = null);
+    decimal? RemainingQuantity = null,
+    BusinessConsoleMesReceiptCostCapitalizationProgress? CostCapitalization = null);
+
+/// <summary>
+/// 入库单等待成本归集时 ERP 侧的归集进度（#3728）。ERP 要「工单已完工 + 报工成本到齐 + 物料过账到齐」
+/// 才发布单位成本；任何一项不前进（例如报工事件进了死信），入库单就停在 Requested。
+/// 仅对「Requested 且尚无单位成本」的行、且调用者有 ERP 财务读权限时填充。
+/// </summary>
+public sealed record BusinessConsoleMesReceiptCostCapitalizationProgress(
+    bool WorkOrderCompleted,
+    int ReceivedReportCount,
+    int ExpectedReportCount,
+    int ReceivedMaterialMovementCount,
+    int ExpectedMaterialMovementCount,
+    bool CapitalizationPublished);
+
+public sealed record BusinessConsoleErpWorkOrderCostProgressRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId);
 
 public sealed record BusinessConsoleMesFinishedGoodsInventoryLinkRequest(
     [property: RouteParam] string RequestNo,

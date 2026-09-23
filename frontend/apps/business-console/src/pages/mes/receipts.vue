@@ -5,6 +5,7 @@ import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
   isFailedReceiptStatus,
   mesReceiptStatusOptions,
+  receiptPendingReason,
   receiptStatusLabel,
   receiptStatusTone,
 } from '@/composables/mes/useMesReferenceLabels'
@@ -289,7 +290,7 @@ function isNonEmpty(value: string) {
         ><span class="tabular-nums">{{ formatUnitCost(row.unitCost) }}</span></template
       >
       <template #cell-receiptStatus="{ row }">
-        <div class="grid gap-1">
+        <div class="grid justify-items-start gap-1">
           <NvStatusBadge
             :tone="receiptStatusTone(row.receiptStatus)"
             :label="receiptStatusLabel(row.receiptStatus)"
@@ -301,6 +302,14 @@ function isNonEmpty(value: string) {
             :title="row.inventoryPostingFailureMessage"
           >
             {{ row.inventoryPostingFailureMessage }}
+          </p>
+          <!-- 待入库原因（#3728）：成本归集卡住时没有失败码，这里说明卡在哪一环。 -->
+          <p
+            v-else-if="receiptPendingReason(row)"
+            data-testid="receipt-pending-reason"
+            class="w-64 text-xs leading-snug whitespace-normal text-muted-foreground"
+          >
+            {{ receiptPendingReason(row) }}
           </p>
         </div>
       </template>

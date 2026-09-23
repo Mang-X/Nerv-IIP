@@ -51535,6 +51535,42 @@
             "type": "number",
             "format": "decimal",
             "nullable": true
+          },
+          "costCapitalization": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptCostCapitalizationProgress"
+              }
+            ]
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptCostCapitalizationProgress": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workOrderCompleted": {
+            "type": "boolean"
+          },
+          "receivedReportCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expectedReportCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "receivedMaterialMovementCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expectedMaterialMovementCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "capitalizationPublished": {
+            "type": "boolean"
           }
         }
       },

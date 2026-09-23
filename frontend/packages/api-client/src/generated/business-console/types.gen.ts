@@ -4850,6 +4850,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inventoryPostingFailedAtUtc?: string | null;
     postedQuantity?: number | null;
     remainingQuantity?: number | null;
+    costCapitalization?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptCostCapitalizationProgress | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptCostCapitalizationProgress = {
+    workOrderCompleted?: boolean;
+    receivedReportCount?: number;
+    expectedReportCount?: number;
+    receivedMaterialMovementCount?: number;
+    expectedMaterialMovementCount?: number;
+    capitalizationPublished?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse = NetCorePalExtensionsDtoResponseData & {
