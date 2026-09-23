@@ -991,6 +991,19 @@ public sealed class BusinessGatewayAuthorizationTests
             effectiveFromUtc = "2026-07-23T01:00:00Z",
             reason = "governed rate",
         },
+        "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            workCenterId = "WC-001",
+            accountingPeriodCode = "2026-09",
+            applicability = "applicable",
+            fixedOverheadBudget = 30000,
+            variableOverheadBudget = 10000,
+            normalCapacityMachineHours = 1000,
+            currencyCode = "CNY",
+            reason = "monthly budget",
+        },
         "/api/business-console/v1/wms/inbound-orders" => new
         {
             organizationId = "org-001",
@@ -1418,6 +1431,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/cost-candidates", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/work-center-cost-rates", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/work-center-cost-rates?workCenterId=WC-001", BusinessGatewayPermissions.ErpFinanceRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates", BusinessGatewayPermissions.ErpFinanceManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates?workCenterId=WC-001&accountingPeriodCode=2026-09", BusinessGatewayPermissions.ErpFinanceRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/finance/vouchers", BusinessGatewayPermissions.ErpFinanceManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/vouchers", BusinessGatewayPermissions.ErpFinanceRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/finance/summary", BusinessGatewayPermissions.ErpFinanceRead);

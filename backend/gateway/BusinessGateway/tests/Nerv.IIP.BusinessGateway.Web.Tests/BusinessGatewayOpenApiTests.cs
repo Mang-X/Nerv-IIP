@@ -668,6 +668,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "post", "configureBusinessConsoleErpWorkCenterCostRate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-cost-rates", "get", "listBusinessConsoleErpWorkCenterCostRates");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates", "post", "configureBusinessConsoleErpWorkCenterMachineOverheadRate");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-rates", "get", "listBusinessConsoleErpWorkCenterMachineOverheadRates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}", "get", "getBusinessConsoleErpWorkOrderCostVariance");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-order-costs", "get", "listBusinessConsoleErpWorkOrderCosts");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations", "get", "listBusinessConsoleErpWorkCenterMachineOverheadReconciliations");
