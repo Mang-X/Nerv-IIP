@@ -27,6 +27,7 @@ public sealed class StationMasterDataTests
         disabled.Disable("retired");
         dbContext.Stations.Add(disabled);
         dbContext.Stations.Add(Station.Create("org-other", EnvironmentId, "ST-FOREIGN", "Foreign", "LINE-A"));
+        dbContext.WorkCenters.Add(WorkCenter.CreateResource(OrganizationId, EnvironmentId, "WC-A", "Assembly", 480, "work-center", "SITE-1", "LINE-A", null, "CAL-1", "minute", true));
         await dbContext.SaveChangesAsync();
         var handler = new ListMasterDataResourcesQueryHandler(dbContext);
 
@@ -50,6 +51,31 @@ public sealed class StationMasterDataTests
         Assert.Equal("ST-NEW", Assert.Single(byWorkCenter.Resources).Code);
         var includingDisabled = await handler.Handle(new ListMasterDataResourcesQuery(OrganizationId, EnvironmentId, "station", IncludeDisabled: true), CancellationToken.None);
         Assert.Equal(3, includingDisabled.Total);
+    }
+
+    [Fact]
+    public async Task Station_directory_scoped_by_work_center_lists_every_station_on_that_work_centers_line()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkCenters.AddRange(
+            WorkCenter.CreateResource(OrganizationId, EnvironmentId, "WC-A", "Assembly A", 480, "work-center", "SITE-1", "LINE-A", null, "CAL-1", "minute", true),
+            WorkCenter.CreateResource(OrganizationId, EnvironmentId, "WC-B", "Assembly B", 480, "work-center", "SITE-1", "LINE-A", null, "CAL-1", "minute", true),
+            WorkCenter.CreateResource(OrganizationId, EnvironmentId, "WC-C", "Packing", 480, "work-center", "SITE-1", "LINE-B", null, "CAL-1", "minute", true),
+            WorkCenter.CreateResource("org-other", EnvironmentId, "WC-A", "Foreign", 480, "work-center", "SITE-1", "LINE-B", null, "CAL-1", "minute", true));
+        dbContext.Stations.AddRange(
+            Station.Create(OrganizationId, EnvironmentId, "ST-SHARED", "共用工位", "LINE-A"),
+            Station.Create(OrganizationId, EnvironmentId, "ST-B-ONLY", "B 工位", "LINE-A", "WC-B"),
+            Station.Create(OrganizationId, EnvironmentId, "ST-OTHER", "包装工位", "LINE-B", "WC-C"));
+        await dbContext.SaveChangesAsync();
+        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
+
+        var workCenterA = await handler.Handle(new ListMasterDataResourcesQuery(OrganizationId, EnvironmentId, "station", WorkCenterCode: "WC-A"), CancellationToken.None);
+        var workCenterC = await handler.Handle(new ListMasterDataResourcesQuery(OrganizationId, EnvironmentId, "station", WorkCenterCode: "WC-C"), CancellationToken.None);
+
+        Assert.Equal(["ST-B-ONLY", "ST-SHARED"], workCenterA.Resources.Select(x => x.Code));
+        Assert.Equal(["ST-OTHER"], workCenterC.Resources.Select(x => x.Code));
     }
 
     [Fact]
@@ -83,6 +109,7 @@ public sealed class StationMasterDataTests
     [InlineData("missing-line")]
     [InlineData("disabled-line")]
     [InlineData("missing-work-center")]
+    [InlineData("disabled-work-center")]
     public async Task Create_station_rejects_parent_line_or_work_center_that_is_not_enabled(string scenario)
     {
         await using var provider = CreateProvider();
@@ -97,14 +124,21 @@ public sealed class StationMasterDataTests
             }
 
             dbContext.ProductionLines.Add(line);
+            if (scenario == "disabled-work-center")
+            {
+                var workCenter = WorkCenter.CreateResource(OrganizationId, EnvironmentId, "WC-A", "Assembly", 480, "work-center", "SITE-1", "LINE-A", null, "CAL-1", "minute", true);
+                workCenter.Disable("retired");
+                dbContext.WorkCenters.Add(workCenter);
+            }
+
             await dbContext.SaveChangesAsync();
         }
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => CreateHandler(dbContext).Handle(
-            new CreateStationCommand(OrganizationId, EnvironmentId, "ST-01", "工位 1", "LINE-A", scenario == "missing-work-center" ? "WC-TYPO" : null),
+            new CreateStationCommand(OrganizationId, EnvironmentId, "ST-01", "工位 1", "LINE-A", scenario switch { "missing-work-center" => "WC-TYPO", "disabled-work-center" => "WC-A", _ => null }),
             CancellationToken.None));
 
-        Assert.Contains(scenario == "missing-work-center" ? "工作中心" : "产线", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(scenario.EndsWith("work-center", StringComparison.Ordinal) ? "工作中心" : "产线", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync();
         Assert.False(await dbContext.Stations.AnyAsync());
     }

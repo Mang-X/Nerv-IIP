@@ -986,7 +986,7 @@ internal static class StationParentValidator
                 x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == line && !x.Disabled,
                 cancellationToken))
         {
-            throw new KnownException($"工位所属产线 '{line}' 必须是同组织、同环境内已存在且未停用的产线。");
+            throw new KnownException($"产线 '{line}' 不存在或已停用。");
         }
 
         var workCenter = workCenterCode?.Trim();
@@ -995,7 +995,7 @@ internal static class StationParentValidator
                 x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == workCenter && !x.Disabled,
                 cancellationToken))
         {
-            throw new KnownException($"工位关联的工作中心 '{workCenter}' 必须是同组织、同环境内已存在且未停用的工作中心。");
+            throw new KnownException($"工作中心 '{workCenter}' 不存在或已停用。");
         }
     }
 }

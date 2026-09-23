@@ -187,8 +187,7 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
             cancellationToken);
         if (!exists)
         {
-            throw new KnownException(
-                $"设备资产工位 '{normalizedStationCode}' 必须引用同组织、同环境内已存在且未停用的工位。");
+            throw new KnownException($"工位 '{normalizedStationCode}' 不存在或已停用。");
         }
 
         return normalizedStationCode;

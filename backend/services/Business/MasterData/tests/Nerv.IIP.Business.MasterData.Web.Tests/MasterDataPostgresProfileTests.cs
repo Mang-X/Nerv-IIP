@@ -334,7 +334,8 @@ public sealed class MasterDataPostgresProfileTests
 
     /// <summary>
     /// `AddStations` 从存量设备的 `station_code` 回填工位：迁移前目录里能看到的工位，迁移后一条不少也不多；
-    /// 同一工位的设备工作中心不一致时只留空这条可选关联，不挑其中一条；只挂在已停用设备上的工位回填为停用。
+    /// 同一工位的设备工作中心不一致时只留空这条可选关联，不挑其中一条，而按其中任一工作中心收窄的目录仍能看到它（工位挂在产线下）；
+    /// 只挂在已停用设备上的工位回填为停用，启用与停用设备混挂的工位保持启用。
     /// </summary>
     [PostgresFact]
     public async Task Postgres_migration_backfills_stations_from_legacy_device_station_codes()
@@ -352,7 +353,14 @@ public sealed class MasterDataPostgresProfileTests
 
             var retired = LegacyStationDevice("org-001", "DEV-C", "LINE-2", "WC-3", "ST-B");
             retired.Disable("retired");
+            var mixedRetired = LegacyStationDevice("org-001", "DEV-G", "LINE-2", "WC-3", "ST-C");
+            mixedRetired.Disable("retired");
+            db.WorkCenters.AddRange(
+                WorkCenter.CreateResource("org-001", "env-dev", "WC-1", "WC 1", 480, "work-center", "SITE-1", "LINE-1", "WS-1", "CAL-1", "minute", true),
+                WorkCenter.CreateResource("org-001", "env-dev", "WC-2", "WC 2", 480, "work-center", "SITE-1", "LINE-1", "WS-1", "CAL-1", "minute", true));
             db.DeviceAssets.AddRange(
+                mixedRetired,
+                LegacyStationDevice("org-001", "DEV-F", "LINE-2", "WC-3", "ST-C"),
                 LegacyStationDevice("org-001", "DEV-A", "LINE-1", "WC-1", "ST-A"),
                 LegacyStationDevice("org-001", "DEV-B", "LINE-1", "WC-2", "ST-A"),
                 retired,
@@ -376,6 +384,7 @@ public sealed class MasterDataPostgresProfileTests
                 [
                     ("org-001", "ST-A", "ST-A", "LINE-1", (string?)null, false),
                     ("org-001", "ST-B", "ST-B", "LINE-2", "WC-3", true),
+                    ("org-001", "ST-C", "ST-C", "LINE-2", "WC-3", false),
                     ("org-other", "ST-A", "ST-A", "LINE-9", "WC-9", false),
                 ],
                 stations.Select(x => (x.OrganizationId, x.Code, x.Name, x.LineCode, x.WorkCenterCode, x.Disabled)));
@@ -383,7 +392,15 @@ public sealed class MasterDataPostgresProfileTests
             var directory = await new ListMasterDataResourcesQueryHandler(db).Handle(
                 new ListMasterDataResourcesQuery("org-001", "env-dev", "station"),
                 CancellationToken.None);
-            Assert.Equal(["ST-A"], directory.Resources.Select(x => x.StationCode));
+            Assert.Equal(["ST-A", "ST-C"], directory.Resources.Select(x => x.StationCode));
+
+            foreach (var workCenter in new[] { "WC-1", "WC-2" })
+            {
+                var scoped = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                    new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: workCenter),
+                    CancellationToken.None);
+                Assert.Equal(["ST-A"], scoped.Resources.Select(x => x.StationCode));
+            }
         }
     }
 
