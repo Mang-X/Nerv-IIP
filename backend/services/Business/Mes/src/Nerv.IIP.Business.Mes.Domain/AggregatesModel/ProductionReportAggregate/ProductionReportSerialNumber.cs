@@ -1,16 +1,8 @@
+using Nerv.IIP.Contracts.MasterData;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 
 public partial record ProductionReportSerialNumberId : IGuidStronglyTypedId;
-
-public static class ProductionSerialTrackingPolicies
-{
-    public const string None = "none";
-    public const string OnReceipt = "on-receipt";
-    public const string OnProduction = "on-production";
-    public const string OnShipment = "on-shipment";
-
-    public static bool IsSupported(string value) => value is None or OnReceipt or OnProduction or OnShipment;
-}
 
 public sealed class ProductionReportSerialNumberAssignment
 {
@@ -36,7 +28,7 @@ public sealed class ProductionReportSerialNumberAssignment
         }
 
         var policy = serialTrackingPolicy.Trim();
-        if (!ProductionSerialTrackingPolicies.IsSupported(policy))
+        if (!MasterDataSerialTrackingPolicies.IsSupported(policy))
         {
             throw new InvalidOperationException($"Unsupported serial tracking policy: {policy}.");
         }
@@ -44,18 +36,18 @@ public sealed class ProductionReportSerialNumberAssignment
         IReadOnlyCollection<string> inputs = serialNumbers ?? [];
         if (!string.IsNullOrWhiteSpace(legacySerialNumber))
         {
-            if (serialNumbers is not null || policy != ProductionSerialTrackingPolicies.None)
+            if (serialNumbers is not null || policy != MasterDataSerialTrackingPolicies.None)
             {
                 throw new InvalidOperationException(
                     "Legacy serialNo cannot be combined with a non-default serialTrackingPolicy or serialNumbers.");
             }
 
             return new ProductionReportSerialNumberAssignment(
-                ProductionSerialTrackingPolicies.OnProduction,
+                MasterDataSerialTrackingPolicies.OnProduction,
                 Normalize([legacySerialNumber]));
         }
 
-        if (policy != ProductionSerialTrackingPolicies.OnProduction)
+        if (policy != MasterDataSerialTrackingPolicies.OnProduction)
         {
             if (inputs.Count > 0)
             {

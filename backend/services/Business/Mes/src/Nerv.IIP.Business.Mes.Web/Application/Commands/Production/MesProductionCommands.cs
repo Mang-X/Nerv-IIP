@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using NetCorePal.Extensions.Repository;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 
@@ -49,7 +50,7 @@ public sealed record RecordProductionReportCommand(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
+    string SerialTrackingPolicy = MasterDataSerialTrackingPolicies.None,
     IReadOnlyCollection<string>? SerialNumbers = null,
     string Source = "manual",
     // 操作人由前线 HTTP 边界从已认证 principal 注入，不由业务载荷携带。
@@ -77,7 +78,7 @@ public sealed record RecordProductionReportCommand(
         string? DefectRecordNo = null,
         string? ProducedLotNo = null,
         string? SerialNo = null,
-        string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
+        string SerialTrackingPolicy = MasterDataSerialTrackingPolicies.None,
         IReadOnlyCollection<string>? SerialNumbers = null,
         string Source = "manual",
         string? ReportedBy = null)
@@ -524,7 +525,7 @@ public sealed class RecordProductionReportCommandHandler(
         if (request.SerialNumbers is null &&
             string.Equals(
                 request.SerialTrackingPolicy.Trim(),
-                ProductionSerialTrackingPolicies.None,
+                MasterDataSerialTrackingPolicies.None,
                 StringComparison.Ordinal))
         {
             parts.Add(request.SerialNo);

@@ -275,6 +275,20 @@ internal static class VocabularyDriftExemptions
             "mes",
             "同值不同义：世界史种子里补产工单的来源计划参考 sourceSystem（与 sourceDocumentType 配套），非检验来源服务。",
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistorySeedService.cs"),
+
+        // ── "none"（MasterDataSerialTrackingPolicies.None，#3747 新建导出） ──────────
+        // 该常量守护的是 SKU 序列号追踪策略码集（none / on-receipt / on-production / on-shipment）。
+        // 同码集的真违例已全部改常量引用：字典种子的 serial-tracking-policy 四行、MES 领域校验、
+        // 业务网关报工判定。下列三处只是恰好同值，各有独立权威与演化路径，不可互相引用。
+        ..Group("none", "同值不同义：条码规则的校验位规则（无校验位），非 SKU 序列号追踪策略。",
+            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs"),
+        ..Group(
+            "none",
+            "同值不同义：同文件 batch-tracking-policy 的「不管理」与 shelf-life-policy 的「无保质期」两个码集，"
+            + "与 serial-tracking-policy 的 none 各自独立（同文件 serial 那四行已改常量引用）。",
+            $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs"),
+        ..Group("none", "同值不同义：MesMaterialShortageStages.None 物料缺口环节（不缺），非 SKU 序列号追踪策略。",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs"),
     ];
 
     private static IEnumerable<VocabularyExemption> Group(

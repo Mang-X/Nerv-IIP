@@ -30,6 +30,7 @@ using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using System.Net;
 using System.Text;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -3422,7 +3423,7 @@ public sealed class MesPersistenceContractTests
                 "report-serial-001",
                 [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
                 ProducedLotNo: "LOT-FG-SERIAL",
-                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
                 SerialNumbers: ["  SN-SERIAL-02  ", "SN-SERIAL-01"],
                 ReportedBy: "operator-serial"),
             CancellationToken.None);
@@ -3441,7 +3442,7 @@ public sealed class MesPersistenceContractTests
                 "report-serial-001",
                 [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
                 ProducedLotNo: "LOT-FG-SERIAL",
-                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
                 SerialNumbers: ["SN-SERIAL-02", "  SN-SERIAL-01  "],
                 ReportedBy: "operator-serial"),
             CancellationToken.None);
@@ -3472,7 +3473,7 @@ public sealed class MesPersistenceContractTests
                 "report-serial-001",
                 [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
                 ProducedLotNo: "LOT-FG-SERIAL",
-                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
                 SerialNumbers: ["SN-SERIAL-02", "SN-SERIAL-03"],
                 ReportedBy: "operator-serial"),
             CancellationToken.None));
@@ -3490,7 +3491,7 @@ public sealed class MesPersistenceContractTests
                 "report-serial-001",
                 [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
                 ProducedLotNo: "LOT-FG-SERIAL",
-                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
                 SerialNumbers: ["SN-SERIAL-01", "SN-SERIAL-02"],
                 ReportedBy: "operator-serial"),
             CancellationToken.None));
@@ -3507,7 +3508,7 @@ public sealed class MesPersistenceContractTests
                 now.AddMinutes(35),
                 "report-serial-002",
                 ProducedLotNo: "LOT-FG-SERIAL-2",
-                SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
                 SerialNumbers: ["SN-SERIAL-01", "SN-SERIAL-03"],
                 ReportedBy: "operator-serial"),
             CancellationToken.None));

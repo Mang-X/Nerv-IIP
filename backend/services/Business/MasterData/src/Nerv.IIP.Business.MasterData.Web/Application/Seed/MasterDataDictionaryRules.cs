@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.MasterData;
+
 namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 public enum ReferenceDataCodeSetKind
@@ -41,10 +43,12 @@ public static class MasterDataDictionaryRules
         new("batch-tracking-policy", "optional", "可选记录", ReferenceDataCodeSetKind.SystemEnum),
         new("batch-tracking-policy", "mandatory", "强制批次", ReferenceDataCodeSetKind.SystemEnum),
 
-        new("serial-tracking-policy", "none", "不管理", ReferenceDataCodeSetKind.SystemEnum),
-        new("serial-tracking-policy", "on-receipt", "入库赋序", ReferenceDataCodeSetKind.SystemEnum),
-        new("serial-tracking-policy", "on-production", "生产赋序", ReferenceDataCodeSetKind.SystemEnum),
-        new("serial-tracking-policy", "on-shipment", "出货赋序", ReferenceDataCodeSetKind.SystemEnum),
+        // 码值引 Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies：MES 领域校验与
+        // 业务网关报工判定引的是同一份常量，字典与判定不会再各抄一份后分叉（#3747）。
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.None, "不管理", ReferenceDataCodeSetKind.SystemEnum),
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.OnReceipt, "入库赋序", ReferenceDataCodeSetKind.SystemEnum),
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.OnProduction, "生产赋序", ReferenceDataCodeSetKind.SystemEnum),
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.OnShipment, "出货赋序", ReferenceDataCodeSetKind.SystemEnum),
 
         new("shelf-life-policy", "none", "无保质期", ReferenceDataCodeSetKind.SystemEnum),
         new("shelf-life-policy", "fifo", "先进先出", ReferenceDataCodeSetKind.SystemEnum),
