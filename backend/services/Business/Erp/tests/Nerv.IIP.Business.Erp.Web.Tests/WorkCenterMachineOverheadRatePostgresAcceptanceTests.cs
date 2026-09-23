@@ -41,12 +41,6 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
                 ["ConnectionStrings:PostgreSQL"] = ErpPostgresLaneDatabase.ConnectionString,
                 ["Persistence:AutoMigrate"] = "false",
                 ["InternalService:BearerToken"] = "test-general-token",
-                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:Name"] = "reader",
-                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:BearerToken"] = "reader-token",
-                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:Subject"] = "reader",
-                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:OrganizationId"] = "org-test",
-                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:EnvironmentId"] = "env-test",
-                ["Erp:MachineOverheadReconciliation:ScopedCallers:Profiles:1:Permissions:0"] = "business.erp.finance.read",
             }));
         });
         using var client = factory.CreateClient();
@@ -76,23 +70,20 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
 
         var body = new Dictionary<string, object>
         {
+            ["organizationId"] = "org-test", ["environmentId"] = "env-test",
             ["workCenterId"] = "WC-HTTP", ["accountingPeriodCode"] = "2026-06",
             ["applicability"] = 0, ["fixedOverheadBudget"] = 30000m,
             ["variableOverheadBudget"] = 10000m, ["normalCapacityMachineHours"] = 1000m,
             ["currencyCode"] = "CNY", ["reason"] = "monthly budget",
         };
-        var query = "?workCenterId=WC-HTTP&accountingPeriodCode=2026-06";
+        var query = "?organizationId=org-test&environmentId=env-test&workCenterId=WC-HTTP&accountingPeriodCode=2026-06";
+        // #3789 裁定：与工作中心人工费率同形，走通用内部服务策略；scoped caller 令牌不再被这组端点接受。
         foreach (var uri in new[] { RateRoute + query, RateRoute + "/current" + query })
         {
-            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Unauthorized, token: "test-general-token");
-            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Forbidden, organization: "other-org");
-            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Forbidden, environment: "other-env");
-            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.BadRequest, organization: null);
+            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Unauthorized, token: "test-erp-machine-overhead-token");
+            await ExpectStatus(HttpMethod.Get, uri, HttpStatusCode.Unauthorized, token: "unknown-token");
         }
-        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.Forbidden, token: "reader-token");
-        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.Forbidden, organization: "other-org");
-        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.Forbidden, environment: "other-env");
-        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.BadRequest, environment: null);
+        await ExpectStatus(HttpMethod.Post, RateRoute, HttpStatusCode.Unauthorized, token: "test-erp-machine-overhead-token");
 
         foreach (var injected in new[] { "fixedHourlyRate", "variableHourlyRate", "totalHourlyRate", "changedBy", "changedAtUtc" })
         {
@@ -113,7 +104,7 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         body["reason"] = "revised budget";
         Assert.True((await Send(HttpMethod.Post, RateRoute)).GetProperty("success").GetBoolean());
 
-        var audit = (await Send(HttpMethod.Get, RateRoute + query, "reader-token")).GetProperty("data");
+        var audit = (await Send(HttpMethod.Get, RateRoute + query)).GetProperty("data");
         Assert.Equal(2, audit.GetProperty("totalCount").GetInt32());
         Assert.Equal(2, audit.GetProperty("currentRevision").GetInt32());
         Assert.Equal(new[] { 2, 1 }, audit.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("revision").GetInt32()));
@@ -127,7 +118,7 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
         Assert.Equal(41m, current.GetProperty("totalHourlyRate").GetDecimal());
         Assert.Equal("CNY", current.GetProperty("currencyCode").GetString());
         Assert.Equal("revised budget", current.GetProperty("reason").GetString());
-        Assert.Equal("internal-service:test-finance-reconciliation", current.GetProperty("changedBy").GetString());
+        Assert.Equal("user:finance-admin", current.GetProperty("changedBy").GetString());
         Assert.NotEqual(default, current.GetProperty("changedAtUtc").GetDateTimeOffset());
         Assert.Equal(1, (await Send(HttpMethod.Get, RateRoute + query + "&pageNumber=2&pageSize=1"))
             .GetProperty("data").GetProperty("items")[0].GetProperty("revision").GetInt32());
@@ -171,26 +162,25 @@ public sealed class WorkCenterMachineOverheadRatePostgresAcceptanceTests
             && x.EnvironmentId == "env-test" && x.WorkCenterId == "WC-HTTP" && x.AccountingPeriodCode == "2026-06"));
         Assert.Empty(await persisted.OperationMachineOverheadSettlements.ToListAsync());
 
-        async Task<JsonElement> Send(HttpMethod method, string uri, string token = "test-erp-machine-overhead-token")
+        async Task<JsonElement> Send(HttpMethod method, string uri, string token = "test-general-token")
         {
-            using var request = Request(method, uri, token, "org-test", "env-test");
+            using var request = Request(method, uri, token);
             using var response = await client.SendAsync(request);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             return json.RootElement.Clone();
         }
-        async Task ExpectStatus(HttpMethod method, string uri, HttpStatusCode status,
-            string token = "test-erp-machine-overhead-token", string? organization = "org-test", string? environment = "env-test")
+        async Task ExpectStatus(HttpMethod method, string uri, HttpStatusCode status, string token = "test-general-token")
         {
-            using var request = Request(method, uri, token, organization, environment);
+            using var request = Request(method, uri, token);
             using var response = await client.SendAsync(request);
             Assert.Equal(status, response.StatusCode);
         }
-        HttpRequestMessage Request(HttpMethod method, string uri, string token, string? organization, string? environment)
+        HttpRequestMessage Request(HttpMethod method, string uri, string token)
         {
             var request = new HttpRequestMessage(method, uri);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            if (organization is not null) request.Headers.Add("X-Organization-Id", organization);
-            if (environment is not null) request.Headers.Add("X-Environment-Id", environment);
+            // 网关由已授权主体注入操作人；ERP 只对内部服务令牌信任这个头。
+            request.Headers.Add("X-Authenticated-Actor", "user:finance-admin");
             if (method == HttpMethod.Post) request.Content = JsonContent.Create(body);
             return request;
         }
