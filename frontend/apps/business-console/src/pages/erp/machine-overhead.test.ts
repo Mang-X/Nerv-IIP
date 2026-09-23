@@ -116,7 +116,11 @@ let data: ReturnType<typeof createState>
 const render = () =>
   mount(MachineOverheadPage, {
     global: {
-      stubs: { BusinessLayout: { template: '<main><slot /></main>' }, DirectoryPicker: true },
+      stubs: {
+        BusinessLayout: { template: '<main><slot /></main>' },
+        DirectoryPicker: true,
+        WorkOrderCostPicker: true,
+      },
     },
   })
 

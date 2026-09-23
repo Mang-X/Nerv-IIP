@@ -102,6 +102,11 @@ public interface IBusinessErpClient
         BusinessConsoleListErpWorkCenterCostRatesRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpWorkOrderCostListResponse> ListWorkOrderCostsAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkOrderCostsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpWorkOrderCostVarianceResponse> GetWorkOrderCostVarianceAsync(
         string internalBearerToken,
         BusinessConsoleGetErpWorkOrderCostVarianceRequest request,
@@ -469,6 +474,22 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
                 ("environmentId", request.EnvironmentId),
                 ("workCenterId", request.WorkCenterId),
                 ("atUtc", request.AtUtc)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpWorkOrderCostListResponse> ListWorkOrderCostsAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkOrderCostsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpWorkOrderCostListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/work-order-costs?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
             null,
             cancellationToken);
 

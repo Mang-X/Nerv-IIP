@@ -133,7 +133,7 @@ public sealed class ErpListQueryCompositionTests
             ["/api/business/v1/erp/finance/receivables"] = ["organizationId", "environmentId", "status", "keyword", "skip", "take", "asOfDate"],
             ["/api/business/v1/erp/finance/cost-candidates"] = ["organizationId", "environmentId", "status", "keyword", "skip", "take", "asOfDate"],
             ["/api/business/v1/erp/finance/vouchers"] = ["organizationId", "environmentId", "status", "keyword", "skip", "take", "asOfDate"],
-            ["/api/business/v1/erp/finance/work-order-costs"] = ["organizationId", "environmentId", "workOrderId", "sourceNcrId", "sourceWorkOrderId", "skip", "take"],
+            ["/api/business/v1/erp/finance/work-order-costs"] = ["organizationId", "environmentId", "workOrderId", "sourceNcrId", "sourceWorkOrderId", "keyword", "skip", "take"],
         };
 
         foreach (var (path, expectedParameters) in listContracts)

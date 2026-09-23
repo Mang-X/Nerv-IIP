@@ -18642,6 +18642,12 @@ internal sealed class RecordingErpClient : IBusinessErpClient
             ]));
     }
 
+    public Task<BusinessConsoleErpWorkOrderCostListResponse> ListWorkOrderCostsAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkOrderCostsRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Use the concrete ERP HTTP client for work-order cost contract tests.");
+
     public Task<BusinessConsoleErpWorkOrderCostVarianceResponse> GetWorkOrderCostVarianceAsync(
         string internalBearerToken,
         BusinessConsoleGetErpWorkOrderCostVarianceRequest request,

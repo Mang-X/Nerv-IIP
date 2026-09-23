@@ -6972,6 +6972,25 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostListResponse = {
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostItem>;
+    total: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostItem = {
+    workOrderId: string;
+    skuCode: string;
+    costKind: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkOrderCostsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostVarianceResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostVarianceResponse | null;
 };
@@ -20999,6 +21018,45 @@ export type CreateBusinessConsoleErpPurchaseOrderResponses = {
 };
 
 export type CreateBusinessConsoleErpPurchaseOrderResponse = CreateBusinessConsoleErpPurchaseOrderResponses[keyof CreateBusinessConsoleErpPurchaseOrderResponses];
+
+export type ListBusinessConsoleErpWorkOrderCostsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-order-costs';
+};
+
+export type ListBusinessConsoleErpWorkOrderCostsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkOrderCostsError = ListBusinessConsoleErpWorkOrderCostsErrors[keyof ListBusinessConsoleErpWorkOrderCostsErrors];
+
+export type ListBusinessConsoleErpWorkOrderCostsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostListResponse;
+};
+
+export type ListBusinessConsoleErpWorkOrderCostsResponse = ListBusinessConsoleErpWorkOrderCostsResponses[keyof ListBusinessConsoleErpWorkOrderCostsResponses];
 
 export type GetBusinessConsoleErpWorkOrderCostVarianceData = {
     body?: never;

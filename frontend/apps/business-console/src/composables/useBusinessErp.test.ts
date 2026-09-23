@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -6,6 +6,7 @@ import {
   convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
   listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
+  listBusinessConsoleErpWorkOrderCostsQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation } from '@pinia/colada'
@@ -13,6 +14,7 @@ import {
   useBusinessErp,
   useErpPurchaseRequisitions,
   useErpWorkCenterCostRates,
+  useErpWorkOrderCostPicker,
 } from './useBusinessErp'
 
 const coladaState = vi.hoisted(() => ({
@@ -39,6 +41,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleErpPurchaseRequisitionsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleErpPurchaseRequisitions' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleErpWorkOrderCostsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleErpWorkOrderCosts' }],
     query: vi.fn(),
   })),
 }))
@@ -235,5 +241,55 @@ describe('business ERP composable', () => {
     const options = vi.mocked(useMutation).mock.calls.at(-1)?.[0] as { onSuccess?: () => void }
     options.onSuccess?.()
     expect(refetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+// PublicContract: #3783 财务页工单候选取自 ERP 工单成本，服务端按关键字搜索。
+describe('ERP work-order cost picker', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    coladaState.queryFactoriesById.clear()
+    coladaState.queryDataById.clear()
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('searches ERP work-order costs by keyword inside the business scope', async () => {
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const picker = useErpWorkOrderCostPicker('')
+
+    picker.search.value = ' 0186 '
+    await vi.advanceTimersByTimeAsync(300)
+    coladaState.queryFactoriesById.get('listBusinessConsoleErpWorkOrderCosts')!()
+
+    expect(listBusinessConsoleErpWorkOrderCostsQueryOptions).toHaveBeenLastCalledWith({
+      query: { organizationId: 'org-001', environmentId: 'env-dev', take: 50, keyword: '0186' },
+    })
+  })
+
+  it('offers work orders with their SKU and keeps a selection outside the current page', () => {
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    coladaState.queryDataById.set('listBusinessConsoleErpWorkOrderCosts', {
+      success: true,
+      data: {
+        items: [
+          { workOrderId: 'WO-0186', skuCode: 'FG-01', costKind: 'ordinary' },
+          { workOrderId: 'WO-RW-0007', skuCode: 'FG-01', costKind: 'rework' },
+        ],
+        total: 120,
+      },
+    })
+
+    const picker = useErpWorkOrderCostPicker('WO-0999')
+
+    expect(picker.options.value).toEqual([
+      { value: 'WO-0999', label: 'WO-0999' },
+      { value: 'WO-0186', label: 'WO-0186', hint: 'FG-01' },
+      { value: 'WO-RW-0007', label: 'WO-RW-0007', hint: 'FG-01 · 返工' },
+    ])
+    expect(picker.total.value).toBe(120)
   })
 })

@@ -3,7 +3,6 @@ import type { BusinessConsoleErpOperationLaborVarianceItem } from '@nerv-iip/api
 import {
   NvButton,
   NvDataTable,
-  NvInput,
   NvMetricStrip,
   NvPageHeader,
   NvToolbar,
@@ -11,6 +10,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed, ref } from 'vue'
 import { useErpWorkOrderCostVariance } from '@/composables/useBusinessErp'
+import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage } from '@/utils/notify'
 import { costAmount, costHours, efficiencyDirection, laborReason } from '../costVariance'
@@ -99,7 +99,7 @@ function resize(pageSize: number) {
     <form @submit.prevent="queryOrder">
       <NvToolbar :show-search="false">
         <template #filters>
-          <NvInput v-model="draft" aria-label="工单编号" placeholder="工单编号" class="w-72" />
+          <WorkOrderCostPicker v-model="draft" class="w-72" />
           <NvButton
             type="submit"
             :disabled="!costs.ready.value || !draft.trim() || costs.workOrderPending.value"
@@ -152,7 +152,7 @@ function resize(pageSize: number) {
         :searchable="false"
         :column-settings="false"
         :awaiting-scope="!costs.ready.value || !costs.workOrder.id"
-        awaiting-scope-message="请选择业务范围并输入工单编号。"
+        awaiting-scope-message="请选择业务范围并选择工单。"
         empty-message="暂无有效人工结算；冲销后请重新结算。"
         @retry="costs.refreshWorkOrder"
         @update:page="costs.workOrder.page = $event"
