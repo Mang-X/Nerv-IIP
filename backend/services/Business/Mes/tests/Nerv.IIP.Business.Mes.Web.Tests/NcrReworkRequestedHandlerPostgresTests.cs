@@ -20,6 +20,7 @@ using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 using Npgsql;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -567,7 +568,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                         reportedAtUtc,
                         "rework-trace:report",
                         ProducedLotNo: "LOT-001",
-                        SerialTrackingPolicy: ProductionSerialTrackingPolicies.OnProduction,
+                        SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
                         SerialNumbers: ["SN-001"],
                         ReportedBy: "operator-rework"),
                     CancellationToken.None);

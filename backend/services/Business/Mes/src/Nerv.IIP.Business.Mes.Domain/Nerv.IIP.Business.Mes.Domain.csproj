@@ -13,6 +13,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- #3747：序列号追踪策略码集取 Contracts.MasterData 的共享词表，Domain 不再自留一份副本。
+         开门边界登记在 Nerv.IIP.ContractBoundary.Tests。 -->
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.MasterData\Nerv.IIP.Contracts.MasterData.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Nerv.IIP.Business.Mes.Web" />
   </ItemGroup>
 

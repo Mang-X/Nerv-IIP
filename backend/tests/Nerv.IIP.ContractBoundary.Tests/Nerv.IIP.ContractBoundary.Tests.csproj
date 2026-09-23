@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\services\Business\Approval\src\Nerv.IIP.Business.Approval.Domain\Nerv.IIP.Business.Approval.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Erp\src\Nerv.IIP.Business.Erp.Domain\Nerv.IIP.Business.Erp.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Inventory\src\Nerv.IIP.Business.Inventory.Domain\Nerv.IIP.Business.Inventory.Domain.csproj" />
+    <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Domain\Nerv.IIP.Business.Mes.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Quality\src\Nerv.IIP.Business.Quality.Domain\Nerv.IIP.Business.Quality.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Domain\Nerv.IIP.Business.Scheduling.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" />
@@ -25,6 +26,7 @@
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Approval\Nerv.IIP.Contracts.Approval.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Erp\Nerv.IIP.Contracts.Erp.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.MasterData\Nerv.IIP.Contracts.MasterData.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
   </ItemGroup>
 

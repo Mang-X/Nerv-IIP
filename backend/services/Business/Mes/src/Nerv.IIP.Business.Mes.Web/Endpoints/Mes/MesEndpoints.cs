@@ -18,6 +18,7 @@ using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Claims;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
@@ -112,7 +113,7 @@ public sealed record RecordProductionReportRequest(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string SerialTrackingPolicy = ProductionSerialTrackingPolicies.None,
+    string SerialTrackingPolicy = MasterDataSerialTrackingPolicies.None,
     IReadOnlyCollection<string>? SerialNumbers = null,
     // 由 BusinessGateway 从已认证 principal 注入的报工操作人；调用方载荷不自带身份。
     string? ReportedBy = null,

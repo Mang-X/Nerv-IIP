@@ -107,9 +107,29 @@ describe('报工标签权威选项（#2889 PublicContract）', () => {
     },
   )
 
-  it('非法 optional 策略不被猜成可报工，且不读取标签目录', async () => {
+  // #3747：码集成员判定的权威在网关（`production-serial-policy-invalid`），本地不再抄一份码集。
+  // 非 on-production 的策略一律按「不需要标签模板」处理：不读标签目录，也不在这里把人挡死。
+  it('未知策略按非 on-production 处理，不读取标签目录，由网关做码集判定', async () => {
     vi.mocked(getBusinessConsoleMasterDataResourceDetail).mockResolvedValue({
       data: { success: true, data: { active: true, serialTrackingPolicy: 'optional' } },
+    } as never)
+    const scope = effectScope()
+    const result = scope.run(() =>
+      useProductionReportSerialOptions(() => ({
+        workOrderId: 'WO-0142',
+        operationTaskId: 'OP-20',
+      })),
+    )!
+    await flushPromises()
+    expect(result.serialOptionsReady.value).toBe(true)
+    expect(result.serialPolicy.value).toBe('optional')
+    expect(listBusinessConsoleBarcodeTemplates).not.toHaveBeenCalled()
+    scope.stop()
+  })
+
+  it('策略缺失仍然拦下：没有策略就判不出要不要标签模板', async () => {
+    vi.mocked(getBusinessConsoleMasterDataResourceDetail).mockResolvedValue({
+      data: { success: true, data: { active: true, serialTrackingPolicy: '' } },
     } as never)
     const scope = effectScope()
     const result = scope.run(() =>

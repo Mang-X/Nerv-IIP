@@ -5,12 +5,14 @@ using Nerv.IIP.AppHub.Domain;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Ops.Domain;
 
@@ -31,6 +33,8 @@ public sealed class ContractBoundaryTests
         new(typeof(StockMovement).Assembly,
             ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
         new(typeof(InspectionRecord).Assembly,
+            ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
+        new(typeof(ProductionReportSerialNumber).Assembly,
             ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
     ];
 
@@ -57,6 +61,12 @@ public sealed class ContractBoundaryTests
             typeof(StockMovement).Assembly,
             typeof(InventoryQualityStatuses).Assembly,
             [typeof(InventoryQualityStatuses).FullName!, typeof(InventoryMovementTypes).FullName!]),
+        // #3747：序列号追踪策略是 MasterData 字典的 SystemEnum 码集，MES 领域、MES 读写面与业务网关
+        // 报工判定此前各抄一份；下沉到 Contracts.MasterData 后 Domain 直接引它。
+        new(
+            typeof(ProductionReportSerialNumber).Assembly,
+            typeof(MasterDataSerialTrackingPolicies).Assembly,
+            [typeof(MasterDataSerialTrackingPolicies).FullName!]),
         new(
             typeof(InspectionRecord).Assembly,
             typeof(QualityInspectionDispositionStatuses).Assembly,
@@ -130,6 +140,8 @@ public sealed class ContractBoundaryTests
                 + "Nerv.IIP.Contracts.Erp.ErpReceiptQualityStatuses,Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute",
                 "Nerv.IIP.Business.Inventory.Domain -> Nerv.IIP.Contracts.Inventory: "
                 + "Nerv.IIP.Contracts.Inventory.InventoryMovementTypes,Nerv.IIP.Contracts.Inventory.InventoryQualityStatuses",
+                "Nerv.IIP.Business.Mes.Domain -> Nerv.IIP.Contracts.MasterData: "
+                + "Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies",
                 "Nerv.IIP.Business.Quality.Domain -> Nerv.IIP.Contracts.Quality: "
                 + "Nerv.IIP.Contracts.Quality.QualityInspectionDispositionStatuses,"
                 + "Nerv.IIP.Contracts.Quality.QualityInspectionSourceServices,"
