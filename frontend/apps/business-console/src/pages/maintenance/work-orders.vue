@@ -205,13 +205,16 @@ const createForm = reactive({
 })
 const createError = shallowRef('')
 const { alarmOptions, alarmsPending } = useEquipmentAlarmCatalog(() => createForm.deviceAssetId)
-// 换了设备，原先挑的报警就不属于这台设备了；从报警带入的建单（设备与报警都只读）不受影响。
-watch(
-  () => createForm.deviceAssetId,
-  () => {
-    if (!createCarried.value) createForm.sourceAlarmId = ''
+// 用户换了设备，原先挑的报警就不属于这台设备了。清空写在设备框的 setter 里，
+// 只有用户操作才触发；从报警页带入建单时直接写字段，不会误清带入的报警。
+const createDeviceModel = computed({
+  get: () => createForm.deviceAssetId,
+  set: (value: string) => {
+    if (value === createForm.deviceAssetId) return
+    createForm.deviceAssetId = value
+    createForm.sourceAlarmId = ''
   },
-)
+})
 const downtimeReasons = useMaintenanceDowntimeReasonDirectory(filters)
 const {
   keyword: reasonKeyword,
@@ -750,7 +753,7 @@ watch(
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
               <NvCombobox
                 id="mwo-device"
-                v-model="createForm.deviceAssetId"
+                v-model="createDeviceModel"
                 :suggestions="deviceSuggestions"
                 placeholder="搜索设备台账"
               />

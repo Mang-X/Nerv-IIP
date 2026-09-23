@@ -331,28 +331,38 @@ describe('maintenance work orders page', () => {
     })
   })
 
-  it('手工建单时关联报警要先选设备，换设备就清掉原先挑的报警', async () => {
+  it('手工建单：先选设备才能挑报警，选中的报警随提交带出，换设备清掉原先挑的报警', async () => {
     state.query = {}
     const wrapper = mount(WorkOrdersPage, mountOptions())
-    const vm = wrapper.vm as unknown as {
-      openCreate: () => void
-      createForm: { deviceAssetId: string; sourceAlarmId: string }
+    ;(wrapper.vm as unknown as { openCreate: () => void }).openCreate()
+    await flushPromises()
+    function input(selector: string) {
+      return document.body.querySelector<HTMLInputElement>(selector)!
     }
-    vm.openCreate()
-    await flushPromises()
-    // 选择器在本文件被桩成输入位，这里读它的占位文案判断「先选设备」。
-    const alarmPicker = () => document.body.querySelector<HTMLInputElement>('#mwo-alarm')!
-    expect(alarmPicker().placeholder).toBe('先选设备')
+    async function type(selector: string, value: string) {
+      input(selector).value = value
+      input(selector).dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+    }
+    // 选择器在本文件被桩成输入位，读占位文案判断「先选设备」。
+    expect(input('#mwo-alarm').placeholder).toBe('先选设备')
 
-    vm.createForm.deviceAssetId = 'DEV-SMT-01'
-    await flushPromises()
-    expect(alarmPicker().placeholder).toBe('可选')
-    vm.createForm.sourceAlarmId = 'ALARM-1'
-    await flushPromises()
+    await type('#mwo-device', 'DEV-PRESS-01')
+    expect(input('#mwo-alarm').placeholder).toBe('可选')
+    await type('#mwo-alarm', 'ALARM-1')
+    await type('#mwo-device', 'DEV-SMT-01')
+    expect(input('#mwo-alarm').value).toBe('')
 
-    vm.createForm.deviceAssetId = 'DEV-PRESS-01'
+    await type('#mwo-alarm', 'ALARM-1')
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建维护工单'))!
+    submit.click()
     await flushPromises()
-    expect(vm.createForm.sourceAlarmId).toBe('')
+    expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
+      deviceAssetId: 'DEV-SMT-01',
+      sourceAlarmId: 'ALARM-1',
+    })
   })
 
   it('offers a technician selector and estimated labor on the create sheet', async () => {

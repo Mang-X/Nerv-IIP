@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleMesProductionReportRow,
+  BusinessConsoleMesWorkOrderItem,
+} from '@nerv-iip/api-client'
 import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
@@ -57,7 +60,7 @@ import {
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -106,12 +109,21 @@ const { keyword: workOrderSearch } = useMesKeywordFilter(workOrderCatalog.filter
 const candidateWorkOrderOptions = computed<EntityPickerOption[]>(() =>
   buildWorkOrderPickerOptions(workOrderCatalog.workOrders.value, candidateWorkOrderId.value),
 )
+// 工序取自已选工单那一行。工单目录走服务端搜索，改搜别的单号后已选工单会滑出结果集，
+// 所以记住最后一次在结果里见到的那一行，别让已选工序凭空变成「未选择」。
+const candidateWorkOrder = shallowRef<BusinessConsoleMesWorkOrderItem>()
+watch(
+  [() => workOrderCatalog.workOrders.value, candidateWorkOrderId],
+  ([orders, workOrderId]) => {
+    const found = orders.find((order) => order.workOrderId?.trim() === workOrderId)
+    if (found) candidateWorkOrder.value = found
+    else if (candidateWorkOrder.value?.workOrderId?.trim() !== workOrderId)
+      candidateWorkOrder.value = undefined
+  },
+  { immediate: true },
+)
 const candidateOperationTaskOptions = computed<EntityPickerOption[]>(() =>
-  buildOperationTaskPickerOptions(
-    workOrderCatalog.workOrders.value.find(
-      (order) => order.workOrderId?.trim() === candidateWorkOrderId.value,
-    ),
-  ),
+  buildOperationTaskPickerOptions(candidateWorkOrder.value),
 )
 // 换了工单，上一张工单的工序任务就不再成立，跟着清掉。
 const candidateWorkOrderModel = computed({
@@ -848,8 +860,11 @@ async function dismissCandidate(candidateId?: string) {
             class="mt-4 grid gap-3 md:grid-cols-2"
           >
             <div class="grid gap-1 text-sm">
-              <span>工单</span>
+              <NvFieldLabel :for="`candidate-work-order-${candidate.candidateId}`"
+                >工单</NvFieldLabel
+              >
               <NvEntityPicker
+                :id="`candidate-work-order-${candidate.candidateId}`"
                 v-model="candidateWorkOrderModel"
                 v-model:search="workOrderSearch"
                 :options="candidateWorkOrderOptions"
@@ -866,8 +881,11 @@ async function dismissCandidate(candidateId?: string) {
               />
             </div>
             <div class="grid gap-1 text-sm">
-              <span>工序任务</span>
+              <NvFieldLabel :for="`candidate-operation-task-${candidate.candidateId}`"
+                >工序任务</NvFieldLabel
+              >
               <NvEntityPicker
+                :id="`candidate-operation-task-${candidate.candidateId}`"
                 v-model="candidateOperationTaskId"
                 :options="candidateOperationTaskOptions"
                 :show-code="false"

@@ -37,13 +37,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
-import {
-  UNAVAILABLE_TEXT,
-  erpReadState,
-  formatAmount,
-  pickerInvalidClass,
-  readCount,
-} from '../shared'
+import { UNAVAILABLE_TEXT, erpReadState, formatAmount, readCount } from '../shared'
 
 definePage({
   meta: {
@@ -327,7 +321,7 @@ async function submit() {
                 :empty-text="sourceDocumentCatalog.emptyText"
                 :loading="sourceDocumentCatalog.pending"
                 aria-label="来源单据"
-                :class="pickerInvalidClass(showErrors && invalid.sourceDocumentNo)"
+                :invalid="showErrors && invalid.sourceDocumentNo"
               />
               <NvInput
                 v-else

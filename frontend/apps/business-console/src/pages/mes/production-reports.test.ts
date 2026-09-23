@@ -128,7 +128,7 @@ const mesState = vi.hoisted(() => ({
   deactivateReverseDetail: vi.fn(),
   guardRows: null as Array<Record<string, unknown>> | null,
   candidateRows: [] as Array<Record<string, unknown>>,
-  workOrderRows: [] as Array<Record<string, unknown>>,
+  workOrderRows: undefined as unknown as { value: Array<Record<string, unknown>> },
   promoteCandidate: vi.fn(
     async (_candidateId: string, _workOrderId: string, _taskId: string) => {},
   ),
@@ -174,6 +174,7 @@ vi.mock('@/composables/useBusinessMes', async () => {
   })
   mesState.pending = shallowRef(false)
   mesState.detail = shallowRef()
+  mesState.workOrderRows = shallowRef([])
   mesState.detailPending = shallowRef(false)
   mesState.detailError = shallowRef()
   return {
@@ -227,9 +228,9 @@ vi.mock('@/composables/useBusinessMes', async () => {
     // main 上并行合入的遥测报工候选队列(同页):这些冲销相关用例不驱动它,给个空队列桩即可。
     useMesWorkOrders: () => ({
       filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 50 }),
-      workOrders: computed(() => mesState.workOrderRows),
+      workOrders: mesState.workOrderRows,
       workOrdersPending: shallowRef(false),
-      workOrdersTotal: computed(() => mesState.workOrderRows.length),
+      workOrdersTotal: computed(() => mesState.workOrderRows.value.length),
     }),
     useMesTelemetryProductionReportCandidates: () => ({
       filters: reactive({
@@ -374,7 +375,7 @@ beforeEach(() => {
   mesState.deactivateReverseDetail.mockClear()
   mesState.guardRows = null
   mesState.candidateRows = []
-  mesState.workOrderRows = []
+  if (mesState.workOrderRows) mesState.workOrderRows.value = []
   mesState.promoteCandidate.mockClear()
   mesState.catalogResolved = true
   // jsdom 未实现 scrollIntoView,定义为可断言的 mock(跨页定位滚动)
@@ -874,7 +875,7 @@ describe('production reports page — 遥测报工候选转正', () => {
 
   async function openCandidate() {
     mesState.candidateRows = [candidate]
-    mesState.workOrderRows = workOrders
+    mesState.workOrderRows.value = workOrders
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     await flushPromises()
     await wrapper
@@ -905,6 +906,23 @@ describe('production reports page — 遥测报工候选转正', () => {
       'WO-1',
       '019fbb41-0010-7000-8000-000000000010',
     )
+  })
+
+  it('工单搜索结果里没有已选工单时，仍保留它的工序候选与已选工序', async () => {
+    const wrapper = await openCandidate()
+
+    // 模拟在工单搜索框改搜别的单号：服务端结果里不再有 WO-1。
+    mesState.workOrderRows.value = [workOrders[1]!]
+    await flushPromises()
+    const taskPicker = wrapper.get('select[aria-label="工序任务"]')
+    expect((taskPicker.element as HTMLSelectElement).value).toBe(
+      '019fbb41-0010-7000-8000-000000000010',
+    )
+    expect(taskPicker.findAll('option').map((o) => o.text())).toEqual([
+      '',
+      'WO-1-OP-10',
+      'WO-1-OP-20',
+    ])
   })
 
   it('改选工单后清掉上一张工单的工序，只能从新工单的工序里挑', async () => {
