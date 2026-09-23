@@ -13,6 +13,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import ShiftFormDialog from '@/components/masterData/ShiftFormDialog.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
@@ -39,7 +40,6 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -141,35 +141,12 @@ const includeDisabled = useIncludeDisabledFilter([shifts.filters, calendars.filt
   shiftPage.value = 1
 })
 const shiftPageSize = ref('10')
-const shiftOpen = ref(false)
-const shiftShowErrors = ref(false)
-const shiftEditingCode = shallowRef<string | null>(null)
-const shiftEditLoading = shallowRef(false)
-const shiftForm = reactive({
-  code: '',
-  name: '',
-  startsAt: '08:00',
-  endsAt: '16:00',
-  paidMinutes: '480',
-})
+// 班次弹窗：每次打开递增作 key，拿到全新实例（按 editing 初始化表单）；0 表示还没打开过。
+const shiftOpen = shallowRef(false)
+const shiftSession = shallowRef(0)
+const shiftEditing = shallowRef<BusinessConsoleResourceItem>()
 const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.value))
-const shiftPaidValid = computed(() => (Number(shiftForm.paidMinutes) || 0) > 0)
-const canCreateShift = computed(() => isNonEmpty(shiftForm.name) && shiftPaidValid.value)
-// 编辑态也可改时段/计薪：名称必填 + 计薪 > 0。
-const shiftFormValid = computed(() =>
-  shiftEditingCode.value
-    ? isNonEmpty(shiftForm.name) && shiftPaidValid.value
-    : canCreateShift.value,
-)
 const shiftListError = computed(() => inlineErrorMessage(shifts.error.value))
-const shiftCrossesMidnight = computed(() => {
-  const start = shiftForm.startsAt.trim()
-  const end = shiftForm.endsAt.trim()
-  return !!start && !!end && end <= start
-})
-watch(shiftOpen, (open) => {
-  if (open) shiftShowErrors.value = false
-})
 watch([shiftKeyword, shiftPageSize], () => {
   shiftPage.value = 1
 })
@@ -181,91 +158,14 @@ watch(
   },
   { immediate: true },
 )
-function resetShiftForm() {
-  Object.assign(shiftForm, {
-    code: '',
-    name: '',
-    startsAt: '08:00',
-    endsAt: '16:00',
-    paidMinutes: '480',
-  })
-}
-function openCreateShift() {
-  shiftEditingCode.value = null
-  resetShiftForm()
-  shiftShowErrors.value = false
+function openShiftForm(row?: BusinessConsoleResourceItem) {
+  shiftEditing.value = row
+  shiftSession.value += 1
   shiftOpen.value = true
 }
-// 班次起止后端以 HH:mm:ss 存；表单 <input type=time> 用 HH:mm，互转。
-function toTimeInput(value?: string | null) {
-  if (!value) return ''
-  return value.slice(0, 5)
-}
-function toTimePayload(value: string) {
-  const v = value.trim()
-  if (!v) return undefined
-  return v.length === 5 ? `${v}:00` : v
-}
-async function openEditShift(row: BusinessConsoleResourceItem) {
+function openEditShift(row: BusinessConsoleResourceItem) {
   if (!row.code) return
-  shiftEditingCode.value = row.code
-  shiftShowErrors.value = false
-  shiftEditLoading.value = true
-  shiftOpen.value = true
-  try {
-    const d = await shiftActions.fetchDetail(row.code)
-    shiftForm.code = row.code
-    shiftForm.name = d?.name ?? row.displayName ?? ''
-    shiftForm.startsAt = toTimeInput(d?.startsAt) || '08:00'
-    shiftForm.endsAt = toTimeInput(d?.endsAt) || '16:00'
-    shiftForm.paidMinutes = d?.paidMinutes != null ? String(d.paidMinutes) : '480'
-  } finally {
-    shiftEditLoading.value = false
-  }
-}
-async function submitShift() {
-  if (shiftEditingCode.value) {
-    if (!shiftFormValid.value) {
-      shiftShowErrors.value = true
-      return
-    }
-    try {
-      await shiftActions.update(shiftEditingCode.value, {
-        name: shiftForm.name.trim(),
-        startsAt: toTimePayload(shiftForm.startsAt),
-        endsAt: toTimePayload(shiftForm.endsAt),
-        paidMinutes: Number(shiftForm.paidMinutes) || 480,
-      })
-      notifySuccess(`班次「${shiftForm.name.trim()}」已更新。`)
-      resetShiftForm()
-      shiftEditingCode.value = null
-      shiftShowErrors.value = false
-      shiftOpen.value = false
-    } catch (error) {
-      notifyOperationFailure('更新班次失败', error, '更新班次失败，请稍后重试。')
-    }
-    return
-  }
-  if (!canCreateShift.value) {
-    shiftShowErrors.value = true
-    return
-  }
-  try {
-    await shifts.create({
-      organizationId: shifts.filters.organizationId,
-      environmentId: shifts.filters.environmentId,
-      name: shiftForm.name.trim(),
-      startsAt: shiftForm.startsAt.trim() || undefined,
-      endsAt: shiftForm.endsAt.trim() || undefined,
-      paidMinutes: Number(shiftForm.paidMinutes) || 480,
-    })
-    notifySuccess(`班次「${shiftForm.name.trim()}」已创建。`)
-    resetShiftForm()
-    shiftShowErrors.value = false
-    shiftOpen.value = false
-  } catch (error) {
-    notifyOperationFailure('保存班次失败', error, '保存班次失败，请稍后重试。')
-  }
+  openShiftForm(row)
 }
 
 // ---- 工作日历 ----
@@ -882,91 +782,9 @@ const sortedExceptions = computed(() =>
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>
           <template #actions>
-            <NvDialog v-model:open="shiftOpen">
-              <NvDialogTrigger as-child>
-                <NvButton size="sm" type="button" @click="openCreateShift"
-                  ><PlusIcon aria-hidden="true" />新建班次</NvButton
-                >
-              </NvDialogTrigger>
-              <NvDialogContent class="sm:max-w-lg">
-                <NvDialogHeader>
-                  <NvDialogTitle>{{
-                    shiftEditingCode ? `编辑班次 · ${shiftEditingCode}` : '新建班次'
-                  }}</NvDialogTitle>
-                  <NvDialogDescription class="sr-only">{{
-                    shiftEditingCode ? `班次 ${shiftEditingCode}` : '新建班次'
-                  }}</NvDialogDescription>
-                </NvDialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitShift">
-                  <CarriedContextSummary
-                    v-if="shiftEditingCode"
-                    label="班次标识"
-                    :items="[{ label: '班次编码', value: shiftForm.code }]"
-                  />
-                  <p
-                    v-if="shiftShowErrors && !shiftFormValid"
-                    class="text-sm text-destructive"
-                    role="alert"
-                  >
-                    请完整填写带 * 的必填项（已标红）。
-                  </p>
-                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <NvField :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.name)">
-                      <NvFieldLabel for="shift-name"
-                        >班次名称 <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <NvInput
-                        id="shift-name"
-                        v-model="shiftForm.name"
-                        autocomplete="off"
-                        required
-                      />
-                    </NvField>
-                    <NvField>
-                      <NvFieldLabel for="shift-start">开始时间</NvFieldLabel>
-                      <NvInput id="shift-start" v-model="shiftForm.startsAt" type="time" />
-                    </NvField>
-                    <NvField>
-                      <NvFieldLabel for="shift-end">结束时间</NvFieldLabel>
-                      <NvInput id="shift-end" v-model="shiftForm.endsAt" type="time" />
-                      <NvFieldDescription v-if="shiftCrossesMidnight"
-                        >结束早于开始，按跨天班次处理。</NvFieldDescription
-                      >
-                    </NvField>
-                    <NvField :data-invalid="shiftShowErrors && !shiftPaidValid">
-                      <NvFieldLabel for="shift-paid"
-                        >计薪时长（分钟） <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <NvInput
-                        id="shift-paid"
-                        v-model="shiftForm.paidMinutes"
-                        type="number"
-                        min="1"
-                        inputmode="numeric"
-                      />
-                    </NvField>
-                  </NvFieldGroup>
-                  <NvDialogFooter>
-                    <NvButton type="button" variant="outline" @click="shiftOpen = false"
-                      >取消</NvButton
-                    >
-                    <NvButton
-                      type="submit"
-                      :disabled="
-                        shifts.createPending.value ||
-                        shiftActions.updatePending.value ||
-                        shiftEditLoading
-                      "
-                    >
-                      <Spinner
-                        v-if="shifts.createPending.value || shiftActions.updatePending.value"
-                        aria-hidden="true"
-                      />{{ shiftEditingCode ? '保存修改' : '保存班次' }}
-                    </NvButton>
-                  </NvDialogFooter>
-                </form>
-              </NvDialogContent>
-            </NvDialog>
+            <NvButton size="sm" type="button" @click="openShiftForm()"
+              ><PlusIcon aria-hidden="true" />新建班次</NvButton
+            >
           </template>
         </NvToolbar>
         <p v-if="shiftListError" class="text-sm text-destructive" role="alert">
@@ -1464,5 +1282,11 @@ const sortedExceptions = computed(() =>
       </NvTabsContent>
     </NvTabs>
     <MasterDataLifecycleDialog :controller="lifecycle" />
+    <ShiftFormDialog
+      v-if="shiftSession"
+      :key="shiftSession"
+      v-model:open="shiftOpen"
+      :editing="shiftEditing"
+    />
   </BusinessLayout>
 </template>

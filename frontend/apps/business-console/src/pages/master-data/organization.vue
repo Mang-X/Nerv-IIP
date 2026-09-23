@@ -6,6 +6,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
@@ -66,7 +67,7 @@ const TREE_TAKE = 200
 
 const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest>('department')
 const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
-// 班组挂靠班次：新建班组要选班次，取班次列表填下拉（只读引用，不在本页维护班次）。
+// 班组挂靠班次：「所属班次」用班次选择器（可就地新增）；这里的列表只用来在只有一个班次时自动选中。
 const shifts = useMasterDataResource('shift')
 // 班组是车间级的（一个班次的人覆盖本车间全部工作中心）；派工按「工作中心 → 车间 → 班组」找人，
 // 所以班组绑的是车间。
@@ -1011,20 +1012,14 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <NvFieldLabel for="team-shift"
                 >所属班次 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvSelect v-model="teamForm.shiftCode">
-                <NvSelectTrigger id="team-shift"
-                  ><NvSelectValue placeholder="请选择班次"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="s in shifts.items.value"
-                    :key="s.code"
-                    :value="s.code ?? NONE_PARENT"
-                  >
-                    {{ s.displayName ?? s.code }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <!-- 要挂的班次还没建时可以就地新增，建好自动选中。 -->
+              <DirectoryPicker
+                id="team-shift"
+                v-model="teamForm.shiftCode"
+                directory-type="shift"
+                placeholder="请选择班次"
+                creatable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="team-workshop">所属车间</NvFieldLabel>
