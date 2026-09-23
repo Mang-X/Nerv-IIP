@@ -74,17 +74,14 @@ const STATUS_OPTIONS = [
 ]
 
 const siteCatalog = useBusinessMasterDataResources('site')
-const siteNameByCode = computed(
-  () =>
-    new Map(
-      siteCatalog.resources.value.flatMap((site) =>
-        site.code ? [[site.code, site.displayName?.trim() || site.code] as const] : [],
-      ),
-    ),
+const catalogSiteOptions = computed(() =>
+  siteCatalog.resources.value.flatMap((site) =>
+    site.code ? [{ value: site.code, label: site.displayName?.trim() || site.code }] : [],
+  ),
 )
 function siteLabel(code?: string | null) {
   if (!code) return '—'
-  return siteNameByCode.value.get(code) ?? code
+  return catalogSiteOptions.value.find((o) => o.value === code)?.label ?? code
 }
 
 const search = computed({
@@ -118,7 +115,7 @@ function blankForm(): LocationForm {
   return {
     locationCode: '',
     locationType: 'storage',
-    siteCode: siteCatalog.resources.value[0]?.code ?? FALLBACK_INVENTORY_SITE_CODE,
+    siteCode: catalogSiteOptions.value[0]?.value ?? FALLBACK_INVENTORY_SITE_CODE,
     parentLocationCode: '',
     status: 'active',
   }
@@ -132,9 +129,7 @@ const editingCode = shallowRef<string | null>(null)
 const form = reactive<LocationForm>(blankForm())
 
 const siteOptions = computed(() => {
-  const options = siteCatalog.resources.value.flatMap((site) =>
-    site.code ? [{ value: site.code, label: site.displayName?.trim() || site.code }] : [],
-  )
+  const options = [...catalogSiteOptions.value]
   // 工厂主数据没加载到、或正在编辑的库位挂在目录外的工厂上时，当前值也要能显示和保留。
   if (form.siteCode && !options.some((o) => o.value === form.siteCode)) {
     options.unshift({ value: form.siteCode, label: form.siteCode })
@@ -247,8 +242,26 @@ async function submitForm() {
       :loading="locationsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="还没有库位。新建原料库、成品库、线边库等库位后，收发料与线边库存才有去处。"
+      empty-message="还没有库位。"
     >
+      <template #empty>
+        <template v-if="search">
+          <p class="text-sm font-medium">没有符合条件的库位</p>
+          <NvButton size="sm" type="button" variant="outline" @click="search = ''">
+            清空筛选
+          </NvButton>
+        </template>
+        <template v-else>
+          <p class="text-sm font-medium">还没有库位</p>
+          <p class="max-w-md text-sm text-muted-foreground">
+            新建原料库、成品库、线边库等库位后，收发料与线边库存才有去处。
+          </p>
+          <NvButton size="sm" type="button" @click="openCreate">
+            <PlusIcon aria-hidden="true" />
+            新建库位
+          </NvButton>
+        </template>
+      </template>
       <template #cell-locationType="{ row }">
         {{ locationTypeLabel(row.locationType) }}
       </template>
