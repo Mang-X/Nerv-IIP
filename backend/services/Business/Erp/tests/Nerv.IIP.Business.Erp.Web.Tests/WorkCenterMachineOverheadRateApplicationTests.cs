@@ -363,7 +363,8 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
             WorkCenterMachineOverheadRate.DefineNotApplicable(
                 "org-a", "env-a", "WC-02", "2026-06", "CNY", 1, "system:test", "无机器费用", ChangedAtUtc),
             Rate("org-a", "env-a", "WC-03", "2026-07", 1, 30_000m),
-            Rate("org-b", "env-a", "WC-04", "2026-06", 1, 30_000m));
+            Rate("org-b", "env-a", "WC-04", "2026-06", 1, 30_000m),
+            Rate("org-a", "env-b", "WC-05", "2026-06", 1, 30_000m));
         await db.SaveChangesAsync();
 
         var coverage = await new GetMachineOverheadRatePeriodCoverageQueryHandler(db).Handle(

@@ -254,11 +254,9 @@ public sealed class MesFoundationReadinessService(
             request.LineCode,
             request.WorkCenterCode,
             cancellationToken);
-        return
-        [
-            .. await BuildWorkCenterCostRateIssuesAsync(request, workCenters, cancellationToken),
-            .. await BuildMachineOverheadRateIssuesAsync(request, workCenters, cancellationToken),
-        ];
+        var laborRateIssues = BuildWorkCenterCostRateIssuesAsync(request, workCenters, cancellationToken);
+        var machineOverheadRateIssues = BuildMachineOverheadRateIssuesAsync(request, workCenters, cancellationToken);
+        return [.. await laborRateIssues, .. await machineOverheadRateIssues];
     }
 
     /// <summary>
