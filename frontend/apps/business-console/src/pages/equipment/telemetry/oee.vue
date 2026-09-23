@@ -10,6 +10,7 @@ import {
 import { usePagedList } from '@/composables/usePagedList'
 import { presentOeeReport, type OeeTableRow } from '@/pages/equipment/telemetry/oeePresentation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import {
   NvBadge,
   NvButton,
@@ -262,24 +263,49 @@ function refreshReport() {
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         <NvField>
-          <NvFieldLabel>设备资产</NvFieldLabel>
-          <NvInput v-model="filters.deviceAssetId" placeholder="设备资产编号" />
+          <NvFieldLabel>设备</NvFieldLabel>
+          <DirectoryPicker
+            v-model="filters.deviceAssetId"
+            directory-type="equipment"
+            placeholder="全部设备"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel>工作中心</NvFieldLabel>
-          <NvInput v-model="filters.workCenterId" placeholder="工作中心编号" />
+          <DirectoryPicker
+            v-model="filters.workCenterId"
+            directory-type="work-center"
+            placeholder="全部工作中心"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel>产线</NvFieldLabel>
-          <NvInput v-model="filters.lineCode" placeholder="产线编号" />
+          <DirectoryPicker
+            v-model="filters.lineCode"
+            directory-type="production-line"
+            placeholder="全部产线"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel>车间</NvFieldLabel>
-          <NvInput v-model="filters.workshopCode" placeholder="车间编号" />
+          <DirectoryPicker
+            v-model="filters.workshopCode"
+            directory-type="workshop"
+            placeholder="全部车间"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel>班次</NvFieldLabel>
-          <NvInput v-model="filters.shiftCode" placeholder="班次编号" />
+          <DirectoryPicker
+            v-model="filters.shiftCode"
+            directory-type="shift"
+            placeholder="全部班次"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel>业务日</NvFieldLabel>
@@ -303,7 +329,7 @@ function refreshReport() {
         </p>
         <p class="text-sm text-muted-foreground">横轴使用业务日“月/日”短标签。</p>
         <p v-if="filters.deviceAssetId" class="text-sm text-muted-foreground">
-          当前设备范围：{{ filters.deviceAssetId }}；可在“设备资产”筛选框清除。
+          当前设备范围：{{ filters.deviceAssetId }}；可在“设备”筛选框清除。
         </p>
       </div>
       <p v-if="trendErrorMessage" class="text-sm text-destructive" role="alert">

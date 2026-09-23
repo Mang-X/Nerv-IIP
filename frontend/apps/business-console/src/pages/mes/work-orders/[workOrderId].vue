@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { statusActionGate } from '@nerv-iip/business-core'
-import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/ui'
+import type {
+  EntityPickerOption,
+  NvDataTableColumn,
+  NvMetricStatus,
+  NvMetricTone,
+} from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
@@ -55,6 +61,7 @@ import {
   NvAlertDialogTitle,
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -402,6 +409,7 @@ const receiveOpen = ref(false)
 const receiveError = ref('')
 const receiveForm = reactive({
   requestId: '',
+  materialCode: '',
   quantity: '',
   materialLotId: '',
 })
@@ -429,6 +437,23 @@ const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
   { key: 'wmsRequestId', header: '出库单', width: 'w-32' },
   { key: 'actions', header: '操作', width: 'w-28' },
 ]
+
+const operationTaskOptions = computed<EntityPickerOption[]>(() =>
+  operationTasks.value.flatMap((task) => {
+    const value = task.operationTaskId?.trim()
+    if (!value) return []
+    const sequence = `第 ${task.operationSequence ?? 0} 道工序`
+    const taskNo = task.operationTaskNo?.trim()
+    const workCenter = task.workCenterName?.trim() || task.workCenterCode?.trim()
+    return [
+      {
+        value,
+        label: taskNo || sequence,
+        hint: [taskNo ? sequence : '', workCenter].filter(Boolean).join(' · '),
+      },
+    ]
+  }),
+)
 
 const issueUomCode = computed(() => resolveBaseUom(issueForm.materialId.trim()))
 const issueUomBlockReason = computed(() => {
@@ -494,6 +519,7 @@ function openReceiveDialog(row: MaterialIssueRow) {
   if (!canReceive(row)) return
   receiveError.value = ''
   receiveForm.requestId = row.requestId ?? ''
+  receiveForm.materialCode = row.materialCode ?? row.materialId ?? ''
   receiveForm.quantity = ''
   receiveForm.materialLotId = row.materialLotId ?? ''
   receiveOpen.value = true
@@ -1419,7 +1445,11 @@ function formatStatus(value?: string | null) {
             <NvFieldLabel for="issue-material">
               物料 <span class="text-destructive">*</span>
             </NvFieldLabel>
-            <NvInput id="issue-material" v-model="issueForm.materialId" placeholder="物料标识" />
+            <DirectoryPicker
+              id="issue-material"
+              v-model="issueForm.materialId"
+              directory-type="material"
+            />
           </NvField>
           <NvField>
             <NvFieldLabel for="issue-uom">单位</NvFieldLabel>
@@ -1442,10 +1472,17 @@ function formatStatus(value?: string | null) {
           </NvField>
           <NvField>
             <NvFieldLabel for="issue-operation">工序任务</NvFieldLabel>
-            <NvInput
+            <NvEntityPicker
               id="issue-operation"
               v-model="issueForm.operationTaskId"
+              :options="operationTaskOptions"
+              title="选择工序任务"
               placeholder="可留空，指定后领料归属该工序"
+              source-text="数据来自本工单的工序任务"
+              empty-text="本工单还没有工序任务"
+              :show-code="false"
+              clearable
+              aria-label="工序任务"
             />
           </NvField>
         </NvFieldGroup>
@@ -1502,10 +1539,13 @@ function formatStatus(value?: string | null) {
           </NvField>
           <NvField>
             <NvFieldLabel for="receive-lot">物料批次</NvFieldLabel>
-            <NvInput
+            <DirectoryPicker
               id="receive-lot"
               v-model="receiveForm.materialLotId"
-              placeholder="退料与追溯依赖批次，建议如实填写"
+              directory-type="batch"
+              :sku-code="receiveForm.materialCode"
+              placeholder="退料与追溯依赖批次，建议如实选择"
+              clearable
             />
           </NvField>
         </NvFieldGroup>

@@ -14,6 +14,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { computed } from 'vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import type { MesProductionStatisticsFilters } from '@/composables/useMesProductionStatistics'
 
 const props = defineProps<{ filters: MesProductionStatisticsFilters }>()
@@ -90,27 +91,33 @@ function fromDateInput(value: string, dayOffset: number) {
         />
       </NvField>
       <NvField class="min-w-36">
-        <NvFieldLabel>班次编码</NvFieldLabel>
-        <NvInput
+        <NvFieldLabel>班次</NvFieldLabel>
+        <DirectoryPicker
+          directory-type="shift"
           :model-value="filters.shiftCode"
           placeholder="全部班次"
-          @update:model-value="emit('update', { shiftCode: String($event) })"
+          clearable
+          @update:model-value="emit('update', { shiftCode: $event })"
         />
       </NvField>
       <NvField class="min-w-44">
-        <NvFieldLabel>工作中心 ID</NvFieldLabel>
-        <NvInput
+        <NvFieldLabel>工作中心</NvFieldLabel>
+        <DirectoryPicker
+          directory-type="work-center"
           :model-value="filters.workCenterId"
           placeholder="全部工作中心"
-          @update:model-value="emit('update', { workCenterId: String($event) })"
+          clearable
+          @update:model-value="emit('update', { workCenterId: $event })"
         />
       </NvField>
       <NvField class="min-w-44">
-        <NvFieldLabel>物料 ID</NvFieldLabel>
-        <NvInput
+        <NvFieldLabel>物料</NvFieldLabel>
+        <DirectoryPicker
+          directory-type="material"
           :model-value="filters.skuId"
           placeholder="全部物料"
-          @update:model-value="emit('update', { skuId: String($event) })"
+          clearable
+          @update:model-value="emit('update', { skuId: $event })"
         />
       </NvField>
     </template>

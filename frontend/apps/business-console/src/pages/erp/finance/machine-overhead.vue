@@ -3,10 +3,11 @@ import type {
   BusinessConsoleErpOperationMachineOverheadItem,
   BusinessConsoleErpMachineOverheadReconciliationItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import {
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvInput,
   NvMetricStrip,
   NvPageHeader,
@@ -14,6 +15,10 @@ import {
 } from '@nerv-iip/ui'
 import { computed, reactive } from 'vue'
 import { useErpMachineOverhead } from '@/composables/useBusinessErp'
+import { useMesWorkOrders } from '@/composables/useBusinessMes'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
+import { buildWorkOrderPickerOptions } from '@/composables/mes/workOrderPickerOptions'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   allocationDifference,
@@ -33,6 +38,12 @@ definePage({
 
 const costs = useErpMachineOverhead()
 const draft = reactive({ workOrderId: '', period: '', workCenterId: '' })
+// 工单是持续新增的大目录，选择器走服务端搜索（与生产追溯同一套工单候选）。
+const workOrderCatalog = useMesWorkOrders({ initialTake: 50 })
+const { keyword: workOrderSearch } = useMesKeywordFilter(workOrderCatalog.filters)
+const workOrderOptions = computed<EntityPickerOption[]>(() =>
+  buildWorkOrderPickerOptions(workOrderCatalog.workOrders.value, draft.workOrderId),
+)
 const order = computed(() =>
   costs.workOrderError.value || costs.workOrderPending.value
     ? undefined
@@ -126,11 +137,20 @@ function resizeMonth(pageSize: number) {
       <form @submit.prevent="queryOrder">
         <NvToolbar :show-search="false">
           <template #filters>
-            <NvInput
+            <NvEntityPicker
               v-model="draft.workOrderId"
+              v-model:search="workOrderSearch"
               class="w-72"
-              aria-label="工单编号"
-              placeholder="工单编号"
+              :options="workOrderOptions"
+              title="选择工单"
+              placeholder="选择工单"
+              search-placeholder="搜索工单号 / 物料…"
+              source-text="数据来自制造执行工单列表"
+              empty-text="当前范围内没有匹配的工单"
+              :loading="workOrderCatalog.workOrdersPending.value"
+              server-search
+              :total-count="workOrderCatalog.workOrdersTotal.value"
+              aria-label="工单"
             />
             <NvButton
               type="submit"
@@ -163,7 +183,7 @@ function resizeMonth(pageSize: number) {
         :searchable="false"
         :column-settings="false"
         :awaiting-scope="!costs.ready.value || !costs.workOrder.id"
-        awaiting-scope-message="请选择业务范围并输入工单编号。"
+        awaiting-scope-message="请选择业务范围并选择工单。"
         :empty-message="order ? '没有有效机器结算明细。' : '尚未取得工单费用。'"
         @retry="costs.refreshWorkOrder"
         @update:page="costs.workOrder.page = $event"
@@ -222,11 +242,12 @@ function resizeMonth(pageSize: number) {
               aria-label="会计期间"
               placeholder="会计期间"
             />
-            <NvInput
+            <DirectoryPicker
               v-model="draft.workCenterId"
+              directory-type="work-center"
               class="w-64"
-              aria-label="工作中心编号"
-              placeholder="工作中心编号（可选）"
+              placeholder="全部工作中心"
+              clearable
             />
             <NvButton
               type="submit"
