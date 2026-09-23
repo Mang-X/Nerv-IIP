@@ -272,6 +272,61 @@ describe('NvEntityPicker', () => {
     })
   })
 
+  // #3796：表单里的选择器就地新增。入口只在调用方给了文案时出现（没有新增权限就不给）；
+  // 点入口收起选择器、把「要新增」交给调用方打开表单，本组件不自己改 v-model。
+  describe('新增入口', () => {
+    function createEntry() {
+      return [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent?.trim() === '新增物料',
+      )
+    }
+
+    it('没给 createText 就没有入口', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择物料' },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      expect(createEntry()).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('点入口收起选择器并发出 create，不动已选值', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择物料', createText: '新增物料' },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      createEntry()!.click()
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toHaveLength(1)
+      expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+      expect(panelOpen()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('弹窗形态同样有入口', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择物料', variant: 'dialog' as const, createText: '新增物料' },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      createEntry()!.click()
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toHaveLength(1)
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+      wrapper.unmount()
+    })
+  })
+
   it('clears the selection without opening the picker', async () => {
     const wrapper = mount(NvEntityPicker, {
       props: {

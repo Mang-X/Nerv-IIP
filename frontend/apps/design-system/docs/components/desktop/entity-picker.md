@@ -86,6 +86,25 @@ const scopeLevels = computed(() => [
 表单提交后校验失败时传入 `invalid`。组件会给根节点设置 `data-invalid`、给触发按钮设置
 `aria-invalid`，并使用错误态边框；打开表单时不要提前传入错误态。
 
+### 就地新增
+
+表单里要选的实体可能还没建（比如登记设备时车间还不存在），传 `create-text` 后候选列表下方
+出现一个新增入口。点击后选择器收起并发出 `create`，由调用方打开新增表单；建好后调用方把
+新建项写回 `v-model`，并确保 `options` 里有这一项，触发器才显示名称而不是编码。
+
+- 有没有新增权限由调用方判断：没有权限就不传 `create-text`，入口不出现。
+- 只在表单字段上用；筛选条上的选择器不带新增入口。
+
+```vue
+<NvEntityPicker
+  v-model="workshop"
+  :options="workshopOptions"
+  title="选择车间"
+  :create-text="canCreateWorkshop ? '新增车间' : undefined"
+  @create="workshopDialogOpen = true"
+/>
+```
+
 ## NvCascadePicker 级联选择器
 
 每级第一项固定为「全部」（值 = 空串），代表不在该层收窄；选中上级会自动把下游层级

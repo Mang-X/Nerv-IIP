@@ -38,6 +38,7 @@ import {
   type BusinessConsolePersonnelSkillMatrixEnvelope,
   type BusinessConsolePersonnelSkillMatrixRow,
   type BusinessConsoleResourceItem,
+  type BusinessConsoleResourceItemEnvelope,
   type BusinessConsoleResourceListEnvelope,
   type BusinessConsoleSetMasterDataResourceEnabledRequest,
   type BusinessConsoleTeamMemberItem,
@@ -185,6 +186,18 @@ function isBusinessQuery(id: string) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
+/**
+ * 新建之后要刷新的查询：该类自己的列表 + 网关可搜目录。选择器（`DirectoryPicker`）取的是目录，
+ * 不刷新的话刚建好的项搜不到，选中后也只能显示编码。
+ */
+function invalidateAfterCreate(queryCache: ReturnType<typeof useQueryCache>, listIds: string[]) {
+  for (const id of [...listIds, 'listBusinessConsoleSearchableDirectory']) {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery(id) })
+      .catch(ignoreBackgroundError)
+  }
+}
+
 function newCreateIdempotencyKey(resourceType: string) {
   const cryptoApi = globalThis.crypto
   if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
@@ -231,11 +244,7 @@ export function useBusinessSkus() {
 
   const createSkuMutation = useMutation({
     ...createBusinessConsoleSkuMutationOptions(),
-    onSuccess() {
-      void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleSkus') })
-        .catch(ignoreBackgroundError)
-    },
+    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleSkus']),
   })
 
   return {
@@ -377,13 +386,11 @@ export function useBusinessWorkshops() {
 
   const createWorkshopMutation = useMutation({
     ...createBusinessConsoleWorkshopMutationOptions(),
-    onSuccess() {
-      for (const id of ['listBusinessConsoleWorkshops', 'listBusinessConsoleMasterDataResources']) {
-        void queryCache
-          .invalidateQueries({ predicate: isBusinessQuery(id) })
-          .catch(ignoreBackgroundError)
-      }
-    },
+    onSuccess: () =>
+      invalidateAfterCreate(queryCache, [
+        'listBusinessConsoleWorkshops',
+        'listBusinessConsoleMasterDataResources',
+      ]),
   })
 
   return {
@@ -580,11 +587,7 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
   // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
   const createMutation = useMutation({
     ...RESOURCE_CREATE_OPTIONS[resourceType](),
-    onSuccess() {
-      void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleMasterDataResources') })
-        .catch(ignoreBackgroundError)
-    },
+    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleMasterDataResources']),
   } as unknown as UseMutationOptions)
 
   return {
@@ -595,7 +598,11 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
     pending: listQuery.isLoading,
     refresh: () => refetchWithBusinessContext(filters, listQuery),
     create: (body: TBody) =>
-      (createMutation.mutateAsync as unknown as (vars: { body: TBody }) => Promise<unknown>)({
+      (
+        createMutation.mutateAsync as unknown as (vars: {
+          body: TBody
+        }) => Promise<BusinessConsoleResourceItemEnvelope>
+      )({
         body: withCreateIdempotency(resourceType, body),
       }),
     createError: createMutation.error,
