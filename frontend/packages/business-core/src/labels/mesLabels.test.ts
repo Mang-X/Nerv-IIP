@@ -218,7 +218,7 @@ describe('receiptPendingReason', () => {
     ).toBe('ERP 已完成成本归集，等待单位成本回传')
   })
 
-  it('is case-insensitive because the two callers cannot rely on a single agreed casing', () => {
+  it('is case-insensitive because the generated contract spells the status lowercase while runtime sends PascalCase', () => {
     expect(receiptPendingReason({ receiptStatus: 'requested' })).toBe(
       '等待 ERP 成本归集回传单位成本',
     )
