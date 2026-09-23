@@ -1,16 +1,9 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpWorkCenterCostRateItem } from '@nerv-iip/api-client'
-import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import {
   NvButton,
   NvDataTable,
-  NvDialog,
-  NvDialogClose,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
   NvEntityPicker,
   NvField,
   NvFieldDescription,
@@ -19,6 +12,12 @@ import {
   NvInput,
   NvMetricStrip,
   NvPageHeader,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetFooter,
+  NvSheetHeader,
+  NvSheetTitle,
   NvStatusBadge,
   NvToolbar,
   Spinner,
@@ -26,10 +25,11 @@ import {
 import { PlusIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { useErpWorkCenterCostRates } from '@/composables/useBusinessErp'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
+import { today } from '@/utils/format'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, formatAmount, formatDateTime } from '../shared'
 
@@ -48,18 +48,12 @@ const canManage = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.erpFinanceManage),
 )
 
-const workCenters = useBusinessMasterDataResources('work-center')
-workCenters.filters.take = 500
-const workCenterOptions = computed<EntityPickerOption[]>(() =>
-  workCenters.resources.value.flatMap((row) =>
-    row.code ? [{ value: row.code, label: row.displayName?.trim() || row.code }] : [],
-  ),
-)
+const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
 
 const costs = useErpWorkCenterCostRates()
 const items = computed(() => costs.rates.value?.items ?? [])
 const current = computed(() => items.value.find((row) => row.isCurrentEffectiveRevision))
-// 同一工作中心的币种由首个修订固定，后续修订只能沿用。
+// 同一工作中心的币种在首个修订后固定；列表按版本倒序，取任一行即可。
 const fixedCurrency = computed(() => items.value[0]?.currencyCode)
 
 function hourly(row: RateRow) {
@@ -81,8 +75,8 @@ const currentCells = computed<NvMetricStripCell[]>(() => {
       {
         key: 'rate',
         label: '当前有效费率',
-        value: '未配置',
-        meta: '报工无法计算人工成本，完工入库会停在待入库。',
+        value: '暂无生效费率',
+        meta: '在有修订生效前，报工无法计算人工成本，完工入库会停在待入库。',
       },
     ]
   }
@@ -93,11 +87,12 @@ const currentCells = computed<NvMetricStripCell[]>(() => {
   ]
 })
 
-type StatusView = { value: string; label: string }
+type StatusView = { value: string; label: string; tone?: 'neutral' }
 function statusOf(row: RateRow): StatusView {
   if (row.isCurrentEffectiveRevision) return { value: 'active', label: '当前生效' }
   if (row.effectiveStatus === 'future') return { value: 'scheduled', label: '未到生效时间' }
-  if (row.effectiveStatus === 'expired') return { value: 'expired', label: '已过期' }
+  if (row.effectiveStatus === 'expired')
+    return { value: 'expired', label: '已过期', tone: 'neutral' }
   return { value: 'superseded', label: '已被新修订取代' }
 }
 
@@ -110,12 +105,6 @@ const columns: NvDataTableColumn<RateRow>[] = [
   { key: 'changedAtUtc', header: '修订时间', accessor: (row) => formatDateTime(row.changedAtUtc) },
 ]
 
-function today() {
-  const now = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
-
 const open = shallowRef(false)
 const form = reactive({ hourlyRate: '', currencyCode: 'CNY', effectiveFrom: '', reason: '' })
 const showErrors = shallowRef(false)
@@ -127,7 +116,7 @@ const invalid = computed(() => ({
 }))
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
-function openDialog() {
+function openSheet() {
   form.hourlyRate = current.value ? String(current.value.hourlyRate) : ''
   form.currencyCode = fixedCurrency.value ?? 'CNY'
   form.effectiveFrom = today()
@@ -163,7 +152,7 @@ async function submit() {
   <BusinessLayout>
     <NvPageHeader title="工作中心费率" :breadcrumbs="[{ label: '经营管理' }, { label: '财务' }]">
       <template v-if="canManage" #actions>
-        <NvButton size="sm" type="button" :disabled="!costs.rates.value" @click="openDialog"
+        <NvButton size="sm" type="button" :disabled="!costs.rates.value" @click="openSheet"
           ><PlusIcon aria-hidden="true" />新增修订</NvButton
         >
       </template>
@@ -178,7 +167,7 @@ async function submit() {
           title="选择工作中心"
           placeholder="选择工作中心"
           empty-text="暂无工作中心，请先在「基础数据 · 工作中心」维护"
-          :loading="workCenters.resourcesPending.value"
+          :loading="workCentersPending"
           aria-label="工作中心"
         />
       </template>
@@ -201,19 +190,22 @@ async function submit() {
       @retry="costs.refresh"
     >
       <template #cell-status="{ row }">
-        <NvStatusBadge :value="statusOf(row).value" :label="statusOf(row).label" />
+        <NvStatusBadge v-bind="statusOf(row)" />
       </template>
     </NvDataTable>
 
-    <NvDialog v-if="canManage" v-model:open="open">
-      <NvDialogContent>
-        <NvDialogHeader
-          ><NvDialogTitle>新增费率修订</NvDialogTitle
-          ><NvDialogDescription class="sr-only"
-            >为所选工作中心追加一个人工费率修订。</NvDialogDescription
-          ></NvDialogHeader
-        >
-        <form class="grid gap-4" @submit.prevent="submit">
+    <NvSheet v-if="canManage" v-model:open="open">
+      <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl">
+        <NvSheetHeader>
+          <NvSheetTitle>新增费率修订</NvSheetTitle>
+          <NvSheetDescription class="sr-only"
+            >为所选工作中心追加一个人工费率修订。</NvSheetDescription
+          >
+        </NvSheetHeader>
+        <form class="grid content-start gap-4 p-4" @submit.prevent="submit">
+          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+            请填写正数费率、三位字母币种、生效日期和修订原因。
+          </p>
           <NvFieldGroup>
             <NvField>
               <NvFieldLabel for="erp-wcr-rate">
@@ -266,21 +258,14 @@ async function submit() {
               />
             </NvField>
           </NvFieldGroup>
-          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写正数费率、三位字母币种、生效日期和修订原因。
-          </p>
-          <NvDialogFooter
-            ><NvDialogClose as-child
-              ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
-            ><NvButton type="submit" :disabled="costs.addRevisionPending.value"
-              ><Spinner
-                v-if="costs.addRevisionPending.value"
-                aria-hidden="true"
-              />保存修订</NvButton
-            ></NvDialogFooter
-          >
+          <NvSheetFooter>
+            <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
+            <NvButton type="submit" :disabled="costs.addRevisionPending.value">
+              <Spinner v-if="costs.addRevisionPending.value" aria-hidden="true" />保存修订
+            </NvButton>
+          </NvSheetFooter>
         </form>
-      </NvDialogContent>
-    </NvDialog>
+      </NvSheetContent>
+    </NvSheet>
   </BusinessLayout>
 </template>

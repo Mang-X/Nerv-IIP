@@ -8,7 +8,12 @@ import {
   listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useBusinessErp, useErpPurchaseRequisitions } from './useBusinessErp'
+import { useMutation } from '@pinia/colada'
+import {
+  useBusinessErp,
+  useErpPurchaseRequisitions,
+  useErpWorkCenterCostRates,
+} from './useBusinessErp'
 
 const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
@@ -18,6 +23,13 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  configureBusinessConsoleErpWorkCenterCostRateMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+  })),
+  listBusinessConsoleErpWorkCenterCostRatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleErpWorkCenterCostRates' }],
+    query: vi.fn(),
+  })),
   convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
   })),
@@ -193,5 +205,35 @@ describe('business ERP composable', () => {
     expect(
       coladaState.refetchById.get('listBusinessConsoleErpPurchaseRequisitions'),
     ).not.toHaveBeenCalled()
+  })
+
+  it('新增工作中心费率修订成功后重拉该工作中心的费率', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const rates = useErpWorkCenterCostRates()
+    rates.workCenterId.value = 'WC-CT-01'
+
+    await rates.addRevision({
+      hourlyRate: 58.5,
+      currencyCode: 'CNY',
+      effectiveFromUtc: '2026-09-22T16:00:00.000Z',
+      reason: '年度人工费率核定',
+    })
+    expect(coladaState.mutateAsync).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workCenterId: 'WC-CT-01',
+        hourlyRate: 58.5,
+        currencyCode: 'CNY',
+        effectiveFromUtc: '2026-09-22T16:00:00.000Z',
+        reason: '年度人工费率核定',
+      },
+    })
+    const refetch = coladaState.refetchById.get('listBusinessConsoleErpWorkCenterCostRates')
+    expect(refetch).not.toHaveBeenCalled()
+    const options = vi.mocked(useMutation).mock.calls.at(-1)?.[0] as { onSuccess?: () => void }
+    options.onSuccess?.()
+    expect(refetch).toHaveBeenCalledTimes(1)
   })
 })

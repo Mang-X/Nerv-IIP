@@ -2,6 +2,7 @@ import type {
   BusinessConsoleErpWorkCenterCostRateItem,
   BusinessConsoleErpWorkCenterCostRateListResponse,
 } from '@nerv-iip/api-client'
+import { NvMetricStrip } from '@nerv-iip/ui'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
@@ -14,11 +15,10 @@ const state = vi.hoisted(() => ({
 vi.mock('@/composables/useBusinessErp', () => ({
   useErpWorkCenterCostRates: () => state.current,
 }))
-vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({
-    filters: { take: 10 },
-    resources: shallowRef([{ code: 'WC-CNC-01', displayName: '数控加工中心一线' }]),
-    resourcesPending: shallowRef(false),
+vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  useEquipmentWorkCenterCatalog: () => ({
+    workCenterOptions: shallowRef([{ value: 'WC-CNC-01', label: '数控加工中心一线' }]),
+    workCentersPending: shallowRef(false),
   }),
 }))
 vi.mock('@/stores/auth', () => ({
@@ -76,17 +76,16 @@ function createState(items: BusinessConsoleErpWorkCenterCostRateItem[]) {
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
-  NvDialog: {
+  NvSheet: {
     props: ['open'],
     emits: ['update:open'],
-    template: '<section v-if="open" class="dialog"><slot /></section>',
+    template: '<section v-if="open" class="sheet"><slot /></section>',
   },
-  NvDialogClose: { template: '<span><slot /></span>' },
-  NvDialogContent: { template: '<div><slot /></div>' },
-  NvDialogDescription: { template: '<p><slot /></p>' },
-  NvDialogFooter: { template: '<footer><slot /></footer>' },
-  NvDialogHeader: { template: '<header><slot /></header>' },
-  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvSheetContent: { template: '<div><slot /></div>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
+  NvSheetFooter: { template: '<footer><slot /></footer>' },
+  NvSheetHeader: { template: '<header><slot /></header>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
 }
 const render = () => mount(WorkCenterCostRatesPage, { global: { stubs } })
 
@@ -119,9 +118,9 @@ describe('工作中心费率', () => {
   it('以当前生效修订为当前费率，并区分被取代、未生效与已过期的修订', async () => {
     const wrapper = render()
     await flushPromises()
-    const text = wrapper.text()
-    expect(text).toContain('US$66.00 / 小时')
-    expect(text).toContain('第 2 版')
+    const strip = wrapper.findComponent(NvMetricStrip).text()
+    expect(strip).toContain('US$66.00 / 小时')
+    expect(strip).toContain('第 2 版')
     const rows = wrapper.findAll('tbody tr').map((row) => row.text())
     expect(rows[0]).toContain('未到生效时间')
     expect(rows[1]).toContain('当前生效')
@@ -129,11 +128,11 @@ describe('工作中心费率', () => {
     expect(rows[3]).toContain('已过期')
   })
 
-  it('没有覆盖当前时间的修订时明确未配置', async () => {
+  it('没有覆盖当前时间的修订时明确暂无生效费率', async () => {
     data.rates.value = listResponse([history()[3]])
     const wrapper = render()
     await flushPromises()
-    expect(wrapper.text()).toContain('未配置')
+    expect(wrapper.findComponent(NvMetricStrip).text()).toContain('暂无生效费率')
   })
 
   it('新增修订沿用已固定的币种，生效日期按本地零点提交', async () => {
