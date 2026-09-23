@@ -155,6 +155,10 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 // 设备 / 班组 / 单位 / 物料 / 单据目录都走真实读面（useQuery）；单测给确定目录，只验页面提交行为。
 vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  useEquipmentAlarmCatalog: () => ({
+    alarmOptions: computed(() => [{ value: 'ALARM-1', label: 'OVERHEAT' }]),
+    alarmsPending: shallowRef(false),
+  }),
   useEquipmentDeviceCatalog: () => ({
     deviceOptions: computed(() => [
       { value: 'DEV-SMT-01', label: '贴片机 01' },
@@ -309,6 +313,46 @@ describe('maintenance work orders page', () => {
     expect(carried?.textContent).toContain('ALARM-9001')
     expect(document.body.querySelector('#mwo-device')).toBeNull()
     expect(document.body.querySelector('#mwo-alarm')).toBeNull()
+  })
+
+  it('从报警带入建单时，提交的来源报警就是带入的那一条', async () => {
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建维护工单'))!
+    submit.click()
+    await flushPromises()
+
+    expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
+      deviceAssetId: 'DEV-PRESS-01',
+      sourceAlarmId: 'ALARM-9001',
+    })
+  })
+
+  it('手工建单时关联报警要先选设备，换设备就清掉原先挑的报警', async () => {
+    state.query = {}
+    const wrapper = mount(WorkOrdersPage, mountOptions())
+    const vm = wrapper.vm as unknown as {
+      openCreate: () => void
+      createForm: { deviceAssetId: string; sourceAlarmId: string }
+    }
+    vm.openCreate()
+    await flushPromises()
+    // 选择器在本文件被桩成输入位，这里读它的占位文案判断「先选设备」。
+    const alarmPicker = () => document.body.querySelector<HTMLInputElement>('#mwo-alarm')!
+    expect(alarmPicker().placeholder).toBe('先选设备')
+
+    vm.createForm.deviceAssetId = 'DEV-SMT-01'
+    await flushPromises()
+    expect(alarmPicker().placeholder).toBe('可选')
+    vm.createForm.sourceAlarmId = 'ALARM-1'
+    await flushPromises()
+
+    vm.createForm.deviceAssetId = 'DEV-PRESS-01'
+    await flushPromises()
+    expect(vm.createForm.sourceAlarmId).toBe('')
   })
 
   it('offers a technician selector and estimated labor on the create sheet', async () => {

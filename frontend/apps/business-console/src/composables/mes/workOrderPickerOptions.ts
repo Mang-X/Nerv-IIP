@@ -33,3 +33,29 @@ export function buildWorkOrderPickerOptions(
     ...options,
   ]
 }
+
+/**
+ * 工序任务选择器的候选项：取**已选工单**自带的工序任务（工单列表每行就带着它的工序），
+ * 按工序顺序排。工序任务标识可能是系统 GUID，所以显示文案用人读工序任务号，
+ * 选择器要关掉编码行（`:show-code="false"`），不把标识印到界面上。
+ */
+export function buildOperationTaskPickerOptions(
+  workOrder: BusinessConsoleMesWorkOrderItem | undefined,
+): EntityPickerOption[] {
+  return [...(workOrder?.operationTasks ?? [])]
+    .sort((a, b) => (a.operationSequence ?? 0) - (b.operationSequence ?? 0))
+    .flatMap((task) => {
+      const value = task.operationTaskId?.trim()
+      if (!value) return []
+      const sequence = task.operationSequence == null ? '' : `工序 ${task.operationSequence}`
+      const label = task.operationTaskNo?.trim() || sequence || '未编号工序'
+      const hint = [
+        label === sequence ? '' : sequence,
+        task.workCenterName?.trim() || task.workCenterCode?.trim(),
+        task.status ? resolveStatus(task.status).label : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+      return [{ value, label, ...(hint ? { hint } : {}) }]
+    })
+}

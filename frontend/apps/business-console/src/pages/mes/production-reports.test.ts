@@ -128,6 +128,10 @@ const mesState = vi.hoisted(() => ({
   deactivateReverseDetail: vi.fn(),
   guardRows: null as Array<Record<string, unknown>> | null,
   candidateRows: [] as Array<Record<string, unknown>>,
+  workOrderRows: [] as Array<Record<string, unknown>>,
+  promoteCandidate: vi.fn(
+    async (_candidateId: string, _workOrderId: string, _taskId: string) => {},
+  ),
   catalogResolved: true,
 }))
 
@@ -221,6 +225,12 @@ vi.mock('@/composables/useBusinessMes', async () => {
       deactivateReverseDetail: mesState.deactivateReverseDetail,
     }),
     // main 上并行合入的遥测报工候选队列(同页):这些冲销相关用例不驱动它,给个空队列桩即可。
+    useMesWorkOrders: () => ({
+      filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 50 }),
+      workOrders: computed(() => mesState.workOrderRows),
+      workOrdersPending: shallowRef(false),
+      workOrdersTotal: computed(() => mesState.workOrderRows.length),
+    }),
     useMesTelemetryProductionReportCandidates: () => ({
       filters: reactive({
         organizationId: 'org-001',
@@ -234,7 +244,7 @@ vi.mock('@/composables/useBusinessMes', async () => {
       pending: shallowRef(false),
       error: shallowRef(undefined),
       refresh: vi.fn(),
-      promote: vi.fn(async () => undefined),
+      promote: mesState.promoteCandidate,
       dismiss: vi.fn(async () => undefined),
       actionPending: computed(() => false),
     }),
@@ -318,6 +328,22 @@ function mountReports(permissionCodes: string[]) {
         NvSelectItem: { template: '<div><slot /></div>' },
         NvSelectValue: { template: '<span />' },
         NvInput: { template: '<input />' },
+        // 选择器按「选项 + 选中值 + 禁用」三件事桩成原生 select，便于驱动选择并读出候选。
+        NvEntityPicker: {
+          props: ['modelValue', 'options', 'disabled', 'ariaLabel'],
+          emits: ['update:modelValue'],
+          template: `
+            <select
+              :aria-label="ariaLabel"
+              :value="modelValue"
+              :disabled="disabled"
+              @change="$emit('update:modelValue', $event.target.value)"
+            >
+              <option value=""></option>
+              <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          `,
+        },
         Spinner: true,
       },
     },
@@ -348,6 +374,8 @@ beforeEach(() => {
   mesState.deactivateReverseDetail.mockClear()
   mesState.guardRows = null
   mesState.candidateRows = []
+  mesState.workOrderRows = []
+  mesState.promoteCandidate.mockClear()
   mesState.catalogResolved = true
   // jsdom 未实现 scrollIntoView,定义为可断言的 mock(跨页定位滚动)
   Element.prototype.scrollIntoView = vi.fn()
@@ -800,5 +828,101 @@ describe('production reports page — reversal permission & cross-page interlink
     mesState.pending.value = false
     vm.onReverseOpenChange(false)
     expect(vm.reverseOpen).toBe(false)
+  })
+})
+
+describe('production reports page — 遥测报工候选转正', () => {
+  const candidate = {
+    candidateId: 'candidate-1',
+    deviceAssetId: 'DEV-001',
+    tagKey: '产量计数',
+    goodQuantity: 8,
+    bucketEndUtc: '2026-08-01T08:00:00Z',
+    status: 'pending-confirmation',
+    workOrderId: 'WO-1',
+    operationTaskId: '019fbb41-0010-7000-8000-000000000010',
+  }
+  const workOrders = [
+    {
+      workOrderId: 'WO-1',
+      workOrderNo: 'WO-1',
+      operationTasks: [
+        {
+          operationTaskId: '019fbb41-0020-7000-8000-000000000020',
+          operationTaskNo: 'WO-1-OP-20',
+          operationSequence: 20,
+        },
+        {
+          operationTaskId: '019fbb41-0010-7000-8000-000000000010',
+          operationTaskNo: 'WO-1-OP-10',
+          operationSequence: 10,
+        },
+      ],
+    },
+    {
+      workOrderId: 'WO-2',
+      workOrderNo: 'WO-2',
+      operationTasks: [
+        {
+          operationTaskId: '019fbb41-0210-7000-8000-000000000210',
+          operationTaskNo: 'WO-2-OP-10',
+          operationSequence: 10,
+        },
+      ],
+    },
+  ]
+
+  async function openCandidate() {
+    mesState.candidateRows = [candidate]
+    mesState.workOrderRows = workOrders
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '处理')!
+      .trigger('click')
+    return wrapper
+  }
+  const promoteButton = (wrapper: Awaited<ReturnType<typeof openCandidate>>) =>
+    wrapper.findAll('button').find((b) => b.text() === '确认并转正')!
+
+  it('默认选中候选自带的工单与工序任务，转正提交的仍是这两个标识', async () => {
+    const wrapper = await openCandidate()
+    const taskPicker = wrapper.get('select[aria-label="工序任务"]')
+
+    expect((wrapper.get('select[aria-label="工单"]').element as HTMLSelectElement).value).toBe(
+      'WO-1',
+    )
+    expect(taskPicker.findAll('option').map((o) => o.text())).toEqual([
+      '',
+      'WO-1-OP-10',
+      'WO-1-OP-20',
+    ])
+    await promoteButton(wrapper).trigger('click')
+
+    expect(mesState.promoteCandidate).toHaveBeenCalledWith(
+      'candidate-1',
+      'WO-1',
+      '019fbb41-0010-7000-8000-000000000010',
+    )
+  })
+
+  it('改选工单后清掉上一张工单的工序，只能从新工单的工序里挑', async () => {
+    const wrapper = await openCandidate()
+
+    await wrapper.get('select[aria-label="工单"]').setValue('WO-2')
+    const taskPicker = wrapper.get('select[aria-label="工序任务"]')
+    expect((taskPicker.element as HTMLSelectElement).value).toBe('')
+    expect(taskPicker.findAll('option').map((o) => o.text())).toEqual(['', 'WO-2-OP-10'])
+    expect(promoteButton(wrapper).attributes('disabled')).toBeDefined()
+
+    await taskPicker.setValue('019fbb41-0210-7000-8000-000000000210')
+    await promoteButton(wrapper).trigger('click')
+
+    expect(mesState.promoteCandidate).toHaveBeenCalledWith(
+      'candidate-1',
+      'WO-2',
+      '019fbb41-0210-7000-8000-000000000210',
+    )
   })
 })

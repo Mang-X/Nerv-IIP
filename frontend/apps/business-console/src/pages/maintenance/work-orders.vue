@@ -17,6 +17,7 @@ import {
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
 import {
+  useEquipmentAlarmCatalog,
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
@@ -203,6 +204,14 @@ const createForm = reactive({
   unavailabilityMode: 'none',
 })
 const createError = shallowRef('')
+const { alarmOptions, alarmsPending } = useEquipmentAlarmCatalog(() => createForm.deviceAssetId)
+// 换了设备，原先挑的报警就不属于这台设备了；从报警带入的建单（设备与报警都只读）不受影响。
+watch(
+  () => createForm.deviceAssetId,
+  () => {
+    if (!createCarried.value) createForm.sourceAlarmId = ''
+  },
+)
 const downtimeReasons = useMaintenanceDowntimeReasonDirectory(filters)
 const {
   keyword: reasonKeyword,
@@ -774,11 +783,19 @@ watch(
             </NvField>
             <NvField v-if="!createCarried">
               <NvFieldLabel for="mwo-alarm">关联报警</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="mwo-alarm"
                 v-model="createForm.sourceAlarmId"
-                autocomplete="off"
-                placeholder="可选"
+                :options="alarmOptions"
+                :show-code="false"
+                :disabled="!createForm.deviceAssetId.trim()"
+                title="选择关联报警"
+                :placeholder="createForm.deviceAssetId.trim() ? '可选' : '先选设备'"
+                source-text="数据来自该设备的报警记录"
+                empty-text="该设备当前没有报警"
+                :loading="alarmsPending"
+                clearable
+                aria-label="关联报警"
               />
             </NvField>
             <NvField>

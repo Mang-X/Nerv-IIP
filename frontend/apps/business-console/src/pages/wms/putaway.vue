@@ -118,6 +118,8 @@ const {
   filters: inboundOrderFilters,
   inboundOrders,
   inboundOrdersPending,
+  receivingQualityGates,
+  receivingQualityGatesPending,
 } = useWmsInboundOrders({ take: 200, workScopeRequired: true })
 watch(
   () => [filters.scopeKind, filters.scopeId] as const,
@@ -180,13 +182,36 @@ const createForm = reactive({
   toLocationCode: '',
   quantity: '',
 })
+// 读面只回物料编码（SKU-…），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+// 行号只能是所选入库单上真实收货的行：入库单列表不带行，收货行由收货质检读面逐行给出
+// （含免检行），按入库单挑出来。
+const inboundLineOptions = computed(() =>
+  receivingQualityGates.value.flatMap((line) => {
+    const lineNo = line.lineNo?.trim()
+    if (!lineNo || line.inboundOrderId?.trim() !== createForm.inboundOrderId) return []
+    const hint = [
+      line.skuCode ? (resolveSkuName(line.skuCode) ?? line.skuCode) : '',
+      line.receivedQuantity == null ? '' : `收货 ${line.receivedQuantity} ${line.uomCode ?? ''}`,
+    ]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' · ')
+    return [{ value: lineNo, label: `第 ${lineNo} 行`, ...(hint ? { hint } : {}) }]
+  }),
+)
+// 换了入库单，上一张单的行号就不再成立；新单只有一行时直接带上。
+watch(inboundLineOptions, (options) => {
+  if (options.some((option) => option.value === createForm.lineNo)) return
+  createForm.lineNo = options.length === 1 ? options[0]!.value : ''
+})
 
 function openCreate() {
   if (!canManageReceipts.value) return
 
   createForm.inboundOrderId = inboundOrderId.value
   createForm.taskNo = ''
-  createForm.lineNo = '1'
+  createForm.lineNo = ''
   createForm.fromLocationCode = ''
   createForm.toLocationCode = ''
   createForm.quantity = ''
@@ -213,7 +238,7 @@ async function submitCreate() {
     !createForm.fromLocationCode.trim() ||
     !createForm.toLocationCode.trim()
   ) {
-    createError.value = '请填写入库单、任务号、行号与起讫库位。'
+    createError.value = '请填写入库单、任务号、入库单行与起讫库位。'
     return
   }
   if (!(Number(createForm.quantity) > 0)) {
@@ -264,8 +289,7 @@ const headerCount = computed(() => {
   return `${putawayTasksTotal.value} 个上架任务`
 })
 
-// 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
-const { resolveSkuName } = useSkuNames()
+// 任务读面只回库位编码，名称在主数据里，按编码 join 出中文名。
 const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
 
 /** 库位展示串：优先中文名，名录查不到就只显编码。 */
@@ -510,8 +534,20 @@ function firstQuery(value: unknown) {
               <NvInput id="wms-putaway-no" v-model="createForm.taskNo" autocomplete="off" />
             </NvField>
             <NvField>
-              <NvFieldLabel for="wms-putaway-line">行号</NvFieldLabel>
-              <NvInput id="wms-putaway-line" v-model="createForm.lineNo" autocomplete="off" />
+              <NvFieldLabel for="wms-putaway-line">入库单行</NvFieldLabel>
+              <NvEntityPicker
+                id="wms-putaway-line"
+                v-model="createForm.lineNo"
+                :options="inboundLineOptions"
+                :show-code="false"
+                :disabled="!createForm.inboundOrderId"
+                title="选择入库单行"
+                :placeholder="createForm.inboundOrderId ? '选择入库单行' : '先选入库单'"
+                source-text="数据来自所选入库单的收货行"
+                empty-text="该入库单还没有收货行"
+                :loading="receivingQualityGatesPending"
+                aria-label="入库单行"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-putaway-from">来源库位</NvFieldLabel>

@@ -12,6 +12,7 @@ import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useMaintenancePlans, useMaintenanceWorkOrders } from './useBusinessMaintenance'
 import { toBaseUomBySku } from './skuBaseUom'
+import { useBusinessEquipmentAlarms } from './useBusinessEquipment'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -277,6 +278,32 @@ export function useMaintenanceDocumentCatalog() {
       ),
     ),
     workOrdersPending: workOrderCatalog.workOrdersPending,
+  }
+}
+
+/**
+ * 报警目录，**只列已选设备的报警**：维修工单关联的是这台设备上的某次报警，
+ * 别的设备的报警不该出现在选项里。报警标识是系统 ID，`label` 用报警代码，
+ * `hint` 标出发生时间，同一代码反复报警时靠时间分辨；选择器要关掉编码行。
+ */
+export function useEquipmentAlarmCatalog(deviceAssetId: MaybeRefOrGetter<string>) {
+  const { alarms, alarmsPending } = useBusinessEquipmentAlarms()
+
+  return {
+    alarmOptions: computed<EntityPickerOption[]>(() => {
+      const device = toValue(deviceAssetId).trim()
+      if (!device) return []
+      return alarms.value
+        .filter((row) => row.deviceAssetId?.trim() === device)
+        .flatMap((row) =>
+          toOption(
+            row.alarmEventId,
+            row.alarmCode,
+            row.raisedAtUtc ? `发生于 ${new Date(row.raisedAtUtc).toLocaleString()}` : '',
+          ),
+        )
+    }),
+    alarmsPending,
   }
 }
 

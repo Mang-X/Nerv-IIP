@@ -208,4 +208,29 @@ describe('ERP finance voucher and cost pages', () => {
       )
     expect(allSentinelSelects).toHaveLength(0)
   })
+
+  it('成本候选的来源单据按成本大类取经营管理已有单据目录，换大类清掉已选单据', async () => {
+    const wrapper = mount(CostCandidatesPage, {
+      global: { stubs: { ...layoutStub, ...selectStubs } },
+    })
+    const vm = wrapper.vm as unknown as {
+      openDialog: () => void
+      form: { sourceType: string; sourceDocumentNo: string }
+      sourceDocumentCatalog: { options: { value: string }[] } | null
+    }
+    vm.openDialog()
+    await flushPromises()
+    // 生产成本的单据（生产工单）不在经营管理目录里，不给候选。
+    expect(vm.sourceDocumentCatalog).toBeNull()
+
+    vm.form.sourceType = 'procurement'
+    await flushPromises()
+    expect(vm.sourceDocumentCatalog?.options.map((o) => o.value)).toEqual(['PO-001'])
+    vm.form.sourceDocumentNo = 'PO-001'
+
+    vm.form.sourceType = 'logistics'
+    await flushPromises()
+    expect(vm.sourceDocumentCatalog?.options.map((o) => o.value)).toEqual(['SO-001'])
+    expect(vm.form.sourceDocumentNo).toBe('')
+  })
 })
