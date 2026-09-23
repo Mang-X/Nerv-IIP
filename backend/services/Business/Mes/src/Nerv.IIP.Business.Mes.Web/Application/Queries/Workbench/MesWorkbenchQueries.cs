@@ -185,7 +185,7 @@ public sealed class MesFoundationReadinessService(
                 "MES",
                 "WorkOrder",
                 x.WorkOrderId,
-                "在「制造执行 ▸ 派工看板」给这些工序派工时选择设备",
+                "在「制造执行 ▸ 计划与工单 ▸ 派工看板」给这些工序派工时选择设备",
                 severity: "Warning"))
             .ToArray();
     }

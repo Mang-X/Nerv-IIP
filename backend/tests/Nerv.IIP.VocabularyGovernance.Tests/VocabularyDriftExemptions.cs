@@ -139,6 +139,11 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs"),
         ..Group("product-engineering", "同值不同义：MES 就绪区域码，非审批来源服务。",
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs"),
+        // #3771 新增的两个区域码（成本费率 / 库位检查）同属这一枚举面，与质量检验来源服务、审批来源服务同值不同义。
+        ..Group("erp", "同值不同义：MES 就绪区域码（成本费率检查），非质量检验来源服务。",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs"),
+        ..Group("inventory", "同值不同义：MES 就绪区域码（库位检查），非审批/质量检验来源服务。",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs"),
 
         // ── 检验处置/NCR 处置族（QualityInspectionDispositionStatuses / QualityNcrDispositionTypes） ──
         // #1370 ③ 批次 B 已销账：Mes/Quality 的 NCR 处置类型与 Quality 的检验处置结果全部改常量引用，

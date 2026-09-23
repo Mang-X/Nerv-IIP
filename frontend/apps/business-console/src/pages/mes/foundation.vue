@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import type {
+  BusinessConsoleMesReadinessArea,
+  BusinessConsoleMesReadinessIssue,
+} from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesFoundationReadiness } from '@/composables/useBusinessMes'
 import {
@@ -78,18 +82,7 @@ watch(skuValue, () => {
   productionVersionValue.value = ''
 })
 
-interface ReadinessArea {
-  areaCode?: string
-  status?: string
-  issues?: ReadinessIssue[]
-}
-interface ReadinessIssue {
-  code?: string
-  referenceId?: string | null
-  message?: string
-  fixHint?: string | null
-}
-const areas = computed(() => (readiness.value?.areas ?? []) as ReadinessArea[])
+const areas = computed(() => readiness.value?.areas ?? [])
 const blockingIssues = computed(() => readiness.value?.blockingIssues ?? [])
 const warningIssues = computed(() => readiness.value?.warningIssues ?? [])
 const errorMessage = computed(() => inlineErrorMessage(readinessError.value))
@@ -135,11 +128,11 @@ const readinessStatusPill = computed(() => {
   return { label: '可以开工', tone: 'success' as const }
 })
 
-function issueText(issue: ReadinessIssue) {
+function issueText(issue: BusinessConsoleMesReadinessIssue) {
   return issue.message ?? issue.code ?? '未命名问题'
 }
 
-const columns: NvDataTableColumn<ReadinessArea>[] = [
+const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
   { key: 'areaCode', header: '检查区域', cellClass: 'font-medium', width: 'w-40' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'issues', header: '问题' },

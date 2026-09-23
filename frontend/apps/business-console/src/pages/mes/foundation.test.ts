@@ -29,7 +29,7 @@ const readiness = {
           code: 'OPERATION_TASK_DEVICE_UNASSIGNED',
           severity: 'Warning',
           message: '工单 WO-001 有 2 道待开工工序未绑定设备',
-          fixHint: '在「制造执行 ▸ 派工看板」给这些工序派工时选择设备',
+          fixHint: '在「制造执行 ▸ 计划与工单 ▸ 派工看板」给这些工序派工时选择设备',
         },
       ],
     },
@@ -77,8 +77,11 @@ describe('生产准备检查页', () => {
     expect(alert).toContain('当前没有生效的成本费率')
     expect(alert).toContain('去处理：在「经营管理 ▸ 财务 ▸ 工作中心费率」为该工作中心新增费率修订')
 
+    // 区域列要显示中文区域名，而不是裸区域码 erp。
+    const areaCells = wrapper.findAll('tbody tr').map((row) => row.find('td').text())
+    expect(areaCells).toEqual(['成本费率', '设备'])
+
     const text = wrapper.text()
-    expect(text).toContain('成本费率')
-    expect(text).toContain('去处理：在「制造执行 ▸ 派工看板」给这些工序派工时选择设备')
+    expect(text).toContain('去处理：在「制造执行 ▸ 计划与工单 ▸ 派工看板」给这些工序派工时选择设备')
   })
 })

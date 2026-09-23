@@ -136,6 +136,21 @@ public sealed class MesFoundationReadinessDataGapTests
     }
 
     [Fact]
+    public async Task Equipment_area_counts_only_tasks_of_the_requested_sku()
+    {
+        await using var dbContext = CreateDbContext();
+        var now = DateTimeOffset.Parse("2026-09-23T08:00:00Z");
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Queue("org-001", "env-dev", "WO-A", "OT-A-10", 10, "WC-TUB-01", [], now, TimeSpan.FromHours(1), "FG-A"),
+            OperationTask.Queue("org-001", "env-dev", "WO-B", "OT-B-10", 10, "WC-TUB-01", [], now, TimeSpan.FromHours(1), "FG-B"));
+        await dbContext.SaveChangesAsync();
+
+        var readiness = await ReadAreaAsync(dbContext, new FakeFoundationSources(), "equipment", skuId: "FG-A");
+
+        Assert.Equal("WO-A", Assert.Single(readiness.Issues).ReferenceId);
+    }
+
+    [Fact]
     public async Task Equipment_area_is_ready_when_every_queued_task_has_a_device()
     {
         await using var dbContext = CreateDbContext();
@@ -214,12 +229,13 @@ public sealed class MesFoundationReadinessDataGapTests
         string areaCode,
         string? siteCode = null,
         string? lineCode = null,
-        string? workCenterCode = null) =>
+        string? workCenterCode = null,
+        string? skuId = null) =>
         new GetMesFoundationReadinessAreaQueryHandler(
             FoundationReadinessServices.Create(dbContext, NoQualityPlans.Instance, sources, DevelopmentSupplyLocations, DevelopmentFinishedGoodsLocation))
             .Handle(
                 new GetMesFoundationReadinessAreaQuery(
-                    "org-001", "env-dev", areaCode, siteCode, lineCode, workCenterCode, null, null, null, null),
+                    "org-001", "env-dev", areaCode, siteCode, lineCode, workCenterCode, skuId, null, null, null),
                 CancellationToken.None);
 
     /// <summary>与 AppHost 普通 Development 回落、Inventory 产品基线种子同一组库位码。</summary>
