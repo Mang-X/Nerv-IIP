@@ -244,6 +244,8 @@ public sealed class BusinessGatewayOpenApiTests
             "ageCompleteness");
         AssertOperationId(paths, "/api/business-console/v1/inventory/movements", "post", "postBusinessConsoleInventoryMovement");
         AssertOperationId(paths, "/api/business-console/v1/inventory/movements", "get", "listBusinessConsoleInventoryMovements");
+        AssertOperationId(paths, "/api/business-console/v1/inventory/locations", "get", "listBusinessConsoleInventoryLocations");
+        AssertOperationId(paths, "/api/business-console/v1/inventory/locations", "post", "createOrUpdateBusinessConsoleInventoryLocation");
         AssertOperationId(paths, "/api/business-console/v1/inventory/count-tasks", "post", "createBusinessConsoleInventoryCountTask");
         AssertOperationId(paths, "/api/business-console/v1/inventory/count-tasks", "get", "listBusinessConsoleInventoryCountTasks");
         AssertOperationId(paths, "/api/business-console/v1/inventory/count-adjustments", "get", "listBusinessConsoleInventoryCountAdjustments");

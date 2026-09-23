@@ -1254,6 +1254,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/context-scan-prevalidation", BusinessGatewayPermissions.MesOperationsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryLedgerRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/locations", BusinessGatewayPermissions.InventoryLocationsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/locations", BusinessGatewayPermissions.InventoryLocationsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-adjustments", BusinessGatewayPermissions.InventoryCountsManage);

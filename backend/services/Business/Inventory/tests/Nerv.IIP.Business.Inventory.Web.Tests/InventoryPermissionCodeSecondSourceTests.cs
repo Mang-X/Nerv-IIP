@@ -31,6 +31,7 @@ public sealed class InventoryPermissionCodeSecondSourceTests
             ["listInventoryDirectory"] = "business.inventory.ledger.read", // GET /api/inventory/v1/directory
             ["listInventoryLineSideBalances"] = "business.inventory.ledger.read", // GET /api/inventory/v1/line-side-balances
             ["createOrUpdateInventoryLocation"] = "business.inventory.locations.manage", // POST /api/inventory/v1/locations
+            ["listInventoryLocations"] = "business.inventory.locations.manage", // GET /api/inventory/v1/locations
             ["postInventoryMovement"] = "business.inventory.movements.create", // POST /api/inventory/v1/movements
             ["listInventoryMovements"] = "business.inventory.ledger.read", // GET /api/inventory/v1/movements
             ["getInventoryAvailability"] = "business.inventory.ledger.read", // GET /api/inventory/v1/availability

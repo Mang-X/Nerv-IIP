@@ -37,6 +37,16 @@ public interface IBusinessInventoryClient
         BusinessConsoleInventoryMovementListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleInventoryLocationListResponse> ListLocationsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryLocationListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateOrUpdateInventoryLocationResponse> CreateOrUpdateLocationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateInventoryLocationRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleInventoryCountTaskListResponse> ListCountTasksAsync(
         string internalBearerToken,
         BusinessConsoleInventoryCountTaskListRequest request,
@@ -209,6 +219,33 @@ public sealed class HttpBusinessInventoryClient(
                 ("page", request.Page),
                 ("pageSize", request.PageSize)),
             null,
+            cancellationToken);
+
+    public Task<BusinessConsoleInventoryLocationListResponse> ListLocationsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryLocationListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleInventoryLocationListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/inventory/v1/locations?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.Keyword),
+                ("page", request.Page),
+                ("pageSize", request.PageSize)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleCreateOrUpdateInventoryLocationResponse> CreateOrUpdateLocationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateInventoryLocationRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCreateOrUpdateInventoryLocationResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/inventory/v1/locations",
+            request,
             cancellationToken);
 
     public Task<BusinessConsoleInventoryCountTaskListResponse> ListCountTasksAsync(

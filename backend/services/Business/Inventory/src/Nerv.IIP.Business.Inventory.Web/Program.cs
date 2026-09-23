@@ -90,6 +90,7 @@ try
     }
 
     builder.Services.AddInventoryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddScoped<InventoryLocationSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryCountSeedService>();
@@ -150,6 +151,17 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // Inventory 产品基线 seed（#3770）：与 Approval 同口径，显式开关或本地 autoMigrate 时执行。
+    var seedEnabled = builder.Configuration.GetValue<bool>("Inventory:Seed:Enabled") || autoMigrate;
+    if (seedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var written = await scope.ServiceProvider.GetRequiredService<InventoryLocationSeedService>().SeedAsync(
+            builder.Configuration["Inventory:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Inventory:Seed:EnvironmentId"] ?? "env-dev");
+        app.Logger.LogInformation("Inventory product seed completed: {Locations} missing stock locations added.", written);
     }
 
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");

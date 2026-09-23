@@ -45,6 +45,7 @@ export const BUSINESS_PERMISSION_CODES = {
   inventoryLedgerRead: 'business.inventory.ledger.read',
   inventoryMovementsCreate: 'business.inventory.movements.create',
   inventoryCountsManage: 'business.inventory.counts.manage',
+  inventoryLocationsManage: 'business.inventory.locations.manage',
   wmsReceiptsRead: 'business.wms.receipts.read',
   wmsReceiptsManage: 'business.wms.receipts.manage',
   wmsShipmentsRead: 'business.wms.shipments.read',
@@ -123,7 +124,12 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
     P.mesCapacityRead,
   ],
   quality: [P.qualityInspectionRecordsRead, P.qualityNcrRead, P.qualityNcrManage],
-  inventory: [P.inventoryLedgerRead, P.inventoryMovementsCreate, P.inventoryCountsManage],
+  inventory: [
+    P.inventoryLedgerRead,
+    P.inventoryMovementsCreate,
+    P.inventoryCountsManage,
+    P.inventoryLocationsManage,
+  ],
   wms: [
     P.wmsReceiptsRead,
     P.wmsReceiptsManage,
