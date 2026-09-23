@@ -201,9 +201,10 @@ const UNANSWERED_DISPLAY = {
  * 「有没有」和「是什么」因此读自同一次取值，不需要在模板里断言非空。
  *
  * 「未知」在**行状态自发起这次重放以来没有发生转移**时显示，一旦转移就让位，由「状态」列说话。
- * 判的是**转移**，不是当前值：「未知」的含义是「服务端还没告诉我们这次的结果」，而状态转移
- * 才是服务端对这次尝试的答复。只看当前值会出错——点击前就是「重放失败」的行，刷新后仍是
- * 「重放失败」，那是这次尝试**之前**的状态，不是对它的答复（N1）。
+ * 判的是**转移**，不是当前值。状态没有转移时，客户端无法区分「服务端没收到这次请求」与
+ * 「服务端收到了、又试了一次、又失败了」（后者下游仍记为重放失败，状态不变）——两种情况下
+ * 都**没有答复到达客户端**，所以「未知」是真话。只看当前值会把点击前就是「重放失败」的行
+ * 误判为「服务端已给出结果」而让位，行上于是与「从没重试过」同形（N1）。
  * 网关返 502 而下游其实已重放时，状态必然转成「已重放」，「未知」必然让位，不会与之并存。
  * 让位在渲染时推导，不去改 `replayResults`，因此不需要额外的同步时机。
  */
@@ -257,8 +258,10 @@ function notifyBatchReplaySummary(results: DeadLetterBatchRowResult[]) {
   }
   const summary = `重放未全部完成：${segments.join('，')}`
   // 服务端原文只透传第一条出错行的；汇总串里的计数已覆盖每一行。
-  const firstFailure = results.find((r) => r.kind !== 'answered')
-  const firstError = firstFailure && 'error' in firstFailure ? firstFailure.error : undefined
+  const firstError = results.find(
+    (r): r is Extract<DeadLetterBatchRowResult, { kind: 'unanswered' | 'rejected' }> =>
+      r.kind !== 'answered',
+  )?.error
   notifyOperationFailure(summary, firstError, summary)
 }
 

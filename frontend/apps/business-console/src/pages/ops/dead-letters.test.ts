@@ -415,6 +415,21 @@ describe('集成事件死信运维页', () => {
     expect(row?.find('[aria-label="状态：未收到答复，待核实"]').exists()).toBe(true)
   })
 
+  it('重放失败的行点重放、没收到答复：页面把点击前的状态带进重放目标，「未知」不被让位', async () => {
+    // 端到端覆盖「页面行 → 重放目标」这一步：T1 直接插入记录、composable 用例直接传入目标，
+    // 都不经过页面构造重放目标的 targetOf，而 N1 恰好可以只在这一步复现。
+    // 点击前行状态 ∈ canReplay 放行集 {pending, failed}；其余点击类用例都喂 pending，这条补 failed。
+    seedRow('Erp', 'dl-1', 'failed')
+    state.nextReplayError = new Error('Failed to fetch')
+    const wrapper = await mountPage()
+
+    await wrapper.find('[aria-label^="重放死信"]').trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('tr').find((tr) => tr.text().includes('Erp'))
+    expect(row?.find('[aria-label="状态：未收到答复，待核实"]').exists()).toBe(true)
+  })
+
   it('T3 混合批次（成功 + 5xx + 429）：交给 toast 的串里三类计数都在', async () => {
     seedRow()
     state.selectedRowKeys.splice(0, state.selectedRowKeys.length, deadLetterRowKey('Erp', 'dl-1'))
