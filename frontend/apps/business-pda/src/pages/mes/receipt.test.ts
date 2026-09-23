@@ -26,7 +26,26 @@ const workOrderFilters = reactive({
   workOrderId: undefined as string | undefined,
 })
 
-const receipts = [
+// costCapitalization 是可选字段：网关只在调用者有 ERP 财务读权限时附带（#3767）。
+interface MockReceipt {
+  receiptRequestId: string
+  requestNo: string
+  workOrderId: string
+  skuId: string
+  quantity: number
+  unitCost?: number
+  receiptStatus: string
+  costCapitalization?: {
+    workOrderCompleted?: boolean
+    receivedReportCount?: number
+    expectedReportCount?: number
+    receivedMaterialMovementCount?: number
+    expectedMaterialMovementCount?: number
+    capitalizationPublished?: boolean
+  }
+}
+
+const receipts: MockReceipt[] = [
   {
     receiptRequestId: 'RCPT-1',
     requestNo: 'FGR-2026-0001',
@@ -118,6 +137,34 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).toContain('来源：生产完工入库申请服务（组织/环境范围）')
     expect(wrapper.text()).toContain('已加载 2 / 共 2')
     expect(wrapper.text()).toContain('最近成功响应')
+  })
+
+  it('shows which stage a pending receipt is stuck on, same wording as business console (#3767)', async () => {
+    // 同一份 costCapitalization 输入，business-console 与 PDA 走同一份 receiptPendingReason
+    // （@nerv-iip/business-core），判断逻辑只有一份，不是两份复制。
+    const pendingReceipt: MockReceipt = {
+      receiptRequestId: 'RCPT-3',
+      requestNo: 'FGR-2026-0003',
+      workOrderId: 'WO-2026-0003',
+      skuId: 'SKU-C',
+      quantity: 10,
+      receiptStatus: 'requested',
+      costCapitalization: {
+        workOrderCompleted: true,
+        receivedReportCount: 0,
+        expectedReportCount: 8,
+        receivedMaterialMovementCount: 3,
+        expectedMaterialMovementCount: 3,
+      },
+    }
+    receiptRows.value = [pendingReceipt]
+    const wrapper = mount(ReceiptPage)
+    await flushPromises()
+
+    const reason = wrapper.find('[data-testid="receipt-pending-reason"]')
+    expect(reason.exists()).toBe(true)
+    expect(reason.text()).toContain('报工成本 0/8')
+    expect(reason.text()).toContain('物料过账 3/3')
   })
 
   it('shows the list error (not the empty state) when the receipts query fails', async () => {

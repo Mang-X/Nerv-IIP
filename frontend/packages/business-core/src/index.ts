@@ -4,6 +4,7 @@ export {
   OPERATION_TASK_STATUS_LABELS,
   operationTaskStatusLabel,
   RECEIPT_STATUS_LABELS,
+  receiptPendingReason,
   receiptStatusLabel,
   SHIFT_HANDOVER_ISSUE_CATEGORY_CODES,
   SHIFT_HANDOVER_ISSUE_CATEGORY_LABELS,
@@ -20,7 +21,11 @@ export {
   workOrderTitle,
   WORK_ORDER_STATUS_LABELS,
 } from './labels/mesLabels'
-export type { WorkOrderLabelRow } from './labels/mesLabels'
+export type {
+  ReceiptCostCapitalizationProgress,
+  ReceiptPendingReasonRow,
+  WorkOrderLabelRow,
+} from './labels/mesLabels'
 export {
   describeMesReadinessReason,
   describeMesReadinessReasons,

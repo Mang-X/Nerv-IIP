@@ -6,6 +6,7 @@ import type {
 import {
   finishedGoodsReceiptFlow,
   type ReceiptCtx,
+  receiptPendingReason,
   receiptStatusLabel,
   workOrderSubtitle,
   workOrderTitle,
@@ -378,7 +379,18 @@ function onCreateScanAccepted(value: MesScanAccepted) {
           :title="receiptTitle(req)"
           :subtitle="receiptSubtitle(req)"
           :interactive="false"
-        />
+        >
+          <!-- 待入库卡在哪一环（#3728 在 PDA 的补齐，#3767）：判断逻辑与业务控制台共用
+               @nerv-iip/business-core 的 receiptPendingReason，不在这里另抄一份。 -->
+          <template v-if="receiptPendingReason(req)" #meta>
+            <p
+              data-testid="receipt-pending-reason"
+              class="text-xs leading-snug text-muted-foreground"
+            >
+              {{ receiptPendingReason(req) }}
+            </p>
+          </template>
+        </NvListRow>
       </div>
     </div>
 

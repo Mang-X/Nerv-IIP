@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   materialIssueStatusLabel,
   operationTaskStatusLabel,
+  receiptPendingReason,
   receiptStatusLabel,
   SHIFT_HANDOVER_ISSUE_CATEGORY_CODES,
   SHIFT_HANDOVER_ISSUE_SEVERITY_CODES,
@@ -160,6 +161,59 @@ describe('shiftHandoverIssueCategoryLabel / shiftHandoverIssueSeverityLabel', ()
     for (const code of SHIFT_HANDOVER_ISSUE_SEVERITY_CODES) {
       expect(shiftHandoverIssueSeverityLabel(code)).not.toBe('未知级别')
     }
+  })
+})
+
+describe('receiptPendingReason', () => {
+  it('returns null when the receipt is not in requested status', () => {
+    expect(receiptPendingReason({ receiptStatus: 'posted' })).toBeNull()
+    expect(receiptPendingReason({ receiptStatus: 'cancelled' })).toBeNull()
+  })
+
+  it('says it is already submitted for inventory posting once unitCost has arrived', () => {
+    expect(receiptPendingReason({ receiptStatus: 'requested', unitCost: 12.5 })).toBe(
+      '已提交库存过账，等待库存确认',
+    )
+  })
+
+  it('says it is waiting for ERP cost capitalization when progress is missing', () => {
+    expect(receiptPendingReason({ receiptStatus: 'requested' })).toBe(
+      '等待 ERP 成本归集回传单位成本',
+    )
+  })
+
+  it('says the work order has not been completed on the ERP side yet', () => {
+    expect(
+      receiptPendingReason({
+        receiptStatus: 'requested',
+        costCapitalization: { workOrderCompleted: false },
+      }),
+    ).toBe('等待 ERP 收到工单完工后归集成本；长时间不变请联系系统管理员')
+  })
+
+  it('reports the report/material-movement progress counts while waiting on capitalization', () => {
+    // 同一份 costCapitalization 输入，business-console 与 PDA 都必须显示同一句文案（#3767）。
+    expect(
+      receiptPendingReason({
+        receiptStatus: 'requested',
+        costCapitalization: {
+          workOrderCompleted: true,
+          receivedReportCount: 0,
+          expectedReportCount: 8,
+          receivedMaterialMovementCount: 3,
+          expectedMaterialMovementCount: 3,
+        },
+      }),
+    ).toBe('等待 ERP 成本归集（报工成本 0/8，物料过账 3/3）；长时间不变请联系系统管理员')
+  })
+
+  it('says capitalization has been published and unit cost is still pending', () => {
+    expect(
+      receiptPendingReason({
+        receiptStatus: 'requested',
+        costCapitalization: { workOrderCompleted: true, capitalizationPublished: true },
+      }),
+    ).toBe('ERP 已完成成本归集，等待单位成本回传')
   })
 })
 

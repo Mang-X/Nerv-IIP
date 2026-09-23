@@ -213,3 +213,48 @@ export function shiftHandoverUnfinishedWorkOrderStatusLabel(status?: string | nu
 function normalizeHandoverCode(value?: string | null): string {
   return (value ?? '').trim().toLowerCase()
 }
+
+/**
+ * 完工入库单 ERP 成本归集进度（Requested 状态卡在哪一环，#3728 / #3767）。
+ *
+ * 字段对齐 api-client 生成类型
+ * `NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptCostCapitalizationProgress`。
+ */
+export interface ReceiptCostCapitalizationProgress {
+  workOrderCompleted?: boolean | null
+  receivedReportCount?: number | null
+  expectedReportCount?: number | null
+  receivedMaterialMovementCount?: number | null
+  expectedMaterialMovementCount?: number | null
+  capitalizationPublished?: boolean | null
+}
+
+/** `receiptPendingReason` 所需的入库单行字段（business-console / PDA 共用同一份判断逻辑）。 */
+export interface ReceiptPendingReasonRow {
+  receiptStatus?: string | null
+  unitCost?: number | null
+  costCapitalization?: ReceiptCostCapitalizationProgress | null
+}
+
+/**
+ * 「待入库」卡在哪一环（#3728，PDA 补齐于 #3767）。Requested 是两段等待：先等 ERP 成本归集
+ * 回传单位成本，拿到单位成本后才提交库存过账。成本归集卡住时 MES 没有失败码，所以每个待入库
+ * 行都要在这里给出原因；costCapitalization 由网关按调用者 ERP 财务读权限附带，没有时只能说明
+ * 在等哪一环。
+ *
+ * business-console 和 PDA 调用的是同一个列表接口
+ * （`listBusinessConsoleMesFinishedGoodsReceiptRequests`），因此这里按接口原始的小写状态码
+ * （如 `requested`）判断，与本文件其余大小写混杂的状态表（历史遗留、各自域的独立值域）无关。
+ */
+export function receiptPendingReason(row: ReceiptPendingReasonRow): string | null {
+  if ((row.receiptStatus ?? '').toLowerCase() !== 'requested') return null
+  if (row.unitCost !== undefined && row.unitCost !== null) return '已提交库存过账，等待库存确认'
+  const progress = row.costCapitalization
+  if (!progress) return '等待 ERP 成本归集回传单位成本'
+  if (progress.capitalizationPublished) return 'ERP 已完成成本归集，等待单位成本回传'
+  // 归集停住（完工或报工事件被 ERP 拒绝）只有管理员能在死信里处理，业务用户能做的是找管理员。
+  const escalate = '长时间不变请联系系统管理员'
+  if (!progress.workOrderCompleted) return `等待 ERP 收到工单完工后归集成本；${escalate}`
+  const counts = `报工成本 ${progress.receivedReportCount ?? 0}/${progress.expectedReportCount ?? 0}，物料过账 ${progress.receivedMaterialMovementCount ?? 0}/${progress.expectedMaterialMovementCount ?? 0}`
+  return `等待 ERP 成本归集（${counts}）；${escalate}`
+}
