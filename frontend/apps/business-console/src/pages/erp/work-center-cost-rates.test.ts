@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   current: undefined as unknown,
   permissionCodes: [] as string[],
 }))
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/useErpCostAccounting', () => ({
   useErpWorkCenterCostRates: () => state.current,
 }))
 vi.mock('@/composables/useEquipmentPickerCatalog', () => ({

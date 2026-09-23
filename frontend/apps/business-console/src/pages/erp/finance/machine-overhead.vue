@@ -13,7 +13,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { computed, reactive } from 'vue'
-import { useErpMachineOverhead } from '@/composables/useBusinessErp'
+import { useErpMachineOverhead } from '@/composables/useErpCostAccounting'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

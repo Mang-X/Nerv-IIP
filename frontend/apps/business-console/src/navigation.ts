@@ -472,6 +472,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.erpFinanceRead],
         },
         {
+          title: '机器制造费用率',
+          icon: CoinsIcon,
+          to: { path: '/erp/finance/machine-overhead-rates' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
+        {
           title: '工单成本差异',
           icon: LayersIcon,
           to: { path: '/erp/finance/cost-variance' },
