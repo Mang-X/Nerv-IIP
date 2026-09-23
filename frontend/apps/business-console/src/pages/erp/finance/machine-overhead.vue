@@ -128,7 +128,7 @@ function resizeMonth(pageSize: number) {
       <form @submit.prevent="queryOrder">
         <NvToolbar :show-search="false">
           <template #filters>
-            <WorkOrderCostPicker v-model="draft.workOrderId" class="w-72" />
+            <WorkOrderCostPicker v-model="draft.workOrderId" class="w-96" />
             <NvButton
               type="submit"
               :disabled="

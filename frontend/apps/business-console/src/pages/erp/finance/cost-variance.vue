@@ -99,7 +99,7 @@ function resize(pageSize: number) {
     <form @submit.prevent="queryOrder">
       <NvToolbar :show-search="false">
         <template #filters>
-          <WorkOrderCostPicker v-model="draft" class="w-72" />
+          <WorkOrderCostPicker v-model="draft" class="w-96" />
           <NvButton
             type="submit"
             :disabled="!costs.ready.value || !draft.trim() || costs.workOrderPending.value"
