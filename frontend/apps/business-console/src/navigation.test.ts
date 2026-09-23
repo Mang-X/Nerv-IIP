@@ -130,6 +130,7 @@ describe('business console ERP navigation', () => {
       '/erp/finance/cost-candidates',
       '/erp/finance/machine-overhead',
       '/erp/finance/cost-variance',
+      '/erp/finance/work-center-cost-rates',
     ])
   })
 
@@ -166,6 +167,7 @@ describe('business console ERP navigation', () => {
       '/erp/finance/vouchers',
       '/erp/finance/cost-candidates',
       '/erp/finance/machine-overhead',
+      '/erp/finance/work-center-cost-rates',
     ]) {
       expect(byPath.get(path)).toEqual([P.erpFinanceRead])
     }
