@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, useId } from 'vue'
-import { CheckIcon, SearchIcon } from '@lucide/vue'
+import { CheckIcon, PlusIcon, SearchIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import type { EntityPickerOption } from './types'
 
@@ -29,6 +29,8 @@ const props = withDefaults(
     serverSearch?: boolean
     /** 服务端搜索时目录的匹配总数；大于当前条数即说明还有没显示出来的。 */
     totalCount?: number
+    /** 新增入口文案（如「新增车间」）；传了才在列表下方出现入口，点击发出 `create`。 */
+    createText?: string
   }>(),
   {
     searchPlaceholder: '搜索名称 / 编码…',
@@ -48,6 +50,7 @@ function codeOf(option: EntityPickerOption): string {
 const emit = defineEmits<{
   (e: 'pick', option: EntityPickerOption): void
   (e: 'update:search', value: string): void
+  (e: 'create'): void
 }>()
 
 const localQuery = ref('')
@@ -179,6 +182,17 @@ defineExpose({ focus: () => inputEl.value?.focus() })
           {{ emptyText }}
         </div>
       </template>
+    </div>
+
+    <div v-if="createText" :class="cn('border-t border-border', dense ? 'p-1.5' : 'px-4 py-2')">
+      <button
+        type="button"
+        class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-primary outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+        @click="emit('create')"
+      >
+        <PlusIcon class="size-4 shrink-0" aria-hidden="true" />
+        {{ createText }}
+      </button>
     </div>
 
     <div
