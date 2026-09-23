@@ -6710,6 +6710,49 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryLocationListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationResponse>;
+    totalCount?: number;
+    page?: number;
+    pageSize?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationResponse = {
+    locationId?: string;
+    locationCode?: string;
+    locationType?: string;
+    siteCode?: string;
+    parentLocationCode?: string | null;
+    status?: string;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateInventoryLocationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationResponse = {
+    locationId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    locationCode?: string;
+    locationType?: string;
+    siteCode?: string;
+    parentLocationCode?: string | null;
+    status?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryCountTaskListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountTaskListResponse | null;
 };
@@ -20513,6 +20556,66 @@ export type PostBusinessConsoleInventoryMovementResponses = {
 };
 
 export type PostBusinessConsoleInventoryMovementResponse = PostBusinessConsoleInventoryMovementResponses[keyof PostBusinessConsoleInventoryMovementResponses];
+
+export type ListBusinessConsoleInventoryLocationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/inventory/locations';
+};
+
+export type ListBusinessConsoleInventoryLocationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleInventoryLocationsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryLocationListResponse;
+};
+
+export type ListBusinessConsoleInventoryLocationsResponse = ListBusinessConsoleInventoryLocationsResponses[keyof ListBusinessConsoleInventoryLocationsResponses];
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/inventory/locations';
+};
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateInventoryLocationResponse;
+};
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationResponse = CreateOrUpdateBusinessConsoleInventoryLocationResponses[keyof CreateOrUpdateBusinessConsoleInventoryLocationResponses];
 
 export type ListBusinessConsoleInventoryCountTasksData = {
     body?: never;

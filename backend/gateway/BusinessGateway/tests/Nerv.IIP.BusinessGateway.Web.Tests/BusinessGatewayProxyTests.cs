@@ -1313,6 +1313,74 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("RM-BAR-01", Assert.Single(data.GetProperty("items").EnumerateArray()).GetProperty("skuCode").GetString());
     }
 
+    /// <summary>#3770 库位维护读面 facade：停用库位也要回到页面，否则无法重新启用。</summary>
+    [Fact]
+    public async Task Inventory_location_list_forwards_query_context_with_internal_service_token()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/inventory/locations?organizationId=org-001&environmentId=env-dev&keyword=line&page=2&pageSize=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal("org-001", inventory.LastLocationListRequest!.OrganizationId);
+        Assert.Equal("line", inventory.LastLocationListRequest.Keyword);
+        Assert.Equal(2, inventory.LastLocationListRequest.Page);
+        Assert.Equal(25, inventory.LastLocationListRequest.PageSize);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(7, data.GetProperty("totalCount").GetInt32());
+        var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+        Assert.Equal("line-side", item.GetProperty("locationType").GetString());
+        Assert.Equal("inactive", item.GetProperty("status").GetString());
+    }
+
+    /// <summary>#3770 库位新增/编辑 facade：原样转发到 Inventory 的库位 upsert。</summary>
+    [Fact]
+    public async Task Inventory_location_save_forwards_body_with_internal_service_token()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/locations", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            locationCode = "loc-line-02",
+            locationType = "line-side",
+            siteCode = "SITE-001",
+            parentLocationCode = "loc-line-01",
+            status = "active",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal(
+            new BusinessConsoleCreateOrUpdateInventoryLocationRequest(
+                "org-001", "env-dev", "loc-line-02", "line-side", "SITE-001", "loc-line-01", "active"),
+            inventory.LastSavedLocation);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("location-002", document.RootElement.GetProperty("data").GetProperty("locationId").GetString());
+    }
+
     /// <summary>盘点任务读面 facade：前端表格从会话内本地队列切到服务端数据的前提。</summary>
     [Fact]
     public async Task Inventory_count_task_list_forwards_query_context_with_internal_service_token()
@@ -16686,6 +16754,43 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
     public int MovementListCallCount { get; private set; }
 
     public BusinessConsoleInventoryMovementListRequest? LastMovementListRequest { get; private set; }
+
+    public BusinessConsoleInventoryLocationListRequest? LastLocationListRequest { get; private set; }
+
+    public BusinessConsoleCreateOrUpdateInventoryLocationRequest? LastSavedLocation { get; private set; }
+
+    public Task<BusinessConsoleInventoryLocationListResponse> ListLocationsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryLocationListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastLocationListRequest = request;
+        return Task.FromResult(new BusinessConsoleInventoryLocationListResponse(
+            [
+                new BusinessConsoleInventoryLocationResponse(
+                    "location-001",
+                    "loc-line-01",
+                    "line-side",
+                    "SITE-001",
+                    null,
+                    "inactive",
+                    new DateTime(2026, 9, 23, 8, 0, 0, DateTimeKind.Utc)),
+            ],
+            7,
+            request.Page,
+            request.PageSize));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateInventoryLocationResponse> CreateOrUpdateLocationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateInventoryLocationRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSavedLocation = request;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateInventoryLocationResponse("location-002"));
+    }
 
     public int CountTaskListCallCount { get; private set; }
 

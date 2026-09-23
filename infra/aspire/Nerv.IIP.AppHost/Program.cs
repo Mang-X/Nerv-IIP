@@ -155,9 +155,10 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 // - leader-demo profile（判据 leaderDemoHistoryEnabled）下发 WH-WB-*。只有该 profile 会让 Inventory
 //   跑 WorldHistorySeedService，把 WorldHistoryPhase2Spec.StockLocations 的七个库位真的建成行，
 //   线边收料/领料才查得到可用量。
-// - 普通 Development 维持 loc-*（MasterData inventory-location 码表候选码）。该 profile 下 Inventory
-//   不种任何库位行，loc-* 与 WH-WB-* 都不存在，在手量须经真实流程建立——这是 #2058 的 owner 裁决，
-//   本处不改变它。
+// - 普通 Development 维持 loc-*（MasterData inventory-location 码表候选码）。库位主数据属于开箱数据
+//   （#3770 owner 裁决）：Inventory 产品基线种子 InventoryLocationSeedService 在每个 profile 都会补齐
+//   这四个 loc-* 库位行（loc-line-01 为 line-side）；改这里的回落码必须同步改那份种子。
+//   在手量仍须经真实流程建立（#2058），本处不改变它。
 // 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
 // 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
 // 根本不下发，由服务侧 fail-closed 自己暴露——WMS 领料进死信 unresolved-location，MES 抛
