@@ -181,6 +181,23 @@ public sealed class MesFoundationReadinessDataGapTests
     }
 
     [Fact]
+    public async Task Http_reader_narrows_to_the_requested_work_center_because_master_data_does_not()
+    {
+        // MasterData 的 work-center 分支不认 workCenterCode 参数（真栈上按工作中心检查时曾列出全部 17 个）。
+        var handler = new StubHttpMessageHandler(_ => Json(
+            "{\"data\":{\"resources\":[" +
+            "{\"resourceType\":\"work-center\",\"code\":\"WC-TUB-01\",\"displayName\":\"缸筒加工中心一线\",\"active\":true,\"snapshotVersion\":\"1\"}," +
+            "{\"resourceType\":\"work-center\",\"code\":\"WC-TUB-02\",\"displayName\":\"缸筒加工中心二线\",\"active\":true,\"snapshotVersion\":\"1\"}" +
+            "],\"total\":2},\"success\":true}"));
+        var reader = CreateReader(masterData: handler);
+
+        var workCenters = await reader.ListActiveWorkCentersAsync("org-001", "env-dev", "SITE-001", null, "WC-TUB-02", CancellationToken.None);
+
+        Assert.Equal([new MesFoundationWorkCenter("WC-TUB-02", "缸筒加工中心二线")], workCenters);
+        Assert.Contains("siteCode=SITE-001", Assert.Single(handler.Requests).RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Http_reader_reports_source_failure_instead_of_missing_data()
     {
         var reader = CreateReader(erp: new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)));
@@ -245,9 +262,10 @@ public sealed class MesFoundationReadinessDataGapTests
 
     private static HttpMesFoundationSourceReader CreateReader(
         StubHttpMessageHandler? erp = null,
-        StubHttpMessageHandler? inventory = null) =>
+        StubHttpMessageHandler? inventory = null,
+        StubHttpMessageHandler? masterData = null) =>
         new(
-            new MesMasterDataHttpClient(new HttpClient(new StubHttpMessageHandler(_ => throw new InvalidOperationException("unexpected MasterData call"))) { BaseAddress = new Uri("http://master-data.local") }),
+            new MesMasterDataHttpClient(new HttpClient(masterData ?? new StubHttpMessageHandler(_ => throw new InvalidOperationException("unexpected MasterData call"))) { BaseAddress = new Uri("http://master-data.local") }),
             new MesErpHttpClient(new HttpClient(erp ?? new StubHttpMessageHandler(_ => throw new InvalidOperationException("unexpected ERP call"))) { BaseAddress = new Uri("http://erp.local") }),
             new MesInventoryHttpClient(new HttpClient(inventory ?? new StubHttpMessageHandler(_ => throw new InvalidOperationException("unexpected Inventory call"))) { BaseAddress = new Uri("http://inventory.local") }),
             new TestInternalServiceTokenProvider("internal-token"));

@@ -66,11 +66,13 @@ public sealed class HttpMesFoundationSourceReader(
                 ("resourceType", "work-center"),
                 ("siteCode", siteCode),
                 ("lineCode", lineCode),
-                ("workCenterCode", workCenterCode),
                 ("all", "true")),
             cancellationToken);
+        // MasterData 的 work-center 分支只按工厂/产线过滤，workCenterCode 参数只作用于挂在工作中心下的资源，
+        // 所以按工作中心收窄在这里做。
+        var code = workCenterCode?.Trim();
         return data.Resources
-            .Where(x => x.Active)
+            .Where(x => x.Active && (string.IsNullOrEmpty(code) || string.Equals(x.Code, code, StringComparison.Ordinal)))
             .Select(x => new MesFoundationWorkCenter(x.Code, x.DisplayName))
             .OrderBy(x => x.Code, StringComparer.Ordinal)
             .ToArray();
