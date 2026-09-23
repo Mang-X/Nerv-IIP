@@ -340,12 +340,15 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
-            // 工位挂在产线下：按工作中心收窄时给出该工作中心所在产线下的全部工位，不看工位自己的可选工作中心关联。
-            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || dbContext.WorkCenters.Any(workCenter =>
-                workCenter.OrganizationId == x.OrganizationId &&
-                workCenter.EnvironmentId == x.EnvironmentId &&
-                workCenter.Code == request.WorkCenterCode &&
-                workCenter.LineCode == x.LineCode))
+            // 工位挂在产线下：按工作中心收窄时给出该工作中心所在产线下的全部工位，
+            // 另并回工位自身关联到该工作中心的工位（工作中心改挂产线、未登记或无产线时不丢）。
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) ||
+                x.WorkCenterCode == request.WorkCenterCode ||
+                dbContext.WorkCenters.Any(workCenter =>
+                    workCenter.OrganizationId == x.OrganizationId &&
+                    workCenter.EnvironmentId == x.EnvironmentId &&
+                    workCenter.Code == request.WorkCenterCode &&
+                    workCenter.LineCode == x.LineCode))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .GroupJoin(
                 dbContext.ProductionLines.AsNoTracking(),

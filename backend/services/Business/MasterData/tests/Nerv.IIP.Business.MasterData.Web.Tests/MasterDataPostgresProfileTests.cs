@@ -401,6 +401,12 @@ public sealed class MasterDataPostgresProfileTests
                     CancellationToken.None);
                 Assert.Equal(["ST-A"], scoped.Resources.Select(x => x.StationCode));
             }
+
+            // WC-3 在 work_centers 里没有行，ST-C 只凭自身关联的工作中心命中。
+            var unregisteredWorkCenter = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: "WC-3"),
+                CancellationToken.None);
+            Assert.Equal(["ST-C"], unregisteredWorkCenter.Resources.Select(x => x.StationCode));
         }
     }
 

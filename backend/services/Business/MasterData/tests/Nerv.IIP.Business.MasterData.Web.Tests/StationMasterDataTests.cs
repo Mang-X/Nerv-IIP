@@ -67,15 +67,21 @@ public sealed class StationMasterDataTests
         dbContext.Stations.AddRange(
             Station.Create(OrganizationId, EnvironmentId, "ST-SHARED", "共用工位", "LINE-A"),
             Station.Create(OrganizationId, EnvironmentId, "ST-B-ONLY", "B 工位", "LINE-A", "WC-B"),
-            Station.Create(OrganizationId, EnvironmentId, "ST-OTHER", "包装工位", "LINE-B", "WC-C"));
+            Station.Create(OrganizationId, EnvironmentId, "ST-OTHER", "包装工位", "LINE-B", "WC-C"),
+            Station.Create(OrganizationId, EnvironmentId, "ST-CROSS", "跨线关联工位", "LINE-B", "WC-A"),
+            Station.Create(OrganizationId, EnvironmentId, "ST-UNREGISTERED-WC", "未登记工作中心工位", "LINE-Z", "WC-GHOST"));
         await dbContext.SaveChangesAsync();
         var handler = new ListMasterDataResourcesQueryHandler(dbContext);
 
         var workCenterA = await handler.Handle(new ListMasterDataResourcesQuery(OrganizationId, EnvironmentId, "station", WorkCenterCode: "WC-A"), CancellationToken.None);
         var workCenterC = await handler.Handle(new ListMasterDataResourcesQuery(OrganizationId, EnvironmentId, "station", WorkCenterCode: "WC-C"), CancellationToken.None);
 
-        Assert.Equal(["ST-B-ONLY", "ST-SHARED"], workCenterA.Resources.Select(x => x.Code));
-        Assert.Equal(["ST-OTHER"], workCenterC.Resources.Select(x => x.Code));
+        var ghost = await handler.Handle(new ListMasterDataResourcesQuery(OrganizationId, EnvironmentId, "station", WorkCenterCode: "WC-GHOST"), CancellationToken.None);
+
+        // ST-CROSS 在 LINE-B，只凭自身关联 WC-A 命中；ST-UNREGISTERED-WC 的工作中心在 work_centers 里没有行。
+        Assert.Equal(["ST-B-ONLY", "ST-CROSS", "ST-SHARED"], workCenterA.Resources.Select(x => x.Code));
+        Assert.Equal(["ST-CROSS", "ST-OTHER"], workCenterC.Resources.Select(x => x.Code));
+        Assert.Equal(["ST-UNREGISTERED-WC"], ghost.Resources.Select(x => x.Code));
     }
 
     [Fact]
