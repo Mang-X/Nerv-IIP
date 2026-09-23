@@ -1,10 +1,5 @@
 import type { ListBusinessConsoleMesWorkOrdersData } from '@nerv-iip/api-client'
-import { receiptPendingReason } from '@nerv-iip/business-core'
 import type { StatusTone } from '@nerv-iip/ui'
-
-// 判断逻辑权威在 @nerv-iip/business-core（PDA 复用同一份，#3767）；这里保留同名导出，
-// 不改动 receipts.vue 等既有调用方。
-export { receiptPendingReason }
 
 type MesStatusValue = NonNullable<
   NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']

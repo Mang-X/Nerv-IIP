@@ -148,7 +148,7 @@ describe('PDA MES finished-goods receipt page', () => {
       workOrderId: 'WO-2026-0003',
       skuId: 'SKU-C',
       quantity: 10,
-      receiptStatus: 'requested',
+      receiptStatus: 'Requested',
       costCapitalization: {
         workOrderCompleted: true,
         receivedReportCount: 0,

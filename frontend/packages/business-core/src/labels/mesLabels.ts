@@ -243,8 +243,11 @@ export interface ReceiptPendingReasonRow {
  * 在等哪一环。
  *
  * business-console 和 PDA 调用的是同一个列表接口
- * （`listBusinessConsoleMesFinishedGoodsReceiptRequests`），因此这里按接口原始的小写状态码
- * （如 `requested`）判断，与本文件其余大小写混杂的状态表（历史遗留、各自域的独立值域）无关。
+ * （`listBusinessConsoleMesFinishedGoodsReceiptRequests`）。网关按 Ordinal 比较运行时状态值
+ * `"Requested"`（`BusinessConsoleMesEndpoints.cs`），生成类型 types.gen 里的小写枚举值只是
+ * 展示层处理器（`MesListDisplayOpenApiDocumentProcessor`）改写的契约文档，不是运行时实际大小写；
+ * 这里对 `Requested` 做大小写不敏感比较，不依赖某一侧的具体大小写拼写，与本文件其余大小写
+ * 混杂的状态表（历史遗留、各自域的独立值域）无关。
  */
 export function receiptPendingReason(row: ReceiptPendingReasonRow): string | null {
   if ((row.receiptStatus ?? '').toLowerCase() !== 'requested') return null
