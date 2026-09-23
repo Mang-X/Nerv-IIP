@@ -15,13 +15,13 @@ import {
   NvSelectValue,
   NvStatusBadge,
   NvToolbar,
-  NvInput,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMesAndon, type AndonAction } from '@/composables/mes/useMesAndon'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatDateTime } from '@/utils/format'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -174,16 +174,13 @@ async function submit(row: BusinessConsoleMesAndonCallResponse, action: AndonAct
           }}</NvSelectItem></NvSelectContent
         >
       </NvSelect>
-      <NvInput
+      <DirectoryPicker
+        directory-type="work-center"
         :model-value="filters.workCenterId ?? ''"
-        aria-label="工作中心"
-        placeholder="工作中心编号"
+        placeholder="全部工作中心"
         class="w-48"
-        @change="
-          changeFilters({
-            workCenterId: ($event.target as HTMLInputElement).value.trim() || undefined,
-          })
-        "
+        clearable
+        @update:model-value="changeFilters({ workCenterId: $event || undefined })"
       />
     </template>
   </NvToolbar>

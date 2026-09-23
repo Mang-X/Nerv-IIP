@@ -432,6 +432,10 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
+  DirectoryPicker: {
+    props: ['modelValue', 'directoryType'],
+    template: '<input readonly :value="modelValue" :data-directory-type="directoryType" />',
+  },
   NvBadge: { template: '<span><slot /></span>' },
   NvButton: { template: '<button><slot /></button>' },
   NvDataTable: {
@@ -906,10 +910,8 @@ describe('equipment telemetry pages', () => {
   it('shows a deep-linked device scope and clears it when switching to an organization comparison', async () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
-    const deviceInput = wrapper
-      .findAll('input')
-      .find((input) => input.element.value === 'DEV-CNC-01')
-    expect(deviceInput?.exists()).toBe(true)
+    const devicePicker = wrapper.get('[data-directory-type="equipment"]')
+    expect((devicePicker.element as HTMLInputElement).value).toBe('DEV-CNC-01')
     expect(wrapper.text()).toContain('当前设备范围：DEV-CNC-01')
 
     telemetryPageMocks.aggregateFilters!.dimension = 'workCenter'

@@ -14,6 +14,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed, reactive } from 'vue'
 import { useErpMachineOverhead } from '@/composables/useBusinessErp'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   allocationDifference,
@@ -222,11 +223,12 @@ function resizeMonth(pageSize: number) {
               aria-label="会计期间"
               placeholder="会计期间"
             />
-            <NvInput
+            <DirectoryPicker
               v-model="draft.workCenterId"
+              directory-type="work-center"
               class="w-64"
-              aria-label="工作中心编号"
-              placeholder="工作中心编号（可选）"
+              placeholder="全部工作中心"
+              clearable
             />
             <NvButton
               type="submit"

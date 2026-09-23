@@ -36,6 +36,7 @@ import {
 } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
@@ -1061,11 +1062,23 @@ function isPresent(value: string | undefined | null): value is string {
             </NvField>
             <NvField>
               <NvFieldLabel for="record-batch">批次</NvFieldLabel>
-              <NvInput id="record-batch" v-model="recordForm.batchNo" />
+              <DirectoryPicker
+                id="record-batch"
+                v-model="recordForm.batchNo"
+                directory-type="batch"
+                :sku-code="recordForm.skuCode"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="record-serial">序列号</NvFieldLabel>
-              <NvInput id="record-serial" v-model="recordForm.serialNo" />
+              <DirectoryPicker
+                id="record-serial"
+                v-model="recordForm.serialNo"
+                directory-type="serial"
+                :sku-code="recordForm.skuCode"
+                clearable
+              />
             </NvField>
           </NvFieldGroup>
 

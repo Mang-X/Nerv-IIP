@@ -115,7 +115,9 @@ function createState() {
 let data: ReturnType<typeof createState>
 const render = () =>
   mount(MachineOverheadPage, {
-    global: { stubs: { BusinessLayout: { template: '<main><slot /></main>' } } },
+    global: {
+      stubs: { BusinessLayout: { template: '<main><slot /></main>' }, DirectoryPicker: true },
+    },
   })
 
 // PublicContract / DomainInvariant: #2386 的状态与金额呈现验收；#2385 的公开读契约。
