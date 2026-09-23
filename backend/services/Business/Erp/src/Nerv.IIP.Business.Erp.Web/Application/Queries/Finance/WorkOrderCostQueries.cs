@@ -12,6 +12,7 @@ public sealed record ListWorkOrderCostsQuery(
     string? WorkOrderId = null,
     string? SourceNcrId = null,
     string? SourceWorkOrderId = null,
+    string? Keyword = null,
     int Skip = 0,
     int Take = 100) : IQuery<ListWorkOrderCostsResponse>;
 
@@ -24,6 +25,7 @@ public sealed class ListWorkOrderCostsQueryValidator : AbstractValidator<ListWor
         RuleFor(x => x.WorkOrderId).MaximumLength(100);
         RuleFor(x => x.SourceNcrId).MaximumLength(100);
         RuleFor(x => x.SourceWorkOrderId).MaximumLength(100);
+        RuleFor(x => x.Keyword).MaximumLength(200);
         this.AddPageRules(query => query.Skip, query => query.Take);
     }
 }
@@ -82,6 +84,11 @@ public sealed class ListWorkOrderCostsQueryHandler(ApplicationDbContext dbContex
         {
             var sourceWorkOrderId = request.SourceWorkOrderId.Trim();
             costs = costs.Where(x => x.SourceWorkOrderId == sourceWorkOrderId);
+        }
+        var keyword = SearchTerm.From(request.Keyword).Value;
+        if (keyword != null)
+        {
+            costs = costs.Where(x => x.WorkOrderId.Contains(keyword) || x.SkuCode.Contains(keyword));
         }
 
         var total = await costs.CountAsync(cancellationToken);

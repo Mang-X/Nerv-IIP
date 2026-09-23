@@ -46,6 +46,7 @@ public sealed record ListWorkOrderCostsRequest(
     string? WorkOrderId = null,
     string? SourceNcrId = null,
     string? SourceWorkOrderId = null,
+    string? Keyword = null,
     int Skip = 0,
     int Take = 100);
 
@@ -63,6 +64,7 @@ public sealed class ListWorkOrderCostsEndpoint(ISender sender)
             req.WorkOrderId,
             req.SourceNcrId,
             req.SourceWorkOrderId,
+            req.Keyword,
             req.Skip,
             req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);

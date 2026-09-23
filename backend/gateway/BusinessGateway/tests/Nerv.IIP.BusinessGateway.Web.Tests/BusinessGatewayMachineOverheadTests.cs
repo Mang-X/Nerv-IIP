@@ -14,6 +14,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayMachineOverheadTests
 {
     [Theory]
+    [InlineData("/api/business-console/v1/erp/finance/work-order-costs?keyword=WO")]
     [InlineData("/api/business-console/v1/erp/finance/work-order-costs/WO-001")]
     [InlineData("/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations?accountingPeriodCode=2026-08")]
     public async Task Facades_reject_forbidden_principal_before_downstream_request(string path)
@@ -32,6 +33,68 @@ public sealed class BusinessGatewayMachineOverheadTests
         Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
         Assert.Equal(0, handler.CallCount);
+    }
+
+    // PublicContract: #3783 财务页工单候选取自 ERP 自己的工单成本，财务读权限即可搜到。
+    [Fact]
+    public async Task Work_order_cost_list_facade_forwards_keyword_search_to_erp_under_finance_read()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(new
+        {
+            success = true,
+            data = new
+            {
+                total = 1,
+                ordinaryCostTotal = 125m,
+                reworkCostTotal = 0m,
+                items = new[]
+                {
+                    new { workOrderCostId = "cost-001", workOrderId = "WO-0917", skuCode = "FG-001", costKind = "ordinary" },
+                },
+            },
+        }));
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = Lease(auth, handler);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/erp/finance/work-order-costs?organizationId=org-001&environmentId=env-dev&keyword=0917&take=50");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.ErpFinanceRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal(
+            "/api/business/v1/erp/finance/work-order-costs?organizationId=org-001&environmentId=env-dev&keyword=0917&skip=0&take=50",
+            handler.PathAndQuery);
+        Assert.Equal("Bearer internal-erp-token", handler.Authorization);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"]!;
+        Assert.Equal(1, body["total"]!.GetValue<int>());
+        var item = Assert.Single(body["items"]!.AsArray())!;
+        Assert.Equal("WO-0917", item["workOrderId"]!.GetValue<string>());
+        Assert.Equal("FG-001", item["skuCode"]!.GetValue<string>());
+        Assert.Equal("ordinary", item["costKind"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Work_order_cost_list_facade_rejects_a_cost_kind_outside_the_published_set()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(new
+        {
+            success = true,
+            data = new
+            {
+                total = 1,
+                items = new[] { new { workOrderId = "WO-0917", skuCode = "FG-001", costKind = "scrap" } },
+            },
+        }));
+        await using var lease = Lease(FakeBusinessGatewayAuthorizationClient.Allowed(), handler);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/erp/finance/work-order-costs?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
     }
 
     [Fact]
@@ -248,8 +311,8 @@ public sealed class BusinessGatewayMachineOverheadTests
         var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
         return BusinessGatewayTestHost.Lease(auth, services =>
         {
-            services.RemoveAll<IBusinessErpClient>();
-            services.AddSingleton<IBusinessErpClient>(new HttpBusinessErpClient(downstream));
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(new HttpBusinessErpCostingClient(downstream));
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-erp-token"));
         });

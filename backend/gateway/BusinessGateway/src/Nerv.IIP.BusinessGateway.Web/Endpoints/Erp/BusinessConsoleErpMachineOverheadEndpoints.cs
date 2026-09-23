@@ -8,11 +8,37 @@ using Nerv.IIP.ServiceAuth;
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/work-order-costs")]
+[BusinessGatewayOperationId("listBusinessConsoleErpWorkOrderCosts")]
+public sealed class ListBusinessConsoleErpWorkOrderCostsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpCostingClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<
+        BusinessConsoleListErpWorkOrderCostsRequest,
+        BusinessConsoleErpWorkOrderCostListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleListErpWorkOrderCostsRequest request) =>
+        request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListErpWorkOrderCostsRequest request) =>
+        request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpWorkOrderCostListResponse> ForwardAsync(
+        BusinessConsoleListErpWorkOrderCostsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListWorkOrderCostsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpGet("/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}")]
 [BusinessGatewayOperationId("getBusinessConsoleErpWorkOrderCostVariance")]
 public sealed class GetBusinessConsoleErpWorkOrderCostVarianceEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessErpClient erp,
+    IBusinessErpCostingClient erp,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<
         BusinessConsoleGetErpWorkOrderCostVarianceRequest,
@@ -38,7 +64,7 @@ public sealed class GetBusinessConsoleErpWorkOrderCostVarianceEndpoint(
 [BusinessGatewayOperationId("listBusinessConsoleErpWorkCenterMachineOverheadReconciliations")]
 public sealed class ListBusinessConsoleErpMachineOverheadReconciliationsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessErpClient erp,
+    IBusinessErpCostingClient erp,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<
         BusinessConsoleListErpMachineOverheadReconciliationsRequest,
@@ -57,6 +83,19 @@ public sealed class ListBusinessConsoleErpMachineOverheadReconciliationsEndpoint
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.ListMachineOverheadReconciliationsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleListErpWorkOrderCostsRequestValidator
+    : Validator<BusinessConsoleListErpWorkOrderCostsRequest>
+{
+    public BusinessConsoleListErpWorkOrderCostsRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Keyword).MaximumLength(200);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
 }
 
 public sealed class BusinessConsoleGetErpWorkOrderCostVarianceRequestValidator

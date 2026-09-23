@@ -6400,6 +6400,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessErpClient>();
             services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(erp);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-list-token"));
         });
@@ -6462,6 +6464,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessErpClient>();
             services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(erp);
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -6489,6 +6493,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessErpClient>();
             services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(erp);
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -7215,6 +7221,8 @@ public sealed class BusinessGatewayProxyTests
         {
             services.RemoveAll<IBusinessErpClient>();
             services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(erp);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -7370,7 +7378,7 @@ public sealed class BusinessGatewayProxyTests
                 });
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
-        var subject = new HttpBusinessErpClient(httpClient);
+        var subject = new HttpBusinessErpCostingClient(httpClient);
         var effectiveFromUtc = DateTimeOffset.Parse("2026-07-23T01:00:00Z", CultureInfo.InvariantCulture);
         var atUtc = DateTimeOffset.Parse("2026-07-23T02:00:00Z", CultureInfo.InvariantCulture);
         var request = new BusinessConsoleConfigureErpWorkCenterCostRateRequest(
@@ -7409,7 +7417,7 @@ public sealed class BusinessGatewayProxyTests
             : data;
         var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
-        var client = new HttpBusinessErpClient(httpClient);
+        var client = new HttpBusinessErpCostingClient(httpClient);
 
         var response = await client.ConfigureWorkCenterCostRateAsync(
             "internal-token",
@@ -7435,7 +7443,7 @@ public sealed class BusinessGatewayProxyTests
     {
         var handler = new RecordingHandler(_ => StringJsonResponse(HttpStatusCode.OK, responseBody));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
-        var client = new HttpBusinessErpClient(httpClient);
+        var client = new HttpBusinessErpCostingClient(httpClient);
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
             client.ConfigureWorkCenterCostRateAsync(
@@ -7462,7 +7470,7 @@ public sealed class BusinessGatewayProxyTests
             },
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.local") };
-        var client = new HttpBusinessErpClient(httpClient);
+        var client = new HttpBusinessErpCostingClient(httpClient);
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
             client.ConfigureWorkCenterCostRateAsync(
@@ -7488,6 +7496,8 @@ public sealed class BusinessGatewayProxyTests
         {
             services.RemoveAll<IBusinessErpClient>();
             services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IBusinessErpCostingClient>();
+            services.AddSingleton<IBusinessErpCostingClient>(erp);
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -18643,7 +18653,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     }
 }
 
-internal sealed class RecordingErpClient : IBusinessErpClient
+internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCostingClient
 {
     public int PurchaseOrderListCallCount { get; private set; }
 
@@ -18746,6 +18756,12 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     true),
             ]));
     }
+
+    public Task<BusinessConsoleErpWorkOrderCostListResponse> ListWorkOrderCostsAsync(
+        string internalBearerToken,
+        BusinessConsoleListErpWorkOrderCostsRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Use the concrete ERP HTTP client for work-order cost contract tests.");
 
     public Task<BusinessConsoleErpWorkOrderCostVarianceResponse> GetWorkOrderCostVarianceAsync(
         string internalBearerToken,

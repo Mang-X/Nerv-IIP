@@ -30,6 +30,11 @@ test('财务核对人工差异并展开覆盖报工', async ({ page }, testInfo)
     let data: unknown = { items: [], total: 0 }
     if (url.pathname.endsWith('/auth/refresh')) data = session
     else if (url.pathname.endsWith('/auth/me')) data = principal
+    else if (url.pathname.endsWith('/erp/finance/work-order-costs'))
+      data = {
+        items: [{ workOrderId: 'WO-202609-0186', skuCode: 'FG-0186', costKind: 'ordinary' }],
+        total: 1,
+      }
     else if (url.pathname.includes('/work-order-costs/')) {
       expect(url.searchParams.get('organizationId')).toBe('org-001')
       expect(url.searchParams.get('environmentId')).toBe('env-dev')
@@ -104,7 +109,8 @@ test('财务核对人工差异并展开覆盖报工', async ({ page }, testInfo)
     await route.fulfill({ json: { success: true, data, code: 0, message: '' } })
   })
   await page.goto('/erp/finance/cost-variance')
-  await page.getByLabel('工单编号', { exact: true }).fill('WO-202609-0186')
+  await page.getByRole('button', { name: '工单', exact: true }).click()
+  await page.getByRole('option', { name: /WO-202609-0186/ }).click()
   await page.getByRole('button', { name: '查询工单', exact: true }).click()
   await expect(page.getByText('效率方向：不利', { exact: true })).toBeVisible()
   await expect(page.getByText('未启用机器成本', { exact: true })).toBeVisible()

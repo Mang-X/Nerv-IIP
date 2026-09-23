@@ -2143,7 +2143,7 @@ public sealed class ListBusinessConsoleMesRelatedQualityItemsEndpoint(
 public sealed class ListBusinessConsoleMesFinishedGoodsReceiptRequestsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
-    IBusinessErpClient erp,
+    IBusinessErpCostingClient erp,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesReceiptRequestListResponse>(
         auth,

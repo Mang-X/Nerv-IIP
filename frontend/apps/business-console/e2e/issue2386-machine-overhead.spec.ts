@@ -30,6 +30,11 @@ test('财务人员核对机器预定分配与月度未多分配差异', async ({
     let data: unknown = { items: [], total: 0 }
     if (url.pathname.endsWith('/auth/refresh')) data = session
     else if (url.pathname.endsWith('/auth/me')) data = principal
+    else if (url.pathname.endsWith('/erp/finance/work-order-costs'))
+      data = {
+        items: [{ workOrderId: 'WO-202609-0186', skuCode: 'FG-0186', costKind: 'ordinary' }],
+        total: 1,
+      }
     else if (url.pathname.includes('/work-order-costs/')) {
       expect(url.searchParams.get('organizationId')).toBe('org-001')
       expect(url.searchParams.get('environmentId')).toBe('env-dev')
@@ -114,7 +119,8 @@ test('财务人员核对机器预定分配与月度未多分配差异', async ({
     await route.fulfill({ json: { success: true, data, code: 0, message: '' } })
   })
   await page.goto('/erp/finance/machine-overhead')
-  await page.getByLabel('工单编号', { exact: true }).fill('WO-202609-0186')
+  await page.getByRole('button', { name: '工单', exact: true }).click()
+  await page.getByRole('option', { name: /WO-202609-0186/ }).click()
   await page.getByRole('button', { name: '查询工单', exact: true }).click()
   await expect(page.getByText('合计 CNY 15,600.00', { exact: true })).toBeVisible()
   await page.getByLabel('会计期间', { exact: true }).fill('2026-09')

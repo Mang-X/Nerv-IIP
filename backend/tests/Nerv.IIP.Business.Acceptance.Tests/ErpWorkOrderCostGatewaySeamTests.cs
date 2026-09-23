@@ -133,8 +133,8 @@ public sealed class ErpWorkOrderCostGatewaySeamTests
                 services.AddSingleton<IBusinessGatewayAuthorizationClient, FinanceAuthorization>();
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider, InternalToken>();
-                services.RemoveAll<IBusinessErpClient>();
-                services.AddHttpClient<IBusinessErpClient, HttpBusinessErpClient>(client =>
+                services.RemoveAll<IBusinessErpCostingClient>();
+                services.AddHttpClient<IBusinessErpCostingClient, HttpBusinessErpCostingClient>(client =>
                     client.BaseAddress = new Uri("http://erp.test"))
                     .ConfigurePrimaryHttpMessageHandler(() => erp.Server.CreateHandler());
             });
