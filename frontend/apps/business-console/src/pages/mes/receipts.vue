@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { receiptPendingReason } from '@nerv-iip/business-core'
 import ReceiptCreateSheet from '@/components/mes/ReceiptCreateSheet.vue'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
   isFailedReceiptStatus,
   mesReceiptStatusOptions,
-  receiptPendingReason,
   receiptStatusLabel,
   receiptStatusTone,
 } from '@/composables/mes/useMesReferenceLabels'
