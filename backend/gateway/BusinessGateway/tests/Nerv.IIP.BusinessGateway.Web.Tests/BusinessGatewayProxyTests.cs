@@ -6307,6 +6307,135 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Finished_goods_receipt_list_attaches_erp_cost_capitalization_progress_to_rows_awaiting_unit_cost()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReceiptRequests =
+            [
+                Receipt("Requested") with { RequestNo = "FGR-001", UnitCost = null },
+                Receipt("Requested") with { RequestNo = "FGR-002", UnitCost = null },
+                Receipt("Requested") with { RequestNo = "FGR-003", WorkOrderId = "WO-002", UnitCost = null },
+                Receipt("Requested") with { RequestNo = "FGR-004" },
+                Receipt("Posted") with { RequestNo = "FGR-005", UnitCost = null },
+            ]
+        };
+        var stalled = new BusinessConsoleMesReceiptCostCapitalizationProgress(true, 0, 8, 3, 3, false);
+        var erp = new RecordingErpClient
+        {
+            WorkOrderCostProgress = new(StringComparer.Ordinal) { ["WO-001"] = stalled },
+        };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-list-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            new[] { BusinessGatewayPermissions.MesReceiptsRead, BusinessGatewayPermissions.ErpFinanceRead },
+            auth.Requirements.Select(x => x.PermissionCode).ToArray());
+        Assert.Equal(
+            new[]
+            {
+                new BusinessConsoleErpWorkOrderCostProgressRequest("org-001", "env-dev", "WO-001"),
+                new BusinessConsoleErpWorkOrderCostProgressRequest("org-001", "env-dev", "WO-002"),
+            },
+            erp.WorkOrderCostProgressRequests.ToArray());
+        Assert.Equal("internal-list-token", erp.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rows = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
+            .ToDictionary(row => row.GetProperty("requestNo").GetString()!, row => row.GetProperty("costCapitalization"));
+        foreach (var requestNo in new[] { "FGR-001", "FGR-002" })
+        {
+            Assert.True(rows[requestNo].GetProperty("workOrderCompleted").GetBoolean());
+            Assert.Equal(0, rows[requestNo].GetProperty("receivedReportCount").GetInt32());
+            Assert.Equal(8, rows[requestNo].GetProperty("expectedReportCount").GetInt32());
+        }
+        // ERP 没有 WO-002 的成本记录：挂「什么都没收到」，而不是留空让前端误判为无权限。
+        Assert.False(rows["FGR-003"].GetProperty("workOrderCompleted").GetBoolean());
+        Assert.Equal(0, rows["FGR-003"].GetProperty("receivedReportCount").GetInt32());
+        Assert.Equal(JsonValueKind.Null, rows["FGR-004"].ValueKind);
+        Assert.Equal(JsonValueKind.Null, rows["FGR-005"].ValueKind);
+    }
+
+    [Fact]
+    public async Task Finished_goods_receipt_list_still_returns_receipts_when_erp_progress_read_fails()
+    {
+        var mes = new RecordingMesClient
+        {
+            ReceiptRequests =
+            [
+                Receipt("Requested") with { RequestNo = "FGR-001", UnitCost = null },
+                Receipt("Requested") with { RequestNo = "FGR-002", WorkOrderId = "WO-002", UnitCost = null },
+            ]
+        };
+        var erp = new RecordingErpClient
+        {
+            WorkOrderCostProgress = new(StringComparer.Ordinal)
+            {
+                ["WO-002"] = new BusinessConsoleMesReceiptCostCapitalizationProgress(true, 2, 8, 1, 3, false),
+            },
+            WorkOrderCostProgressFailures = new(StringComparer.Ordinal) { "WO-001" },
+        };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rows = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
+            .ToDictionary(row => row.GetProperty("requestNo").GetString()!, row => row.GetProperty("costCapitalization"));
+        Assert.Equal(JsonValueKind.Null, rows["FGR-001"].ValueKind);
+        Assert.Equal(2, rows["FGR-002"].GetProperty("receivedReportCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Finished_goods_receipt_list_skips_erp_progress_without_erp_finance_read_permission()
+    {
+        var mes = new RecordingMesClient { ReceiptRequests = [Receipt("Requested") with { UnitCost = null }] };
+        var erp = new RecordingErpClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesReceiptsRead);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(erp.WorkOrderCostProgressRequests);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var row = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("costCapitalization").ValueKind);
+    }
+
+    [Fact]
     public async Task Finished_goods_receipt_inventory_link_returns_not_found_instead_of_guessing_a_similar_receipt()
     {
         var mes = new RecordingMesClient
@@ -18524,6 +18653,26 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         BusinessConsoleListErpMachineOverheadReconciliationsRequest request,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException("Use the concrete ERP HTTP client for machine-overhead contract tests.");
+
+    public Dictionary<string, BusinessConsoleMesReceiptCostCapitalizationProgress> WorkOrderCostProgress { get; init; } = new(StringComparer.Ordinal);
+
+    public List<BusinessConsoleErpWorkOrderCostProgressRequest> WorkOrderCostProgressRequests { get; } = [];
+
+    public HashSet<string> WorkOrderCostProgressFailures { get; init; } = new(StringComparer.Ordinal);
+
+    public Task<BusinessConsoleMesReceiptCostCapitalizationProgress?> GetWorkOrderCostProgressAsync(
+        string internalBearerToken,
+        BusinessConsoleErpWorkOrderCostProgressRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        WorkOrderCostProgressRequests.Add(request);
+        if (WorkOrderCostProgressFailures.Contains(request.WorkOrderId))
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.BadGateway, "downstream-unavailable");
+        }
+        return Task.FromResult(WorkOrderCostProgress.GetValueOrDefault(request.WorkOrderId));
+    }
 
     public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
         string internalBearerToken,

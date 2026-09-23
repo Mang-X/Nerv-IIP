@@ -107,6 +107,12 @@ public interface IBusinessErpClient
         BusinessConsoleGetErpWorkOrderCostVarianceRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>该工单在 ERP 的成本归集进度；ERP 尚无该工单的成本记录时返回 null。</summary>
+    Task<BusinessConsoleMesReceiptCostCapitalizationProgress?> GetWorkOrderCostProgressAsync(
+        string internalBearerToken,
+        BusinessConsoleErpWorkOrderCostProgressRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpMachineOverheadReconciliationListResponse> ListMachineOverheadReconciliationsAsync(
         string internalBearerToken,
         BusinessConsoleListErpMachineOverheadReconciliationsRequest request,
@@ -465,6 +471,33 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
                 ("atUtc", request.AtUtc)),
             null,
             cancellationToken);
+
+    public async Task<BusinessConsoleMesReceiptCostCapitalizationProgress?> GetWorkOrderCostProgressAsync(
+        string internalBearerToken,
+        BusinessConsoleErpWorkOrderCostProgressRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamWorkOrderCostListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/work-order-costs?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("workOrderId", request.WorkOrderId),
+                ("take", 1)),
+            null,
+            cancellationToken);
+        var cost = response.Items.SingleOrDefault();
+        return cost is null
+            ? null
+            : new BusinessConsoleMesReceiptCostCapitalizationProgress(
+                cost.CompletedAtUtc.HasValue,
+                cost.ReceivedReportCount,
+                cost.ExpectedReportCount,
+                cost.ReceivedMaterialMovementCount,
+                cost.ExpectedMaterialMovementCount,
+                cost.CapitalizationPublished);
+    }
 
     public async Task<BusinessConsoleErpWorkOrderCostVarianceResponse> GetWorkOrderCostVarianceAsync(
         string internalBearerToken,
@@ -922,6 +955,16 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             ("keyword", request.Keyword),
             ("skip", request.Skip),
             ("take", request.Take));
+
+    private sealed record DownstreamWorkOrderCostListResponse(IReadOnlyCollection<DownstreamWorkOrderCostItem> Items);
+
+    private sealed record DownstreamWorkOrderCostItem(
+        DateTimeOffset? CompletedAtUtc,
+        int ExpectedReportCount,
+        int ReceivedReportCount,
+        int ExpectedMaterialMovementCount,
+        int ReceivedMaterialMovementCount,
+        bool CapitalizationPublished);
 
     private sealed record DownstreamPurchaseOrderListResponse(IReadOnlyCollection<DownstreamPurchaseOrderItem> Items, int Total);
 

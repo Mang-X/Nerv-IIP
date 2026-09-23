@@ -497,3 +497,80 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(notifySpies.success).not.toHaveBeenCalled()
   })
 })
+
+describe('MES receipts — why a receipt is still waiting (#3728)', () => {
+  const requested = (id: string, extra: Record<string, unknown>) => ({
+    receiptRequestId: id,
+    requestNo: id,
+    workOrderId: 'WO-1',
+    skuId: 'FG-1',
+    quantity: 10,
+    receiptStatus: 'Requested',
+    requestedAtUtc: '2026-09-22T02:00:00Z',
+    ...extra,
+  })
+  const progress = (overrides: Record<string, unknown>) => ({
+    workOrderCompleted: true,
+    receivedReportCount: 0,
+    expectedReportCount: 8,
+    receivedMaterialMovementCount: 3,
+    expectedMaterialMovementCount: 3,
+    capitalizationPublished: false,
+    ...overrides,
+  })
+
+  beforeEach(() => {
+    routeState.query = {}
+    receiptState.rows = [
+      requested('FGR-cost-stalled', {
+        unitCost: null,
+        costCapitalization: progress({ receivedMaterialMovementCount: 1 }),
+      }),
+      requested('FGR-no-erp-permission', { unitCost: null, costCapitalization: null }),
+      requested('FGR-not-completed', {
+        unitCost: null,
+        costCapitalization: progress({ workOrderCompleted: false, expectedReportCount: 0 }),
+      }),
+      requested('FGR-cost-published', {
+        unitCost: null,
+        costCapitalization: progress({ receivedReportCount: 8, capitalizationPublished: true }),
+      }),
+      requested('FGR-posting', { unitCost: 12.5 }),
+      { ...requested('FGR-posted', { unitCost: 12.5 }), receiptStatus: 'Posted' },
+    ]
+  })
+
+  function reasonsByRequestNo() {
+    const wrapper = mountPage()
+    return new Map(
+      wrapper.findAll('[data-testid="row"]').map((row, index) => {
+        const reason = row.find('[data-testid="receipt-pending-reason"]')
+        return [
+          receiptState.rows[index]?.requestNo as string,
+          reason.exists() ? reason.text() : null,
+        ]
+      }),
+    )
+  }
+
+  it('gives every Requested receipt a readable reason and none to settled ones', () => {
+    const reasons = reasonsByRequestNo()
+    for (const row of receiptState.rows.filter((r) => r.receiptStatus === 'Requested')) {
+      expect(reasons.get(row.requestNo as string)?.trim(), row.requestNo as string).toBeTruthy()
+    }
+    expect(reasons.get('FGR-posted')).toBeNull()
+  })
+
+  it('names the stage each Requested receipt is stuck on', () => {
+    const reasons = reasonsByRequestNo()
+    expect(reasons.get('FGR-cost-stalled')).toContain('报工成本 0/8')
+    expect(reasons.get('FGR-cost-stalled')).toContain('物料过账 1/3')
+    expect(reasons.get('FGR-cost-stalled')).toContain('联系系统管理员')
+    expect(reasons.get('FGR-no-erp-permission')).toBe('等待 ERP 成本归集回传单位成本')
+    expect(reasons.get('FGR-not-completed')).toBe(
+      '等待 ERP 收到工单完工后归集成本；长时间不变请联系系统管理员',
+    )
+    expect(reasons.get('FGR-cost-published')).toBe('ERP 已完成成本归集，等待单位成本回传')
+    expect(reasons.get('FGR-posting')).toBe('已提交库存过账，等待库存确认')
+  })
+})
