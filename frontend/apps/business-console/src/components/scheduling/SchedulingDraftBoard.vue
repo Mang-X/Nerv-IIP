@@ -7,8 +7,10 @@ import {
 } from '@nerv-iip/scheduling'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import type { EntityPickerOption } from '@nerv-iip/ui'
 import {
   NvButton,
+  NvEntityPicker,
   NvInput,
   NvStatusBadge,
   NvTabs,
@@ -45,6 +47,13 @@ const view = shallowRef('gantt')
 const materialRisks = computed(() => props.model?.materialRisks ?? [])
 // 设备数据风险（软约束）：排在状态未知设备上的工序，开工前需人工确认设备可用。
 const equipmentRisks = computed(() => props.model?.equipmentRisks ?? [])
+// 改派资源只能在本排程的资源泳道之间挑，与资源排产板拖拽换泳道同一口径。
+const resourceOptions = computed<EntityPickerOption[]>(() =>
+  (props.model?.resources ?? []).map((resource) => ({
+    value: resource.id,
+    label: resource.text || resource.id,
+  })),
+)
 </script>
 
 <template>
@@ -193,11 +202,18 @@ const equipmentRisks = computed(() => props.model?.equipmentRisks ?? [])
             >
               <td class="p-2 font-medium">{{ task.orderId }} · {{ task.operationId }}</td>
               <td class="p-2">
-                <NvInput
-                  class="h-8 min-w-32"
+                <NvEntityPicker
+                  class="min-w-40"
                   :disabled="readOnly || task.locked"
                   :model-value="task.resourceId"
-                  @update:model-value="emit('update', task.id, { resourceId: String($event) })"
+                  :options="resourceOptions"
+                  title="选择资源"
+                  placeholder="选择资源"
+                  source-text="数据来自本排程的资源泳道"
+                  empty-text="本排程没有可用资源"
+                  :show-code="false"
+                  :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
+                  @update:model-value="emit('update', task.id, { resourceId: $event })"
                 />
               </td>
               <td class="p-2">

@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { PiniaColada } from '@pinia/colada'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +16,26 @@ const api = vi.hoisted(() => ({
 vi.mock('@nerv-iip/api-client', async (original) => ({
   ...(await original<typeof import('@nerv-iip/api-client')>()),
   listBusinessConsoleMesAndonCalls: api.list,
+  // 工作中心筛选走可搜目录：目录项的 id 与编码不同，用来证明筛选提交的是编码。
+  listBusinessConsoleSearchableDirectoryQueryOptions: ({
+    path,
+    query,
+  }: {
+    path: Record<string, string>
+    query: Record<string, unknown>
+  }) => ({
+    key: ['searchable-directory', path, query],
+    query: async () => ({
+      success: true,
+      data: {
+        items: [
+          { id: 'wc-a-id', code: 'WC-A', displayName: '总装一线', context: {} },
+          { id: 'wc-b-id', code: 'WC-B', displayName: '总装二线', context: {} },
+        ],
+        total: 2,
+      },
+    }),
+  }),
   claimBusinessConsoleMesAndonCall: api.claim,
   getBusinessConsolePrincipalWorkContextQueryOptions: ({
     query,
@@ -158,6 +178,10 @@ describe('安灯工作台用户行为（#3655）', () => {
         }),
       }),
     )
+    // 地址栏带入的工作中心不在目录当前页里：选择器仍要显示它并可清除，不能显示成「全部工作中心」。
+    const picker = wrapper.get('button[aria-label="工作中心"]')
+    expect(picker.text()).toContain('WC-ASSEMBLY')
+    expect(wrapper.find('button[aria-label="清除工作中心"]').exists()).toBe(true)
     await router.push('/source')
     router.back()
     await flushPromises()
@@ -167,9 +191,12 @@ describe('安灯工作台用户行为（#3655）', () => {
     expect(api.list).toHaveBeenLastCalledWith(
       expect.objectContaining({ query: expect.objectContaining({ skip: 20, take: 20 }) }),
     )
-    const input = wrapper.get('input[aria-label="工作中心"]')
-    await input.setValue('WC-B')
-    await input.trigger('change')
+    await wrapper.get('button[aria-label="工作中心"]').trigger('click')
+    await flushPromises()
+    const option = [...document.body.querySelectorAll('[role="option"]')].find((element) =>
+      element.textContent?.includes('总装二线'),
+    )!
+    await new DOMWrapper(option).trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({
       queue: 'unclosed',

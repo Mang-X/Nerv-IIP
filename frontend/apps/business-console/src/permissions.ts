@@ -54,6 +54,7 @@ export const BUSINESS_PERMISSION_CODES = {
   erpProcurementRead: 'business.erp.procurement.read',
   erpSalesRead: 'business.erp.sales.read',
   erpFinanceRead: 'business.erp.finance.read',
+  erpFinanceManage: 'business.erp.finance.manage',
   iiotTelemetryRead: 'business.iiot.telemetry.read',
   iiotAlarmRulesManage: 'business.iiot.alarm-rules.manage',
   iiotAlarmsRead: 'business.iiot.alarms.read',

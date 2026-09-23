@@ -17,6 +17,7 @@ import {
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
 import {
+  useEquipmentAlarmCatalog,
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
@@ -203,6 +204,17 @@ const createForm = reactive({
   unavailabilityMode: 'none',
 })
 const createError = shallowRef('')
+const { alarmOptions, alarmsPending } = useEquipmentAlarmCatalog(() => createForm.deviceAssetId)
+// 用户换了设备，原先挑的报警就不属于这台设备了。清空写在设备框的 setter 里，
+// 只有用户操作才触发；从报警页带入建单时直接写字段，不会误清带入的报警。
+const createDeviceModel = computed({
+  get: () => createForm.deviceAssetId,
+  set: (value: string) => {
+    if (value === createForm.deviceAssetId) return
+    createForm.deviceAssetId = value
+    createForm.sourceAlarmId = ''
+  },
+})
 const downtimeReasons = useMaintenanceDowntimeReasonDirectory(filters)
 const {
   keyword: reasonKeyword,
@@ -741,7 +753,7 @@ watch(
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
               <NvCombobox
                 id="mwo-device"
-                v-model="createForm.deviceAssetId"
+                v-model="createDeviceModel"
                 :suggestions="deviceSuggestions"
                 placeholder="搜索设备台账"
               />
@@ -774,11 +786,19 @@ watch(
             </NvField>
             <NvField v-if="!createCarried">
               <NvFieldLabel for="mwo-alarm">关联报警</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="mwo-alarm"
                 v-model="createForm.sourceAlarmId"
-                autocomplete="off"
-                placeholder="可选"
+                :options="alarmOptions"
+                :show-code="false"
+                :disabled="!createForm.deviceAssetId.trim()"
+                title="选择关联报警"
+                :placeholder="createForm.deviceAssetId.trim() ? '可选' : '先选设备'"
+                source-text="数据来自该设备的报警记录"
+                empty-text="该设备当前没有报警"
+                :loading="alarmsPending"
+                clearable
+                aria-label="关联报警"
               />
             </NvField>
             <NvField>
