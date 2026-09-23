@@ -99,7 +99,16 @@ StockLedgerLineResponse:
 ### 4.2 【P0】库位主数据读面
 
 库位是本域出现频次最高的手输字段（库存 3 页 + WMS 6 页共 16 处）。
-现状：只有 `POST /api/inventory/v1/locations`（创建），**网关连这个都没代理**，也没有任何 GET。
+
+**#3770 已交付（2026-09）**：`GET /api/inventory/v1/locations` 与 `POST` upsert 均已由网关代理
+（`listBusinessConsoleInventoryLocations` / `createOrUpdateBusinessConsoleInventoryLocation`），
+业务前端新增「库存管理 ▸ 库位」维护页（列表含停用库位，可新建、编辑类型/工厂/上级库位/状态）。
+开箱数据由 Inventory 产品基线种子补齐 `loc-raw-01 / loc-semi-01 / loc-fg-01 / loc-line-01`
+（`loc-line-01` 为线边库位）。读面目前只支持 `keyword`（按库位编码）与分页；下方草案里的
+`displayName`、仓库/库区、容量等字段库存侧尚无存储，未交付。各页库位选择器仍走
+`useWarehouseCodeCatalog` 派生目录，改接本读面是后续工作。
+
+以下为立项时的草案，保留作对照：
 
 ```
 GET /api/inventory/v1/locations

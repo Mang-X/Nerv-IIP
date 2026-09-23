@@ -1269,6 +1269,39 @@ public sealed record BusinessConsoleInventoryMovementLineResponse(
     decimal? UnitCost = null,
     decimal? MovementAmount = null);
 
+public sealed record BusinessConsoleInventoryLocationListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryLocationListResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryLocationResponse> Items,
+    int TotalCount = 0,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryLocationResponse(
+    string LocationId,
+    string LocationCode,
+    string LocationType,
+    string SiteCode,
+    string? ParentLocationCode,
+    string Status,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleCreateOrUpdateInventoryLocationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string LocationCode,
+    string LocationType,
+    string SiteCode,
+    string? ParentLocationCode,
+    string Status);
+
+public sealed record BusinessConsoleCreateOrUpdateInventoryLocationResponse(string LocationId);
+
 public sealed record BusinessConsoleInventoryCountTaskListRequest(
     string OrganizationId,
     string EnvironmentId,

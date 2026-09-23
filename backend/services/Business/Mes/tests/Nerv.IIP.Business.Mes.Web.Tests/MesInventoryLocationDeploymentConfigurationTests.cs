@@ -16,6 +16,8 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     private const string AppHostProgramPath = "infra/aspire/Nerv.IIP.AppHost/Program.cs";
     private const string InventoryWorldHistoryPhase2SpecPath =
         "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryPhase2Spec.cs";
+    private const string InventoryLocationSeedServicePath =
+        "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/InventoryLocationSeedService.cs";
     private const string MasterDataDictionaryRulesPath =
         "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs";
     /// <summary>AppHost 里区分两个 Development profile 的门控变量名。</summary>
@@ -170,10 +172,8 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     /// <summary>
     /// 普通 Development 分支仍然只回落 MasterData <c>inventory-location</c> 码表里登记过的候选码。
     ///
-    /// 这条是 #2058 原断言的原样保留：它管的是「普通 Development 的回落码是受治理的登记码」，
-    /// 该 profile 下 Inventory 不种任何库位行（<c>loc-*</c> 与 <c>WH-WB-*</c> 都不存在），在手量须经
-    /// 真实流程建立——owner 在 #2058 已裁决走文档明示，本票不推翻它，只在它没管过的 leader-demo
-    /// profile 上修 p1。
+    /// 这条是 #2058 原断言的原样保留：它管的是「普通 Development 的回落码是受治理的登记码」。
+    /// 库位行本身由 Inventory 产品基线种子建出（#3770），见下一条；在手量仍须经真实流程建立（#2058）。
     /// </summary>
     [Fact]
     public void AppHost_product_location_fallbacks_are_present_in_master_data_dictionary()
@@ -191,6 +191,31 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
         Assert.True(
             fallbackCodes.IsSubsetOf(dictionaryCodes),
             $"AppHost fallback 库位码未在 MasterData inventory-location 字典中：{string.Join(", ", fallbackCodes.Except(dictionaryCodes, StringComparer.Ordinal).Order(StringComparer.Ordinal))}");
+    }
+
+    /// <summary>
+    /// 普通 Development 的回落站点与库位码必须是 Inventory 产品基线种子真的会建出行来的（#3770）：
+    /// 线边库存读面按「站点 + 库位」连库位表，任一对不上读面就恒空、不报错。
+    /// </summary>
+    [Fact]
+    public void AppHost_product_location_fallbacks_are_all_seeded_by_the_inventory_product_baseline()
+    {
+        var plain = DeploymentFallbackLiterals(ReadRepositoryFile(AppHostProgramPath)).Plain;
+        var seed = ReadRepositoryFile(InventoryLocationSeedServicePath);
+        var seededCodes = Regex
+            .Matches(seed, @"new\(""(?<code>[^""]+)"",\s*""[^""]+""\)")
+            .Select(match => match.Groups["code"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var seededSite = Regex.Match(seed, @"const string SiteCode = ""(?<value>[^""]+)"";").Groups["value"].Value;
+        var fallbackCodes = LocationCodesOnly(plain);
+
+        Assert.NotEmpty(fallbackCodes);
+        Assert.NotEmpty(seededCodes);
+        Assert.True(
+            fallbackCodes.IsSubsetOf(seededCodes),
+            "普通 Development 回落库位码在 Inventory 产品基线种子里不存在（线边库存读面会恒空）：" +
+            string.Join(", ", fallbackCodes.Except(seededCodes, StringComparer.Ordinal).Order(StringComparer.Ordinal)));
+        Assert.Equal([seededSite], plain.Where(code => code.StartsWith("SITE-", StringComparison.Ordinal)).Distinct());
     }
 
     /// <summary>站点码不是库位码，库位行目录里不含它；两个目录比对都要先把它排除。</summary>
