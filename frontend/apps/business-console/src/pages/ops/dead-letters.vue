@@ -111,17 +111,32 @@ interface DeadLetterRow {
   service: string
   deadLetterId: string
   deadLetter: IntegrationEventDeadLetterResponse
+  /** 已按 `deadLetter.failureCode` 解析好的中文原因与补数据入口；未点名的失败码为 `undefined`。 */
+  failureHint: FailureHint | undefined
 }
 
 const rows = computed<DeadLetterRow[]>(() =>
   items.value.flatMap((item) => {
     const service = item.service
     const deadLetter = item.deadLetter
-    return service && deadLetter?.id ? [{ service, deadLetterId: deadLetter.id, deadLetter }] : []
+    return service && deadLetter?.id
+      ? [
+          {
+            service,
+            deadLetterId: deadLetter.id,
+            deadLetter,
+            failureHint: knownFailureReason(deadLetter.failureCode),
+          },
+        ]
+      : []
   }),
 )
 const selectedRows = computed(() =>
   rows.value.filter((row) => selectedRowKeys.value.includes(rowKeyOf(row))),
+)
+
+const selectedFailureHint = computed(() =>
+  knownFailureReason(selectedDeadLetter.value?.failureCode),
 )
 
 /**
@@ -167,25 +182,35 @@ function reasonText(source: DeadLetterUnavailableSource) {
   return source.reason === 'sourceTimeout' ? '响应超时，可能只是慢' : '服务不可用'
 }
 
+interface FailureHint {
+  reason: string
+  linkPath: string
+  linkLabel: string
+}
+
 /**
  * 三种基础数据缺失类失败码的中文说明与「去补数据」入口。
  * 只覆盖 #3772 票面点名的三种——其余失败码仍只显示原始码与消息，不在本票范围内猜译。
  *
- * `unavailable-machine-time-fact` 指向派工看板而非机器制造费用页：机器工时事实来自 MES
- * 设备上报，「重放」需要的是把工时事实核实/补齐到 MES 侧，费用页本身不产生工时数据
- * （见 `OperationMachineOverheadSettlementIntegrationEventHandlers.AddUnavailableDeadLetterAsync`）。
+ * `missing-machine-overhead-rate`：ERP 把解析机器制造费用率时的任何已知异常都记成这个码
+ * （含「会计期间未唯一匹配」等），不只是「没有生效修订」这一种情形，故措辞留有余地——
+ * 具体原因仍以同屏的「失败原因」为准
+ * （`OperationMachineOverheadSettlementIntegrationEventHandlers.cs:425`、
+ * `WorkCenterMachineOverheadRateQueries.cs:170`）。
+ *
+ * `unavailable-machine-time-fact`：机器工时事实和设备号是 MES 在工序完工时一次性冻结进
+ * 事件载荷的（`OperationTask.cs:367-375`），ERP 只读载荷判定（同 handler `:382-388`）。
+ * 指向派工看板是因为「核实工时数据是否正确」要去 MES 侧看，不代表补完当前工单就能重放
+ * 通过——事后补录不会改已发布事件的载荷，同一事件重放大概率仍会再次进入这个死信。
  */
-const KNOWN_FAILURE_REASONS: Record<
-  string,
-  { reason: string; linkPath: string; linkLabel: string }
-> = {
+const KNOWN_FAILURE_REASONS: Record<string, FailureHint> = {
   'missing-work-center-cost-rate': {
     reason: '该工作中心在报工时点没有生效的人工费率修订。',
     linkPath: '/erp/finance/work-center-cost-rates',
     linkLabel: '去补充工作中心费率',
   },
   'missing-machine-overhead-rate': {
-    reason: '该工作中心在结算时点没有生效的机器制造费用率。',
+    reason: '该工作中心在结算时点没有生效的机器制造费用率，或所属会计期间未能唯一匹配。',
     linkPath: '/erp/finance/machine-overhead',
     linkLabel: '去查看机器制造费用',
   },
@@ -519,15 +544,15 @@ function formatPayload(value: string | null | undefined) {
 
         <template #cell-failureCode="{ row }">
           <span>{{ row.deadLetter.failureCode ?? '' }}</span>
-          <template v-if="knownFailureReason(row.deadLetter.failureCode)">
+          <template v-if="row.failureHint">
             <p class="mt-1 text-xs text-muted-foreground">
-              {{ knownFailureReason(row.deadLetter.failureCode)!.reason }}
+              {{ row.failureHint.reason }}
             </p>
             <RouterLink
-              :to="knownFailureReason(row.deadLetter.failureCode)!.linkPath"
-              class="mt-1 inline-block text-xs underline"
+              :to="row.failureHint.linkPath"
+              class="mt-1 inline-block text-xs text-brand underline-offset-4 hover:underline"
             >
-              {{ knownFailureReason(row.deadLetter.failureCode)!.linkLabel }}
+              {{ row.failureHint.linkLabel }}
             </RouterLink>
           </template>
         </template>
@@ -610,15 +635,15 @@ function formatPayload(value: string | null | undefined) {
             <dd class="break-all">{{ selectedDeadLetter.failureCode ?? '—' }}</dd>
             <dt class="text-muted-foreground">失败原因</dt>
             <dd class="break-words">{{ selectedDeadLetter.failureMessage ?? '—' }}</dd>
-            <template v-if="knownFailureReason(selectedDeadLetter.failureCode)">
-              <dt class="text-muted-foreground">中文说明</dt>
+            <template v-if="selectedFailureHint">
+              <dt class="text-muted-foreground">处理建议</dt>
               <dd class="break-words">
-                {{ knownFailureReason(selectedDeadLetter.failureCode)!.reason }}
+                {{ selectedFailureHint.reason }}
                 <RouterLink
-                  :to="knownFailureReason(selectedDeadLetter.failureCode)!.linkPath"
-                  class="mt-1 block text-sm underline"
+                  :to="selectedFailureHint.linkPath"
+                  class="mt-1 block text-sm text-brand underline-offset-4 hover:underline"
                 >
-                  {{ knownFailureReason(selectedDeadLetter.failureCode)!.linkLabel }}
+                  {{ selectedFailureHint.linkLabel }}
                 </RouterLink>
               </dd>
             </template>

@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, ref, shallowRef } from 'vue'
+import { computed, defineComponent, reactive, ref, shallowRef } from 'vue'
 
 import DeadLettersPage from './dead-letters.vue'
 import type {
@@ -113,9 +113,28 @@ vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
   }
 })
 
-const stubs = { BusinessLayout: { template: '<main><slot /></main>' } }
+/**
+ * 真实 `RouterLink` 要挂路由插件才能渲染；页面没装路由时它直接渲染不出 `href`
+ * （B1 复审实测：`Failed to resolve component: RouterLink`，`to` 目标因此从未被断言过）。
+ * 用同 `to` 语义的锚点 stub，让「跳去哪」和文案一样能在渲染 DOM 里断言到。
+ */
+const RouterLinkStub = defineComponent({
+  name: 'RouterLink',
+  props: { to: { type: String, required: true } },
+  template: '<a :href="to"><slot /></a>',
+})
 
-function seedRow(service = 'Erp', id = 'dl-1', status = 'pending') {
+const stubs = {
+  BusinessLayout: { template: '<main><slot /></main>' },
+  RouterLink: RouterLinkStub,
+}
+
+function seedRow(
+  service = 'Erp',
+  id = 'dl-1',
+  status = 'pending',
+  failureCode = 'missing-work-center-cost-rate',
+) {
   state.items = [
     {
       service,
@@ -123,7 +142,7 @@ function seedRow(service = 'Erp', id = 'dl-1', status = 'pending') {
         id,
         eventType: 'erp.OperationActualTimeLaborCost',
         consumerName: 'business-erp.operation-actual-time-labor-cost',
-        failureCode: 'missing-work-center-cost-rate',
+        failureCode,
         status,
         deadLetteredAtUtc: '2026-09-20T02:00:00Z',
       },
@@ -203,50 +222,79 @@ describe('集成事件死信运维页', () => {
     expect(text).toContain('计数因此偏小')
   })
 
-  it('三类基础数据缺失死信在列表里显示中文原因和补数据入口', async () => {
-    seedRow()
-    const text = (await mountPage()).text()
+  /**
+   * 三种失败码各自的中文原因片段、链接文案与**链接目标**——目标是票面要交付的「补数据
+   * 入口」本身，链接文案对不对不能代表跳得对不对，必须连 `to` 一起断言（B1 复审实测：
+   * 把 `linkPath` 改错、或整条 `unavailable-machine-time-fact` 删掉，此前的用例仍然全绿）。
+   */
+  const KNOWN_FAILURE_CASES = [
+    {
+      failureCode: 'missing-work-center-cost-rate',
+      reasonFragment: '该工作中心在报工时点没有生效的人工费率修订',
+      linkLabel: '去补充工作中心费率',
+      linkPath: '/erp/finance/work-center-cost-rates',
+    },
+    {
+      failureCode: 'missing-machine-overhead-rate',
+      reasonFragment: '该工作中心在结算时点没有生效的机器制造费用率',
+      linkLabel: '去查看机器制造费用',
+      linkPath: '/erp/finance/machine-overhead',
+    },
+    {
+      failureCode: 'unavailable-machine-time-fact',
+      reasonFragment: 'MES 未提供或未确认权威的机器工时数据',
+      linkLabel: '去派工看板核实',
+      linkPath: '/mes/dispatch',
+    },
+  ] as const
 
-    expect(text).toContain('该工作中心在报工时点没有生效的人工费率修订')
-    expect(text).toContain('去补充工作中心费率')
-  })
+  it.each(KNOWN_FAILURE_CASES)(
+    '列表里 $failureCode 显示中文原因，且「去补数据」链接指向 $linkPath',
+    async ({ failureCode, reasonFragment, linkLabel, linkPath }) => {
+      seedRow('Erp', 'dl-1', 'pending', failureCode)
+      const wrapper = await mountPage()
+
+      expect(wrapper.text()).toContain(reasonFragment)
+      const link = wrapper.findAll('a').find((a) => a.text() === linkLabel)
+      expect(link, `未找到链接文案「${linkLabel}」`).toBeDefined()
+      expect(link!.attributes('href')).toBe(linkPath)
+    },
+  )
 
   it('未点名的失败码不编造中文原因，只显示原始码', async () => {
-    seedRow()
-    state.items[0]!.deadLetter = {
-      ...(state.items[0]!.deadLetter as Record<string, unknown>),
-      failureCode: 'closed-accounting-period',
-    }
-    const text = (await mountPage()).text()
-
-    expect(text).toContain('closed-accounting-period')
-    expect(text).not.toContain('去补充')
-    expect(text).not.toContain('去查看机器制造费用')
-    expect(text).not.toContain('去派工看板核实')
-  })
-
-  it('详情抽屉里同样显示中文原因和补数据入口', async () => {
-    seedRow()
-    state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
-    state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-1' }
-    state.selectedDeadLetter = {
-      id: 'dl-1',
-      status: 'pending',
-      eventType: 'erp.OperationActualTimeLaborCost',
-      failureCode: 'missing-machine-overhead-rate',
-    }
+    seedRow('Erp', 'dl-1', 'pending', 'closed-accounting-period')
     const wrapper = await mountPage()
 
-    await wrapper
-      .findAll('button')
-      .find((b) => b.text().includes('详情'))
-      ?.trigger('click')
-    await flushPromises()
-
-    const detailText = document.body.textContent ?? ''
-    expect(detailText).toContain('该工作中心在结算时点没有生效的机器制造费用率')
-    expect(detailText).toContain('去查看机器制造费用')
+    expect(wrapper.text()).toContain('closed-accounting-period')
+    expect(wrapper.find('a').exists()).toBe(false)
   })
+
+  it.each(KNOWN_FAILURE_CASES)(
+    '详情抽屉里 $failureCode 显示中文原因，且链接指向 $linkPath',
+    async ({ failureCode, reasonFragment, linkLabel, linkPath }) => {
+      seedRow('Erp', 'dl-1', 'pending', failureCode)
+      state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
+      state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-1' }
+      state.selectedDeadLetter = {
+        id: 'dl-1',
+        status: 'pending',
+        eventType: 'erp.OperationActualTimeLaborCost',
+        failureCode,
+      }
+      const wrapper = await mountPage()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('详情'))
+        ?.trigger('click')
+      await flushPromises()
+
+      const detailText = document.body.textContent ?? ''
+      expect(detailText).toContain(reasonFragment)
+      const link = [...document.querySelectorAll('a')].find((a) => a.textContent === linkLabel)
+      expect(link, `详情抽屉未找到链接文案「${linkLabel}」`).toBeDefined()
+      expect(link!.getAttribute('href')).toBe(linkPath)
+    },
+  )
 
   it('超时与不可用对用户不是同一句话', async () => {
     state.unavailableSources = [{ service: 'Erp', reason: 'sourceTimeout' }]
