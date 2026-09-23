@@ -10746,6 +10746,7 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("/api/business-console/v1/master-data/uom-conversions", "fromUomCode")]
     [InlineData("/api/business-console/v1/master-data/sites", "timezone")]
     [InlineData("/api/business-console/v1/master-data/production-lines", "siteCode")]
+    [InlineData("/api/business-console/v1/master-data/stations", "lineCode")]
     [InlineData("/api/business-console/v1/master-data/work-centers", "capacityUnit")]
     [InlineData("/api/business-console/v1/master-data/device-assets", "serialNo")]
     [InlineData("/api/business-console/v1/master-data/shifts", "name")]
@@ -10827,6 +10828,7 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("/api/business-console/v1/master-data/uom-conversions", "/api/business/v1/master-data/uom-conversions")]
     [InlineData("/api/business-console/v1/master-data/sites", "/api/business/v1/master-data/sites")]
     [InlineData("/api/business-console/v1/master-data/production-lines", "/api/business/v1/master-data/production-lines")]
+    [InlineData("/api/business-console/v1/master-data/stations", "/api/business/v1/master-data/stations")]
     [InlineData("/api/business-console/v1/master-data/work-centers", "/api/business/v1/master-data/work-centers")]
     [InlineData("/api/business-console/v1/master-data/device-assets", "/api/business/v1/master-data/device-assets")]
     [InlineData("/api/business-console/v1/master-data/shifts", "/api/business/v1/master-data/shifts")]
@@ -16472,6 +16474,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         BusinessServiceAuditContext auditContext,
         CancellationToken cancellationToken) =>
         CreateAuditedResourceAsync(internalBearerToken, "/api/business/v1/master-data/production-lines", "production-line", request.Code, request.Name, auditContext);
+
+    public Task<BusinessConsoleResourceItem> CreateStationAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateStationRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/stations", "station", request.Code, request.Name);
 
     public Task<BusinessConsoleResourceItem> CreateWorkCenterAsync(
         string internalBearerToken,

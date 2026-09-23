@@ -8,6 +8,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.StationAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
@@ -913,6 +914,92 @@ public sealed class CreateProductionLineCommandHandler(
     }
 }
 
+public sealed record CreateStationCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Code,
+    string Name,
+    string LineCode,
+    string? WorkCenterCode = null,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+
+public sealed class CreateStationCommandHandler(
+    IStationRepository repository,
+    ApplicationDbContext dbContext,
+    MasterDataCodingService? codingService = null)
+    : ICommandHandler<CreateStationCommand, MasterDataResourceResult>
+{
+    public async Task<MasterDataResourceResult> Handle(CreateStationCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
+            codingService,
+            "station",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Code,
+            request.IdempotencyKey,
+            MasterDataCodingService.Fingerprint(request.Name, request.LineCode, request.WorkCenterCode),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("station", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
+        {
+            throw new KnownException($"工位 '{code}' 已存在。");
+        }
+
+        await StationParentValidator.EnsureAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.LineCode,
+            request.WorkCenterCode,
+            cancellationToken);
+        var station = Station.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            code,
+            request.Name,
+            request.LineCode,
+            request.WorkCenterCode);
+        await repository.AddAsync(station, cancellationToken);
+        return new MasterDataResourceResult("station", station.Code, station.Name);
+    }
+}
+
+internal static class StationParentValidator
+{
+    /// <summary>工位的上级产线必须存在且未停用；可选关联的工作中心给了就同样要求存在且未停用。</summary>
+    public static async Task EnsureAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string lineCode,
+        string? workCenterCode,
+        CancellationToken cancellationToken)
+    {
+        var line = lineCode.Trim();
+        if (!await dbContext.ProductionLines.AnyAsync(
+                x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == line && !x.Disabled,
+                cancellationToken))
+        {
+            throw new KnownException($"工位所属产线 '{line}' 必须是同组织、同环境内已存在且未停用的产线。");
+        }
+
+        var workCenter = workCenterCode?.Trim();
+        if (!string.IsNullOrEmpty(workCenter) &&
+            !await dbContext.WorkCenters.AnyAsync(
+                x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == workCenter && !x.Disabled,
+                cancellationToken))
+        {
+            throw new KnownException($"工位关联的工作中心 '{workCenter}' 必须是同组织、同环境内已存在且未停用的工作中心。");
+        }
+    }
+}
+
 public sealed record CreateShiftCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -1257,7 +1344,7 @@ public sealed class RegisterDeviceAssetCommandHandler
                 request.SiteCode ?? string.Empty,
                 request.WorkshopCode ?? string.Empty,
                 request.LineCode,
-                request.StationCode ?? string.Empty,
+                references.StationCode,
                 references.ParentDeviceId,
                 request.RetiredOn)
             .ReplaceComponents(request.Components ?? []);
@@ -1276,16 +1363,18 @@ public sealed class RegisterDeviceAssetCommandHandler
                 request.EnvironmentId,
                 request.SupplierPartnerCode,
                 request.ParentDeviceId,
+                request.StationCode,
                 cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(request.SupplierPartnerCode) ||
-            !string.IsNullOrWhiteSpace(request.ParentDeviceId))
+            !string.IsNullOrWhiteSpace(request.ParentDeviceId) ||
+            !string.IsNullOrWhiteSpace(request.StationCode))
         {
             throw new KnownException("校验设备资产引用需要 MasterData 持久化上下文。");
         }
 
-        return Task.FromResult(new DeviceAssetReferenceValidationResult(string.Empty, string.Empty));
+        return Task.FromResult(new DeviceAssetReferenceValidationResult(string.Empty, string.Empty, string.Empty));
     }
 }
 

@@ -1249,6 +1249,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/uom-conversions", BusinessGatewayPermissions.MasterDataProductsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/sites", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/production-lines", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/stations", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/work-centers", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/device-assets", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/shifts", BusinessGatewayPermissions.MasterDataResourcesManage);

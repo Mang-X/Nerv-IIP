@@ -436,9 +436,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     }
 
     [Fact]
-    public async Task Station_route_preserves_scoped_stable_id_and_readable_code()
+    public async Task Station_route_uses_station_master_data_code_as_id_and_code()
     {
-        const string stableId = "station:7:org-0017:env-dev8:SITE-0016:WS-0018:LINE-0016:WC-0016:ST-001";
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
         [
             Grant("work-center", "WC-001", BusinessGatewayPermissions.MasterDataResourcesRead),
@@ -450,8 +449,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             [
                 new BusinessConsoleResourceItem(
                     "station",
-                    stableId,
                     "ST-001",
+                    "装配工位 1",
                     true,
                     "v1",
                     SiteCode: "SITE-001",
@@ -471,8 +470,9 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = body.RootElement.GetProperty("data").GetProperty("items")[0];
-        Assert.Equal(stableId, item.GetProperty("id").GetString());
+        Assert.Equal("ST-001", item.GetProperty("id").GetString());
         Assert.Equal("ST-001", item.GetProperty("code").GetString());
+        Assert.Equal("装配工位 1", item.GetProperty("displayName").GetString());
         Assert.Equal("WC-001", item.GetProperty("context").GetProperty("workCenterCode").GetString());
         Assert.Equal("station", masterData.LastListResourcesRequest!.ResourceType);
         Assert.Equal("WC-001", masterData.LastListResourcesRequest.WorkCenterCode);

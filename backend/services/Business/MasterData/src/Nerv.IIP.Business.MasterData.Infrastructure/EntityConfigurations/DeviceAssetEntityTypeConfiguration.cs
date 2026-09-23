@@ -19,7 +19,7 @@ public sealed class DeviceAssetEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.WorkCenterCode).HasColumnName("work_center_code").IsRequired().HasMaxLength(100).HasComment("Work center code where the device asset is assigned.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("Site code where the device asset is installed.");
         builder.Property(x => x.WorkshopCode).HasColumnName("workshop_code").IsRequired().HasMaxLength(100).HasComment("Workshop code where the device asset is installed.");
-        builder.Property(x => x.StationCode).HasColumnName("station_code").IsRequired().HasMaxLength(100).HasComment("Station code or local position inside the production line.");
+        builder.Property(x => x.StationCode).HasColumnName("station_code").IsRequired().HasMaxLength(100).HasComment("Code of the stations master data row the device is bound to; blank when not bound to a station.");
         builder.Property(x => x.AssetClassCode).HasColumnName("asset_class_code").IsRequired().HasMaxLength(100).HasComment("Asset class code used for equipment grouping and maintenance policy.");
         builder.Property(x => x.Manufacturer).HasColumnName("manufacturer").IsRequired().HasMaxLength(160).HasComment("Equipment manufacturer name.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").IsRequired().HasMaxLength(160).HasComment("Manufacturer serial number or asset serial reference.");

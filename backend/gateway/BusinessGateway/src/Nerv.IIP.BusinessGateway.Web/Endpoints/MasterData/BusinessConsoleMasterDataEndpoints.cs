@@ -654,6 +654,20 @@ public sealed class BusinessConsoleCreateProductionLineRequestValidator : Valida
     }
 }
 
+public sealed class BusinessConsoleCreateStationRequestValidator : Validator<BusinessConsoleCreateStationRequest>
+{
+    public BusinessConsoleCreateStationRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.LineCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
 public sealed class BusinessConsoleCreateWorkCenterRequestValidator : Validator<BusinessConsoleCreateWorkCenterRequest>
 {
     public BusinessConsoleCreateWorkCenterRequestValidator()
@@ -1246,6 +1260,28 @@ public sealed class CreateBusinessConsoleProductionLineEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         masterData.CreateProductionLineAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/stations")]
+[BusinessGatewayOperationId("createBusinessConsoleStation")]
+public sealed class CreateBusinessConsoleStationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateStationRequest, BusinessConsoleResourceItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateStationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateStationRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleResourceItem> ForwardAsync(
+        BusinessConsoleCreateStationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.CreateStationAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console MasterData")]

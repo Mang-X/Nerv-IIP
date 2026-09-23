@@ -744,6 +744,15 @@ public sealed record CreateProductionLineRequest(
     string? WorkshopCode = null,
     string? IdempotencyKey = null);
 
+public sealed record CreateStationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Code,
+    string Name,
+    string LineCode,
+    string? WorkCenterCode = null,
+    string? IdempotencyKey = null);
+
 public sealed record CreateShiftRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -944,6 +953,29 @@ public sealed class CreateProductionLineEndpoint(
             req.WorkshopCode,
             req.IdempotencyKey,
             operation), ct);
+        await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateStationEndpoint(ISender sender)
+    : MasterDataEndpoint<CreateStationRequest, ResponseData<MasterDataResourceResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<CreateStationEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(CreateStationRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new CreateStationCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Code,
+            req.Name,
+            req.LineCode,
+            req.WorkCenterCode,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -1884,6 +1916,7 @@ public static class MasterDataEndpointContracts
         new(typeof(ListPersonnelSkillMatrixEndpoint), "GET", "/api/business/v1/master-data/personnel-skills/matrix", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataPersonnelSkillMatrix"),
         new(typeof(CreateSiteEndpoint), "POST", "/api/business/v1/master-data/sites", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataSite"),
         new(typeof(CreateProductionLineEndpoint), "POST", "/api/business/v1/master-data/production-lines", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataProductionLine"),
+        new(typeof(CreateStationEndpoint), "POST", "/api/business/v1/master-data/stations", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataStation"),
         new(typeof(CreateShiftEndpoint), "POST", "/api/business/v1/master-data/shifts", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataShift"),
         new(typeof(CreateWorkCalendarEndpoint), "POST", "/api/business/v1/master-data/work-calendars", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCalendar"),
         new(typeof(CreateWorkCenterEndpoint), "POST", "/api/business/v1/master-data/work-centers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCenter"),

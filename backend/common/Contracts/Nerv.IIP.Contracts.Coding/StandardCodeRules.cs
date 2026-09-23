@@ -52,6 +52,7 @@ public static class StandardCodeRules
         SimpleResource("site", "工厂", "ST", 3),
         SimpleResource("workshop", "车间", "WS", 3),
         SimpleResource("production-line", "生产线", "PL", 3),
+        SimpleResource("station", "工位", "STN", 4),
         SimpleResource("shift", "班次", "SH", 2),
         SimpleResource("work-center", "工作中心", "WC", 4),
         SimpleResource("device-asset", "设备资产", "EQ", 5),

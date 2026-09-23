@@ -5807,6 +5807,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     idempotencyKey?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest = {
+    organizationId: string;
+    environmentId: string;
+    code?: string | null;
+    name: string;
+    lineCode: string;
+    workCenterCode?: string | null;
+    idempotencyKey?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest = {
     organizationId: string;
     environmentId: string;
@@ -19085,6 +19095,39 @@ export type CreateBusinessConsoleProductionLineResponses = {
 };
 
 export type CreateBusinessConsoleProductionLineResponse = CreateBusinessConsoleProductionLineResponses[keyof CreateBusinessConsoleProductionLineResponses];
+
+export type CreateBusinessConsoleStationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/stations';
+};
+
+export type CreateBusinessConsoleStationErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleStationError = CreateBusinessConsoleStationErrors[keyof CreateBusinessConsoleStationErrors];
+
+export type CreateBusinessConsoleStationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem;
+};
+
+export type CreateBusinessConsoleStationResponse = CreateBusinessConsoleStationResponses[keyof CreateBusinessConsoleStationResponses];
 
 export type CreateBusinessConsoleWorkCenterData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest;
