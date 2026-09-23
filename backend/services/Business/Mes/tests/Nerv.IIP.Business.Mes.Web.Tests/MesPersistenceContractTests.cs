@@ -1526,7 +1526,7 @@ public sealed class MesPersistenceContractTests
             "ASSET-FILL-01"));
         await dbContext.SaveChangesAsync();
 
-        var handler = new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext, MissingQualityInspectionPlanReader.Instance));
+        var handler = new GetMesFoundationReadinessAreaQueryHandler(FoundationReadinessServices.Create(dbContext, MissingQualityInspectionPlanReader.Instance));
         var quality = await handler.Handle(
             new GetMesFoundationReadinessAreaQuery(
                 "org-001",
@@ -1578,7 +1578,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
-            new MesFoundationReadinessService(
+            FoundationReadinessServices.Create(
                 scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                 new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
             .Handle(
@@ -1612,7 +1612,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
-            new MesFoundationReadinessService(
+            FoundationReadinessServices.Create(
                 scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                 new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
             .Handle(
@@ -1649,7 +1649,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
-            new MesFoundationReadinessService(
+            FoundationReadinessServices.Create(
                 scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                 new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
             .Handle(
@@ -1673,7 +1673,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var exception = await Assert.ThrowsAsync<KnownException>(() => new GetMesFoundationReadinessAreaQueryHandler(
-                new MesFoundationReadinessService(
+                FoundationReadinessServices.Create(
                     scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                     new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
             .Handle(
@@ -1693,7 +1693,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
-            new MesFoundationReadinessService(
+            FoundationReadinessServices.Create(
                 scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                 reader))
             .Handle(
@@ -1713,7 +1713,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var handler = new GetMesFoundationReadinessAreaQueryHandler(
-            new MesFoundationReadinessService(
+            FoundationReadinessServices.Create(
                 scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                 MissingQualityInspectionPlanReader.Instance));
 
@@ -1769,7 +1769,7 @@ public sealed class MesPersistenceContractTests
             "DEV-OIL-01"));
         await dbContext.SaveChangesAsync();
 
-        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext, MissingQualityInspectionPlanReader.Instance)).Handle(
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(FoundationReadinessServices.Create(dbContext, MissingQualityInspectionPlanReader.Instance)).Handle(
             new GetMesFoundationReadinessAreaQuery(
                 "org-001",
                 "env-dev",

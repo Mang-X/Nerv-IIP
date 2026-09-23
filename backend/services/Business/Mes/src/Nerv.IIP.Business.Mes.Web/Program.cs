@@ -212,6 +212,7 @@ if (!builder.Environment.IsProduction() && string.IsNullOrWhiteSpace(connectionS
 
 builder.Services.AddMesPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
+builder.Services.AddScoped<IMesFoundationSourceReader, HttpMesFoundationSourceReader>();
 builder.Services.AddScoped<MesFoundationReadinessService>();
 builder.Services.Configure<MesEngineeringChangeOptions>(
     builder.Configuration.GetSection("Mes:EngineeringChange"));

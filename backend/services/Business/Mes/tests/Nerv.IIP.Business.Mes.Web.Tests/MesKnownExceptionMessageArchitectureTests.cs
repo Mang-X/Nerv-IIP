@@ -38,6 +38,7 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendAsync", 2, "稳定错误码与 provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendOptionalAsync", 1, "稳定错误码与 provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendRequestAsync", 2, "稳定错误码与 provider 失败透传"),
+        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesFoundationSourceReader.cs", "HttpMesFoundationSourceReader", "Unavailable", 1, "稳定错误码 FOUNDATION_SOURCE_UNAVAILABLE 与 MasterData/ERP/Inventory 来源失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesMaterialAvailabilityReader.cs", "HttpMesMaterialAvailabilityReader", "GetUomConversionsAsync", 1, "稳定错误码 MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesMaterialAvailabilityReader.cs", "HttpMesMaterialAvailabilityReader", "SendAsync", 4, "稳定错误码与 Inventory 或 MasterData provider 失败透传"),
         Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "GetAvailabilityAsync", 3, "稳定错误码与 Inventory provider 失败透传"),
@@ -101,8 +102,8 @@ public sealed class MesKnownExceptionMessageArchitectureTests
         var documents = ReadMesSourceDocuments();
         var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
 
-        Assert.Equal(87, discovered.Count);
-        Assert.Equal(192, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(88, discovered.Count);
+        Assert.Equal(193, discovered.Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(188, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
         Assert.Equal(ExpectedLedger.Count, discovered.Count);
 
