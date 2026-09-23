@@ -178,6 +178,10 @@ describe('安灯工作台用户行为（#3655）', () => {
         }),
       }),
     )
+    // 地址栏带入的工作中心不在目录当前页里：选择器仍要显示它并可清除，不能显示成「全部工作中心」。
+    const picker = wrapper.get('button[aria-label="工作中心"]')
+    expect(picker.text()).toContain('WC-ASSEMBLY')
+    expect(wrapper.find('button[aria-label="清除工作中心"]').exists()).toBe(true)
     await router.push('/source')
     router.back()
     await flushPromises()

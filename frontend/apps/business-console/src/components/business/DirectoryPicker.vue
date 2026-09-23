@@ -4,10 +4,11 @@
  * `v-model` 回传目录项的人读编码，与过去手填提交的值同口径。
  *
  * - 工作中心 / 物料 / 设备 / 车间 / 批次 / 序列号走网关可搜目录（服务端搜索）；
- * - 班次、产线不在可搜目录里，取基础数据资源列表在本地搜索。
+ * - 班次、产线不在可搜目录里，取基础数据资源列表在本地按搜索词过滤。
+ * 两种来源返回同一形状，选择器统一按「调用方持有搜索词」的模式接。
  */
 import { NvEntityPicker } from '@nerv-iip/ui'
-import { computed, ref } from 'vue'
+import { watch } from 'vue'
 import {
   useMasterDataListPicker,
   useSearchableDirectoryPicker,
@@ -37,23 +38,22 @@ const props = defineProps<{
 const model = defineModel<string>({ default: '' })
 
 const text = DIRECTORY_TEXT[props.directoryType]
-const listType = props.directoryType === 'shift' || props.directoryType === 'production-line'
-const directory = listType
-  ? undefined
-  : useSearchableDirectoryPicker(props.directoryType as SearchableType, {
+const { search, options, pending, total } = isListType(props.directoryType)
+  ? useMasterDataListPicker(props.directoryType, model)
+  : useSearchableDirectoryPicker(props.directoryType, {
       selected: model,
       skuCode: () => props.skuCode,
     })
-const list = listType ? useMasterDataListPicker(props.directoryType as ListType) : undefined
-const source = (directory ?? list)!
-
-const options = computed(() => source.options.value)
-const pending = computed(() => source.pending.value)
-const total = computed(() => directory?.total.value)
+// 搜索词由这里持有，面板关闭不会清空它；选定后清掉，下次打开从完整候选开始。
+watch(model, () => {
+  search.value = ''
+})
 // 批次 / 序列号目录的名称就是「编码 · 物料」，再印一行编码是重复。
 const showCode = props.directoryType !== 'batch' && props.directoryType !== 'serial'
-// 本地搜索时面板自己持有搜索词，这里的值不会被读取。
-const search = directory?.search ?? ref('')
+
+function isListType(type: SearchableType | ListType): type is ListType {
+  return type === 'shift' || type === 'production-line'
+}
 </script>
 
 <template>
@@ -67,7 +67,7 @@ const search = directory?.search ?? ref('')
     :source-text="text.source"
     :empty-text="`没有匹配的${text.noun}`"
     :loading="pending"
-    :server-search="!listType"
+    server-search
     :total-count="total"
     :show-code="showCode"
     :aria-label="text.noun"

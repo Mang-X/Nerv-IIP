@@ -103,21 +103,41 @@ export function useSearchableDirectoryPicker(
 
 /**
  * 班次、产线不在可搜目录里（owner 裁定不给目录端点加类型），改取基础数据资源列表。
- * 这两类在一个组织内是几条到几十条，整表取回在本地搜索即可。
+ * 这两类在一个组织内是几条到几十条，整表取回后按搜索词在本地过滤；
+ * 返回形状与 `useSearchableDirectoryPicker` 相同，选择器不必区分来源。
  */
-export function useMasterDataListPicker(resourceType: 'shift' | 'production-line') {
+export function useMasterDataListPicker(
+  resourceType: 'shift' | 'production-line',
+  selected: MaybeRefOrGetter<string | undefined>,
+) {
   const catalog = useBusinessMasterDataResources(resourceType)
   catalog.filters.take = 500
+  const search = ref('')
+  const all = computed<EntityPickerOption[]>(() =>
+    catalog.resources.value
+      .filter((row) => row.active !== false)
+      .flatMap((row) => {
+        const value = row.code?.trim()
+        return value ? [{ value, label: row.displayName?.trim() || value }] : []
+      }),
+  )
+  const options = computed(() => {
+    const keyword = search.value.trim().toLowerCase()
+    const current = toValue(selected)?.trim()
+    // 已选项不因搜索词被滤掉，否则触发器会显示成「未选择」。
+    return all.value.filter(
+      (row) =>
+        !keyword ||
+        row.value === current ||
+        row.label.toLowerCase().includes(keyword) ||
+        row.value.toLowerCase().includes(keyword),
+    )
+  })
   return {
-    options: computed<EntityPickerOption[]>(() =>
-      catalog.resources.value
-        .filter((row) => row.active !== false)
-        .flatMap((row) => {
-          const value = row.code?.trim()
-          return value ? [{ value, label: row.displayName?.trim() || value }] : []
-        }),
-    ),
+    search,
+    options,
     pending: catalog.resourcesPending,
+    total: computed(() => options.value.length),
   }
 }
 

@@ -211,6 +211,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                   placeholder="选择资源"
                   source-text="数据来自本排程的资源泳道"
                   empty-text="本排程没有可用资源"
+                  :show-code="false"
                   :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
                   @update:model-value="emit('update', task.id, { resourceId: $event })"
                 />

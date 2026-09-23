@@ -9,17 +9,6 @@ import MachineOverheadPage from './finance/machine-overhead.vue'
 
 const state = vi.hoisted(() => ({ current: undefined as unknown }))
 vi.mock('@/composables/useBusinessErp', () => ({ useErpMachineOverhead: () => state.current }))
-vi.mock('@/composables/useBusinessMes', async () => {
-  const { reactive, shallowRef } = await import('vue')
-  return {
-    useMesWorkOrders: () => ({
-      filters: reactive({}),
-      workOrders: shallowRef([]),
-      workOrdersPending: shallowRef(false),
-      workOrdersTotal: shallowRef(0),
-    }),
-  }
-})
 
 function orderFixture(): BusinessConsoleErpWorkOrderCostVarianceResponse {
   return {
