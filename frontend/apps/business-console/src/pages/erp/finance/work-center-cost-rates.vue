@@ -24,7 +24,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { useErpWorkCenterCostRates } from '@/composables/useBusinessErp'
+import { useErpWorkCenterCostRates } from '@/composables/useErpCostAccounting'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
