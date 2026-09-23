@@ -99,6 +99,10 @@ export function useSearchableDirectoryPicker(
     options: pickerOptions,
     pending: query.isLoading,
     total: computed(() => response.value?.data?.total ?? 0),
+    /** 就地新建的项：目录刷新回来之前（或不在第一页时）已选项也显示名称。 */
+    remember(option: EntityPickerOption) {
+      known.value = new Map(known.value).set(option.value, option)
+    },
   }
 }
 
@@ -109,17 +113,28 @@ export function useSearchableDirectoryPicker(
 export function useMasterDataListPicker(resourceType: 'shift' | 'production-line') {
   const catalog = useBusinessMasterDataResources(resourceType)
   catalog.filters.take = 500
+  const created = shallowRef<EntityPickerOption>()
+  const rows = computed<EntityPickerOption[]>(() =>
+    catalog.resources.value
+      .filter((row) => row.active !== false)
+      .flatMap((row) => {
+        const value = row.code?.trim()
+        return value ? [{ value, label: row.displayName?.trim() || value }] : []
+      }),
+  )
   return {
     serverSearch: false as const,
-    options: computed<EntityPickerOption[]>(() =>
-      catalog.resources.value
-        .filter((row) => row.active !== false)
-        .flatMap((row) => {
-          const value = row.code?.trim()
-          return value ? [{ value, label: row.displayName?.trim() || value }] : []
-        }),
-    ),
+    options: computed(() => {
+      const extra = created.value
+      return extra && !rows.value.some((row) => row.value === extra.value)
+        ? [extra, ...rows.value]
+        : rows.value
+    }),
     pending: catalog.resourcesPending,
+    /** 就地新建的项：列表刷新回来之前已选项也显示名称。 */
+    remember(option: EntityPickerOption) {
+      created.value = option
+    },
   }
 }
 

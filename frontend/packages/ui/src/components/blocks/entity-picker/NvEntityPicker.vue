@@ -76,6 +76,12 @@ const props = withDefaults(
     serverSearch?: boolean
     /** 服务端搜索时目录的匹配总数（用于「显示 N / 共 M 条」的如实提示）。 */
     totalCount?: number
+    /**
+     * 新增入口文案（如「新增车间」）。传了才在候选列表下方出现入口；点击后收起选择器并发出
+     * `create`，由调用方打开新增表单，建好后把新值写回 `v-model`。
+     * 有没有新增权限由调用方判断：没有权限就不传。
+     */
+    createText?: string
     id?: string
     ariaLabel?: string
     class?: HTMLAttributes['class']
@@ -97,6 +103,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   (e: 'update:search', value: string): void
+  (e: 'create'): void
 }>()
 
 const open = ref(false)
@@ -145,6 +152,11 @@ function setOpen(next: boolean) {
 function pick(option: EntityPickerOption) {
   emit('update:modelValue', option.value)
   open.value = false
+}
+
+function create() {
+  open.value = false
+  emit('create')
 }
 
 function clear() {
@@ -233,9 +245,11 @@ function clear() {
           :search="search"
           :server-search="serverSearch"
           :total-count="totalCount"
+          :create-text="createText"
           dense
           @pick="pick"
           @update:search="emit('update:search', $event)"
+          @create="create"
         />
       </PopoverContent>
     </PopoverPortal>
@@ -260,9 +274,11 @@ function clear() {
         :search="search"
         :server-search="serverSearch"
         :total-count="totalCount"
+        :create-text="createText"
         :dense="false"
         @pick="pick"
         @update:search="emit('update:search', $event)"
+        @create="create"
       />
     </NvDialogContent>
   </component>

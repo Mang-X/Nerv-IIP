@@ -1,5 +1,6 @@
 export const BUSINESS_PERMISSION_CODES = {
   masterDataProductsRead: 'business.masterdata.products.read',
+  masterDataProductsManage: 'business.masterdata.products.manage',
   masterDataResourcesRead: 'business.masterdata.resources.read',
   masterDataResourcesManage: 'business.masterdata.resources.manage',
   engineeringDocumentsRead: 'business.engineering.documents.read',
