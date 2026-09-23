@@ -254,6 +254,39 @@ describe('business WMS composables', () => {
     expect(gateQuery?.autoRefetch?.()).toBe(10_000)
   })
 
+  it('收货行读面带上作业范围，范围未选定时不发请求', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const gateQueries: Array<Record<string, unknown>> = []
+    vi.mocked(listBusinessConsoleWmsReceivingQualityGates).mockImplementation((({
+      query,
+    }: {
+      query: Record<string, unknown>
+    }) => {
+      gateQueries.push(query)
+      return Promise.resolve({
+        data: { success: true, data: { total: 0, items: [] } },
+        request: new Request('http://test.local'),
+        response: new Response(),
+      } as Awaited<ReturnType<typeof listBusinessConsoleWmsReceivingQualityGates>>)
+    }) as never)
+
+    const inbound = useWmsInboundOrders({ workScopeRequired: true })
+    // 按当前 filters 重新求值 query 选项（colada 在响应式依赖变化时同样重算）。
+    const gateQuery = () =>
+      coladaState.queryFactoriesById.get('listBusinessConsoleWmsReceivingQualityGates')!() as {
+        enabled?: boolean
+        query?: () => Promise<unknown>
+      }
+    expect(gateQuery().enabled).toBe(false)
+
+    inbound.filters.scopeKind = 'site'
+    inbound.filters.scopeId = 'SITE-001'
+    expect(gateQuery().enabled).toBe(true)
+    await gateQuery().query?.()
+    expect(gateQueries[0]).toMatchObject({ scopeKind: 'site', scopeId: 'SITE-001' })
+  })
+
   it('surfaces a later quality page failure instead of returning an empty gate list', async () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })

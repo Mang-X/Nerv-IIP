@@ -190,14 +190,14 @@ const inboundLineOptions = computed(() =>
   receivingQualityGates.value.flatMap((line) => {
     const lineNo = line.lineNo?.trim()
     if (!lineNo || line.inboundOrderId?.trim() !== createForm.inboundOrderId) return []
-    const hint = [
-      line.skuCode ? (resolveSkuName(line.skuCode) ?? line.skuCode) : '',
-      line.receivedQuantity == null ? '' : `收货 ${line.receivedQuantity} ${line.uomCode ?? ''}`,
-    ]
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .join(' · ')
-    return [{ value: lineNo, label: `第 ${lineNo} 行`, ...(hint ? { hint } : {}) }]
+    // 物料名放进主文案（可截断），辅助信息只留数量：辅助信息不截断，放长了会把行号挤没。
+    const sku = line.skuCode ? (resolveSkuName(line.skuCode) ?? line.skuCode) : ''
+    const label = sku ? `第 ${lineNo} 行 · ${sku}` : `第 ${lineNo} 行`
+    const hint =
+      line.receivedQuantity == null
+        ? ''
+        : `收货 ${line.receivedQuantity} ${line.uomCode ?? ''}`.trim()
+    return [{ value: lineNo, label, ...(hint ? { hint } : {}) }]
   }),
 )
 // 换了入库单，上一张单的行号就不再成立；新单只有一行时直接带上。
