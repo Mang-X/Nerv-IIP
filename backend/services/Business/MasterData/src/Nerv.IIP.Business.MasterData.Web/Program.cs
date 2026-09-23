@@ -216,7 +216,8 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    var seedEnabled = builder.Configuration.GetValue<bool>("MasterData:Seed:Enabled") || autoMigrate;
+    // MasterData 产品基线 seed：默认开启（#3805），显式 false 可关闭；本地 autoMigrate 时也强制执行。
+    var seedEnabled = builder.Configuration.GetValue("MasterData:Seed:Enabled", true) || autoMigrate;
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();

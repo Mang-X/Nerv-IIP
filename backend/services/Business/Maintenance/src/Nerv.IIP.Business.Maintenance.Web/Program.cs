@@ -147,9 +147,9 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // 点检保养计划 seed（默认随 autoMigrate 开启，或显式 Maintenance:Seed:Enabled）：
+    // 点检保养计划 seed：默认开启（#3805，显式 false 可关闭），本地 autoMigrate 时也强制执行。
     // 全新环境补齐可选保养计划，供 PDA 点检页选计划 → 录测量值/超差/拍照走通（幂等只补缺失）。
-    var seedEnabled = builder.Configuration.GetValue<bool>("Maintenance:Seed:Enabled") || autoMigrate;
+    var seedEnabled = builder.Configuration.GetValue("Maintenance:Seed:Enabled", true) || autoMigrate;
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();

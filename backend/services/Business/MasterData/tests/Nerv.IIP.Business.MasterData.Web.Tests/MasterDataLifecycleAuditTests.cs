@@ -554,6 +554,7 @@ public sealed class MasterDataLifecycleAuditTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
+            builder.UseSetting("MasterData:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
             builder.UseSetting("InternalService:BearerToken", "audit-test-token");
             builder.ConfigureTestServices(services =>
             {

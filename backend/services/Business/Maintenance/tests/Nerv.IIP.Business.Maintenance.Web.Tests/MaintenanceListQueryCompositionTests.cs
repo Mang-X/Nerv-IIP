@@ -257,6 +257,7 @@ public sealed class MaintenanceListQueryCompositionTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("environment", "Testing");
+                builder.UseSetting("Maintenance:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 builder.ConfigureServices(services =>
@@ -276,6 +277,7 @@ public sealed class MaintenanceListQueryCompositionTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("environment", "Testing");
+                builder.UseSetting("Maintenance:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 builder.ConfigureServices(services =>

@@ -115,8 +115,8 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // Approval 产品基线 seed：与 MasterData/Quality 同口径，显式开关或本地 autoMigrate 时执行。
-    var seedEnabled = builder.Configuration.GetValue<bool>("Approval:Seed:Enabled") || autoMigrate;
+    // Approval 产品基线 seed：默认开启（#3805），显式 false 可关闭；本地 autoMigrate 时也强制执行。
+    var seedEnabled = builder.Configuration.GetValue("Approval:Seed:Enabled", true) || autoMigrate;
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();

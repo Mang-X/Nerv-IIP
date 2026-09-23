@@ -36,7 +36,7 @@
 1. Web/Worker 默认不自动 migration。
 2. `Persistence:AutoMigrate=true` 只在 [`../../runbooks/database-release.md`](../../runbooks/database-release.md) 允许的环境边界内生效；非 Development/未授权环境必须 fail closed。
 3. 自动迁移调用仍走正式 EF migrations，不使用 `EnsureCreated` 或手写建表 SQL 旁路 migration history。
-4. seed 与 migration 是两件事：允许 AutoMigrate 不自动意味着可以执行任何 demo/business seed。
+4. seed 与 migration 是两件事：允许 AutoMigrate 不自动意味着可以执行任何 demo/business seed。产品基线 seed（幂等补缺，如 Approval/Inventory/Maintenance/MasterData/Quality 各自的 `<Service>:Seed:Enabled`）默认开启，不依赖 `AutoMigrate`；显式设为 `false` 才关闭。`LeaderDemo:*`、`Walkthrough:*` 等演示种子与 IAM 引导种子不在此列，仍默认关闭且只在 Development 允许开启。
 5. 启动迁移失败必须让服务启动失败并保留可诊断日志；不能 catch 后继续以部分 schema 运行。
 
 ## FileStorage 等窄例外
