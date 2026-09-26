@@ -19,6 +19,7 @@ import {
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
 import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
+import { currencyOptionsIncluding } from '@/data/currencyReference'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
@@ -185,11 +186,6 @@ function setLevel(level: keyof typeof LOWER_LEVELS, value: string) {
   for (const lower of LOWER_LEVELS[level]) form[lower] = ''
 }
 
-const currencyValidationMessage = computed(() => {
-  const code = form.purchaseCurrencyCode.trim()
-  if (!code) return ''
-  return /^[a-z]{3}$/i.test(code) ? '' : '币种必须是 3 位字母编码。'
-})
 const componentValidationMessage = computed(() => {
   const invalid = form.components.find(
     (component) => isComponentReady(component) && componentQuantity(component) <= 0,
@@ -209,9 +205,7 @@ const formValid = computed(
       form.workCenterCode,
       form.stationCode,
       form.criticality,
-    ].every(isNonEmpty) &&
-    !currencyValidationMessage.value &&
-    !componentValidationMessage.value,
+    ].every(isNonEmpty) && !componentValidationMessage.value,
 )
 const saving = computed(() => creation.pending.value || deviceActions.updatePending.value)
 
@@ -274,7 +268,6 @@ function componentQuantity(component: DeviceComponentForm) {
   return optionalNumber(component.quantity) ?? 1
 }
 function devicePayload() {
-  const currency = form.purchaseCurrencyCode.trim()
   return {
     model: form.model.trim(),
     manufacturer: form.manufacturer.trim(),
@@ -287,7 +280,7 @@ function devicePayload() {
     stationCode: form.stationCode.trim(),
     purchaseDate: optionalText(form.purchaseDate),
     purchaseCost: optionalNumber(form.purchaseCost),
-    purchaseCurrencyCode: currency ? currency.toUpperCase() : undefined,
+    purchaseCurrencyCode: form.purchaseCurrencyCode,
     warrantyExpiresOn: optionalText(form.warrantyExpiresOn),
     supplierPartnerCode: optionalText(form.supplierPartnerCode),
     parentDeviceId: optionalText(form.parentDeviceId),
@@ -489,17 +482,15 @@ async function submit() {
               step="0.01"
             />
           </NvField>
-          <NvField :data-invalid="showErrors && Boolean(currencyValidationMessage)">
+          <NvField>
             <NvFieldLabel for="dev-currency">币种</NvFieldLabel>
-            <NvInput
+            <NvSearchSelect
               id="dev-currency"
               v-model="form.purchaseCurrencyCode"
-              autocomplete="off"
-              maxlength="3"
+              :options="currencyOptionsIncluding(form.purchaseCurrencyCode)"
+              search-placeholder="搜索币种代码或名称"
+              aria-label="币种"
             />
-            <NvFieldDescription v-if="showErrors && currencyValidationMessage">{{
-              currencyValidationMessage
-            }}</NvFieldDescription>
           </NvField>
           <NvField>
             <NvFieldLabel for="dev-warranty">保修到期</NvFieldLabel>

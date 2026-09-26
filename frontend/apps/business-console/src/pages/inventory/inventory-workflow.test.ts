@@ -230,6 +230,18 @@ vi.mock('@/composables/useBusinessInventory', () => ({
   }),
 }))
 
+// 寄售货主取自业务伙伴目录：同一伙伴可兼任客户与供应商，按角色分两组。
+vi.mock('@/composables/useErpPickerCatalog', async () => {
+  const { computed, ref } = await import('vue')
+  return {
+    useErpPartnerCatalog: () => ({
+      customerOptions: computed(() => [{ value: 'C-EAST', label: '华东客户' }]),
+      supplierOptions: computed(() => [{ value: 'V-STEEL', label: '宝钢供应' }]),
+      partnersPending: ref(false),
+    }),
+  }
+})
+
 vi.mock('@/utils/notify', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifyError: inventoryState.notifyError,
@@ -1020,6 +1032,45 @@ describe('inventory workflow pages', () => {
     expect(inventoryState.cancelCountTask).toHaveBeenCalledWith(
       'COUNT-TASK-CLOSE',
       '盘点范围调整，任务不再执行',
+    )
+  })
+
+  it('寄售货主随货主类型联动：客户寄售选客户、供应商寄售选供应商，其余类型不填货主', async () => {
+    routeState.query = { skuCode: 'SKU-001', locationCode: 'A-01' }
+    inventoryState.createCountTask.mockResolvedValue({ data: { countTaskId: 'COUNT-TASK-NEW' } })
+    const wrapper = mountInventoryPage(CountsPage)
+    const ownerTypeSelect = wrapper
+      .findAllComponents(uiStubs.NvSelect)
+      .find((select) => select.find('[aria-label="货主类型"]').exists())!
+    const chooseOwnerType = async (value: string) => {
+      ownerTypeSelect.vm.$emit('update:modelValue', value)
+      await nextTick()
+    }
+    const ownerOptions = () =>
+      wrapper.findAll('#count-task-owner-id option').map((option) => option.attributes('value'))
+
+    expect(wrapper.find('#count-task-owner-id').exists()).toBe(false)
+
+    await chooseOwnerType('customer')
+    expect(ownerOptions()).toEqual(['C-EAST'])
+    await wrapper.find('#count-task-owner-id').setValue('C-EAST')
+
+    // 换成供应商寄售：已选的客户不能带过去当供应商货主。
+    await chooseOwnerType('supplier')
+    expect(ownerOptions()).toEqual(['V-STEEL'])
+    expect((wrapper.find('#count-task-owner-id').element as HTMLSelectElement).value).toBe('')
+    await wrapper.find('#count-task-owner-id').setValue('V-STEEL')
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    expect(inventoryState.createCountTask).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ownerType: 'supplier', ownerId: 'V-STEEL' }),
+    )
+
+    // 本公司库存没有货主：切回去后货主字段消失，提交也不再带上一轮选的供应商。
+    await chooseOwnerType('owned')
+    expect(wrapper.find('#count-task-owner-id').exists()).toBe(false)
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    expect(inventoryState.createCountTask).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ownerType: 'owned', ownerId: undefined }),
     )
   })
 

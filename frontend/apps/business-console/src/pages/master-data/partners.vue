@@ -14,6 +14,7 @@ import {
   useBusinessPartners,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
+import { currencyOptionsIncluding } from '@/data/currencyReference'
 import { PARTNER_TYPE_OPTIONS } from '@/data/masterDataReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -33,6 +34,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -75,7 +77,6 @@ const createShowErrors = ref(false)
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
 const originalCreditLimitValue = shallowRef('')
-const originalCreditCurrencyValue = shallowRef('')
 
 const keyword = ref('')
 const roleFilter = ref('all')
@@ -168,11 +169,6 @@ const hasCustomerRole = computed(
   () => createForm.partnerType === 'customer' || selectedExtraRoles().includes('customer'),
 )
 const creditLimitValue = computed(() => String(createForm.creditLimit ?? '').trim())
-const creditCurrencyValue = computed(() =>
-  String(createForm.creditCurrencyCode ?? '')
-    .trim()
-    .toUpperCase(),
-)
 const hasOriginalCreditProfile = computed(() => Boolean(originalCreditLimitValue.value))
 const shouldShowCreditFields = computed(
   () => hasCustomerRole.value || hasOriginalCreditProfile.value,
@@ -181,7 +177,6 @@ const creditLimitValidationMessage = computed(() => {
   if (!hasCustomerRole.value || !creditLimitValue.value) return ''
   const amount = Number(creditLimitValue.value)
   if (!Number.isFinite(amount) || amount < 0) return '信用额度必须为不小于 0 的数字。'
-  if (!creditCurrencyValue.value) return '填写信用额度时必须填写币种。'
   return ''
 })
 // 只保留「会清空已有额度」这类非显而易见的后果提示；一般情况不写说明。
@@ -251,7 +246,6 @@ function rowKey(row: BusinessConsoleResourceItem) {
 function resetCreateForm() {
   Object.assign(createForm, { ...PARTNER_FORM_DEFAULTS })
   originalCreditLimitValue.value = ''
-  originalCreditCurrencyValue.value = ''
   for (const key of Object.keys(extraRoleState)) extraRoleState[key] = false
 }
 function openCreate() {
@@ -272,14 +266,13 @@ async function openEdit(row: BusinessConsoleResourceItem) {
     const d = await partnerActions.fetchDetail(row.code)
     const type = d?.partnerType ?? row.partnerType ?? PARTNER_FORM_DEFAULTS.partnerType
     originalCreditLimitValue.value = d?.creditLimit?.toString() ?? row.creditLimit?.toString() ?? ''
-    originalCreditCurrencyValue.value = d?.creditCurrencyCode ?? row.creditCurrencyCode ?? ''
     Object.assign(createForm, {
       code: row.code,
       name: d?.name ?? row.displayName ?? '',
       partnerType: type,
       taxId: d?.taxId ?? row.taxId ?? '',
       creditLimit: originalCreditLimitValue.value,
-      creditCurrencyCode: originalCreditCurrencyValue.value || 'CNY',
+      creditCurrencyCode: (d?.creditCurrencyCode ?? row.creditCurrencyCode) || 'CNY',
     })
     const extras = new Set(
       (d?.partnerRoles ?? row.partnerRoles ?? []).map((r) => (r ?? '').trim()).filter(Boolean),
@@ -353,7 +346,7 @@ function customerCreditPatch() {
 
   return {
     creditLimit: Number(creditLimitValue.value),
-    creditCurrencyCode: creditCurrencyValue.value,
+    creditCurrencyCode: createForm.creditCurrencyCode,
   }
 }
 function formatCreditLimit(
@@ -477,11 +470,12 @@ function formatCreditLimit(
                   :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)"
                 >
                   <NvFieldLabel for="partner-credit-currency">信用币种</NvFieldLabel>
-                  <NvInput
+                  <NvSearchSelect
                     id="partner-credit-currency"
                     v-model="createForm.creditCurrencyCode"
-                    autocomplete="off"
-                    maxlength="10"
+                    :options="currencyOptionsIncluding(createForm.creditCurrencyCode)"
+                    search-placeholder="搜索币种代码或名称"
+                    aria-label="信用币种"
                   />
                 </NvField>
               </NvFieldGroup>
