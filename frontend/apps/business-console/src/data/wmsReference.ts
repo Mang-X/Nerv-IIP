@@ -50,19 +50,26 @@ export const WMS_OUTBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
   { value: 'Cancelled', label: '已取消' },
 ]
 
-/** 上下游单据类型：入库来自采购收货或生产完工，出库去向生产领料或销售发货。 */
+/**
+ * 上下游单据类型：入库来自采购收货或生产完工，出库去向生产领料或销售发货。
+ *
+ * 码值对齐后端 `WmsSourceDocumentTypes` 常量（`backend/common/Contracts/Nerv.IIP.Contracts.Wms/WmsIntegrationEvents.cs`）
+ * 与世界观种子 `WorldHistoryWmsSpec` 里同语义单据使用的字面量，不是随手起的 PascalCase 名字（#3822）：
+ * WMS 建单时按原样存下这个值不做归一化，销售发货必须等于 `erp-delivery-order` 事件才会带上发货单号，
+ * 应收消费者才查得到、才会生成应收；采购收货则决定完工入库能不能取到单位成本。
+ */
 export const WMS_INBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
-  { value: 'PurchaseReceipt', label: '采购收货' },
-  { value: 'ProductionReceipt', label: '生产完工入库' },
-  { value: 'SalesReturn', label: '销售退货' },
-  { value: 'InventoryTransfer', label: '库存调拨' },
+  { value: 'purchase-receipt', label: '采购收货' },
+  { value: 'production-receipt', label: '生产完工入库' },
+  { value: 'sales-return-rma', label: '销售退货' },
+  { value: 'inventory-transfer', label: '库存调拨' },
 ]
 
 export const WMS_OUTBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
-  { value: 'ProductionIssue', label: '生产领料' },
-  { value: 'SalesDelivery', label: '销售发货' },
-  { value: 'PurchaseReturn', label: '采购退货' },
-  { value: 'InventoryTransfer', label: '库存调拨' },
+  { value: 'material-issue', label: '生产领料' },
+  { value: 'erp-delivery-order', label: '销售发货' },
+  { value: 'purchase-receipt-return', label: '采购退货' },
+  { value: 'inventory-transfer', label: '库存调拨' },
 ]
 
 /**
@@ -70,10 +77,10 @@ export const WMS_OUTBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
  * 采购收货、销售退货、库存调拨没有可搜列表，不在表里（自由输入）。
  */
 export const WMS_SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
-  ProductionReceipt: 'mes-finished-goods-receipt',
-  ProductionIssue: 'mes-material-issue',
-  SalesDelivery: 'erp-delivery-order',
-  PurchaseReturn: 'wms-supplier-return',
+  'production-receipt': 'mes-finished-goods-receipt',
+  'material-issue': 'mes-material-issue',
+  'erp-delivery-order': 'erp-delivery-order',
+  'purchase-receipt-return': 'wms-supplier-return',
 }
 
 export const wmsWarehouseTaskStatusFilterOptions = withAnyOption(
