@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useId } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { CheckIcon, PlusIcon, SearchIcon } from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import type { EntityPickerOption } from './types'
@@ -50,6 +50,8 @@ const emit = defineEmits<{
   (e: 'pick', option: EntityPickerOption): void
   (e: 'update:search', value: string): void
   (e: 'create'): void
+  /** 服务端搜索时滚到列表底部、且还有没加载的匹配项：调用方加载下一页并追加进 `options`。 */
+  (e: 'load-more'): void
 }>()
 
 const localQuery = ref('')
@@ -83,6 +85,61 @@ const hasMore = computed(
   () => props.serverSearch && props.totalCount != null && props.totalCount > filtered.value.length,
 )
 
+/**
+ * 列表虚拟化：候选多到上百条时只渲染可视区附近的行，上下用占位撑出总高度。
+ * 行高是定值（单行名称 36px，名称 + 编码两行 52px，模板里用同一组高度类钉住），
+ * 可视区高度取列表的 max-height，因此可见范围不依赖测量，首帧就能算对。
+ * 条数少时整列渲染：开销可以忽略，读屏也能拿到完整列表。
+ */
+const VIRTUALIZE_ABOVE = 100
+const OVERSCAN = 8
+const rowHeight = computed(() => (props.showCode ? 52 : 36))
+const viewportHeight = computed(() => (props.dense ? 288 : 320))
+const listEl = ref<HTMLElement>()
+const scrollTop = ref(0)
+
+const range = computed(() => {
+  const count = filtered.value.length
+  if (count <= VIRTUALIZE_ABOVE) return { start: 0, end: count }
+  const start = Math.max(0, Math.floor(scrollTop.value / rowHeight.value) - OVERSCAN)
+  const end = Math.min(
+    count,
+    Math.ceil((scrollTop.value + viewportHeight.value) / rowHeight.value) + OVERSCAN,
+  )
+  return { start, end }
+})
+const visibleRows = computed(() =>
+  filtered.value
+    .slice(range.value.start, range.value.end)
+    .map((option, offset) => ({ option, index: range.value.start + offset })),
+)
+
+function onScroll() {
+  const el = listEl.value
+  if (!el) return
+  scrollTop.value = el.scrollTop
+  // 离底部不到几行就要下一页，滚到底之前数据已经接上。
+  if (hasMore.value && el.scrollTop + el.clientHeight >= el.scrollHeight - rowHeight.value * 5) {
+    emit('load-more')
+  }
+}
+
+// 换了搜索词，结果从头开始：滚动位置一起回到顶部。
+watch(query, () => {
+  if (listEl.value) listEl.value.scrollTop = 0
+  scrollTop.value = 0
+})
+
+/** 键盘移动高亮项时把它滚进可视区（虚拟化下不在可视区的行根本没渲染）。 */
+function revealActive() {
+  const el = listEl.value
+  if (!el) return
+  const top = activeIndex.value * rowHeight.value
+  if (top < el.scrollTop) el.scrollTop = top
+  else if (top + rowHeight.value > el.scrollTop + el.clientHeight)
+    el.scrollTop = top + rowHeight.value - el.clientHeight
+}
+
 const listboxId = useId()
 const optionId = (index: number) => `${listboxId}-opt-${index}`
 const activeDescendant = computed(() =>
@@ -104,9 +161,11 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     activeIndex.value = items.length ? (activeIndex.value + 1) % items.length : 0
+    revealActive()
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
     activeIndex.value = items.length ? (activeIndex.value - 1 + items.length) % items.length : 0
+    revealActive()
   } else if (e.key === 'Enter') {
     e.preventDefault()
     const option = items[activeIndex.value]
@@ -144,20 +203,32 @@ defineExpose({ focus: () => inputEl.value?.focus() })
 
     <div
       :id="listboxId"
+      ref="listEl"
       role="listbox"
       :class="cn('overflow-y-auto overscroll-contain p-2', dense ? 'max-h-72' : 'max-h-80')"
+      @scroll.passive="onScroll"
     >
       <div v-if="loading" class="px-3 py-8 text-center text-sm text-muted-foreground">加载中…</div>
       <template v-else>
+        <div
+          v-if="range.start"
+          aria-hidden="true"
+          :style="{ height: `${range.start * rowHeight}px` }"
+        />
         <button
-          v-for="(option, index) in filtered"
+          v-for="{ option, index } in visibleRows"
           :id="optionId(index)"
           :key="option.value"
           type="button"
           role="option"
           :aria-selected="option.value === modelValue"
           :data-active="index === activeIndex || undefined"
-          class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left outline-none hover:bg-accent data-active:bg-accent"
+          :class="
+            cn(
+              'flex w-full items-center gap-2.5 rounded-md px-2.5 text-left outline-none hover:bg-accent data-active:bg-accent',
+              showCode ? 'h-13' : 'h-9',
+            )
+          "
           @click="pick(option)"
           @mousemove="activeIndex = index"
         >
@@ -177,6 +248,11 @@ defineExpose({ focus: () => inputEl.value?.focus() })
             {{ option.hint }}
           </span>
         </button>
+        <div
+          v-if="range.end < filtered.length"
+          aria-hidden="true"
+          :style="{ height: `${(filtered.length - range.end) * rowHeight}px` }"
+        />
         <div v-if="!filtered.length" class="px-3 py-8 text-center text-sm text-muted-foreground">
           {{ emptyText }}
         </div>

@@ -339,3 +339,105 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
     expect(optionText).not.toContain('WC-0042')
   })
 })
+
+// #3832：库位 / 批次 / 序列号走服务端搜索。库位多的仓库几千个：
+// 列表滚到底接着取下一页，输入关键字由服务端在全部库位里找，第 501 个以后照样选得到。
+describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832）', () => {
+  const TOTAL = 1200
+  const code = (n: number) => `LOC-${String(n).padStart(4, '0')}`
+
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    configureApiClient()
+    document.body.innerHTML = ''
+  })
+
+  function mountLocationPicker() {
+    const requests: URL[] = []
+    configureApiClient({
+      baseUrl: 'http://gateway.local',
+      fetch: (async (request: Request) => {
+        const url = new URL(request.url)
+        requests.push(url)
+        const keyword = url.searchParams.get('keyword')
+        const pageIndex = Number(url.searchParams.get('pageIndex'))
+        const pageSize = Number(url.searchParams.get('pageSize'))
+        const all = Array.from({ length: TOTAL }, (_, i) => code(i + 1)).filter(
+          (value) => !keyword || value.includes(keyword),
+        )
+        const items = all
+          .slice((pageIndex - 1) * pageSize, pageIndex * pageSize)
+          .map((value) => ({ code: value, displayName: value, context: { siteCode: 'SITE-A' } }))
+        return Response.json({ success: true, data: { items, total: all.length } })
+      }) as typeof fetch,
+    })
+    const model = ref('')
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          useBusinessContextStore().patchContext({
+            organizationId: 'org-a',
+            environmentId: 'env-a',
+          })
+          return () =>
+            h(DirectoryPicker, {
+              directoryType: 'location',
+              modelValue: model.value,
+              'onUpdate:modelValue': (value: string) => (model.value = value),
+            })
+        },
+      }),
+      { global: { plugins: [createPinia(), PiniaColada] }, attachTo: document.body },
+    )
+    mounted.push(wrapper)
+    return { model, requests, wrapper }
+  }
+
+  const optionTexts = () =>
+    [...document.body.querySelectorAll('[role="option"]')].map((row) => row.textContent ?? '')
+
+  function scrollToBottom() {
+    const list = document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 5000 })
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 288 })
+    Object.defineProperty(list, 'scrollTop', { configurable: true, value: 5000 - 288 })
+    list.dispatchEvent(new Event('scroll'))
+  }
+
+  it('滚到底取下一页并接在后面', async () => {
+    const { requests, wrapper } = mountLocationPicker()
+    await openPicker(wrapper)
+
+    expect(requests.at(-1)?.pathname).toBe('/api/business-console/v1/directories/location')
+    expect(optionTexts()).toHaveLength(50)
+    expect(optionTexts().some((text) => text.includes(code(51)))).toBe(false)
+
+    scrollToBottom()
+    await flushPromises()
+
+    expect(requests.at(-1)?.searchParams.get('pageIndex')).toBe('2')
+    expect(optionTexts().some((text) => text.includes(code(1)))).toBe(true)
+    expect(optionTexts().some((text) => text.includes(code(100)))).toBe(true)
+  })
+
+  it('输入关键字由服务端在全部库位里找，第 501 个以后也选得到', async () => {
+    const { model, requests, wrapper } = mountLocationPicker()
+    await openPicker(wrapper)
+
+    const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+    search.value = code(1001)
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    // 搜索词去抖 300ms 后才发请求。
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    await flushPromises()
+
+    expect(requests.at(-1)?.searchParams.get('keyword')).toBe(code(1001))
+    const target = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes(code(1001)),
+    )
+    expect(target).toBeDefined()
+    target!.click()
+    await flushPromises()
+    expect(model.value).toBe(code(1001))
+  })
+})

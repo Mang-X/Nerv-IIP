@@ -18,17 +18,13 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
-import {
   wmsInboundOrderStatusFilterOptions,
   wmsInboundOrderStatusLabel,
   WMS_INBOUND_SOURCE_TYPE_OPTIONS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import DirectorySuggestInput from '@/components/business/DirectorySuggestInput.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -56,7 +52,6 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvCombobox,
   NvEntityPicker,
   NvField,
   NvFieldError,
@@ -341,11 +336,6 @@ const headerCount = computed(() => {
 // 工厂给默认值、单位跟随物料——收货行的库存上下文只差「选哪个物料」。
 const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
   useInventoryScopeDefaults(filters)
-// 库位与批次后端无主数据读面，从真实台账与仓储作业记录派生可选项。
-const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(
-  undefined,
-  { scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }) },
-)
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -698,22 +688,20 @@ function formatDateTime(value?: string | null) {
                 placeholder="收货数量*"
                 :aria-label="`第 ${index + 1} 行收货数量`"
               />
-              <NvEntityPicker
+              <DirectoryPicker
                 v-model="line.stagingLocationCode"
                 class="w-36"
-                :options="locationOptions"
+                directory-type="location"
                 title="选择暂存库位"
                 placeholder="暂存库位*"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 :aria-label="`第 ${index + 1} 行暂存库位`"
               />
               <!-- 收货批次可能是本次新到货的新批次号，因此保留录入能力、只做既有批次建议。 -->
-              <NvCombobox
+              <DirectorySuggestInput
                 v-model="line.lotNo"
+                directory-type="batch"
                 class="w-36"
-                :suggestions="lotOptions"
                 placeholder="批次"
                 :aria-label="`第 ${index + 1} 行批次`"
               />

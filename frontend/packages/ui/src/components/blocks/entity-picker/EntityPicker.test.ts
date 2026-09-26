@@ -283,6 +283,80 @@ describe('NvEntityPicker', () => {
     })
   })
 
+  // #3832：库位多的仓库几千个候选。只渲染可视区附近的行，滚到哪里就渲染到哪里，
+  // 第 2601 个照样点得到；服务端搜索时滚近底部向调用方要下一页。
+  describe('大目录：虚拟化与滚动加载', () => {
+    function listbox() {
+      return document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    }
+    function scrollListTo(el: HTMLElement, box: { top: number; height: number; client: number }) {
+      Object.defineProperty(el, 'scrollTop', { configurable: true, value: box.top })
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: box.height })
+      Object.defineProperty(el, 'clientHeight', { configurable: true, value: box.client })
+      el.dispatchEvent(new Event('scroll'))
+    }
+    const many = Array.from({ length: 3000 }, (_, i) => ({
+      value: `LOC-${String(i + 1).padStart(4, '0')}`,
+      label: `LOC-${String(i + 1).padStart(4, '0')}`,
+    }))
+
+    it('几千个候选只渲染可视区附近的行，滚到后面的行照样能选', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options: many, title: '选择库位', showCode: false },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const rendered = () => [...document.body.querySelectorAll('[role="option"]')]
+      expect(rendered().length).toBeLessThan(40)
+      expect(rendered()[0]?.textContent).toContain('LOC-0001')
+
+      // 单行候选行高 36px：滚到第 2601 个所在的位置。
+      scrollListTo(listbox(), { top: 2600 * 36, height: 3000 * 36, client: 288 })
+      await flushPromises()
+
+      const target = rendered().find((row) => row.textContent?.includes('LOC-2601'))
+      expect(target).toBeDefined()
+      expect(rendered().length).toBeLessThan(40)
+      ;(target as HTMLElement).click()
+      await flushPromises()
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['LOC-2601'])
+
+      wrapper.unmount()
+    })
+
+    it('服务端搜索时滚近底部才要下一页；已经列全就不再要', async () => {
+      const firstPage = many.slice(0, 50)
+      const wrapper = mount(NvEntityPicker, {
+        props: {
+          options: firstPage,
+          title: '选择库位',
+          showCode: false,
+          serverSearch: true,
+          search: '',
+          totalCount: 3000,
+        },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const box = { height: 50 * 36 + 16, client: 288 }
+      scrollListTo(listbox(), { ...box, top: 0 })
+      expect(wrapper.emitted('load-more')).toBeUndefined()
+
+      scrollListTo(listbox(), { ...box, top: box.height - box.client })
+      expect(wrapper.emitted('load-more')).toHaveLength(1)
+
+      await wrapper.setProps({ totalCount: 50 })
+      scrollListTo(listbox(), { ...box, top: box.height - box.client })
+      expect(wrapper.emitted('load-more')).toHaveLength(1)
+
+      wrapper.unmount()
+    })
+  })
+
   // #3796：表单里的选择器就地新增。入口只在调用方给了文案时出现（没有新增权限就不给）；
   // 点入口收起选择器、把「要新增」交给调用方打开表单，本组件不自己改 v-model。
   describe('新增入口', () => {
