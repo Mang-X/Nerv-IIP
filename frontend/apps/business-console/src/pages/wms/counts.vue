@@ -34,6 +34,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -71,7 +72,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 
 definePage({
   meta: {
@@ -121,8 +122,7 @@ const { page, pageSize } = usePagedList(filters, {
   ],
 })
 // 物料 / 单位 / 工厂走主数据目录；库位后端无读面，从既有台账与作业记录派生。
-const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
-  useInventoryScopeCatalog()
+const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
 const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
   scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
 })
@@ -133,11 +133,6 @@ const statusFilter = computed({
     filters.status = value === WMS_STATUS_ANY ? undefined : value
   },
 })
-/** 单位随物料的基本单位带出，不给手输：盘点单位写错就核不上账。 */
-function onCountSkuChange(skuCode: string) {
-  createForm.skuCode = skuCode
-  createForm.uomCode = skuCode ? resolveUomCode(skuCode) : ''
-}
 
 function isOpen(row: BusinessConsoleWmsCountExecutionItem) {
   return statusActionGate({
@@ -186,6 +181,11 @@ const createForm = reactive({
   siteCode: '',
   locationCode: '',
   expectedQuantity: '',
+})
+// 单位随物料的基本单位带出，不给手输：盘点单位写错就核不上账。
+// 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
+watchEffect(() => {
+  createForm.uomCode = resolveUomCode(createForm.skuCode)
 })
 const createError = shallowRef('')
 
@@ -635,18 +635,12 @@ function refreshAll() {
             </NvField>
             <NvField>
               <NvFieldLabel for="cnt-sku">物料</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="cnt-sku"
-                :model-value="createForm.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
+                v-model="createForm.skuCode"
+                directory-type="material"
+                creatable
                 clearable
-                aria-label="物料"
-                @update:model-value="onCountSkuChange"
               />
             </NvField>
             <NvField>

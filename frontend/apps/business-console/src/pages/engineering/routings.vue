@@ -5,6 +5,7 @@ import type {
   BusinessConsoleStandardOperationItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import {
@@ -134,11 +135,6 @@ function wcLabel(code?: string | null) {
   return wcNameByCode.value.get(code) ?? code
 }
 
-const skuOptions = computed(() =>
-  skus.value
-    .filter((s) => s.code)
-    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
-)
 const workCenterOptions = computed(() =>
   workCenters.value
     .filter((w) => w.code)
@@ -443,16 +439,13 @@ async function openView(row: BusinessConsoleRoutingItem) {
                   <NvFieldLabel for="rt-sku"
                     >产出物料 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.skuCode">
-                    <NvSelectTrigger id="rt-sku"
-                      ><NvSelectValue placeholder="选择产出物料"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="rt-sku"
+                    v-model="form.skuCode"
+                    directory-type="material"
+                    creatable
+                    placeholder="选择产出物料"
+                  />
                 </NvField>
                 <NvField :data-invalid="showErrors && !revisionValid">
                   <NvFieldLabel for="rt-rev"
@@ -508,19 +501,12 @@ async function openView(row: BusinessConsoleRoutingItem) {
                     <NvFieldLabel :for="`rt-wc-${index}`"
                       >工作中心 <span class="text-destructive">*</span></NvFieldLabel
                     >
-                    <NvSelect v-model="op.workCenterCode">
-                      <NvSelectTrigger :id="`rt-wc-${index}`"
-                        ><NvSelectValue placeholder="选择工作中心"
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem
-                          v-for="o in workCenterOptions"
-                          :key="o.value"
-                          :value="o.value"
-                          >{{ o.label }}</NvSelectItem
-                        >
-                      </NvSelectContent>
-                    </NvSelect>
+                    <DirectoryPicker
+                      :id="`rt-wc-${index}`"
+                      v-model="op.workCenterCode"
+                      directory-type="work-center"
+                      creatable
+                    />
                   </NvField>
                   <NvField :data-invalid="showErrors && !op.operationCode.trim()">
                     <NvFieldLabel :for="`rt-name-${index}`"

@@ -4,6 +4,7 @@ import type {
   BusinessConsoleReleaseEngineeringBomRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
@@ -118,11 +119,6 @@ function skuLabel(code?: string | null) {
   return skuNameByCode.value.get(code) ?? code
 }
 
-const skuOptions = computed(() =>
-  skus.value
-    .filter((s) => s.code)
-    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
-)
 // 物料编码 → 基本单位，选物料后自动带出行单位（仍可手动覆盖）。
 const baseUomByCode = computed(
   () =>
@@ -194,10 +190,26 @@ function blankForm(): EbomForm {
 // 选物料后把该行单位自动设为其基本单位（按单位选项大小写不敏感匹配真实 code——
 // SKU 的基本单位可能与单位表大小写不一致，如 'PCS' vs 'pcs'；匹配不到则不填，避免落到无效值/占位符）。
 function applyComponentUom(line: ComponentLine, code: string) {
+  const uom = matchedUom(code)
+  if (uom) {
+    line.unitOfMeasureCode = uom
+    return
+  }
+  if (!code) return
+  // 就地新建的物料要等物料列表刷新回来才查得到基本单位：等到查得到再带出，期间该行换了物料就作废。
+  const stop = watch(
+    () => matchedUom(code),
+    (next) => {
+      if (!next) return
+      stop()
+      if (line.componentCode === code) line.unitOfMeasureCode = next
+    },
+  )
+}
+function matchedUom(code: string) {
   const base = baseUomByCode.value.get(code)
-  if (!base) return
-  const match = uomOptions.value.find((o) => o.value.toLowerCase() === base.toLowerCase())
-  if (match) line.unitOfMeasureCode = match.value
+  if (!base) return undefined
+  return uomOptions.value.find((o) => o.value.toLowerCase() === base.toLowerCase())?.value
 }
 
 const formOpen = shallowRef(false)
@@ -400,16 +412,13 @@ function uomLabel(code?: string | null) {
                   <NvFieldLabel for="ebom-parent"
                     >父项物料 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.parentItemCode">
-                    <NvSelectTrigger id="ebom-parent"
-                      ><NvSelectValue placeholder="选择父项"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="ebom-parent"
+                    v-model="form.parentItemCode"
+                    directory-type="material"
+                    creatable
+                    placeholder="选择父项"
+                  />
                 </NvField>
                 <NvField :data-invalid="showErrors && !revisionValid">
                   <NvFieldLabel for="ebom-rev"
@@ -458,19 +467,14 @@ function uomLabel(code?: string | null) {
                     <NvFieldLabel :for="`ebom-comp-${index}`"
                       >组件物料 <span class="text-destructive">*</span></NvFieldLabel
                     >
-                    <NvSelect
+                    <DirectoryPicker
+                      :id="`ebom-comp-${index}`"
                       v-model="line.componentCode"
-                      @update:model-value="(v) => applyComponentUom(line, String(v ?? ''))"
-                    >
-                      <NvSelectTrigger :id="`ebom-comp-${index}`"
-                        ><NvSelectValue placeholder="选择组件"
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                          o.label
-                        }}</NvSelectItem>
-                      </NvSelectContent>
-                    </NvSelect>
+                      directory-type="material"
+                      creatable
+                      placeholder="选择组件"
+                      @update:model-value="(v: string) => applyComponentUom(line, v)"
+                    />
                   </NvField>
                   <NvField :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
                     <NvFieldLabel :for="`ebom-qty-${index}`"

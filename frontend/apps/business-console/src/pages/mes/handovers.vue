@@ -57,6 +57,7 @@ import {
   MES_HANDOVER_ISSUE_SEVERITY_LABELS,
   MES_HANDOVER_STATUS_LABELS,
 } from '@/data/businessLabels'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -816,25 +817,15 @@ function formatDateTime(value?: string | null) {
           <NvFieldGroup class="grid gap-3">
             <NvField>
               <NvFieldLabel for="handover-create-shift-trigger">交接班次</NvFieldLabel>
-              <NvSelect
+              <DirectoryPicker
+                id="handover-create-shift-trigger"
                 v-model="createForm.shiftId"
                 data-testid="handover-create-shift"
-                :data-invalid="createShowErrors && !selectedShift ? '' : undefined"
-                :disabled="shiftOptions.length === 0"
-              >
-                <NvSelectTrigger id="handover-create-shift-trigger" aria-label="选择交接班次">
-                  <NvSelectValue placeholder="选择班次" />
-                </NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in shiftOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+                directory-type="shift"
+                creatable
+                :invalid="createShowErrors && !selectedShift"
+                aria-label="选择交接班次"
+              />
               <p v-if="createShowErrors && !selectedShift" class="text-xs text-destructive">
                 请选择交接班次。
               </p>

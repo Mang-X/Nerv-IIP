@@ -22,6 +22,7 @@ import {
   WAREHOUSE_SERIAL_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
@@ -47,7 +48,7 @@ import {
   Spinner,
 } from '@nerv-iip/ui'
 import { SendIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
@@ -63,15 +64,9 @@ const businessContext = useBusinessContextStore()
 const { movementRows, movementsPending, movementsTotal, postMovement, postMovementPending } =
   useInventoryMovement()
 // 物料 / 工厂走主数据目录；库位/批次/序列号后端无读面，从既有台账与作业记录派生。
-const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
-  useInventoryScopeCatalog()
+const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
 const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
   useWarehouseCodeCatalog()
-/** 单位随物料的基本单位带出，不给手输：单位写错这笔移动就落不到正确台账。 */
-function onSkuChange(skuCode: string) {
-  form.skuCode = skuCode
-  form.uomCode = skuCode ? resolveUomCode(skuCode) : ''
-}
 
 // 受控值：UI 说人话，下发仍是后端码值。
 const QUALITY_OPTIONS = [
@@ -107,6 +102,12 @@ const form = reactive({
 const isTransfer = computed(() => form.movementType === 'transfer')
 
 const movementSheetOpen = shallowRef(false)
+
+// 单位随物料的基本单位带出，不给手输：单位写错这笔移动就落不到正确台账。
+// 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
+watchEffect(() => {
+  form.uomCode = resolveUomCode(form.skuCode)
+})
 
 // 上下文穿透：从来源单据（收货/完工入库/领料/盘点）带入 SKU/库位/批次。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -342,18 +343,12 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-sku">物料</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-sku"
-                :model-value="form.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
+                v-model="form.skuCode"
+                directory-type="material"
+                creatable
                 clearable
-                aria-label="物料"
-                @update:model-value="onSkuChange"
               />
             </NvField>
             <NvField>
