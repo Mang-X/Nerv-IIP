@@ -18,6 +18,7 @@ const barcode = vi.hoisted(() => ({
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
   printBatchStatus: 'completed',
+  templateId: 'tpl-1',
   route: { query: {} as Record<string, unknown> },
   ruleFilters: undefined as undefined | { keyword?: string; skip: number; take: number },
   templateFilters: undefined as undefined | { skip: number; take: number },
@@ -106,7 +107,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       filters,
       templates: computed(() => [
         {
-          templateId: 'tpl-1',
+          templateId: barcode.templateId,
           templateCode: 'SKU_BOX',
           templateName: '外箱标签',
           templateFileId: 'file-label-box',
@@ -307,6 +308,7 @@ describe('barcode pages', () => {
     barcode.route.query = {}
     barcode.printBatchSourceDocumentType = 'production.report'
     barcode.printBatchStatus = 'completed'
+    barcode.templateId = 'tpl-1'
     barcode.ruleFilters = undefined
     barcode.templateFilters = undefined
     barcode.printBatchFilters = undefined
@@ -663,6 +665,42 @@ describe('barcode pages', () => {
         requestedQuantity: 3,
       }),
     )
+  })
+
+  // 模板选择器回传的是模板主键（GUID），选中后屏幕上只能出现模板名称 / 编码。
+  it('shows the template name and code, never its internal id, after picking a label template', async () => {
+    const templateId = '01a0de6f-211c-71c5-83ed-2348ece32398'
+    barcode.templateId = templateId
+    const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
+    const wrapper = mount(PrintBatchesPage, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...stubsWithRealPicker,
+          RouterLink: routerLinkStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建打印批次'))!
+      .trigger('click')
+    await wrapper.find('#barcode-print-template').trigger('click')
+    await flushPromises()
+    const option = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (element) => element.textContent?.includes('外箱标签'),
+    )
+    expect(option?.textContent).not.toContain(templateId)
+    option!.click()
+    await flushPromises()
+
+    expect(wrapper.find('#barcode-print-template').text()).toContain('外箱标签')
+    expect(document.body.textContent).not.toContain(templateId)
+    wrapper.unmount()
   })
 
   it('reuses the print batch idempotency key while retrying the same dialog submission', async () => {

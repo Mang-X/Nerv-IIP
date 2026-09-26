@@ -101,22 +101,18 @@ const form = reactive({
   requestedQuantity: '1',
 })
 
-// 标签模板绑定的是模板主键（GUID），没人能手输——一律从模板目录里选，展示模板名 + 编码。
+// 标签模板绑定的是模板主键（GUID），没人能手输——一律从模板目录里选。选择器只展示模板名与编码，
+// 主键不上屏（选择器上关掉编码位，否则它会拿主键当编码显示）。
 const { templates, templatesPending } = useBarcodeTemplates()
-const templateOptions = computed(() => {
-  const options = templates.value
+const templateOptions = computed(() =>
+  templates.value
     .filter((template) => !!template.templateId)
     .map((template) => ({
       value: template.templateId as string,
       label: template.templateName || template.templateCode || '未命名模板',
       hint: template.templateCode ?? undefined,
-    }))
-  const current = form.labelTemplateId.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    options.unshift({ value: current, label: current, hint: undefined })
-  }
-  return options
-})
+    })),
+)
 
 const batchColumns: NvDataTableColumn<BusinessConsoleBarcodePrintBatchItem>[] = [
   {
@@ -347,6 +343,7 @@ function firstQuery(value: unknown) {
                     id="barcode-print-template"
                     v-model="form.labelTemplateId"
                     :options="templateOptions"
+                    :show-code="false"
                     title="选择标签模板"
                     placeholder="选择标签模板"
                     empty-text="暂无标签模板，请先在标签模板维护"
