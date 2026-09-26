@@ -5,7 +5,6 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import {
@@ -105,18 +104,13 @@ const {
   supplierReturnsPending,
   supplierReturnsError,
   refreshReceivingQuality,
-  inboundOrdersLastUpdatedAt,
-  inboundOrdersHasSuccessfulResponse,
-  inboundOrdersHasFailedResponse,
 } = useWmsInboundOrders({ workScopeRequired: true })
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: inboundScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'receipts')
 const operationalCandidates = useWmsOperationalCandidates('receipt', filters)
@@ -448,22 +442,6 @@ function formatDateTime(value?: string | null) {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 收货作业范围目录"
-      :loaded="inboundOrders.length"
-      :total="inboundOrdersTotal"
-      :updated-at="inboundOrdersLastUpdatedAt"
-      :empty="
-        inboundOrdersHasSuccessfulResponse && !inboundOrdersError && inboundOrders.length === 0
-      "
-      :failed="
-        inboundOrdersHasFailedResponse || Boolean(inboundOrdersError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 收货作业范围或入库单未成功返回，请重试。"
-      :empty-explanation="inboundScopeReady ? '当前作业范围没有收货单。' : workScopeUnreadyMessage"
-    />
 
     <p v-if="contextUnavailable" class="text-sm text-warning" role="status">
       没有权限或库存服务暂不可用，本页只显示入库单本身。

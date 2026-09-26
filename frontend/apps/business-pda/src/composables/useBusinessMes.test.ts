@@ -654,23 +654,6 @@ describe('pda useBusinessMes composables', () => {
     ).not.toHaveBeenCalled()
   })
 
-  it('records freshness only after successful material-issue and receipt responses', () => {
-    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
-      success: true,
-      data: { items: [], total: 0 },
-    })
-    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
-      success: true,
-      data: { items: [], total: 0 },
-    })
-
-    const materialIssue = useMesMaterialIssue()
-    const receipts = useMesReceipts()
-
-    expect(materialIssue.lastUpdatedAt.value).not.toBeNull()
-    expect(receipts.lastUpdatedAt.value).not.toBeNull()
-  })
-
   it('exposes failed material-issue and receipt envelopes instead of treating them as successful empty lists', () => {
     coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
       success: false,
@@ -739,8 +722,6 @@ describe('pda useBusinessMes composables', () => {
     expect(materialIssue.total.value).toBe(9)
     expect(receipts.receipts.value).toHaveLength(1)
     expect(receipts.total.value).toBe(8)
-    expect(materialIssue.lastUpdatedAt.value).toBe('2026-07-28T01:00:00.000Z')
-    expect(receipts.lastUpdatedAt.value).toBe('2026-07-28T01:00:00.000Z')
 
     reactiveAuthState.principal = undefined
     await nextTick()
@@ -750,8 +731,6 @@ describe('pda useBusinessMes composables', () => {
     expect(materialIssue.total.value).toBe(0)
     expect(receipts.receipts.value).toEqual([])
     expect(receipts.total.value).toBe(0)
-    expect(materialIssue.lastUpdatedAt.value).toBeNull()
-    expect(receipts.lastUpdatedAt.value).toBeNull()
     expect(
       coladaState.refetchById.get('listBusinessConsoleMesMaterialIssueRequests'),
     ).not.toHaveBeenCalled()
@@ -768,8 +747,6 @@ describe('pda useBusinessMes composables', () => {
     expect(receipts.receipts.value).toEqual([])
     expect(receipts.total.value).toBe(0)
     expect(receipts.hasSuccessfulResponse.value).toBe(false)
-    expect(materialIssue.lastUpdatedAt.value).toBeNull()
-    expect(receipts.lastUpdatedAt.value).toBeNull()
 
     coladaState.queryDataRefById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = {
       success: false,
@@ -777,8 +754,6 @@ describe('pda useBusinessMes composables', () => {
     coladaState.queryDataRefById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')!.value =
       { success: false }
     await nextTick()
-    expect(materialIssue.lastUpdatedAt.value).toBeNull()
-    expect(receipts.lastUpdatedAt.value).toBeNull()
 
     vi.setSystemTime('2026-07-28T02:00:00.000Z')
     coladaState.queryDataRefById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = {
@@ -806,8 +781,6 @@ describe('pda useBusinessMes composables', () => {
       expect.objectContaining({ receiptRequestId: 'NEW-RECEIPT' }),
     ])
     expect(receipts.total.value).toBe(1)
-    expect(materialIssue.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
-    expect(receipts.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
 
     coladaState.loadingById.get('listBusinessConsoleMesMaterialIssueRequests')!.value = true
     coladaState.loadingById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')!.value = true
@@ -819,8 +792,6 @@ describe('pda useBusinessMes composables', () => {
     expect(receipts.receipts.value).toEqual([
       expect.objectContaining({ receiptRequestId: 'NEW-RECEIPT' }),
     ])
-    expect(materialIssue.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
-    expect(receipts.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
   })
 
   it('enables list queries once a principal scope is present', () => {
@@ -878,9 +849,6 @@ describe('pda useBusinessMes composables', () => {
     expect(workOrders.workOrders.value).toHaveLength(1)
     expect(operationTasks.operationTasks.value).toHaveLength(1)
     expect(reports.productionReports.value).toHaveLength(1)
-    expect(workOrders.lastUpdatedAt.value).not.toBeNull()
-    expect(operationTasks.lastUpdatedAt.value).not.toBeNull()
-    expect(reports.lastUpdatedAt.value).not.toBeNull()
 
     reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
     await nextTick()
@@ -894,9 +862,6 @@ describe('pda useBusinessMes composables', () => {
     expect(reports.productionReports.value).toEqual([])
     expect(reports.total.value).toBe(0)
     expect(reports.hasSuccessfulResponse.value).toBe(false)
-    expect(workOrders.lastUpdatedAt.value).toBeNull()
-    expect(operationTasks.lastUpdatedAt.value).toBeNull()
-    expect(reports.lastUpdatedAt.value).toBeNull()
   })
 
   it('uses the exact strong-ID work-order detail query for report route identity', () => {
@@ -929,7 +894,6 @@ describe('pda useBusinessMes composables', () => {
     expect(result.hasFailedResponse.value).toBe(true)
     expect(result.error.value).toBeInstanceOf(Error)
     expect((result.error.value as Error).message).toBe('工单详情查询失败')
-    expect(result.lastUpdatedAt.value).toBeNull()
 
     coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = {
       success: true,
@@ -941,7 +905,6 @@ describe('pda useBusinessMes composables', () => {
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(true)
     expect((result.error.value as Error).message).toBe('工单详情响应无效，请重试。')
-    expect(result.lastUpdatedAt.value).toBeNull()
 
     coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = [
       { workOrderId: 'WO-501' },
@@ -952,7 +915,6 @@ describe('pda useBusinessMes composables', () => {
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(true)
     expect((result.error.value as Error).message).toBe('工单详情响应无效，请重试。')
-    expect(result.lastUpdatedAt.value).toBeNull()
   })
 
   it.each([
@@ -993,10 +955,9 @@ describe('pda useBusinessMes composables', () => {
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(true)
     expect((result.error.value as Error).message).toBe('工单详情响应无效，请重试。')
-    expect(result.lastUpdatedAt.value).toBeNull()
   })
 
-  it('unbinds work-order detail and freshness when the work-order or org/env identity changes', async () => {
+  it('unbinds work-order detail when the work-order or org/env identity changes', async () => {
     coladaState.queryDataById.set('getBusinessConsoleMesWorkOrderDetail', {
       success: true,
       data: {
@@ -1014,14 +975,12 @@ describe('pda useBusinessMes composables', () => {
 
     expect(result.workOrder.value?.workOrderId).toBe('WO-A')
     expect(result.hasSuccessfulResponse.value).toBe(true)
-    expect(result.lastUpdatedAt.value).not.toBeNull()
 
     workOrderId.value = 'WO-B'
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(false)
-    expect(result.lastUpdatedAt.value).toBeNull()
 
     coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = {
       success: true,
@@ -1039,7 +998,6 @@ describe('pda useBusinessMes composables', () => {
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(false)
-    expect(result.lastUpdatedAt.value).toBeNull()
 
     coladaState.queryDataRefById.get('getBusinessConsoleMesWorkOrderDetail')!.value = {
       success: true,
@@ -1055,14 +1013,12 @@ describe('pda useBusinessMes composables', () => {
     }
     await nextTick()
     expect(result.workOrder.value?.workOrderId).toBe('WO-B')
-    expect(result.lastUpdatedAt.value).not.toBeNull()
 
     reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
     await nextTick()
     expect(result.workOrder.value).toBeUndefined()
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(false)
-    expect(result.lastUpdatedAt.value).toBeNull()
   })
 
   it('continues exact task pagination across a full page when total is omitted', async () => {

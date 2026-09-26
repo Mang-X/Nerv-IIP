@@ -85,7 +85,6 @@ const {
   captureOperationActionContext,
   isOperationActionContextCurrent,
   refresh,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useMesOperationTasks()
@@ -131,20 +130,6 @@ const visibleOperationTasks = computed(() =>
         )
       : operationTasks.value,
 )
-const workScopeKindLabels: Record<string, string> = {
-  self: '本人',
-  team: '班组',
-  'work-center': '工作中心',
-  workshop: '车间',
-  organization: '组织',
-}
-const mesScope = computed(() => {
-  const selectedScope = operationListScope.value
-  if (!selectedScope) return '当前主体授权作业范围未就绪'
-  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
-  const name = selectedScope.displayName || selectedScope.id
-  return `当前主体授权作业范围 · ${name}（${kind}）`
-})
 const mesEmptyExplanation = computed(() =>
   operationListScopeReady.value
     ? '当前主体授权作业范围内暂无工序任务。'
@@ -817,11 +802,8 @@ async function onScanAccepted(value: MesScanAccepted) {
     <TaskListShell
       v-if="!result"
       state-key="mes-operation-tasks"
-      :scope="mesScope"
-      source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
       :loaded="loaded"
       :total="total"
-      :updated-at="lastUpdatedAt"
       :pending="pending"
       :refreshing="refreshing"
       :loading-more="loadingMore"
@@ -830,7 +812,6 @@ async function onScanAccepted(value: MesScanAccepted) {
       :filter-state="taskFilterState"
       :empty-description="mesEmptyExplanation"
       error-test-id="operation-tasks-error"
-      failure-explanation="工序任务服务未成功返回，请刷新重试。"
       @refresh="() => refresh()"
       @retry="() => refresh()"
       @load-more="loadMore"

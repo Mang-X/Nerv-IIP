@@ -162,7 +162,4 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
         .last(),
     ).toBeVisible()
   }
-  await expect(page.getByTestId('list-scope-meta')).toContainText(
-    `已加载 ${filteredItems.length} / 共 ${filteredTotal}`,
-  )
 })

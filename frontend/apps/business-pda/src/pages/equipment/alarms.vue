@@ -55,11 +55,7 @@ const {
   refreshing,
   loadMoreError,
   loadMore,
-  organizationId,
-  environmentId,
   scopeReady,
-  lastUpdatedAt,
-  hasSuccessfulResponse,
   hasFailedResponse,
   pending,
   error,
@@ -68,9 +64,6 @@ const {
   shelve,
   actionPending,
 } = useBusinessEquipmentAlarms()
-const alarmScope = computed(() =>
-  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
 const alarmTotal = computed(() => total.value)
 const alarmScopeReady = computed(() => scopeReady.value)
 const alarmListError = computed(
@@ -373,18 +366,14 @@ function showToast(message: string, type: 'success' | 'error') {
     <div class="flex min-h-0 flex-1 flex-col">
       <TaskListShell
         state-key="equipment-alarms"
-        :scope="alarmScope"
-        source="设备报警服务（组织/环境范围）"
         :loaded="loaded"
         :total="alarmTotal"
-        :updated-at="lastUpdatedAt"
         :pending="pending"
         :refreshing="refreshing"
         :loading-more="loadingMore"
         :error="alarmListError"
         :load-more-error="loadMoreError"
         error-test-id="alarms-error"
-        failure-explanation="设备报警服务未成功返回，请刷新重试。"
         :filter-state="alarmFilterState"
         :empty-description="
           alarmScopeReady

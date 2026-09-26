@@ -28,7 +28,6 @@ vi.mock('@/composables/useBusinessQualityInspectionTasks', () => ({
     submitInspection,
     submitPending: shallowRef(false),
     claimTask,
-    lastUpdatedAt: shallowRef('2026-07-31T08:00:00.000Z'),
     hasSuccessfulResponse: shallowRef(true),
     hasFailedResponse: shallowRef(false),
     scopeReady: shallowRef(true),

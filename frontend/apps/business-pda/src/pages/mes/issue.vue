@@ -24,7 +24,6 @@ import {
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
 import LineSideInventoryBalancesPanel from '@/components/mes/LineSideInventoryBalancesPanel.vue'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -48,10 +47,8 @@ const router = useRouter()
 const {
   filters,
   requests,
-  total,
   pending,
   error,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
   refresh,
@@ -86,19 +83,8 @@ const {
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
 const statusLabel = materialIssueStatusLabel
-const listScope = computed(() =>
-  filters.organizationId && filters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
 const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
 const scopedRequests = computed(() => (scopeReady.value ? requests.value : []))
-const scopedTotal = computed(() => (scopeReady.value ? total.value : 0))
-const emptyExplanation = computed(() =>
-  !filters.organizationId || !filters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : '当前组织/环境范围暂无领料申请；此列表暂不支持按当前人员归属筛选，不代表当前人员没有领料任务。',
-)
 const listFailure = computed(() =>
   error.value
     ? error.value
@@ -534,21 +520,6 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         @previous-page="previousLineSideInventoryPage"
         @next-page="nextLineSideInventoryPage"
         @refresh="refreshLineSideInventory"
-      />
-
-      <ListScopeMeta
-        :scope="listScope"
-        source="生产领料申请服务（组织/环境范围）"
-        :loaded="scopedRequests.length"
-        :total="scopedTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="生产领料申请服务未成功返回，请刷新重试。"
-        :empty="
-          !scopeReady ||
-          (!pending && !error && hasSuccessfulResponse && scopedRequests.length === 0)
-        "
-        :empty-explanation="emptyExplanation"
       />
 
       <RetryableListError

@@ -137,7 +137,6 @@ vi.mock('@/composables/useBusinessWms', () => ({
     organizationId: computed(() => 'org-001'),
     environmentId: computed(() => 'env-dev'),
     scopeReady: computed(() => true),
-    lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
     hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
     hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
@@ -289,7 +288,6 @@ describe('WMS 收货入库', () => {
 
     expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-RECEIVING')
     expect(wmsState.filters.status).toBe('Completed')
-    expect(wrapper.text()).toContain('WMS 收货作业范围目录')
   })
 
   it('点单 → 抽屉展示行级批号+质检门禁明细 + 后端效期三色（无需扫码）', async () => {

@@ -299,7 +299,6 @@ describe('quality inspection task workbench page', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('本页匹配 1 个 / 服务总数 4 个')
-    expect(wrapper.text()).toContain('筛选仅按当前页匹配')
   })
 
   it('claims before opening the existing inspection form without inventing a source document number', async () => {

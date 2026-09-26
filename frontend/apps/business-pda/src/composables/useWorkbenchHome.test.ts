@@ -311,7 +311,6 @@ describe('usePendingInspectionSummary', () => {
     const inspection = usePendingInspectionSummary()
     expect(inspection.tasks.value).toHaveLength(1)
     expect(inspection.total.value).toBe(7)
-    expect(inspection.lastUpdatedAt.value).toBe('2026-07-28T01:00:00.000Z')
 
     reactiveAuthState.principal = {
       organizationId: '',
@@ -324,7 +323,6 @@ describe('usePendingInspectionSummary', () => {
     expect(inspection.scopeReady.value).toBe(false)
     expect(inspection.tasks.value).toEqual([])
     expect(inspection.total.value).toBe(0)
-    expect(inspection.lastUpdatedAt.value).toBeNull()
     expect(coladaState.refetchById.get('inspection')).not.toHaveBeenCalled()
 
     reactiveAuthState.principal = {
@@ -338,13 +336,7 @@ describe('usePendingInspectionSummary', () => {
     expect(inspection.tasks.value).toEqual([])
     expect(inspection.total.value).toBe(0)
     expect(inspection.hasSuccessfulResponse.value).toBe(false)
-    expect(inspection.lastUpdatedAt.value).toBeNull()
 
-    coladaState.dataRefById.get('inspection')!.value = { success: false }
-    await nextTick()
-    expect(inspection.lastUpdatedAt.value).toBeNull()
-
-    vi.setSystemTime('2026-07-28T02:00:00.000Z')
     coladaState.dataRefById.get('inspection')!.value = {
       success: true,
       data: {
@@ -359,7 +351,6 @@ describe('usePendingInspectionSummary', () => {
     ])
     expect(inspection.total.value).toBe(1)
     expect(inspection.hasSuccessfulResponse.value).toBe(true)
-    expect(inspection.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
 
     coladaState.loadingById.get('inspection')!.value = true
     await nextTick()
@@ -368,6 +359,5 @@ describe('usePendingInspectionSummary', () => {
       expect.objectContaining({ inspectionTaskId: 'NEW-INSPECTION' }),
     ])
     expect(inspection.total.value).toBe(1)
-    expect(inspection.lastUpdatedAt.value).toBe('2026-07-28T02:00:00.000Z')
   })
 })

@@ -174,21 +174,6 @@ describe('business WMS composables', () => {
     )
   })
 
-  it('exposes unsuccessful inbound and outbound envelopes as business-response failures', () => {
-    const context = useBusinessContextStore()
-    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
-    coladaState.queryDataById.set('listBusinessConsoleWmsInboundOrders', { success: false })
-    coladaState.queryDataById.set('listBusinessConsoleWmsOutboundOrders', { success: false })
-
-    const inbound = useWmsInboundOrders()
-    const outbound = useWmsOutboundOrders()
-
-    expect(inbound.inboundOrdersHasSuccessfulResponse.value).toBe(false)
-    expect(inbound.inboundOrdersHasFailedResponse.value).toBe(true)
-    expect(outbound.outboundOrdersHasSuccessfulResponse.value).toBe(false)
-    expect(outbound.outboundOrdersHasFailedResponse.value).toBe(true)
-  })
-
   it('reads receiving quality and supplier returns through all server pages', async () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })

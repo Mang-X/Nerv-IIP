@@ -57,17 +57,10 @@ const {
   createWorkOrder,
   createPending,
   canReadWorkOrderDetail,
-  organizationId,
-  environmentId,
   scopeReady,
   workOrdersTotal,
-  workOrdersLastUpdatedAt,
-  workOrdersHasSuccessfulResponse,
   workOrdersHasFailedResponse,
 } = useBusinessMaintenance()
-const maintenanceScope = computed(() =>
-  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
-)
 const maintenanceTotal = computed(() => workOrdersTotal.value)
 const workOrderListError = computed(
   () =>
@@ -571,18 +564,14 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
         <h2 class="text-sm font-medium text-muted-foreground">近期维修工单</h2>
         <TaskListShell
           state-key="maintenance-work-orders"
-          :scope="maintenanceScope"
-          source="维修工单服务（组织/环境范围，暂不支持按维修人员归属筛选）"
           :loaded="workOrdersLoaded"
           :total="maintenanceTotal"
-          :updated-at="workOrdersLastUpdatedAt"
           :pending="workOrdersPending"
           :refreshing="workOrdersRefreshing"
           :loading-more="workOrdersLoadingMore"
           :error="workOrderListError"
           :load-more-error="workOrdersLoadMoreError"
           error-test-id="work-orders-error"
-          failure-explanation="维修工单服务未成功返回，请刷新重试。"
           :filter-state="workOrderFilterState"
           :empty-description="
             scopeReady

@@ -6,7 +6,6 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -77,18 +76,13 @@ const {
   startPicking,
   completePicking,
   pickingActionPending,
-  pickingTasksLastUpdatedAt,
-  pickingTasksHasSuccessfulResponse,
-  pickingTasksHasFailedResponse,
 } = useWmsPickingTasks({ workScopeRequired: true })
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: pickingScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
@@ -482,22 +476,6 @@ function firstQuery(value: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 发货作业范围目录"
-      :loaded="pickingTasks.length"
-      :total="pickingTasksTotal"
-      :updated-at="pickingTasksLastUpdatedAt"
-      :empty="pickingTasksHasSuccessfulResponse && !pickingTasksError && pickingTasks.length === 0"
-      :failed="
-        pickingTasksHasFailedResponse || Boolean(pickingTasksError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 发货作业范围或拣货任务未成功返回，请重试。"
-      :empty-explanation="
-        pickingScopeReady ? '当前作业范围没有拣货任务。' : workScopeUnreadyMessage
-      "
-    />
 
     <NvToolbar :show-search="false">
       <template #filters>

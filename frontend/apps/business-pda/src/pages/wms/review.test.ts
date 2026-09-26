@@ -92,7 +92,6 @@ vi.mock('@/composables/useBusinessWms', () => ({
     organizationId: computed(() => 'org-001'),
     environmentId: computed(() => 'env-dev'),
     scopeReady: computed(() => true),
-    lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
     hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
     hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
@@ -172,7 +171,6 @@ describe('WMS 复核发货', () => {
 
     expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-SHIPPING')
     expect(wmsState.filters.status).toBe('Completed')
-    expect(wrapper.text()).toContain('WMS 发货作业范围目录')
   })
 
   it('点单 → 抽屉 → 复核单号未填时确认按钮禁用', async () => {

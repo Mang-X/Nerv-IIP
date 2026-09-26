@@ -230,8 +230,6 @@ describe('operation-tasks 排程已失效 quick filter', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('当前主体授权作业范围 · 精加工一线（工作中心）')
-
     const button = wrapper.findAll('button').find((b) => b.text().includes('排程已失效'))!
     expect(button).toBeTruthy()
     expect(button.attributes('aria-pressed')).toBe('false')

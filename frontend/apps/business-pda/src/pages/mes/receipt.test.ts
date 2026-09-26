@@ -75,7 +75,6 @@ const workOrders = [
 const receiptsPending = ref(false)
 const receiptsError = ref<unknown>(null)
 const receiptRows = ref(receipts)
-const receiptsLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const receiptsHasSuccessfulResponse = ref(true)
 const receiptsHasFailedResponse = ref(false)
 
@@ -86,7 +85,6 @@ vi.mock('@/composables/useBusinessMes', () => ({
     total: computed(() => receiptRows.value.length),
     pending: receiptsPending,
     error: receiptsError,
-    lastUpdatedAt: receiptsLastUpdatedAt,
     hasSuccessfulResponse: receiptsHasSuccessfulResponse,
     hasFailedResponse: receiptsHasFailedResponse,
     refresh: refreshReceipts,
@@ -133,10 +131,6 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).toContain('已入库')
     expect(wrapper.text()).not.toContain('Requested')
     expect(wrapper.text()).not.toContain('Received')
-    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
-    expect(wrapper.text()).toContain('来源：生产完工入库申请服务（组织/环境范围）')
-    expect(wrapper.text()).toContain('已加载 2 / 共 2')
-    expect(wrapper.text()).toContain('最近成功响应')
   })
 
   it('shows which stage a pending receipt is stuck on, same wording as business console (#3767)', async () => {
@@ -178,16 +172,14 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(alert.text()).toContain('加载失败：网络异常')
     // 错误态不应退化为「暂无完工入库申请」空态
     expect(wrapper.text()).not.toContain('暂无完工入库申请')
-    expect(wrapper.find('[data-testid="list-empty-explanation"]').exists()).toBe(false)
   })
 
-  it('explains a successful empty organization-scope response without claiming personal ownership', async () => {
+  it('shows the business empty state for a successful empty response', async () => {
     receiptRows.value = []
     const wrapper = mount(ReceiptPage)
     await flushPromises()
 
     expect(wrapper.text()).toContain('当前组织/环境范围暂无完工入库申请')
-    expect(wrapper.text()).toContain('不代表当前人员没有入库任务')
   })
 
   it('shows a retryable failure for success:false instead of a business empty state', async () => {
@@ -211,8 +203,6 @@ describe('PDA MES finished-goods receipt page', () => {
     receiptFilters.environmentId = ''
     await flushPromises()
 
-    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
-    expect(wrapper.text()).toContain('已加载 0 / 共 0')
     expect(wrapper.text()).not.toContain('FGR-2026-0001')
     expect(wrapper.text()).not.toContain('SKU-A')
   })

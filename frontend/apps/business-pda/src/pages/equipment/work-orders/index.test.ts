@@ -43,7 +43,6 @@ vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
     loadMoreError: shallowRef(),
     pending: shallowRef(false),
     error: shallowRef(state.error),
-    lastUpdatedAt: shallowRef('2026-08-02T01:00:00.000Z'),
     filters: reactive(state.filters),
     principalDisplayName: shallowRef('张维修'),
     refresh: state.refresh,
@@ -97,7 +96,6 @@ describe('maintenance self work-order queue page', () => {
     const { wrapper } = await mountPage()
 
     expect(wrapper.text()).toContain('维修工单')
-    expect(wrapper.text()).toContain('当前账号暂无法查看维修工单')
     expect(wrapper.text()).not.toContain('我的工单')
     expect(wrapper.text()).not.toContain('我的维修工单')
     expect(wrapper.text()).toContain('当前账号暂无法查看，请重新登录或联系管理员')

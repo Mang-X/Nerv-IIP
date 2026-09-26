@@ -108,7 +108,6 @@ async function createHarness() {
             tasks.operationListScope.value?.id ?? 'no-scope',
             tasks.operationTasks.value[0]?.operationTaskId ?? 'no-row',
             tasks.total.value,
-            tasks.lastUpdatedAt.value ? 'fresh' : 'not-fresh',
           ].join('|'),
         )
     },
@@ -149,7 +148,7 @@ describe('PDA MES operation-list principal scope identity', () => {
       environmentId: 'env-dev',
     } as never
     await flushPromises()
-    expect(wrapper.text()).toContain('no-row|0|not-fresh')
+    expect(wrapper.text()).toContain('no-row|0')
 
     resolveWorkContext('business.mes.operations.read', 1, 'WC-B')
     resolveWorkContext('business.mes.operations.manage', 1, 'WC-B')
@@ -168,7 +167,7 @@ describe('PDA MES operation-list principal scope identity', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-B|OP-B|1|fresh')
+    expect(wrapper.text()).toBe('WC-B|OP-B|1')
 
     oldRequest.resolve({
       success: true,
@@ -178,7 +177,7 @@ describe('PDA MES operation-list principal scope identity', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-B|OP-B|1|fresh')
+    expect(wrapper.text()).toBe('WC-B|OP-B|1')
   })
 
   it('ignores an old same-scope response after the route pair filters change', async () => {
@@ -210,7 +209,7 @@ describe('PDA MES operation-list principal scope identity', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-A|OP-B|1|fresh')
+    expect(wrapper.text()).toBe('WC-A|OP-B|1')
 
     oldRequest.resolve({
       success: true,
@@ -220,6 +219,6 @@ describe('PDA MES operation-list principal scope identity', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-A|OP-B|1|fresh')
+    expect(wrapper.text()).toBe('WC-A|OP-B|1')
   })
 })

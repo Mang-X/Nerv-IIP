@@ -15,7 +15,6 @@ import { NvAppShellMobile, NvBottomSheet, NvListRow, NvMobileResult } from '@ner
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/useBusinessMes'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
@@ -37,10 +36,8 @@ const router = useRouter()
 const {
   filters,
   receipts,
-  total,
   pending,
   error,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
   refresh,
@@ -72,19 +69,8 @@ function receiptSubtitle(req: Receipt) {
   return parts.join(' · ')
 }
 
-const listScope = computed(() =>
-  filters.organizationId && filters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
 const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
 const scopedReceipts = computed(() => (scopeReady.value ? receipts.value : []))
-const scopedTotal = computed(() => (scopeReady.value ? total.value : 0))
-const emptyExplanation = computed(() =>
-  !filters.organizationId || !filters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : '当前组织/环境范围暂无完工入库申请；此列表暂不支持按当前人员归属筛选，不代表当前人员没有入库任务。',
-)
 const listFailure = computed(() =>
   error.value
     ? error.value
@@ -334,21 +320,6 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         :accepted-kinds="['work-order', 'operation-task']"
         @accepted="onScanAccepted"
         @status-change="scanGate.set('list', $event)"
-      />
-
-      <ListScopeMeta
-        :scope="listScope"
-        source="生产完工入库申请服务（组织/环境范围）"
-        :loaded="scopedReceipts.length"
-        :total="scopedTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="生产完工入库申请服务未成功返回，请刷新重试。"
-        :empty="
-          !scopeReady ||
-          (!pending && !error && hasSuccessfulResponse && scopedReceipts.length === 0)
-        "
-        :empty-explanation="emptyExplanation"
       />
 
       <RetryableListError

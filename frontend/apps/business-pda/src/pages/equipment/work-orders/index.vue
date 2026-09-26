@@ -31,8 +31,6 @@ const {
   refresh,
   pending,
   error,
-  lastUpdatedAt,
-  hasSuccessfulResponse,
   hasFailedResponse,
   filters,
   principalDisplayName,
@@ -44,12 +42,6 @@ const displayError = computed(
   () =>
     error.value ?? (hasFailedResponse.value ? new Error('维修工单读取失败，请重试。') : undefined),
 )
-const scopeLabel = computed(() => {
-  if (!scopeReady.value) return '当前账号暂无法查看维修工单'
-  if (hasFailedResponse.value) return '维修工单暂不可用'
-  if (hasSuccessfulResponse.value) return '分派给当前维修人员 / 当前业务环境'
-  return '正在读取当前维修人员的工单'
-})
 const filterState = computed(() => ({
   status: filters.status,
   deviceAssetIds: filters.deviceAssetIds,
@@ -106,19 +98,15 @@ function restoreState(state: { filters: Record<string, unknown> }) {
     <div class="flex h-full min-h-0 flex-col">
       <TaskListShell
         :state-key="`maintenance-self-work-orders:${scopeKey}`"
-        :scope="scopeLabel"
-        source="维修工单"
         :loaded="loaded"
         :total="total"
         :has-more="hasMore"
-        :updated-at="lastUpdatedAt"
         :pending="pending"
         :refreshing="refreshing"
         :loading-more="loadingMore"
         :error="displayError"
         :load-more-error="loadMoreError"
         error-test-id="maintenance-self-work-orders-error"
-        failure-explanation="未成功读取当前维修人员的工单，不展示之前的队列。"
         :filter-state="filterState"
         :empty-description="
           scopeReady

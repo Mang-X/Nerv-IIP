@@ -3,7 +3,6 @@ import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandid
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
@@ -62,7 +61,6 @@ const {
   scopeKind,
   scopeId,
   scopeReady,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useWmsCount({ status: 'Open' })
@@ -311,21 +309,6 @@ function goHome() {
           :show-lot="false"
           @scan-override-change="candidates.setScanOverride"
           @retry="candidates.refresh"
-        />
-        <ListScopeMeta
-          :scope="countScope"
-          source="WMS 盘点作业范围目录"
-          :loaded="executions.length"
-          :total="countTotal"
-          :updated-at="lastUpdatedAt"
-          :failed="hasFailedResponse"
-          failure-explanation="盘点任务服务未成功返回，请刷新重试。"
-          :empty="!scopeReady || showEmpty"
-          :empty-explanation="
-            scopeReady
-              ? `“${countScope}”在当前状态下没有盘点任务。`
-              : 'WMS 未返回可用作业范围，未发起列表查询。'
-          "
         />
       </div>
 

@@ -72,10 +72,9 @@ import {
 import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
 import {
   assertLifecycleActionExecutable,
@@ -536,7 +535,6 @@ export function useMesWorkOrders() {
     workOrdersIdentity,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -557,7 +555,6 @@ export function useMesWorkOrders() {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
@@ -659,7 +656,6 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
   const boundDetailResponse = computed(() =>
     bindWorkOrderDetailResponse(currentResponse.value, workOrderId.value.trim()),
   )
-  const lastUpdatedAt = useListFreshness(boundDetailResponse, detailEnabled)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     boundDetailResponse,
     detailEnabled,
@@ -689,7 +685,6 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
@@ -974,7 +969,6 @@ export function useMesOperationTasks() {
     operationTasksIdentity,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -1298,7 +1292,6 @@ export function useMesOperationTasks() {
     operationScopeReady: operationScope.scopeReady,
     captureOperationActionContext,
     isOperationActionContextCurrent,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (scopeReady.value ? taskPager.refresh() : Promise.resolve()),
@@ -1577,7 +1570,6 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
     () => scopeKey(filters),
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -1604,7 +1596,6 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: reportsQuery.isLoading,
     error: reportsQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (scopeReady.value ? reportsQuery.refetch() : Promise.resolve()),
@@ -2036,7 +2027,6 @@ export function useMesMaterialIssue() {
     scopeKey,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -2078,7 +2068,6 @@ export function useMesMaterialIssue() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: requestsQuery.isLoading,
     error: requestsQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? requestsQuery.refetch() : Promise.resolve()),
@@ -2191,7 +2180,6 @@ export function useMesReceipts() {
     scopeKey,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -2219,7 +2207,6 @@ export function useMesReceipts() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: receiptsQuery.isLoading,
     error: receiptsQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? receiptsQuery.refetch() : Promise.resolve()),

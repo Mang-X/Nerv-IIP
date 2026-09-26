@@ -23,11 +23,7 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 const DEFAULT_TAKE = 200
 
@@ -227,12 +223,6 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
     () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
-  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
-    currentResponse,
-    scopeReady,
-    () => tasksQuery.isLoading.value,
-  )
   const taskActions = useQualityInspectionTaskActions(filters)
 
   const rawTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
@@ -256,9 +246,6 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
     ),
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
-    lastUpdatedAt,
-    hasSuccessfulResponse,
-    hasFailedResponse,
     startInspection: taskActions.startInspection,
     startInspectionError: taskActions.startInspectionError,
     startInspectionPending: taskActions.startInspectionPending,

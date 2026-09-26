@@ -100,7 +100,6 @@ vi.mock('@/composables/useWorkbenchHome', () => {
         warehouseEntries.value.some((entry) => entry.state === 'failed'),
       ),
       pending: ref(false),
-      lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
     usePendingInspectionSummary: () => ({
       visible: computed(() => permissions.value.has(HOME_PERMISSIONS.quality)),
@@ -113,7 +112,6 @@ vi.mock('@/composables/useWorkbenchHome', () => {
       refresh: refreshInspection,
       hasSuccessfulResponse: inspectionHasSuccessfulResponse,
       hasFailedResponse: inspectionHasFailedResponse,
-      lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     }),
   }
 })
@@ -329,16 +327,13 @@ describe('PDA home', () => {
     for (const note of notes) expect(note).toMatch(/请联系管理员|请下拉刷新/)
   })
 
-  it('shows the inspection source and missing-scope explanation when permitted without scope', () => {
+  it('keeps the inspection card without a business empty state when permitted without scope', () => {
     organizationId.value = ''
     environmentId.value = ''
 
     const wrapper = mount(HomePage)
 
     expect(wrapper.find('[data-testid="home-inspection"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('组织/环境范围未就绪')
-    expect(wrapper.text()).toContain('质检待检任务服务（组织/环境范围，状态：待检）')
-    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
     expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
   })
 
@@ -359,8 +354,6 @@ describe('PDA home', () => {
     environmentId.value = ''
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
-    expect(wrapper.text()).toContain('已加载 0 / 共 0')
     expect(wrapper.text()).not.toContain('OLD-SKU')
     expect(wrapper.text()).not.toContain('OLD-BATCH')
   })

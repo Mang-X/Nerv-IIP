@@ -17,7 +17,6 @@ import {
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/useBusinessWms'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import {
@@ -92,9 +91,6 @@ const {
   completeCountExecution,
   completeCountExecutionPending,
   filters,
-  countExecutionsLastUpdatedAt,
-  countExecutionsHasSuccessfulResponse,
-  countExecutionsHasFailedResponse,
 } = useWmsCountExecutions({ workScopeRequired: true })
 const auth = useAuthStore()
 const canManageCounts = computed(() =>
@@ -103,11 +99,9 @@ const canManageCounts = computed(() =>
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: countScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'counts')
 const operationalCandidates = useWmsOperationalCandidates('count', filters)
@@ -463,24 +457,6 @@ function refreshAll() {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 盘点作业范围目录"
-      :loaded="countExecutions.length"
-      :total="countExecutionsTotal"
-      :updated-at="countExecutionsLastUpdatedAt"
-      :empty="
-        countExecutionsHasSuccessfulResponse &&
-        !countExecutionsError &&
-        countExecutions.length === 0
-      "
-      :failed="
-        countExecutionsHasFailedResponse || Boolean(countExecutionsError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 盘点作业范围或盘点任务未成功返回，请重试。"
-      :empty-explanation="countScopeReady ? '当前作业范围没有盘点任务。' : workScopeUnreadyMessage"
-    />
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
       <NvMetricStrip

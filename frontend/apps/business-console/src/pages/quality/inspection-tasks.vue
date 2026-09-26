@@ -14,7 +14,6 @@ import {
 } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import { useQualitySkuCatalog } from '@/composables/useQualityPickerCatalog'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -63,9 +62,6 @@ const {
   pending,
   error,
   refreshTasks,
-  lastUpdatedAt,
-  hasSuccessfulResponse: tasksHasSuccessfulResponse,
-  hasFailedResponse: tasksHasFailedResponse,
   claimInspectionTask,
   assignInspectionTask,
 } = useQualityInspectionTasks({
@@ -145,23 +141,6 @@ const scopeHint = computed(() =>
     : filters.sourceType === 'all'
       ? `服务总数 ${total.value} 个待检任务。`
       : `本页匹配 ${tasks.value.length} 个 / 服务总数 ${total.value} 个；后续页面可能还有匹配任务。`,
-)
-const sourceTypeHint = computed(() =>
-  filters.sourceType === 'all'
-    ? '质检待检任务服务（组织/环境范围，状态：待检）'
-    : `质检待检任务服务（组织/环境范围，状态：待检；${sourceLabel(filters.sourceType)}筛选仅按当前页匹配）`,
-)
-const scopeText = computed(() =>
-  filters.organizationId && filters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
-const emptyExplanation = computed(() =>
-  !filters.organizationId || !filters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : filters.sourceType !== 'all'
-      ? `当前页没有符合“${sourceLabel(filters.sourceType)}”的任务；服务总数为 ${total.value}，后续页面可能还有匹配任务。`
-      : '当前列表为组织范围的待检任务，暂不支持按检验人员筛选；空态不代表个人待检。',
 )
 
 const claimPendingTaskId = shallowRef('')
@@ -449,17 +428,6 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
         </NvField>
         <p class="text-sm text-muted-foreground">{{ scopeHint }}</p>
       </div>
-      <ListScopeMeta
-        :scope="scopeText"
-        :source="sourceTypeHint"
-        :loaded="tasks.length"
-        :total="total"
-        :updated-at="lastUpdatedAt"
-        :empty="tasksHasSuccessfulResponse && !error && tasks.length === 0"
-        :failed="tasksHasFailedResponse || Boolean(error)"
-        failure-explanation="质检待检任务服务未成功返回，请重试。"
-        :empty-explanation="emptyExplanation"
-      />
     </div>
 
     <p

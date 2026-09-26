@@ -1052,7 +1052,6 @@ describe('PDA WMS composables', () => {
 
     expect(result.tasks.value).toEqual([])
     expect(result.total.value).toBe(0)
-    expect(result.lastUpdatedAt.value).toBeNull()
   })
 
   it('normalizes task rows and refreshes the authorized query from page zero', async () => {
@@ -1982,7 +1981,6 @@ describe('PDA WMS composables', () => {
       expect(result.rows.value).toHaveLength(1)
       expect(result.total.value).toBe(7)
       expect(result.hasSuccessfulResponse.value).toBe(true)
-      expect(result.lastUpdatedAt.value).not.toBeNull()
     }
 
     reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
@@ -1993,7 +1991,6 @@ describe('PDA WMS composables', () => {
       expect(result.total.value).toBe(0)
       expect(result.hasSuccessfulResponse.value).toBe(false)
       expect(result.hasFailedResponse.value).toBe(false)
-      expect(result.lastUpdatedAt.value).toBeNull()
     }
   })
 

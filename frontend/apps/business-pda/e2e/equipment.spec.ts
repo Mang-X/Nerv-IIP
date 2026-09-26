@@ -227,7 +227,7 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await expect(page.getByTestId('maintenance-work-order-row')).toHaveCount(0)
   await expect(page.getByText('当前维修人员暂无符合筛选条件的维修工单')).toHaveCount(0)
   await page.getByTestId('retry-list').click()
-  await expect(page.getByTestId('task-list-meta')).toContainText('已加载 20 / 共 27')
+  await expect(page.getByTestId('maintenance-work-order-row')).toHaveCount(20)
   expect(listRequests[0].searchParams.get('scopeKind')).toBe('self')
   expect(listRequests[0].searchParams.get('scopeId')).toBe(principal.principalId)
   expect(listRequests[0].searchParams.get('skip')).toBe('0')
@@ -275,7 +275,6 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await expect
     .poll(() => listRequests.some((url) => url.searchParams.get('skip') === '20'))
     .toBe(true)
-  await expect(page.getByTestId('task-list-meta')).toContainText('已加载 25 / 共 25')
   await expect(page.getByTestId('maintenance-work-order-row')).toHaveCount(25)
   await expect(page.getByText('MWO-2026-0025', { exact: false })).toBeVisible()
   await expect(page.getByText('MWO-OPEN-DISTRACTOR', { exact: false })).toHaveCount(0)
@@ -677,10 +676,7 @@ test('维修工单：缺少设备位置读取权限时不发请求且不声称�
 
     await page.goto('/equipment/work-orders')
 
-    await expect(page.getByText('当前账号暂无法查看维修工单')).toBeVisible()
-    await expect(page.getByTestId('list-empty-explanation')).toContainText(
-      '当前账号暂无法查看，请重新登录或联系管理员',
-    )
+    await expect(page.getByText('当前账号暂无法查看，请重新登录或联系管理员')).toBeVisible()
     await expect(page.getByText('我的维修工单')).toHaveCount(0)
     expect(requests).toEqual([])
   } finally {
@@ -705,10 +701,7 @@ test('维修工单：缺少主体 ID 时列表与详情均不发业务请求', a
 
     await page.goto('/equipment/work-orders')
 
-    await expect(page.getByText('当前账号暂无法查看维修工单')).toBeVisible()
-    await expect(page.getByTestId('list-empty-explanation')).toContainText(
-      '当前账号暂无法查看，请重新登录或联系管理员',
-    )
+    await expect(page.getByText('当前账号暂无法查看，请重新登录或联系管理员')).toBeVisible()
     await expect(page.getByText('我的工单')).toHaveCount(0)
     expect(requests).toEqual([])
 

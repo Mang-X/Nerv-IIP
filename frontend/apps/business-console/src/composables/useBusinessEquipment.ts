@@ -28,11 +28,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { refDebounced } from '@vueuse/core'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
@@ -491,11 +487,6 @@ export function useBusinessEquipmentAlarms() {
     () => `${businessContext.organizationId.trim()}:${businessContext.environmentId.trim()}`,
     alarmsScopeReady,
   )
-  const alarmsLastUpdatedAt = useListFreshness(alarmsResponse, alarmsScopeReady)
-  const {
-    hasSuccessfulResponse: alarmsHasSuccessfulResponse,
-    hasFailedResponse: alarmsHasFailedResponse,
-  } = useListResponseState(alarmsResponse, alarmsScopeReady, () => alarmsQuery.isLoading.value)
 
   async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
     const scope = {
@@ -669,14 +660,6 @@ export function useBusinessEquipmentAlarms() {
     ),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
-    alarmsTotal: computed(() =>
-      alarmsResponse.value?.success ? (alarmsResponse.value.data?.total ?? 0) : 0,
-    ),
-    alarmsOrganizationId: computed(() => businessContext.organizationId),
-    alarmsEnvironmentId: computed(() => businessContext.environmentId),
-    alarmsLastUpdatedAt,
-    alarmsHasSuccessfulResponse,
-    alarmsHasFailedResponse,
     refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
     shelveAlarm,
     unshelveAlarm,
