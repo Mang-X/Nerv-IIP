@@ -3,7 +3,8 @@
  * 目录选择器：`NvEntityPicker` 接业务目录，只能从目录里选、不接受自由文本。
  * `v-model` 回传目录项的人读编码，与过去手填提交的值同口径。
  *
- * - 工作中心 / 工位 / 物料 / 设备 / 车间 / 批次 / 序列号走网关可搜目录（服务端搜索）；
+ * - 工作中心 / 工位 / 物料 / 设备 / 车间 / 库位 / 批次 / 序列号走网关可搜目录（服务端搜索，
+ *   滚到底再取下一页）；
  * - 班次、产线、工厂不在可搜目录里，取基础数据资源列表，由选择器自带的本地过滤搜索；
  * - 传了 `parent`（表单里的层级字段按已选上级收窄）也取资源列表，见 `useMasterDataListPicker`。
  *
@@ -31,6 +32,7 @@ type SearchableType =
   | 'material'
   | 'equipment'
   | 'workshop'
+  | 'location'
   | 'batch'
   | 'serial'
 
@@ -40,6 +42,7 @@ const DIRECTORY_NOUN: Record<SearchableType | ListType, string> = {
   material: '物料',
   equipment: '设备',
   workshop: '车间',
+  location: '库位',
   batch: '批次',
   serial: '序列号',
   shift: '班次',
@@ -80,13 +83,16 @@ const total = computed(() => (source.serverSearch ? source.total.value : undefin
 function updateSearch(value: string) {
   if (source.serverSearch) source.search.value = value
 }
+function loadMore() {
+  if (source.serverSearch) source.loadMore()
+}
 // 服务端搜索的搜索词由这里持有，面板关闭不会清空它；选定后清掉，下次打开从完整候选开始。
 // 本地过滤时面板每次打开重新挂载，搜索词自然重置。
 if (source.serverSearch) {
   watch(model, () => updateSearch(''))
 }
-// 批次 / 序列号目录的名称就是「编码 · 物料」，再印一行编码是重复。
-const showCode = type !== 'batch' && type !== 'serial'
+// 库位目录的名称就是编码，批次 / 序列号目录的名称是「编码 · 物料」，再印一行编码是重复。
+const showCode = type !== 'location' && type !== 'batch' && type !== 'serial'
 
 const auth = useAuthStore()
 const creator = props.creatable ? directoryCreatorFor(type) : undefined
@@ -136,6 +142,7 @@ function isHierarchyType(type: SearchableType): type is 'workshop' | 'work-cente
     @update:search="updateSearch"
     v-bind="$attrs"
     @create="openCreate"
+    @load-more="loadMore"
   />
   <component
     :is="creator.dialog"

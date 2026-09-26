@@ -20,10 +20,6 @@ import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/us
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
-import {
   wmsCountExecutionStatusFilterOptions,
   wmsCountExecutionStatusLabel,
   WMS_STATUS_ANY,
@@ -114,11 +110,8 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.scopeId,
   ],
 })
-// 物料 / 单位 / 工厂走主数据目录；库位后端无读面，从既有台账与作业记录派生。
+// 物料 / 单位 / 工厂走主数据目录；库位走库存可搜目录（服务端搜索）。
 const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
-const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
-  scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
-})
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -634,14 +627,12 @@ function refreshAll() {
             </NvField>
             <NvField>
               <NvFieldLabel for="cnt-location">库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="cnt-location"
                 v-model="createForm.locationCode"
-                :options="locationOptions"
+                directory-type="location"
                 title="选择库位"
                 placeholder="选择库位"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="库位"
               />

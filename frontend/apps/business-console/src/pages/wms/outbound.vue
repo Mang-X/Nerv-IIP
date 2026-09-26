@@ -18,11 +18,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
-import {
   wmsOutboundOrderStatusFilterOptions,
   wmsOutboundOrderStatusLabel,
   WMS_OUTBOUND_SOURCE_TYPE_OPTIONS,
@@ -108,12 +103,8 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.scopeId,
   ],
 })
-// 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
+// 物料 / 单位 / 工厂走主数据目录；库位与批次走库存可搜目录（服务端搜索）。
 const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
-const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(
-  undefined,
-  { scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }) },
-)
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -689,25 +680,21 @@ function refreshAll() {
                 placeholder="需求数量*"
                 :aria-label="`第 ${index + 1} 行需求数量`"
               />
-              <NvEntityPicker
+              <DirectoryPicker
                 v-model="line.pickLocationCode"
                 class="w-36"
-                :options="locationOptions"
+                directory-type="location"
                 title="选择拣货库位"
                 placeholder="拣货库位*"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 :aria-label="`第 ${index + 1} 行拣货库位`"
               />
-              <NvEntityPicker
+              <DirectoryPicker
                 v-model="line.lotNo"
                 class="w-36"
-                :options="lotOptions"
+                directory-type="batch"
                 title="选择批次"
                 placeholder="批次"
-                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 :aria-label="`第 ${index + 1} 行批次`"
               />

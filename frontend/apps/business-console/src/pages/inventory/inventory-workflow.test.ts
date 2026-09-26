@@ -388,25 +388,6 @@ vi.mock('@/composables/useInventorySiteStock', async () => {
   }
 })
 
-// 库位/批次/序列号后端无主数据读面，真实实现从台账与仓储作业记录派生；测试给确定目录。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, ref } = await import('vue')
-  return {
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'A-01', label: 'A-01' },
-        { value: 'B-02', label: 'B-02' },
-      ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: ref(false),
-    }),
-  }
-})
-
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   PageHeader: {
@@ -673,15 +654,15 @@ describe('inventory workflow pages', () => {
       expect(wrapper.text()).toContain('已扫描 24/48 个物料')
     })
 
-    it('库位/批次/序列号是从既有数据派生的选择器，不再让仓管手输', () => {
+    it('库位/批次/序列号走库存可搜目录选择器，不再让仓管手输', () => {
       const wrapper = mountInventoryPage(AvailabilityPage)
 
-      const pickerLabels = wrapper
-        .findAll('[data-entity-picker]')
-        .map((picker) => picker.attributes('aria-label'))
-      expect(pickerLabels).toContain('库位')
-      expect(pickerLabels).toContain('批次')
-      expect(pickerLabels).toContain('序列号')
+      const pickers = wrapper
+        .findAll('[data-directory-picker]')
+        .map((picker) => [picker.attributes('aria-label'), picker.attributes('directory-type')])
+      expect(pickers).toContainEqual(['库位', 'location'])
+      expect(pickers).toContainEqual(['批次', 'batch'])
+      expect(pickers).toContainEqual(['序列号', 'serial'])
       // 这三项过去是自由文本框，改造后不允许再出现同名输入框。
       const inputLabels = wrapper.findAll('input').map((input) => input.attributes('aria-label'))
       expect(inputLabels).not.toContain('库位')

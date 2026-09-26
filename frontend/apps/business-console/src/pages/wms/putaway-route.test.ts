@@ -133,25 +133,6 @@ vi.mock('@/composables/useBusinessWms', async () => {
   }
 })
 
-// 库位目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'STAGE-01', label: 'STAGE-01' },
-        { value: 'RACK-A-01-01', label: 'RACK-A-01-01' },
-      ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: shallowRef(false),
-    }),
-  }
-})
-
 vi.mock('@/composables/usePagedList', async () => {
   const { shallowRef } = await import('vue')
   return {
@@ -273,6 +254,12 @@ function wmsStubs() {
   return {
     BusinessLayout: { template: '<main><slot /></main>' },
     WmsInventoryContextPanel: true,
+    DirectoryPicker: {
+      props: ['modelValue', 'id'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
     NvEntityPicker: {
       props: ['modelValue', 'options', 'id'],
       emits: ['update:modelValue'],

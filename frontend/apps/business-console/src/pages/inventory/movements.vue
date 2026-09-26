@@ -14,12 +14,6 @@ import { useInventoryMovement } from '@/composables/useBusinessInventory'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-  WAREHOUSE_SERIAL_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -62,10 +56,8 @@ const route = useRoute()
 const businessContext = useBusinessContextStore()
 const { movementRows, movementsPending, movementsTotal, postMovement, postMovementPending } =
   useInventoryMovement()
-// 物料 / 工厂走主数据目录；库位/批次/序列号后端无读面，从既有台账与作业记录派生。
+// 物料 / 工厂走主数据目录；库位/批次/序列号走库存可搜目录（服务端搜索）。
 const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
-const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
-  useWarehouseCodeCatalog()
 
 // 受控值：UI 说人话，下发仍是后端码值。
 const QUALITY_OPTIONS = [
@@ -375,14 +367,12 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="movement-location">{{
                 isTransfer ? '出库库位' : '库位'
               }}</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-location"
                 v-model="form.locationCode"
-                :options="locationOptions"
+                directory-type="location"
                 title="选择库位"
                 placeholder="选择库位"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 :aria-label="isTransfer ? '出库库位' : '库位'"
               />
@@ -390,14 +380,12 @@ function isNonEmpty(value: string) {
             <!-- 调拨两腿配平：入库库位必填且不能与出库库位相同，否则整笔拒绝。 -->
             <NvField v-if="isTransfer">
               <NvFieldLabel for="movement-transfer-in-location">入库库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-transfer-in-location"
                 v-model="form.transferInLocationCode"
-                :options="locationOptions"
+                directory-type="location"
                 title="选择入库库位"
                 placeholder="选择入库库位"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="入库库位"
               />
@@ -427,28 +415,24 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-lot">批次</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-lot"
                 v-model="form.lotNo"
-                :options="lotOptions"
+                directory-type="batch"
                 title="选择批次"
                 placeholder="选择批次"
-                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="批次"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-serial">序列号</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-serial"
                 v-model="form.serialNo"
-                :options="serialOptions"
+                directory-type="serial"
                 title="选择序列号"
                 placeholder="选择序列号"
-                :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="序列号"
               />

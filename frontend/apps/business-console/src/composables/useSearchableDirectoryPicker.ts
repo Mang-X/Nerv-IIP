@@ -1,10 +1,11 @@
 import {
-  listBusinessConsoleSearchableDirectoryQueryOptions,
+  listBusinessConsoleSearchableDirectory,
+  listBusinessConsoleSearchableDirectoryQueryKey,
   type BusinessConsoleSearchableDirectoryEnvelope,
   type ListBusinessConsoleSearchableDirectoryData,
 } from '@nerv-iip/api-client'
 import type { EntityPickerOption } from '@nerv-iip/ui'
-import { useQuery } from '@pinia/colada'
+import { useInfiniteQuery } from '@pinia/colada'
 import { refDebounced } from '@vueuse/core'
 import { computed, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -14,7 +15,7 @@ import { useBusinessMasterDataResources } from './useBusinessMasterData'
 export type SearchableDirectoryType =
   ListBusinessConsoleSearchableDirectoryData['path']['directoryType']
 
-/** 目录端点单页上限内取一页；更多的靠搜索收窄，匹配总数如实交给选择器提示。 */
+/** 目录按页取：先列第一页，滚到底再取下一页；匹配总数如实交给选择器提示。 */
 const PAGE_SIZE = 50
 
 export interface SearchableDirectoryPickerOptions {
@@ -41,33 +42,47 @@ export function useSearchableDirectoryPicker(
     300,
   )
 
-  const query = useQuery(() => {
+  const directoryQuery = computed(() => {
     const skuCode = toValue(options.skuCode)?.trim()
     return {
-      ...listBusinessConsoleSearchableDirectoryQueryOptions({
-        path: { directoryType },
-        query: {
-          organizationId: context.organizationId,
-          environmentId: context.environmentId,
-          pageIndex: 1,
-          pageSize: PAGE_SIZE,
-          rankingMode: 'default',
-          ...(keyword.value ? { keyword: keyword.value } : {}),
-          ...(skuCode ? { skuCode } : {}),
-        },
-      }),
-      enabled: hasBusinessContext(context),
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      pageSize: PAGE_SIZE,
+      rankingMode: 'default' as const,
+      ...(keyword.value ? { keyword: keyword.value } : {}),
+      ...(skuCode ? { skuCode } : {}),
     }
   })
 
-  const response = computed(
-    () => query.data.value as BusinessConsoleSearchableDirectoryEnvelope | undefined,
-  )
+  const query = useInfiniteQuery({
+    key: () =>
+      listBusinessConsoleSearchableDirectoryQueryKey({
+        path: { directoryType },
+        query: { ...directoryQuery.value, pageIndex: 1 },
+      }),
+    query: async ({ pageParam, signal }) => {
+      const { data } = await listBusinessConsoleSearchableDirectory({
+        path: { directoryType },
+        query: { ...directoryQuery.value, pageIndex: pageParam },
+        signal,
+        throwOnError: true,
+      })
+      return data as BusinessConsoleSearchableDirectoryEnvelope
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages, lastPageParam) => {
+      const loaded = allPages.reduce((count, page) => count + (page.data?.items?.length ?? 0), 0)
+      return loaded < (lastPage.data?.total ?? 0) ? lastPageParam + 1 : null
+    },
+    enabled: () => hasBusinessContext(context),
+  })
+
+  const pages = computed(() => query.data.value?.pages ?? [])
 
   const results = computed<EntityPickerOption[]>(() => {
     const seen = new Set<string>()
     const rows: EntityPickerOption[] = []
-    for (const item of response.value?.data?.items ?? []) {
+    for (const item of pages.value.flatMap((page) => page.data?.items ?? [])) {
       const value = item.code?.trim()
       // 批次 / 序列号按「物料 + 编码」分组，同一编码可能在不同物料下各出现一次。
       if (!value || seen.has(value)) continue
@@ -97,8 +112,13 @@ export function useSearchableDirectoryPicker(
     serverSearch: true as const,
     search,
     options: pickerOptions,
-    pending: query.isLoading,
-    total: computed(() => response.value?.data?.total ?? 0),
+    // 只有第一页还没回来时算加载中；取下一页时列表照常显示、继续滚动。
+    pending: computed(() => query.isPending.value && query.isLoading.value),
+    total: computed(() => pages.value.at(-1)?.data?.total ?? 0),
+    /** 选择器滚到底部时取下一页；上一页还在路上时不重复发。 */
+    loadMore() {
+      if (query.hasNextPage.value && !query.isLoading.value) void query.loadNextPage()
+    },
     /** 就地新建的项：目录刷新回来之前（或不在第一页时）已选项也显示名称。 */
     remember(option: EntityPickerOption) {
       known.value = new Map(known.value).set(option.value, option)
