@@ -4,9 +4,9 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggreg
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 
 /// <summary>
-/// Maintenance 基础数据 seed（仿 <c>QualitySeedService</c> / <c>MasterDataSeedService</c>）：为全新
-/// 环境补齐**点检保养计划**——PDA 点检页（equipment/inspect）先选保养计划再录测量值，计划目录
-/// 为空会导致无计划可选、点检链路（含拍照/超差）无法端到端走通（L2 真栈走查前置）。
+/// Maintenance 演示 seed：补齐三条**点检保养计划**，供 PDA 点检页（equipment/inspect）先选保养计划再录
+/// 测量值。计划绑定的是《工厂世界观设定集》里的虚构设备，客户台账里不会有，因此只随
+/// <c>LeaderDemo:Seed:Enabled</c> 写入，不进产品基线（#3811）。
 /// 幂等且**只补缺失项**：按 org/env + planCode 已存在（含被租户维护过的）一律跳过，保留租户事实——
 /// 预置计划被操作员修改后重复 seed 不得覆写；与既有 seed 服务一致走 <c>SaveChangesAsync</c>（seed
 /// 只需计划落库供 list 查询读取，不经命令管道、不派发领域事件）。

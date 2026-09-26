@@ -216,7 +216,9 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    var seedEnabled = builder.Configuration.GetValue<bool>("MasterData:Seed:Enabled") || autoMigrate;
+    // 产品基线种子（编码规则/字典/计量单位/班次/日历/部门）：基础功能必需，默认开启、只补缺，
+    // 显式 false 才关闭（#3811）。演示数据在下方 LeaderDemo 开关里。
+    var seedEnabled = builder.Configuration.GetValue("MasterData:Seed:Enabled", true);
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();

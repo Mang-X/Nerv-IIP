@@ -115,6 +115,8 @@ public sealed class ReportingDimensionResourceHttpTests
         {
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "reporting-dimension-http-token");
+            // 产品基线 seed 默认开启，会往这个内存库写班次，混进本用例对单一资源的断言。
+            builder.UseSetting("MasterData:Seed:Enabled", "false");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();
