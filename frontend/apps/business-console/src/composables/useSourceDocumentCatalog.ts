@@ -1,7 +1,7 @@
 /**
  * 来源单据目录：按单据类型分派到各业务域现成的列表端点，把行映射成 `EntityPickerOption`。
  *
- * 背景：条码打印 / 扫码补录、检验记录、仓储出入库单、销售订单、成本候选、不合格品关闭
+ * 背景：条码打印 / 扫码补录、检验记录、销售订单、成本候选、不合格品关闭
  * 这些表单都要填「来源单据」，过去全靠手输单号。来源单据分多种类型，每种类型各有现成的
  * 列表端点，所以这里不补后端聚合端点，而是「先选类型，再按该类型的列表搜单号」。
  *
@@ -10,11 +10,8 @@
  * 没有可搜列表端点的类型（采购收货、销售退货、库存调拨、库存移动等）不在这里，页面退回自由输入。
  */
 import {
-  listBusinessConsoleErpDeliveryOrdersQueryOptions,
   listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
-  listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
-  listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleQualityInspectionRecordsQueryOptions,
@@ -111,23 +108,6 @@ const SPECS = {
     queryOptions: (query) => listBusinessConsoleMesProductionReportsQueryOptions({ query }),
     toOption: (row) => documentOption(row.reportNo, row.reportNo, row.workOrderNo),
   }),
-  'mes-finished-goods-receipt': defineSpec({
-    noun: '完工入库单',
-    searchPlaceholder: '搜索入库申请号 / 工单…',
-    serverSearch: true,
-    queryOptions: (query) =>
-      listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({ query }),
-    toOption: (row) => documentOption(row.requestNo, row.requestNo, row.workOrderNo, row.skuCode),
-  }),
-  // 领料申请：列表的 requestId 就是申请单号（WMS 出库单的源单据号也用它）。
-  'mes-material-issue': defineSpec({
-    noun: '领料申请',
-    searchPlaceholder: '搜索领料单号 / 工单…',
-    serverSearch: true,
-    queryOptions: (query) => listBusinessConsoleMesMaterialIssueRequestsQueryOptions({ query }),
-    toOption: (row) =>
-      documentOption(row.requestId, row.requestId, row.workOrderNo, row.materialCode),
-  }),
   'wms-inbound-order': defineSpec({
     noun: '入库单',
     searchPlaceholder: '搜索入库单号…',
@@ -143,14 +123,6 @@ const SPECS = {
     queryOptions: (query) => listBusinessConsoleWmsSupplierReturnRequestsQueryOptions({ query }),
     toOption: (row) =>
       documentOption(row.supplierReturnNo, row.supplierReturnNo, row.inboundOrderNo, row.skuCode),
-  }),
-  'erp-delivery-order': defineSpec({
-    noun: '发货单',
-    searchPlaceholder: '搜索发货单号…',
-    serverSearch: true,
-    queryOptions: (query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }),
-    toOption: (row) =>
-      documentOption(row.deliveryOrderNo, row.deliveryOrderNo, row.customerCode, row.salesOrderNo),
   }),
   // 已批准且还没转过订单的报价单：转过的再转会被拒（一张报价只能转一张订单）。
   'erp-approved-quotation': defineSpec({
