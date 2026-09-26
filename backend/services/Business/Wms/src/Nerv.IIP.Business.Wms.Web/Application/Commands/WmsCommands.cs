@@ -618,7 +618,7 @@ public sealed class CreatePickingTaskCommandHandler(
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
         // line-level idempotency key lets command retries recover the same reservation.
         var reservation = line.InventoryReservationId is null && inventoryReservationClient is not null
-            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, request.FromLocationCode, request.Quantity, cancellationToken)
+            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, request.TaskNo, request.FromLocationCode, request.Quantity, cancellationToken)
             : null;
         var inventoryReservationId = line.InventoryReservationId ?? reservation?.ReservationId;
         var task = outbound.CreatePickingTask(
@@ -641,11 +641,12 @@ public sealed class CreatePickingTaskCommandHandler(
         IWmsInventoryReservationClient inventoryReservationClient,
         OutboundOrder outbound,
         OutboundOrderLine line,
+        string taskNo,
         string fromLocationCode,
         decimal quantity,
         CancellationToken cancellationToken)
     {
-        var idempotencyKey = WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo);
+        var idempotencyKey = WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo, taskNo);
         if (string.IsNullOrWhiteSpace(line.LotNo))
         {
             var fefo = await inventoryReservationClient.ReserveFefoAsync(
@@ -2396,9 +2397,13 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(
 
 internal static class WmsInventoryReservationIdempotencyKeys
 {
-    public static string ForPickingTask(OutboundOrder outbound, string lineNo)
+    /// <summary>
+    /// 拣货预留键跟随拣货任务（ADR 0031 部分修订 ADR 0019）：同一任务的重试恢复同一份预留；
+    /// 任务作废后以新任务号重建，是一次新的业务请求，拿到新预留，而不是重放已失效的旧预留。
+    /// </summary>
+    public static string ForPickingTask(OutboundOrder outbound, string lineNo, string taskNo)
     {
-        var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}";
+        var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}:{WmsText.Required(taskNo, nameof(taskNo))}";
         return $"wms-pick-res:{StableHash(raw)}";
     }
 

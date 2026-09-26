@@ -147,6 +147,53 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         Assert.Equal("expired", reservation.Status);
     }
 
+    /// <summary>
+    /// ADR 0031 / #3836：拣货预留跟随拣货任务。原任务的预留过期、任务被取消后，以新任务号重建拣货任务，
+    /// 必须拿到一份新的 open 预留，而不是把已过期的旧预留当幂等结果重放回来。
+    /// 反向读数：幂等键不含任务号时，重建拿回的仍是那份已过期的预留。
+    /// </summary>
+    [Fact]
+    public async Task Recreated_picking_task_after_cancellation_gets_a_new_reservation()
+    {
+        await using var wmsDb = CreateWmsContext();
+        await using var inventoryDb = CreateInventoryContext();
+        await SeedInventoryAsync(inventoryDb, "SKU-FG-1000", "LOC-A-01", "LOT-001", 10m, "seed-recreate-pick-001");
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RPC-RECREATE-001",
+            "sales-delivery",
+            "SO-RPC-RECREATE-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        wmsDb.OutboundOrders.Add(outbound);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+        var inventoryClient = new TimeoutAfterInventoryCommitClient(inventoryDb);
+        var firstTaskId = await new CreatePickingTaskCommandHandler(wmsDb, inventoryClient).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-RPC-RECREATE-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+        var firstReservation = Assert.Single(inventoryDb.StockReservations);
+
+        // 原预留超时过期；WMS 的过期消费者随即清掉该行预留并取消未完成的拣货任务。
+        inventoryDb.StockLedgers.Single().ExpireReservation(firstReservation, firstReservation.ExpiresAtUtc.AddMinutes(1));
+        await inventoryDb.SaveChangesAsync(CancellationToken.None);
+        outbound.MarkInventoryReservationReleased(firstReservation.Id.ToString());
+        wmsDb.WarehouseTasks.Single(x => x.Id == firstTaskId).Cancel();
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePickingTaskCommandHandler(wmsDb, inventoryClient).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-RPC-RECREATE-002", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+
+        var newReservation = Assert.Single(inventoryDb.StockReservations, x => x.Id != firstReservation.Id);
+        Assert.Equal("open", newReservation.Status);
+        Assert.Equal(4m, newReservation.OpenQuantity);
+        Assert.Equal(newReservation.Id.ToString(), outbound.Lines.Single().InventoryReservationId);
+        Assert.Equal(4m, inventoryDb.StockLedgers.Single().ReservedQuantity);
+    }
+
     [Fact]
     public async Task Count_execution_retry_after_inventory_freeze_timeout_recovers_existing_count_task()
     {
