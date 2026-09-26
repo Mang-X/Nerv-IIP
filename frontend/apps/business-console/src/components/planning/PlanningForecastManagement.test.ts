@@ -61,6 +61,16 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   }),
 }))
 
+// 物料选择器的取数与就地新增由 DirectoryPicker 自己的测试覆盖；这里点一下选中 FG-1000。
+vi.mock('@/components/business/DirectoryPicker.vue', () => ({
+  default: {
+    props: { modelValue: String, directoryType: String, creatable: Boolean, invalid: Boolean },
+    emits: ['update:modelValue'],
+    template:
+      '<button type="button" :data-directory-type="directoryType" :data-creatable="creatable" :data-invalid="invalid || undefined" @click="$emit(\'update:modelValue\', \'FG-1000\')">{{ modelValue }}</button>',
+  },
+}))
+
 vi.mock('@/utils/notify', () => ({
   inlineErrorMessage: (error: unknown) => String(error ?? ''),
   serverErrorMessage: (error: unknown) =>
@@ -219,12 +229,11 @@ describe('PlanningForecastManagement', () => {
     expect(wrapper.get('#forecast-site-error').text()).toContain('请选择工厂')
     expect(wrapper.get('#forecast-uom-error').text()).toContain('请选择单位')
     expect(wrapper.get('#forecast-quantity-error').text()).toContain('预测数量必须大于 0')
-    expect(wrapper.get('[aria-label="预测 SKU"]').classes()).toContain('border-destructive')
     expect(wrapper.get('[aria-label="预测工厂"]').classes()).toContain('border-destructive')
     expect(wrapper.get('[aria-label="预测单位"]').classes()).toContain('border-destructive')
     expect(wrapper.get('#forecast-start').classes()).toContain('border-destructive')
     expect(wrapper.get('#forecast-end').classes()).toContain('border-destructive')
-    expect(wrapper.get('[aria-label="预测 SKU"]').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('[aria-label="预测 SKU"]').attributes('data-invalid')).toBe('true')
     expect(wrapper.get('[aria-label="预测 SKU"]').attributes('aria-describedby')).toBe(
       'forecast-sku-error',
     )
@@ -263,8 +272,8 @@ describe('PlanningForecastManagement', () => {
     expect(wrapper.find('#forecast-reference').exists()).toBe(false)
     expect(wrapper.text()).toContain('保存后自动生成')
     const sku = wrapper.get('[aria-label="预测 SKU"]')
-    expect(sku.attributes('data-search-placeholder')).toBe('搜索 SKU 编码或名称')
-    expect(sku.text()).toBe('减振器总成 · FG-1000')
+    expect(sku.attributes('data-directory-type')).toBe('material')
+    expect(sku.attributes('data-creatable')).toBe('true')
     expect(wrapper.get('[aria-label="预测工厂"]').text()).toBe('上海工厂 · SITE-01')
     expect(wrapper.get('[aria-label="预测单位"]').text()).toBe('件 · pcs')
     expect(wrapper.find('#forecast-start').exists()).toBe(true)

@@ -15,6 +15,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useSkuNames } from '@/composables/useSkuNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import {
   Empty,
   EmptyDescription,
@@ -75,13 +76,13 @@ const createError = shallowRef('')
 
 // 工单 / 物料 / 单位都从既有读面选，不手输编码。
 const { workOrderOptions, workOrdersPending } = useMaintenanceDocumentCatalog()
-const { skuOptions, skusPending, baseUomBySku } = useEquipmentSkuCatalog()
+const { baseUomBySku } = useEquipmentSkuCatalog()
 const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 // 备件领用单位默认跟随物料的基本单位，避免手选错单位对不上库存台账。
+// 除了换物料，也跟着「所选物料的基本单位」变：就地新建的物料要等物料目录刷新回来才查得到。
 watch(
-  () => createForm.skuCode,
-  (skuCode) => {
-    const baseUom = baseUomBySku.value.get(skuCode.trim())
+  [() => createForm.skuCode, () => baseUomBySku.value.get(createForm.skuCode.trim())],
+  ([, baseUom]) => {
     if (baseUom) createForm.uomCode = baseUom
   },
 )
@@ -304,15 +305,12 @@ async function submitCreate() {
             </NvField>
             <NvField>
               <NvFieldLabel for="sp-sku">备件物料</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="sp-sku"
                 v-model="createForm.skuCode"
-                :options="skuOptions"
-                title="选择备件物料"
+                directory-type="material"
+                creatable
                 placeholder="选择备件物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
                 aria-label="备件物料"
               />
             </NvField>

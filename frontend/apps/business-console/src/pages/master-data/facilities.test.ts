@@ -177,7 +177,7 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = {
   BusinessLayout: { template: '<main><slot /></main>' },
-  // 工位新建弹窗里的工作中心选择器（取数由 DirectoryPicker 自己的用例覆盖）。
+  // 表单里的层级选择器（取数与就地新增由 DirectoryPicker 自己的用例覆盖）。
   DirectoryPicker: {
     props: ['modelValue', 'id'],
     emits: ['update:modelValue'],
@@ -747,11 +747,8 @@ describe('master-data facilities tree page', () => {
       .trigger('click')
     await flushPromises()
 
-    // 原生 select 桩只能选已有选项：改挂到同工厂的另一条产线（直挂工厂、无车间）。
-    await wrapper
-      .findAll('select')
-      .find((select) => select.html().includes('后桥线'))!
-      .setValue('LINE-B')
+    // 改挂到同工厂的另一条产线（直挂工厂、无车间）。
+    await wrapper.get('#edit-station-line').setValue('LINE-B')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(actionStub.update).toHaveBeenLastCalledWith('ST-A1', {

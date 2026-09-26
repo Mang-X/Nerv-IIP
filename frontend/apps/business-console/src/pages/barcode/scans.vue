@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeScanRecordItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useBarcodeScans } from '@/composables/useBusinessBarcode'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
@@ -84,7 +85,7 @@ const form = reactive({
   rejectionReason: '',
 })
 
-// 设备/终端从设备资产主数据里选（补录与筛选共用一份目录），不再手输编码。
+// 筛选区的设备/终端从设备资产主数据里选，不再手输编码（补录表单用可新增的设备选择器）。
 const { resources: deviceResources, resourcesPending: devicesPending } =
   useBusinessMasterDataResources('device-asset')
 const deviceCatalogOptions = computed(() =>
@@ -96,15 +97,6 @@ const deviceCatalogOptions = computed(() =>
       hint: row.code ?? undefined,
     })),
 )
-function deviceOptionsWith(current: string) {
-  const options = deviceCatalogOptions.value
-  const trimmed = current.trim()
-  if (trimmed && !options.some((option) => option.value === trimmed)) {
-    return [{ value: trimmed, label: trimmed, hint: undefined }, ...options]
-  }
-  return options
-}
-const formDeviceOptions = computed(() => deviceOptionsWith(form.deviceCode))
 // 筛选值是 `string | undefined`（留空=全部），选择器要 `string`，做一层空串代理。
 const deviceFilterValue = computed({
   get: () => filters.deviceCode ?? '',
@@ -112,7 +104,14 @@ const deviceFilterValue = computed({
     filters.deviceCode = value.trim() ? value : undefined
   },
 })
-const filterDeviceOptions = computed(() => deviceOptionsWith(deviceFilterValue.value))
+const filterDeviceOptions = computed(() => {
+  const options = deviceCatalogOptions.value
+  const current = deviceFilterValue.value.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
 
 const columns: NvDataTableColumn<BusinessConsoleBarcodeScanRecordItem>[] = [
   {
@@ -298,15 +297,12 @@ function firstQuery(value: unknown) {
                   <NvFieldLabel for="barcode-scan-device"
                     >设备/终端 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvEntityPicker
+                  <DirectoryPicker
                     id="barcode-scan-device"
                     v-model="form.deviceCode"
-                    :options="formDeviceOptions"
-                    title="选择设备/终端"
+                    directory-type="equipment"
+                    creatable
                     placeholder="选择设备/终端"
-                    source-text="数据来自基础数据设备台账"
-                    empty-text="暂无设备台账，请先在基础数据维护设备"
-                    :loading="devicesPending"
                     aria-label="设备/终端"
                     clearable
                   />

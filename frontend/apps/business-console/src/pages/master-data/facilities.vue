@@ -554,8 +554,8 @@ const canEdit = computed(() => {
 const editPending = computed(() => ACTIONS_BY_TYPE[editType.value].updatePending.value)
 const editTitle = computed(() => `编辑${NODE_LABEL[editType.value]} · ${editCode.value}`)
 
-// 改挂上级的父级候选（取页内已加载列表）。层级类型固定（工厂→车间→产线→工作中心），
-// 跨层挂载结构上不可能成环；这里只把候选限定为合法上级，并随上层选择联动过滤。
+// 改挂上级：车间 / 产线选择器按所选工厂收窄候选（`parent`）。层级类型固定（工厂→车间→产线→
+// 工作中心），跨层挂载结构上不可能成环。这两份同口径的页内列表用来在改挂工厂后判断原归属是否还合法。
 const editWorkshopOptions = computed(() =>
   workshops.workshops.value.filter(
     (w) => !editForm.siteCode || (w.siteCode ?? '') === editForm.siteCode,
@@ -564,15 +564,8 @@ const editWorkshopOptions = computed(() =>
 const editLineOptions = computed(() =>
   lines.items.value.filter((l) => !editForm.plantCode || (l.siteCode ?? '') === editForm.plantCode),
 )
-// reka 的 SelectItem 不允许空串 value。“无车间（直挂工厂）”用哨兵值表示，仅作用于下拉绑定；
-// 提交仍按 空串→null 处理（见保存逻辑）。
+// reka 的 SelectItem 不允许空串 value，编码缺失的工厂项用哨兵值占位。
 const NONE_OPTION = '__none__'
-const editWorkshopValue = computed({
-  get: () => editForm.workshopCode || NONE_OPTION,
-  set: (v) => {
-    editForm.workshopCode = v === NONE_OPTION ? '' : v
-  },
-})
 // 改挂工厂后，原车间 / 产线可能不再归属该工厂——置空让用户重选，避免归属错配。
 const editCascadeReady = shallowRef(false)
 watch(
@@ -1060,21 +1053,16 @@ function childLabelOf(type: string): string | undefined {
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="edit-line-workshop">所属车间</NvFieldLabel>
-                  <NvSelect v-model="editWorkshopValue">
-                    <NvSelectTrigger id="edit-line-workshop"
-                      ><NvSelectValue placeholder="无（直挂工厂）"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem :value="NONE_OPTION">无（直挂工厂）</NvSelectItem>
-                      <NvSelectItem
-                        v-for="w in editWorkshopOptions"
-                        :key="w.code"
-                        :value="w.code ?? NONE_OPTION"
-                      >
-                        {{ w.displayName ?? w.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="edit-line-workshop"
+                    v-model="editForm.workshopCode"
+                    directory-type="workshop"
+                    creatable
+                    :parent="{ siteCode: editForm.siteCode }"
+                    :create-context="{ siteCode: editForm.siteCode }"
+                    placeholder="无（直挂工厂）"
+                    clearable
+                  />
                 </NvField>
               </template>
               <template v-if="editType === 'station'">
@@ -1082,20 +1070,13 @@ function childLabelOf(type: string): string | undefined {
                   <NvFieldLabel for="edit-station-line"
                     >所属产线 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="editForm.lineCode">
-                    <NvSelectTrigger id="edit-station-line"
-                      ><NvSelectValue placeholder="请选择产线"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="l in lines.items.value"
-                        :key="l.code"
-                        :value="l.code ?? NONE_OPTION"
-                      >
-                        {{ l.displayName ?? l.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="edit-station-line"
+                    v-model="editForm.lineCode"
+                    directory-type="production-line"
+                    creatable
+                    placeholder="请选择产线"
+                  />
                 </NvField>
                 <NvField>
                   <NvFieldLabel for="edit-station-wc">关联工作中心</NvFieldLabel>
@@ -1133,20 +1114,15 @@ function childLabelOf(type: string): string | undefined {
                   <NvFieldLabel for="edit-wc-line"
                     >所属产线 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="editForm.lineCode">
-                    <NvSelectTrigger id="edit-wc-line"
-                      ><NvSelectValue placeholder="请选择产线"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="l in editLineOptions"
-                        :key="l.code"
-                        :value="l.code ?? NONE_OPTION"
-                      >
-                        {{ l.displayName ?? l.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="edit-wc-line"
+                    v-model="editForm.lineCode"
+                    directory-type="production-line"
+                    creatable
+                    :parent="{ siteCode: editForm.plantCode }"
+                    :create-context="{ siteCode: editForm.plantCode }"
+                    placeholder="请选择产线"
+                  />
                 </NvField>
               </template>
             </NvFieldGroup>

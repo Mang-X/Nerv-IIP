@@ -26,6 +26,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -36,7 +37,6 @@ import {
 } from '@/utils/notify'
 import {
   NvButton,
-  NvCombobox,
   NvDataTable,
   NvDropdownMenuItem,
   NvEntityPicker,
@@ -109,14 +109,28 @@ const router = useRouter()
 
 // 技师目录（人员选择器数据源，读自 /master-data/workers）。
 const { workers, workersPending } = useBusinessWorkers()
-// 设备台账（设备编号联想建议 + 列表里把编号解析成设备名，读自 master-data device-asset 资源）。
+// 设备台账（列表里把编号解析成设备名，读自 master-data device-asset 资源）。
 const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
 // 完工登记的换件行：物料与单位从主数据选，单位默认跟随物料基本单位。
-const { skuOptions, skusPending, baseUomBySku } = useEquipmentSkuCatalog()
+const { baseUomBySku } = useEquipmentSkuCatalog()
 const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 function applySpareRowSku(row: { skuCode: string; uomCode: string }) {
-  const baseUom = baseUomBySku.value.get(row.skuCode.trim())
-  if (baseUom) row.uomCode = baseUom
+  const code = row.skuCode.trim()
+  const baseUom = baseUomBySku.value.get(code)
+  if (baseUom) {
+    row.uomCode = baseUom
+    return
+  }
+  if (!code) return
+  // 就地新建的物料要等物料列表刷新回来才查得到基本单位：等到查得到再带出，期间该行换了物料就作废。
+  const stop = watch(
+    () => baseUomBySku.value.get(code),
+    (next) => {
+      if (!next) return
+      stop()
+      if (row.skuCode.trim() === code) row.uomCode = next
+    },
+  )
 }
 const deviceNameByCode = computed(() => {
   const map = new Map<string, string>()
@@ -168,12 +182,6 @@ const reasonOptions = [
   { label: '部件磨损', value: 'worn-part' },
   { label: '突发故障', value: 'breakdown' },
 ]
-// 设备编号联想建议：设备台账的编号 + 名称（可自由录入未登记设备）。
-const deviceSuggestions = computed(() =>
-  deviceResources.value
-    .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
-    .filter((s) => s.value.length > 0),
-)
 // 指派技师 / 实际技师均走 master-data 复用件 WorkerSelect（服务端检索工人目录，绑 userId）。
 // 建单写 assignedTechnicianUserId、完工写 actualTechnicianUserId（#897 已补契约）。
 // 可靠性汇总按技师聚合。
@@ -751,13 +759,12 @@ watch(
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField v-if="!createCarried">
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
-              <NvCombobox
+              <DirectoryPicker
                 id="mwo-device"
                 v-model="createDeviceModel"
-                :suggestions="deviceSuggestions"
-                placeholder="搜索设备台账"
+                directory-type="equipment"
+                creatable
               />
-              <NvFieldDescription>也可直接输入设备编号，如 DEV-SMT-01。</NvFieldDescription>
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-priority">优先级</NvFieldLabel>
@@ -962,15 +969,12 @@ watch(
             >
               <NvField>
                 <NvFieldLabel :for="`spare-sku-${row.id}`">物料</NvFieldLabel>
-                <NvEntityPicker
+                <DirectoryPicker
                   :id="`spare-sku-${row.id}`"
                   :model-value="row.skuCode"
-                  :options="skuOptions"
-                  title="选择备件物料"
+                  directory-type="material"
+                  creatable
                   placeholder="选择备件物料"
-                  source-text="数据来自基础数据物料主数据"
-                  empty-text="暂无物料主数据，请先在基础数据维护物料"
-                  :loading="skusPending"
                   aria-label="备件物料"
                   @update:model-value="
                     (value: string) => {

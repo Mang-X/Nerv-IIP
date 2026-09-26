@@ -146,6 +146,13 @@ const stubs = {
     template:
       '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
+  // 表单里的设备选择器（取数与就地新增由 DirectoryPicker 自己的测试覆盖）同样替成输入位。
+  DirectoryPicker: {
+    props: ['modelValue', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   RowActions: { template: '<div><slot /></div>' },
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
   NvDropdownMenuItem: {

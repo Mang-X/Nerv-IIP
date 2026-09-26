@@ -34,6 +34,10 @@ vi.mock('@/components/planning/PlanningRunSuggestionChart.vue', () => ({
 vi.mock('@/components/planning/PlanningForecastManagement.vue', () => ({
   default: { template: '<div data-testid="forecast-management" />' },
 }))
+// 物料选择器的取数与就地新增由 DirectoryPicker 自己的测试覆盖。
+vi.mock('@/components/business/DirectoryPicker.vue', () => ({
+  default: { props: ['modelValue'], template: '<input readonly :value="modelValue" />' },
+}))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
   default: {
     props: ['orderReference', 'mode', 'urgency'],

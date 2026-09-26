@@ -43,11 +43,12 @@ const stubs = {
     template:
       '<div data-slot="nv-input" :data-invalid="invalid || undefined"><input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" /></div>',
   },
-  NvEntityPicker: {
-    props: ['id', 'invalid', 'modelValue', 'options'],
+  // 物料 / 工作中心选择器的取数与就地新增由 DirectoryPicker 自己的测试覆盖，这里换成原生 <select>。
+  DirectoryPicker: {
+    props: ['id', 'invalid', 'modelValue', 'directoryType'],
     emits: ['update:modelValue'],
     template:
-      '<div data-slot="nv-entity-picker" :data-invalid="invalid || undefined"><select :id="id" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>',
+      '<div data-slot="nv-entity-picker" :data-invalid="invalid || undefined"><select :id="id" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="SKU-FA-001">精密泵体</option><option value="WC-ASSEMBLY-01">总装一线</option></select></div>',
   },
   NvButton: {
     props: ['disabled', 'type'],
@@ -71,10 +72,6 @@ function mountSheet() {
       open: true,
       organizationId: 'org-1',
       environmentId: 'env-1',
-      skuOptions: [{ value: 'SKU-FA-001', label: '精密泵体' }],
-      skusPending: false,
-      workCenterOptions: [{ value: 'WC-ASSEMBLY-01', label: '总装一线' }],
-      workCentersPending: false,
     },
     global: { stubs },
   })
