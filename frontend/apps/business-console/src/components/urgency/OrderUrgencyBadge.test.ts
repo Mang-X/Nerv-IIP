@@ -142,7 +142,7 @@ describe('OrderUrgencyBadge display modes', () => {
     ['dynamicUrgency', '高风险'],
     ['executionRisk', '关注'],
     ['criticalRatio', 'CR 0.8'],
-    ['slack', 'Slack -2h'],
+    ['slack', '松弛 -2h'],
     ['expectedDelay', '延误 5h'],
   ]
 
@@ -327,7 +327,7 @@ describe('OrderUrgencyBadge priority editing', () => {
     expect(wrapper.find('[data-testid="priority-editor"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('仅排产管理权限可调整人工优先级')
     // Read-only users still inspect the urgency explanation.
-    expect(wrapper.text()).toContain('CR / Slack')
+    expect(wrapper.text()).toContain('CR / 松弛时间')
     expect(wrapper.text()).toContain('执行风险')
   })
 })

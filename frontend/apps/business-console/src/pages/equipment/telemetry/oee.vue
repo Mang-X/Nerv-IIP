@@ -257,9 +257,7 @@ function refreshReport() {
     <section class="grid gap-3 rounded-lg border bg-card p-4" aria-label="范围筛选">
       <div>
         <h2 class="text-sm font-semibold text-foreground">范围筛选</h2>
-        <p class="text-sm text-muted-foreground">
-          留空表示当前授权范围内全部；筛选值只交给服务端裁决。
-        </p>
+        <p class="text-sm text-muted-foreground">留空表示全部。</p>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         <NvField>
@@ -328,9 +326,6 @@ function refreshReport() {
           业务日按历史站点时区与日界线聚合；趋势独立读取完整窗口，不随下方核查表翻页改变。
         </p>
         <p class="text-sm text-muted-foreground">横轴使用业务日“月/日”短标签。</p>
-        <p v-if="filters.deviceAssetId" class="text-sm text-muted-foreground">
-          当前设备范围：{{ filters.deviceAssetId }}；可在“设备”筛选框清除。
-        </p>
       </div>
       <p v-if="trendErrorMessage" class="text-sm text-destructive" role="alert">
         {{ trendErrorMessage }}
@@ -396,21 +391,6 @@ function refreshReport() {
                       >，{{ segment.omittedCount }} 个缺失点</span
                     >。
                   </p>
-                  <p class="text-xs text-muted-foreground">
-                    首桶 UTC：{{ segment.firstWindowLabel }}
-                  </p>
-                  <p class="text-xs text-muted-foreground">
-                    末桶 UTC：{{ segment.lastWindowLabel }}
-                  </p>
-                  <details class="text-xs text-muted-foreground">
-                    <summary class="cursor-pointer">查看逐桶 UTC 窗口</summary>
-                    <ul class="mt-2 grid gap-1 pl-4">
-                      <li v-for="bucket in segment.buckets" :key="bucket.key">
-                        {{ bucket.businessDateLabel }}：{{ bucket.windowLabel
-                        }}<span v-if="!bucket.hasCompleteRates">（率值缺失）</span>
-                      </li>
-                    </ul>
-                  </details>
                 </div>
                 <div
                   v-if="segment.runs.length === 0"
@@ -441,14 +421,9 @@ function refreshReport() {
                       class="grid gap-2 rounded-lg border bg-card p-3"
                       data-oee-discrete-point
                     >
-                      <div>
-                        <h5 class="text-sm font-medium text-foreground">
-                          离散桶 · {{ run.points[0]?.businessDateLabel }}
-                        </h5>
-                        <p class="text-xs text-muted-foreground">
-                          UTC：{{ run.points[0]?.windowLabel }}
-                        </p>
-                      </div>
+                      <h5 class="text-sm font-medium text-foreground">
+                        离散桶 · {{ run.points[0]?.businessDateLabel }}
+                      </h5>
                       <dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                         <div>
                           <dt class="text-muted-foreground">OEE</dt>
@@ -480,9 +455,7 @@ function refreshReport() {
     <section class="grid gap-3">
       <div>
         <h2 class="text-sm font-semibold text-foreground">{{ dimensionLabel }}核查表</h2>
-        <p class="text-sm text-muted-foreground">
-          OEE、可用率、性能率、质量率均直接来自聚合契约；“—”表示事实缺失，不代表 0% 或 100%。
-        </p>
+        <p class="text-sm text-muted-foreground">“—”表示没有数据，不代表 0% 或 100%。</p>
       </div>
       <NvDataTable
         v-model:page="page"
@@ -516,10 +489,5 @@ function refreshReport() {
         <template #cell-qualityRate="{ row }">{{ rateCell(row.qualityRate) }}</template>
       </NvDataTable>
     </section>
-
-    <p class="text-xs text-muted-foreground">
-      查询窗口以 UTC 传输；业务日与班次按历史事实记录的站点时区、日界线和班次边界聚合。当前返回
-      {{ reportPresentation.tablePageCount }} 个桶。
-    </p>
   </BusinessLayout>
 </template>

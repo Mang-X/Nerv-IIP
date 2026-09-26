@@ -165,7 +165,7 @@ export interface ErpReadState {
   awaitingScopeMessage: string
 }
 
-const UNSCOPED_MESSAGE = '尚未选择组织与环境，还没有发起查询——请先在顶部选择业务范围。'
+const UNSCOPED_MESSAGE = '尚未确定当前组织，还没有查询。'
 
 export function erpReadState(input: ErpReadStateInput): ErpReadState {
   const { noun, unit, ready, pending, error, total, filtered = false, emptyHint } = input

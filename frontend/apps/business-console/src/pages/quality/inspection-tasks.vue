@@ -135,12 +135,9 @@ const emptyMessage = computed(() =>
     ? `${locatorMessage.value.replace('正在定位', '未找到')}。请确认来源单据已生成待检任务，或清除定位条件后查看全部任务。`
     : '当前没有待检任务。免检 SKU 不会生成任务；若刚完成收货或报工，请刷新后再查看。',
 )
+// 任务总数已在页头；这里只提醒来源筛选的真实限制。
 const scopeHint = computed(() =>
-  locatorMessage.value
-    ? `共定位到 ${total.value} 个待检任务。`
-    : filters.sourceType === 'all'
-      ? `服务总数 ${total.value} 个待检任务。`
-      : `本页匹配 ${tasks.value.length} 个 / 服务总数 ${total.value} 个；后续页面可能还有匹配任务。`,
+  filters.sourceType === 'all' ? '' : '来源筛选只在当前页内生效，其它页可能还有匹配的任务。',
 )
 
 const claimPendingTaskId = shallowRef('')
@@ -426,7 +423,7 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
             aria-label="按 SKU 查找"
           />
         </NvField>
-        <p class="text-sm text-muted-foreground">{{ scopeHint }}</p>
+        <p v-if="scopeHint" class="text-sm text-muted-foreground">{{ scopeHint }}</p>
       </div>
     </div>
 

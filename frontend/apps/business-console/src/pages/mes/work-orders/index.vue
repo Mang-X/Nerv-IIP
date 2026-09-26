@@ -406,11 +406,7 @@ async function submitReleaseWorkOrder() {
       )
     }
   } catch (error) {
-    notifyOperationFailure(
-      '工单下达失败',
-      error,
-      '工单下达失败，请根据服务端原因检查就绪条件后重试。',
-    )
+    notifyOperationFailure('工单下达失败', error, '工单下达失败，请检查就绪条件后重试。')
   }
 }
 
@@ -928,7 +924,7 @@ function isNonEmpty(value: string) {
         <NvDialogHeader>
           <NvDialogTitle>确认下达工单</NvDialogTitle>
           <NvDialogDescription>
-            下达后，服务端会再次校验物料、设备、质量与工序就绪条件；未通过时不会视为成功。
+            下达时系统会再次校验物料、设备、质量与工序就绪条件，未通过则不会下达。
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitReleaseWorkOrder">
@@ -971,7 +967,7 @@ function isNonEmpty(value: string) {
               :disabled="releaseWorkOrderPending"
               aria-label="确认已核对工单下达警告"
             />
-            <span>我已核对当前工单、生产版本与工序信息，并确认继续执行服务端就绪检查。</span>
+            <span>我已核对当前工单、生产版本与工序信息，确认下达。</span>
           </label>
           <NvDialogFooter>
             <NvButton

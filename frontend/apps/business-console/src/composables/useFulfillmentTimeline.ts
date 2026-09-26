@@ -115,14 +115,12 @@ export interface FulfillmentNode {
   detailStatusLabel?: string
   /** established：最近更新时间（ISO）。 */
   updatedAt?: string
-  /** established：使用的关联键说明，供演示时核对来源。 */
-  linkLabel?: string
+  /** established：补充说明（如合批工单同时承接的其它订单）。 */
+  note?: string
   /** established：下钻到真实页面。 */
   drill?: RouteLocationRaw
   /** pending / unlinked：规则说明（该节点由什么产生 / 为何尚无稳定关联）。 */
   ruleNote?: string
-  /** 数据源与新鲜度标注（失败不可伪装为空态）。 */
-  source?: string
   /** failed：失败子类，用于区分 409 / 超时 / 其它。 */
   failureKind?: FulfillmentFailureKind
 }
@@ -351,18 +349,17 @@ export function describeMrpSuggestion(record: MrpSuggestionRecord): string {
 }
 
 /**
- * 工单关联键说明。合批工单的首条需求引用可能是别的订单号——这时明说「与…等订单合批」，
+ * 合批说明。合批工单的首条需求引用可能是别的订单号——这时明说「同时承接…等订单」，
  * 不让人误以为这张工单只为本单而开。
  */
-export function describeWorkOrderLink(
+export function describeMergedWorkOrder(
   record: MesWorkOrderRecord,
   salesOrderNo: string | undefined,
-): string {
-  const base = `demandSourceReference = ${salesOrderNo ?? '-'}（MRP 建议 → 工单 ${record.workOrderNo}）`
+): string | undefined {
   const primaryDemand = record.planRow?.sourceDemandReference?.trim()
   return primaryDemand && salesOrderNo && primaryDemand !== salesOrderNo
-    ? `${base}；该工单为合批工单，同时承接 ${primaryDemand} 等订单`
-    : base
+    ? `该工单为合批工单，同时承接 ${primaryDemand} 等订单`
+    : undefined
 }
 
 /** 发货单关联匹配：DeliveryOrder.salesOrderNo === salesOrderNo。 */
@@ -388,12 +385,11 @@ interface RecordNodeInput<T> {
     detailStatus?: string
     detailStatusLabel?: string
     updatedAt?: string
-    linkLabel?: string
+    note?: string
     drill?: RouteLocationRaw
   }
   /** pending（尚未产生 / 等待上游）时的规则说明。 */
   pendingNote: string
-  source: string
 }
 
 /** 已接入节点的状态机核心：把一次查询快照解析为节点视图。 */
@@ -402,7 +398,6 @@ export function resolveRecordNode<T>(input: RecordNodeInput<T>): FulfillmentNode
     key: input.key,
     title: input.title,
     status: 'pending',
-    source: input.source,
   }
   if (input.error !== undefined && input.error !== null) {
     const classified = classifyFulfillmentFailure(input.error)
@@ -431,27 +426,27 @@ interface UnlinkedNodeSpec {
 const UNLINKED_NODES: Readonly<Partial<Record<FulfillmentNodeKey, UnlinkedNodeSpec>>> = {
   'production-report': {
     title: '生产报工',
-    ruleNote: '生产报工与产出批次以工单为键，可从上方工单继续下钻；本时间线尚未直接汇总。',
+    ruleNote: '生产报工与产出批次按工单记录，可从上方工单继续查看；本时间线尚未直接汇总。',
   },
   'quality-result': {
-    title: '质量结果 / NCR / hold',
-    ruleNote: '质量检验任务的来源单据指向工单，可从上方工单继续下钻；本时间线尚未直接汇总。',
+    title: '质量结果 / NCR / 冻结',
+    ruleNote: '质量检验任务按工单生成，可从上方工单继续查看；本时间线尚未直接汇总。',
   },
   'finished-goods-receipt': {
     title: '完工入库',
-    ruleNote: '完工入库请求以工单号为键，可从上方工单继续下钻；本时间线尚未直接汇总。',
+    ruleNote: '完工入库按工单办理，可从上方工单继续查看；本时间线尚未直接汇总。',
   },
   'finished-goods-inventory': {
     title: '成品批次与库存',
-    ruleNote: '成品库存联动以完工入库单号为键，需先经完工入库才能回溯到本单。',
+    ruleNote: '成品库存由完工入库带入，需先完成完工入库才能回溯到本单。',
   },
   'wms-outbound': {
     title: 'WMS 出库',
-    ruleNote: '出库单目前只记录出库单号与状态，没有回指发货单/销售订单的字段，暂不直接关联。',
+    ruleNote: '出库单目前无法对应到发货单或销售订单，暂不直接关联。',
   },
   voucher: {
     title: '凭证',
-    ruleNote: '会计凭证按科目借贷过账，不带单据级来源，因此无法稳定回溯到某一张销售订单。',
+    ruleNote: '会计凭证按科目汇总过账，无法对应到某一张销售订单。',
   },
 }
 
@@ -473,8 +468,6 @@ function unlinkedNode(key: FulfillmentNodeKey): FulfillmentNode {
     title: spec?.title ?? key,
     status: 'unlinked',
     ruleNote: spec?.ruleNote,
-    // 面向演示观众的说法：不要把「契约/关联键」这类开发者词汇摆到抽屉里（#1418 owner 亲验）。
-    source: '本时间线暂不直接汇总 · 需从上游单据下钻',
   }
 }
 
@@ -789,18 +782,15 @@ export function useFulfillmentTimeline(
           status: 'established',
           businessNo: order.value.salesOrderNo ?? undefined,
           detailStatus: order.value.status ?? undefined,
-          linkLabel: `salesOrderNo = ${order.value.salesOrderNo ?? '-'}`,
           drill: order.value.salesOrderNo
             ? { path: '/erp/sales/orders', query: { keyword: order.value.salesOrderNo } }
             : undefined,
-          source: 'ERP · 销售订单读面',
         }
       : {
           key: 'sales-order',
           title: '销售订单',
           status: 'pending',
           ruleNote: '未选择销售订单。',
-          source: 'ERP · 销售订单读面',
         }
 
     return [
@@ -815,12 +805,9 @@ export function useFulfillmentTimeline(
         present: (record) => ({
           businessNo: record.sourceReference ?? record.demandType ?? undefined,
           detailStatus: record.sourceStatus ?? undefined,
-          linkLabel: `sourceReference = ${record.sourceReference ?? '-'}`,
           drill: { path: '/planning' },
         }),
-        pendingNote:
-          '销售订单确认后由需求编排生成生产需求（DemandSource.sourceReference = 销售单号，#958），当前尚未产生。',
-        source: 'Planning · 需求源读面',
+        pendingNote: '销售订单确认后会生成生产需求，当前尚未产生。',
       }),
       resolveRecordNode<MrpSuggestionRecord>({
         key: 'mrp-suggestion',
@@ -833,15 +820,13 @@ export function useFulfillmentTimeline(
           businessNo: describeMrpSuggestion(record),
           detailStatus: record.suggestion?.status ?? undefined,
           updatedAt: record.suggestion?.requiredDate ?? undefined,
-          linkLabel: `demandSourceReference = ${record.pegging.demandSourceReference ?? '-'}`,
           drill: { path: '/planning' },
         }),
         // 空态不能绝对化：只扫了最近若干次运行，更早的运行没看过，说「尚未产生」是越界结论。
         pendingNote:
           scanRunIds.value.length > 0
             ? `最近 ${scanRunIds.value.length} 次 MRP 运行内没有找到与本单的关联（更早的运行未在查询范围内）。`
-            : 'MRP 运行后按需求源生成建议，并把本销售订单 peg 到建议上（pegging.demandSourceReference = 销售单号），当前尚未运行。',
-        source: 'Planning · MRP 运行与 pegging 读面',
+            : 'MRP 运行后会按生产需求生成建议并关联到本销售订单，当前尚未运行。',
       }),
       resolveRecordNode<MesWorkOrderRecord>({
         key: 'mes-work-order',
@@ -854,14 +839,13 @@ export function useFulfillmentTimeline(
           businessNo: record.workOrderNo,
           detailStatus: record.planRow?.status ?? undefined,
           updatedAt: record.planRow?.plannedStartUtc ?? undefined,
-          linkLabel: describeWorkOrderLink(record, so),
+          note: describeMergedWorkOrder(record, so),
           drill: { path: `/mes/work-orders/${encodeURIComponent(record.workOrderNo)}` },
         }),
         pendingNote:
           suggestionIds.value.length > 0
-            ? '本单已有 MRP 建议，但建议尚未被接受为 MES 工单（工单号回写在建议的下游引用上），当前尚未开单。'
-            : '计划员在需求与计划工作台接受 MRP 建议后才会开出 MES 工单（建议的下游引用即工单号），当前尚未开单。',
-        source: 'Planning · 建议下游引用 + MES 工单来源引用',
+            ? '本单已有 MRP 建议，但建议尚未被接受为 MES 工单，当前尚未开单。'
+            : '计划员在需求与计划工作台接受 MRP 建议后才会开出 MES 工单，当前尚未开单。',
       }),
       unlinkedNode('production-report'),
       unlinkedNode('quality-result'),
@@ -878,14 +862,11 @@ export function useFulfillmentTimeline(
           businessNo: record.deliveryOrderNo ?? undefined,
           detailStatus: record.status ?? undefined,
           updatedAt: record.shippedAtUtc ?? record.releasedAtUtc ?? undefined,
-          linkLabel: `salesOrderNo = ${record.salesOrderNo ?? '-'}`,
           drill: record.salesOrderNo
             ? { path: '/erp/sales/deliveries', query: { keyword: record.salesOrderNo } }
             : { path: '/erp/sales/deliveries' },
         }),
-        pendingNote:
-          '销售订单履约时生成发货单（DeliveryOrder.salesOrderNo = 销售单号），当前尚未产生。',
-        source: 'ERP · 发货单读面',
+        pendingNote: '销售订单履约时生成发货单，当前尚未产生。',
       }),
       unlinkedNode('wms-outbound'),
       resolveRecordNode<BusinessConsoleErpReceivableSourceDocumentResponse>({
@@ -901,13 +882,11 @@ export function useFulfillmentTimeline(
           // 会被节点组件拿去过状态词表，白报一条漏词。
           detailStatusLabel: record.openAmount != null ? `未结 ${record.openAmount}` : undefined,
           updatedAt: record.createdAtUtc ?? undefined,
-          linkLabel: `sourceDocumentNo = ${record.sourceDocumentNo ?? '-'}（发货单号）`,
           drill: { path: '/erp/finance/ar-ap' },
         }),
         pendingNote: receivableSourceNo.value
-          ? 'WMS 出库完成后由后端按发货单号生成应收（Receivable.sourceDocumentNo = 发货单号），当前尚未生成。'
+          ? 'WMS 出库完成后按发货单号生成应收，当前尚未生成。'
           : '需先生成发货单，才能按发货单号回溯应收（尚无可用源单号）。',
-        source: 'ERP · 应收 by-source 读面',
       }),
       unlinkedNode('voucher'),
     ]
@@ -937,12 +916,10 @@ export function useFulfillmentTimeline(
           businessNo: record.businessReference ?? record.orderId ?? undefined,
           detailStatusLabel: describeUrgencyLevel(record.level),
           updatedAt: record.calculatedAtUtc ?? undefined,
-          linkLabel: `businessReference = ${record.businessReference ?? '-'}`,
           drill: { path: '/scheduling' },
         }),
         pendingNote:
           '排程侧尚未按本销售单号计算紧急度。该指标按交期直接计算，与上方各环节进度无关。',
-        source: 'Scheduling · 订单紧急度读面（按交期独立计算，不依赖 MRP / 工单进度）',
       }),
     ]
   })

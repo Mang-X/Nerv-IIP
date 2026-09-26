@@ -129,7 +129,7 @@ const summary = computed(() => {
   return {
     label: '门禁待确认',
     value: 'unknown',
-    description: '服务端返回了未识别的门禁状态，已停止上架操作。',
+    description: '质检门禁状态无法识别，已停止上架操作。',
   }
 })
 

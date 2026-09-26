@@ -421,7 +421,7 @@ const validResultLines = computed(() =>
 const submitBlockers = computed<string[]>(() => {
   const blockers: string[] = []
   if (!hasBusinessContext(filters)) {
-    blockers.push('业务范围（组织 / 环境）尚未就绪，请在顶部业务范围条选择组织与环境。')
+    blockers.push('尚未确定当前组织。')
   }
   if (isInspectionTaskFlow.value && !inspectionTaskSubmissionAllowed.value) {
     blockers.push(

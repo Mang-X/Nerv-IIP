@@ -77,8 +77,7 @@ const REASON_MESSAGES: Record<string, (context?: WmsReasonContext) => string> = 
   'missing-work-pool-assignment': (context) =>
     `${subject(context)}还没有分配作业池，无法执行。请先由当班负责人把它分配到对应的作业池。`,
 
-  'resource-tenant-mismatch': () =>
-    '该对象不属于当前组织或环境，无法操作。请确认顶部的组织/环境选择是否正确。',
+  'resource-tenant-mismatch': () => '该对象不属于当前组织，无法操作。',
 
   'missing-work-scope-kind': () => '本次操作没有带上作业范围，请在页面顶部选择库区/站点后重试。',
 

@@ -173,7 +173,7 @@ describe('WorkOrderTransformationDialog', () => {
     )
   })
 
-  it('渲染由父级映射的 409 冲突态，不把预置状态当作请求证据', () => {
+  it('渲染由父级映射的冲突态，不把预置状态当作请求证据', () => {
     const wrapper = mountDialog({
       mode: 'merge',
       state: 'conflict',
@@ -184,7 +184,9 @@ describe('WorkOrderTransformationDialog', () => {
       ],
     })
 
-    expect(wrapper.find('[data-testid="transformation-status"]').text()).toContain('409')
+    expect(wrapper.find('[data-testid="transformation-status"]').text()).toContain(
+      '提交与工单当前状态冲突',
+    )
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
 })

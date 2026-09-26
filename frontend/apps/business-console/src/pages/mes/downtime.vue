@@ -326,7 +326,7 @@ const recordPending = computed(
 const recordEntryBlocker = computed(() => {
   if (!canManageDowntime.value) return '没有停机登记权限'
   if (!filters.organizationId.trim() || !filters.environmentId.trim()) {
-    return '尚未进入有效组织与环境'
+    return '尚未确定当前组织'
   }
   if (downtimeWriteScopePending.value) return '正在核验停机登记范围'
   if (!downtimeWriteScopeReady.value) {
@@ -471,7 +471,7 @@ async function submitDowntime() {
       throw new Error('停机登记结果未确认，请刷新停机事件核实后再重试。')
     }
   } catch (error) {
-    notifyOperationFailure('停机登记失败', error, '停机登记失败，请根据服务端原因检查后重试。')
+    notifyOperationFailure('停机登记失败', error, '停机登记失败，请稍后重试。')
     return
   }
 

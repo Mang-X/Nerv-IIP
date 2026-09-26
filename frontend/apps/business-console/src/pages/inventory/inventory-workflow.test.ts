@@ -825,12 +825,12 @@ describe('inventory workflow pages', () => {
       .trigger('click')
     await nextTick()
 
-    expect(wrapper.get('[data-page-count]').text()).toBe('业务上下文加载中')
+    expect(wrapper.get('[data-page-count]').text()).toBe('尚未确定当前组织')
     // 「还没查」是中性态，不是空态：不能渲染成「当前范围没有临期批次」那种结论。
     const contextTable = wrapper.get('[data-ui-table]')
     expect(contextTable.attributes('data-awaiting-scope')).toBe('true')
     expect(contextTable.attributes('data-awaiting-scope-message')).toBe(
-      '业务上下文加载中，请稍候。',
+      '尚未确定当前组织，暂无法查看效期预警批次。',
     )
     expect(contextTable.attributes('data-has-error')).toBe('false')
     expect(wrapper.text()).not.toContain('请选择工厂')

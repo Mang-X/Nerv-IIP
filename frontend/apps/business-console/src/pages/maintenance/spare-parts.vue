@@ -204,7 +204,7 @@ async function submitCreate() {
 
     <Empty v-if="listErrorMessage" class="min-h-72 rounded-xl border" role="alert">
       <EmptyTitle>备件需求暂时无法加载</EmptyTitle>
-      <EmptyDescription> 数据来自维修工单的备件需求。当前请求失败，请稍后重试。 </EmptyDescription>
+      <EmptyDescription>请稍后重试。</EmptyDescription>
       <NvButton
         type="button"
         variant="outline"

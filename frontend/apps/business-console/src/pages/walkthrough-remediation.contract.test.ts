@@ -57,7 +57,6 @@ describe('2026-07-26 leadership walkthrough remediation', () => {
     const source = businessPages['./maintenance/spare-parts.vue']
     expect(source).toContain('v-if="!listErrorMessage"')
     expect(source).toContain('<Empty v-if="listErrorMessage"')
-    expect(source).toContain('数据来自维修工单的备件需求')
   })
 
   it('keeps implementation details out of screen-facing copy', () => {

@@ -521,7 +521,6 @@ async function submitRule() {
           <RouterLink class="text-primary underline-offset-4 hover:underline" to="/master-data/skus"
             >打开物料页</RouterLink
           >
-          <span class="text-xs text-muted-foreground">按默认条码规则反查待 SKU facade 支持。</span>
         </div>
       </template>
       <template #cell-actions="{ row }">

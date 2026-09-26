@@ -199,7 +199,7 @@ function setPriority(workOrderId: string, value: string | number) {
       <p class="text-sm leading-6 text-muted-foreground">
         {{
           scopeMessage ||
-          '请先在上方选择已授权的作业范围；若没有可选项，请联系管理员在 IAM 为账号配置数据范围。'
+          '请先在上方选择已授权的作业范围；若没有可选项，请联系管理员为账号配置数据范围。'
         }}
       </p>
     </div>

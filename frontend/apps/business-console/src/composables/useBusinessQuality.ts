@@ -456,7 +456,7 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
         body,
       )
       if (!pending.payloadSnapshot || typeof pending.payloadSnapshot !== 'object') {
-        throw new Error('返工处置缺少冻结的待处理载荷，请保留当前页面并人工核实。')
+        throw new Error('返工处置缺少上次未完成提交的内容，请保留当前页面并人工核实。')
       }
       const stableBody = pending.payloadSnapshot as BusinessConsoleNcrDispositionRequest
       const result = await completePendingBusinessIntent(intentScope, async () => {

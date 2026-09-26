@@ -100,7 +100,7 @@ const targetWorkOrderId = computed(() =>
 const resolvedHorizon = computed(() => resolveSchedulingHorizon(horizon.value))
 const disabledReason = computed(() => {
   if (readOnly.value) return SINGLE_ORDER_SCHEDULING_DENIED_REASON
-  if (!scheduling.hasScope.value) return '请先在顶部选择组织与环境。'
+  if (!scheduling.hasScope.value) return '尚未确定当前组织，暂不能排产。'
   if (!targetWorkOrderId.value) return '请先选择要排产的工单。'
   if (!resolvedHorizon.value.ok) return resolvedHorizon.value.message
   return ''
@@ -159,8 +159,6 @@ async function submit() {
         <AlertTriangleIcon class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>
           本次排产<strong>新建一个只含该单的排程方案</strong>；现有方案保持不变，两者需要人工取舍后再发布。
-          「把该单插入现有方案」尚不可用——插单预览需要后端能力（MAN-674 /
-          #1241），到位后再在此处提供。
         </span>
       </p>
 

@@ -828,7 +828,7 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.text()).toContain('按 2 个站点分别呈现')
   })
 
-  it('renders equal site and business date windows as distinct precise segments', () => {
+  it('renders equal site and business date windows as distinct segments', () => {
     telemetryPageMocks.trendBuckets = [
       {
         ...telemetryPageMocks.aggregateBuckets[0],
@@ -851,8 +851,6 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.findAll('[data-oee-segment]')).toHaveLength(2)
     expect(wrapper.findAll('[data-oee-discrete-point]')).toHaveLength(2)
     expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('2026-06-30 15:00:00 UTC – 2026-07-01 15:00:00 UTC')
-    expect(wrapper.text()).toContain('2026-06-30 16:00:00 UTC – 2026-07-01 16:00:00 UTC')
   })
 
   it('shows an explicit all-missing segment state', () => {
@@ -907,12 +905,11 @@ describe('equipment telemetry pages', () => {
     expect(wrapper.get('[data-testid="data-table"]').attributes('data-total')).toBe('2')
   })
 
-  it('shows a deep-linked device scope and clears it when switching to an organization comparison', async () => {
+  it('keeps a deep-linked device filter and clears it when switching to an organization comparison', async () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
     const devicePicker = wrapper.get('[data-directory-type="equipment"]')
     expect((devicePicker.element as HTMLInputElement).value).toBe('DEV-CNC-01')
-    expect(wrapper.text()).toContain('当前设备范围：DEV-CNC-01')
 
     telemetryPageMocks.aggregateFilters!.dimension = 'workCenter'
     await nextTick()

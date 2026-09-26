@@ -266,7 +266,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                     :disabled="readOnly || persistPending || !task.resourceId"
                     :title="
                       task.resourceId
-                        ? '把该工序的资源与起止落库为跨方案 override，重排程自动继承'
+                        ? '固定该工序的资源与起止时间，之后重新排程也保持不变'
                         : '该工序未分配资源，先指定资源再持久锁定'
                     "
                     @click="emit('persistOverride', task.id)"
@@ -274,9 +274,9 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                   >
                   <NvStatusBadge
                     v-if="persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)"
-                    label="本次会话已持久化"
+                    label="已持久锁定"
                     tone="success"
-                    title="该工序 override 已在本次会话内落库；override 暂无读接口，刷新后徽标不再回显，但落库结果仍会被重排程继承"
+                    title="该工序的资源与起止时间已固定，之后重新排程也保持不变。刷新页面后此标记不再显示，但锁定仍然有效。"
                   />
                 </div>
               </td>

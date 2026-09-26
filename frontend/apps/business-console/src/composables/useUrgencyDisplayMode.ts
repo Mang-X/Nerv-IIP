@@ -23,9 +23,9 @@ export const URGENCY_DISPLAY_MODES: readonly UrgencyDisplayModeOption[] = [
   { value: 'businessPriority', label: '业务优先级' },
   { value: 'dynamicUrgency', label: '动态紧迫度' },
   { value: 'executionRisk', label: '执行风险' },
-  // 行业术语说人话：CR / Slack 是排程教科书用语，界面上给中文名，英文缩写留在括号里备查。
+  // 行业术语说人话：界面上给中文名；CR 是排程通用缩写，留在括号里备查。
   { value: 'criticalRatio', label: '紧迫系数（CR）' },
-  { value: 'slack', label: '松弛时间（Slack）' },
+  { value: 'slack', label: '松弛时间' },
   { value: 'expectedDelay', label: '预计延迟' },
 ]
 
@@ -82,7 +82,7 @@ export function formatUrgencyDisplay(
     case 'criticalRatio':
       return { label: `CR ${formatRatio(urgency.timeCriticality?.criticalRatio)}`, tone }
     case 'slack':
-      return { label: `Slack ${formatHours(urgency.timeCriticality?.slackHours)}`, tone }
+      return { label: `松弛 ${formatHours(urgency.timeCriticality?.slackHours)}`, tone }
     case 'expectedDelay':
       return { label: `延误 ${formatHours(urgency.timeCriticality?.expectedDelayHours)}`, tone }
     case 'level':

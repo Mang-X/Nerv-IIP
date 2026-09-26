@@ -43,7 +43,11 @@ import {
   useMaintenanceWorkOrders,
 } from '@/composables/useBusinessMaintenance'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { formatIsoInterval } from '@/data/businessLabels'
+import {
+  formatIsoInterval,
+  labelFor,
+  MAINTENANCE_INSPECTION_RESULT_LABELS,
+} from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -72,6 +76,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
 import { readFaceText } from '@/utils/readFace'
+import { formatDateTime } from '@/utils/format'
 
 definePage({
   meta: {
@@ -311,7 +316,7 @@ const runtimeUntilNextCardHint = computed(() => {
     }
     return `运行小时型计划 ${code} · 阈值 ${mostUrgent.plan.nextDueRuntimeHours ?? '—'} 小时`
   }
-  if (runtimeRemainingHasErrorCandidate.value) return '运行小时读面读取失败，请稍后重试'
+  if (runtimeRemainingHasErrorCandidate.value) return '运行小时读取失败，请稍后重试'
   if (runtimeRemainingHasInvalidCandidate.value) return '运行小时阈值与游标不成对，计划数据不完整'
   return '当前窗口无运行样本'
 })
@@ -356,7 +361,7 @@ const cumulativeRuntimeCardValue = computed(() => {
 })
 const runtimeHoursCardHint = computed(() => {
   if (runtimeHoursPending.value) return '正在读取运行小时'
-  if (runtimeHoursError.value) return '运行小时读面读取失败，请稍后重试'
+  if (runtimeHoursError.value) return '运行小时读取失败，请稍后重试'
   if (!hasRuntimeHoursSamples.value) return '当前窗口无运行样本，等于设备暂无运行事实'
   return currentDeviceRuntimePlan.value
     ? '自运行小时型计划起算日累计'
@@ -576,8 +581,13 @@ function historyTypeLabel(value?: string | null) {
 function historyType(row: { itemType?: string | null }) {
   return row.itemType
 }
-function historyValue(row: { value?: string | null }) {
-  return row.value ?? '无数值'
+function historyValue(row: { itemType?: string | null; value?: string | null }) {
+  if (!row.value) return '无数值'
+  // 状态类记录的值是设备状态码，按设备状态词表说中文。
+  return row.itemType?.toLowerCase() === 'state' ? statusLabel(row.value) : row.value
+}
+function inspectionResultLabel(value?: string | null) {
+  return value ? labelFor(MAINTENANCE_INSPECTION_RESULT_LABELS, value, '未知结果') : '未记录'
 }
 function maintenanceStatusLabel(value?: string | null) {
   const labels: Record<string, string> = {
@@ -631,11 +641,6 @@ function quantityLabel(row: { quantity?: number | null; uomCode?: string | null 
 }
 function recordDowntime() {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: filters.deviceAssetId } })
-}
-function formatDateTime(value?: string | null) {
-  if (!value) return '无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 </script>
 
@@ -1251,12 +1256,11 @@ function formatDateTime(value?: string | null) {
                 :key="row.inspectionId"
                 class="grid gap-1 rounded-lg border p-3"
               >
-                <span class="text-sm font-medium text-foreground">{{
-                  row.inspectionId ?? '点检记录'
-                }}</span>
+                <span class="text-sm font-medium text-foreground"
+                  >点检 · {{ formatDateTime(row.inspectedAtUtc) }}</span
+                >
                 <span class="text-xs text-muted-foreground"
-                  >结果 {{ row.result ?? '未记录' }} ·
-                  {{ formatDateTime(row.inspectedAtUtc) }}</span
+                  >结果 {{ inspectionResultLabel(row.result) }}</span
                 >
               </div>
               <div
@@ -1330,7 +1334,7 @@ function formatDateTime(value?: string | null) {
                 v-if="!maintenancePending && !maintenanceAvailabilityWindows.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前设备没有 Maintenance 可用窗口。
+                当前设备没有可用的维护窗口。
               </div>
             </div>
           </div>

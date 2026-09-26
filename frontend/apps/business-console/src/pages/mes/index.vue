@@ -381,7 +381,7 @@ function countValue(key: string) {
       class="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
       role="alert"
     >
-      尚未选择业务范围（组织与环境），现场数据未读取，暂时无法判断产线状态。
+      尚未确定当前组织，现场数据未读取，暂时无法判断产线状态。
     </p>
 
     <div class="grid gap-4 xl:grid-cols-3">

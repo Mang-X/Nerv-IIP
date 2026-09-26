@@ -569,7 +569,7 @@ describe('APS scheduling workbench page', () => {
     expect(detailPanel.text()).toContain('已锁定')
     expect(detailPanel.text()).toContain('SKU-PISTON-01')
     // 齐套没有权威来源：说明去哪儿看，不给估算数。
-    expect(detailPanel.text()).toContain('齐套率排程契约未返回')
+    expect(detailPanel.text()).toContain('齐套情况请到「领料与齐套」页核对')
     // 甘特没有被遮挡，仍然在场且可继续换选。
     expect(wrapper.find('[data-testid="readonly-schedule-timeline"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('排程方案明细')
@@ -1091,7 +1091,7 @@ describe('APS scheduling workbench page', () => {
       startUtc: '2026-07-02T08:00:00Z',
       endUtc: '2026-07-02T10:00:00Z',
     })
-    expect(stub.toastSuccess).toHaveBeenCalledWith('工序 override 已持久化，重排程自动继承')
+    expect(stub.toastSuccess).toHaveBeenCalledWith('工序已持久锁定，之后重新排程也保持不变')
   })
 
   it('refuses to persist an override for a task the draft does not know', async () => {

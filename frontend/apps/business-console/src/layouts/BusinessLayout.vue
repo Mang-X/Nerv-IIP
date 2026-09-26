@@ -88,9 +88,9 @@ function openSearch() {
     >
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p class="font-medium">未选择业务上下文</p>
+          <p class="font-medium">账号尚未分配组织</p>
           <p class="text-muted-foreground">
-            当前账号未返回组织或环境。请联系管理员补齐业务上下文，或退出后使用已配置账号登录。
+            请联系管理员为当前账号分配组织，或退出后换用已分配组织的账号登录。
           </p>
         </div>
         <button

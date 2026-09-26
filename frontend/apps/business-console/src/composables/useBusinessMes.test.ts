@@ -694,7 +694,7 @@ describe('business MES composables', () => {
         },
         { idempotencyKey: 'no-scope-key' },
       ),
-      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向管理员配置授权（#1288），不再泛泛说「尚未选择」。
     ).rejects.toThrow('没有已授权的作业范围')
 
     expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
@@ -1048,7 +1048,7 @@ describe('business MES composables', () => {
         completesOperation: false,
         idempotencyKey: 'report-no-scope',
       }),
-      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向管理员配置授权（#1288），不再泛泛说「尚未选择」。
     ).rejects.toThrow('没有已授权的作业范围')
     expect(recordBusinessConsoleMesProductionReport).not.toHaveBeenCalled()
   })
@@ -1608,7 +1608,7 @@ describe('business MES composables', () => {
         scopeKind: 'work-center',
         scopeId: 'WC-2',
       }),
-    ).rejects.toThrow('尚未进入有效组织与环境')
+    ).rejects.toThrow('尚未确定当前组织')
 
     const mutation = vi.mocked(recordBusinessConsoleMesDefectV2MutationOptions).mock.results.at(-1)
       ?.value.mutation as ReturnType<typeof vi.fn>

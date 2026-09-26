@@ -308,7 +308,7 @@ describe('barcode pages', () => {
     barcode.recordScan.mockResolvedValue(undefined)
   })
 
-  it('renders rule maintenance with source usage, explicit SKU gap, and route-seeded keyword', async () => {
+  it('renders rule maintenance with source usage and route-seeded keyword', async () => {
     barcode.route.query = { ruleCode: 'GS1-CASE' }
     const wrapper = mount(RulesPage, {
       global: {
@@ -326,7 +326,6 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('GS1 公司前缀 7 位')
     expect(wrapper.text()).toContain('收货入库')
     expect(wrapper.text()).toContain('生产报工')
-    expect(wrapper.text()).toContain('按默认条码规则反查待 SKU facade 支持')
     expect(barcode.ruleFilters?.keyword).toBe('GS1-CASE')
     expect(barcode.ruleFilters?.take).toBe(10)
   })
@@ -451,8 +450,7 @@ describe('barcode pages', () => {
 
     expect(wrapper.text()).toContain('标签模板')
     expect(wrapper.text()).toContain('SKU_BOX')
-    expect(wrapper.text()).toContain('skuCode')
-    expect(wrapper.text()).toContain('适用对象')
+    expect(wrapper.text()).toContain('物料编码、批次号、有效期')
 
     await wrapper
       .findAll('button')

@@ -38,7 +38,6 @@ export interface OeeTrendPoint {
   identity: OeeBucketIdentity
   time: string
   businessDateLabel: string
-  windowLabel: string
   oee: number
   availability: number
   performance: number
@@ -76,25 +75,14 @@ export interface OeeTrendRun {
   chartData: OeeTrendChartRow[]
 }
 
-export interface OeeTrendBucketDetail {
-  key: string
-  identity: OeeBucketIdentity
-  businessDateLabel: string
-  windowLabel: string
-  hasCompleteRates: boolean
-}
-
 export interface OeeTrendSegment {
   key: string
   ordinal: number
   businessDateStartLabel: string
   businessDateEndLabel: string
-  firstWindowLabel: string
-  lastWindowLabel: string
   bucketCount: number
   pointCount: number
   omittedCount: number
-  buckets: OeeTrendBucketDetail[]
   runs: OeeTrendRun[]
 }
 
@@ -104,7 +92,6 @@ export interface OeeReportPresentation {
   trendBucketCount: number
   trendPointCount: number
   omittedTrendBucketCount: number
-  tablePageCount: number
   tableTotal: number
 }
 
@@ -127,7 +114,6 @@ export function presentOeeReport(input: {
     trendBucketCount: input.trendBuckets.length,
     trendPointCount,
     omittedTrendBucketCount,
-    tablePageCount: input.tableBuckets.length,
     tableTotal: input.tableTotal,
   }
 }
@@ -256,29 +242,10 @@ function presentTrendSegment(
     ordinal,
     businessDateStartLabel: displayBusinessDate(buckets[0]?.businessDate),
     businessDateEndLabel: displayBusinessDate(buckets.at(-1)?.businessDate),
-    firstWindowLabel: formatExactUtcWindow(buckets[0]?.bucketStartUtc, buckets[0]?.bucketEndUtc),
-    lastWindowLabel: formatExactUtcWindow(
-      buckets.at(-1)?.bucketStartUtc,
-      buckets.at(-1)?.bucketEndUtc,
-    ),
     bucketCount: buckets.length,
     pointCount,
     omittedCount: buckets.length - pointCount,
-    buckets: buckets.map(presentTrendBucketDetail),
     runs,
-  }
-}
-
-function presentTrendBucketDetail(
-  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
-): OeeTrendBucketDetail {
-  const identity = bucketIdentity(bucket)
-  return {
-    key: JSON.stringify(identity),
-    identity,
-    businessDateLabel: displayBusinessDate(bucket.businessDate),
-    windowLabel: formatExactUtcWindow(bucket.bucketStartUtc, bucket.bucketEndUtc),
-    hasCompleteRates: hasCompleteRates(bucket),
   }
 }
 
@@ -321,7 +288,6 @@ function presentTrendPoint(bucket: BusinessConsoleTelemetryOeeAggregateBucket): 
     identity,
     time: shortBusinessDate(bucket),
     businessDateLabel: displayBusinessDate(bucket.businessDate),
-    windowLabel: formatExactUtcWindow(bucket.bucketStartUtc, bucket.bucketEndUtc),
     oee: percentNumber(bucket.oeeRate),
     availability: percentNumber(bucket.availabilityRate),
     performance: percentNumber(bucket.performanceRate),
@@ -442,17 +408,6 @@ function shortBusinessDate(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
 
 function displayBusinessDate(value?: string | null) {
   return value?.trim() || '未解析业务日'
-}
-
-function formatExactUtcWindow(start?: string | null, end?: string | null) {
-  return `${formatExactUtc(start)} – ${formatExactUtc(end)}`
-}
-
-function formatExactUtc(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`
 }
 
 function formatWindow(start?: string | null, end?: string | null) {

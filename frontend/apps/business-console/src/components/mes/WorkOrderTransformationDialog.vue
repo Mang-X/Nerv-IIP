@@ -118,7 +118,7 @@ const statusText = computed(() => {
     case 'success':
       return '操作已完成，结果已回读。'
     case 'conflict':
-      return '数据冲突（409），请刷新工单后重试。'
+      return '提交与工单当前状态冲突，请刷新后核对填写内容再试。'
     case 'error':
       return props.errorMessage || '操作失败，请检查填写内容后重试。'
     default:
@@ -210,7 +210,7 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
           拆成多个新的子工单；数量必须守恒，目标标识不能已存在。
         </NvDialogDescription>
         <NvDialogDescription v-else>
-          将选中的同 SKU 工单合并为一个新工单；服务端会按源工单数量合计生成目标数量。
+          将选中的同 SKU 工单合并为一个新工单，新工单数量为各源工单数量之和。
         </NvDialogDescription>
       </NvDialogHeader>
 

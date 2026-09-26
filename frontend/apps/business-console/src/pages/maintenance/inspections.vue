@@ -6,6 +6,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
+import { labelFor, MAINTENANCE_INSPECTION_RESULT_LABELS } from '@/data/businessLabels'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import {
   useEquipmentUomCatalog,
@@ -106,11 +107,9 @@ const { planOptions, plansPending, workOrderOptions, workOrdersPending } =
   useMaintenanceDocumentCatalog()
 const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 
-const resultOptions = [
-  { label: '通过', value: 'passed' },
-  { label: '异常', value: 'failed' },
-  { label: '需复检', value: 'requires-review' },
-]
+const resultOptions = Object.entries(MAINTENANCE_INSPECTION_RESULT_LABELS).map(
+  ([value, label]) => ({ value, label }),
+)
 
 interface MeasurementFormRow extends MeasurementDraftRow {
   id: number
@@ -198,8 +197,7 @@ function rowKey(row: InspectionRow) {
 }
 function resultLabel(value?: string | null) {
   // 选项里没有的结果就说「未知结果」，绝不把后端英文码回吐到界面上。
-  if (!value) return '未知'
-  return resultOptions.find((o) => o.value === value.toLowerCase())?.label ?? '未知结果'
+  return value ? labelFor(MAINTENANCE_INSPECTION_RESULT_LABELS, value, '未知结果') : '未知'
 }
 // 后端已算 isWithinSpec：超差 = 明确 false（未判定的 undefined 不当作超差）。
 function measurementOutOfSpec(m: MeasurementItem) {

@@ -419,7 +419,7 @@ describe('MES handovers read-face guard', () => {
     })
     expect(mutations.createShiftHandover.mock.calls[0]?.[0]).not.toHaveProperty('openIssueIds')
     expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
-    expect(mutations.notifySuccess).toHaveBeenCalledWith('班次交接创建成功，服务端已受理。')
+    expect(mutations.notifySuccess).toHaveBeenCalledWith('班次交接已受理。')
   })
 
   it('keeps the create idempotency key for a retry after an operation failure', async () => {
@@ -468,7 +468,7 @@ describe('MES handovers read-face guard', () => {
       environmentId: 'env-dev',
     })
     expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
-    expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理，服务端已受理。')
+    expect(mutations.notifySuccess).toHaveBeenCalledWith('接班已受理。')
   })
 
   it('closes the accept dialog and disables the row entry once the refreshed list confirms an uncertain accept', async () => {

@@ -298,7 +298,7 @@ describe('quality inspection task workbench page', () => {
     filters.sourceType = 'operation'
     await nextTick()
 
-    expect(wrapper.text()).toContain('本页匹配 1 个 / 服务总数 4 个')
+    expect(wrapper.text()).toContain('来源筛选只在当前页内生效')
   })
 
   it('claims before opening the existing inspection form without inventing a source document number', async () => {

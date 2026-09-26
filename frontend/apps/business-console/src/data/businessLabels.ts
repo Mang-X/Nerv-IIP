@@ -510,3 +510,10 @@ export const TELEMETRY_CANDIDATE_STATUS_LABELS: Readonly<Record<string, string>>
   dismissed: '已忽略',
   suspended: '已挂起',
 }
+
+/** 维护点检结果（维护点检页录入的三个取值，设备详情页同一口径展示）。 */
+export const MAINTENANCE_INSPECTION_RESULT_LABELS: Readonly<Record<string, string>> = {
+  passed: '通过',
+  failed: '异常',
+  'requires-review': '需复检',
+}

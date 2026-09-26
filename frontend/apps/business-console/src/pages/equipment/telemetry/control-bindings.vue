@@ -271,7 +271,7 @@ function formatDateTime(value?: string | null) {
                   <NvInput
                     id="binding-host"
                     v-model="form.connectorHostId"
-                    placeholder="连接器主机 ID"
+                    placeholder="填写连接主机标识"
                     :aria-invalid="!!hostError"
                   />
                   <p v-if="hostError" class="text-xs text-destructive" role="alert">

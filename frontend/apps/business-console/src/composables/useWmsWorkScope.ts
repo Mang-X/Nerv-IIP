@@ -155,18 +155,18 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
    * 所以「去 IAM 配置」这句话并进 403 分支——不为一个到不了的分支单留文案与标志位。
    */
   const unreadyMessage = computed(() => {
-    if (!hasTenant.value) return '请先选择组织与环境，再查看作业范围。'
+    if (!hasTenant.value) return '尚未确定当前组织，暂无法查看作业范围。'
     if (catalogQuery.error.value) {
       return `取不到已授权的作业范围：${inlineErrorMessage(
         catalogQuery.error.value,
         '作业范围目录未成功返回。',
-      )}若是权限不足，请到 IAM 为本账号配置站点授权或作业池成员资格。`
+      )}若是权限不足，请联系管理员为本账号配置站点授权或作业池成员资格。`
     }
     if (catalogQuery.isLoading.value || envelope.value === undefined) {
       return '正在获取已授权的作业范围…'
     }
     if (envelope.value.success !== true || scopeOptions.value.length === 0) {
-      return '作业范围目录未返回任何已授权范围，请到 IAM 为本账号配置站点授权或作业池成员资格。'
+      return '当前账号还没有已授权的作业范围，请联系管理员为本账号配置站点授权或作业池成员资格。'
     }
     return hasSelection.value ? '' : '请先在上方选择作业范围。'
   })

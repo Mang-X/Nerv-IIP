@@ -167,14 +167,14 @@ describe('PC WMS 作业范围选择闭环 (#1343)', () => {
     expect(wrapper.text()).not.toContain('请稍后重试')
   })
 
-  it('目录成功但零授权范围时指向 IAM 配置，绝不说成「暂无数据」', async () => {
+  it('目录成功但零授权范围时指向管理员配置授权，绝不说成「暂无数据」', async () => {
     const { wrapper, scope } = createHarness()
 
     resolveCatalog(0, [])
     await flushPromises()
 
     expect(scope.hasSelection.value).toBe(false)
-    expect(wrapper.text()).toContain('请到 IAM')
+    expect(wrapper.text()).toContain('请联系管理员为本账号配置站点授权')
     expect(wrapper.text()).not.toContain('暂无数据')
   })
 
