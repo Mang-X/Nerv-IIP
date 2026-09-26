@@ -67,9 +67,13 @@ const form = reactive({
   parentLocationCode: props.location?.parentLocationCode ?? '',
   status: props.location?.status ?? 'active',
 })
-// 没选过工厂时默认第一个工厂（工厂目录还没回来时用兜底工厂）。
+// 没选过工厂时默认第一个工厂；工厂目录回来之前先不给默认值（取不到工厂时才用兜底工厂），
+// 免得下拉先挂上一个只有编码的临时项。
 const siteCode = computed({
-  get: () => form.siteCode || catalogSiteOptions.value[0]?.value || FALLBACK_INVENTORY_SITE_CODE,
+  get: () =>
+    form.siteCode ||
+    catalogSiteOptions.value[0]?.value ||
+    (siteCatalog.resourcesPending.value ? '' : FALLBACK_INVENTORY_SITE_CODE),
   set: (value: string) => {
     form.siteCode = value
   },
