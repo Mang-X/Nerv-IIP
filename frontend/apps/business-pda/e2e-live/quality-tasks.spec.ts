@@ -156,10 +156,6 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
     }
   } else {
     expect(filteredTotal).toBe(0)
-    await expect(
-      page
-        .getByText('当前账号没有符合筛选条件的质检任务；缺少登录主体或组织环境时不会发起查询。')
-        .last(),
-    ).toBeVisible()
+    await expect(page.getByText('当前账号没有符合筛选条件的质检任务。').last()).toBeVisible()
   }
 })
