@@ -115,6 +115,8 @@ const productionVersionOptions = computed(() =>
       ...(row.isDefault ? { hint: '默认版本' } : {}),
     })),
 )
+// 生产版本读不到名称（无权限、清单截断或仍在加载）时的中性说法，不回吐版本主键。
+const UNKNOWN_VERSION_LABEL = '暂无法显示版本名称'
 /**
  * 查看抽屉里受影响版本的说法。生产版本存的是版本主键，换成「物料 · 生效日」再上屏；
  * 其余三类是用户手工录入的版本标识，原样显示。
@@ -124,7 +126,7 @@ function affectedVersionLabel(kind?: string | null, versionId?: string | null) {
   if (kind !== 'ProductionVersion') return versionId
   return (
     productionVersionOptions.value.find((option) => option.value === versionId)?.label ??
-    '暂无法显示版本名称'
+    UNKNOWN_VERSION_LABEL
   )
 }
 function affectedVersionOptions(kind: string, current: string) {
@@ -132,7 +134,7 @@ function affectedVersionOptions(kind: string, current: string) {
   const options = productionVersionOptions.value
   const trimmed = current.trim()
   if (trimmed && !options.some((option) => option.value === trimmed)) {
-    return [{ value: trimmed, label: trimmed }, ...options]
+    return [{ value: trimmed, label: UNKNOWN_VERSION_LABEL }, ...options]
   }
   return options
 }

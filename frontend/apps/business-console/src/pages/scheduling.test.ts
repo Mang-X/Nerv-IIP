@@ -569,7 +569,7 @@ describe('APS scheduling workbench page', () => {
     expect(detailPanel.text()).toContain('已锁定')
     expect(detailPanel.text()).toContain('SKU-PISTON-01')
     // 齐套没有权威来源：说明去哪儿看，不给估算数。
-    expect(detailPanel.text()).toContain('齐套率请在物料齐套页查看')
+    expect(detailPanel.text()).toContain('齐套情况请到「领料与齐套」页核对')
     // 甘特没有被遮挡，仍然在场且可继续换选。
     expect(wrapper.find('[data-testid="readonly-schedule-timeline"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('排程方案明细')

@@ -746,7 +746,7 @@ function setLaneOrder(value: LaneOrder) {
             >
               物料 / 数量 / 交期取自 MES 工单{{
                 selectedWorkOrder ? '' : '（当前工单不在已加载的工单窗口内，故未显示）'
-              }}。齐套率请在物料齐套页查看。
+              }}。齐套情况请到「领料与齐套」页核对。
             </p>
 
             <NvButton size="sm" variant="outline" type="button" @click="emit('openDetail')">
