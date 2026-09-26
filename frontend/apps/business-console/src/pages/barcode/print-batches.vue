@@ -262,25 +262,6 @@ function statusLabel(value?: string | null) {
   return STATUS_OPTIONS.find((option) => option.value === value)?.label ?? '其他状态'
 }
 
-// 有单据目录的类型按共用口径跳转；采购收货、库存类没有可搜列表，按单号带到对应列表筛选。
-function sourceDocumentRoute(batch: BusinessConsoleBarcodePrintBatchItem) {
-  const type = batch.sourceDocumentType
-  const id = batch.sourceDocumentId?.trim()
-  if (!id) return undefined
-  const shared = barcodeSourceDocumentRoute(type, id)
-  if (shared) return shared
-  if (type === 'purchase-receipt') {
-    return { path: '/erp/procurement/receipts', query: { keyword: id } }
-  }
-  if (type === 'inventory.count') {
-    return { path: '/inventory/counts', query: { countTaskId: id } }
-  }
-  if (type?.startsWith('inventory.')) {
-    return { path: '/inventory/movements', query: { sourceDocumentId: id } }
-  }
-  return undefined
-}
-
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
@@ -470,9 +451,9 @@ function firstQuery(value: unknown) {
       >
         <template #cell-sourceDocumentId="{ row }">
           <RouterLink
-            v-if="sourceDocumentRoute(row)"
+            v-if="barcodeSourceDocumentRoute(row.sourceDocumentType, row.sourceDocumentId)"
             class="underline underline-offset-2"
-            :to="sourceDocumentRoute(row)!"
+            :to="barcodeSourceDocumentRoute(row.sourceDocumentType, row.sourceDocumentId)!"
           >
             {{ row.sourceDocumentId }}
           </RouterLink>

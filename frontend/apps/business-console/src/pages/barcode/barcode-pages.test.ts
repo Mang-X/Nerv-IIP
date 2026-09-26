@@ -613,6 +613,25 @@ describe('barcode pages', () => {
     expect(scans.find('#barcode-scan-source-id').attributes('kind')).toBe('mes-work-order')
   })
 
+  // 只有工单能按单号直达；其它类型的目标页找不到那张单据，业务对象只显示文本。
+  it.each(['wms.receiving', 'quality.inspection', 'purchase-receipt', 'inventory.count'])(
+    'shows %s business objects as plain text instead of a dead-end link',
+    async (sourceDocumentType) => {
+      barcode.printBatchSourceDocumentType = sourceDocumentType
+      const stubs = { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub }
+      const batches = mount(PrintBatchesPage, { global: { stubs } })
+      const scans = mount(ScansPage, { global: { stubs } })
+      await flushPromises()
+
+      const linkTexts = (wrapper: ReturnType<typeof mount>) =>
+        wrapper.findAll('[data-router-link]').map((link) => link.text())
+      expect(batches.text()).toContain('WO-001')
+      expect(linkTexts(batches)).not.toContain('WO-001')
+      expect(scans.text()).toContain('IB-001')
+      expect(linkTexts(scans)).not.toContain('IB-001')
+    },
+  )
+
   it.each(['inventory.receipt', 'inventory.issue'])(
     'keeps %s print batches filtered when drilling into scan records',
     async (sourceDocumentType) => {
