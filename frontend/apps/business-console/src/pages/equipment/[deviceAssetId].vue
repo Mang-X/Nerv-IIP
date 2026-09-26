@@ -490,6 +490,13 @@ const notConnected = computed(
     !currentState.value?.currentState &&
     !currentState.value?.isSourceFresh,
 )
+// 没接入过采集的设备，IIoT 给的可用性窗口原因码是「采集过期」；本页已知它从未接入，按实情说。
+function windowReason(reasonCode?: string | null) {
+  if (notConnected.value && reasonCode === 'equipment.sourceStale') {
+    return { label: '尚未接入采集', nextStep: '为设备配置采集连接后即可看到运行状态' }
+  }
+  return describeEquipmentReason(reasonCode ?? '')
+}
 const stateText = computed(() =>
   notConnected.value ? '尚未接入采集' : statusLabel(currentState.value?.currentState),
 )
@@ -498,9 +505,9 @@ const sourceText = computed(() => {
   return notConnected.value ? '尚未接入' : '采集过期'
 })
 /** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
-function deviceLabel(code?: string | null, fallback = '无设备') {
-  if (!code) return fallback
-  return resolveDevice(code) ?? readFaceText(code, fallback)
+function deviceLabel(reference?: string | null) {
+  if (!reference) return '—'
+  return resolveDevice(reference) ?? readFaceText(reference)
 }
 function workCenterLabel(code?: string | null, fallback = '未绑定') {
   if (!code) return fallback
@@ -513,7 +520,7 @@ const columns: NvDataTableColumn<Window>[] = [
   {
     key: 'reason',
     header: '原因',
-    accessor: (r) => describeEquipmentReason(r.reasonCode ?? '').label,
+    accessor: (r) => windowReason(r.reasonCode).label,
   },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => workCenterLabel(r.workCenterId) },
   { key: 'startUtc', header: '开始', width: 'w-44' },
@@ -932,10 +939,10 @@ function recordDowntime() {
             <template #cell-reason="{ row }">
               <div class="grid gap-1">
                 <span class="font-medium text-foreground">{{
-                  describeEquipmentReason(row.reasonCode ?? '').label
+                  windowReason(row.reasonCode).label
                 }}</span>
                 <span class="text-xs text-muted-foreground">{{
-                  describeEquipmentReason(row.reasonCode ?? '').nextStep
+                  windowReason(row.reasonCode).nextStep
                 }}</span>
               </div>
             </template>

@@ -793,11 +793,22 @@ describe('equipment pages', () => {
       stateOccurredAtUtc: null,
       isSourceFresh: false,
     }
+    readFaceState.availabilityWindows = [
+      {
+        availabilityStatus: 'unknown',
+        reasonCode: 'equipment.sourceStale',
+        sourceReferenceId: deviceId,
+        sourceReferenceLabel: 'EQ00001',
+      },
+    ]
 
     const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
     expect(visibleText).toContain('设备详情：五轴加工中心（EQ00001）')
+    expect(visibleText).toContain('为设备配置采集连接后即可看到运行状态')
+    expect(visibleText).not.toContain('equipment.sourceStale')
     expect(visibleText).toContain('尚未接入采集')
-    expect(visibleText).not.toContain('无设备')
+    expect(visibleText).not.toContain('设备详情：无设备')
+    expect(visibleText).not.toContain('当前状态无设备')
     expect(visibleText).not.toContain('采集过期')
     expect(visibleText).not.toContain('未知状态')
     expect(visibleText).not.toMatch(UUID_PATTERN)
@@ -830,6 +841,7 @@ describe('equipment pages', () => {
         reasonCode: 'maintenance.pm',
         workCenterId: deviceId,
         sourceReferenceId: workOrderId,
+        substituteDeviceAssetIds: ['019fbb41-dddd-7ddd-8ddd-dddddddddddd'],
       },
     ]
     readFaceState.workOrders = [
@@ -847,6 +859,7 @@ describe('equipment pages', () => {
 
     const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
     expect(visibleText).toContain('—')
+    expect(visibleText).not.toContain('无设备')
     expect(visibleText).toContain('维修工单')
     expect(visibleText).not.toMatch(UUID_PATTERN)
     expect(visibleText).not.toContain('user-emp-')
