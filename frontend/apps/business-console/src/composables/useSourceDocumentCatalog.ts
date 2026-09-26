@@ -12,7 +12,6 @@
 import {
   listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
-  listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleQualityInspectionRecordsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
@@ -100,13 +99,6 @@ const SPECS = {
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleMesWorkOrdersQueryOptions({ query }),
     toOption: (row) => documentOption(row.workOrderId, row.workOrderNo, row.skuCode),
-  }),
-  'mes-production-report': defineSpec({
-    noun: '报工单',
-    searchPlaceholder: '搜索报工单号 / 工单…',
-    serverSearch: true,
-    queryOptions: (query) => listBusinessConsoleMesProductionReportsQueryOptions({ query }),
-    toOption: (row) => documentOption(row.reportNo, row.reportNo, row.workOrderNo),
   }),
   'wms-inbound-order': defineSpec({
     noun: '入库单',

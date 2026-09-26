@@ -207,10 +207,19 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
           rejectionReason: 'parse-failed',
           scannedAtUtc: '2026-07-02T02:00:00Z',
         },
+        {
+          scanRecordId: 'scan-3',
+          deviceCode: 'PDA-03',
+          scannedValue: '(01)06912345678901(10)WO-001',
+          sourceWorkflow: 'production.report',
+          sourceDocumentId: 'WO-001',
+          result: 'accepted',
+          scannedAtUtc: '2026-07-02T03:00:00Z',
+        },
       ]),
       scansError: shallowRef(undefined),
       scansPending: shallowRef(false),
-      scansTotal: computed(() => 2),
+      scansTotal: computed(() => 3),
       refreshScans: vi.fn(),
       recordScan: barcode.recordScan,
       recordScanPending: shallowRef(false),
@@ -569,6 +578,37 @@ describe('barcode pages', () => {
     expect(scanLink?.attributes('data-to')).toContain('"path":"/barcode/scans"')
     expect(scanLink?.attributes('data-to')).toContain('"sourceWorkflow":"production.report"')
     expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
+  })
+
+  // #3824：生产报工的业务对象一律是工单——打印批次、扫码补录都从工单目录里选，点进去都到同一张工单。
+  it('points production-report objects at the same work order from print batches and scans', async () => {
+    const stubs = { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub }
+    const batches = mount(PrintBatchesPage, { global: { stubs } })
+    const scans = mount(ScansPage, { global: { stubs } })
+    await flushPromises()
+
+    const workOrderLink = (wrapper: ReturnType<typeof mount>) =>
+      wrapper
+        .findAll('[data-router-link]')
+        .find((link) => link.text() === 'WO-001')
+        ?.attributes('data-to')
+    expect(workOrderLink(batches)).toBe(JSON.stringify('/mes/work-orders/WO-001'))
+    expect(workOrderLink(scans)).toBe(workOrderLink(batches))
+
+    await batches
+      .findAll('button')
+      .find((b) => b.text().includes('新建打印批次'))!
+      .trigger('click')
+    await setInput(batches, '#barcode-print-source-type', 'production.report')
+    await scans
+      .findAll('button')
+      .find((b) => b.text().includes('补录扫码审计'))!
+      .trigger('click')
+    await setInput(scans, '#barcode-scan-workflow', 'production.report')
+    await flushPromises()
+
+    expect(batches.find('#barcode-print-source-id').attributes('kind')).toBe('mes-work-order')
+    expect(scans.find('#barcode-scan-source-id').attributes('kind')).toBe('mes-work-order')
   })
 
   it.each(['inventory.receipt', 'inventory.issue'])(
