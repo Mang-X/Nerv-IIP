@@ -47,8 +47,7 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
           线边库存余额与账龄
         </h2>
         <p class="mt-1 text-sm text-muted-foreground">
-          库存服务权威余额；第 {{ page }} / {{ pageCount }} 页，本页 {{ items.length }} 条，共
-          {{ total }} 条。
+          第 {{ page }} / {{ pageCount }} 页，本页 {{ items.length }} 条，共 {{ total }} 条。
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">

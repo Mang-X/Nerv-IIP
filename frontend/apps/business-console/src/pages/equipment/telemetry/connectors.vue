@@ -156,7 +156,7 @@ function toggle(key: string) {
       v-if="connectorsState === 'idle'"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      业务上下文未就绪，采集健康尚未查询。
+      尚未确定当前组织，暂未查询采集健康。
     </div>
 
     <div

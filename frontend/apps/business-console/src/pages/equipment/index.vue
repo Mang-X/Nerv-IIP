@@ -236,7 +236,7 @@ function formatDateTime(value?: string | null) {
       v-if="overviewState === 'idle'"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      业务上下文未就绪，设备运行数据尚未查询。
+      尚未确定当前组织，暂未查询设备运行数据。
     </div>
     <div
       v-else-if="overviewState === 'loading'"
@@ -306,7 +306,7 @@ function formatDateTime(value?: string | null) {
         v-if="overviewState === 'idle'"
         class="self-start rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
       >
-        业务上下文未就绪，设备清单尚未查询。
+        尚未确定当前组织，暂未查询设备清单。
       </div>
       <div
         v-else-if="overviewState === 'error'"
@@ -471,7 +471,7 @@ function formatDateTime(value?: string | null) {
             v-if="overviewState === 'idle'"
             class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
           >
-            业务上下文未就绪，阻塞窗口尚未查询。
+            尚未确定当前组织，暂未查询阻塞窗口。
           </div>
           <div
             v-else-if="overviewState === 'loading'"

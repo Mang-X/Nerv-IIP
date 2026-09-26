@@ -234,7 +234,7 @@ const availableTrend = computed(() =>
 const pageCount = computed(() => {
   if (nearExpiryOnly.value) {
     if (!hasExpirySite.value) return '请选择工厂'
-    if (!hasExpiryScope.value) return '业务上下文加载中'
+    if (!hasExpiryScope.value) return '尚未确定当前组织'
     if (expiryAlertsError.value) return '读取失败'
     if (expiryAlertsPending.value) return '加载中'
     if (!expiryAlertsSuccessful.value) return '等待查询'
@@ -267,7 +267,7 @@ const tableAwaitingScope = computed(() => {
 })
 const tableAwaitingScopeMessage = computed(() => {
   if (nearExpiryOnly.value && !hasExpirySite.value) return '请选择工厂查看效期预警批次。'
-  if (nearExpiryOnly.value) return '业务上下文加载中，请稍候。'
+  if (nearExpiryOnly.value) return '尚未确定当前组织，暂无法查看效期预警批次。'
   return '请先选择工厂，再查库存可用量。'
 })
 /** 走到这里才是真的查成功且 0 条。 */

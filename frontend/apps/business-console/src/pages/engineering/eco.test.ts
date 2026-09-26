@@ -365,7 +365,10 @@ describe('engineering eco page', () => {
       changeNumber: 'ECO-1',
       reason: '更换供应商物料',
       status: 'Released',
-      affectedVersions: [{ versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' }],
+      affectedVersions: [
+        { versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' },
+        { versionKind: 'ProductionVersion', versionId: 'PV-1' },
+      ],
     })
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()
@@ -377,5 +380,8 @@ describe('engineering eco page', () => {
     const sheet = wrapper.find('[data-testid="sheet"]')
     expect(sheet.text()).toContain('制造 BOM')
     expect(sheet.text()).toContain('MBOM-VER-9')
+    // 生产版本存的是版本主键，上屏的是「物料 · 生效日」。
+    expect(sheet.text()).toContain('SKU-1 · 生效 2026-01-01')
+    expect(sheet.text()).not.toContain('PV-1')
   })
 })

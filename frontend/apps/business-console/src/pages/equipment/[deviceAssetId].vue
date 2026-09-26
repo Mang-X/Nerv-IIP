@@ -43,7 +43,11 @@ import {
   useMaintenanceWorkOrders,
 } from '@/composables/useBusinessMaintenance'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { formatIsoInterval } from '@/data/businessLabels'
+import {
+  formatIsoInterval,
+  labelFor,
+  MAINTENANCE_INSPECTION_RESULT_LABELS,
+} from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -576,8 +580,13 @@ function historyTypeLabel(value?: string | null) {
 function historyType(row: { itemType?: string | null }) {
   return row.itemType
 }
-function historyValue(row: { value?: string | null }) {
-  return row.value ?? '无数值'
+function historyValue(row: { itemType?: string | null; value?: string | null }) {
+  if (!row.value) return '无数值'
+  // 状态类记录的值是设备状态码，按设备状态词表说中文。
+  return row.itemType?.toLowerCase() === 'state' ? statusLabel(row.value) : row.value
+}
+function inspectionResultLabel(value?: string | null) {
+  return value ? labelFor(MAINTENANCE_INSPECTION_RESULT_LABELS, value, '未知结果') : '未记录'
 }
 function maintenanceStatusLabel(value?: string | null) {
   const labels: Record<string, string> = {
@@ -1251,12 +1260,11 @@ function formatDateTime(value?: string | null) {
                 :key="row.inspectionId"
                 class="grid gap-1 rounded-lg border p-3"
               >
-                <span class="text-sm font-medium text-foreground">{{
-                  row.inspectionId ?? '点检记录'
-                }}</span>
+                <span class="text-sm font-medium text-foreground"
+                  >点检 · {{ formatDateTime(row.inspectedAtUtc) }}</span
+                >
                 <span class="text-xs text-muted-foreground"
-                  >结果 {{ row.result ?? '未记录' }} ·
-                  {{ formatDateTime(row.inspectedAtUtc) }}</span
+                  >结果 {{ inspectionResultLabel(row.result) }}</span
                 >
               </div>
               <div

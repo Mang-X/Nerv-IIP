@@ -107,7 +107,7 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'failed',
       failureKind: 'conflict',
     })
-    expect(wrapper.text()).toContain('数据冲突（409）')
+    expect(wrapper.text()).toContain('数据已被他人修改')
     const button = wrapper.find('button')
     expect(button.exists()).toBe(true)
     await button.trigger('click')

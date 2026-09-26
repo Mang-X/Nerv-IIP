@@ -110,7 +110,7 @@ const handoverContextReady = computed(() =>
 
 const createEntryBlocker = computed(() => {
   if (!canManageHandovers.value) return '没有交接单管理权限'
-  if (!handoverContextReady.value) return '请先完成业务上下文选择'
+  if (!handoverContextReady.value) return '尚未确定当前组织'
   return ''
 })
 

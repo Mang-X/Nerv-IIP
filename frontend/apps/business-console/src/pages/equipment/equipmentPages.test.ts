@@ -662,7 +662,7 @@ describe('equipment pages', () => {
   it('separates not-yet-queried and loading from a genuine zero-device fleet', () => {
     overviewState.state = 'idle'
     const idle = mount(EquipmentIndexPage, { global: { stubs } })
-    expect(idle.text()).toContain('业务上下文未就绪，设备运行数据尚未查询。')
+    expect(idle.text()).toContain('尚未确定当前组织，暂未查询设备运行数据。')
     expect(idle.text()).not.toContain('暂无设备运行记录')
     expect(idle.text()).not.toContain('0 台设备')
 
@@ -719,7 +719,12 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('维护与可靠性')
     expect(wrapper.text()).toContain('维修工单')
     expect(wrapper.text()).toContain('PM-CNC-MONTHLY')
-    expect(wrapper.text()).toContain('insp-6')
+    // 点检记录没有人读单号（inspectionId 是主键），按点检时间 + 中文结果上屏。
+    expect(wrapper.text()).toContain('结果 通过')
+    expect(wrapper.text()).not.toContain('insp-6')
+    expect(wrapper.text()).not.toContain('passed')
+    // 历史摘录里状态类记录的值是设备状态码，同样说中文。
+    expect(wrapper.text()).not.toContain('running')
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
     expect(wrapper.text()).not.toContain('正式页面')

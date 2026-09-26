@@ -115,6 +115,18 @@ const productionVersionOptions = computed(() =>
       ...(row.isDefault ? { hint: '默认版本' } : {}),
     })),
 )
+/**
+ * 查看抽屉里受影响版本的说法。生产版本存的是版本主键，换成「物料 · 生效日」再上屏；
+ * 其余三类是用户手工录入的版本标识，原样显示。
+ */
+function affectedVersionLabel(kind?: string | null, versionId?: string | null) {
+  if (!versionId) return '—'
+  if (kind !== 'ProductionVersion') return versionId
+  return (
+    productionVersionOptions.value.find((option) => option.value === versionId)?.label ??
+    '生产版本已不在当前清单中'
+  )
+}
 function affectedVersionOptions(kind: string, current: string) {
   if (kind !== 'ProductionVersion') return []
   const options = productionVersionOptions.value
@@ -214,7 +226,6 @@ const impactColumns: NvDataTableColumn<BusinessConsoleEngineeringChangeImpactNod
 const riskColumns: NvDataTableColumn<BusinessConsoleEngineeringChangeImpactRisk>[] = [
   { key: 'severity', header: '级别', width: 'w-24' },
   { key: 'message', header: '风险提示' },
-  { key: 'relatedVersionId', header: '关联版本', width: 'w-40' },
 ]
 
 // ── 发布变更向导（一步发布，非多步审批）────────────────────────
@@ -750,7 +761,9 @@ function riskTone(severity?: string | null): StatusTone {
               <tbody>
                 <tr v-for="(row, i) in viewAffected" :key="i" class="border-t">
                   <td class="px-3 py-2">{{ versionKindLabel(row.versionKind) }}</td>
-                  <td class="px-3 py-2 break-all">{{ row.versionId || '—' }}</td>
+                  <td class="px-3 py-2 break-all">
+                    {{ affectedVersionLabel(row.versionKind, row.versionId) }}
+                  </td>
                 </tr>
               </tbody>
             </table>
