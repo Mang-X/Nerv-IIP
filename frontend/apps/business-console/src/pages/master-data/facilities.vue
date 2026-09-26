@@ -1,11 +1,6 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleCreateProductionLineRequest,
-  BusinessConsoleCreateSiteRequest,
-  BusinessConsoleCreateStationRequest,
-  BusinessConsoleCreateWorkCenterRequest,
-  BusinessConsoleResourceItem,
-} from '@nerv-iip/api-client'
+import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
+import type { DirectoryCreateContext } from '@/components/business/directoryCreators'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
@@ -14,7 +9,11 @@ import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import ProductionLineCreateDialog from '@/components/masterData/ProductionLineCreateDialog.vue'
+import SiteCreateDialog from '@/components/masterData/SiteCreateDialog.vue'
 import StationCreateDialog from '@/components/masterData/StationCreateDialog.vue'
+import WorkCenterCreateDialog from '@/components/masterData/WorkCenterCreateDialog.vue'
+import WorkshopCreateDialog from '@/components/masterData/WorkshopCreateDialog.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
@@ -33,7 +32,6 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
-  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -50,7 +48,7 @@ import {
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { FactoryIcon, PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDateTime } from '@/utils/format'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -68,17 +66,16 @@ definePage({
 const TREE_TAKE = 200
 const DEFAULT_TIMEZONE = DEFAULT_TIME_ZONE
 const WORK_CENTER_DEFAULTS = {
-  resourceType: 'work-center',
   capacityUnit: 'minutes',
   capacityMinutesPerDay: 480,
   finiteCapacity: true,
 }
 
-const sites = useMasterDataResource<BusinessConsoleCreateSiteRequest>('site')
+const sites = useMasterDataResource('site')
 const workshops = useBusinessWorkshops()
-const lines = useMasterDataResource<BusinessConsoleCreateProductionLineRequest>('production-line')
-const workCenters = useMasterDataResource<BusinessConsoleCreateWorkCenterRequest>('work-center')
-const stations = useMasterDataResource<BusinessConsoleCreateStationRequest>('station')
+const lines = useMasterDataResource('production-line')
+const workCenters = useMasterDataResource('work-center')
+const stations = useMasterDataResource('station')
 const siteActions = useMasterDataResourceActions('site')
 const workshopActions = useMasterDataResourceActions('workshop')
 const lineActions = useMasterDataResourceActions('production-line')
@@ -100,7 +97,7 @@ const includeDisabled = useIncludeDisabledFilter([
 workshops.filters.take = TREE_TAKE
 
 // 工作日历列表（仅供"默认工作日历"在详情面板解析编码→名称）。
-const calendars = useMasterDataResource<Record<string, unknown>>('work-calendar')
+const calendars = useMasterDataResource('work-calendar')
 calendars.filters.take = TREE_TAKE
 
 // 归属 / 日历 编码 → 名称解析（详情面板显示名称而非裸编码；列表加载后 computed 实时更新）。
@@ -127,8 +124,6 @@ function nameOf(map: Map<string, string>, code: string): string {
 // 节点类型与其在层级中的角色。工位和工作中心都挂在产线下：工位是层级上的下级（工厂 ▸ 车间 ▸
 // 产线 ▸ 工位），工作中心是排产与成本口径的产能单元。
 type NodeType = 'site' | 'workshop' | 'production-line' | 'work-center' | 'station'
-// 走本页通用新建框的类型；工位用单独的新建弹窗（设备表单里就地新增也用它）。
-type CreateType = Exclude<NodeType, 'station'>
 interface TreeNode {
   type: NodeType
   code: string
@@ -145,11 +140,14 @@ const NODE_LABEL: Record<NodeType, string> = {
   'work-center': '工作中心',
   station: '工位',
 }
-// 各父类型可就地新建的子级类型；树节点上的「+」建第一种。
-const CHILD_TYPES: Partial<Record<NodeType, NodeType[]>> = {
-  site: ['workshop'],
-  workshop: ['production-line'],
-  'production-line': ['work-center', 'station'],
+// 各父类型可就地新建的子级类型（树节点上的「+」建第一种），以及新建子级时父节点作为哪一级
+// 上级带出（上级所在工厂取自父节点自身的归属）。
+const CHILDREN: Partial<
+  Record<NodeType, { types: [NodeType, ...NodeType[]]; contextKey: string }>
+> = {
+  site: { types: ['workshop'], contextKey: 'siteCode' },
+  workshop: { types: ['production-line'], contextKey: 'workshopCode' },
+  'production-line': { types: ['work-center', 'station'], contextKey: 'lineCode' },
 }
 
 function toNode(item: BusinessConsoleResourceItem, type: NodeType): TreeNode {
@@ -472,213 +470,40 @@ function refreshAll() {
   void stations.refresh()
 }
 
-// ================= 新建（含就地建子级，父 code 预填只读） =================
-// 单一对话框，按目标 NodeType 切换字段。父归属在打开时确定且只读。
-const createOpen = ref(false)
-const createType = shallowRef<CreateType>('site')
-const createShowErrors = ref(false)
-// 父归属（就地建子级时带入，只读）。
-const parentCtx = reactive({ siteCode: '', workshopCode: '', lineCode: '', plantCode: '' })
-const createForm = reactive({
-  name: '',
-  timezone: DEFAULT_TIMEZONE,
-  defaultCalendarCode: '',
-  capacityMinutesPerDay: '480',
-})
-
-function resetCreateForm() {
-  Object.assign(createForm, {
-    name: '',
-    timezone: DEFAULT_TIMEZONE,
-    defaultCalendarCode: '',
-    capacityMinutesPerDay: '480',
-  })
-  Object.assign(parentCtx, { siteCode: '', workshopCode: '', lineCode: '', plantCode: '' })
+// ================= 新建（含就地建子级，父级带出为只读归属） =================
+// 各类的新建弹窗与表单选择器里就地新增共用（车间 / 产线 / 工作中心 / 工位的约定见
+// `directoryCreators.ts`）。每次打开递增 key 重新挂载，按当次的上级带出归属。
+const CREATE_DIALOGS: Record<NodeType, Component> = {
+  site: SiteCreateDialog,
+  workshop: WorkshopCreateDialog,
+  'production-line': ProductionLineCreateDialog,
+  'work-center': WorkCenterCreateDialog,
+  station: StationCreateDialog,
 }
+const createOpen = shallowRef(false)
+const creating = shallowRef<{
+  session: number
+  type: NodeType
+  bindings: { context?: DirectoryCreateContext }
+}>()
 
+function openCreate(type: NodeType, bindings: { context?: DirectoryCreateContext }) {
+  creating.value = { session: (creating.value?.session ?? 0) + 1, type, bindings }
+  createOpen.value = true
+}
 // 顶部「+ 新建工厂」建根。
 function openCreateRoot() {
-  resetCreateForm()
-  createType.value = 'site'
-  createShowErrors.value = false
-  createOpen.value = true
+  openCreate('site', {})
 }
-// 工位新建弹窗：每次打开递增 key 重新挂载，按当次的产线带出归属。
-const stationCreateSession = shallowRef(0)
-const stationCreateOpen = shallowRef(false)
-const stationCreateLine = shallowRef('')
-
-// 选中父节点 → 「+ 新建<子级>」，父 code 预填且只读。
-function openCreateChild(
-  parent: TreeNode | MasterDataTreeNodeData,
-  childType = CHILD_TYPES[parent.type as NodeType]?.[0],
-) {
-  if (!childType) return
-  if (childType === 'station') {
-    stationCreateLine.value = parent.code
-    stationCreateSession.value += 1
-    stationCreateOpen.value = true
-    return
+// 选中父节点 → 「+ 新建<子级>」，父级带出为只读归属。
+function openCreateChild(parent: TreeNode | MasterDataTreeNodeData, childType?: NodeType) {
+  const children = CHILDREN[parent.type as NodeType]
+  if (!children) return
+  const context: DirectoryCreateContext = {
+    siteCode: parent.item.siteCode ?? '',
+    [children.contextKey]: parent.code,
   }
-  resetCreateForm()
-  createType.value = childType
-  // 用选中路径回填完整归属链（plantCode = 路径上的工厂 code）。
-  const path = selectedPath.value
-  const site = path.find((n) => n.type === 'site')
-  const workshop = path.find((n) => n.type === 'workshop')
-  const line = path.find((n) => n.type === 'production-line')
-  // 选中节点未必在 selectedPath（如刚点新建未选）——以 parent 自身为准补齐。
-  if (childType === 'workshop') {
-    parentCtx.siteCode = parent.code
-  } else if (childType === 'production-line') {
-    parentCtx.workshopCode = parent.code
-    parentCtx.siteCode = site?.code ?? (parent.type === 'site' ? parent.code : '')
-  } else if (childType === 'work-center') {
-    parentCtx.lineCode = parent.code
-    parentCtx.plantCode = site?.code ?? ''
-    void workshop
-    void line
-  }
-  createShowErrors.value = false
-  createOpen.value = true
-}
-
-watch(createOpen, (open) => {
-  if (open) createShowErrors.value = false
-})
-
-const createTitle = computed(() => `新建${NODE_LABEL[createType.value]}`)
-// 归属由所选节点带出，只读展示（不做 disabled 输入框、也不再让用户挑一次）。
-const createContextItems = computed(() => {
-  switch (createType.value) {
-    case 'workshop':
-      return [{ label: '所属工厂', value: nameOf(siteNameByCode.value, parentCtx.siteCode) }]
-    case 'production-line':
-      return [
-        { label: '所属工厂', value: nameOf(siteNameByCode.value, parentCtx.siteCode) },
-        { label: '所属车间', value: nameOf(workshopNameByCode.value, parentCtx.workshopCode) },
-      ]
-    case 'work-center':
-      return [
-        { label: '所属工厂', value: nameOf(siteNameByCode.value, parentCtx.plantCode) },
-        { label: '所属产线', value: nameOf(lineNameByCode.value, parentCtx.lineCode) },
-      ]
-    default:
-      return []
-  }
-})
-// 读屏用的一行事实；界面上归属已在只读区呈现，不再写说明。
-const createContextLine = computed(() =>
-  createContextItems.value.length
-    ? createContextItems.value.map((i) => `${i.label}：${i.value}`).join('，')
-    : '工厂结构根节点',
-)
-
-// 工作日历改为从已维护的日历中选，不让用户手抄编码；只有一条时自动选中。
-const calendarOptions = computed(() => calendars.items.value.filter((c) => Boolean(c.code)))
-watch(
-  [createOpen, calendarOptions],
-  () => {
-    if (!createOpen.value || createType.value !== 'work-center') return
-    if (createForm.defaultCalendarCode) return
-    const only = calendarOptions.value.length === 1 ? calendarOptions.value[0] : undefined
-    if (only?.code) createForm.defaultCalendarCode = only.code
-  },
-  { immediate: true },
-)
-
-const canCreate = computed(() => {
-  if (!isNonEmpty(createForm.name)) return false
-  switch (createType.value) {
-    case 'site':
-      return isNonEmpty(createForm.timezone)
-    case 'workshop':
-      return isNonEmpty(parentCtx.siteCode)
-    case 'production-line':
-      return isNonEmpty(parentCtx.workshopCode) || isNonEmpty(parentCtx.siteCode)
-    case 'work-center':
-      return (
-        isNonEmpty(parentCtx.lineCode) &&
-        isNonEmpty(parentCtx.plantCode) &&
-        isNonEmpty(createForm.defaultCalendarCode) &&
-        (Number(createForm.capacityMinutesPerDay) || 0) > 0
-      )
-  }
-})
-
-const createPending = computed(() => {
-  switch (createType.value) {
-    case 'site':
-      return sites.createPending.value
-    case 'workshop':
-      return workshops.createWorkshopPending.value
-    case 'production-line':
-      return lines.createPending.value
-    case 'work-center':
-      return workCenters.createPending.value
-  }
-})
-
-async function submitCreate() {
-  if (!canCreate.value) {
-    createShowErrors.value = true
-    return
-  }
-  const name = createForm.name.trim()
-  try {
-    switch (createType.value) {
-      case 'site':
-        await sites.create({
-          organizationId: sites.filters.organizationId,
-          environmentId: sites.filters.environmentId,
-          name,
-          timezone: createForm.timezone.trim(),
-        })
-        break
-      case 'workshop':
-        await workshops.createWorkshop({
-          organizationId: workshops.filters.organizationId,
-          environmentId: workshops.filters.environmentId,
-          name,
-          siteCode: parentCtx.siteCode.trim(),
-        })
-        break
-      case 'production-line':
-        await lines.create({
-          organizationId: lines.filters.organizationId,
-          environmentId: lines.filters.environmentId,
-          name,
-          siteCode: parentCtx.siteCode.trim(),
-          ...(parentCtx.workshopCode.trim() ? { workshopCode: parentCtx.workshopCode.trim() } : {}),
-        })
-        break
-      case 'work-center':
-        await workCenters.create({
-          organizationId: workCenters.filters.organizationId,
-          environmentId: workCenters.filters.environmentId,
-          name,
-          plantCode: parentCtx.plantCode.trim(),
-          lineCode: parentCtx.lineCode.trim(),
-          defaultCalendarCode: createForm.defaultCalendarCode.trim(),
-          capacityMinutesPerDay:
-            Number(createForm.capacityMinutesPerDay) || WORK_CENTER_DEFAULTS.capacityMinutesPerDay,
-          resourceType: WORK_CENTER_DEFAULTS.resourceType,
-          capacityUnit: WORK_CENTER_DEFAULTS.capacityUnit,
-          finiteCapacity: WORK_CENTER_DEFAULTS.finiteCapacity,
-        })
-        break
-    }
-    notifySuccess(`${NODE_LABEL[createType.value]}「${name}」已创建。`)
-    resetCreateForm()
-    createShowErrors.value = false
-    createOpen.value = false
-  } catch (error) {
-    notifyOperationFailure(
-      `创建${NODE_LABEL[createType.value]}失败`,
-      error,
-      `创建${NODE_LABEL[createType.value]}失败，请稍后重试。`,
-    )
-  }
+  openCreate(childType ?? children.types[0], { context })
 }
 
 // ================= 编辑（编码只读；改名 + 改挂上级，归属经 update 透传） =================
@@ -709,7 +534,6 @@ function timeZoneOptionsWith(current: string) {
   }
   return TIME_ZONE_OPTIONS
 }
-const timeZoneOptions = computed(() => timeZoneOptionsWith(createForm.timezone))
 const editTimeZoneOptions = computed(() => timeZoneOptionsWith(editForm.timezone))
 
 const canEdit = computed(() => {
@@ -904,14 +728,14 @@ function requestLifecycle(row: BusinessConsoleResourceItem) {
 
 // 选中节点能就地新建的子级，以及各类子级的数量。
 const childTypesOfSelected = computed(() =>
-  selectedNode.value ? (CHILD_TYPES[selectedNode.value.type] ?? []) : [],
+  selectedNode.value ? (CHILDREN[selectedNode.value.type]?.types ?? []) : [],
 )
 function childCount(type: NodeType) {
   return selectedNode.value?.children.filter((child) => child.type === type).length ?? 0
 }
 // 通用树节点的 childLabelOf 回调（参数为开放 string）：映射到本页的子级中文名。
 function childLabelOf(type: string): string | undefined {
-  const child = CHILD_TYPES[type as NodeType]?.[0]
+  const child = CHILDREN[type as NodeType]?.types[0]
   return child ? NODE_LABEL[child] : undefined
 }
 </script>
@@ -1150,111 +974,6 @@ function childLabelOf(type: string): string | undefined {
       </section>
     </div>
 
-    <!-- 新建对话框（含就地建子级，父归属只读） -->
-    <NvDialog v-model:open="createOpen">
-      <NvDialogContent class="sm:max-w-lg">
-        <NvDialogHeader>
-          <NvDialogTitle>{{ createTitle }}</NvDialogTitle>
-          <!-- 归属已在下方只读区完整呈现；此处仅供读屏播报。 -->
-          <NvDialogDescription class="sr-only">{{ createContextLine }}</NvDialogDescription>
-        </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submitCreate">
-          <CarriedContextSummary
-            v-if="createContextItems.length"
-            label="归属"
-            :items="createContextItems"
-          />
-          <p v-if="createShowErrors && !canCreate" class="text-sm text-destructive" role="alert">
-            请完整填写带 * 的必填项（已标红）。
-          </p>
-          <FormSectionTitle>基础信息</FormSectionTitle>
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-              <NvFieldLabel for="create-name"
-                >{{ NODE_LABEL[createType] }}名称
-                <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput id="create-name" v-model="createForm.name" autocomplete="off" required />
-            </NvField>
-            <!-- 工厂：时区 -->
-            <NvField
-              v-if="createType === 'site'"
-              :data-invalid="createShowErrors && !isNonEmpty(createForm.timezone)"
-            >
-              <NvFieldLabel for="create-tz"
-                >时区 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvSearchSelect
-                id="create-tz"
-                v-model="createForm.timezone"
-                :options="timeZoneOptions"
-                placeholder="选择时区"
-                aria-label="时区"
-              />
-            </NvField>
-          </NvFieldGroup>
-
-          <!-- 工作中心：产能 -->
-          <template v-if="createType === 'work-center'">
-            <FormSectionTitle>产能</FormSectionTitle>
-            <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-              <NvField
-                :data-invalid="createShowErrors && !isNonEmpty(createForm.defaultCalendarCode)"
-              >
-                <NvFieldLabel for="create-cal"
-                  >默认工作日历 <span class="text-destructive">*</span></NvFieldLabel
-                >
-                <NvSelect v-if="calendarOptions.length" v-model="createForm.defaultCalendarCode">
-                  <NvSelectTrigger id="create-cal"
-                    ><NvSelectValue placeholder="请选择工作日历"
-                  /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="c in calendarOptions" :key="c.code" :value="c.code ?? ''">
-                      {{ c.displayName ?? c.code }}
-                    </NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
-                <template v-else>
-                  <NvInput
-                    id="create-cal"
-                    v-model="createForm.defaultCalendarCode"
-                    autocomplete="off"
-                    required
-                  />
-                  <!-- 尚无可选日历时的取值来源（非显而易见），保留一行。 -->
-                  <NvFieldDescription>先在「排班与日历」页建工作日历。</NvFieldDescription>
-                </template>
-              </NvField>
-              <NvField
-                :data-invalid="
-                  createShowErrors && !((Number(createForm.capacityMinutesPerDay) || 0) > 0)
-                "
-              >
-                <NvFieldLabel for="create-cap"
-                  >日产能（分钟） <span class="text-destructive">*</span></NvFieldLabel
-                >
-                <NvInput
-                  id="create-cap"
-                  v-model="createForm.capacityMinutesPerDay"
-                  type="number"
-                  min="1"
-                  inputmode="numeric"
-                />
-              </NvField>
-            </NvFieldGroup>
-          </template>
-
-          <NvDialogFooter>
-            <NvButton type="button" variant="outline" @click="createOpen = false">取消</NvButton>
-            <NvButton type="submit" :disabled="createPending">
-              <Spinner v-if="createPending" aria-hidden="true" />
-              保存{{ NODE_LABEL[createType] }}
-            </NvButton>
-          </NvDialogFooter>
-        </form>
-      </NvDialogContent>
-    </NvDialog>
-
     <!-- 编辑对话框（编码只读；改名 + 改挂上级） -->
     <NvDialog v-model:open="editOpen">
       <NvDialogContent class="sm:max-w-lg">
@@ -1442,11 +1161,12 @@ function childLabelOf(type: string): string | undefined {
         </form>
       </NvDialogContent>
     </NvDialog>
-    <StationCreateDialog
-      v-if="stationCreateSession"
-      :key="stationCreateSession"
-      v-model:open="stationCreateOpen"
-      :context="{ lineCode: stationCreateLine }"
+    <component
+      :is="CREATE_DIALOGS[creating.type]"
+      v-if="creating"
+      :key="creating.session"
+      v-model:open="createOpen"
+      v-bind="creating.bindings"
     />
     <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>

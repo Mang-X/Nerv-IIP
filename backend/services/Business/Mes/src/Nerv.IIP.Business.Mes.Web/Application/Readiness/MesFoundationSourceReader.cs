@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -14,9 +15,12 @@ public sealed record MesFoundationWorkCenter(string Code, string DisplayName);
 
 public sealed record MesFoundationStockLocation(string LocationCode, string SiteCode, string LocationType);
 
+/// <summary>某日所在会计期间，以及该期间已配置机器制造费用率（适用或明确不适用）的工作中心；期间未唯一匹配时期间为空。</summary>
+public sealed record MesMachineOverheadRateCoverage(string? AccountingPeriodCode, IReadOnlyCollection<string> ConfiguredWorkCenterIds);
+
 /// <summary>
 /// 生产准备检查读取的外部基础数据（#3771）。MES 不拥有这些数据：工作中心来自 MasterData，
-/// 工作中心成本费率来自 ERP，库位主数据来自 Inventory。
+/// 工作中心成本费率、会计期间与机器制造费用率来自 ERP，库位主数据来自 Inventory。
 /// 来源读失败一律抛 <c>FOUNDATION_SOURCE_UNAVAILABLE</c>，由网关把该检查区域显示为「来源服务不可用」，
 /// 不能把读失败说成「缺数据」。
 /// </summary>
@@ -34,6 +38,12 @@ public interface IMesFoundationSourceReader
         string organizationId,
         string environmentId,
         string workCenterId,
+        CancellationToken cancellationToken);
+
+    Task<MesMachineOverheadRateCoverage> GetMachineOverheadRateCoverageAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly date,
         CancellationToken cancellationToken);
 
     Task<MesFoundationStockLocation?> FindStockLocationAsync(
@@ -93,6 +103,23 @@ public sealed class HttpMesFoundationSourceReader(
                 ("workCenterId", workCenterId)),
             cancellationToken);
         return data.CurrentEffectiveRevision is not null;
+    }
+
+    public async Task<MesMachineOverheadRateCoverage> GetMachineOverheadRateCoverageAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly date,
+        CancellationToken cancellationToken)
+    {
+        var data = await GetAsync<ErpMachineOverheadRateCoverage>(
+            erpClient.HttpClient,
+            "ERP 机器制造费用率",
+            "/api/business/v1/erp/finance/machine-overhead-rate-coverage?" + Query(
+                ("organizationId", organizationId),
+                ("environmentId", environmentId),
+                ("date", date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))),
+            cancellationToken);
+        return new MesMachineOverheadRateCoverage(data.AccountingPeriodCode, data.ConfiguredWorkCenterIds);
     }
 
     public async Task<MesFoundationStockLocation?> FindStockLocationAsync(
@@ -175,6 +202,8 @@ public sealed class HttpMesFoundationSourceReader(
                 .Select(x => $"{Uri.EscapeDataString(x.Name)}={Uri.EscapeDataString(x.Value!.Trim())}"));
 
     private sealed record ErpWorkCenterCostRateList(int? CurrentEffectiveRevision);
+
+    private sealed record ErpMachineOverheadRateCoverage(string? AccountingPeriodCode, IReadOnlyCollection<string> ConfiguredWorkCenterIds);
 
     private sealed record InventoryStockLocationList(IReadOnlyCollection<InventoryStockLocationItem> Items);
 

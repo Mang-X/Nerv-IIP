@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
+import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
 import DevicesPage from './devices.vue'
 
 const stub = vi.hoisted(() => ({
@@ -146,17 +147,32 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useMasterDataResourceActions: () => stubActions(),
   useBusinessWorkshops: () => stubWorkshops(),
-  // 设备类别改成取 `asset-class` 数据字典、供应商改成取业务伙伴目录（都不再手输编码）。
-  useBusinessMasterDataResources: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
-    resources: computed(() => [
-      { resourceType: 'reference-data', code: 'CNC', displayName: '数控机床', active: true },
-    ]),
-    resourcesTotal: computed(() => 1),
-    resourcesError: shallowRef(undefined),
-    resourcesPending: shallowRef(false),
-    refreshResources: vi.fn(),
+  useCreateMasterDataResource: () => ({
+    create: stub.create,
+    error: shallowRef(undefined),
+    pending: shallowRef(false),
   }),
+  // 设备类别改成取 `asset-class` 数据字典、供应商改成取业务伙伴目录（都不再手输编码）；
+  // 设备弹窗另取工厂（唯一时缺省选中）与设备台账（父设备候选）。
+  useBusinessMasterDataResources: (resourceType: string) => {
+    const rows =
+      resourceType === 'reference-data'
+        ? [{ resourceType: 'reference-data', code: 'CNC', displayName: '数控机床', active: true }]
+        : stubResource(resourceType).items.value
+    return {
+      filters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 200,
+      }),
+      resources: computed(() => rows),
+      resourcesTotal: computed(() => rows.length),
+      resourcesError: shallowRef(undefined),
+      resourcesPending: shallowRef(false),
+      refreshResources: vi.fn(),
+    }
+  },
   useBusinessPartners: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
     partners: computed(() => [
@@ -173,6 +189,10 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     partnersPending: shallowRef(false),
     refreshPartners: vi.fn(),
   }),
+}))
+
+vi.mock('@/stores/businessContext', () => ({
+  useBusinessContextStore: () => ({ organizationId: 'org-001', environmentId: 'env-dev' }),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -267,6 +287,10 @@ async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
     .find((b) => b.text().includes('新建设备'))!
     .trigger('click')
   await flushPromises()
+  await fillValid(wrapper)
+}
+
+async function fillValid(wrapper: ReturnType<typeof mount>) {
   // 新建态不再有编码输入框（编码由系统自动生成）。
   await wrapper.find('#dev-model').setValue('KR-210')
   await wrapper.find('#dev-maker').setValue('KUKA')
@@ -453,6 +477,21 @@ describe('master-data devices page', () => {
     expect(stationContext()).toEqual({ lineCode: 'LINE-B' })
   })
 
+  // 就地新增车间、产线、工作中心时，表单已选的上级交给新增弹窗带出为只读归属；键名对不上时
+  // 弹窗会让用户重新自选上级，建出来的项可能挂到别的工厂 / 产线下，又被自动选进设备表单。
+  it('车间、产线、工作中心的新增弹窗拿到的是表单当前选的上级', async () => {
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+    const createContext = (id: string) =>
+      JSON.parse(wrapper.get(id).attributes('data-create-context')!)
+    expect(createContext('#dev-workshop')).toEqual({ siteCode: 'PLANT-A' })
+    expect(createContext('#dev-line')).toEqual({ siteCode: 'PLANT-A', workshopCode: 'WS-A' })
+    expect(createContext('#dev-wc')).toEqual({ siteCode: 'PLANT-A', lineCode: 'LINE-A' })
+  })
+
   it('换产线后工位、工作中心清空并按新产线收窄，不带旧工位提交', async () => {
     stub.create.mockClear()
     const wrapper = mount(DevicesPage, {
@@ -476,6 +515,24 @@ describe('master-data devices page', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(stub.create).not.toHaveBeenCalled()
+  })
+
+  // 设备选择器就地新增（directory-creators/equipment.ts）靠 created 拿到新建设备的编码去自动选中。
+  it('弹窗新建成功：发出 created，带服务端回传的编码，并关闭', async () => {
+    stub.create.mockClear()
+    const wrapper = mount(DeviceFormDialog, {
+      props: { open: true },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await fillValid(wrapper)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.create).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('created')).toEqual([[{ code: 'EQ-NEW', name: 'KR-210' }]])
+    expect(wrapper.emitted('update:open')).toEqual([[false]])
   })
 
   it('提交失败：弹错误 toast（人话）且不重置表单', async () => {

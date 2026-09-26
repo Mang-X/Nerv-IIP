@@ -61,6 +61,7 @@
 
 | CodeSet | 中文名 | 类别 | 标准码值 |
 | --- | --- | --- | --- |
+| `asset-class` | 设备类别 | 平台预置+可维护 | `general-equipment`=通用设备 / `special-equipment`=专用设备 / `testing-equipment`=检测设备 / `logistics-equipment`=物流设备 / `power-equipment`=动力设备 |
 | `device-status` | 设备状态 | 系统枚举 | `running`=运行 / `idle`=待机 / `maintenance`=保养 / `fault`=故障 / `scrapped`=报废 |
 | `line-type` | 产线类型 | 系统枚举 | `flow`=流水线 / `cell`=单元线 / `discrete`=离散 |
 | `work-center-type` | 工作中心粒度 | 系统枚举 | `work-center`=工作中心 / `section`=工段 / `station-group`=工位组 |
