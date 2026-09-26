@@ -811,6 +811,8 @@ public sealed class ApprovalEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                // 本用例只验证匿名拒绝先于持久化，不需要也不具备真实数据库；产品基线 seed 现默认开启（#3805），显式关闭。
+                builder.UseSetting("Approval:Seed:Enabled", "false");
             });
         using var client = factory.CreateClient();
 

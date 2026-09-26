@@ -23,8 +23,8 @@
 2. 连接串只来自受控输入，目标 database 名称与 manifest / `-ExpectedDatabase` 完全匹配；不得误连开发默认库、共享验证库或相邻客户库。
 3. PostgreSQL、Redis、对象存储和观测依赖满足当前发布 profile；消息 provider 为 Redis 时核对持久化与恢复策略，为 RabbitMQ 时才核对 RabbitMQ。
 4. 备份/快照已成功并记录位置、时间、校验方式和恢复负责人。**备份失败或无法确认位置时停止发布。**
-5. 本次服务清单、执行顺序、seed 清单、幂等规则和初始凭据处理方式已批准。
-6. 任一 migration 或 seed 失败时停止后续服务启动；结果不确定时先核对 migration history、公开健康状态和脚本日志，不盲重放。
+5. 本次服务清单、执行顺序、seed 清单、幂等规则和初始凭据处理方式已批准；seed 清单须包含第 7 节列出的、随 Web 启动默认执行的产品基线 seed。
+6. 任一 migration 或 seed 失败时停止后续服务启动（产品基线 seed 失败会让该服务启动失败）；结果不确定时先核对 migration history、公开健康状态和脚本日志，不盲重放。
 7. 发布脚本必须是 `release-install` 或受控 migrator；不得用临时 SQL、`verify` 脚本或 Web 启动时 AutoMigrate 处理客户数据。
 8. 执行 Quality migration `20260629074947_AddQualityLongtailReviewFixes` 前，先按 `docs/reports/remediation/business-quality-inspection-duplicates.md` 完成历史重复组检查/清理；不得静默删除或改写 NCR、事件或审计证据。
 9. 如果旧库仍把 AppHub/Ops `__EFMigrationsHistory` 放在 `public`，先执行第 3 节升级前置；服务 schema 已存在正确历史记录的库不得重复把这一条件当作必经“阶段”。
@@ -228,7 +228,17 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 
 ## 7. Seed 契约
 
-Seed 是显式步骤，不混入普通 Web 启动。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
+Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
+
+产品基线 seed 例外（#3805）：以下 seed 是基础功能必需的开箱数据，**默认在服务 Web 启动时执行**，不依赖 `Persistence:AutoMigrate`；显式设为 `false` 才关闭。它们只补缺、不覆盖已有行，重复执行不改变租户已有数据。
+
+| 开关 | 服务 | 写入内容 | 目标租户配置 |
+|---|---|---|---|
+| `Approval:Seed:Enabled` | BusinessApproval | 缺失的审批模板 | `Approval:Seed:OrganizationId` / `Approval:Seed:EnvironmentId` |
+| `Inventory:Seed:Enabled` | BusinessInventory | 缺失的库位 | `Inventory:Seed:OrganizationId` / `Inventory:Seed:EnvironmentId` |
+| `Quality:Seed:Enabled` | BusinessQuality | 缺失的质量原因码等基础目录 | `Quality:Seed:OrganizationId` / `Quality:Seed:EnvironmentId` |
+
+目标租户配置缺省为 `org-001` / `env-dev`；部署到其它租户时必须显式配置组织与环境，否则开箱数据会写进缺省租户。`MasterData:Seed:Enabled`、`Maintenance:Seed:Enabled` 不在此列，仍需显式开启或随 Development 下的 AutoMigrate 执行；`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 引导种子也不在此列。
 
 诊断输出至少能关联：
 
