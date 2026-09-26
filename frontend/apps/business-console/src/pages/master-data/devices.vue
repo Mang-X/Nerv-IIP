@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
@@ -268,23 +269,19 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
   ]
 }
 
-const workshopOptions = computed(() =>
-  workshops.workshops.value.filter(
-    (w) => !createForm.siteCode || (w.siteCode ?? '') === createForm.siteCode,
-  ),
-)
-const lineOptions = computed(() =>
-  lines.items.value.filter(
-    (l) =>
-      (!createForm.siteCode || (l.siteCode ?? '') === createForm.siteCode) &&
-      (!createForm.workshopCode || (l.workshopCode ?? '') === createForm.workshopCode),
-  ),
-)
-const workCenterOptions = computed(() =>
-  workCenters.items.value.filter(
-    (w) => !createForm.lineCode || (w.lineCode ?? '') === createForm.lineCode,
-  ),
-)
+// 层级字段逐级收窄：改了上级，下级原先选的值可能已不在新上级下，一律清空让用户重选
+// （选择器按上级收窄后，留着旧值会在界面上显示成未选、提交时却仍带着它）。
+// 工作中心和工位都挂在产线下、彼此不是上下级。
+const LOWER_LEVELS = {
+  siteCode: ['workshopCode', 'lineCode', 'workCenterCode', 'stationCode'],
+  workshopCode: ['lineCode', 'workCenterCode', 'stationCode'],
+  lineCode: ['workCenterCode', 'stationCode'],
+} as const
+function setLevel(level: keyof typeof LOWER_LEVELS, value: string) {
+  if (createForm[level] === value) return
+  createForm[level] = value
+  for (const lower of LOWER_LEVELS[level]) createForm[lower] = ''
+}
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return devices.items.value
@@ -662,87 +659,80 @@ async function submitDevice() {
                   <NvFieldLabel for="dev-site"
                     >所属工厂 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="createForm.siteCode">
-                    <NvSelectTrigger id="dev-site"
-                      ><NvSelectValue placeholder="请选择工厂"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="s in sites.items.value"
-                        :key="s.code"
-                        :value="s.code ?? '__none__'"
-                      >
-                        {{ s.displayName ?? s.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="dev-site"
+                    directory-type="site"
+                    creatable
+                    :model-value="createForm.siteCode"
+                    :invalid="createShowErrors && !isNonEmpty(createForm.siteCode)"
+                    @update:model-value="setLevel('siteCode', $event)"
+                  />
                 </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.workshopCode)">
                   <NvFieldLabel for="dev-workshop"
                     >所属车间 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="createForm.workshopCode">
-                    <NvSelectTrigger id="dev-workshop"
-                      ><NvSelectValue placeholder="请选择车间"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="w in workshopOptions"
-                        :key="w.code"
-                        :value="w.code ?? '__none__'"
-                      >
-                        {{ w.displayName ?? w.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="dev-workshop"
+                    directory-type="workshop"
+                    creatable
+                    :parent="{ siteCode: createForm.siteCode }"
+                    :create-context="{ siteCode: createForm.siteCode }"
+                    :model-value="createForm.workshopCode"
+                    :invalid="createShowErrors && !isNonEmpty(createForm.workshopCode)"
+                    @update:model-value="setLevel('workshopCode', $event)"
+                  />
                 </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
                   <NvFieldLabel for="dev-line"
                     >所属产线 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="createForm.lineCode">
-                    <NvSelectTrigger id="dev-line"
-                      ><NvSelectValue placeholder="请选择产线"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="l in lineOptions"
-                        :key="l.code"
-                        :value="l.code ?? '__none__'"
-                      >
-                        {{ l.displayName ?? l.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="dev-line"
+                    directory-type="production-line"
+                    creatable
+                    :parent="{
+                      siteCode: createForm.siteCode,
+                      workshopCode: createForm.workshopCode,
+                    }"
+                    :create-context="{
+                      siteCode: createForm.siteCode,
+                      workshopCode: createForm.workshopCode,
+                    }"
+                    :model-value="createForm.lineCode"
+                    :invalid="createShowErrors && !isNonEmpty(createForm.lineCode)"
+                    @update:model-value="setLevel('lineCode', $event)"
+                  />
                 </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
                   <NvFieldLabel for="dev-wc"
                     >所属工作中心 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="createForm.workCenterCode">
-                    <NvSelectTrigger id="dev-wc"
-                      ><NvSelectValue placeholder="请选择工作中心"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="w in workCenterOptions"
-                        :key="w.code"
-                        :value="w.code ?? '__none__'"
-                      >
-                        {{ w.displayName ?? w.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="dev-wc"
+                    v-model="createForm.workCenterCode"
+                    directory-type="work-center"
+                    creatable
+                    :parent="{ lineCode: createForm.lineCode }"
+                    :create-context="{
+                      siteCode: createForm.siteCode,
+                      lineCode: createForm.lineCode,
+                    }"
+                    :invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)"
+                  />
                 </NvField>
                 <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.stationCode)">
                   <NvFieldLabel for="dev-station"
                     >所属工位 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <DirectoryPicker
                     id="dev-station"
                     v-model="createForm.stationCode"
-                    autocomplete="off"
-                    required
+                    directory-type="station"
+                    creatable
+                    :parent="{ lineCode: createForm.lineCode }"
+                    :create-context="{ lineCode: createForm.lineCode }"
+                    :invalid="createShowErrors && !isNonEmpty(createForm.stationCode)"
                   />
                 </NvField>
                 <NvField>

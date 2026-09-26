@@ -4,6 +4,7 @@ import {
   createBusinessConsoleDepartmentMutationOptions,
   createBusinessConsoleProductionLineMutationOptions,
   createBusinessConsoleShiftMutationOptions,
+  createBusinessConsoleStationMutationOptions,
   createBusinessConsoleSiteMutationOptions,
   createBusinessConsoleBusinessPartnerMutationOptions,
   createBusinessConsoleReferenceDataCodeMutationOptions,
@@ -544,6 +545,7 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
 const RESOURCE_CREATE_OPTIONS = {
   site: createBusinessConsoleSiteMutationOptions,
   'production-line': createBusinessConsoleProductionLineMutationOptions,
+  station: createBusinessConsoleStationMutationOptions,
   'work-center': createBusinessConsoleWorkCenterMutationOptions,
   'device-asset': registerBusinessConsoleDeviceAssetMutationOptions,
   shift: createBusinessConsoleShiftMutationOptions,

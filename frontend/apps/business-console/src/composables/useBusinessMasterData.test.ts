@@ -40,6 +40,7 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   createBusinessConsoleSiteMutationOptions: mutationOptionStub(),
+  createBusinessConsoleStationMutationOptions: mutationOptionStub(),
   createBusinessConsoleProductionLineMutationOptions: mutationOptionStub(),
   createBusinessConsoleWorkCenterMutationOptions: mutationOptionStub(),
   registerBusinessConsoleDeviceAssetMutationOptions: mutationOptionStub(),
