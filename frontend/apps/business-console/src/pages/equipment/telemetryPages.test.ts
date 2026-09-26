@@ -755,12 +755,12 @@ describe('equipment telemetry pages', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
     expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
-    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('离散桶 · 2026-07-01')
+    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('单日 · 2026-07-01')
     expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('70%')
-    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
+    expect(wrapper.text()).toContain('1 条日统计缺少数据，图中未按 0%')
     expect(wrapper.text()).toContain('缺少或存在冲突的工序标准速率')
     expect(wrapper.text()).toContain('—')
-    expect(wrapper.text()).toContain('1 个完整率值点，1 个缺失点')
+    expect(wrapper.text()).toContain('1 条数据完整，1 条缺数')
   })
 
   it('renders the complete 31-day trend independently from the 20-row audit page', () => {
@@ -795,10 +795,9 @@ describe('equipment telemetry pages', () => {
     expect(chartText).toContain('7/1')
     expect(chartText).toContain('7/31')
     expect(chartText).toContain('SITE-SUZHOU · OEE')
-    expect(wrapper.text()).toContain('按 1 个站点分别呈现')
-    expect(wrapper.text()).toContain('完整窗口共 31 个业务日聚合桶')
-    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
-    expect(wrapper.get('[data-testid="metric-strip"]').text()).not.toContain('数据不完整')
+    expect(wrapper.text()).toContain('按 1 个站点分别展示')
+    expect(wrapper.text()).toContain('所选时段共 31 条日统计')
+    expect(wrapper.text()).toContain('1 条日统计缺少数据，图中未按 0%')
   })
 
   it('renders equal business dates as independent site-owned trend groups', () => {
@@ -825,7 +824,7 @@ describe('equipment telemetry pages', () => {
 
     expect(points).toHaveLength(2)
     expect(wrapper.findAll('[data-oee-site]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('按 2 个站点分别呈现')
+    expect(wrapper.text()).toContain('按 2 个站点分别展示')
   })
 
   it('renders equal site and business date windows as distinct segments', () => {
@@ -864,9 +863,7 @@ describe('equipment telemetry pages', () => {
 
     expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
     expect(wrapper.find('[data-oee-discrete-point]').exists()).toBe(false)
-    expect(wrapper.text()).toContain(
-      '本历史窗口段没有可绘制的完整率值；全部缺失事实仍保留在下方核查表中。',
-    )
+    expect(wrapper.text()).toContain('这一段没有完整数据，无法绘制趋势；原因见下方明细。')
   })
 
   it('keeps equal shift codes in different sites and hierarchy readable with distinct row keys', () => {
@@ -931,8 +928,8 @@ describe('equipment telemetry pages', () => {
 
     telemetryPageMocks.aggregateError = undefined
     const emptyText = mount(TelemetryOeePage, { global: { stubs } }).text()
-    expect(emptyText).toContain('当前窗口没有可绘制的完整率值')
-    expect(emptyText).toContain('当前窗口和筛选范围内没有 OEE 聚合事实')
+    expect(emptyText).toContain('所选时段没有完整的 OEE 数据')
+    expect(emptyText).toContain('所选时段和筛选范围内没有 OEE 数据')
   })
 
   it('requires a numeric threshold before saving an alarm rule', async () => {

@@ -1,6 +1,65 @@
 import { describe, expect, it } from 'vitest'
 import type { BusinessConsoleTelemetryOeeAggregateBucket } from '@nerv-iip/api-client'
-import { presentOeeReport, type OeeReportDimension } from './oeePresentation'
+import {
+  localDatesFromOeeWindow,
+  oeeWindowFromLocalDates,
+  presentOeeReport,
+  recentOeeWindow,
+  type OeeReportDimension,
+} from './oeePresentation'
+
+// 国内工厂的使用者在东八区：接口给的是 UTC 时刻，屏上必须是当地时间。
+process.env.TZ = 'Asia/Shanghai'
+
+describe('OEE 统计时段按当地时间显示与查询', () => {
+  it('把接口的 UTC 时段换算成当地时间显示（按天、按班次）', () => {
+    const report = presentOeeReport({
+      dimension: 'shift',
+      trendBuckets: [],
+      tableBuckets: [
+        bucket({
+          businessDate: '2026-08-01',
+          bucketStartUtc: '2026-07-31T16:00:00.000Z',
+          bucketEndUtc: '2026-08-01T16:00:00.000Z',
+        }),
+        bucket({
+          dimension: 'shift',
+          dimensionValue: 'SHIFT-DAY',
+          businessDate: '2026-08-01',
+          bucketStartUtc: '2026-08-01T00:00:00.000Z',
+          bucketEndUtc: '2026-08-01T12:00:00.000Z',
+        }),
+      ],
+      tableTotal: 2,
+    })
+
+    expect(report.tableRows.map((row) => row.windowLabel)).toEqual([
+      '2026-08-01 00:00 至 2026-08-02 00:00',
+      '2026-08-01 08:00 至 2026-08-01 20:00',
+    ])
+  })
+
+  it('选中的当地日期按当地 0 点换算成查询时段，并能原样换回', () => {
+    const window = oeeWindowFromLocalDates('2026-08-01', '2026-08-07')
+
+    expect(window).toEqual({
+      windowStartUtc: '2026-07-31T16:00:00.000Z',
+      windowEndUtc: '2026-08-07T16:00:00.000Z',
+    })
+    expect(localDatesFromOeeWindow(window.windowStartUtc, window.windowEndUtc)).toEqual({
+      start: '2026-08-01',
+      end: '2026-08-07',
+    })
+  })
+
+  it('默认统计时段是含今天的最近 7 个当地自然日（当地凌晨也不会退回前一天）', () => {
+    // 当地 2026-09-27 01:00，UTC 仍是 9 月 26 日。
+    expect(recentOeeWindow(7, new Date('2026-09-26T17:00:00.000Z'))).toEqual({
+      windowStartUtc: '2026-09-20T16:00:00.000Z',
+      windowEndUtc: '2026-09-27T16:00:00.000Z',
+    })
+  })
+})
 
 describe('OEE aggregate presentation', () => {
   it('separates equal business dates into site-owned trend groups without cross-site lines', () => {

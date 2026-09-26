@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryOeeAggregateDimension } from '@nerv-iip/api-client'
-import type { DateRange, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import type { DateRange, NvDataTableColumn } from '@nerv-iip/ui'
 import {
   describeTelemetryOeeDegradation,
   formatOeeRate,
@@ -8,7 +8,13 @@ import {
   useBusinessTelemetryOeeTrend,
 } from '@/composables/useBusinessTelemetry'
 import { usePagedList } from '@/composables/usePagedList'
-import { presentOeeReport, type OeeTableRow } from '@/pages/equipment/telemetry/oeePresentation'
+import {
+  localDatesFromOeeWindow,
+  oeeWindowFromLocalDates,
+  presentOeeReport,
+  recentOeeWindow,
+  type OeeTableRow,
+} from '@/pages/equipment/telemetry/oeePresentation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import {
@@ -20,7 +26,6 @@ import {
   NvFieldLabel,
   NvInput,
   NvLineChart,
-  NvMetricStrip,
   NvPageHeader,
   NvSelect,
   NvSelectContent,
@@ -43,20 +48,14 @@ definePage({
 })
 
 const route = useRoute()
-const DEFAULT_WINDOW_DAYS = 7
-const defaultWindow = (() => {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(start.getDate() - DEFAULT_WINDOW_DAYS)
-  return { endUtc: end.toISOString(), startUtc: start.toISOString() }
-})()
+const defaultWindow = recentOeeWindow(7)
 
 const dimensions: Array<{ value: BusinessConsoleTelemetryOeeAggregateDimension; label: string }> = [
-  { value: 'day', label: '业务日趋势' },
-  { value: 'workCenter', label: '工作中心横比' },
-  { value: 'line', label: '产线横比' },
-  { value: 'workshop', label: '车间横比' },
-  { value: 'shift', label: '班次横比' },
+  { value: 'day', label: '按天趋势' },
+  { value: 'shift', label: '按班次对比' },
+  { value: 'workCenter', label: '按工作中心对比' },
+  { value: 'line', label: '按产线对比' },
+  { value: 'workshop', label: '按车间对比' },
 ]
 
 const {
@@ -74,8 +73,8 @@ const {
   lineCode: routeQuery('lineCode'),
   workshopCode: routeQuery('workshopCode'),
   businessDate: routeQuery('businessDate'),
-  windowEndUtc: routeQuery('windowEndUtc') || defaultWindow.endUtc,
-  windowStartUtc: routeQuery('windowStartUtc') || defaultWindow.startUtc,
+  windowEndUtc: routeQuery('windowEndUtc') || defaultWindow.windowEndUtc,
+  windowStartUtc: routeQuery('windowStartUtc') || defaultWindow.windowStartUtc,
 })
 const { refreshTrend, trendBuckets, trendError, trendPending } =
   useBusinessTelemetryOeeTrend(filters)
@@ -102,7 +101,7 @@ watch(
 )
 
 const dimensionLabel = computed(
-  () => dimensions.find((item) => item.value === filters.dimension)?.label ?? 'OEE 聚合',
+  () => dimensions.find((item) => item.value === filters.dimension)?.label ?? '',
 )
 const errorMessage = computed(() => inlineErrorMessage(aggregateError.value))
 const trendErrorMessage = computed(() => inlineErrorMessage(trendError.value))
@@ -114,16 +113,6 @@ const reportPresentation = computed(() =>
     tableTotal: aggregateTotal.value,
   }),
 )
-const summaryCells = computed<NvMetricStripCell[]>(() => [
-  {
-    key: 'window',
-    label: '数据窗口',
-    value: formatWindow(filters.windowStartUtc, filters.windowEndUtc),
-  },
-  { key: 'timezone', label: '查询时区', value: 'UTC' },
-  { key: 'dimension', label: '聚合维度', value: dimensionLabel.value },
-  { key: 'count', label: '结果', value: aggregateTotal.value, unit: ' 个桶' },
-])
 
 const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
   { key: 'primaryLabel', header: '对比对象' },
@@ -131,7 +120,7 @@ const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
   ...(filters.dimension === 'day' || filters.dimension === 'shift'
     ? [{ key: 'businessDateLabel', header: '业务日' }]
     : []),
-  { key: 'windowLabel', header: '聚合窗口' },
+  { key: 'windowLabel', header: '统计时段' },
   { key: 'oeeRate', header: 'OEE', accessor: (row) => rateCell(row.oeeRate) },
   {
     key: 'availabilityRate',
@@ -149,13 +138,10 @@ const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
 ])
 
 const windowRange = computed<DateRange>({
-  get: () => ({
-    end: toDateInput(filters.windowEndUtc, -1),
-    start: toDateInput(filters.windowStartUtc),
-  }),
+  get: () => localDatesFromOeeWindow(filters.windowStartUtc, filters.windowEndUtc),
   set: (range) => {
-    if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
-    if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
+    if (!range.start || !range.end) return
+    Object.assign(filters, oeeWindowFromLocalDates(range.start, range.end))
   },
 })
 
@@ -168,31 +154,8 @@ function dimensionQuery(value: string): BusinessConsoleTelemetryOeeAggregateDime
     ? (value as BusinessConsoleTelemetryOeeAggregateDimension)
     : 'day'
 }
-function toDateInput(value: string, dayOffset = 0) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  if (dayOffset) date.setDate(date.getDate() + dayOffset)
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 10)
-}
-function fromDateInput(value: string, dayOffset: number) {
-  const [year, month, day] = value.split('-').map(Number)
-  if (!year || !month || !day) return new Date().toISOString()
-  return new Date(year, month - 1, day + dayOffset).toISOString()
-}
 function rateCell(value: number | null | undefined) {
   return value == null ? '—' : formatOeeRate(value)
-}
-function formatWindow(start: string, end: string) {
-  return `${formatDateTime(start, false)} – ${formatDateTime(end, false)}`
-}
-function formatDateTime(value?: string | null, includeTime = true) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return includeTime
-    ? date.toLocaleString('zh-CN', { timeZone: 'UTC', hour12: false })
-    : date.toLocaleDateString('zh-CN', { timeZone: 'UTC' })
 }
 function degradationSummary(row: OeeTableRow) {
   if (!row.isDegraded) return '完整'
@@ -248,8 +211,8 @@ function refreshReport() {
           </NvSelect>
         </NvField>
         <NvField class="min-w-64">
-          <NvFieldLabel>数据窗口（最多 31 天）</NvFieldLabel>
-          <NvDateRangePicker v-model="windowRange" placeholder="选择数据窗口" />
+          <NvFieldLabel>统计时段（最多 31 天）</NvFieldLabel>
+          <NvDateRangePicker v-model="windowRange" placeholder="选择统计时段" />
         </NvField>
       </template>
     </NvToolbar>
@@ -312,8 +275,6 @@ function refreshReport() {
       </div>
     </section>
 
-    <NvMetricStrip :cells="summaryCells" />
-
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <section
@@ -321,11 +282,10 @@ function refreshReport() {
       class="grid gap-3 rounded-lg border bg-card p-4"
     >
       <div>
-        <h2 class="text-sm font-semibold text-foreground">OEE 与 A/P/Q 业务日趋势</h2>
+        <h2 class="text-sm font-semibold text-foreground">OEE 与可用率、性能率、质量率按天趋势</h2>
         <p class="text-sm text-muted-foreground">
-          业务日按历史站点时区与日界线聚合；趋势独立读取完整窗口，不随下方核查表翻页改变。
+          每天按工厂当地时间和换日时刻划分；趋势覆盖所选时段的全部日期，不随下方明细翻页变化。
         </p>
-        <p class="text-sm text-muted-foreground">横轴使用业务日“月/日”短标签。</p>
       </div>
       <p v-if="trendErrorMessage" class="text-sm text-destructive" role="alert">
         {{ trendErrorMessage }}
@@ -340,20 +300,20 @@ function refreshReport() {
         v-else-if="!trendErrorMessage && reportPresentation.trendBucketCount === 0"
         class="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground"
       >
-        当前窗口没有可绘制的完整率值；缺失事实仍会保留在下方核查表中。
+        所选时段没有完整的 OEE 数据，无法绘制趋势；缺数原因见下方明细。
       </div>
       <template v-else-if="!trendErrorMessage">
         <p class="text-sm text-muted-foreground" role="status">
-          完整窗口共 {{ reportPresentation.trendBucketCount }} 个业务日聚合桶，按
-          {{ reportPresentation.trendGroups.length }} 个站点分别呈现。
+          所选时段共 {{ reportPresentation.trendBucketCount }} 条日统计，按
+          {{ reportPresentation.trendGroups.length }} 个站点分别展示。
         </p>
         <p
           v-if="reportPresentation.omittedTrendBucketCount > 0"
           class="text-sm text-warning"
           role="status"
         >
-          {{ reportPresentation.omittedTrendBucketCount }} 个桶缺少率值，未画成
-          0%；请在下方查看缺失原因。
+          {{ reportPresentation.omittedTrendBucketCount }} 条日统计缺少数据，图中未按 0%
+          绘制；原因见下方明细。
         </p>
         <div class="grid gap-4">
           <section
@@ -365,9 +325,9 @@ function refreshReport() {
             <div>
               <h3 class="text-sm font-semibold text-foreground">站点 {{ group.siteLabel }}</h3>
               <p class="text-xs text-muted-foreground">
-                {{ group.bucketCount }} 个桶，{{ group.pointCount }} 个完整率值点<span
+                {{ group.bucketCount }} 条日统计，{{ group.pointCount }} 条数据完整<span
                   v-if="group.omittedCount > 0"
-                  >，{{ group.omittedCount }} 个缺失点保留在核查表</span
+                  >，{{ group.omittedCount }} 条缺数、原因见下方明细</span
                 >。
               </p>
             </div>
@@ -379,16 +339,16 @@ function refreshReport() {
                 :data-oee-segment="segment.key"
               >
                 <div class="grid gap-1">
-                  <h4 class="text-sm font-medium text-foreground">
-                    历史窗口段 {{ segment.ordinal }}
+                  <h4 v-if="group.segments.length > 1" class="text-sm font-medium text-foreground">
+                    第 {{ segment.ordinal }} 段
                   </h4>
                   <p class="text-xs text-muted-foreground">
                     业务日 {{ segment.businessDateStartLabel }} 至
-                    {{ segment.businessDateEndLabel }}；{{ segment.bucketCount }} 个桶，{{
+                    {{ segment.businessDateEndLabel }}；{{ segment.bucketCount }} 条日统计，{{
                       segment.pointCount
                     }}
-                    个完整率值点<span v-if="segment.omittedCount > 0"
-                      >，{{ segment.omittedCount }} 个缺失点</span
+                    条数据完整<span v-if="segment.omittedCount > 0"
+                      >，{{ segment.omittedCount }} 条缺数</span
                     >。
                   </p>
                 </div>
@@ -396,7 +356,7 @@ function refreshReport() {
                   v-if="segment.runs.length === 0"
                   class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
                 >
-                  本历史窗口段没有可绘制的完整率值；全部缺失事实仍保留在下方核查表中。
+                  这一段没有完整数据，无法绘制趋势；原因见下方明细。
                 </div>
                 <template v-else>
                   <div
@@ -422,7 +382,7 @@ function refreshReport() {
                       data-oee-discrete-point
                     >
                       <h5 class="text-sm font-medium text-foreground">
-                        离散桶 · {{ run.points[0]?.businessDateLabel }}
+                        单日 · {{ run.points[0]?.businessDateLabel }}
                       </h5>
                       <dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                         <div>
@@ -454,7 +414,7 @@ function refreshReport() {
 
     <section class="grid gap-3">
       <div>
-        <h2 class="text-sm font-semibold text-foreground">{{ dimensionLabel }}核查表</h2>
+        <h2 class="text-sm font-semibold text-foreground">{{ dimensionLabel }}明细</h2>
         <p class="text-sm text-muted-foreground">“—”表示没有数据，不代表 0% 或 100%。</p>
       </div>
       <NvDataTable
@@ -471,7 +431,7 @@ function refreshReport() {
         :page-size-options="[10, 20, 50, 100]"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前窗口和筛选范围内没有 OEE 聚合事实。"
+        empty-message="所选时段和筛选范围内没有 OEE 数据。"
       >
         <template #cell-isDegraded="{ row }">
           <div class="grid max-w-md gap-1">
