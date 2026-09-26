@@ -316,7 +316,8 @@ const completeCarriedItems = computed(() => {
 })
 
 type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
-const columns: NvDataTableColumn<WorkOrderRow>[] = [
+// 没有可用操作的角色不渲染「操作」列，免得只剩表头、整列空白。
+const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
   {
     key: 'workOrderNo',
     header: '工单号',
@@ -355,8 +356,10 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
     accessor: (r) => technicianLabel(r.assignedTechnicianUserId),
   },
   { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
-]
+  ...(canManageWorkOrders.value
+    ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
+    : []),
+])
 
 /**
  * 人读工单号。以前拿 workOrderId（GUID）末 8 位拼 `WO-XXXXXXXX` 冒充单号——
@@ -708,7 +711,7 @@ watch(
       /></template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <NvRowActions v-if="canManageWorkOrders" :label="`维护工单操作 ${workOrderNo(row)}`">
+        <NvRowActions :label="`维护工单操作 ${workOrderNo(row)}`">
           <NvDropdownMenuItem :disabled="!canComplete(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成工单

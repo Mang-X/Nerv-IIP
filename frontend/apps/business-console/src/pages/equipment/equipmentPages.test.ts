@@ -999,6 +999,12 @@ describe('equipment pages', () => {
       wrapper.unmount()
     })
 
+    it('设备详情：有管理权限时页头有「创建维修工单」', () => {
+      const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+      expect(wrapper.text()).toContain('创建维修工单')
+    })
+
     it('设备详情：只读角色看不到', () => {
       signInWithoutWorkOrderManage()
       const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
