@@ -58,10 +58,12 @@ export const WMS_OUTBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
  * 生成不了下游应收/成本，要么直接把单据送进死信（owner 2026-09-26 裁定，见 #3822）。
  * 库存调拨没有上游单据、天然只能由仓库手建，因此是控制台仅保留的入库/出库来源类型。
  *
- * `inventory-transfer` 码值对齐 #3822 原定的字面量；后端 `WmsSourceDocumentTypes`
- * 没有为它声明常量，`CreateInboundOrderCommand`/`CreateOutboundOrderCommand` 的
- * `SourceDocumentType` 只做 `NotEmpty`/`MaximumLength(100)` 校验、原样存库，没有任何
- * 下游按字面量比对这个值，所以字面量本身可以自由选取，这里延用既有码值。
+ * `inventory-transfer` 码值是本 PR 把旧值 `InventoryTransfer` 改的小写-连字符形式，
+ * 后端 `WmsSourceDocumentTypes` 没有为它声明常量，全仓也没有任何下游按字面量比对这个值，
+ * 所以字面量本身可以自由选取。校验上，`CreateInboundOrderCommand` 有
+ * `NotEmpty`/`MaximumLength(100)` 的 FluentValidation 校验器；`CreateOutboundOrderCommand`
+ * 没有对应的校验器，只在领域层 `OutboundOrder.Create` 里靠 `WmsText.Required` 做非空校验，
+ * 没有长度上限。两条命令都原样存库。
  */
 export const WMS_INBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
   { value: 'inventory-transfer', label: '库存调拨' },
