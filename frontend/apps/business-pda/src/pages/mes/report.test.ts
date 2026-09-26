@@ -105,6 +105,8 @@ const defaultWorkOrders = [
 ]
 const workOrdersRef = ref<Array<Record<string, unknown>>>(defaultWorkOrders)
 const telemetryCandidatesRef = ref<Array<Record<string, unknown>>>([])
+const telemetryTargetTasksRef = ref<Array<Record<string, unknown>>>([])
+const telemetryPromote = vi.fn()
 
 const defaultOperationTasks = [
   {
@@ -312,8 +314,14 @@ vi.mock('@/composables/useBusinessMes', () => ({
     candidates: computed(() => telemetryCandidatesRef.value),
     total: computed(() => telemetryCandidatesRef.value.length),
     pending: ref(false),
-    promote: vi.fn(),
+    promote: telemetryPromote,
     dismiss: vi.fn(),
+  }),
+  useMesTelemetryCandidateTargetTasks: () => ({
+    tasks: computed(() => telemetryTargetTasksRef.value),
+    pending: ref(false),
+    error: ref(null),
+    refresh: vi.fn(),
   }),
   // 作业范围选择入口自带一个独立实例（#1297）：页面挂载时必须能解析到它。
   useMesWorkScopeSelection: () => ({
@@ -389,6 +397,8 @@ describe('PDA MES production reporting page', () => {
       clearPendingBusinessIntent(entry)
     sessionStorage.clear()
     telemetryCandidatesRef.value = []
+    telemetryTargetTasksRef.value = []
+    telemetryPromote.mockReset()
     serialRequired.value = false
     serialValid.value = true
     serialTemplateId.value = ''
@@ -1413,6 +1423,73 @@ describe('PDA MES production reporting page', () => {
     expect(text).toMatch(/设备 DEV-CNC-02 · 8 件[^设]*待确认/)
     expect(text).not.toContain('active-alarm')
     expect(text).not.toContain('pending-confirmation')
+  })
+
+  async function openTelemetryCandidate(candidate: Record<string, unknown>) {
+    telemetryCandidatesRef.value = [
+      { goodQuantity: 12, status: 'pending-confirmation', ...candidate },
+    ]
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('12 件'))!
+      .trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+  const deviceTasks = [
+    { operationTaskId: 'OP-1', workOrderId: 'WO-2026-0001', operationSequence: 10 },
+    { operationTaskId: 'OP-3', workOrderId: 'WO-2026-0002', operationSequence: 10 },
+  ]
+
+  it('遥测候选已关联工单工序时直接带出，确认转正不需要输入任何编号', async () => {
+    telemetryTargetTasksRef.value = deviceTasks
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-1',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'active-alarm',
+      workOrderId: 'WO-2026-0002',
+      operationTaskId: 'OP-3',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0002 · 工序 10')
+    expect(wrapper.find('input[placeholder*="工单号"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-1', 'WO-2026-0002', 'OP-3')
+  })
+
+  it('设备上只有一道执行中的工序时直接带出', async () => {
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-2',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0001 · 工序 10')
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-2', 'WO-2026-0001', 'OP-1')
+  })
+
+  it('设备上有多道执行中的工序时点选后才能转正', async () => {
+    telemetryTargetTasksRef.value = deviceTasks
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-3',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    expect(wrapper.find('[data-testid="telemetry-target"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="telemetry-target-option-OP-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0002 · 工序 10')
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-3', 'WO-2026-0002', 'OP-3')
   })
 
   it('命令与可见 pair 精确一致，并只显示契约实际返回的回执字段', async () => {

@@ -46,6 +46,7 @@ import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
+import TelemetryCandidateTarget from './components/TelemetryCandidateTarget.vue'
 import {
   formatOperationDateTime,
   reworkSourceLabel,
@@ -155,8 +156,7 @@ const {
 })
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
-const telemetryWorkOrderId = ref('')
-const telemetryOperationTaskId = ref('')
+const telemetryTarget = ref<Task | null>(null)
 const telemetryDismissReason = ref('')
 const scanGate = useMesScanGate()
 const scanPending = scanGate.pending
@@ -164,8 +164,7 @@ const scanGuarded = scanGate.guarded
 const validatedDeviceAssetId = ref('')
 const validatedPersonnelId = ref('')
 function resetTelemetryAction() {
-  telemetryWorkOrderId.value = ''
-  telemetryOperationTaskId.value = ''
+  telemetryTarget.value = null
   telemetryDismissReason.value = ''
 }
 function toggleTelemetryCandidate(candidateId?: string) {
@@ -174,17 +173,12 @@ function toggleTelemetryCandidate(candidateId?: string) {
     telemetryCandidateId.value === candidateId ? null : (candidateId ?? null)
 }
 
-async function promoteTelemetryCandidate(candidate: {
-  candidateId?: string
-  workOrderId?: string | null
-  operationTaskId?: string | null
-}) {
+async function promoteTelemetryCandidate(candidateId?: string) {
   if (scanPending.value) return
-  if (!candidate.candidateId) return
-  const workOrderId = telemetryWorkOrderId.value.trim() || candidate.workOrderId?.trim()
-  const operationTaskId = telemetryOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
-  if (!workOrderId || !operationTaskId) return
-  await telemetryQueue.promote(candidate.candidateId, workOrderId, operationTaskId)
+  const workOrderId = telemetryTarget.value?.workOrderId
+  const operationTaskId = telemetryTarget.value?.operationTaskId
+  if (!candidateId || !workOrderId || !operationTaskId) return
+  await telemetryQueue.promote(candidateId, workOrderId, operationTaskId)
   telemetryCandidateId.value = null
   resetTelemetryAction()
 }
@@ -620,20 +614,18 @@ async function onScanAccepted(value: MesScanAccepted) {
             }}</span>
           </NvMobileButton>
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
-            <NvMobileInput
-              v-model="telemetryWorkOrderId"
-              :placeholder="candidate.workOrderId ? '留空则沿用已关联工单' : '工单号'"
-            />
-            <NvMobileInput
-              v-model="telemetryOperationTaskId"
-              :placeholder="candidate.operationTaskId ? '留空则沿用已关联工序' : '工序任务号'"
+            <TelemetryCandidateTarget
+              v-model="telemetryTarget"
+              :candidate="candidate"
+              :context="reportContext"
             />
             <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
             <div class="grid grid-cols-2 gap-2">
               <NvMobileButton
                 variant="primary"
-                @click="promoteTelemetryCandidate(candidate)"
-                :disabled="scanPending"
+                data-testid="telemetry-promote"
+                :disabled="!telemetryTarget || scanPending"
+                @click="promoteTelemetryCandidate(candidate.candidateId)"
                 >确认转正</NvMobileButton
               ><NvMobileButton
                 variant="outline"

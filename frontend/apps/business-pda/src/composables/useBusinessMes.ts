@@ -1855,6 +1855,65 @@ export function useMesTelemetryProductionReportCandidates() {
   }
 }
 
+const TELEMETRY_TARGET_TASK_TAKE = 20
+
+/**
+ * 遥测候选转正时「报到哪道工序」的候选：只取可报工（执行中）的工序任务。
+ * 没输关键词时按候选设备收窄——即这台设备当前在制的工序；输入工单号搜索时放开设备限制。
+ */
+export function useMesTelemetryCandidateTargetTasks(
+  context: Readonly<Ref<MesReportExecutionContext | undefined>>,
+  deviceAssetId: Readonly<Ref<string>>,
+  keyword: Readonly<Ref<string>>,
+) {
+  const query = useQuery(() => {
+    const current = context.value
+    const device = deviceAssetId.value.trim()
+    const search = keyword.value.trim()
+    return {
+      key: [
+        'mes-telemetry-candidate-target-tasks',
+        current?.principalId ?? '',
+        current?.organizationId ?? '',
+        current?.environmentId ?? '',
+        current?.scopeKind ?? '',
+        current?.scopeId ?? '',
+        current?.generation ?? 0,
+        device,
+        search,
+      ],
+      enabled: Boolean(current && (device || search)),
+      query: async ({ signal }) => {
+        if (!current) return []
+        const response = await listBusinessConsoleMesReportableOperationTasks({
+          query: {
+            organizationId: current.organizationId,
+            environmentId: current.environmentId,
+            scopeKind: current.scopeKind,
+            scopeId: current.scopeId,
+            deviceAssetId: search ? undefined : device || undefined,
+            keyword: search || undefined,
+            skip: 0,
+            take: TELEMETRY_TARGET_TASK_TAKE,
+          },
+          signal,
+        })
+        const envelope = response.data
+        if (!envelope?.success || !envelope.data) {
+          throw new Error(envelope?.message?.trim() || '执行中工序读取失败，请重试。')
+        }
+        return envelope.data.items ?? []
+      },
+    }
+  })
+  return {
+    tasks: computed(() => query.data.value ?? []),
+    pending: query.isLoading,
+    error: query.error,
+    refresh: () => query.refetch(),
+  }
+}
+
 export type CreateIssueInput = BusinessConsoleMesCreateMaterialIssueRequest
 
 export type ConfirmLineSideReceiptInput = BusinessConsoleMesConfirmLineSideReceiptRequest
