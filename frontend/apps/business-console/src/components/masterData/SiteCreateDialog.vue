@@ -25,7 +25,7 @@ import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const open = defineModel<boolean>('open', { default: false })
 
-const context = useBusinessContextStore()
+const businessContext = useBusinessContextStore()
 const returnFocus = useReturnFocusOnClose()
 const sites = useCreateMasterDataResource<BusinessConsoleCreateSiteRequest>('site')
 
@@ -42,8 +42,8 @@ async function submit() {
   const name = form.name.trim()
   try {
     await sites.create({
-      organizationId: context.organizationId,
-      environmentId: context.environmentId,
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
       name,
       timezone: form.timezone,
     })

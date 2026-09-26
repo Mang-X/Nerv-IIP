@@ -12,7 +12,7 @@ import type {
   DirectoryCreatedItem,
 } from '@/components/business/directoryCreators'
 import { useBusinessWorkshops } from '@/composables/useBusinessMasterData'
-import { useMasterDataDisplayName } from '@/composables/useMasterDataDisplayName'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
@@ -37,10 +37,11 @@ const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ created: [item: DirectoryCreatedItem] }>()
 
 const carriedSiteCode = props.context?.siteCode?.trim() ?? ''
-const context = useBusinessContextStore()
+const businessContext = useBusinessContextStore()
 const returnFocus = useReturnFocusOnClose()
 const workshops = useBusinessWorkshops()
-const siteName = useMasterDataDisplayName('site')
+const { resolveSite } = useMasterDataDisplayNames({ sites: true })
+const carriedSiteName = computed(() => resolveSite(carriedSiteCode) ?? carriedSiteCode)
 
 const form = reactive({ name: '', siteCode: carriedSiteCode })
 const showErrors = shallowRef(false)
@@ -54,8 +55,8 @@ async function submit() {
   const name = form.name.trim()
   try {
     const response = await workshops.createWorkshop({
-      organizationId: context.organizationId,
-      environmentId: context.environmentId,
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
       name,
       siteCode: form.siteCode,
     })
@@ -75,14 +76,14 @@ async function submit() {
       <NvDialogHeader>
         <NvDialogTitle>新建车间</NvDialogTitle>
         <NvDialogDescription class="sr-only">{{
-          carriedSiteCode ? `所属工厂：${siteName(carriedSiteCode)}` : '新建车间并选择所属工厂'
+          carriedSiteCode ? `所属工厂：${carriedSiteName}` : '新建车间并选择所属工厂'
         }}</NvDialogDescription>
       </NvDialogHeader>
       <form class="grid gap-4" @submit.prevent="submit">
         <CarriedContextSummary
           v-if="carriedSiteCode"
           label="归属"
-          :items="[{ label: '所属工厂', value: siteName(carriedSiteCode) }]"
+          :items="[{ label: '所属工厂', value: carriedSiteName }]"
         />
         <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
           请完整填写带 * 的必填项（已标红）。

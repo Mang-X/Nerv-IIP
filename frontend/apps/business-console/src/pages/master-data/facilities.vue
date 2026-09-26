@@ -140,11 +140,14 @@ const NODE_LABEL: Record<NodeType, string> = {
   'work-center': '工作中心',
   station: '工位',
 }
-// 各父类型可就地新建的子级类型；树节点上的「+」建第一种。
-const CHILD_TYPES: Partial<Record<NodeType, NodeType[]>> = {
-  site: ['workshop'],
-  workshop: ['production-line'],
-  'production-line': ['work-center', 'station'],
+// 各父类型可就地新建的子级类型（树节点上的「+」建第一种），以及新建子级时父节点作为哪一级
+// 上级带出（上级所在工厂取自父节点自身的归属）。
+const CHILDREN: Partial<
+  Record<NodeType, { types: [NodeType, ...NodeType[]]; contextKey: string }>
+> = {
+  site: { types: ['workshop'], contextKey: 'siteCode' },
+  workshop: { types: ['production-line'], contextKey: 'workshopCode' },
+  'production-line': { types: ['work-center', 'station'], contextKey: 'lineCode' },
 }
 
 function toNode(item: BusinessConsoleResourceItem, type: NodeType): TreeNode {
@@ -477,12 +480,6 @@ const CREATE_DIALOGS: Record<NodeType, Component> = {
   'work-center': WorkCenterCreateDialog,
   station: StationCreateDialog,
 }
-// 父节点作为子级的哪一级上级带出；上级所在工厂取自父节点自身的归属。
-const PARENT_CONTEXT_KEY: Partial<Record<NodeType, string>> = {
-  site: 'siteCode',
-  workshop: 'workshopCode',
-  'production-line': 'lineCode',
-}
 const createOpen = shallowRef(false)
 const creating = shallowRef<{
   session: number
@@ -499,16 +496,14 @@ function openCreateRoot() {
   openCreate('site', {})
 }
 // 选中父节点 → 「+ 新建<子级>」，父级带出为只读归属。
-function openCreateChild(
-  parent: TreeNode | MasterDataTreeNodeData,
-  childType = CHILD_TYPES[parent.type as NodeType]?.[0],
-) {
-  if (!childType) return
+function openCreateChild(parent: TreeNode | MasterDataTreeNodeData, childType?: NodeType) {
+  const children = CHILDREN[parent.type as NodeType]
+  if (!children) return
   const context: DirectoryCreateContext = {
     siteCode: parent.item.siteCode ?? '',
-    [PARENT_CONTEXT_KEY[parent.type as NodeType]!]: parent.code,
+    [children.contextKey]: parent.code,
   }
-  openCreate(childType, { context })
+  openCreate(childType ?? children.types[0], { context })
 }
 
 // ================= 编辑（编码只读；改名 + 改挂上级，归属经 update 透传） =================
@@ -733,14 +728,14 @@ function requestLifecycle(row: BusinessConsoleResourceItem) {
 
 // 选中节点能就地新建的子级，以及各类子级的数量。
 const childTypesOfSelected = computed(() =>
-  selectedNode.value ? (CHILD_TYPES[selectedNode.value.type] ?? []) : [],
+  selectedNode.value ? (CHILDREN[selectedNode.value.type]?.types ?? []) : [],
 )
 function childCount(type: NodeType) {
   return selectedNode.value?.children.filter((child) => child.type === type).length ?? 0
 }
 // 通用树节点的 childLabelOf 回调（参数为开放 string）：映射到本页的子级中文名。
 function childLabelOf(type: string): string | undefined {
-  const child = CHILD_TYPES[type as NodeType]?.[0]
+  const child = CHILDREN[type as NodeType]?.types[0]
   return child ? NODE_LABEL[child] : undefined
 }
 </script>

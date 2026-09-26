@@ -16,6 +16,8 @@ export interface MasterDataDisplayNameOptions {
   workshops?: boolean
   /** 产线（production-line）。 */
   lines?: boolean
+  /** 工厂（site）。 */
+  sites?: boolean
 }
 
 /**
@@ -49,6 +51,7 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   const uomSource = source(options.uoms, 'unit-of-measure')
   const workshopSource = source(options.workshops, 'workshop')
   const lineSource = source(options.lines, 'production-line')
+  const siteSource = source(options.sites, 'site')
 
   function indexOf(items: { code?: string | null; displayName?: string | null }[] | undefined) {
     const map = new Map<string, string>()
@@ -65,6 +68,7 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   const uomByCode = computed(() => indexOf(uomSource?.resources.value))
   const workshopByCode = computed(() => indexOf(workshopSource?.resources.value))
   const lineByCode = computed(() => indexOf(lineSource?.resources.value))
+  const siteByCode = computed(() => indexOf(siteSource?.resources.value))
 
   const resolver = (index: typeof deviceByCode) => (code?: string | null) => {
     if (!code) return undefined
@@ -80,6 +84,7 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     resolveUom: resolver(uomByCode),
     resolveWorkshop: resolver(workshopByCode),
     resolveLine: resolver(lineByCode),
+    resolveSite: resolver(siteByCode),
     /** 计量单位展示串：「件 (pcs)」，名录缺失时只显编码。 */
     formatUom(code?: string | null, fallback = ''): string {
       if (!code) return fallback
@@ -93,5 +98,6 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     uomByCode,
     workshopByCode,
     lineByCode,
+    siteByCode,
   }
 }

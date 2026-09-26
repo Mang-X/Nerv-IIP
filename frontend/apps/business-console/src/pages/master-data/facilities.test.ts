@@ -327,6 +327,8 @@ describe('master-data facilities tree page', () => {
       .trigger('click')
     await flushPromises()
 
+    // 新建态不出现编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#workshop-code').exists()).toBe(false)
     await wrapper.find('#workshop-name').setValue('涂装车间')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
@@ -419,6 +421,8 @@ describe('master-data facilities tree page', () => {
       .trigger('click')
     await flushPromises()
 
+    // 新建态不出现编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#site-code').exists()).toBe(false)
     await wrapper.find('#site-name').setValue('广州工厂')
     await flushPromises()
     await wrapper.find('form').trigger('submit')

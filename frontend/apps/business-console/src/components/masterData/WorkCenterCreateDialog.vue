@@ -18,7 +18,7 @@ import {
   useBusinessMasterDataResources,
   useCreateMasterDataResource,
 } from '@/composables/useBusinessMasterData'
-import { useMasterDataDisplayName } from '@/composables/useMasterDataDisplayName'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
@@ -52,12 +52,11 @@ const DEFAULT_CAPACITY_MINUTES = 480
 
 const carriedSiteCode = props.context?.siteCode?.trim() ?? ''
 const carriedLineCode = props.context?.lineCode?.trim() ?? ''
-const context = useBusinessContextStore()
+const businessContext = useBusinessContextStore()
 const returnFocus = useReturnFocusOnClose()
 const workCenters =
   useCreateMasterDataResource<BusinessConsoleCreateWorkCenterRequest>('work-center')
-const siteName = useMasterDataDisplayName('site')
-const lineName = useMasterDataDisplayName('production-line')
+const { resolveSite, resolveLine } = useMasterDataDisplayNames({ sites: true, lines: true })
 const calendars = useBusinessMasterDataResources('work-calendar')
 calendars.filters.take = 200
 
@@ -79,8 +78,14 @@ const canSubmit = computed(
     capacityValid.value,
 )
 const carriedItems = computed(() => [
-  { label: '所属工厂', value: carriedSiteCode && siteName(carriedSiteCode) },
-  { label: '所属产线', value: carriedLineCode && lineName(carriedLineCode) },
+  {
+    label: '所属工厂',
+    value: carriedSiteCode && (resolveSite(carriedSiteCode) ?? carriedSiteCode),
+  },
+  {
+    label: '所属产线',
+    value: carriedLineCode && (resolveLine(carriedLineCode) ?? carriedLineCode),
+  },
 ])
 
 // 工作日历从已维护的日历中选，不让用户手抄编码；只有一条时自动选中。
@@ -109,8 +114,8 @@ async function submit() {
   const name = form.name.trim()
   try {
     const response = await workCenters.create({
-      organizationId: context.organizationId,
-      environmentId: context.environmentId,
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
       name,
       plantCode: form.plantCode,
       lineCode: form.lineCode,

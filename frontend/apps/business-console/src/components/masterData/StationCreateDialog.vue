@@ -13,8 +13,9 @@ import type {
   DirectoryCreateContext,
   DirectoryCreatedItem,
 } from '@/components/business/directoryCreators'
-import { useMasterDataResource } from '@/composables/useBusinessMasterData'
-import { useMasterDataDisplayName } from '@/composables/useMasterDataDisplayName'
+import { useCreateMasterDataResource } from '@/composables/useBusinessMasterData'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
   NvDialog,
@@ -38,13 +39,14 @@ const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ created: [item: DirectoryCreatedItem] }>()
 
 const carriedLineCode = props.context?.lineCode?.trim() ?? ''
-const stations = useMasterDataResource<BusinessConsoleCreateStationRequest>('station')
-const lineName = useMasterDataDisplayName('production-line')
+const businessContext = useBusinessContextStore()
+const stations = useCreateMasterDataResource<BusinessConsoleCreateStationRequest>('station')
+const { resolveLine } = useMasterDataDisplayNames({ lines: true })
 
 const form = reactive({ name: '', lineCode: carriedLineCode, workCenterCode: '' })
 const showErrors = shallowRef(false)
 const canSubmit = computed(() => !!form.name.trim() && !!form.lineCode.trim())
-const carriedLineName = computed(() => lineName(carriedLineCode))
+const carriedLineName = computed(() => resolveLine(carriedLineCode) ?? carriedLineCode)
 
 // 换了产线，原先选的工作中心可能不在新产线下，清掉让用户重选。
 function setLine(lineCode: string) {
@@ -60,8 +62,8 @@ async function submit() {
   const name = form.name.trim()
   try {
     const response = await stations.create({
-      organizationId: stations.filters.organizationId,
-      environmentId: stations.filters.environmentId,
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
       name,
       lineCode: form.lineCode.trim(),
       ...(form.workCenterCode ? { workCenterCode: form.workCenterCode } : {}),
@@ -128,8 +130,8 @@ async function submit() {
         </NvFieldGroup>
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
-          <NvButton type="submit" :disabled="stations.createPending.value">
-            <Spinner v-if="stations.createPending.value" aria-hidden="true" />
+          <NvButton type="submit" :disabled="stations.pending.value">
+            <Spinner v-if="stations.pending.value" aria-hidden="true" />
             保存工位
           </NvButton>
         </NvDialogFooter>

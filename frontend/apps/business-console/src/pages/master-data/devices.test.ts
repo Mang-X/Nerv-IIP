@@ -453,6 +453,21 @@ describe('master-data devices page', () => {
     expect(stationContext()).toEqual({ lineCode: 'LINE-B' })
   })
 
+  // 就地新增车间、产线、工作中心时，表单已选的上级交给新增弹窗带出为只读归属；键名对不上时
+  // 弹窗会让用户重新自选上级，建出来的项可能挂到别的工厂 / 产线下，又被自动选进设备表单。
+  it('车间、产线、工作中心的新增弹窗拿到的是表单当前选的上级', async () => {
+    const wrapper = mount(DevicesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...pickerStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+    const createContext = (id: string) =>
+      JSON.parse(wrapper.get(id).attributes('data-create-context')!)
+    expect(createContext('#dev-workshop')).toEqual({ siteCode: 'PLANT-A' })
+    expect(createContext('#dev-line')).toEqual({ siteCode: 'PLANT-A', workshopCode: 'WS-A' })
+    expect(createContext('#dev-wc')).toEqual({ siteCode: 'PLANT-A', lineCode: 'LINE-A' })
+  })
+
   it('换产线后工位、工作中心清空并按新产线收窄，不带旧工位提交', async () => {
     stub.create.mockClear()
     const wrapper = mount(DevicesPage, {

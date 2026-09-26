@@ -212,6 +212,8 @@ describe('已注册的新增弹窗（#3797）', () => {
     expect(document.body.querySelector('#workshop-site')).toBeNull()
     setInput('#workshop-name', '涂装车间')
     await flushPromises()
+    const readsBefore = directoryReads(requests, 'workshop')
+    expect(readsBefore).toBeGreaterThan(0)
     document.body.querySelector('form')!.requestSubmit()
     await flushPromises()
 
@@ -219,6 +221,8 @@ describe('已注册的新增弹窗（#3797）', () => {
     expect(post.body).toMatchObject({ name: '涂装车间', siteCode: 'PLANT-A' })
     expect(model.value).toBe('WS-0042')
     expect(wrapper.get('button[aria-haspopup]').text()).toContain('涂装车间')
+    // 不按上级收窄的车间选择器取的是可搜目录：新建之后必须重新拉，否则搜不到刚建的车间。
+    expect(directoryReads(requests, 'workshop')).toBeGreaterThan(readsBefore)
   })
 
   it('车间：调用方没给工厂时由用户自选，不选不提交', async () => {

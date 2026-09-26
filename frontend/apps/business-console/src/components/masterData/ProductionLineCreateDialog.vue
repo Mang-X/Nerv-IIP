@@ -14,7 +14,7 @@ import type {
   DirectoryCreatedItem,
 } from '@/components/business/directoryCreators'
 import { useCreateMasterDataResource } from '@/composables/useBusinessMasterData'
-import { useMasterDataDisplayName } from '@/composables/useMasterDataDisplayName'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
@@ -40,19 +40,24 @@ const emit = defineEmits<{ created: [item: DirectoryCreatedItem] }>()
 
 const carriedSiteCode = props.context?.siteCode?.trim() ?? ''
 const carriedWorkshopCode = props.context?.workshopCode?.trim() ?? ''
-const context = useBusinessContextStore()
+const businessContext = useBusinessContextStore()
 const returnFocus = useReturnFocusOnClose()
 const lines =
   useCreateMasterDataResource<BusinessConsoleCreateProductionLineRequest>('production-line')
-const siteName = useMasterDataDisplayName('site')
-const workshopName = useMasterDataDisplayName('workshop')
+const { resolveSite, resolveWorkshop } = useMasterDataDisplayNames({ sites: true, workshops: true })
 
 const form = reactive({ name: '', siteCode: carriedSiteCode, workshopCode: carriedWorkshopCode })
 const showErrors = shallowRef(false)
 const canSubmit = computed(() => !!form.name.trim() && !!form.siteCode)
 const carriedItems = computed(() => [
-  { label: '所属工厂', value: carriedSiteCode && siteName(carriedSiteCode) },
-  { label: '所属车间', value: carriedWorkshopCode && workshopName(carriedWorkshopCode) },
+  {
+    label: '所属工厂',
+    value: carriedSiteCode && (resolveSite(carriedSiteCode) ?? carriedSiteCode),
+  },
+  {
+    label: '所属车间',
+    value: carriedWorkshopCode && (resolveWorkshop(carriedWorkshopCode) ?? carriedWorkshopCode),
+  },
 ])
 
 // 换了工厂，原先选的车间可能不在新工厂下，清掉让用户重选。
@@ -69,8 +74,8 @@ async function submit() {
   const name = form.name.trim()
   try {
     const response = await lines.create({
-      organizationId: context.organizationId,
-      environmentId: context.environmentId,
+      organizationId: businessContext.organizationId,
+      environmentId: businessContext.environmentId,
       name,
       siteCode: form.siteCode,
       ...(form.workshopCode ? { workshopCode: form.workshopCode } : {}),
