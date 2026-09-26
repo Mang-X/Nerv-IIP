@@ -151,7 +151,7 @@ export function formatOeeQuantity(value: number | null | undefined, uomCode?: st
 }
 
 export function describeTelemetryOeeLimitations() {
-  return 'OEE = 可用率 × 性能率 × 质量率。性能率使用 MES 报工总产出与工序标准速率计算，质量率使用良品 ÷（良品 + 报废 + 返工）计算；任一来源不足时明确标记为数据不完整，不以 1 替代。'
+  return 'OEE = 可用率 × 性能率 × 质量率。性能率按报工总产出与工序标准速率计算，质量率按良品 ÷（良品 + 报废 + 返工）计算；任一项缺数据时标记为数据不完整，不按 100% 计。'
 }
 
 export function describeTelemetryOeeDegradation(reason: string) {

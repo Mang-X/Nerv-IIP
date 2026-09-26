@@ -6,6 +6,7 @@ import type {
 import { NvBadge } from '@nerv-iip/ui'
 import type { BusinessReadState } from '@/composables/businessReadState'
 import { describeTelemetryOeeDegradation, formatOeeRate } from '@/composables/useBusinessTelemetry'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 
 defineProps<{
   canReadWip: boolean
@@ -24,7 +25,30 @@ function wipLabel(row: BusinessConsoleMesWipSummaryRow) {
 }
 
 function workCenterLabel(row: BusinessConsoleMesWipSummaryRow) {
-  return row.workCenterName ?? row.workCenterCode ?? row.workCenterId ?? '未标工作中心'
+  const code = row.workCenterCode ?? row.workCenterId
+  return row.workCenterName ?? resolveWorkCenter(code) ?? code ?? '未标工作中心'
+}
+
+const { resolveSite, resolveShift, resolveWorkCenter } = useMasterDataDisplayNames({
+  sites: true,
+  shifts: true,
+  workCenters: true,
+})
+
+/** 性能率行的对象：按天是「业务日 · 工厂」，按班次是「班次 · 业务日」，按工作中心是工作中心名称。 */
+function bucketLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
+  const code = bucket.dimensionValue?.trim()
+  const date = bucket.businessDate?.trim()
+  switch (bucket.dimension) {
+    case 'day':
+      return [date, code && (resolveSite(code) ?? code)].filter(Boolean).join(' · ') || '未归属范围'
+    case 'shift':
+      return (
+        [code && (resolveShift(code) ?? code), date].filter(Boolean).join(' · ') || '未归属范围'
+      )
+    default:
+      return (code && (resolveWorkCenter(code) ?? code)) || '未归属范围'
+  }
 }
 
 function rateLabel(rate: number | null | undefined) {
@@ -50,9 +74,7 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
         </NvBadge>
       </div>
 
-      <p v-if="!canReadWip" class="mt-4 text-sm text-muted-foreground">
-        无在制跟踪读取权限，未请求 WIP 数据
-      </p>
+      <p v-if="!canReadWip" class="mt-4 text-sm text-muted-foreground">没有查看在制工序的权限</p>
       <p v-else-if="wipState === 'idle'" class="mt-4 text-sm text-muted-foreground">
         请选择有效业务范围
       </p>
@@ -84,15 +106,13 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
       <div>
         <h2 class="text-sm font-semibold text-foreground">设备性能率</h2>
         <p class="mt-1 text-xs text-muted-foreground">
-          直接展示设备效率服务的性能率，不从产量反算。
+          性能率取自设备 OEE 统计，不由本页产量反算。
         </p>
       </div>
 
-      <p v-if="!canReadOee" class="mt-4 text-sm text-muted-foreground">
-        无设备效率读取权限，未请求 OEE 数据
-      </p>
+      <p v-if="!canReadOee" class="mt-4 text-sm text-muted-foreground">没有查看设备 OEE 的权限</p>
       <p v-else-if="isSkuDimension" class="mt-4 text-sm text-muted-foreground">
-        当前没有 SKU 维度的效率权威
+        按物料统计时不提供设备性能率，请切换到按天、按班次或按工作中心查看。
       </p>
       <p v-else-if="oeePending" class="mt-4 text-sm text-muted-foreground">正在读取设备性能率…</p>
       <p v-else-if="oeeError" class="mt-4 text-sm text-destructive">
@@ -109,7 +129,7 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
         >
           <div class="flex items-center justify-between gap-3">
             <span class="truncate text-sm font-medium text-foreground">
-              {{ bucket.dimensionValue ?? '未命名范围' }}
+              {{ bucketLabel(bucket) }}
             </span>
             <div class="flex items-center gap-2">
               <span class="font-mono text-sm font-semibold tabular-nums">

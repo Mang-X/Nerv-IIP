@@ -721,7 +721,7 @@ function formatDateTime(value?: string | null) {
   <BusinessLayout>
     <NvPageHeader
       title="设备报警"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="`${alarms.length} 条未解除`"
     >
       <template #actions>

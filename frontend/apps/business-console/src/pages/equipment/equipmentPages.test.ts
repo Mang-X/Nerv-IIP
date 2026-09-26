@@ -65,7 +65,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
           ? '精加工一线'
           : undefined,
       resolveTeam: () => undefined,
-      resolveUom: () => undefined,
+      resolveUom: (code?: string | null) => (code === 'pcs' ? '件' : undefined),
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
@@ -409,7 +409,8 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
 vi.mock('@/composables/useBusinessTelemetry', () => ({
   describeTelemetryOeeDegradation: (reason: string) => reason,
   describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',
-  formatOeeQuantity: (value: number | null | undefined) => (value == null ? '无数据' : `${value}`),
+  formatOeeQuantity: (value: number | null | undefined, uom?: string | null) =>
+    value == null ? '无数据' : `${value}${uom ? ` ${uom}` : ''}`,
   formatOeeRate: (value: number | null | undefined) =>
     value == null ? '无数据' : `${(value * 100).toFixed(1)}%`,
   useBusinessTelemetryHistory: () => ({
@@ -450,6 +451,8 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
       qualityRate: 0.95,
       isDegraded: false,
       stateSampleCount: 12,
+      expectedOutputQuantity: 120,
+      outputUomCode: 'pcs',
     })),
     oeeError: shallowRef(),
     oeePending: shallowRef(false),
@@ -718,6 +721,8 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('设备运行指标')
     expect(wrapper.text()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(wrapper.text()).toContain('82.0%')
+    // 理论产出的单位按主数据名称显示，不直接显示单位编码。
+    expect(wrapper.text()).toContain('理论产出120 件')
     expect(wrapper.text()).toContain('历史事件6')
     expect(wrapper.text()).toContain('temperature')
     expect(wrapper.text()).toContain('维护与可靠性')

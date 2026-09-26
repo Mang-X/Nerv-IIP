@@ -397,7 +397,7 @@ function rateProgress(rate?: number | null) {
   return rate === null || rate === undefined ? 0 : Math.max(0, Math.min(100, rate * 100))
 }
 function rateFoot(rate?: number | null, explanation?: string) {
-  return rate === null || rate === undefined ? '当前窗口暂无可计算样本' : explanation
+  return rate === null || rate === undefined ? '统计时段内暂无可计算数据' : explanation
 }
 const oeeFacets = computed<NvMetricFacet[]>(() => [
   { key: 'availability', label: '可用率', value: rateValue(oee.value?.availabilityRate) },
@@ -470,9 +470,10 @@ watch(
 )
 
 // 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+const { resolveDevice, resolveWorkCenter, resolveUom } = useMasterDataDisplayNames({
   devices: true,
   workCenters: true,
+  uoms: true,
 })
 /** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
 function deviceLabel(code?: string | null, fallback = '无设备') {
@@ -653,7 +654,7 @@ function recordDowntime() {
       :title="
         filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'
       "
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
     >
       <template #actions>
         <NvButton
@@ -995,7 +996,7 @@ function recordDowntime() {
             :value="rateValue(oee?.loadingRate)"
             :progress="rateProgress(oee?.loadingRate)"
             target-label="目标 100%"
-            :foot-start="rateFoot(oee?.loadingRate, '已排除计划停机窗口')"
+            :foot-start="rateFoot(oee?.loadingRate, '已扣除计划停机时间')"
           />
           <NvMetricCard
             variant="target"
@@ -1024,7 +1025,7 @@ function recordDowntime() {
             variant="sparkline"
             label="历史事件"
             :value="historyCount"
-            foot-start="当前时间窗内的历史事件数"
+            foot-start="所选时间范围内的历史事件数"
           />
         </NvSectionCards>
 
@@ -1099,39 +1100,34 @@ function recordDowntime() {
 
           <div class="rounded-lg border bg-card">
             <div class="border-b px-4 py-3">
-              <h3 class="text-sm font-semibold text-foreground">OEE 与可用性口径</h3>
+              <h3 class="text-sm font-semibold text-foreground">OEE 计算依据</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                OEE 与可用性口径与设备综合效率页一致，此处不另行计算。
+                算法与「OEE 趋势与横比」页一致，此处不另行计算。
               </p>
             </div>
             <div class="grid gap-3 p-4 text-sm">
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">统计窗口</span>
+                <span class="text-muted-foreground">统计时段</span>
                 <span
                   >{{ formatDateTime(oee?.windowStartUtc ?? oeeFilters.windowStartUtc) }} -
                   {{ formatDateTime(oee?.windowEndUtc ?? oeeFilters.windowEndUtc) }}</span
                 >
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">状态样本</span>
+                <span class="text-muted-foreground">设备状态记录</span>
                 <span>{{ oee?.stateSampleCount ?? 0 }} 条</span>
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">性能因子</span>
-                <span>{{ formatOeeRate(oee?.performanceRate) }}</span>
-              </div>
-              <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">质量因子</span>
-                <span>{{ formatOeeRate(oee?.qualityRate) }}</span>
-              </div>
-              <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">MES 报工</span>
+                <span class="text-muted-foreground">报工记录</span>
                 <span>{{ oee?.productionFactCount ?? 0 }} 条</span>
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
                 <span class="text-muted-foreground">理论产出</span>
                 <span>{{
-                  formatOeeQuantity(oee?.expectedOutputQuantity, oee?.outputUomCode)
+                  formatOeeQuantity(
+                    oee?.expectedOutputQuantity,
+                    resolveUom(oee?.outputUomCode) ?? oee?.outputUomCode,
+                  )
                 }}</span>
               </div>
               <div

@@ -186,13 +186,13 @@ function refreshReport() {
   <BusinessLayout>
     <NvPageHeader
       title="OEE 趋势与横比"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="dimensionLabel"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/telemetry/history">
-            <LineChartIcon aria-hidden="true" />遥测历史
+            <LineChartIcon aria-hidden="true" />历史趋势
           </RouterLink>
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>

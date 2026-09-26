@@ -208,11 +208,7 @@ function formatDateTime(value?: string | null) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="设备运行看板"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="headerCount"
-    >
+    <NvPageHeader title="设备运行看板" :breadcrumbs="[{ label: '设备监控' }]" :count="headerCount">
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/alarms"

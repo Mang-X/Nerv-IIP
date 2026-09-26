@@ -370,7 +370,7 @@ function primaryLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket, names:
     case 'workshop':
       return displayName(names.workshop, value, '未解析车间')
     default:
-      return value?.trim() || '未解析维度'
+      return value?.trim() || '—'
   }
 }
 

@@ -43,6 +43,8 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     if (!enabled) return undefined
     const catalog = useBusinessMasterDataResources(resourceType)
     catalog.filters.take = CATALOG_TAKE
+    // 历史单据可能引用已停用的主数据，名称照样要解析出来。
+    catalog.filters.includeDisabled = true
     return catalog
   }
 

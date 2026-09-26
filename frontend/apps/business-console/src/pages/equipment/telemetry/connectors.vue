@@ -100,11 +100,7 @@ function toggle(key: string) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="采集健康"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="headerCount"
-    >
+    <NvPageHeader title="采集健康" :breadcrumbs="[{ label: '设备监控' }]" :count="headerCount">
       <template #actions>
         <span class="text-xs text-muted-foreground">每 10 秒自动刷新</span>
         <NvButton size="sm" type="button" variant="outline" as-child>
