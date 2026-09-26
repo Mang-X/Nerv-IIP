@@ -138,6 +138,13 @@ const outboundOrderNoById = computed(() => {
 // 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
 const { resolveSkuName } = useSkuNames()
 const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+// 就地新增库位时预填所选出库单的工厂：库位要建在单据所在的工厂下。
+const createSiteCode = computed(
+  () =>
+    outboundOrders.value.find(
+      (order) => order.outboundOrderId?.trim() === createForm.outboundOrderId,
+    )?.siteCode ?? '',
+)
 const outboundOrderSelection = computed({
   // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
   get: () =>
@@ -702,6 +709,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.fromLocationCode"
                 directory-type="location"
                 creatable
+                :create-context="{ siteCode: createSiteCode }"
                 title="选择货架库位"
                 placeholder="货架库位"
                 clearable
@@ -715,6 +723,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.toLocationCode"
                 directory-type="location"
                 creatable
+                :create-context="{ siteCode: createSiteCode }"
                 title="选择集货库位"
                 placeholder="集货/暂存库位"
                 clearable

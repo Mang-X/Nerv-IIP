@@ -50,7 +50,9 @@ vi.mock('./directoryCreators', () => ({
   directoryCreatorFor: (type: string) =>
     type === 'work-center' || type === 'shift' || type === 'station'
       ? { permission: 'business.masterdata.resources.manage', dialog: StubCreateDialog }
-      : undefined,
+      : type === 'location'
+        ? { permission: 'business.inventory.locations.manage', dialog: StubCreateDialog }
+        : undefined,
 }))
 
 interface Recorded {
@@ -353,7 +355,7 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
   })
 
   function mountLocationPicker(
-    options: { forbidden?: boolean; holdLaterPages?: Promise<void> } = {},
+    options: { failStatus?: number; holdLaterPages?: Promise<void> } = {},
   ) {
     const requests: URL[] = []
     configureApiClient({
@@ -361,10 +363,10 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
       fetch: (async (request: Request) => {
         const url = new URL(request.url)
         requests.push(url)
-        if (options.forbidden) {
+        if (options.failStatus) {
           return Response.json(
-            { success: false, message: 'directory-scope-not-authorized', code: 403 },
-            { status: 403 },
+            { success: false, message: 'directory-unavailable', code: options.failStatus },
+            { status: options.failStatus },
           )
         }
         const keyword = url.searchParams.get('keyword')
@@ -391,6 +393,7 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
           return () =>
             h(DirectoryPicker, {
               directoryType: 'location',
+              creatable: true,
               modelValue: model.value,
               'onUpdate:modelValue': (value: string) => (model.value = value),
             })
@@ -439,12 +442,28 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
     expect(optionTexts().some((text) => text.includes(code(100)))).toBe(true)
   })
 
-  it('目录拒绝当前角色时说无权查看，不说没有匹配', async () => {
-    const { wrapper } = mountLocationPicker({ forbidden: true })
+  // 取数失败时不能说成「没有匹配」，也不给「新增」入口（会引导用户去新建可能已存在的库位）；
+  // 403 与其它失败说法不同（审核 R2-2）。对照：取数成功时有新增权限就有入口。
+  it('取数成功时给新增入口', async () => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { wrapper } = mountLocationPicker()
     await openPicker(wrapper)
 
-    expect(document.body.textContent).toContain('当前角色无权查看库位')
+    expect(document.body.textContent).toContain('新增库位')
+  })
+
+  it.each([
+    [403, '当前角色无权查看库位', '库位加载失败'],
+    [502, '库位加载失败，请稍后重试', '无权查看'],
+  ])('目录返回 %i 时如实说明、不给新增入口', async (status, shown, notShown) => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { wrapper } = mountLocationPicker({ failStatus: status })
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain(shown)
+    expect(document.body.textContent).not.toContain(notShown)
     expect(document.body.textContent).not.toContain('没有匹配的库位')
+    expect(document.body.textContent).not.toContain('新增库位')
   })
 
   it('输入关键字由服务端在全部库位里找，第 501 个以后也选得到', async () => {

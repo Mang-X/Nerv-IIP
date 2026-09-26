@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.Contracts.Iam;
 
@@ -11,8 +12,11 @@ public sealed record BusinessConsoleSearchableDirectoryDefinition(
 
 public sealed record BusinessConsoleSearchableDirectoryScope(string? Kind, string? Id);
 
-/// <summary>按工厂切分的目录可见的工厂集合；<see cref="SiteCodes"/> 为 null 表示组织级授权、不收窄。</summary>
-public sealed record BusinessConsoleAuthorizedSites(IReadOnlyList<string>? SiteCodes);
+/// <summary>
+/// 按工厂切分的目录可见范围：组织级授权（<see cref="OrganizationWide"/>）不收窄；
+/// 否则收窄到 <see cref="SiteCodes"/>（至少一个工厂）。
+/// </summary>
+public sealed record BusinessConsoleAuthorizedSites(bool OrganizationWide, IReadOnlyList<string> SiteCodes);
 
 public static class BusinessConsoleSearchableDirectoryPolicy
 {
@@ -163,12 +167,7 @@ public static class BusinessConsoleSearchableDirectoryPolicy
         }
 
         var grants = (authorization.ScopeGrants ?? []).ToArray();
-        if (grants.Any(grant => grant is null
-                || string.IsNullOrWhiteSpace(grant.SourceKind)
-                || grant.SourceKind.Trim().ToLowerInvariant() is not ("role" or "membership")
-                || string.IsNullOrWhiteSpace(grant.SourceId)
-                || string.IsNullOrWhiteSpace(grant.ScopeKind)
-                || string.IsNullOrWhiteSpace(grant.ScopeId)))
+        if (!grants.All(IsWellFormedGrant))
         {
             return null;
         }
@@ -197,16 +196,16 @@ public static class BusinessConsoleSearchableDirectoryPolicy
         {
             var requestedSite = requestedScopeId!.Trim();
             return organizationWide || sites.Contains(requestedSite, StringComparer.Ordinal)
-                ? new BusinessConsoleAuthorizedSites([requestedSite])
+                ? new BusinessConsoleAuthorizedSites(false, [requestedSite])
                 : null;
         }
 
         if (organizationWide)
         {
-            return new BusinessConsoleAuthorizedSites(null);
+            return new BusinessConsoleAuthorizedSites(true, []);
         }
 
-        return sites.Length > 0 ? new BusinessConsoleAuthorizedSites(sites) : null;
+        return sites.Length > 0 ? new BusinessConsoleAuthorizedSites(false, sites) : null;
     }
 
     private static bool IsRepresentableGrant(
@@ -214,12 +213,7 @@ public static class BusinessConsoleSearchableDirectoryPolicy
         AuthorizationScopeGrant? grant,
         string organizationId)
     {
-        if (grant is null
-            || string.IsNullOrWhiteSpace(grant.SourceKind)
-            || grant.SourceKind.Trim().ToLowerInvariant() is not ("role" or "membership")
-            || string.IsNullOrWhiteSpace(grant.SourceId)
-            || string.IsNullOrWhiteSpace(grant.ScopeKind)
-            || string.IsNullOrWhiteSpace(grant.ScopeId)
+        if (!IsWellFormedGrant(grant)
             || grant.ApplicablePermissionCodes?.Contains(definition.PermissionCode, StringComparer.Ordinal) != true)
         {
             return false;
@@ -242,6 +236,15 @@ public static class BusinessConsoleSearchableDirectoryPolicy
 
         return definition.SupportedScopeKinds.Contains(scopeKind);
     }
+
+    /// <summary>来源（角色 / 成员关系）与范围齐全的授权；残缺的授权一律视为不可表示。</summary>
+    private static bool IsWellFormedGrant([NotNullWhen(true)] AuthorizationScopeGrant? grant) =>
+        grant is not null
+        && !string.IsNullOrWhiteSpace(grant.SourceKind)
+        && grant.SourceKind.Trim().ToLowerInvariant() is "role" or "membership"
+        && !string.IsNullOrWhiteSpace(grant.SourceId)
+        && !string.IsNullOrWhiteSpace(grant.ScopeKind)
+        && !string.IsNullOrWhiteSpace(grant.ScopeId);
 
     private static BusinessConsoleSearchableDirectoryDefinition Define(
         string directoryType,

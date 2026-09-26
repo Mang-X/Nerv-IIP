@@ -126,6 +126,32 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Empty(AuthorizedSites(downstream));
     }
 
+    // 两条各自单独变异都会存活的防线：IAM 判定 DenyAll、或只有别的组织的组织级授权，都不能读到库存目录。
+    [Theory]
+    [InlineData("deny-all")]
+    [InlineData("other-organization")]
+    public async Task Deny_all_or_other_organization_grant_cannot_read_inventory_directory(string kind)
+    {
+        var auth = kind == "deny-all"
+            ? FakeBusinessGatewayAuthorizationClient.Allowed(
+                dataScope: new AuthorizationDataScope([], [], [], DenyAll: true),
+                scopeGrants: [Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead)])
+            : FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+            [
+                Grant("organization", "org-999", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+            ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(downstream.RequestUri);
+    }
+
     [Fact]
     public async Task Grant_without_any_site_fails_closed()
     {
@@ -547,7 +573,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
 
         var response = await client.ListDirectoryAsync(
             "internal-token",
-            new BusinessConsoleInventoryDirectoryRequest("org-1", "env-1", "batch", "lot", "SITE-A", "SKU-1"),
+            new BusinessConsoleInventoryDirectoryRequest("org-1", "env-1", "batch", "lot", "SKU-1", AuthorizedSiteCodes: ["SITE-A"]),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -559,7 +585,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Contains("\"skip\":0", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"take\":20", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("directoryType=batch", handler.RequestUri!.Query, StringComparison.Ordinal);
-        Assert.Contains("siteCode=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("authorizedSiteCodes=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
     }
 
     [Theory]
