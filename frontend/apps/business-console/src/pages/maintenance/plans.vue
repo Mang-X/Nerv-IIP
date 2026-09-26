@@ -276,11 +276,17 @@ async function submitGenerate() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" @click="openGenerate">
+        <NvButton
+          v-if="canManagePlans"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="openGenerate"
+        >
           <CalendarClockIcon aria-hidden="true" />
           生成到期工单
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManagePlans" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建保养计划
         </NvButton>

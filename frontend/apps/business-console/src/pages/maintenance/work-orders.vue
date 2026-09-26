@@ -23,6 +23,7 @@ import {
 } from '@/composables/useEquipmentPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import { CURRENCY_OPTIONS } from '@/data/currencyReference'
@@ -137,6 +138,9 @@ const { resolvePartner } = useBusinessPartnerNames()
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const currentUserId = computed(() => principal.value?.principalId ?? '')
+const canManageWorkOrders = computed(() =>
+  (principal.value?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
+)
 const workerOptions = computed(() =>
   workers.value
     .map((w) => ({
@@ -597,7 +601,7 @@ function formatDate(value?: string | null) {
 watch(
   () => route.query,
   (query) => {
-    if (queryPrefilled.value) return
+    if (queryPrefilled.value || !canManageWorkOrders.value) return
     const deviceAssetId = typeof query.deviceAssetId === 'string' ? query.deviceAssetId : ''
     const sourceAlarmId = typeof query.sourceAlarmId === 'string' ? query.sourceAlarmId : ''
     if (!deviceAssetId && !sourceAlarmId) return
@@ -626,7 +630,7 @@ watch(
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageWorkOrders" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建维护工单
         </NvButton>
@@ -704,7 +708,7 @@ watch(
       /></template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`维护工单操作 ${workOrderNo(row)}`">
+        <NvRowActions v-if="canManageWorkOrders" :label="`维护工单操作 ${workOrderNo(row)}`">
           <NvDropdownMenuItem :disabled="!canComplete(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成工单
