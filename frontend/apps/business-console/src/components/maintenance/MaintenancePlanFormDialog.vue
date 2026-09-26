@@ -33,10 +33,8 @@ import {
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import {
-  useEquipmentDeviceCatalog,
-  useEquipmentTeamCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import { useEquipmentTeamCatalog } from '@/composables/useEquipmentPickerCatalog'
 
 type TriggerMode = 'calendar' | 'runtime' | 'both'
 type DialogMode = 'create' | 'edit'
@@ -97,7 +95,6 @@ const form = reactive<PlanFormState>({
 })
 const submitted = shallowRef(false)
 
-const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 const { teamOptions, teamsPending } = useEquipmentTeamCatalog()
 
 const intervalOptions = computed(() => {
@@ -266,16 +263,12 @@ function submitForm() {
         <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
           <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-device">设备</NvFieldLabel>
-            <NvEntityPicker
+            <DirectoryPicker
               id="plan-device"
               v-model="form.deviceAssetId"
-              :options="deviceOptions"
-              title="选择设备"
-              placeholder="选择设备"
-              source-text="数据来自基础数据设备资产"
-              empty-text="暂无设备资产，请先在基础数据登记设备"
-              :loading="devicesPending"
-              aria-label="设备"
+              directory-type="equipment"
+              creatable
+              :invalid="deviceInvalid"
             />
             <NvFieldError v-if="deviceInvalid" :errors="['请选择设备。']" />
           </NvField>

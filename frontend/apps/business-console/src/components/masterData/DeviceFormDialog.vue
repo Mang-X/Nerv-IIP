@@ -120,63 +120,56 @@ if (props.editing) {
 }
 
 // ── 三个原本手输的编码字段，改为从真实目录里选 ─────────────────
-// 设备类别取数据字典 `asset-class` CodeSet；字典为空时给空态引导，不编造码值。
-const assetClassCatalog = useBusinessMasterDataResources('reference-data', {
-  codeSet: 'asset-class',
-})
-const assetClassOptions = computed(() => {
-  const options = assetClassCatalog.resources.value
-    .filter((row) => !!row.code && row.active !== false)
-    .map((row) => ({
-      value: row.code as string,
-      label: row.displayName || (row.code as string),
-      hint: row.code ?? undefined,
-    }))
-  const current = form.assetClassCode.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
-  }
-  return options
-})
-
-// 供应商只列带 supplier 角色的业务伙伴（伙伴可同时是客户与供应商，按角色包含关系筛）。
-const { partners, partnersPending } = useBusinessPartners()
-const supplierOptions = computed(() => {
-  const options = partners.value
-    .filter((row) => row.active !== false)
-    .filter((row) =>
-      [row.partnerType, ...(row.partnerRoles ?? [])]
-        .map((role) => (role ?? '').trim())
-        .includes('supplier'),
-    )
+// 候选取目录里的行（编码作值、名称作显示）；当前值不在候选里（已停用、或不在取回的这一批）时补到最前，
+// 按编码显示，免得回填后显示成未选。
+function codeOptions(rows: BusinessConsoleResourceItem[], current: string) {
+  const options = rows
     .filter((row) => !!row.code)
     .map((row) => ({
       value: row.code as string,
       label: row.displayName || (row.code as string),
       hint: row.code ?? undefined,
     }))
-  const current = form.supplierPartnerCode.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
+  const code = current.trim()
+  if (code && !options.some((option) => option.value === code)) {
+    return [{ value: code, label: code, hint: undefined }, ...options]
   }
   return options
+}
+
+// 设备类别取数据字典 `asset-class` CodeSet；字典为空时给空态引导，不编造码值。
+const assetClassCatalog = useBusinessMasterDataResources('reference-data', {
+  codeSet: 'asset-class',
 })
+const assetClassOptions = computed(() =>
+  codeOptions(
+    assetClassCatalog.resources.value.filter((row) => row.active !== false),
+    form.assetClassCode,
+  ),
+)
+
+// 供应商只列带 supplier 角色的业务伙伴（伙伴可同时是客户与供应商，按角色包含关系筛）。
+const { partners, partnersPending } = useBusinessPartners()
+const supplierOptions = computed(() =>
+  codeOptions(
+    partners.value
+      .filter((row) => row.active !== false)
+      .filter((row) =>
+        [row.partnerType, ...(row.partnerRoles ?? [])]
+          .map((role) => (role ?? '').trim())
+          .includes('supplier'),
+      ),
+    form.supplierPartnerCode,
+  ),
+)
 
 // 父设备来自设备台账本身，且必须排除正在编辑的这台——设备不能挂在自己名下。
-const parentDeviceOptions = computed(() => {
-  const options = devices.resources.value
-    .filter((row) => !!row.code && row.code !== editingCode)
-    .map((row) => ({
-      value: row.code as string,
-      label: row.displayName || (row.code as string),
-      hint: row.code ?? undefined,
-    }))
-  const current = form.parentDeviceId.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
-  }
-  return options
-})
+const parentDeviceOptions = computed(() =>
+  codeOptions(
+    devices.resources.value.filter((row) => row.code !== editingCode),
+    form.parentDeviceId,
+  ),
+)
 
 // 层级字段逐级收窄：改了上级，下级原先选的值可能已不在新上级下，一律清空让用户重选
 // （选择器按上级收窄后，留着旧值会在界面上显示成未选、提交时却仍带着它）。

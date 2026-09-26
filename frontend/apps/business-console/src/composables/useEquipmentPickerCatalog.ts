@@ -112,7 +112,7 @@ function telemetryValueTypeLabel(valueType?: string | null) {
   return TELEMETRY_VALUE_TYPE_LABELS[key] ?? key
 }
 
-/** 设备资产目录：遥测筛选条与维护建单共用的「哪台设备」。 */
+/** 设备资产目录：遥测页的「哪台设备」。 */
 export function useEquipmentDeviceCatalog() {
   const deviceCatalog = useBusinessMasterDataResources('device-asset')
   deviceCatalog.filters.take = CATALOG_TAKE
