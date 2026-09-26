@@ -48,7 +48,7 @@ public sealed class EngineeringApprovalVocabularyContractTests
             "ECO-20260801-000001",
             CancellationToken.None));
 
-        Assert.Contains("same ECO document", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("工程变更发布需要同一工程变更的已批准 BusinessApproval 审批链。", exception.Message);
     }
 
     [Fact]
@@ -63,24 +63,88 @@ public sealed class EngineeringApprovalVocabularyContractTests
             "ECO-20260801-000001",
             CancellationToken.None));
 
-        Assert.Contains("same ECO document", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("工程变更发布需要同一工程变更的已批准 BusinessApproval 审批链。", exception.Message);
     }
 
-    private static HttpEngineeringApprovalVerifier CreateVerifier(string templateCode, string status) =>
+    [Fact]
+    public async Task Release_consumer_rejects_an_invalid_approval_reference_without_echoing_input()
+    {
+        var verifier = CreateVerifier(ApprovalTemplateCodes.EngineeringChangeOrder, "approved");
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => verifier.EnsureApprovedAsync(
+            "org-001",
+            "env-dev",
+            "not-a-guid",
+            "ECO-20260801-000001",
+            CancellationToken.None));
+
+        Assert.Equal("审批引用标识必须是 BusinessApproval 审批链 ID。", exception.Message);
+        Assert.DoesNotContain("not-a-guid", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Release_consumer_redacts_non_success_provider_messages()
+    {
+        var verifier = CreateVerifier(
+            ApprovalTemplateCodes.EngineeringChangeOrder,
+            "approved",
+            HttpStatusCode.BadGateway,
+            "{\"message\":\"provider secret\"}");
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => verifier.EnsureApprovedAsync(
+            "org-001",
+            "env-dev",
+            "0190c0b4-3d3b-7f41-bf6a-0e9a6d5a0001",
+            "ECO-20260801-000001",
+            CancellationToken.None));
+
+        Assert.Equal("BusinessApproval 审批链校验失败，请稍后重试。", exception.Message);
+        Assert.DoesNotContain("provider secret", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Release_consumer_redacts_empty_provider_responses()
+    {
+        var verifier = CreateVerifier(
+            ApprovalTemplateCodes.EngineeringChangeOrder,
+            "approved",
+            HttpStatusCode.OK,
+            "{\"data\":null,\"message\":\"provider secret\"}");
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => verifier.EnsureApprovedAsync(
+            "org-001",
+            "env-dev",
+            "0190c0b4-3d3b-7f41-bf6a-0e9a6d5a0001",
+            "ECO-20260801-000001",
+            CancellationToken.None));
+
+        Assert.Equal("BusinessApproval 审批链返回为空，请稍后重试。", exception.Message);
+        Assert.DoesNotContain("provider secret", exception.Message, StringComparison.Ordinal);
+    }
+
+    private static HttpEngineeringApprovalVerifier CreateVerifier(
+        string templateCode,
+        string status,
+        HttpStatusCode responseStatus = HttpStatusCode.OK,
+        string? responseBody = null) =>
         new(
-            new HttpClient(new StubHandler(templateCode, status))
+            new HttpClient(new StubHandler(templateCode, status, responseStatus, responseBody))
             {
                 BaseAddress = new Uri("http://approval.test"),
             },
             new StubTokenProvider());
 
-    private sealed class StubHandler(string templateCode, string status) : HttpMessageHandler
+    private sealed class StubHandler(
+        string templateCode,
+        string status,
+        HttpStatusCode responseStatus,
+        string? responseBody) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            var payload = JsonSerializer.Serialize(new
+            var payload = responseBody ?? JsonSerializer.Serialize(new
             {
                 success = true,
                 message = string.Empty,
@@ -98,7 +162,7 @@ public sealed class EngineeringApprovalVocabularyContractTests
                 },
             });
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult(new HttpResponseMessage(responseStatus)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json"),
             });
