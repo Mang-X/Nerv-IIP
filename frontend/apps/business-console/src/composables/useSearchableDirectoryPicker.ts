@@ -23,6 +23,10 @@ export interface SearchableDirectoryPickerOptions {
   selected: MaybeRefOrGetter<string | undefined>
   /** 批次 / 序列号按物料收窄。 */
   skuCode?: MaybeRefOrGetter<string | undefined>
+  /** 库存目录（库位 / 批次 / 序列号）按表单已选的工厂收窄（服务端再与授权工厂取交集）。 */
+  siteCode?: MaybeRefOrGetter<string | undefined>
+  /** 为假时不取数（如表单还没选工厂）。 */
+  enabled?: MaybeRefOrGetter<boolean>
 }
 
 /**
@@ -44,6 +48,7 @@ export function useSearchableDirectoryPicker(
 
   const directoryQuery = computed(() => {
     const skuCode = toValue(options.skuCode)?.trim()
+    const siteCode = toValue(options.siteCode)?.trim()
     return {
       organizationId: context.organizationId,
       environmentId: context.environmentId,
@@ -51,6 +56,7 @@ export function useSearchableDirectoryPicker(
       rankingMode: 'default' as const,
       ...(keyword.value ? { keyword: keyword.value } : {}),
       ...(skuCode ? { skuCode } : {}),
+      ...(siteCode ? { siteCode } : {}),
     }
   })
 
@@ -74,7 +80,7 @@ export function useSearchableDirectoryPicker(
       const loaded = allPages.reduce((count, page) => count + (page.data?.items?.length ?? 0), 0)
       return loaded < (lastPage.data?.total ?? 0) ? lastPageParam + 1 : null
     },
-    enabled: () => hasBusinessContext(context),
+    enabled: () => hasBusinessContext(context) && toValue(options.enabled ?? true),
   })
 
   const pages = computed(() => query.data.value?.pages ?? [])

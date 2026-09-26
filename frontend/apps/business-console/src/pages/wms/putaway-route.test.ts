@@ -184,6 +184,29 @@ describe('WMS putaway route handoff', () => {
     wrapper.unmount()
   })
 
+  // #3832 审核 R3-1：从入库页带入的入库单可能不在本页最近 200 条里，工厂取路由带来的入库单工厂，
+  // 不能回落成空（空工厂会让库位选择器没有候选、新增时落到别的工厂）。
+  it('从入库页带入较早的入库单时，库位选择器用路由带来的入库单工厂', async () => {
+    const previous = state.routeQuery
+    state.routeQuery = {
+      inboundOrderNo: 'IB-OLD',
+      inboundOrderId: 'ib-old',
+      siteCode: 'SITE-OLD',
+      create: '1',
+    }
+    try {
+      const wrapper = mountPutaway()
+      await flushPromises()
+
+      expect(document.body.querySelector('#wms-putaway-to')!.getAttribute('data-form-site')).toBe(
+        'SITE-OLD',
+      )
+      wrapper.unmount()
+    } finally {
+      state.routeQuery = previous
+    }
+  })
+
   it('入库单行只从所选入库单的收货行里挑，不混入别的入库单', async () => {
     const wrapper = mountPutaway()
     await flushPromises()
@@ -255,10 +278,10 @@ function wmsStubs() {
     BusinessLayout: { template: '<main><slot /></main>' },
     WmsInventoryContextPanel: true,
     DirectoryPicker: {
-      props: ['modelValue', 'id'],
+      props: ['modelValue', 'id', 'formSiteCode'],
       emits: ['update:modelValue'],
       template:
-        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        '<input :id="id" :data-form-site="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
     },
     NvEntityPicker: {
       props: ['modelValue', 'options', 'id'],

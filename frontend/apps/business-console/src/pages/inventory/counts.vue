@@ -493,7 +493,7 @@ function isNonEmpty(value: string) {
                 v-model="taskForm.locationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: taskForm.siteCode }"
+                :form-site-code="taskForm.siteCode"
                 title="选择库位"
                 placeholder="选择库位"
                 clearable

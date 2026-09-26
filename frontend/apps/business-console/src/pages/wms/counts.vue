@@ -632,7 +632,7 @@ function refreshAll() {
                 v-model="createForm.locationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: createForm.siteCode }"
+                :form-site-code="createForm.siteCode"
                 title="选择库位"
                 placeholder="选择库位"
                 clearable

@@ -162,10 +162,10 @@ vi.mock('@/composables/useBusinessWms', () => ({
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   DirectoryPicker: {
-    props: ['modelValue', 'id'],
+    props: ['modelValue', 'id', 'formSiteCode'],
     emits: ['update:modelValue'],
     template:
-      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input :id="id" :data-form-site="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
   NvDataTable: {
@@ -288,6 +288,8 @@ describe('WMS picking route context', () => {
     expect(wrapper.get('#wms-picking-line').attributes('data-options')).toBe('')
     await wrapper.get('#wms-picking-outbound').setValue('OB-001')
     expect(wrapper.get('#wms-picking-line').attributes('data-options')).toBe('1')
+    // 库位选择器的工厂取所选出库单的工厂（#3832）。
+    expect(wrapper.get('#wms-picking-from').attributes('data-form-site')).toBe('S1')
     expect((wrapper.get('#wms-picking-line').element as HTMLInputElement).value).toBe('1')
 
     await wrapper.get('#wms-picking-no').setValue('PICK-OB-001-01')

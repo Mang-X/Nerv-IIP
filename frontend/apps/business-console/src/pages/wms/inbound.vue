@@ -561,6 +561,7 @@ function formatDateTime(value?: string | null) {
           v-if="row.inboundOrderNo"
           :inbound-order-id="row.inboundOrderId"
           :inbound-order-no="row.inboundOrderNo"
+          :site-code="row.siteCode ?? undefined"
           :gates="receivingQualityGates"
           :supplier-returns="supplierReturns"
           :quality-gate-status="row.qualityGateStatus"
@@ -695,7 +696,7 @@ function formatDateTime(value?: string | null) {
                 class="w-36"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: createForm.siteCode }"
+                :form-site-code="createForm.siteCode"
                 title="选择暂存库位"
                 placeholder="暂存库位*"
                 clearable

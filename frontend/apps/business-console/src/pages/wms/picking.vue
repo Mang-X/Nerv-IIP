@@ -709,7 +709,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.fromLocationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: createSiteCode }"
+                :form-site-code="createSiteCode"
                 title="选择货架库位"
                 placeholder="货架库位"
                 clearable
@@ -723,7 +723,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.toLocationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: createSiteCode }"
+                :form-site-code="createSiteCode"
                 title="选择集货库位"
                 placeholder="集货/暂存库位"
                 clearable

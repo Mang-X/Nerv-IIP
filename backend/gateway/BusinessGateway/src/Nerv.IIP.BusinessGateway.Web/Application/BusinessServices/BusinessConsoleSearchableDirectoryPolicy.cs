@@ -13,10 +13,29 @@ public sealed record BusinessConsoleSearchableDirectoryDefinition(
 public sealed record BusinessConsoleSearchableDirectoryScope(string? Kind, string? Id);
 
 /// <summary>
-/// 按工厂切分的目录可见范围：组织级授权（<see cref="OrganizationWide"/>）不收窄；
-/// 否则收窄到 <see cref="SiteCodes"/>（至少一个工厂）。
+/// 按工厂切分的目录（库位 / 批次 / 序列号）可见范围，只有两种合法状态：
+/// 组织级授权不收窄（<see cref="OrganizationWide"/>），或收窄到至少一个工厂（<see cref="Sites"/>）。
 /// </summary>
-public sealed record BusinessConsoleAuthorizedSites(bool OrganizationWide, IReadOnlyList<string> SiteCodes);
+public sealed class BusinessConsoleAuthorizedSites
+{
+    private BusinessConsoleAuthorizedSites(IReadOnlyList<string>? siteFilter)
+    {
+        SiteFilter = siteFilter;
+    }
+
+    /// <summary>组织级授权：不按工厂收窄。</summary>
+    public static BusinessConsoleAuthorizedSites OrganizationWide { get; } = new(null);
+
+    /// <summary>收窄到给定工厂（至少一个）。</summary>
+    public static BusinessConsoleAuthorizedSites Sites(IReadOnlyList<string> siteCodes)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(siteCodes.Count);
+        return new(siteCodes);
+    }
+
+    /// <summary>下传给库存目录的工厂过滤；null 表示不收窄。</summary>
+    public IReadOnlyList<string>? SiteFilter { get; }
+}
 
 public static class BusinessConsoleSearchableDirectoryPolicy
 {
@@ -196,16 +215,16 @@ public static class BusinessConsoleSearchableDirectoryPolicy
         {
             var requestedSite = requestedScopeId!.Trim();
             return organizationWide || sites.Contains(requestedSite, StringComparer.Ordinal)
-                ? new BusinessConsoleAuthorizedSites(false, [requestedSite])
+                ? BusinessConsoleAuthorizedSites.Sites([requestedSite])
                 : null;
         }
 
         if (organizationWide)
         {
-            return new BusinessConsoleAuthorizedSites(true, []);
+            return BusinessConsoleAuthorizedSites.OrganizationWide;
         }
 
-        return sites.Length > 0 ? new BusinessConsoleAuthorizedSites(false, sites) : null;
+        return sites.Length > 0 ? BusinessConsoleAuthorizedSites.Sites(sites) : null;
     }
 
     private static bool IsRepresentableGrant(

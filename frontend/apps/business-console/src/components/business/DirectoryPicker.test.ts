@@ -355,7 +355,7 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
   })
 
   function mountLocationPicker(
-    options: { failStatus?: number; holdLaterPages?: Promise<void> } = {},
+    options: { failStatus?: number; holdLaterPages?: Promise<void>; formSiteCode?: string } = {},
   ) {
     const requests: URL[] = []
     configureApiClient({
@@ -373,12 +373,20 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
         const pageIndex = Number(url.searchParams.get('pageIndex'))
         if (pageIndex > 1) await options.holdLaterPages
         const pageSize = Number(url.searchParams.get('pageSize'))
-        const all = Array.from({ length: TOTAL }, (_, i) => code(i + 1)).filter(
-          (value) => !keyword || value.includes(keyword),
+        const siteCode = url.searchParams.get('siteCode')
+        // 奇数号库位在 SITE-A，偶数号在 SITE-B；带了工厂就只回那个工厂的。
+        const all = Array.from({ length: TOTAL }, (_, i) => ({
+          value: code(i + 1),
+          site: (i + 1) % 2 ? 'SITE-A' : 'SITE-B',
+        })).filter(
+          (row) =>
+            (!keyword || row.value.includes(keyword)) && (!siteCode || row.site === siteCode),
         )
-        const items = all
-          .slice((pageIndex - 1) * pageSize, pageIndex * pageSize)
-          .map((value) => ({ code: value, displayName: value, context: { siteCode: 'SITE-A' } }))
+        const items = all.slice((pageIndex - 1) * pageSize, pageIndex * pageSize).map((row) => ({
+          code: row.value,
+          displayName: row.value,
+          context: { siteCode: row.site },
+        }))
         return Response.json({ success: true, data: { items, total: all.length } })
       }) as typeof fetch,
     })
@@ -394,6 +402,7 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
             h(DirectoryPicker, {
               directoryType: 'location',
               creatable: true,
+              formSiteCode: options.formSiteCode,
               modelValue: model.value,
               'onUpdate:modelValue': (value: string) => (model.value = value),
             })
@@ -464,6 +473,36 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
     expect(document.body.textContent).not.toContain(notShown)
     expect(document.body.textContent).not.toContain('没有匹配的库位')
     expect(document.body.textContent).not.toContain('新增库位')
+  })
+
+  // #3832 审核 R3-2：表单工厂是库位选择器唯一的工厂口径——候选只有这个工厂的库位，新增时预选它。
+  it('给定表单工厂时，候选只有该工厂的库位，新增时预选该工厂', async () => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { requests, wrapper } = mountLocationPicker({ formSiteCode: 'SITE-B' })
+    await openPicker(wrapper)
+
+    expect(requests.at(-1)?.searchParams.get('siteCode')).toBe('SITE-B')
+    const rows = [...document.body.querySelectorAll('[role="option"]')]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((row) => row.textContent?.includes('SITE-B'))).toBe(true)
+
+    createEntry('库位')!.click()
+    await flushPromises()
+    const context = JSON.parse(
+      document.body.querySelector('[data-testid="save"]')!.getAttribute('data-context')!,
+    )
+    expect(context).toMatchObject({ siteCode: 'SITE-B' })
+  })
+
+  it('表单还没选工厂时提示先选工厂，不取数、不给新增入口', async () => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { requests, wrapper } = mountLocationPicker({ formSiteCode: '' })
+    await openPicker(wrapper)
+
+    expect(requests).toHaveLength(0)
+    expect(document.body.textContent).toContain('请先选择工厂')
+    expect(document.body.textContent).not.toContain('新增库位')
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0)
   })
 
   it('输入关键字由服务端在全部库位里找，第 501 个以后也选得到', async () => {

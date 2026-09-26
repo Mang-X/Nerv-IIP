@@ -40,16 +40,20 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
         var scopeError = BusinessConsoleSearchableDirectoryPolicy.ValidateScope(directoryType, req.ScopeKind, req.ScopeId);
         var rankingError = BusinessConsoleSearchableDirectoryPolicy.ValidateRankingMode(req.RankingMode);
+        // 表单工厂只对按工厂切分的库存目录有意义；别的目录不静默忽略它。
+        var siteError = !string.IsNullOrWhiteSpace(req.SiteCode) && definition.Owner != "inventory"
+            ? "directory-site-unsupported"
+            : null;
         var tenantScopeInvalid = string.IsNullOrWhiteSpace(req.OrganizationId) || string.IsNullOrWhiteSpace(req.EnvironmentId);
         var pageOffsetValid = TryCalculatePageOffset(req.PageIndex, req.PageSize, out var pageOffset);
-        if (tenantScopeInvalid || scopeError is not null || rankingError is not null || !pageOffsetValid)
+        if (tenantScopeInvalid || scopeError is not null || rankingError is not null || siteError is not null || !pageOffsetValid)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
                 HttpContext,
                 StatusCodes.Status400BadRequest,
                 tenantScopeInvalid
                     ? "directory-tenant-scope-invalid"
-                    : scopeError ?? rankingError ?? "directory-page-invalid",
+                    : scopeError ?? rankingError ?? siteError ?? "directory-page-invalid",
                 ct);
             return;
         }
@@ -258,10 +262,12 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 request.EnvironmentId,
                 request.DirectoryType,
                 request.Keyword,
+                // 表单工厂：库存目录再与授权工厂取交集，不能借此读到授权外的工厂。
+                request.SiteCode?.Trim(),
                 request.SkuCode,
                 pageOffset,
                 request.PageSize,
-                authorizedSites.OrganizationWide ? null : authorizedSites.SiteCodes),
+                authorizedSites.SiteFilter),
             cancellationToken);
         ValidateInventory(response, request, pageOffset);
 

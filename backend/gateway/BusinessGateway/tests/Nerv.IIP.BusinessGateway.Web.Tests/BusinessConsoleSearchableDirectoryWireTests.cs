@@ -152,6 +152,47 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Null(downstream.RequestUri);
     }
 
+    // #3832 审核 R3-2：表单已选的工厂原样下传给库存目录（库存侧再与授权工厂取交集），授权工厂仍一并下传。
+    [Fact]
+    public async Task Form_site_is_forwarded_alongside_the_authorized_sites()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+            Grant("site", "SITE-B", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&siteCode=SITE-B");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("siteCode=SITE-B", downstream.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Equal(["SITE-A", "SITE-B"], AuthorizedSites(downstream));
+    }
+
+    [Fact]
+    public async Task Form_site_is_rejected_on_directories_not_split_by_site()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.MasterDataResourcesRead, organizationWide: true),
+        ]);
+        var downstream = new JsonHandler("{}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/material?organizationId=org-001&environmentId=env-dev&siteCode=SITE-B");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("directory-site-unsupported", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Grant_without_any_site_fails_closed()
     {
@@ -573,7 +614,14 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
 
         var response = await client.ListDirectoryAsync(
             "internal-token",
-            new BusinessConsoleInventoryDirectoryRequest("org-1", "env-1", "batch", "lot", "SKU-1", AuthorizedSiteCodes: ["SITE-A"]),
+            new BusinessConsoleInventoryDirectoryRequest(
+                "org-1",
+                "env-1",
+                "batch",
+                Keyword: "lot",
+                SiteCode: "SITE-B",
+                SkuCode: "SKU-1",
+                AuthorizedSiteCodes: ["SITE-A"]),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -586,6 +634,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Contains("\"take\":20", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("directoryType=batch", handler.RequestUri!.Query, StringComparison.Ordinal);
         Assert.Contains("authorizedSiteCodes=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("siteCode=SITE-B", handler.RequestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("skuCode=SKU-1", handler.RequestUri.Query, StringComparison.Ordinal);
     }
 
     [Theory]

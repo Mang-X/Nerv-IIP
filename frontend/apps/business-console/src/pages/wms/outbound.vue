@@ -685,7 +685,7 @@ function refreshAll() {
                 class="w-36"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: createForm.siteCode }"
+                :form-site-code="createForm.siteCode"
                 title="选择拣货库位"
                 placeholder="拣货库位*"
                 clearable

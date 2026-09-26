@@ -473,10 +473,10 @@ const uiStubs = {
   },
   // 物料字段是目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖），同样换成 select。
   DirectoryPicker: {
-    props: ['modelValue', 'createContext'],
+    props: ['modelValue', 'formSiteCode'],
     emits: ['update:modelValue'],
     template:
-      '<select data-directory-picker v-bind="$attrs" :data-create-site="createContext?.siteCode" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"></select>',
+      '<select data-directory-picker v-bind="$attrs" :data-form-site="formSiteCode" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"></select>',
   },
   NvSelect: { template: '<div><slot /></div>' },
   NvSelectContent: { template: '<div><slot /></div>' },
@@ -677,13 +677,16 @@ describe('inventory workflow pages', () => {
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
   })
 
-  // #3832 审核 R2-1：就地新增库位要建在表单已选的工厂下，库位选择器把表单工厂带给新增弹窗。
-  it('passes the chosen movement site to the location pickers for in-place creation', async () => {
-    const wrapper = mountInventoryPage(MovementsPage)
+  // #3832 审核 R3-2：库位选择器的工厂只从表单工厂来（候选收窄与就地新增都用它），每页一条轻量断言。
+  it.each([
+    ['库存移动', MovementsPage, '#movement-site', '#movement-location'],
+    ['库存盘点', CountsPage, '#count-task-site', '#count-task-location'],
+  ])('%s的库位选择器拿到表单工厂', async (_name, Page, siteSelector, locationSelector) => {
+    const wrapper = mountInventoryPage(Page)
 
-    await wrapper.get('#movement-site').setValue('S1')
+    await wrapper.get(siteSelector).setValue('S1')
 
-    expect(wrapper.get('#movement-location').attributes('data-create-site')).toBe('S1')
+    expect(wrapper.get(locationSelector).attributes('data-form-site')).toBe('S1')
   })
 
   it('uses design-system table components for the stock movement read face', () => {

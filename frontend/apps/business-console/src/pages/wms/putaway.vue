@@ -142,11 +142,15 @@ const inboundOrderNoById = computed(() => {
   for (const [no, id] of inboundOrderIdByNo.value) map.set(id, no)
   return map
 })
-// 就地新增库位时预填所选入库单的工厂：库位要建在单据所在的工厂下。
+// 表单工厂 = 所选入库单的工厂：库位候选按它收窄、就地新增预填它。
+// 从入库页带入时路由已带上入库单的工厂——这里的入库单列表只取最近 200 条，较早的单据不在列表里。
+const carriedSiteCode = computed(() => firstQuery(route.query.siteCode))
 const createSiteCode = computed(
   () =>
+    (carriedFromInbound.value && carriedSiteCode.value) ||
     inboundOrders.value.find((order) => order.inboundOrderId?.trim() === createForm.inboundOrderId)
-      ?.siteCode ?? '',
+      ?.siteCode ||
+    '',
 )
 const inboundOrderSelection = computed({
   // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
@@ -256,6 +260,7 @@ async function submitCreate() {
 const carriedFromInbound = computed(() => Boolean(inboundOrderId.value))
 const carriedContextItems = computed(() => [
   { label: '入库单', value: inboundOrderNo.value || inboundOrderId.value },
+  ...(createSiteCode.value ? [{ label: '工厂', value: createSiteCode.value }] : []),
 ])
 
 /**
@@ -530,7 +535,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.fromLocationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: createSiteCode }"
+                :form-site-code="createSiteCode"
                 title="选择暂存库位"
                 placeholder="暂存库位"
                 clearable
@@ -544,7 +549,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.toLocationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: createSiteCode }"
+                :form-site-code="createSiteCode"
                 title="选择货架库位"
                 placeholder="货架库位"
                 clearable

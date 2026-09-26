@@ -55,6 +55,9 @@ public sealed class InventoryDirectoryHttpContractTests
     [InlineData("", new[] { "LOC-A", "LOC-B", "LOC-C" })]
     [InlineData("&authorizedSiteCodes=SITE-A", new[] { "LOC-A" })]
     [InlineData("&authorizedSiteCodes=SITE-A&authorizedSiteCodes=SITE-C", new[] { "LOC-A", "LOC-C" })]
+    // 表单工厂与授权工厂取交集：落在授权内只剩该工厂，落在授权外什么也读不到。
+    [InlineData("&siteCode=SITE-C&authorizedSiteCodes=SITE-A&authorizedSiteCodes=SITE-C", new[] { "LOC-C" })]
+    [InlineData("&siteCode=SITE-B&authorizedSiteCodes=SITE-A", new string[0])]
     public async Task Directory_narrows_to_the_authorized_site_union(string sites, string[] expectedCodes)
     {
         await using var factory = CreateFactory();

@@ -372,7 +372,7 @@ function isNonEmpty(value: string) {
                 v-model="form.locationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: form.siteCode }"
+                :form-site-code="form.siteCode"
                 title="选择库位"
                 placeholder="选择库位"
                 clearable
@@ -387,7 +387,7 @@ function isNonEmpty(value: string) {
                 v-model="form.transferInLocationCode"
                 directory-type="location"
                 creatable
-                :create-context="{ siteCode: form.siteCode }"
+                :form-site-code="form.siteCode"
                 title="选择入库库位"
                 placeholder="选择入库库位"
                 clearable
