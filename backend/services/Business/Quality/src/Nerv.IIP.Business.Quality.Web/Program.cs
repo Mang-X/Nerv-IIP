@@ -222,7 +222,7 @@ try
     }
 
     // 质量基础目录 seed（原因码等）：默认开启（#3805），显式 false 可关闭；幂等补缺。
-    // 目标租户读 IAM 引导种子的同一份配置（#3812），部署只配一处。
+    // 目标租户读 IAM 引导种子的同一组键（#3812），不再单独配置。
     var seedEnabled = builder.Configuration.GetValue("Quality:Seed:Enabled", true);
     if (seedEnabled)
     {

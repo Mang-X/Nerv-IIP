@@ -239,7 +239,7 @@ Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web
 | `Quality:Seed:Enabled` | BusinessQuality | 缺失的质量原因码等基础目录 |
 | `MasterData:Seed:Enabled` | BusinessMasterData | 缺失的编码规则、受控字典（不含工厂自定义码集的样例值）、计量单位与换算、班次、工作日历、部门 |
 
-目标租户与 IAM 引导种子同源（#3812）：四个服务都读 `Iam:Seed:OrganizationId` / `Iam:Seed:EnvironmentId`，缺省为 `org-001` / `env-dev`；Approval 模板的审批人读 `Iam:Seed:AdminUserId`，缺省为 `user-admin`。部署到其它租户时，在 AppHost 进程环境（或各服务共享的配置源）里设置一次 `Iam__Seed__OrganizationId` / `Iam__Seed__EnvironmentId` / `Iam__Seed__AdminUserId`，IAM 引导种子与产品基线 seed 同时生效；不设则开箱数据写进缺省租户。`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 引导种子不在此列。MasterData 的演示员工、班组、技能、产品分类、工厂自定义字典样例，以及 Maintenance 的点检保养计划，只随 `LeaderDemo:Seed:Enabled` 写入；Maintenance 没有产品基线 seed。
+目标租户与 IAM 引导种子读同一组键（#3812）：四个服务都读 `Iam:Seed:OrganizationId` / `Iam:Seed:EnvironmentId`，缺省为 `org-001` / `env-dev`；Approval 模板的审批人读 `Iam:Seed:AdminUserId`，缺省为 `user-admin`。IAM 引导种子只在 Development 下执行（见 `docs/governance/data/persistence-startup.md`）；非 Development 环境里这组键只决定四个产品基线 seed 写到哪个租户、审批人填谁，对应的组织、环境和管理员账号必须另行建好。部署到其它租户时，这三个键要进到 IAM 与四个服务的进程环境：AppHost 拓扑下在 AppHost 进程环境里设置一次 `Iam__Seed__OrganizationId` / `Iam__Seed__EnvironmentId` / `Iam__Seed__AdminUserId` 即可，各服务继承；Compose 拓扑（`infra/compose/nerv-iip.platform.yml`）只把 `environment` 里列出的键传进容器，需要把这三个键加进 `dotnet-env` 锚点或逐个服务添加，只在 `.env` 或 shell 里设置不会生效。不设则开箱数据写进缺省租户。`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 引导种子不在此列。MasterData 的演示员工、班组、技能、产品分类、工厂自定义字典样例，以及 Maintenance 的点检保养计划，只随 `LeaderDemo:Seed:Enabled` 写入；Maintenance 没有产品基线 seed。
 
 只补缺意味着种子定义以后再改时（例如标准编码规则的段定义、字典显示名），不会回写到已有环境；需要改已有环境的值时，走对应的维护入口或单独的数据 migration。
 
