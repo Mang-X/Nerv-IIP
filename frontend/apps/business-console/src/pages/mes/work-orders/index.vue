@@ -41,6 +41,7 @@ import {
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
@@ -207,7 +208,6 @@ const workOrderEmptyExplanation = computed(() =>
 )
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
-const skuOptions = computed(() => toResourceOptions(skus.value))
 
 // ── 急单表单的四个选择器 ────────────────────────────────────────
 // 物料 ▸ 生产版本 从属，工作中心 ▸ 工序任务 从属：上游变了清空下游。
@@ -1042,15 +1042,11 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-sku"
                 >物料 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvEntityPicker
+              <DirectoryPicker
                 id="rush-sku"
                 v-model="rushForm.skuId"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料，请先在基础数据维护"
-                aria-label="物料"
+                directory-type="material"
+                creatable
                 clearable
               />
             </NvField>
@@ -1092,15 +1088,11 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-work-center"
                 >工作中心 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvEntityPicker
+              <DirectoryPicker
                 id="rush-work-center"
                 v-model="rushForm.workCenterId"
-                :options="workCenterOptions"
-                title="选择工作中心"
-                placeholder="选择工作中心"
-                source-text="数据来自基础数据工作中心主数据"
-                empty-text="暂无工作中心，请先在基础数据维护"
-                aria-label="工作中心"
+                directory-type="work-center"
+                creatable
                 clearable
               />
             </NvField>

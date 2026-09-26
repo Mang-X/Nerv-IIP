@@ -125,6 +125,13 @@ const formSelectStubs = {
   NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  // 目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖）换成原生 <select>，下标顺序不变。
+  DirectoryPicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="SKU-1">SKU-1</option><option value="WC-A">WC-A</option><option value="WC-B">WC-B</option></select>',
+  },
 }
 const routerLinkStub = { RouterLink: { props: ['to'], template: '<a><slot /></a>' } }
 

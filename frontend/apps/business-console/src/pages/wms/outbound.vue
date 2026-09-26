@@ -30,6 +30,7 @@ import {
   WMS_OUTBOUND_SOURCE_TYPE_OPTIONS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   inlineErrorMessage,
@@ -66,7 +67,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 
 definePage({
   meta: {
@@ -114,8 +115,7 @@ const { page, pageSize } = usePagedList(filters, {
   ],
 })
 // 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
-const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
-  useInventoryScopeCatalog()
+const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
 const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(
   undefined,
   { scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }) },
@@ -127,14 +127,6 @@ const statusFilter = computed({
     filters.status = value === WMS_STATUS_ANY ? undefined : value
   },
 })
-/**
- * 单位不是独立选择项：出库行的单位由物料的基本单位决定，手输只会写出查不到货的组合。
- * 选完物料就把单位带出来，行上只读展示。
- */
-function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: string) {
-  line.skuCode = skuCode
-  line.uomCode = skuCode ? resolveUomCode(skuCode) : ''
-}
 
 /**
  * 读错误只归列表区域。提交（创建 / 复核）失败一律走 toast，不并进这一条：
@@ -187,6 +179,12 @@ const createForm = reactive({
   sourceDocumentId: '',
   siteCode: '',
   lines: [emptyLine()] as OutboundLine[],
+})
+
+// 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。
+// 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
+watchEffect(() => {
+  for (const line of createForm.lines) line.uomCode = resolveUomCode(line.skuCode)
 })
 
 function openCreate() {
@@ -689,17 +687,13 @@ function refreshAll() {
               :key="index"
               class="flex flex-wrap items-end gap-2 rounded-md border p-2"
             >
-              <NvEntityPicker
-                :model-value="line.skuCode"
+              <DirectoryPicker
+                v-model="line.skuCode"
                 class="w-44"
-                :options="skuOptions"
-                title="选择物料"
+                directory-type="material"
+                creatable
                 placeholder="物料*"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
                 :aria-label="`第 ${index + 1} 行物料`"
-                @update:model-value="(value: string) => onLineSkuChange(line, value)"
               />
               <!-- 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 -->
               <span

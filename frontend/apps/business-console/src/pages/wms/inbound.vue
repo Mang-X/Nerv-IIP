@@ -30,6 +30,7 @@ import {
   WMS_INBOUND_SOURCE_TYPE_OPTIONS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -74,7 +75,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watchEffect } from 'vue'
 import { RouterLink } from 'vue-router'
 
 definePage({
@@ -353,11 +354,11 @@ const statusFilter = computed({
     filters.status = value === WMS_STATUS_ANY ? undefined : value
   },
 })
-/** 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 */
-function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: string) {
-  line.skuCode = skuCode
-  line.uomCode = skuCode ? resolveUomCode(skuCode) : ''
-}
+// 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。
+// 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
+watchEffect(() => {
+  for (const line of createForm.lines) line.uomCode = resolveUomCode(line.skuCode)
+})
 /** 网关明确回「还没给够条件」时才引导选物料；其余情况按拿到的上下文照常呈现。 */
 const contextScopeRequired = computed(
   () => (inventoryContext.value?.status ?? '').toLowerCase() === 'scope-required',
@@ -694,17 +695,13 @@ function formatDateTime(value?: string | null) {
               :key="index"
               class="flex flex-wrap items-end gap-2 rounded-md border p-2"
             >
-              <NvEntityPicker
-                :model-value="line.skuCode"
+              <DirectoryPicker
+                v-model="line.skuCode"
                 class="w-44"
-                :options="skuOptions"
-                title="选择物料"
+                directory-type="material"
+                creatable
                 placeholder="物料*"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
                 :aria-label="`第 ${index + 1} 行物料`"
-                @update:model-value="(value: string) => onLineSkuChange(line, value)"
               />
               <!-- 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 -->
               <span

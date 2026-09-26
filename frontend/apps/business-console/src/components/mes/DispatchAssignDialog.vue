@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import {
   useBusinessMasterDataResources,
   useBusinessWorkers,
@@ -18,7 +19,6 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvEntityPicker,
   NvField,
   NvFieldLabel,
   NvSearchSelect,
@@ -94,8 +94,6 @@ const {
   workersPending,
   filters: workerFilters,
 } = useBusinessWorkers({ employmentStatus: 'active' })
-const { resources: devices, resourcesPending: devicesPending } =
-  useBusinessMasterDataResources('device-asset')
 const { resources: shifts } = useBusinessMasterDataResources('shift')
 // 技能筛选取「技能目录」主数据（skillCode + 中文 skillName）。
 // 曾踩坑：这里取的是「人员技能矩阵」资源，其 code 是 `userId:skillCode` 复合键、
@@ -155,17 +153,6 @@ const workerOptions = computed(() =>
 const selectedWorker = computed(() => workers.value.find((w) => w.userId === assignedUserId.value))
 const selectedWorkerSkills = computed(() =>
   (selectedWorker.value?.skills ?? []).filter((s) => s.skillName),
-)
-
-const deviceOptions = computed(() =>
-  devices.value
-    .filter((d) => d.code)
-    .map((d) => ({
-      value: d.code as string,
-      label: d.displayName ?? (d.code as string),
-      // 提示位给「所属工作中心」——挑设备时最要紧的是它在不在这道工序的工作中心。
-      hint: d.workCenterCode ?? undefined,
-    })),
 )
 
 const affordance = computed(() =>
@@ -336,31 +323,24 @@ function formatDateTime(value?: string | null) {
           <div class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="assign-device">设备</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="assign-device"
                 v-model="deviceAssetId"
-                :options="deviceOptions"
-                title="选择设备"
+                directory-type="equipment"
+                creatable
                 placeholder="沿用排程设备"
-                source-text="数据来自基础数据设备台账"
-                empty-text="暂无设备台账，请先在「基础数据 · 设备」维护"
-                :loading="devicesPending"
-                aria-label="设备"
                 clearable
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="assign-shift">班次</NvFieldLabel>
-              <NvSelect v-model="shiftId">
-                <NvSelectTrigger id="assign-shift">
-                  <NvSelectValue :placeholder="shiftLabel(target?.shiftId)" />
-                </NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="s in shifts" :key="s.code ?? ''" :value="s.code ?? ''">
-                    {{ s.displayName ?? s.code }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <DirectoryPicker
+                id="assign-shift"
+                v-model="shiftId"
+                directory-type="shift"
+                creatable
+                :placeholder="shiftLabel(target?.shiftId)"
+              />
             </NvField>
           </div>
 

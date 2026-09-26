@@ -242,6 +242,13 @@ const stubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
+  // 交接班次是班次选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖），这里换成原生 <select>。
+  DirectoryPicker: {
+    props: ['modelValue', 'invalid'],
+    emits: ['update:modelValue'],
+    template:
+      '<select v-bind="$attrs" :value="modelValue" :data-invalid="invalid ? \'\' : undefined" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="EARLY">早班</option></select>',
+  },
   // 与 NvDialog 同理：stub 必须用 v-if 承载开合，否则抽屉在测试里恒为「已渲染」。
   NvSheet: {
     props: ['open'],

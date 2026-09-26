@@ -288,6 +288,7 @@ const layoutStub = {
   BusinessLayout: { template: '<main><slot /></main>' },
   NvEntityPicker: onlySelectStub,
   NvSearchSelect: onlySelectStub,
+  DirectoryPicker: onlySelectStub,
 }
 
 describe('WMS operate actions', () => {

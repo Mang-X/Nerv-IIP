@@ -6,6 +6,7 @@ import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/useErpPic
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -51,7 +52,7 @@ definePage({
 const rfqs = useErpRequestsForQuotation()
 // 询价对象与物料从主数据目录里选；供应商是多选，用应用侧的多选组合件。
 const { supplierOptions, partnersPending } = useErpPartnerCatalog()
-const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
+const { uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
 // 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
 const { resolvePartnerLabel } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(rfqs.filters, { resetOn: [() => rfqs.filters.keyword] })
@@ -128,13 +129,10 @@ const form = reactive({
   requiredDate: '',
 })
 // 询价单位默认跟随物料的基本单位；用户仍可改成采购包装单位。
-watch(
-  () => form.skuCode,
-  (skuCode) => {
-    const baseUom = baseUomBySku.value.get(skuCode.trim())
-    if (baseUom) form.uomCode = baseUom
-  },
-)
+// 除了换物料，也跟着「所选物料的基本单位」变：就地新建的物料要等物料目录刷新回来才查得到。
+watch([() => form.skuCode, () => baseUomBySku.value.get(form.skuCode.trim())], ([, baseUom]) => {
+  if (baseUom) form.uomCode = baseUom
+})
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const supplierCodeList = computed(() =>
@@ -283,16 +281,11 @@ async function submit() {
               <NvFieldLabel for="erp-rfq-sku">
                 物料 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="erp-rfq-sku"
                 v-model="form.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料，请先在「基础数据 · 物料」维护"
-                :loading="skusPending"
-                aria-label="物料"
+                directory-type="material"
+                creatable
                 :class="pickerInvalidClass(showErrors && invalid.skuCode)"
               />
             </NvField>

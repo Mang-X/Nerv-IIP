@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus } from '@/composables/useBusinessMasterData'
 import {
@@ -479,16 +480,12 @@ async function runResolve() {
                   <NvFieldLabel for="pv-sku"
                     >物料 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.skuCode">
-                    <NvSelectTrigger id="pv-sku"
-                      ><NvSelectValue placeholder="选择物料"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="pv-sku"
+                    v-model="form.skuCode"
+                    directory-type="material"
+                    creatable
+                  />
                 </NvField>
                 <NvField class="self-start">
                   <NvFieldLabel>设为默认</NvFieldLabel>
