@@ -939,7 +939,7 @@ test('返工报工：router pair 切换、延迟旧请求与浏览器 back/forwa
       page.getByRole('heading', { name: '返工 · WO-RW-B · 工序 20', exact: true }),
     ).toBeVisible()
     await expect(page.getByTestId('report-rework-source')).toContainText(
-      '来源 NCR NCR-2026-0002（ncr-b） · 源工单 WO-SOURCE-B',
+      '来源 NCR NCR-2026-0002 · 源工单 WO-SOURCE-B',
     )
     await expect(page.getByTestId('good-quantity')).toBeVisible()
     await expect(page.getByTestId('report-route-issue')).toHaveCount(0)
@@ -953,7 +953,7 @@ test('返工报工：router pair 切换、延迟旧请求与浏览器 back/forwa
       page.getByRole('heading', { name: '返工 · WO-RW-A · 工序 10', exact: true }),
     ).toBeVisible()
     await expect(page.getByTestId('report-rework-source')).toContainText(
-      '来源 NCR NCR-2026-0001（ncr-a） · 源工单 WO-SOURCE-A',
+      '来源 NCR NCR-2026-0001 · 源工单 WO-SOURCE-A',
     )
     await expect(page.getByTestId('good-quantity')).toBeVisible()
 

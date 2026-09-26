@@ -49,6 +49,7 @@ import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 import {
   formatOperationDateTime,
   reworkSourceLabel,
+  telemetryCandidateStateLabel,
   withReworkLabel,
 } from './components/operationPresentation'
 
@@ -615,7 +616,7 @@ async function onScanAccepted(value: MesScanAccepted) {
               >{{ candidate.goodQuantity }} 件 ·
               {{ formatOperationDateTime(candidate.bucketStartUtc) }}</span
             ><span class="block text-xs text-muted-foreground">{{
-              candidate.suspensionReason ?? candidate.status
+              telemetryCandidateStateLabel(candidate)
             }}</span>
           </NvMobileButton>
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">

@@ -651,7 +651,7 @@ describe('PDA MES production reporting page', () => {
     const wrapper = mount(ReportPage)
 
     expect(wrapper.text()).toContain('返工 · WO-2026-0001')
-    expect(wrapper.text()).toContain('来源 NCR NCR-2026-0001（ncr-001） · 源工单 WO-SOURCE-001')
+    expect(wrapper.text()).toContain('来源 NCR NCR-2026-0001 · 源工单 WO-SOURCE-001')
     expect(wrapper.text()).toContain('WO-2026-0002')
     expect(wrapper.text()).not.toContain('返工 · WO-2026-0002')
 
@@ -661,7 +661,7 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
     expect(
       document.body.querySelector('[data-testid="report-rework-source"]')?.textContent?.trim(),
-    ).toBe('来源 NCR NCR-2026-0001（ncr-001） · 源工单 WO-SOURCE-001')
+    ).toBe('来源 NCR NCR-2026-0001 · 源工单 WO-SOURCE-001')
   })
 
   it('fails closed when a deep-linked rework work order omits source authority', async () => {

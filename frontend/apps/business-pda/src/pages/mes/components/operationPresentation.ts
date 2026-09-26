@@ -89,7 +89,7 @@ export function withReworkLabel(label: string, item: MesWorkOrderAuthority) {
 export function reworkSourceLabel(item: MesWorkOrderAuthority) {
   const authority = parseMesWorkOrderAuthority(item)
   if (authority?.kind !== 'rework') return ''
-  return `来源 NCR ${authority.sourceNcrCode}（${authority.sourceNcrId}） · 源工单 ${authority.sourceWorkOrderId}`
+  return `来源 NCR ${authority.sourceNcrCode} · 源工单 ${authority.sourceWorkOrderId}`
 }
 
 export function formatOperationDate(value?: string | null) {
@@ -102,4 +102,29 @@ export function formatOperationDateTime(value?: string | null) {
   if (!value) return '未提供'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const TELEMETRY_CANDIDATE_SUSPENSION_LABELS: Readonly<Record<string, string>> = {
+  'active-alarm': '设备存在未处理报警',
+  'no-work-center-mapping': '设备未绑定工作中心',
+  'no-current-work-order': '工作中心当前无在制工单',
+  'no-operation-task': '工作中心当前无进行中的工序任务',
+  'signal-stale': '采集信号已过期',
+}
+
+const TELEMETRY_CANDIDATE_STATUS_LABELS: Readonly<Record<string, string>> = {
+  draft: '草稿',
+  'pending-confirmation': '待确认',
+  confirmed: '已确认',
+  dismissed: '已忽略',
+}
+
+/** 遥测报工候选的状态说明：有挂起原因时说原因，否则说状态；不认识的码不上屏。 */
+export function telemetryCandidateStateLabel(candidate: {
+  status?: string | null
+  suspensionReason?: string | null
+}) {
+  const reason = candidate.suspensionReason?.trim().toLowerCase()
+  if (reason) return TELEMETRY_CANDIDATE_SUSPENSION_LABELS[reason] ?? ''
+  return TELEMETRY_CANDIDATE_STATUS_LABELS[candidate.status?.trim().toLowerCase() ?? ''] ?? ''
 }

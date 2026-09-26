@@ -283,10 +283,9 @@ function planSubtitle(item: { deviceAssetId?: string; interval?: string }) {
   return parts.join(' · ')
 }
 
-function inspectionTitle(item: { planId?: string | null; workOrderId?: string | null }) {
-  if (item.planId) return `计划 ${item.planId}`
-  if (item.workOrderId) return `工单 ${item.workOrderId}`
-  return '点检记录'
+function inspectionTitle(item: { planId?: string | null }) {
+  const planCode = allPlans.value.find((plan) => plan.planId === item.planId)?.planCode
+  return planCode ? `计划 ${planCode}` : '点检记录'
 }
 
 function inspectionSubtitle(item: {
