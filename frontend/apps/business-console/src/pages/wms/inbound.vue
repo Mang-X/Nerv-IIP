@@ -28,9 +28,11 @@ import {
   wmsInboundOrderStatusFilterOptions,
   wmsInboundOrderStatusLabel,
   WMS_INBOUND_SOURCE_TYPE_OPTIONS,
+  WMS_SOURCE_DOCUMENT_KINDS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -197,6 +199,11 @@ function openCreate() {
   createForm.lines = [emptyLine()]
   createError.value = ''
   createOpen.value = true
+}
+// 换了来源类型，已选的来源单据就不属于这一类了。
+function changeSourceDocumentType(value: string) {
+  createForm.sourceDocumentType = value
+  createForm.sourceDocumentId = ''
 }
 function addLine() {
   createForm.lines.push(emptyLine())
@@ -670,15 +677,20 @@ function formatDateTime(value?: string | null) {
               <NvFieldLabel for="wms-in-srctype">来源类型</NvFieldLabel>
               <NvSearchSelect
                 id="wms-in-srctype"
-                v-model="createForm.sourceDocumentType"
+                :model-value="createForm.sourceDocumentType"
                 :options="WMS_INBOUND_SOURCE_TYPE_OPTIONS"
                 placeholder="选择来源类型"
                 aria-label="来源类型"
+                @update:model-value="changeSourceDocumentType"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-in-srcid">来源单据</NvFieldLabel>
-              <NvInput id="wms-in-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
+              <SourceDocumentPicker
+                id="wms-in-srcid"
+                v-model="createForm.sourceDocumentId"
+                :kind="WMS_SOURCE_DOCUMENT_KINDS[createForm.sourceDocumentType]"
+              />
             </NvField>
           </NvFieldGroup>
 

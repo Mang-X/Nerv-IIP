@@ -16,6 +16,7 @@ import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import FulfillmentTimelineSheet from '@/components/fulfillment/FulfillmentTimelineSheet.vue'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -520,11 +521,11 @@ async function submit() {
               <NvFieldLabel for="erp-so-quotation">
                 已批准报价单号 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <SourceDocumentPicker
                 id="erp-so-quotation"
                 v-model="form.quotationNo"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.quotationNo ? '' : undefined"
+                kind="erp-approved-quotation"
+                :invalid="showErrors && invalid.quotationNo"
               />
             </NvField>
             <NvField>

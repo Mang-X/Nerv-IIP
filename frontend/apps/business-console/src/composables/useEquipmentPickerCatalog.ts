@@ -8,6 +8,7 @@
  * 口径：`value` 一律是提交体真正需要的标识（设备编号 / tagKey / 单位编码 / 工单 ID），
  * `label` 是人读名称，`hint` 放辅助识别信息（单位 / 值类型 / 状态 / 归属设备）。
  */
+import type { BusinessConsoleMaintenanceWorkOrderItem } from '@nerv-iip/api-client'
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useMaintenancePlans, useMaintenanceWorkOrders } from './useBusinessMaintenance'
@@ -248,6 +249,17 @@ export function maintenanceWorkOrderNo(workOrderId?: string | null) {
   return id ? `WO-${id.slice(-8).toUpperCase()}` : ''
 }
 
+/** 维修工单选项：提交工单 ID，显示人读单号，提示设备与状态（凡是选维修工单的地方共用）。 */
+export function maintenanceWorkOrderOption(
+  row: Pick<BusinessConsoleMaintenanceWorkOrderItem, 'workOrderId' | 'deviceAssetId' | 'status'>,
+): EntityPickerOption | undefined {
+  return toOption(
+    row.workOrderId,
+    maintenanceWorkOrderNo(row.workOrderId),
+    joinHint(row.deviceAssetId, maintenanceWorkOrderStatusLabel(row.status)),
+  )[0]
+}
+
 /**
  * 维护单据目录：保养计划与维修工单。
  * 两者的提交值都是系统 ID（后端按 ID 关联），所以 `value` 用 ID，`label` 用人读单号 /
@@ -269,13 +281,7 @@ export function useMaintenanceDocumentCatalog() {
     ),
     plansPending: planCatalog.plansPending,
     workOrderOptions: computed<EntityPickerOption[]>(() =>
-      workOrderCatalog.workOrders.value.flatMap((row) =>
-        toOption(
-          row.workOrderId,
-          maintenanceWorkOrderNo(row.workOrderId),
-          joinHint(row.deviceAssetId, maintenanceWorkOrderStatusLabel(row.status)),
-        ),
-      ),
+      workOrderCatalog.workOrders.value.flatMap((row) => maintenanceWorkOrderOption(row) ?? []),
     ),
     workOrdersPending: workOrderCatalog.workOrdersPending,
   }
