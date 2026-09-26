@@ -261,6 +261,7 @@ const selectStubs = {
   NvEntityPicker: idInputStub,
   NvSearchSelect: idInputStub,
   DirectoryPicker: idInputStub,
+  SourceDocumentCatalogPicker: idInputStub,
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],

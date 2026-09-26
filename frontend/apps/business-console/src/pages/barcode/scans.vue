@@ -2,9 +2,11 @@
 import type { BusinessConsoleBarcodeScanRecordItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { useBarcodeScans } from '@/composables/useBusinessBarcode'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
+import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
@@ -46,6 +48,14 @@ definePage({
 })
 
 const WORKFLOW_OPTIONS = BARCODE_SCAN_WORKFLOW_OPTIONS
+
+// 业务对象按动作来源从单据目录里选，取值与互链同口径：生产报工扫码挂在工单上（打印批次按工单 ID
+// 跳到这里），仓储收货记入库单号，质量检验记被检验的那张单据。库存类动作没有可搜列表，自由输入。
+const SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
+  'production.report': 'mes-work-order',
+  'wms.receiving': 'wms-inbound-order',
+  'quality.inspection': 'quality-inspection',
+}
 
 const RESULT_OPTIONS = [
   { value: 'accepted', label: '已接受' },
@@ -172,6 +182,12 @@ function openRecordDialog() {
   })
   showErrors.value = false
   open.value = true
+}
+
+// 换了动作来源，已选的业务对象就不属于这一类了。
+function changeSourceWorkflow(value: unknown) {
+  form.sourceWorkflow = typeof value === 'string' ? value : ''
+  form.sourceDocumentId = ''
 }
 
 async function submitScan() {
@@ -334,20 +350,32 @@ function firstQuery(value: unknown) {
                   <NvFieldLabel for="barcode-scan-workflow"
                     >动作来源 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="barcode-scan-workflow"
-                    v-model="form.sourceWorkflow"
-                    autocomplete="off"
-                  />
+                  <NvSelect
+                    :model-value="form.sourceWorkflow"
+                    @update:model-value="changeSourceWorkflow"
+                  >
+                    <NvSelectTrigger id="barcode-scan-workflow"
+                      ><NvSelectValue placeholder="选择动作来源"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in WORKFLOW_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
                 </NvField>
                 <NvField :data-invalid="showErrors && !form.sourceDocumentId.trim()">
                   <NvFieldLabel for="barcode-scan-source-id"
                     >业务对象 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <SourceDocumentPicker
                     id="barcode-scan-source-id"
                     v-model="form.sourceDocumentId"
-                    autocomplete="off"
+                    :kind="SOURCE_DOCUMENT_KINDS[form.sourceWorkflow]"
+                    :invalid="showErrors && !form.sourceDocumentId.trim()"
                   />
                 </NvField>
                 <NvField

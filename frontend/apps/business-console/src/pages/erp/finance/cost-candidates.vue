@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
 import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
+import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import { useErpCostCandidates, useErpFinanceSummary } from '@/composables/useBusinessErp'
 import {
   useErpPayableSourceCatalog,
@@ -148,8 +150,9 @@ const invalid = computed(() => ({
 }))
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
-// 来源单据按成本大类从经营管理已有的单据目录里挑：采购成本挂采购订单，物流成本挂销售订单 / 发货单。
-// 生产、维护成本的单据（生产工单、维修工单）不在经营管理的单据目录里，仍按单号录入。
+// 来源单据按成本大类挑：采购成本挂采购订单，物流成本挂销售订单 / 发货单（经营管理单据目录）；
+// 生产成本挂工单号，候选取财务已归集成本的工单（财务读权限即可，与成本差异页同一个选择器）；
+// 维护成本挂维修工单，维修工单只有系统 ID，选择器显示人读单号。
 const { payableSourceOptions, payableSourcesPending } = useErpPayableSourceCatalog()
 const { receivableSourceOptions, receivableSourcesPending } = useErpReceivableSourceCatalog()
 const sourceDocumentCatalog = computed<{
@@ -323,11 +326,18 @@ async function submit() {
                 aria-label="来源单据"
                 :invalid="showErrors && invalid.sourceDocumentNo"
               />
-              <NvInput
+              <WorkOrderCostPicker
+                v-else-if="form.sourceType === 'production'"
+                id="erp-cc-source"
+                v-model="form.sourceDocumentNo"
+                :invalid="showErrors && invalid.sourceDocumentNo"
+              />
+              <SourceDocumentPicker
                 v-else
                 id="erp-cc-source"
                 v-model="form.sourceDocumentNo"
-                :data-invalid="showErrors && invalid.sourceDocumentNo ? '' : undefined"
+                kind="maintenance-work-order"
+                :invalid="showErrors && invalid.sourceDocumentNo"
               />
             </NvField>
             <NvField>
