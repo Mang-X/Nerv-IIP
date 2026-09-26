@@ -371,6 +371,7 @@ function isNonEmpty(value: string) {
                 id="movement-location"
                 v-model="form.locationCode"
                 directory-type="location"
+                creatable
                 title="选择库位"
                 placeholder="选择库位"
                 clearable
@@ -384,6 +385,7 @@ function isNonEmpty(value: string) {
                 id="movement-transfer-in-location"
                 v-model="form.transferInLocationCode"
                 directory-type="location"
+                creatable
                 title="选择入库库位"
                 placeholder="选择入库库位"
                 clearable

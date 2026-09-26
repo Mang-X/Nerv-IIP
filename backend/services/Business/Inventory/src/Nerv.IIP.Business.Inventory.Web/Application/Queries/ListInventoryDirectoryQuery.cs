@@ -48,6 +48,7 @@ public static class InventoryDirectoryEfQueries
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => x.OnHandQuantity > 0)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => request.AuthorizedSiteCodes == null || request.AuthorizedSiteCodes.Contains(x.SiteCode))
             .Where(x => string.IsNullOrWhiteSpace(request.SkuCode) || x.SkuCode == request.SkuCode);
 
         return directoryType == InventoryDirectoryTypes.Batch
@@ -122,7 +123,9 @@ public sealed record ListInventoryDirectoryQuery(
     string? SkuCode = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = OffsetPage.DefaultTake) : IQuery<InventoryDirectoryResponse>;
+    int Take = OffsetPage.DefaultTake,
+    // 调用方授权可见的工厂集合（多个工厂范围取并集）；null 表示不按授权收窄（组织级授权）。
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null) : IQuery<InventoryDirectoryResponse>;
 
 public sealed class ListInventoryDirectoryQueryValidator : AbstractValidator<ListInventoryDirectoryQuery>
 {
@@ -137,6 +140,8 @@ public sealed class ListInventoryDirectoryQueryValidator : AbstractValidator<Lis
         RuleFor(x => x.Keyword).MaximumLength(200);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        RuleFor(x => x.AuthorizedSiteCodes).Must(x => x == null || x.Count is > 0 and <= 100);
+        RuleForEach(x => x.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -174,6 +179,7 @@ public sealed class ListInventoryDirectoryQueryHandler(ApplicationDbContext dbCo
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => x.Status == "active")
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => request.AuthorizedSiteCodes == null || request.AuthorizedSiteCodes.Contains(x.SiteCode))
             .Where(x => keyword == null
                 || x.LocationCode.ToLower().Contains(keyword)
                 || x.LocationType.ToLower().Contains(keyword)

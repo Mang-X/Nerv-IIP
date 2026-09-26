@@ -352,15 +352,24 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
     document.body.innerHTML = ''
   })
 
-  function mountLocationPicker() {
+  function mountLocationPicker(
+    options: { forbidden?: boolean; holdLaterPages?: Promise<void> } = {},
+  ) {
     const requests: URL[] = []
     configureApiClient({
       baseUrl: 'http://gateway.local',
       fetch: (async (request: Request) => {
         const url = new URL(request.url)
         requests.push(url)
+        if (options.forbidden) {
+          return Response.json(
+            { success: false, message: 'directory-scope-not-authorized', code: 403 },
+            { status: 403 },
+          )
+        }
         const keyword = url.searchParams.get('keyword')
         const pageIndex = Number(url.searchParams.get('pageIndex'))
+        if (pageIndex > 1) await options.holdLaterPages
         const pageSize = Number(url.searchParams.get('pageSize'))
         const all = Array.from({ length: TOTAL }, (_, i) => code(i + 1)).filter(
           (value) => !keyword || value.includes(keyword),
@@ -405,7 +414,9 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
   }
 
   it('滚到底取下一页并接在后面', async () => {
-    const { requests, wrapper } = mountLocationPicker()
+    let release!: () => void
+    const holdLaterPages = new Promise<void>((resolve) => (release = resolve))
+    const { requests, wrapper } = mountLocationPicker({ holdLaterPages })
     await openPicker(wrapper)
 
     expect(requests.at(-1)?.pathname).toBe('/api/business-console/v1/directories/location')
@@ -413,11 +424,27 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
     expect(optionTexts().some((text) => text.includes(code(51)))).toBe(false)
 
     scrollToBottom()
+    // 取下一页期间列表照常显示，不整列换成「加载中…」（否则滚动位置丢失）；
+    // 连着触发两次也只发一次请求。
+    await flushPromises()
+    expect(optionTexts()).toHaveLength(50)
+    expect(document.body.textContent).not.toContain('加载中')
+    scrollToBottom()
+    await flushPromises()
+    release()
     await flushPromises()
 
-    expect(requests.at(-1)?.searchParams.get('pageIndex')).toBe('2')
+    expect(requests.filter((url) => url.searchParams.get('pageIndex') === '2')).toHaveLength(1)
     expect(optionTexts().some((text) => text.includes(code(1)))).toBe(true)
     expect(optionTexts().some((text) => text.includes(code(100)))).toBe(true)
+  })
+
+  it('目录拒绝当前角色时说无权查看，不说没有匹配', async () => {
+    const { wrapper } = mountLocationPicker({ forbidden: true })
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain('当前角色无权查看库位')
+    expect(document.body.textContent).not.toContain('没有匹配的库位')
   })
 
   it('输入关键字由服务端在全部库位里找，第 501 个以后也选得到', async () => {

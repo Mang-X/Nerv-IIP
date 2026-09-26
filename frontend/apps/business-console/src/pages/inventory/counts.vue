@@ -492,6 +492,7 @@ function isNonEmpty(value: string) {
                 id="count-task-location"
                 v-model="taskForm.locationCode"
                 directory-type="location"
+                creatable
                 title="选择库位"
                 placeholder="选择库位"
                 clearable

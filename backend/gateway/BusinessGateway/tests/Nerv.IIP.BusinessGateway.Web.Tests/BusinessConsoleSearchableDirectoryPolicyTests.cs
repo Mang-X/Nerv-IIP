@@ -48,7 +48,7 @@ public sealed class BusinessConsoleSearchableDirectoryPolicyTests
     // 有范围维度的目录上，无法表达成过滤条件的 grant 仍然 fail closed（不退化为组织级）；
     // 无范围维度的目录上没有可被越权读到的按范围切分的行，同一条 grant 得到整份词表。
     [Theory]
-    [InlineData("location", false)]
+    [InlineData("work-center", false)]
     [InlineData("personnel", false)]
     [InlineData("downtime-reason", true)]
     [InlineData("maintenance-reason", true)]

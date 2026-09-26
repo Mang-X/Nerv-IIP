@@ -631,6 +631,7 @@ function refreshAll() {
                 id="cnt-location"
                 v-model="createForm.locationCode"
                 directory-type="location"
+                creatable
                 title="选择库位"
                 placeholder="选择库位"
                 clearable

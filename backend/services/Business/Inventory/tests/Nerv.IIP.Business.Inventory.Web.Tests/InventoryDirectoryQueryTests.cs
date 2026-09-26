@@ -119,6 +119,26 @@ public sealed class InventoryDirectoryQueryTests
         Assert.Equal("inventory.stock-ledgers", result.SourceKind);
     }
 
+    // #3832：批次 / 序列号同样按授权工厂的并集收窄，不在并集里的工厂的台账不出现。
+    [Fact]
+    public async Task Batch_directory_narrows_to_the_authorized_site_union()
+    {
+        await using var db = CreateDbContext();
+        AddLedger(db, "SKU-01", "SITE-A", "LOC-A-01", "LOT-A", null, 1m);
+        AddLedger(db, "SKU-01", "SITE-B", "LOC-B-01", "LOT-B", null, 1m);
+        AddLedger(db, "SKU-01", "SITE-C", "LOC-C-01", "LOT-C", null, 1m);
+        await db.SaveChangesAsync();
+
+        var result = await Handle(db, new ListInventoryDirectoryQuery(
+            Org,
+            Env,
+            InventoryDirectoryTypes.Batch,
+            AuthorizedSiteCodes: ["SITE-A", "SITE-C"]));
+
+        Assert.Equal(["LOT-A", "LOT-C"], result.Items.Select(item => item.Code));
+        Assert.Equal(2, result.Total);
+    }
+
     [Fact]
     public async Task Serial_directory_is_deterministic_and_server_paged()
     {

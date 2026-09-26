@@ -692,6 +692,7 @@ function formatDateTime(value?: string | null) {
                 v-model="line.stagingLocationCode"
                 class="w-36"
                 directory-type="location"
+                creatable
                 title="选择暂存库位"
                 placeholder="暂存库位*"
                 clearable

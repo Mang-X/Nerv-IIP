@@ -80,6 +80,9 @@ const { options, pending } = source
 const serverSearch = source.serverSearch
 const search = computed(() => (source.serverSearch ? source.search.value : undefined))
 const total = computed(() => (source.serverSearch ? source.total.value : undefined))
+const emptyText = computed(() =>
+  source.serverSearch && source.forbidden.value ? `当前角色无权查看${noun}` : `没有匹配的${noun}`,
+)
 function updateSearch(value: string) {
   if (source.serverSearch) source.search.value = value
 }
@@ -132,7 +135,7 @@ function isHierarchyType(type: SearchableType): type is 'workshop' | 'work-cente
     :title="`选择${noun}`"
     :placeholder="`选择${noun}`"
     :search-placeholder="`搜索${noun}名称 / 编码…`"
-    :empty-text="`没有匹配的${noun}`"
+    :empty-text="emptyText"
     :loading="pending"
     :server-search="serverSearch"
     :total-count="total"

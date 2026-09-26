@@ -77,13 +77,24 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
         var authorization = HttpContext.Items[BusinessGatewayAuthorization.PrincipalItemKey]
             as BusinessGatewayAuthorizationResult;
-        var authorizedScope = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedScope(
-            definition,
-            authorization,
-            req.OrganizationId,
-            scopeKind,
-            scopeId);
-        if (authorizedScope is null)
+        // 库存目录（库位 / 批次 / 序列号）按工厂切分：可见范围取授权工厂的并集；其余目录仍解析成单一范围。
+        var authorizedSites = definition.Owner == "inventory"
+            ? BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedSites(
+                definition,
+                authorization,
+                req.OrganizationId,
+                scopeKind,
+                scopeId)
+            : null;
+        var authorizedScope = definition.Owner == "inventory"
+            ? null
+            : BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedScope(
+                definition,
+                authorization,
+                req.OrganizationId,
+                scopeKind,
+                scopeId);
+        if (authorizedSites is null && authorizedScope is null)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
                 HttpContext,
@@ -92,15 +103,15 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 ct);
             return;
         }
-        scopeKind = authorizedScope.Kind;
-        scopeId = authorizedScope.Id;
+        scopeKind = authorizedScope?.Kind;
+        scopeId = authorizedScope?.Id;
 
         try
         {
             var response = definition.Owner switch
             {
                 "master-data" => await QueryMasterDataAsync(req with { DirectoryType = directoryType }, scopeKind, scopeId, pageOffset, ct),
-                "inventory" => await QueryInventoryAsync(req with { DirectoryType = directoryType }, scopeKind, scopeId, pageOffset, ct),
+                "inventory" => await QueryInventoryAsync(req with { DirectoryType = directoryType }, authorizedSites!, pageOffset, ct),
                 "quality" => await QueryQualityAsync(req with { DirectoryType = directoryType }, pageOffset, ct),
                 "maintenance" => await QueryMaintenanceAsync(req with { DirectoryType = directoryType }, pageOffset, ct),
                 _ => throw new InvalidOperationException("Unknown directory owner."),
@@ -213,8 +224,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
     private async Task<BusinessConsoleSearchableDirectoryResponse> QueryInventoryAsync(
         BusinessConsoleSearchableDirectoryRequest request,
-        string? scopeKind,
-        string? scopeId,
+        BusinessConsoleAuthorizedSites authorizedSites,
         int pageOffset,
         CancellationToken cancellationToken)
     {
@@ -225,10 +235,11 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 request.EnvironmentId,
                 request.DirectoryType,
                 request.Keyword,
-                scopeKind == "site" ? scopeId : null,
+                SiteCode: null,
                 request.SkuCode,
                 pageOffset,
-                request.PageSize),
+                request.PageSize,
+                authorizedSites.SiteCodes),
             cancellationToken);
         ValidateInventory(response, request, pageOffset);
 

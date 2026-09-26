@@ -50,6 +50,37 @@ public sealed class InventoryDirectoryHttpContractTests
         Assert.Equal(firstCode, items[0].GetProperty("code").GetString());
     }
 
+    // #3832：网关把用户授权工厂的并集以重复的 authorizedSiteCodes 传下来；不传表示组织级授权、不收窄。
+    [Theory]
+    [InlineData("", new[] { "LOC-A", "LOC-B", "LOC-C" })]
+    [InlineData("&authorizedSiteCodes=SITE-A", new[] { "LOC-A" })]
+    [InlineData("&authorizedSiteCodes=SITE-A&authorizedSiteCodes=SITE-C", new[] { "LOC-A", "LOC-C" })]
+    public async Task Directory_narrows_to_the_authorized_site_union(string sites, string[] expectedCodes)
+    {
+        await using var factory = CreateFactory();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            foreach (var site in new[] { "A", "B", "C" })
+            {
+                db.StockLocations.Add(StockLocation.CreateOrUpdate(
+                    null, "org-directory", "env-directory", $"LOC-{site}", "bin", $"SITE-{site}", null, "active"));
+            }
+            await db.SaveChangesAsync();
+        }
+
+        using var client = CreateClient(factory);
+        using var response = await client.GetAsync(
+            "/api/inventory/v1/directory?directoryType=location&organizationId=org-directory&environmentId=env-directory" + sites);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(body.RootElement.GetProperty("success").GetBoolean());
+        var codes = body.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("code").GetString())
+            .ToArray();
+        Assert.Equal(expectedCodes, codes);
+    }
+
     [Theory]
     [InlineData("organizationId=org-directory&environmentId=env-directory&skip=-1", "skip")]
     [InlineData("organizationId=org-directory&environmentId=env-directory&take=0", "take")]
