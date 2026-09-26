@@ -18,6 +18,7 @@ import {
   WAREHOUSE_LOT_EMPTY_TEXT,
   WAREHOUSE_SERIAL_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
@@ -145,7 +146,7 @@ watch(
 )
 
 // 工厂给默认值、单位跟随物料，仓管只需要选物料与库位。
-const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(taskForm)
+const { siteOptions, sitesPending } = useInventoryScopeDefaults(taskForm)
 // 库位/批次/序列号后端无主数据读面，从既有台账与仓储作业记录派生可选项。
 const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
   useWarehouseCodeCatalog()
@@ -457,16 +458,11 @@ function isNonEmpty(value: string) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="count-task-sku">物料</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-sku"
                 v-model="taskForm.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
-                aria-label="物料"
+                directory-type="material"
+                creatable
               />
             </NvField>
             <NvField>

@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleMesProductionPlanRow,
-  BusinessConsoleResourceItem,
-} from '@nerv-iip/api-client'
+import type { BusinessConsoleMesProductionPlanRow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort, StatusTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import {
   describeMesReadinessReason,
   describeMesReadinessReasons,
@@ -58,7 +55,6 @@ const {
   refreshProductionPlans,
 } = useMesProductionPlans()
 const route = useRoute()
-const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 const { resolveSkuLabel } = useMesDisplayNames()
 
 const keyword = ref('')
@@ -91,7 +87,6 @@ const readinessOptions = [
   { label: '受阻', value: 'Blocked' },
 ]
 
-const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 watchDebounced(
   keyword,
   (value) => {
@@ -250,14 +245,6 @@ function sortValue(plan: BusinessConsoleMesProductionPlanRow, key: string) {
   if (key === 'plannedStartUtc')
     return plan.plannedStartUtc ? new Date(plan.plannedStartUtc).getTime() : 0
   return (plan[key as keyof BusinessConsoleMesProductionPlanRow] as string | null) ?? ''
-}
-function toResourceOptions(items: BusinessConsoleResourceItem[]) {
-  return items
-    .filter((i) => i.active !== false && i.code)
-    .map((i) => ({
-      label: i.displayName ? `${i.displayName} (${i.code})` : i.code!,
-      value: i.code!,
-    }))
 }
 function optionalText(value: string) {
   const trimmed = value.trim()
@@ -458,16 +445,13 @@ function newPlanIdempotencyKey(scope: string) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="convert-wc">工作中心</NvFieldLabel>
-              <NvSelect v-model="convertForm.workCenterId">
-                <NvSelectTrigger id="convert-wc"
-                  ><NvSelectValue placeholder="按工艺路线默认"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <DirectoryPicker
+                id="convert-wc"
+                v-model="convertForm.workCenterId"
+                directory-type="work-center"
+                creatable
+                placeholder="按工艺路线默认"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="convert-due">交期</NvFieldLabel>

@@ -124,6 +124,7 @@ const stubs = {
   NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  DirectoryPicker: true,
 }
 
 /** 真弹层挂 body，用例之间必须卸载。 */

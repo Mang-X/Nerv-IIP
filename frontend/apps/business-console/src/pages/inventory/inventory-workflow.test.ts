@@ -249,6 +249,7 @@ vi.mock('@/composables/useInventoryScope', async () => {
       { value: 'RM-BAR-45-01', label: '45号钢棒料', hint: 'kg' },
     ]),
     skusPending: ref(false),
+    resolveUomCode: (skuCode: string) => baseUomBySku[skuCode.trim()] ?? '',
   }
   return {
     FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
@@ -477,6 +478,13 @@ const uiStubs = {
     emits: ['update:modelValue'],
     template:
       '<select data-entity-picker v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option></select>',
+  },
+  // 物料字段是目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖），同样换成 select。
+  DirectoryPicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select data-directory-picker v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"></select>',
   },
   NvSelect: { template: '<div><slot /></div>' },
   NvSelectContent: { template: '<div><slot /></div>' },
