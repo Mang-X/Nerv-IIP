@@ -43,7 +43,6 @@ const refreshing = ref(false)
 const scopeReady = ref(true)
 const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
-const lastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refresh = vi.fn(async () => {})
 const loadMore = vi.fn(async () => {})
 const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
@@ -73,7 +72,6 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     organizationId,
     environmentId,
     scopeReady,
-    lastUpdatedAt,
     hasSuccessfulResponse: computed(() => !pending.value && !error.value),
     hasFailedResponse: computed(() => false),
     pending,

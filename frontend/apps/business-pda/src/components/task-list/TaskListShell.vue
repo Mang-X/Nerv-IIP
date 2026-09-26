@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { NvInfiniteList, NvMobileEmpty, NvPullRefresh } from '@nerv-iip/ui-mobile'
 import { computed, nextTick, onMounted, shallowRef, watch } from 'vue'
@@ -12,33 +11,25 @@ interface PersistedTaskListState {
 const props = withDefaults(
   defineProps<{
     stateKey: string
-    scope: string
-    source: string
     loaded: number
     total: number
     hasMore?: boolean
-    updatedAt?: string | null
     pending: boolean
     refreshing: boolean
     loadingMore: boolean
     error?: unknown
     loadMoreError?: unknown
     errorTestId?: string
-    failureExplanation?: string
     filterState?: Record<string, unknown>
     emptyDescription?: string
-    showMeta?: boolean
   }>(),
   {
-    updatedAt: null,
     hasMore: undefined,
     error: undefined,
     loadMoreError: undefined,
     errorTestId: 'task-list-initial-error',
-    failureExplanation: '任务服务未成功返回；已加载数据不会被清空。',
     filterState: () => ({}),
     emptyDescription: '当前筛选范围暂无任务。',
-    showMeta: true,
   },
 )
 
@@ -168,20 +159,6 @@ onMounted(async () => {
   <div class="flex h-full min-h-0 flex-1 flex-col">
     <div v-if="$slots.filters" class="shrink-0 border-b border-border bg-card">
       <slot name="filters" />
-    </div>
-
-    <div v-if="showMeta" data-testid="task-list-meta" class="shrink-0 px-4 py-3">
-      <ListScopeMeta
-        :scope="scope"
-        :source="source"
-        :loaded="loaded"
-        :total="total"
-        :updated-at="updatedAt"
-        :failed="Boolean(initialError || retainedError || partialError)"
-        :failure-explanation="failureExplanation"
-        :empty="isEmpty"
-        :empty-explanation="emptyDescription"
-      />
     </div>
 
     <RetryableListError

@@ -7,7 +7,6 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -72,18 +71,13 @@ const {
   createPutaway,
   createPutawayPending,
   createPutawayError,
-  putawayTasksLastUpdatedAt,
-  putawayTasksHasSuccessfulResponse,
-  putawayTasksHasFailedResponse,
 } = useWmsPutawayTasks({ workScopeRequired: true })
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: putawayScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'receipts')
 const operationalCandidates = useWmsOperationalCandidates('receipt', filters)
@@ -384,22 +378,6 @@ function firstQuery(value: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 收货作业范围目录"
-      :loaded="putawayTasks.length"
-      :total="putawayTasksTotal"
-      :updated-at="putawayTasksLastUpdatedAt"
-      :empty="putawayTasksHasSuccessfulResponse && !putawayTasksError && putawayTasks.length === 0"
-      :failed="
-        putawayTasksHasFailedResponse || Boolean(putawayTasksError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 收货作业范围或上架任务未成功返回，请重试。"
-      :empty-explanation="
-        putawayScopeReady ? '当前作业范围没有上架任务。' : workScopeUnreadyMessage
-      "
-    />
 
     <NvToolbar :show-search="false">
       <template #filters>

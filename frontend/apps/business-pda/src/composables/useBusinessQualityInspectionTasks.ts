@@ -31,10 +31,9 @@ import {
 } from '@/components/quality/inspectionTaskBlockReasons'
 import { useAuthStore } from '@/stores/auth'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { makeIdempotencyKey } from './makeIdempotencyKey'
@@ -177,7 +176,6 @@ export function useBusinessQualityInspectionTasks() {
     listIdentity,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -621,7 +619,6 @@ export function useBusinessQualityInspectionTasks() {
     loadMore,
     pending: listQuery.isLoading,
     error: listQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,

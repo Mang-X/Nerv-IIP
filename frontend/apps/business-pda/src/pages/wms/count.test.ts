@@ -118,7 +118,6 @@ vi.mock('@/composables/useBusinessWms', () => ({
     organizationId: computed(() => 'org-001'),
     environmentId: computed(() => 'env-dev'),
     scopeReady: computed(() => true),
-    lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
     hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
     hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
@@ -218,7 +217,6 @@ describe('WMS 盘点', () => {
 
     expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-COUNT')
     expect(wmsState.filters.status).toBe('Completed')
-    expect(wrapper.text()).toContain('WMS 盘点作业范围目录')
   })
 
   it('实盘数使用移动端数字键盘录入', async () => {

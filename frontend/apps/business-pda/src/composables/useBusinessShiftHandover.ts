@@ -53,10 +53,9 @@ import {
   type ShiftHandoverPartyState,
 } from '@nerv-iip/business-core'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { usePdaIdentity } from '@/composables/useWorkbenchHome'
 import { useAuthStore } from '@/stores/auth'
 
@@ -112,7 +111,7 @@ export type { ShiftHandoverPartyState }
  * `toLocaleString('zh-CN')` + NaN 守卫（见 `maintenanceWorkOrderPresentation`）。
  * 列表用紧凑式（月日时分）是因为 375px 宽装不下带年份的全式；详情页给全式。
  *
- * 时区钉死 `Asia/Shanghai`（与本 app 的 `ListScopeMeta` 同一口径）：交接班读的是厂区班次时点，
+ * 时区钉死 `Asia/Shanghai`：交接班读的是厂区班次时点，
  * 跟着宿主时区漂会让同一张单在不同设备上显示成不同班次；同时这也让读数与 CI（UTC）一致，
  * 不会出现「本机绿、CI 红」的时区假红。
  */
@@ -269,7 +268,6 @@ export function useMesShiftHandovers() {
     listScopeKey,
     enabled,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, enabled)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     enabled,
@@ -290,7 +288,6 @@ export function useMesShiftHandovers() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: handoversQuery.isLoading,
     error: handoversQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (enabled.value ? handoversQuery.refetch() : Promise.resolve()),

@@ -110,7 +110,6 @@ vi.mock('@/composables/useBusinessShiftHandover', async (importOriginal) => {
       total: computed(() => rows.value.length),
       pending,
       error,
-      lastUpdatedAt: ref('2026-09-14T02:03:04.000Z'),
       hasSuccessfulResponse,
       hasFailedResponse,
       refresh,

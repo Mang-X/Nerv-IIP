@@ -4,7 +4,6 @@ import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandid
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
@@ -75,7 +74,6 @@ const {
   scopeKind,
   scopeId,
   scopeReady,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useWmsInbound({ status: 'Open' })
@@ -473,21 +471,6 @@ function goPutaway() {
           :show-scanner="false"
           @scan-override-change="candidates.setScanOverride"
           @retry="candidates.refresh"
-        />
-        <ListScopeMeta
-          :scope="inboundScope"
-          source="WMS 收货作业范围目录"
-          :loaded="orders.length"
-          :total="inboundTotal"
-          :updated-at="lastUpdatedAt"
-          :failed="hasFailedResponse"
-          failure-explanation="收货入库服务未成功返回，请刷新重试。"
-          :empty="!scopeReady || showEmpty"
-          :empty-explanation="
-            scopeReady
-              ? `“${inboundScope}”在当前状态下没有收货单据。`
-              : 'WMS 未返回可用作业范围，未发起列表查询。'
-          "
         />
       </div>
 

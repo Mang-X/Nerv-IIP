@@ -14,7 +14,7 @@ import {
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
-import { useListFreshness, useScopeBoundListResponse } from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import { useTaskListPagination } from './useTaskListPagination'
 import {
   MAINTENANCE_READ_MODEL_PERMISSIONS,
@@ -581,14 +581,6 @@ export function useMaintenanceSelfWorkOrders() {
       Boolean(listQuery.error.value || firstPageState.value.error),
   )
   const error = computed(() => listQuery.error.value ?? firstPageState.value.error)
-  const freshness = useListFreshness(
-    computed(() => {
-      if (firstPage.value) return { success: true }
-      if (firstPageState.value.error) return { success: false }
-      return undefined
-    }),
-    scope.scopeReady,
-  )
   const visibleItems = computed(() =>
     pending.value || hasFailedResponse.value ? [] : pager.items.value,
   )
@@ -633,7 +625,6 @@ export function useMaintenanceSelfWorkOrders() {
     refresh,
     pending,
     error,
-    lastUpdatedAt: freshness,
     hasSuccessfulResponse,
     hasFailedResponse,
   }

@@ -378,9 +378,6 @@ describe('useBusinessMaintenance', () => {
     expect(result.workOrders.value).toHaveLength(1)
     expect(result.inspections.value).toHaveLength(1)
     expect(result.plans.value).toHaveLength(1)
-    expect(result.workOrdersLastUpdatedAt.value).not.toBeNull()
-    expect(result.inspectionsLastUpdatedAt.value).not.toBeNull()
-    expect(result.plansLastUpdatedAt.value).not.toBeNull()
 
     seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
     await nextTick()
@@ -394,8 +391,5 @@ describe('useBusinessMaintenance', () => {
     expect(result.plans.value).toHaveLength(0)
     expect(result.plansTotal.value).toBe(0)
     expect(result.plansHasSuccessfulResponse.value).toBe(false)
-    expect(result.workOrdersLastUpdatedAt.value).toBeNull()
-    expect(result.inspectionsLastUpdatedAt.value).toBeNull()
-    expect(result.plansLastUpdatedAt.value).toBeNull()
   })
 })

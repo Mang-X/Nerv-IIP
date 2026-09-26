@@ -73,30 +73,3 @@ export function useListResponseState(
 
   return { hasSuccessfulResponse, hasFailedResponse }
 }
-
-/**
- * Records when a successful list response became available for the current scope.
- *
- * An unavailable/disabled projection is an explicit scope unbind and clears the timestamp.
- * A failed response in the same scope keeps the previous successful-response time.
- */
-export function useListFreshness(
-  data: MaybeRefOrGetter<unknown>,
-  enabled: MaybeRefOrGetter<boolean>,
-) {
-  const lastUpdatedAt = shallowRef<string | null>(null)
-
-  watch(
-    [() => toValue(data), () => toValue(enabled)],
-    ([value, ready]) => {
-      if (!ready || value === undefined) {
-        lastUpdatedAt.value = null
-      } else if (isSuccessfulEnvelope(value)) {
-        lastUpdatedAt.value = new Date().toISOString()
-      }
-    },
-    { immediate: true, flush: 'sync' },
-  )
-
-  return computed(() => lastUpdatedAt.value)
-}

@@ -18,10 +18,9 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { confirmedMaintenanceCreateWorkOrderId } from './maintenanceCreateReceipt'
@@ -146,9 +145,6 @@ export function useBusinessMaintenance() {
     scopeReady,
   )
   const plansResponse = useScopeBoundListResponse(() => plansQuery.data.value, scopeKey, scopeReady)
-  const workOrdersLastUpdatedAt = useListFreshness(workOrdersResponse, scopeReady)
-  const inspectionsLastUpdatedAt = useListFreshness(inspectionsResponse, scopeReady)
-  const plansLastUpdatedAt = useListFreshness(plansResponse, scopeReady)
   const {
     hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
     hasFailedResponse: workOrdersHasFailedResponse,
@@ -296,7 +292,6 @@ export function useBusinessMaintenance() {
     loadMoreWorkOrders: workOrderPager.loadMore,
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersError: workOrdersQuery.error,
-    workOrdersLastUpdatedAt,
     workOrdersHasSuccessfulResponse,
     workOrdersHasFailedResponse,
     refreshWorkOrders: () => (scopeReady.value ? workOrderPager.refresh() : Promise.resolve()),
@@ -314,7 +309,6 @@ export function useBusinessMaintenance() {
     ),
     inspectionsPending: inspectionsQuery.isLoading,
     inspectionsError: inspectionsQuery.error,
-    inspectionsLastUpdatedAt,
     inspectionsHasSuccessfulResponse,
     inspectionsHasFailedResponse,
     refreshInspections: () => (scopeReady.value ? inspectionsQuery.refetch() : Promise.resolve()),
@@ -326,7 +320,6 @@ export function useBusinessMaintenance() {
     plansTotal,
     plansPending: plansQuery.isLoading,
     plansError: plansQuery.error,
-    plansLastUpdatedAt,
     plansHasSuccessfulResponse,
     plansHasFailedResponse,
     refreshPlans: () => (scopeReady.value ? plansQuery.refetch() : Promise.resolve()),

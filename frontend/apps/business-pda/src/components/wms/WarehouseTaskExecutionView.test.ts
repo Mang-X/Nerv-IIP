@@ -206,7 +206,6 @@ describe('WarehouseTaskExecutionView', () => {
       locationCode: 'A-01',
       lotNo: 'LOT-01',
       candidateSearchKeyword: '候选-01',
-      updatedAt: '2026-08-01T08:00:00.000Z',
       loadMoreError,
     })
     await nextTick()
@@ -215,8 +214,6 @@ describe('WarehouseTaskExecutionView', () => {
     await nextTick()
 
     const shell = wrapper.getComponent(TaskListShell)
-    expect(shell.props('showMeta')).toBe(true)
-    expect(shell.props('updatedAt')).toBe('2026-08-01T08:00:00.000Z')
     expect(shell.props('loadMoreError')).toBe(loadMoreError)
     expect(shell.props('filterState')).toEqual({
       scopeKey: 'self:emp049',

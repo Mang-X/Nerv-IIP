@@ -13,7 +13,6 @@ import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandi
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
@@ -89,18 +88,13 @@ const {
   createOutbound,
   createOutboundPending,
   createOutboundError,
-  outboundOrdersLastUpdatedAt,
-  outboundOrdersHasSuccessfulResponse,
-  outboundOrdersHasFailedResponse,
 } = useWmsOutboundOrders({ workScopeRequired: true })
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: outboundScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
@@ -476,22 +470,6 @@ function refreshAll() {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 发货作业范围目录"
-      :loaded="outboundOrders.length"
-      :total="outboundOrdersTotal"
-      :updated-at="outboundOrdersLastUpdatedAt"
-      :empty="
-        outboundOrdersHasSuccessfulResponse && !outboundOrdersError && outboundOrders.length === 0
-      "
-      :failed="
-        outboundOrdersHasFailedResponse || Boolean(outboundOrdersError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 发货作业范围或出库单未成功返回，请重试。"
-      :empty-explanation="outboundScopeReady ? '当前作业范围没有出库单。' : workScopeUnreadyMessage"
-    />
 
     <NvMetricStrip :cells="metricCells" />
 

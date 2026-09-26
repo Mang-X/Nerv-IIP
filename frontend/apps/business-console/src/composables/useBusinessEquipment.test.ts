@@ -330,8 +330,6 @@ describe('business equipment composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleEquipmentAlarms', { success: false })
     const failed = useBusinessEquipmentAlarms()
     expect(failed.alarms.value).toEqual([])
-    expect(failed.alarmsHasSuccessfulResponse.value).toBe(false)
-    expect(failed.alarmsHasFailedResponse.value).toBe(true)
   })
 
   it('单台设备的报警由服务端按设备过滤，未选设备时不发请求', () => {

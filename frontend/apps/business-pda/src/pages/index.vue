@@ -18,7 +18,6 @@ import {
 } from '@lucide/vue'
 import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
 import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
   HOME_PERMISSIONS,
@@ -102,15 +101,7 @@ const INSPECTION_PREVIEW = 3
 const scopedInspectionTasks = computed(() =>
   inspection.scopeReady.value ? inspection.tasks.value : [],
 )
-const scopedInspectionTotal = computed(() =>
-  inspection.scopeReady.value ? inspection.total.value : 0,
-)
 const inspectionPreview = computed(() => scopedInspectionTasks.value.slice(0, INSPECTION_PREVIEW))
-const inspectionEmptyExplanation = computed(() =>
-  inspection.scopeReady.value
-    ? '当前组织/环境范围暂无待检任务；此列表不是个人待检。'
-    : '缺少组织或环境范围，未发起查询。',
-)
 const inspectionFailure = computed(() =>
   inspection.error.value
     ? inspection.error.value
@@ -253,27 +244,6 @@ function openRoute(route: string) {
             共 <span class="font-semibold text-foreground">{{ inspection.total.value }}</span> 项
           </span>
         </div>
-        <ListScopeMeta
-          :scope="
-            identity.organizationId.value && identity.environmentId.value
-              ? '当前登录组织 / 当前业务环境'
-              : '组织/环境范围未就绪'
-          "
-          source="质检待检任务服务（组织/环境范围，状态：待检）"
-          :loaded="scopedInspectionTasks.length"
-          :total="scopedInspectionTotal"
-          :updated-at="inspection.lastUpdatedAt.value"
-          :failed="inspection.hasFailedResponse.value"
-          failure-explanation="质检待检任务服务未成功返回，请刷新重试。"
-          :empty="
-            !inspection.scopeReady.value ||
-            (!inspection.pending.value &&
-              !inspection.error.value &&
-              inspection.hasSuccessfulResponse.value &&
-              scopedInspectionTasks.length === 0)
-          "
-          :empty-explanation="inspectionEmptyExplanation"
-        />
         <RetryableListError
           v-if="inspectionFailure"
           :error="inspectionFailure"

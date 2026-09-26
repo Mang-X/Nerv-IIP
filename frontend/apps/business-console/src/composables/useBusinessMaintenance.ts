@@ -47,11 +47,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -226,15 +222,6 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
     () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
     workOrdersScopeReady,
   )
-  const workOrdersLastUpdatedAt = useListFreshness(workOrdersResponse, workOrdersScopeReady)
-  const {
-    hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
-    hasFailedResponse: workOrdersHasFailedResponse,
-  } = useListResponseState(
-    workOrdersResponse,
-    workOrdersScopeReady,
-    () => workOrdersQuery.isLoading.value,
-  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceWorkOrderV2MutationOptions(),
@@ -366,9 +353,6 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
         workOrdersResponse.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
       ),
     ),
-    workOrdersLastUpdatedAt,
-    workOrdersHasSuccessfulResponse,
-    workOrdersHasFailedResponse,
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     createWorkOrder: createWithStableIntent,
     createWorkOrderPending: createMutation.isLoading,

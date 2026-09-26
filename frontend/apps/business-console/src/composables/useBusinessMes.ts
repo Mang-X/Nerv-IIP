@@ -155,11 +155,7 @@ import {
 import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
 import { mesWorkOrderReleaseBlocker } from './mes/workOrderRelease'
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 const DEFAULT_TAKE = 100
 const MES_OPERATIONS_READ_PERMISSION = 'business.mes.operations.read'
@@ -1074,15 +1070,6 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     workOrdersIdentity,
     workOrdersScopeReady,
   )
-  const workOrdersLastUpdatedAt = useListFreshness(workOrdersResponse, workOrdersScopeReady)
-  const {
-    hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
-    hasFailedResponse: workOrdersHasFailedResponse,
-  } = useListResponseState(
-    workOrdersResponse,
-    workOrdersScopeReady,
-    () => workOrdersQuery.isLoading.value,
-  )
 
   const createRushMutation = useMutation({
     ...createBusinessConsoleMesRushWorkOrderMutationOptions(),
@@ -1186,9 +1173,6 @@ export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersState: businessReadState(workOrdersQuery, () => workOrdersScopeReady.value),
     workOrdersTotal: computed(() => envelopeTotal(workOrdersResponse.value)),
-    workOrdersLastUpdatedAt,
-    workOrdersHasSuccessfulResponse,
-    workOrdersHasFailedResponse,
     workOrderReadScope: workOrderReadScope.selectedScope,
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
@@ -2010,18 +1994,6 @@ export function useMesOperationTasks() {
     operationTasksIdentity,
     operationTasksScopeReady,
   )
-  const operationTasksLastUpdatedAt = useListFreshness(
-    operationTasksResponse,
-    operationTasksScopeReady,
-  )
-  const {
-    hasSuccessfulResponse: operationTasksHasSuccessfulResponse,
-    hasFailedResponse: operationTasksHasFailedResponse,
-  } = useListResponseState(
-    operationTasksResponse,
-    operationTasksScopeReady,
-    () => operationTasksQuery.isLoading.value,
-  )
   const completeMutation = useMutation(completeBusinessConsoleMesOperationTaskMutationOptions())
   const pauseMutation = useMutation(pauseBusinessConsoleMesOperationTaskMutationOptions())
   const resumeMutation = useMutation(resumeBusinessConsoleMesOperationTaskMutationOptions())
@@ -2132,9 +2104,6 @@ export function useMesOperationTasks() {
     operationScopeMessage: operationScope.scopeMessage,
     operationScopePending: operationScope.scopePending,
     operationScopeReady: operationScope.scopeReady,
-    operationTasksLastUpdatedAt,
-    operationTasksHasSuccessfulResponse,
-    operationTasksHasFailedResponse,
     pauseOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,

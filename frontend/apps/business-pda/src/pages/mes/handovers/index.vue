@@ -14,7 +14,6 @@ import {
 } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
   formatHandoverTimestamp,
@@ -40,10 +39,8 @@ const {
   canManage,
   hasScope,
   handovers,
-  total,
   pending,
   error,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
   refresh,
@@ -148,22 +145,6 @@ function openDetail(row: ShiftHandoverRow) {
       }}</NvNoticeBar>
 
       <NvMobileTabs v-model="activeTab" :items="tabs" data-testid="handover-status-tabs" />
-
-      <ListScopeMeta
-        :scope="hasScope ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪'"
-        source="班次交接服务（组织/环境范围，按所选状态过滤）"
-        :loaded="handovers.length"
-        :total="total"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse || Boolean(error)"
-        failure-explanation="班次交接服务未成功返回，请刷新重试。"
-        :empty="!canRead || showEmpty"
-        :empty-explanation="
-          canRead
-            ? '当前组织/环境范围内没有该状态的交接单。'
-            : '没有交接班读取权限或范围未就绪，未发起查询。'
-        "
-      />
 
       <RetryableListError
         v-if="error || hasFailedResponse"

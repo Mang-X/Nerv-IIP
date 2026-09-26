@@ -26,9 +26,7 @@ const props = withDefaults(
     pending: boolean
     refreshing?: boolean
     error: unknown
-    scope?: string
     scopeReady?: boolean
-    updatedAt?: string | null
     hasSuccessfulResponse?: boolean
     hasFailedResponse?: boolean
     status?: string
@@ -40,9 +38,7 @@ const props = withDefaults(
     loadMoreError?: unknown
   }>(),
   {
-    scope: undefined,
     scopeReady: true,
-    updatedAt: null,
     hasSuccessfulResponse: false,
     hasFailedResponse: false,
     status: 'pending',
@@ -104,10 +100,6 @@ const sourceServiceOptions: DropdownOption[] = [
   { label: 'ERP', value: 'erp' },
   { label: 'MES', value: 'mes' },
 ]
-const qualitySource = computed(() => {
-  const status = props.status === 'in-progress' ? '进行中' : '待检'
-  return `质检待检任务服务（当前账号 Self 范围，状态：${status}）`
-})
 const listError = computed(
   () =>
     props.error ??
@@ -165,19 +157,15 @@ function restoreState(state: { filters: Record<string, unknown> }) {
 <template>
   <TaskListShell
     state-key="quality-inspection-tasks"
-    :scope="props.scope ?? '组织/环境范围未就绪'"
-    :source="qualitySource"
     :loaded="props.loaded"
     :total="props.total"
     :has-more="props.hasMore"
-    :updated-at="props.updatedAt"
     :pending="props.pending"
     :refreshing="props.refreshing"
     :loading-more="props.loadingMore"
     :error="listError"
     :load-more-error="props.loadMoreError"
     error-test-id="tasks-error"
-    failure-explanation="质检待检任务服务未成功返回，请刷新重试。"
     :filter-state="{ status, keyword, sourceType, sourceService, overdue }"
     empty-description="当前账号没有符合筛选条件的质检任务；缺少登录主体或组织环境时不会发起查询。"
     @refresh="emit('refresh')"

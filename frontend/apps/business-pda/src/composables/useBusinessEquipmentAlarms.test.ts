@@ -367,7 +367,7 @@ describe('useBusinessEquipmentAlarms', () => {
     expect(result.hasFailedResponse.value).toBe(true)
   })
 
-  it('unbinds alarm rows, total, and freshness immediately on an org/env scope switch', async () => {
+  it('unbinds alarm rows and total immediately on an org/env scope switch', async () => {
     seedPrincipal()
     coladaState.queryDataById.set(ALL_KEY, {
       success: true,
@@ -378,7 +378,6 @@ describe('useBusinessEquipmentAlarms', () => {
     expect(result.alarms.value).toHaveLength(1)
     expect(result.total.value).toBe(5)
     expect(result.hasSuccessfulResponse.value).toBe(true)
-    expect(result.lastUpdatedAt.value).not.toBeNull()
 
     seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
     await nextTick()
@@ -387,7 +386,6 @@ describe('useBusinessEquipmentAlarms', () => {
     expect(result.total.value).toBe(0)
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(false)
-    expect(result.lastUpdatedAt.value).toBeNull()
   })
 })
 

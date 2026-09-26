@@ -6,7 +6,7 @@ import { useQuery } from '@pinia/colada'
 import { computed, ref } from 'vue'
 import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 import { hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
-import { useScopeBoundListResponse } from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 /** Console 建单使用的 Maintenance 权威目录，码值原样进入 v2 请求。 */
 export function useMaintenanceDowntimeReasonDirectory(scope: BusinessContextFields) {

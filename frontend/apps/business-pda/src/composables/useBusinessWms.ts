@@ -60,10 +60,9 @@ import {
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useAuthStore } from '@/stores/auth'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from '@/composables/useWmsWorkScope'
 
 const DEFAULT_TAKE = 100
@@ -332,7 +331,6 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -473,7 +471,6 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     loadMoreError,
     refreshing,
     loadingMore,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,
@@ -594,7 +591,6 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -735,7 +731,6 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     loadMoreError,
     refreshing,
     loadingMore,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,
@@ -1032,7 +1027,6 @@ function useWmsWarehouseTasks(
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -1386,7 +1380,6 @@ function useWmsWarehouseTasks(
     actionPending,
     actionUnconfirmed,
     actionConfirmedSequence,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,
@@ -1520,7 +1513,6 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -1659,7 +1651,6 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     loadMoreError,
     refreshing,
     loadingMore,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,

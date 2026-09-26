@@ -177,15 +177,11 @@ async function createWorkOrderHarness() {
     environmentId: 'env-dev',
   } as never
   const workOrderId = ref('WO-SHARED')
-  let listLastUpdatedAt: Readonly<{ value: string | null }> | undefined
-  let detailLastUpdatedAt: Readonly<{ value: string | null }> | undefined
 
   const Harness = defineComponent({
     setup() {
       const list = useMesWorkOrders()
       const detail = useMesWorkOrderDetail(workOrderId)
-      listLastUpdatedAt = list.lastUpdatedAt
-      detailLastUpdatedAt = detail.lastUpdatedAt
       return () =>
         h(
           'div',
@@ -193,9 +189,7 @@ async function createWorkOrderHarness() {
             list.workOrderReadScope.value?.id ?? 'no-scope',
             list.workOrders.value[0]?.workOrderId ?? 'no-row',
             list.total.value,
-            list.lastUpdatedAt.value ? 'list-fresh' : 'list-not-fresh',
             detail.workOrder.value?.skuId ?? 'no-detail',
-            detail.lastUpdatedAt.value ? 'detail-fresh' : 'detail-not-fresh',
           ].join('|'),
         )
     },
@@ -207,12 +201,7 @@ async function createWorkOrderHarness() {
     },
   })
   await flushPromises()
-  return {
-    auth,
-    wrapper,
-    listLastUpdatedAt: () => listLastUpdatedAt?.value ?? null,
-    detailLastUpdatedAt: () => detailLastUpdatedAt?.value ?? null,
-  }
+  return { auth, wrapper }
 }
 
 async function createExactTaskHarness() {
@@ -263,8 +252,8 @@ describe('PDA MES work-order principal scope identity', () => {
     localStorage.clear()
   })
 
-  it('keeps current list, total, freshness, and detail when old scope responses arrive late', async () => {
-    const { auth, wrapper, listLastUpdatedAt, detailLastUpdatedAt } = await createWorkOrderHarness()
+  it('keeps current list, total, and detail when old scope responses arrive late', async () => {
+    const { auth, wrapper } = await createWorkOrderHarness()
     resolveWorkContext('business.mes.work-orders.read', 0, 'WC-A')
     await flushPromises()
 
@@ -284,7 +273,7 @@ describe('PDA MES work-order principal scope identity', () => {
       environmentId: 'env-dev',
     } as never
     await flushPromises()
-    expect(wrapper.text()).toBe('no-scope|no-row|0|list-not-fresh|no-detail|detail-not-fresh')
+    expect(wrapper.text()).toBe('no-scope|no-row|0|no-detail')
 
     resolveWorkContext('business.mes.work-orders.read', 1, 'WC-B')
     await flushPromises()
@@ -308,13 +297,8 @@ describe('PDA MES work-order principal scope identity', () => {
     })
     currentDetailRequest.resolve(workOrderDetail('WO-SHARED', 'SKU-B'))
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-B|WO-B|1|list-fresh|SKU-B|detail-fresh')
-    const currentListFreshness = listLastUpdatedAt()
-    const currentDetailFreshness = detailLastUpdatedAt()
-    expect(currentListFreshness).not.toBeNull()
-    expect(currentDetailFreshness).not.toBeNull()
+    expect(wrapper.text()).toBe('WC-B|WO-B|1|SKU-B')
 
-    await new Promise((resolve) => setTimeout(resolve, 5))
     oldListRequest.resolve({
       success: true,
       data: {
@@ -324,9 +308,7 @@ describe('PDA MES work-order principal scope identity', () => {
     })
     oldDetailRequest.resolve(workOrderDetail('WO-SHARED', 'SKU-A-LATE'))
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-B|WO-B|1|list-fresh|SKU-B|detail-fresh')
-    expect(listLastUpdatedAt()).toBe(currentListFreshness)
-    expect(detailLastUpdatedAt()).toBe(currentDetailFreshness)
+    expect(wrapper.text()).toBe('WC-B|WO-B|1|SKU-B')
   })
 
   it('keeps the current reporting-read exact task when the old principal response arrives late', async () => {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import InspectionMeasurementRow, {
   type MeasurementFormRow,
 } from '@/components/equipment/InspectionMeasurementRow.vue'
@@ -66,11 +65,9 @@ const router = useRouter()
 
 const maintenance = useBusinessMaintenance()
 const {
-  scopeReady,
   plansPending,
   plansError,
   plansTotal,
-  plansLastUpdatedAt,
   plansHasSuccessfulResponse,
   plansHasFailedResponse,
   loadMorePlans,
@@ -79,8 +76,6 @@ const {
   recordPending,
   inspectionsPending,
   inspectionsError,
-  inspectionsTotal,
-  inspectionsLastUpdatedAt,
   inspectionsHasSuccessfulResponse,
   inspectionsHasFailedResponse,
   refreshInspections,
@@ -90,9 +85,6 @@ const {
 const allPlans = computed<PlanRow[]>(() => maintenance.plans.value as PlanRow[])
 const inspections = computed<InspectionRow[]>(
   () => maintenance.inspections.value as InspectionRow[],
-)
-const maintenanceScope = computed(() =>
-  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
 )
 const showPlansEmpty = computed(
   () =>
@@ -396,21 +388,6 @@ function inspectionSubtitle(item: {
         <!-- 步骤 1：选择保养计划 -->
         <div class="space-y-2">
           <p class="text-sm text-foreground">选择保养计划</p>
-          <ListScopeMeta
-            :scope="maintenanceScope"
-            source="保养计划服务（组织/环境范围，暂不支持按维修人员归属筛选）"
-            :loaded="plans.length"
-            :total="plansTotal"
-            :updated-at="plansLastUpdatedAt"
-            :failed="plansHasFailedResponse"
-            failure-explanation="保养计划服务未成功返回，请刷新重试。"
-            :empty="!scopeReady || showPlansEmpty"
-            :empty-explanation="
-              scopeReady
-                ? '当前组织/环境范围暂无保养计划；暂不支持按维修人员归属筛选，空态不代表个人计划。'
-                : '缺少组织或环境范围，未发起查询。'
-            "
-          />
 
           <RetryableListError
             v-if="plansError || plansHasFailedResponse"
@@ -542,19 +519,6 @@ function inspectionSubtitle(item: {
       <!-- 近期点检记录 -->
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期点检记录</h2>
-        <ListScopeMeta
-          :scope="maintenanceScope"
-          source="点检记录服务（组织/环境范围）"
-          :loaded="inspections.length"
-          :total="inspectionsTotal"
-          :updated-at="inspectionsLastUpdatedAt"
-          :failed="inspectionsHasFailedResponse"
-          failure-explanation="点检记录服务未成功返回，请刷新重试。"
-          :empty="!scopeReady || showInspectionsEmpty"
-          :empty-explanation="
-            scopeReady ? '当前组织/环境范围暂无点检记录。' : '缺少组织或环境范围，未发起查询。'
-          "
-        />
 
         <RetryableListError
           v-if="inspectionsError || inspectionsHasFailedResponse"

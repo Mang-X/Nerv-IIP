@@ -45,7 +45,6 @@ const workOrdersRefreshing = ref(false)
 const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
 const scopeReady = ref(true)
-const workOrdersLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refreshWorkOrders = vi.fn(async () => {})
 const loadMoreWorkOrders = vi.fn(async () => {})
 
@@ -60,7 +59,6 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     organizationId,
     environmentId,
     scopeReady,
-    workOrdersLastUpdatedAt,
     workOrdersHasSuccessfulResponse: computed(
       () => !workOrdersPending.value && !workOrdersError.value,
     ),

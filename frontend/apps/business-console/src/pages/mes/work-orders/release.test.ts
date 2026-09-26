@@ -125,7 +125,6 @@ vi.mock('@/composables/useBusinessMes', () => ({
 
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
-  ListScopeMeta: true,
   MesWorkScopeSelect: true,
   OrderUrgencyBadge: true,
   ProductionReportDialog: true,

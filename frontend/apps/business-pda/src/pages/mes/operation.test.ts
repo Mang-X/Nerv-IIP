@@ -179,7 +179,6 @@ vi.mock('@/composables/useBusinessMes', () => ({
     filters,
     operationTasks: computed(() => operationTasksRef.value),
     total: computed(() => operationTasksRef.value.length),
-    lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
     hasSuccessfulResponse: computed(() => tasksSuccessfulRef.value && !tasksErrorRef.value),
     hasFailedResponse: computed(() => false),
     pending: tasksPendingRef,
@@ -386,7 +385,6 @@ describe('PDA MES operation execution page', () => {
     expect(wrapper.find('input[placeholder^="扫"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('MO-2026-0001')
     expect(wrapper.text()).toContain('MO-2026-0002')
-    expect(wrapper.text()).toContain('当前主体授权作业范围 · 精加工一线（工作中心）')
     // 工序序号可读呈现
     expect(wrapper.text()).toContain('工序 10')
   })

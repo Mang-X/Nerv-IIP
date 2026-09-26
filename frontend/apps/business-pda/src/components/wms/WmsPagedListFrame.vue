@@ -29,14 +29,11 @@ const emit = defineEmits<{
 <template>
   <TaskListShell
     :state-key="props.stateKey"
-    scope="当前授权 WMS 作业范围"
-    source="WMS 作业服务"
     :loaded="loaded"
     :total="total"
     :pending="pending"
     :refreshing="refreshing"
     :loading-more="loadingMore"
-    :show-meta="false"
     :empty-description="emptyDescription"
     :filter-state="filterState"
     :error="error"
