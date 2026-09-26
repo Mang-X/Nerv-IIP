@@ -106,27 +106,53 @@ export function useSearchableDirectoryPicker(
   }
 }
 
+/** 按上级收窄候选：给了哪一级就只留挂在这一级下的项，空值表示这一级不限。 */
+export interface DirectoryParent {
+  siteCode?: string
+  workshopCode?: string
+  lineCode?: string
+}
+
+export type MasterDataListPickerType =
+  | 'shift'
+  | 'site'
+  | 'workshop'
+  | 'production-line'
+  | 'work-center'
+  | 'station'
+
+const PARENT_KEYS = ['siteCode', 'workshopCode', 'lineCode'] as const
+
 /**
- * 班次、产线不在可搜目录里（owner 裁定不给目录端点加类型），改取基础数据资源列表。
- * 这两类在一个组织内是几条到几十条，整表取回，搜索交给选择器自带的本地过滤。
+ * 基础数据资源列表 → 选择器候选，整表取回，搜索交给选择器自带的本地过滤。两种用法：
+ * - 班次、产线、工厂不在可搜目录里（owner 裁定不给目录端点加类型）；
+ * - 表单里的层级字段要按已选上级收窄（`parent`）。可搜目录的 scope 是授权范围，
+ *   不是层级过滤，也没有按产线收窄的参数，所以这类字段也走这里。
+ * 这些类型在一个组织内是几条到几十条，整表取回在本地收窄。
  */
-export function useMasterDataListPicker(resourceType: 'shift' | 'production-line') {
+export function useMasterDataListPicker(
+  resourceType: MasterDataListPickerType,
+  parent?: MaybeRefOrGetter<DirectoryParent | undefined>,
+) {
   const catalog = useBusinessMasterDataResources(resourceType)
   catalog.filters.take = 500
   const created = shallowRef<EntityPickerOption>()
-  const rows = computed<EntityPickerOption[]>(() =>
-    catalog.resources.value
+  const rows = computed<EntityPickerOption[]>(() => {
+    const within = toValue(parent)
+    return catalog.resources.value
       .filter((row) => row.active !== false)
+      .filter((row) => PARENT_KEYS.every((key) => !within?.[key] || row[key] === within[key]))
       .flatMap((row) => {
         const value = row.code?.trim()
         return value ? [{ value, label: row.displayName?.trim() || value }] : []
-      }),
-  )
+      })
+  })
   return {
     serverSearch: false as const,
+    // 新建项只在列表还没刷新回它时补进来；刷新回来后按上级收窄，换了上级就不再出现。
     options: computed(() => {
       const extra = created.value
-      return extra && !rows.value.some((row) => row.value === extra.value)
+      return extra && !catalog.resources.value.some((row) => row.code?.trim() === extra.value)
         ? [extra, ...rows.value]
         : rows.value
     }),
