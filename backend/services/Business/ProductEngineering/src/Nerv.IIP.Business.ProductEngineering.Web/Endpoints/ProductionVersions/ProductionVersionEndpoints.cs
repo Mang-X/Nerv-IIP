@@ -2,6 +2,7 @@ using FastEndpoints;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.ProductionVersions;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries.ProductionVersions;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
@@ -145,7 +146,7 @@ public sealed record ListProductionVersionsRequest(
     string? SkuCode,
     string? Status,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed class ListProductionVersionsEndpoint(ISender sender)
     : ProductionVersionEndpoint<ListProductionVersionsRequest, ResponseData<ListProductionVersionsResponse>>
