@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import type {
   BusinessConsoleMaintenanceInspectionItem,
   BusinessConsoleMaintenancePlanItem,
@@ -111,6 +111,8 @@ const authState = vi.hoisted(() => ({
     'business.iiot.alarms.write',
     'business.iiot.device-control.read',
     'business.iiot.device-control.write',
+    'business.maintenance.work-orders.read',
+    'business.maintenance.work-orders.manage',
   ] as string[],
 }))
 
@@ -585,6 +587,8 @@ describe('equipment pages', () => {
       'business.iiot.alarms.write',
       'business.iiot.device-control.read',
       'business.iiot.device-control.write',
+      'business.maintenance.work-orders.read',
+      'business.maintenance.work-orders.manage',
     ]
     readFaceState.catalogResolved = true
     readFaceState.activeAlarms = []
@@ -956,5 +960,51 @@ describe('equipment pages', () => {
     // The control-command history section still renders (read-scoped), but the dispatch action does not.
     expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.findAll('button').some((b) => b.text().includes('设备控制'))).toBe(false)
+  })
+  describe('「创建维修工单」只给有维护工单管理权限的人', () => {
+    function signInWithoutWorkOrderManage() {
+      authState.permissionCodes = authState.permissionCodes.filter(
+        (code) => code !== 'business.maintenance.work-orders.manage',
+      )
+    }
+
+    it('设备看板：只读角色的阻塞卡片与设备行菜单里都没有这一项', async () => {
+      signInWithoutWorkOrderManage()
+      overviewState.devices = [{ deviceAssetId: 'DEV-A', currentState: 'running' }]
+      overviewState.activeBlocks = [
+        { deviceAssetId: 'DEV-A', reasonCode: 'maintenance', startUtc: '2026-07-12T01:00:00Z' },
+      ]
+      const wrapper = mount(EquipmentIndexPage, { global: { stubs }, attachTo: document.body })
+      await wrapper.get('[aria-label="设备操作 DEV-A"]').trigger('click')
+      await flushPromises()
+
+      // 行菜单确实展开了（同菜单里的「查看详情」在），阻塞卡片和行菜单里都没有建单入口。
+      expect(document.body.textContent).toContain('查看详情')
+      expect(document.body.textContent).not.toContain('创建维修工单')
+      wrapper.unmount()
+    })
+
+    it('设备看板：有管理权限时阻塞卡片与设备行菜单里都有', async () => {
+      overviewState.devices = [{ deviceAssetId: 'DEV-A', currentState: 'running' }]
+      overviewState.activeBlocks = [
+        { deviceAssetId: 'DEV-A', reasonCode: 'maintenance', startUtc: '2026-07-12T01:00:00Z' },
+      ]
+      const wrapper = mount(EquipmentIndexPage, { global: { stubs }, attachTo: document.body })
+      expect(wrapper.text()).toContain('创建维修工单')
+      await wrapper.get('[aria-label="设备操作 DEV-A"]').trigger('click')
+      await flushPromises()
+
+      const menuItems = [...document.body.querySelectorAll('[role="menuitem"]')]
+      expect(menuItems.some((item) => item.textContent?.includes('创建维修工单'))).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('设备详情：只读角色看不到', () => {
+      signInWithoutWorkOrderManage()
+      const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+      expect(wrapper.text()).toContain('记录停机')
+      expect(wrapper.text()).not.toContain('创建维修工单')
+    })
   })
 })

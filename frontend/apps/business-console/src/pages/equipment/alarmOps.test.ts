@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, nextTick, shallowRef } from 'vue'
 
@@ -78,11 +78,14 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
   }),
 }))
 
+const authState = vi.hoisted(() => ({
+  permissionCodes: [] as string[],
+}))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     principal: {
       loginName: 'operator-a',
-      permissionCodes: ['business.iiot.alarms.read', 'business.iiot.alarms.write'],
+      permissionCodes: authState.permissionCodes,
     },
   }),
 }))
@@ -204,6 +207,15 @@ async function clickViewTab(wrapper: ReturnType<typeof mount>, label: string) {
   await tab!.trigger('click')
   await nextTick()
 }
+
+beforeEach(() => {
+  authState.permissionCodes = [
+    'business.iiot.alarms.read',
+    'business.iiot.alarms.write',
+    'business.maintenance.work-orders.read',
+    'business.maintenance.work-orders.manage',
+  ]
+})
 
 describe('alarm ops depth (MAN-441 #795)', () => {
   beforeEach(() => {
@@ -624,5 +636,38 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
     expect(wrapper.findAll('tbody tr').length).toBeGreaterThan(0)
     // …and the query is normalized to the last valid page.
     expect(routerState.query.page).toBe('3')
+  })
+})
+
+describe('alarm row menu — 创建维修工单 gated by maintenance work-order manage', () => {
+  beforeEach(() => {
+    resetRouter()
+    seedAlarms()
+  })
+
+  async function openRowMenu() {
+    const wrapper = mount(AlarmsPage, { global: { stubs }, attachTo: document.body })
+    await wrapper.get('[aria-label="报警操作 ALM-1"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('只读角色的报警行菜单里没有「创建维修工单」', async () => {
+    authState.permissionCodes = authState.permissionCodes.filter(
+      (code) => code !== 'business.maintenance.work-orders.manage',
+    )
+    const wrapper = await openRowMenu()
+
+    // 菜单确实展开了：同一菜单里的「记录停机」在。
+    expect(document.body.textContent).toContain('记录停机')
+    expect(document.body.textContent).not.toContain('创建维修工单')
+    wrapper.unmount()
+  })
+
+  it('有管理权限时报警行菜单里有「创建维修工单」', async () => {
+    const wrapper = await openRowMenu()
+
+    expect(document.body.textContent).toContain('创建维修工单')
+    wrapper.unmount()
   })
 })
