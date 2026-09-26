@@ -4,7 +4,9 @@ import type {
   BusinessConsoleBarcodePrintItemDetail,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { useBarcodePrintBatches, useBarcodeTemplates } from '@/composables/useBusinessBarcode'
+import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -56,6 +58,16 @@ const SOURCE_OPTIONS = [
   { value: 'quality.inspection', label: '质量检验' },
   { value: 'work-order', label: '生产工单' },
 ]
+
+// 业务对象按类型从单据目录里选，取值与本页互链同口径：生产工单记工单 ID（详情路由、生产标签都按它），
+// 生产报工记报工单号，仓储收货记入库单号，质量检验记被检验的那张单据（检验页按它带入）。
+// 采购收货、库存入库 / 出库 / 盘点没有可搜列表，自由输入。
+const SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
+  'work-order': 'mes-work-order',
+  'production.report': 'mes-production-report',
+  'wms.receiving': 'wms-inbound-order',
+  'quality.inspection': 'quality-inspection',
+}
 
 const STATUS_OPTIONS = [
   { value: 'requested', label: '已请求' },
@@ -195,6 +207,12 @@ function openCreate() {
   createIdempotencyKey.value = newPrintBatchIdempotencyKey(sourceDocumentId)
   showErrors.value = false
   open.value = true
+}
+
+// 换了类型，已选的单据就不属于这一类了。
+function changeSourceDocumentType(value: unknown) {
+  form.sourceDocumentType = typeof value === 'string' ? value : ''
+  form.sourceDocumentId = ''
 }
 
 function selectBatch(row: BusinessConsoleBarcodePrintBatchItem) {
@@ -366,7 +384,10 @@ function firstQuery(value: unknown) {
                   <NvFieldLabel for="barcode-print-source-type"
                     >业务对象类型 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.sourceDocumentType">
+                  <NvSelect
+                    :model-value="form.sourceDocumentType"
+                    @update:model-value="changeSourceDocumentType"
+                  >
                     <NvSelectTrigger id="barcode-print-source-type">
                       <NvSelectValue placeholder="选择业务对象类型" />
                     </NvSelectTrigger>
@@ -384,10 +405,11 @@ function firstQuery(value: unknown) {
                   <NvFieldLabel for="barcode-print-source-id"
                     >业务对象编号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <SourceDocumentPicker
                     id="barcode-print-source-id"
                     v-model="form.sourceDocumentId"
-                    autocomplete="off"
+                    :kind="SOURCE_DOCUMENT_KINDS[form.sourceDocumentType]"
+                    :invalid="showErrors && !form.sourceDocumentId.trim()"
                   />
                 </NvField>
               </NvFieldGroup>

@@ -10,6 +10,7 @@
  * - `OutboundOrderStatus` Open / Completed / InventoryPostingFailed / Cancelled / InventoryPostingPending
  */
 import type { SearchSelectOption } from '@nerv-iip/ui'
+import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 
 /** 「全部」在筛选条里用这个哨兵值，避免和真实码值撞。 */
 export const WMS_STATUS_ANY = 'all'
@@ -63,6 +64,17 @@ export const WMS_OUTBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
   { value: 'PurchaseReturn', label: '采购退货' },
   { value: 'InventoryTransfer', label: '库存调拨' },
 ]
+
+/**
+ * 来源单据按类型可选的单据目录（值为该单据的人读单号，与系统生成的出入库单同口径）。
+ * 采购收货、销售退货、库存调拨没有可搜列表，不在表里（自由输入）。
+ */
+export const WMS_SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
+  ProductionReceipt: 'mes-finished-goods-receipt',
+  ProductionIssue: 'mes-material-issue',
+  SalesDelivery: 'erp-delivery-order',
+  PurchaseReturn: 'wms-supplier-return',
+}
 
 export const wmsWarehouseTaskStatusFilterOptions = withAnyOption(
   WMS_WAREHOUSE_TASK_STATUS_OPTIONS,

@@ -36,6 +36,8 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
+import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
@@ -145,6 +147,21 @@ const recordForm = reactive({
   dispositionAttachmentFileIds: '',
   resultLines: [emptyLine()],
 })
+
+// 来源单据按来源类型从单据目录里选，取值与下游比对的值一致：工序检验、终检的结论按工单 ID 回写
+// 制造执行的质量保留，维修检验挂维修工单 ID。收货检验按采购收货单号核对、客户退货没有可搜列表，
+// 这两类自由输入。
+const SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
+  operation: 'mes-work-order',
+  final: 'mes-work-order',
+  maintenance: 'maintenance-work-order',
+}
+
+// 换了来源类型，已选的来源单据就不属于这一类了。
+function changeSourceType(value: unknown) {
+  recordForm.sourceType = typeof value === 'string' ? value : ''
+  recordForm.sourceDocumentId = ''
+}
 
 // 上下文穿透：从工单/工序/收货带入来源单据、批次、序列号。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -998,7 +1015,7 @@ function isPresent(value: string | undefined | null): value is string {
             </NvField>
             <NvField>
               <NvFieldLabel>来源类型</NvFieldLabel>
-              <NvSelect v-model="recordForm.sourceType">
+              <NvSelect :model-value="recordForm.sourceType" @update:model-value="changeSourceType">
                 <NvSelectTrigger aria-label="来源类型"><NvSelectValue /></NvSelectTrigger>
                 <NvSelectContent>
                   <NvSelectItem value="operation">工序</NvSelectItem>
@@ -1027,7 +1044,11 @@ function isPresent(value: string | undefined | null): value is string {
             </NvField>
             <NvField>
               <NvFieldLabel for="record-source-document">来源单据</NvFieldLabel>
-              <NvInput id="record-source-document" v-model="recordForm.sourceDocumentId" required />
+              <SourceDocumentPicker
+                id="record-source-document"
+                v-model="recordForm.sourceDocumentId"
+                :kind="SOURCE_DOCUMENT_KINDS[recordForm.sourceType]"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="record-sku">SKU</NvFieldLabel>

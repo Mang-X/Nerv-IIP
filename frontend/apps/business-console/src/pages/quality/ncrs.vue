@@ -7,6 +7,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
@@ -682,7 +683,12 @@ watch(
               </NvField>
               <NvField>
                 <NvFieldLabel for="ncr-return">退货单据</NvFieldLabel>
-                <NvInput id="ncr-return" v-model="closeForm.returnDocumentId" />
+                <!-- 退供应商处置挂仓储的供应商退货单；报废库存移动只能按 ID 精确查，仍手填。 -->
+                <SourceDocumentPicker
+                  id="ncr-return"
+                  v-model="closeForm.returnDocumentId"
+                  kind="wms-supplier-return"
+                />
               </NvField>
             </NvFieldGroup>
 
