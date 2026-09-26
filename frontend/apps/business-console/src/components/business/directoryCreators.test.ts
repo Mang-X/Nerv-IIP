@@ -2,22 +2,19 @@ import { configureApiClient } from '@nerv-iip/api-client'
 import { PiniaColada } from '@pinia/colada'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import DirectoryPicker from './DirectoryPicker.vue'
 
 // 真实注册表 + 真实新增弹窗（不替身），只替掉网络与权限。
+const DEFAULT_PERMISSIONS = [
+  'business.masterdata.products.manage',
+  'business.masterdata.resources.manage',
+]
+const auth = vi.hoisted(() => ({ permissionCodes: [] as string[] }))
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({
-    principal: {
-      permissionCodes: [
-        'business.masterdata.products.manage',
-        'business.masterdata.resources.manage',
-        'business.inventory.locations.manage',
-      ],
-    },
-  }),
+  useAuthStore: () => ({ principal: { permissionCodes: auth.permissionCodes } }),
 }))
 
 // 弹窗与下拉就地渲染（reka 的 portal 在 jsdom 卸载会崩）；下拉换成原生 <select> 以便填表。
@@ -51,7 +48,10 @@ const CREATED = {
 
 // 基础数据资源列表：带出的上级编码靠它显示成名称，工作日历只有一条时自动选中。
 const RESOURCE_ROWS: Record<string, Array<{ code: string; displayName: string }>> = {
-  site: [{ code: 'PLANT-A', displayName: '宁波工厂' }],
+  site: [
+    { code: 'PLANT-A', displayName: '宁波工厂' },
+    { code: 'PLANT-B', displayName: '绍兴工厂' },
+  ],
   'production-line': [{ code: 'LINE-A', displayName: '前桥线' }],
   'work-calendar': [{ code: 'CAL-A', displayName: '标准日历' }],
 }
@@ -141,6 +141,10 @@ function directoryReads(requests: Recorded[], directoryType: string) {
 }
 
 describe('已注册的新增弹窗（#3797）', () => {
+  beforeEach(() => {
+    auth.permissionCodes = DEFAULT_PERMISSIONS
+  })
+
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount()
     configureApiClient()
@@ -179,8 +183,11 @@ describe('已注册的新增弹窗（#3797）', () => {
   })
 
   // #3832 审核 S1：表单里要选的库位还没建时，就地建好并自动选中；建好后可搜目录要刷新。
-  it('库位：在选择器里新建后自动选中，并刷新可搜目录', async () => {
-    const { model, requests, wrapper } = harness('location')
+  // 入口只认库位维护权限：只授予它（不带其它 manage 码）也要出现「新增库位」。
+  // create-context 带上表单已选的工厂（审核 R2-1），库位要建到单据所在的工厂下，不是目录第一个工厂。
+  it('库位：在选择器里新建后自动选中、建在表单所选工厂下，并刷新可搜目录', async () => {
+    auth.permissionCodes = ['business.inventory.locations.manage']
+    const { model, requests, wrapper } = harness('location', { siteCode: 'PLANT-B' })
     await flushPromises()
     await openCreateDialog(wrapper, '库位')
 
@@ -197,7 +204,7 @@ describe('已注册的新增弹窗（#3797）', () => {
       environmentId: 'env-a',
       locationCode: 'LOC-NEW-01',
       locationType: 'storage',
-      siteCode: 'PLANT-A',
+      siteCode: 'PLANT-B',
       status: 'active',
     })
     expect(model.value).toBe('LOC-NEW-01')

@@ -115,8 +115,14 @@ export function useSearchableDirectoryPicker(
     // 只有第一页还没回来时算加载中；取下一页时列表照常显示、继续滚动。
     pending: computed(() => query.isPending.value && query.isLoading.value),
     total: computed(() => pages.value.at(-1)?.data?.total ?? 0),
-    /** 目录拒绝了当前角色（403）：选择器要说「无权查看」，不能说成「没有匹配」。 */
-    forbidden: computed(() => isForbiddenError(query.error.value)),
+    /**
+     * 目录取数失败的原因：`forbidden` = 拒绝了当前角色（403），`failed` = 其它失败（如 5xx）。
+     * 选择器据此说「无权查看」或「加载失败」，不能把失败说成「没有匹配」。
+     */
+    failure: computed(() => {
+      if (!query.error.value) return undefined
+      return isForbiddenError(query.error.value) ? ('forbidden' as const) : ('failed' as const)
+    }),
     /** 选择器滚到底部时取下一页；上一页还在路上时复用在途的请求，不重复发。 */
     loadMore() {
       if (query.hasNextPage.value) void query.loadNextPage({ cancelRefetch: false })

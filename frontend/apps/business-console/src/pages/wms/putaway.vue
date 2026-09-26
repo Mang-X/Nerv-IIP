@@ -142,6 +142,12 @@ const inboundOrderNoById = computed(() => {
   for (const [no, id] of inboundOrderIdByNo.value) map.set(id, no)
   return map
 })
+// 就地新增库位时预填所选入库单的工厂：库位要建在单据所在的工厂下。
+const createSiteCode = computed(
+  () =>
+    inboundOrders.value.find((order) => order.inboundOrderId?.trim() === createForm.inboundOrderId)
+      ?.siteCode ?? '',
+)
 const inboundOrderSelection = computed({
   // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
   get: () => inboundOrderNoById.value.get(createForm.inboundOrderId) ?? createForm.inboundOrderId,
@@ -524,6 +530,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.fromLocationCode"
                 directory-type="location"
                 creatable
+                :create-context="{ siteCode: createSiteCode }"
                 title="选择暂存库位"
                 placeholder="暂存库位"
                 clearable
@@ -537,6 +544,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.toLocationCode"
                 directory-type="location"
                 creatable
+                :create-context="{ siteCode: createSiteCode }"
                 title="选择货架库位"
                 placeholder="货架库位"
                 clearable

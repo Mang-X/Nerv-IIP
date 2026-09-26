@@ -130,7 +130,6 @@ public sealed class HttpBusinessInventoryClient(
                     ("environmentId", request.EnvironmentId),
                     ("directoryType", request.DirectoryType),
                     ("keyword", request.Keyword),
-                    ("siteCode", request.SiteCode),
                     ("skuCode", request.SkuCode),
                     ("skip", request.Skip),
                     ("take", request.Take)),

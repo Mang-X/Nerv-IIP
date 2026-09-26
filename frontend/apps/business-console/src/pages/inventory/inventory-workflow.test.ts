@@ -473,10 +473,10 @@ const uiStubs = {
   },
   // 物料字段是目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖），同样换成 select。
   DirectoryPicker: {
-    props: ['modelValue'],
+    props: ['modelValue', 'createContext'],
     emits: ['update:modelValue'],
     template:
-      '<select data-directory-picker v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"></select>',
+      '<select data-directory-picker v-bind="$attrs" :data-create-site="createContext?.siteCode" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"></select>',
   },
   NvSelect: { template: '<div><slot /></div>' },
   NvSelectContent: { template: '<div><slot /></div>' },
@@ -675,6 +675,15 @@ describe('inventory workflow pages', () => {
     const wrapper = mountInventoryPage(CountsPage)
 
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
+  })
+
+  // #3832 审核 R2-1：就地新增库位要建在表单已选的工厂下，库位选择器把表单工厂带给新增弹窗。
+  it('passes the chosen movement site to the location pickers for in-place creation', async () => {
+    const wrapper = mountInventoryPage(MovementsPage)
+
+    await wrapper.get('#movement-site').setValue('S1')
+
+    expect(wrapper.get('#movement-location').attributes('data-create-site')).toBe('S1')
   })
 
   it('uses design-system table components for the stock movement read face', () => {

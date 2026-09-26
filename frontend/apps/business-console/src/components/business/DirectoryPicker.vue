@@ -80,9 +80,12 @@ const { options, pending } = source
 const serverSearch = source.serverSearch
 const search = computed(() => (source.serverSearch ? source.search.value : undefined))
 const total = computed(() => (source.serverSearch ? source.total.value : undefined))
-const emptyText = computed(() =>
-  source.serverSearch && source.forbidden.value ? `当前角色无权查看${noun}` : `没有匹配的${noun}`,
-)
+const failure = computed(() => (source.serverSearch ? source.failure.value : undefined))
+const emptyText = computed(() => {
+  if (failure.value === 'forbidden') return `当前角色无权查看${noun}`
+  if (failure.value === 'failed') return `${noun}加载失败，请稍后重试`
+  return `没有匹配的${noun}`
+})
 function updateSearch(value: string) {
   if (source.serverSearch) source.search.value = value
 }
@@ -141,7 +144,7 @@ function isHierarchyType(type: SearchableType): type is 'workshop' | 'work-cente
     :total-count="total"
     :show-code="showCode"
     :aria-label="noun"
-    :create-text="canCreate ? `新增${noun}` : undefined"
+    :create-text="canCreate && !failure ? `新增${noun}` : undefined"
     @update:search="updateSearch"
     v-bind="$attrs"
     @create="openCreate"

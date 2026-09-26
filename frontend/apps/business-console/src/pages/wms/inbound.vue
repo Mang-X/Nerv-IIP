@@ -693,6 +693,7 @@ function formatDateTime(value?: string | null) {
                 class="w-36"
                 directory-type="location"
                 creatable
+                :create-context="{ siteCode: createForm.siteCode }"
                 title="选择暂存库位"
                 placeholder="暂存库位*"
                 clearable
