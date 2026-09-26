@@ -139,7 +139,6 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
           :options="deviceOptions"
           title="选择设备"
           placeholder="全部设备"
-          source-text="数据来自基础数据设备资产"
           empty-text="暂无设备资产，请先在基础数据登记设备"
           :loading="devicesPending"
           clearable

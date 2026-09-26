@@ -14,7 +14,6 @@ import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNam
 import { useSkuNames } from '@/composables/useSkuNames'
 import {
   useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
   WAREHOUSE_LOCATION_EMPTY_TEXT,
   WAREHOUSE_LOT_EMPTY_TEXT,
   WAREHOUSE_SERIAL_EMPTY_TEXT,
@@ -491,7 +490,6 @@ function isNonEmpty(value: string) {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂主数据，请先在基础数据维护工厂"
                 :loading="sitesPending"
                 aria-label="工厂"
@@ -505,7 +503,6 @@ function isNonEmpty(value: string) {
                 :options="locationOptions"
                 title="选择库位"
                 placeholder="选择库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
                 :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable
@@ -556,7 +553,6 @@ function isNonEmpty(value: string) {
                 :options="lotOptions"
                 title="选择批次"
                 placeholder="选择批次"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
                 :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable
@@ -571,7 +567,6 @@ function isNonEmpty(value: string) {
                 :options="serialOptions"
                 title="选择序列号"
                 placeholder="选择序列号"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
                 :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable

@@ -538,7 +538,6 @@ async function submit() {
                 :options="siteOptions"
                 title="选择履约工厂"
                 placeholder="选择履约工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂，请先在「基础数据 · 工厂」维护"
                 :loading="sitesPending"
                 aria-label="履约工厂"

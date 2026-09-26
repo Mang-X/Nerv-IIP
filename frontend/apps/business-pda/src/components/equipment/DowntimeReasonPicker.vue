@@ -18,7 +18,6 @@ const props = defineProps<{
   stateMessage: string
   canSelect: boolean
   truncated: boolean
-  total: number
 }>()
 /** `null` = 用户明确选择「不登记设备不可用」——该路径提交 null，不是空串、不是伪默认码。 */
 const emit = defineEmits<{
@@ -130,8 +129,7 @@ function clearSearch() {
           data-testid="reason-directory-truncated"
           class="text-xs text-muted-foreground"
         >
-          共 {{ props.total }} 条停机原因，当前只显示前 {{ props.options.length }}
-          条；没找到就用上面的搜索框按名称或码查找。
+          没找到就用上面的搜索框按名称或码查找。
         </p>
         <div class="max-h-[48vh] overflow-y-auto rounded-lg border border-border">
           <NvListRow

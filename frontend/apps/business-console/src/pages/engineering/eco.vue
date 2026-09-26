@@ -541,7 +541,6 @@ function riskTone(severity?: string | null): StatusTone {
                       :options="affectedVersionOptions(row.versionKind, row.versionId)"
                       title="选择生产版本"
                       placeholder="选择生产版本"
-                      source-text="数据来自工程数据生产版本"
                       empty-text="暂无生产版本，请先在工程数据维护"
                       :loading="productionVersionsPending"
                       aria-label="受影响版本"

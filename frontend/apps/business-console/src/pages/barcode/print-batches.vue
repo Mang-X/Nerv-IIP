@@ -362,7 +362,6 @@ function firstQuery(value: unknown) {
                     :options="templateOptions"
                     title="选择标签模板"
                     placeholder="选择标签模板"
-                    source-text="数据来自标签模板目录"
                     empty-text="暂无标签模板，请先在标签模板维护"
                     :loading="templatesPending"
                     aria-label="标签模板"

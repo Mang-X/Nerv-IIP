@@ -871,7 +871,6 @@ async function dismissCandidate(candidateId?: string) {
                 title="选择工单"
                 placeholder="选择工单"
                 search-placeholder="搜索工单号 / 物料…"
-                source-text="数据来自制造执行工单列表"
                 empty-text="当前范围内没有匹配的工单"
                 :loading="workOrderCatalog.workOrdersPending.value"
                 server-search
@@ -892,7 +891,6 @@ async function dismissCandidate(candidateId?: string) {
                 :disabled="!candidateWorkOrderId"
                 title="选择工序任务"
                 :placeholder="candidateWorkOrderId ? '选择工序任务' : '先选工单'"
-                source-text="数据来自所选工单的工序任务"
                 empty-text="该工单没有工序任务"
                 :loading="workOrderCatalog.workOrdersPending.value"
                 clearable

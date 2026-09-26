@@ -9,8 +9,7 @@
  * 上架/拣货任务的起讫库位、盘点执行的库位、出库单行的库位/批次/序列号。
  * 这些都是真实业务数据，足以让仓管「从现有库位里挑」而不是凭记忆敲。
  *
- * 界面上必须如实说明来源（`WAREHOUSE_CATALOG_SOURCE_TEXT`），不要让人误以为这是库位主数据。
- * 因此这些字段保留 `clearable`，且**新建单据时若目标库位尚未在系统中出现过**，
+ * 这不是库位主数据，因此这些字段保留 `clearable`，且**新建单据时若目标库位尚未在系统中出现过**，
  * 页面需另给「手动录入新库位」的出路——派生目录只覆盖已有编码，不能挡住开新库位。
  */
 import type { EntityPickerOption } from '@nerv-iip/ui'
@@ -30,12 +29,9 @@ const CATALOG_TAKE = 300
  * 这不是审美取舍，是硬性上限：`EntityPickerPanel` 用 `v-for` 铺**全部**选项，既不虚拟化也不分页。
  * 批次与预留页把整张台账（实测首屏 3811 行、全扫约 1.4 万行）当作 `extraLines` 喂进来，
  * 不设上限的话光是展开一次「批次」下拉就会同步渲染上万个节点，把主线程钉死。
- * 超出部分不是丢掉不管——`locationSourceText` / `lotSourceText` / `serialSourceText`
- * 会如实说明共有多少个编码、当前列出了多少。
  */
 const CATALOG_OPTION_LIMIT = 500
 
-export const WAREHOUSE_CATALOG_SOURCE_TEXT = '数据来自现有库存与仓储作业记录（暂无库位主数据）'
 export const WAREHOUSE_LOCATION_EMPTY_TEXT = '系统里还没有出现过库位，可直接录入新库位编码'
 export const WAREHOUSE_LOT_EMPTY_TEXT = '系统里还没有出现过批次'
 export const WAREHOUSE_SERIAL_EMPTY_TEXT = '系统里还没有出现过序列号'
@@ -170,24 +166,10 @@ export function useWarehouseCodeCatalog(
   const lotOptions = computed<EntityPickerOption[]>(() => toOptions(lotMap.value))
   const serialOptions = computed<EntityPickerOption[]>(() => toOptions(serialMap.value))
 
-  /**
-   * 来源说明——截断了就说截断了。
-   * 下拉底部只会显示「共 N 条」（`N` = 实际列出的条数），若不在这里交代，
-   * 用户会以为系统里就这么多编码，那是假信息。
-   */
-  function sourceTextFor(total: number) {
-    return total > CATALOG_OPTION_LIMIT
-      ? `${WAREHOUSE_CATALOG_SOURCE_TEXT}；共 ${total} 个编码，编码过多仅列出前 ${CATALOG_OPTION_LIMIT} 个，可直接搜索`
-      : WAREHOUSE_CATALOG_SOURCE_TEXT
-  }
-
   return {
     locationOptions,
     lotOptions,
     serialOptions,
-    locationSourceText: computed(() => sourceTextFor(locationMap.value.size)),
-    lotSourceText: computed(() => sourceTextFor(lotMap.value.size)),
-    serialSourceText: computed(() => sourceTextFor(serialMap.value.size)),
     warehouseCatalogPending: computed(
       () =>
         putaway.putawayTasksPending.value ||

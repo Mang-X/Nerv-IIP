@@ -856,7 +856,7 @@ describe('PDA equipment repair page', () => {
     expect(searchReasons).toHaveBeenLastCalledWith('')
   })
 
-  it('目录被截断时说出总数与"请搜索"，不让"翻不到"看起来像"没配"', async () => {
+  it('目录被截断时引导去搜索、但不报条数，不让"翻不到"看起来像"没配"', async () => {
     reasonsTotal.value = 137
     const wrapper = mount(RepairPage, { attachTo: document.body })
     await wrapper.get('[data-testid="reason-trigger"]').trigger('click')
@@ -864,8 +864,8 @@ describe('PDA equipment repair page', () => {
 
     const hint = document.body.querySelector('[data-testid="reason-directory-truncated"]')!
     expect(hint).not.toBeNull()
-    expect(hint.textContent).toContain('137')
     expect(hint.textContent).toContain('搜索')
+    expect(hint.textContent).not.toContain('137')
 
     reasonsTotal.value = DIRECTORY_OPTIONS.length
     await flushPromises()

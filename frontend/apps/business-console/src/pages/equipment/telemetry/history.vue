@@ -282,9 +282,6 @@ function fromDateInput(value: string, dayOffset: number) {
             :options="tagPickerOptions"
             title="选择采集标签"
             placeholder="全部采集标签"
-            :source-text="
-              hasDeviceScope ? '数据来自该设备已配置的采集标签' : '数据来自设备采集标签配置'
-            "
             :empty-text="
               hasDeviceScope
                 ? '该设备还没有配置采集标签，请先在「采集标签」完成采集映射'

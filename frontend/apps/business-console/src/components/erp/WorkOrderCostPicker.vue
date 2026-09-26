@@ -23,7 +23,6 @@ watch(model, () => {
     title="选择工单"
     placeholder="选择工单"
     search-placeholder="搜索工单号 / 物料…"
-    source-text="数据来自财务已归集成本的工单"
     empty-text="没有匹配的工单"
     :loading="pending"
     server-search
