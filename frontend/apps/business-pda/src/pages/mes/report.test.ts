@@ -1009,7 +1009,7 @@ describe('PDA MES production reporting page', () => {
     expect(recordReport).toHaveBeenCalledTimes(2)
     expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('WO-2026-0001 · 工序 10')
   })
 
   it('A pending → B → A 保留原意图，迟到成功不自动确认，显式重试仍同 key', async () => {
@@ -1371,12 +1371,12 @@ describe('PDA MES production reporting page', () => {
     [
       '工序任务不存在',
       { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-MISSING' },
-      '未找到工单 WO-2026-0002 下的工序任务 OP-MISSING',
+      '未在工单 WO-2026-0002 下找到链接中的工序',
     ],
     [
       'pair 不匹配',
       { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-1' },
-      '未找到工单 WO-2026-0002 下的工序任务 OP-1',
+      '未在工单 WO-2026-0002 下找到链接中的工序',
     ],
   ])('%s 时显示明确安全状态且不写入', async (_name, query, message) => {
     route.query = query
@@ -1445,7 +1445,7 @@ describe('PDA MES production reporting page', () => {
       operationTaskId: 'OP-3',
       goodQuantity: 4,
     })
-    expect(wrapper.text()).toContain('WO-2026-0002 · OP-3')
+    expect(wrapper.text()).toContain('WO-2026-0002 · 工序 10')
     expect(wrapper.text()).toContain('报工单号 RPT-2026-0003')
     expect(wrapper.text()).not.toContain('019f-report-0003')
   })
@@ -1581,6 +1581,34 @@ describe('PDA MES production reporting page', () => {
     expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
     expect(recordReport).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+
+  it('names a non-reportable rework task by sequence and never shows its OPT-…-<GUID> number', async () => {
+    const reworkTaskId = 'OPT-0000-0190a7c2d4e84b6f9a1b2c3d4e5f6a7b'
+    operationTasksRef.value = [
+      {
+        operationTaskId: reworkTaskId,
+        operationTaskNo: reworkTaskId,
+        workOrderId: 'WO-2026-0001',
+        status: 'Completed',
+        operationSequence: 10,
+        allowedActions: [],
+      },
+    ]
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      operationTasks: operationTasksRef.value,
+    }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: reworkTaskId }
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
+      '工序 10 当前不可报工',
+    )
+    expect(document.body.textContent).not.toContain('0190a7c2d4e84b6f9a1b2c3d4e5f6a7b')
+    expect(document.body.textContent).not.toContain('OPT-')
+    expect(recordReport).not.toHaveBeenCalled()
   })
 
   it('hides a task outside the reporting-write work-center scope', async () => {

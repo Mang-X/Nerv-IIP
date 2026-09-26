@@ -16,6 +16,7 @@ export {
   shiftHandoverIssueCategoryLabel,
   shiftHandoverIssueSeverityLabel,
   shiftHandoverStatusLabel,
+  operationSequenceLabel,
   workOrderStatusLabel,
   workOrderSubtitle,
   workOrderTitle,

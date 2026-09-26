@@ -206,7 +206,8 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   // 点行打开 BottomSheet 动作面板（teleport 到 body）。
   await row.click()
   await expect(page.getByText('WO-1', { exact: true })).toBeVisible()
-  await expect(page.getByText('OP-1', { exact: true })).toBeVisible()
+  await expect(page.getByText('工序 10', { exact: true })).toBeVisible()
+  await expect(page.getByText('OP-1', { exact: true })).toHaveCount(0)
   await expect(page.getByText('设备信息未提供', { exact: true })).toBeVisible()
   await expect(page.getByText('device-asset-cnc-01')).toHaveCount(0)
   await expect(page.getByText(/门禁评估/)).toBeVisible()
@@ -224,7 +225,7 @@ test('工序执行：列表 → 完成（二次确认）→ 成功结果', async
   const result = page.locator('[data-result][data-status="success"]')
   await expect(result).toBeVisible()
   await expect(result.getByText('工序已完成')).toBeVisible()
-  await expect(result.getByText('WO-1 · OP-1')).toBeVisible()
+  await expect(result.getByText('WO-1 · 工序 10')).toBeVisible()
   await expect
     .poll(() => exactPairs)
     .toContainEqual({
@@ -238,7 +239,7 @@ test('工序执行：375×812 阻塞任务展示前序/齐套/设备/质量原�
   await page.goto('/mes/operation?workOrderId=WO-1&operationTaskId=OP-2')
 
   await expect(page.getByRole('heading', { name: 'WO-1 · 工序 20', exact: true })).toBeVisible()
-  await expect(page.getByText('OP-2', { exact: true })).toBeVisible()
+  await expect(page.getByText('工序 20', { exact: true })).toBeVisible()
   const blockers = page.getByTestId('operation-block-reasons')
   await expect(blockers).toContainText('当前不能开始')
   await expect(blockers).toContainText('前序工序尚未完成（工序 10）')
@@ -291,7 +292,7 @@ test('工序执行：accepted/unconfirmed 回执不显示成功并保留双强 I
   await expect(page.locator('[data-result][data-status="success"]')).toHaveCount(0)
   const errorResult = page.locator('[data-result][data-status="error"]')
   await expect(errorResult).toBeVisible()
-  await expect(errorResult).toContainText('WO-1 · OP-1')
+  await expect(errorResult).toContainText('WO-1 · 工序 10')
   await expect(errorResult).toContainText('结果尚未核实')
 })
 

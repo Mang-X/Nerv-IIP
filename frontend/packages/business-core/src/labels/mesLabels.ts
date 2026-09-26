@@ -100,6 +100,14 @@ export interface WorkOrderLabelRow {
   quantity?: number | null
 }
 
+/**
+ * 工序的上屏称呼：一律按工艺序号「工序 10」，不显示工序任务号——返工工单的任务号形如
+ * `OPT-0000-<GUID>`，是内部号。取不到序号时说明缺失，不回落到任务号。
+ */
+export function operationSequenceLabel(sequence?: number | null): string {
+  return sequence === undefined || sequence === null ? '工序信息未提供' : `工序 ${sequence}`
+}
+
 export function workOrderTitle(wo: WorkOrderLabelRow): string {
   return wo.workOrderId ?? '无工单'
 }

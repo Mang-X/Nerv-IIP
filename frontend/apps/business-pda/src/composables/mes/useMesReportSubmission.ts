@@ -10,6 +10,7 @@ import {
   peekPendingBusinessIntent,
   type PendingBusinessIntentScope,
   type ReportCtx,
+  operationSequenceLabel,
 } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { mesReportIntentScope } from './mesReportIntent'
@@ -388,7 +389,10 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         context: intent.context,
       })
       if (!isCurrent()) return
-      const description = [`${workOrderId} · ${operationTaskId}`, `报工单号 ${reportNo}`]
+      const description = [
+        `${workOrderId} · ${operationSequenceLabel(task.operationSequence)}`,
+        `报工单号 ${reportNo}`,
+      ]
       if (intent.payload?.completesOperation) description.push('本工序已标记完工')
       intent.status = 'success'
       intent.result = {

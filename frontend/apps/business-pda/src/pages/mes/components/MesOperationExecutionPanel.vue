@@ -122,7 +122,7 @@ const blockReasonDisplays = computed(() =>
       >
         <dt class="text-muted-foreground">工单</dt>
         <dd class="min-w-0 break-all text-foreground">{{ workOrderLabel(selected) }}</dd>
-        <dt class="text-muted-foreground">工序任务</dt>
+        <dt class="text-muted-foreground">工序</dt>
         <dd class="min-w-0 break-all text-foreground">{{ operationTaskLabel(selected) }}</dd>
         <dt class="text-muted-foreground">设备</dt>
         <dd class="min-w-0 break-all text-foreground">{{ deviceLabel(selected) }}</dd>

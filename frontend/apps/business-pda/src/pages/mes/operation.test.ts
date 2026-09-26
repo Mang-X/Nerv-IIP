@@ -514,7 +514,7 @@ describe('PDA MES operation execution page', () => {
     wrapper.unmount()
   })
 
-  it('shows the readable work-order and operation-task numbers with server-evaluated blocker details', async () => {
+  it('shows the work-order number and operation sequence with server-evaluated blocker details', async () => {
     operationTasksRef.value = [
       {
         ...defaultTasks[1],
@@ -542,9 +542,10 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     const taskDefinition = [...document.body.querySelectorAll('dt')].find(
-      (term) => term.textContent === '工序任务',
+      (term) => term.textContent === '工序',
     )?.nextElementSibling
-    expect(taskDefinition?.textContent).toBe('WO-2026-0042-OP-20')
+    expect(taskDefinition?.textContent).toBe('工序 20')
+    expect(document.body.textContent).not.toContain('WO-2026-0042-OP-20')
     expect(document.body.textContent).toContain('WO-2026-0042')
     expect(document.body.textContent).not.toContain('MO-2026-0042')
     expect(document.body.textContent).not.toContain('OP-TASK-0020')
@@ -557,6 +558,39 @@ describe('PDA MES operation execution page', () => {
     expect(document.body.textContent).toContain('设备')
     expect(document.body.textContent).toContain('质量')
     expect(document.body.querySelector('[data-testid="action-start"]')).toBeNull()
+  })
+
+  it('never shows a rework operation task number (OPT-…-<GUID>) in the list, detail or result', async () => {
+    const reworkTaskId = 'OPT-0000-0190a7c2d4e84b6f9a1b2c3d4e5f6a7b'
+    operationTasksRef.value = [
+      {
+        ...defaultTasks[0],
+        operationTaskId: reworkTaskId,
+        workOrderId: 'WO-2026-0001-R01',
+        workOrderNo: 'MO-2026-0001-R01',
+        operationTaskNo: reworkTaskId,
+        operationSequence: 10,
+        workOrderType: 'rework',
+        sourceWorkOrderId: 'WO-2026-0001',
+        sourceNcrId: 'ncr-001',
+        sourceNcrCode: 'NCR-2026-0001',
+      },
+    ]
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    expect(wrapper.text()).toContain('返工 · WO-2026-0001-R01 · 工序 10')
+
+    await wrapper.get('[data-row]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="action-complete"]')!.click()
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('WO-2026-0001-R01 · 工序 10')
+    for (const text of [wrapper.text(), document.body.textContent ?? '']) {
+      expect(text).not.toContain('0190a7c2d4e84b6f9a1b2c3d4e5f6a7b')
+      expect(text).not.toContain('OPT-')
+    }
   })
 
   it('shows 设备信息未提供 instead of a raw device id when the device has no readable name or code', async () => {
@@ -863,7 +897,7 @@ describe('PDA MES operation execution page', () => {
     // 成功后显示 Result 成功文案
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('工序已完成')
-    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('WO-2026-0001 · 工序 10')
     expect(wrapper.text()).not.toContain('MO-2026-0001')
     expect(routeGuardState.guard?.()).toBe(true)
     expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
@@ -1007,7 +1041,7 @@ describe('PDA MES operation execution page', () => {
 
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('WO-2026-0001 · 工序 10')
     expect(wrapper.text()).not.toContain('MO-2026-0001')
     expect(wrapper.text()).toContain('结果尚未核实')
   })

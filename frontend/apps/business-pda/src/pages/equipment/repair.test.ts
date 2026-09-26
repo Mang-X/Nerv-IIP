@@ -246,6 +246,7 @@ describe('PDA equipment repair page', () => {
     route.query = { deviceAssetId: 'DEV-ROUTE-1' }
     const wrapper = mount(RepairPage, { attachTo: document.body })
 
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).not.toContain('由报警发起报修')
     expect(wrapper.find('[data-testid="priority-select"]').exists()).toBe(false)
     await selectPriority(wrapper, label as '高' | '中' | '低')
     await wrapper.get('[data-testid="submit"]').trigger('click')
@@ -278,6 +279,7 @@ describe('PDA equipment repair page', () => {
   it('keeps the selected priority when the ActionSheet is cancelled', async () => {
     route.query = { deviceAssetId: 'DEV-ROUTE-1' }
     const wrapper = mount(RepairPage, { attachTo: document.body })
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).not.toContain('由报警发起报修')
 
     await selectPriority(wrapper, '中')
 

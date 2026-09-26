@@ -57,9 +57,9 @@ describe('MesOperationExecutionPanel', () => {
     await flushPromises()
 
     const taskDefinition = [...document.body.querySelectorAll('dt')].find(
-      (term) => term.textContent === '工序任务',
+      (term) => term.textContent === '工序',
     )?.nextElementSibling
-    expect(taskDefinition?.textContent).toBe('WO-2026-0042-OP-20')
+    expect(taskDefinition?.textContent).toBe('工序 20')
     expect(document.body.textContent).toContain('OP-STANDARD-20')
     expect(document.body.textContent).not.toContain('MO-2026-0042')
   })

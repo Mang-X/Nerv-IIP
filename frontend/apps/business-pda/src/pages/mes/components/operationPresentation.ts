@@ -1,5 +1,5 @@
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { operationTaskStatusLabel } from '@nerv-iip/business-core'
+import { operationSequenceLabel, operationTaskStatusLabel } from '@nerv-iip/business-core'
 import type { OperationActionContext } from '@/composables/useBusinessMes'
 import {
   hasCompleteReworkAuthority,
@@ -52,7 +52,7 @@ export function workOrderLabel(task: BusinessConsoleMesOperationTaskRow) {
 }
 
 export function operationTaskLabel(task: BusinessConsoleMesOperationTaskRow) {
-  return task.operationTaskId?.trim() || '工序任务信息未提供'
+  return operationSequenceLabel(task.operationSequence)
 }
 
 export function deviceLabel(task: BusinessConsoleMesOperationTaskRow) {

@@ -3,6 +3,7 @@ import type {
   BusinessConsoleMesWorkOrderDetailResponse,
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
+import { operationSequenceLabel } from '@nerv-iip/business-core'
 import { computed, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -177,13 +178,13 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
         return '可报工工序尚未加载完成，已阻止报工。'
       }
       if (!hasCompleteReworkAuthority(selectedTask.value)) {
-        return `工序任务 ${operationTaskId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
+        return `${operationSequenceLabel(selectedTask.value.operationSequence)} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
       }
       if (!hasSameMesWorkOrderAuthority(selectedWorkOrder.value, selectedTask.value)) {
-        return `工序任务 ${operationTaskId} 的返工来源与工单不一致，已阻止报工，请刷新后重试。`
+        return `${operationSequenceLabel(selectedTask.value.operationSequence)} 的返工来源与工单不一致，已阻止报工，请刷新后重试。`
       }
       if (!canReport(selectedTask.value, selectedWorkOrder.value, reportableTaskKeys.value)) {
-        return `工序任务 ${operationTaskId} 当前不可报工。`
+        return `${operationSequenceLabel(selectedTask.value.operationSequence)} 当前不可报工。`
       }
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && !selectedTask.value) {
@@ -191,10 +192,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
         return options.exactOperationTaskScopeMessage.value || '作业范围尚未就绪，暂不能报工。'
       }
       if (options.exactOperationTaskError.value) {
-        return `工单 ${workOrderId} 下的工序任务 ${operationTaskId} 查询失败，已阻止报工，请重试。`
+        return `工单 ${workOrderId} 下的工序查询失败，已阻止报工，请重试。`
       }
       if (options.exactOperationTaskPending.value) return null
-      return `未找到工单 ${workOrderId} 下的工序任务 ${operationTaskId}，已阻止报工。`
+      return `未在工单 ${workOrderId} 下找到链接中的工序，已阻止报工。`
     }
     return null
   })
