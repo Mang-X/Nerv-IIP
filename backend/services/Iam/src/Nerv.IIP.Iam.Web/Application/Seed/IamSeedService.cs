@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
@@ -19,6 +20,8 @@ public sealed class IamSeedService(
     IamPasswordService passwordService,
     IamTokenService tokenService)
 {
+    private const string ErpFinanceRoleId = "role-erp-finance";
+
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         var seed = options.Value;
@@ -49,6 +52,9 @@ public sealed class IamSeedService(
         var seedAlreadyApplied = await dbContext.SeedManifests.FindAsync([manifestId], cancellationToken) is not null;
         var principalScopeBackfillApplied = await dbContext.SeedManifests
             .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
+        var financeMaintenanceReadManifestId = new SeedManifestId("iam-erp-finance-maintenance-work-orders-read:v1");
+        var financeMaintenanceReadApplied = await dbContext.SeedManifests
+            .FindAsync([financeMaintenanceReadManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
 
         if (await dbContext.Organizations.FindAsync([organizationId], cancellationToken) is null)
@@ -64,8 +70,23 @@ public sealed class IamSeedService(
         foreach (var seedRole in NervIipSeedRoles.ErpJobRoles)
         {
             var roleId = new RoleId(seedRole.RoleId);
-            if (await dbContext.Roles.FindAsync([roleId], cancellationToken) is not null)
+            var existingRole = await dbContext.Roles
+                .Include(x => x.Permissions)
+                .SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken);
+            if (existingRole is not null)
             {
+                // 已有环境的财务专员补维修工单只读（#3827）。只补仍是上一版默认权限的角色，
+                // 运营改过的不动；补一次后记 manifest，之后运营再撤掉也不会被补回。
+                if (!financeMaintenanceReadApplied
+                    && seedRole.RoleId == ErpFinanceRoleId
+                    && existingRole.RoleName == seedRole.RoleName
+                    && SetEquals(
+                        existingRole.Permissions.Select(x => x.PermissionCode),
+                        seedRole.PermissionCodes.Where(x => x != NervIipPermissionCodes.MaintenanceWorkOrdersRead)))
+                {
+                    existingRole.ReplacePermissions(seedRole.PermissionCodes);
+                }
+
                 continue;
             }
 
@@ -202,6 +223,16 @@ public sealed class IamSeedService(
         if (!seedAlreadyApplied)
         {
             dbContext.SeedManifests.Add(new SeedManifest(manifestId, "iam-default-seed", "v1", "iam", now));
+        }
+
+        if (!financeMaintenanceReadApplied)
+        {
+            dbContext.SeedManifests.Add(new SeedManifest(
+                financeMaintenanceReadManifestId,
+                "iam-erp-finance-maintenance-work-orders-read",
+                "v1",
+                "iam",
+                now));
         }
 
         if (!principalScopeBackfillApplied)

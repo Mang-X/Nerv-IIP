@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
 import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import { useErpCostCandidates, useErpFinanceSummary } from '@/composables/useBusinessErp'
 import {
@@ -151,8 +152,7 @@ const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
 // 来源单据按成本大类挑：采购成本挂采购订单，物流成本挂销售订单 / 发货单（经营管理单据目录）；
 // 生产成本挂工单号，候选取财务已归集成本的工单（财务读权限即可，与成本差异页同一个选择器）；
-// 维护成本挂维修工单，但维修工单列表要维护读权限、财务角色没有，也没有财务可读的维修工单目录，
-// 所以仍手填单号。
+// 维护成本挂维修工单：财务专员有维修工单只读（#3827），提交维修工单 ID、显示人读单号。
 const { payableSourceOptions, payableSourcesPending } = useErpPayableSourceCatalog()
 const { receivableSourceOptions, receivableSourcesPending } = useErpReceivableSourceCatalog()
 const sourceDocumentCatalog = computed<{
@@ -328,11 +328,11 @@ async function submit() {
                 v-model="form.sourceDocumentNo"
                 :invalid="showErrors && invalid.sourceDocumentNo"
               />
-              <NvInput
+              <SourceDocumentPicker
                 v-else
                 id="erp-cc-source"
                 v-model="form.sourceDocumentNo"
-                autocomplete="off"
+                kind="maintenance-work-order"
                 :invalid="showErrors && invalid.sourceDocumentNo"
               />
             </NvField>

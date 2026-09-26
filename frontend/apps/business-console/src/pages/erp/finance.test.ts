@@ -238,17 +238,21 @@ describe('ERP finance voucher and cost pages', () => {
             template:
               '<input :id="id" data-catalog="work-order-cost" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
           },
+          SourceDocumentPicker: {
+            props: ['modelValue', 'id', 'kind'],
+            emits: ['update:modelValue'],
+            template:
+              '<input :id="id" :data-catalog="kind" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
         },
       },
     })
     await flushPromises()
     const typeSelect = () => wrapper.get('form select')
-    // 生产成本挂工单号，候选取财务已归集成本的工单；
-    // 维修工单列表要维护读权限，财务角色读不到，维护成本仍手填。
+    // 生产成本挂工单号，候选取财务已归集成本的工单；维护成本挂维修工单（#3827）。
     expect(wrapper.get('#erp-cc-source').attributes('data-catalog')).toBe('work-order-cost')
     await typeSelect().setValue('maintenance')
-    expect(wrapper.find('#erp-cc-source[data-catalog]').exists()).toBe(false)
-    expect(wrapper.find('#erp-cc-source[data-picker]').exists()).toBe(false)
+    expect(wrapper.get('#erp-cc-source').attributes('data-catalog')).toBe('maintenance-work-order')
 
     await typeSelect().setValue('procurement')
     expect(wrapper.get('#erp-cc-source').attributes('data-options')).toBe('PO-001')
