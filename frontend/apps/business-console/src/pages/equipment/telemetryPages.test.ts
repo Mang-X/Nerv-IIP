@@ -44,6 +44,9 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveUom: () => undefined,
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
+      // OEE 页把工厂、班次编码换成主数据名称；名录里没有的编码原样显示。
+      resolveSite: (code?: string | null) => (code === 'SITE-SUZHOU' ? '苏州工厂' : undefined),
+      resolveShift: (code?: string | null) => (code === 'SHIFT-DAY' ? '白班' : undefined),
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
       deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
@@ -755,12 +758,12 @@ describe('equipment telemetry pages', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
 
     expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
-    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('离散桶 · 2026-07-01')
+    expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('单日 · 2026-07-01')
     expect(wrapper.get('[data-oee-discrete-point]').text()).toContain('70%')
-    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
+    expect(wrapper.text()).toContain('1 条日统计缺少数据，图中未按 0%')
     expect(wrapper.text()).toContain('缺少或存在冲突的工序标准速率')
     expect(wrapper.text()).toContain('—')
-    expect(wrapper.text()).toContain('1 个完整率值点，1 个缺失点')
+    expect(wrapper.text()).toContain('1 条数据完整，1 条缺数')
   })
 
   it('renders the complete 31-day trend independently from the 20-row audit page', () => {
@@ -794,11 +797,10 @@ describe('equipment telemetry pages', () => {
     expect(charts.map((chart) => Number(chart.text().split(' ')[0]))).toEqual([20, 10])
     expect(chartText).toContain('7/1')
     expect(chartText).toContain('7/31')
-    expect(chartText).toContain('SITE-SUZHOU · OEE')
-    expect(wrapper.text()).toContain('按 1 个站点分别呈现')
-    expect(wrapper.text()).toContain('完整窗口共 31 个业务日聚合桶')
-    expect(wrapper.text()).toContain('1 个桶缺少率值，未画成 0%')
-    expect(wrapper.get('[data-testid="metric-strip"]').text()).not.toContain('数据不完整')
+    expect(chartText).toContain('苏州工厂 · OEE')
+    expect(wrapper.text()).toContain('按 1 个工厂分别展示')
+    expect(wrapper.text()).toContain('所选时段共 31 条日统计')
+    expect(wrapper.text()).toContain('1 条日统计缺少数据，图中未按 0%')
   })
 
   it('renders equal business dates as independent site-owned trend groups', () => {
@@ -825,7 +827,7 @@ describe('equipment telemetry pages', () => {
 
     expect(points).toHaveLength(2)
     expect(wrapper.findAll('[data-oee-site]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('按 2 个站点分别呈现')
+    expect(wrapper.text()).toContain('按 2 个工厂分别展示')
   })
 
   it('renders equal site and business date windows as distinct segments', () => {
@@ -864,9 +866,7 @@ describe('equipment telemetry pages', () => {
 
     expect(wrapper.find('[data-testid="line-chart"]').exists()).toBe(false)
     expect(wrapper.find('[data-oee-discrete-point]').exists()).toBe(false)
-    expect(wrapper.text()).toContain(
-      '本历史窗口段没有可绘制的完整率值；全部缺失事实仍保留在下方核查表中。',
-    )
+    expect(wrapper.text()).toContain('这一段没有完整数据，无法绘制趋势；原因见下方明细。')
   })
 
   it('keeps equal shift codes in different sites and hierarchy readable with distinct row keys', () => {
@@ -898,8 +898,13 @@ describe('equipment telemetry pages', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
     const rows = wrapper.findAll('[data-testid="data-row"]')
 
-    expect(wrapper.text()).toContain('站点 SITE-SUZHOU › 车间 WS-MACHINING › 产线 LINE-CNC')
-    expect(wrapper.text()).toContain('站点 SITE-WUXI › 车间 WS-ASSEMBLY › 产线 LINE-FINAL')
+    expect(wrapper.text()).toContain('工厂 苏州工厂 › 车间 WS-MACHINING › 产线 LINE-CNC')
+    expect(rows.map((row) => row.text())).toEqual([
+      expect.stringContaining('白班'),
+      expect.stringContaining('白班'),
+    ])
+    expect(wrapper.text()).not.toContain('SHIFT-DAY')
+    expect(wrapper.text()).toContain('工厂 SITE-WUXI › 车间 WS-ASSEMBLY › 产线 LINE-FINAL')
     expect(rows).toHaveLength(2)
     expect(rows[0]?.attributes('data-row-key')).not.toBe(rows[1]?.attributes('data-row-key'))
     expect(wrapper.get('[data-testid="data-table"]').attributes('data-total')).toBe('2')
@@ -931,8 +936,8 @@ describe('equipment telemetry pages', () => {
 
     telemetryPageMocks.aggregateError = undefined
     const emptyText = mount(TelemetryOeePage, { global: { stubs } }).text()
-    expect(emptyText).toContain('当前窗口没有可绘制的完整率值')
-    expect(emptyText).toContain('当前窗口和筛选范围内没有 OEE 聚合事实')
+    expect(emptyText).toContain('所选时段没有完整的 OEE 数据')
+    expect(emptyText).toContain('所选时段和筛选范围内没有 OEE 数据')
   })
 
   it('requires a numeric threshold before saving an alarm rule', async () => {

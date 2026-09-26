@@ -1,6 +1,65 @@
 import { describe, expect, it } from 'vitest'
 import type { BusinessConsoleTelemetryOeeAggregateBucket } from '@nerv-iip/api-client'
-import { presentOeeReport, type OeeReportDimension } from './oeePresentation'
+import {
+  localDatesFromOeeWindow,
+  oeeWindowFromLocalDates,
+  presentOeeReport,
+  recentOeeWindow,
+  type OeeReportDimension,
+} from './oeePresentation'
+
+// 国内工厂的使用者在东八区：接口给的是 UTC 时刻，屏上必须是当地时间。
+process.env.TZ = 'Asia/Shanghai'
+
+describe('OEE 统计时段按当地时间显示与查询', () => {
+  it('把接口的 UTC 时段换算成当地时间显示（按天、按班次）', () => {
+    const report = presentOeeReport({
+      dimension: 'shift',
+      trendBuckets: [],
+      tableBuckets: [
+        bucket({
+          businessDate: '2026-08-01',
+          bucketStartUtc: '2026-07-31T16:00:00.000Z',
+          bucketEndUtc: '2026-08-01T16:00:00.000Z',
+        }),
+        bucket({
+          dimension: 'shift',
+          dimensionValue: 'SHIFT-DAY',
+          businessDate: '2026-08-01',
+          bucketStartUtc: '2026-08-01T00:00:00.000Z',
+          bucketEndUtc: '2026-08-01T12:00:00.000Z',
+        }),
+      ],
+      tableTotal: 2,
+    })
+
+    expect(report.tableRows.map((row) => row.windowLabel)).toEqual([
+      '2026-08-01 00:00 至 2026-08-02 00:00',
+      '2026-08-01 08:00 至 2026-08-01 20:00',
+    ])
+  })
+
+  it('选中的当地日期按当地 0 点换算成查询时段，并能原样换回', () => {
+    const window = oeeWindowFromLocalDates('2026-08-01', '2026-08-07')
+
+    expect(window).toEqual({
+      windowStartUtc: '2026-07-31T16:00:00.000Z',
+      windowEndUtc: '2026-08-07T16:00:00.000Z',
+    })
+    expect(localDatesFromOeeWindow(window.windowStartUtc, window.windowEndUtc)).toEqual({
+      start: '2026-08-01',
+      end: '2026-08-07',
+    })
+  })
+
+  it('默认统计时段是含今天的最近 7 个当地自然日（当地凌晨也不会退回前一天）', () => {
+    // 当地 2026-09-27 01:00，UTC 仍是 9 月 26 日。
+    expect(recentOeeWindow(7, new Date('2026-09-26T17:00:00.000Z'))).toEqual({
+      windowStartUtc: '2026-09-20T16:00:00.000Z',
+      windowEndUtc: '2026-09-27T16:00:00.000Z',
+    })
+  })
+})
 
 describe('OEE aggregate presentation', () => {
   it('separates equal business dates into site-owned trend groups without cross-site lines', () => {
@@ -387,8 +446,8 @@ describe('OEE aggregate presentation', () => {
     expect(new Set(report.tableRows.map((row) => row.key)).size).toBe(2)
     expect(report.tableRows.map((row) => row.primaryLabel)).toEqual(['SHIFT-DAY', 'SHIFT-DAY'])
     expect(report.tableRows.map((row) => row.hierarchyLabel)).toEqual([
-      '站点 SITE-A › 车间 WS-A › 产线 LINE-A',
-      '站点 SITE-B › 车间 WS-B › 产线 LINE-B',
+      '工厂 SITE-A › 车间 WS-A › 产线 LINE-A',
+      '工厂 SITE-B › 车间 WS-B › 产线 LINE-B',
     ])
     expect(report.tableRows.every((row) => row.businessDateLabel === '2026-08-01')).toBe(true)
   })
@@ -397,22 +456,22 @@ describe('OEE aggregate presentation', () => {
     [
       'workCenter',
       { dimensionValue: 'WC-01', siteCode: 'SITE-A', workshopCode: 'WS-A', lineCode: 'LINE-A' },
-      '站点 SITE-A › 车间 WS-A › 产线 LINE-A',
+      '工厂 SITE-A › 车间 WS-A › 产线 LINE-A',
     ],
     [
       'line',
       { dimensionValue: 'LINE-01', siteCode: 'SITE-A', workshopCode: 'WS-A', lineCode: 'LINE-01' },
-      '站点 SITE-A › 车间 WS-A',
+      '工厂 SITE-A › 车间 WS-A',
     ],
     [
       'workshop',
       { dimensionValue: 'WS-01', siteCode: 'SITE-A', workshopCode: 'WS-01' },
-      '站点 SITE-A',
+      '工厂 SITE-A',
     ],
     [
       'shift',
       { dimensionValue: 'SHIFT-DAY', siteCode: 'SITE-A', workshopCode: 'WS-A', lineCode: 'LINE-A' },
-      '站点 SITE-A › 车间 WS-A › 产线 LINE-A',
+      '工厂 SITE-A › 车间 WS-A › 产线 LINE-A',
     ],
   ])(
     'uses the full %s composite identity and relevant hierarchy',
@@ -468,6 +527,78 @@ describe('OEE aggregate presentation', () => {
       degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
     })
     expect(report).toMatchObject({ tableTotal: 27 })
+  })
+})
+
+describe('OEE 对比对象与层级显示主数据名称', () => {
+  const names = {
+    site: (code?: string | null) => ({ 'SITE-001': '一号工厂' })[code ?? ''],
+    workshop: (code?: string | null) => ({ 'WS-01': '一车间 · 机加车间' })[code ?? ''],
+    line: (code?: string | null) => ({ 'LINE-ROD-01': '活塞杆一线' })[code ?? ''],
+    workCenter: (code?: string | null) => ({ 'WC-ROD-01': '活塞杆加工中心一线' })[code ?? ''],
+    shift: (code?: string | null) => ({ NIGHT: '夜班' })[code ?? ''],
+  }
+  const hierarchy = {
+    siteCode: 'SITE-001',
+    workshopCode: 'WS-01',
+    lineCode: 'LINE-ROD-01',
+    businessDate: '2026-09-26',
+  }
+
+  it.each<[OeeReportDimension, string, string, string]>([
+    ['shift', 'NIGHT', '夜班', '工厂 一号工厂 › 车间 一车间 · 机加车间 › 产线 活塞杆一线'],
+    [
+      'workCenter',
+      'WC-ROD-01',
+      '活塞杆加工中心一线',
+      '工厂 一号工厂 › 车间 一车间 · 机加车间 › 产线 活塞杆一线',
+    ],
+    ['line', 'LINE-ROD-01', '活塞杆一线', '工厂 一号工厂 › 车间 一车间 · 机加车间'],
+    ['workshop', 'WS-01', '一车间 · 机加车间', '工厂 一号工厂'],
+  ])('按%s对比时，编码 %s 显示为「%s」', (dimension, code, name, expectedHierarchy) => {
+    const report = presentOeeReport({
+      dimension,
+      trendBuckets: [],
+      tableBuckets: [bucket({ dimension, dimensionValue: code, ...hierarchy })],
+      tableTotal: 1,
+      names,
+    })
+
+    expect(report.tableRows[0]).toMatchObject({
+      primaryLabel: name,
+      hierarchyLabel: expectedHierarchy,
+    })
+  })
+
+  it('按天趋势的分组标题用工厂名称；名录里没有的编码原样显示', () => {
+    const report = presentOeeReport({
+      dimension: 'shift',
+      trendBuckets: [],
+      tableBuckets: [
+        bucket({
+          dimension: 'shift',
+          dimensionValue: 'MIDDLE',
+          ...hierarchy,
+          lineCode: 'LINE-NEW',
+        }),
+      ],
+      tableTotal: 1,
+      names,
+    })
+    const trend = presentOeeReport({
+      dimension: 'day',
+      trendBuckets: [bucket({ siteCode: 'SITE-001' })],
+      tableBuckets: [],
+      tableTotal: 1,
+      names,
+    })
+
+    expect(report.tableRows[0]?.primaryLabel).toBe('MIDDLE')
+    expect(report.tableRows[0]?.hierarchyLabel).toBe(
+      '工厂 一号工厂 › 车间 一车间 · 机加车间 › 产线 LINE-NEW',
+    )
+    expect(trend.trendGroups[0]?.siteLabel).toBe('一号工厂')
+    expect(trend.trendGroups[0]?.series[0]?.label).toBe('一号工厂 · OEE')
   })
 })
 
