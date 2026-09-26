@@ -87,6 +87,23 @@ export interface OeeTrendSegment {
   runs: OeeTrendRun[]
 }
 
+/** 主数据编码 → 名称；查不到返回 undefined，由展示层退回编码。 */
+export interface OeeDisplayNames {
+  site: (code?: string | null) => string | undefined
+  workshop: (code?: string | null) => string | undefined
+  line: (code?: string | null) => string | undefined
+  workCenter: (code?: string | null) => string | undefined
+  shift: (code?: string | null) => string | undefined
+}
+
+const noNames: OeeDisplayNames = {
+  site: () => undefined,
+  workshop: () => undefined,
+  line: () => undefined,
+  workCenter: () => undefined,
+  shift: () => undefined,
+}
+
 export interface OeeReportPresentation {
   trendGroups: OeeTrendGroup[]
   tableRows: OeeTableRow[]
@@ -101,8 +118,11 @@ export function presentOeeReport(input: {
   trendBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[]
   tableBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[]
   tableTotal: number
+  names?: OeeDisplayNames
 }): OeeReportPresentation {
-  const trendGroups = input.dimension === 'day' ? presentDayTrendGroups(input.trendBuckets) : []
+  const names = input.names ?? noNames
+  const trendGroups =
+    input.dimension === 'day' ? presentDayTrendGroups(input.trendBuckets, names) : []
   const trendPointCount = trendGroups.reduce((total, group) => total + group.pointCount, 0)
   const omittedTrendBucketCount = trendGroups.reduce(
     (total, group) => total + group.omittedCount,
@@ -111,7 +131,7 @@ export function presentOeeReport(input: {
 
   return {
     trendGroups,
-    tableRows: input.tableBuckets.map(presentTableRow),
+    tableRows: input.tableBuckets.map((bucket) => presentTableRow(bucket, names)),
     trendBucketCount: input.trendBuckets.length,
     trendPointCount,
     omittedTrendBucketCount,
@@ -121,6 +141,7 @@ export function presentOeeReport(input: {
 
 function presentDayTrendGroups(
   buckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+  names: OeeDisplayNames,
 ): OeeTrendGroup[] {
   const bucketsBySite = new Map<string, BusinessConsoleTelemetryOeeAggregateBucket[]>()
   for (const bucket of buckets) {
@@ -134,7 +155,7 @@ function presentDayTrendGroups(
     .map(([key, siteBuckets]) => {
       const orderedBuckets = siteBuckets.slice().sort(compareTrendBuckets)
       const siteCode = nullable(orderedBuckets[0]?.siteCode)
-      const siteLabel = siteCode?.trim() || '未解析站点'
+      const siteLabel = displayName(names.site, siteCode, '未解析工厂')
       const segments = presentTrendSegments(orderedBuckets)
       return {
         key,
@@ -296,14 +317,17 @@ function presentTrendPoint(bucket: BusinessConsoleTelemetryOeeAggregateBucket): 
   }
 }
 
-function presentTableRow(bucket: BusinessConsoleTelemetryOeeAggregateBucket): OeeTableRow {
+function presentTableRow(
+  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
+  names: OeeDisplayNames,
+): OeeTableRow {
   const identity = bucketIdentity(bucket)
   return {
     key: JSON.stringify(identity),
     identity,
     dimension: bucket.dimension ?? null,
-    primaryLabel: primaryLabel(bucket),
-    hierarchyLabel: hierarchyLabel(bucket),
+    primaryLabel: primaryLabel(bucket, names),
+    hierarchyLabel: hierarchyLabel(bucket, names),
     businessDateLabel:
       bucket.dimension === 'day' || bucket.dimension === 'shift'
         ? bucket.businessDate?.trim() || '未解析业务日'
@@ -332,23 +356,29 @@ function bucketIdentity(bucket: BusinessConsoleTelemetryOeeAggregateBucket): Oee
   ]
 }
 
-function primaryLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
-  if (bucket.dimension === 'day') return bucket.businessDate?.trim() || '未解析业务日'
-  const fallback =
-    bucket.dimension === 'shift'
-      ? '未解析班次'
-      : bucket.dimension === 'workCenter'
-        ? '未解析工作中心'
-        : bucket.dimension === 'line'
-          ? '未解析产线'
-          : bucket.dimension === 'workshop'
-            ? '未解析车间'
-            : '未解析维度'
-  return bucket.dimensionValue?.trim() || fallback
+function primaryLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket, names: OeeDisplayNames) {
+  const value = bucket.dimensionValue
+  switch (bucket.dimension) {
+    case 'day':
+      return bucket.businessDate?.trim() || '未解析业务日'
+    case 'shift':
+      return displayName(names.shift, value, '未解析班次')
+    case 'workCenter':
+      return displayName(names.workCenter, value, '未解析工作中心')
+    case 'line':
+      return displayName(names.line, value, '未解析产线')
+    case 'workshop':
+      return displayName(names.workshop, value, '未解析车间')
+    default:
+      return value?.trim() || '未解析维度'
+  }
 }
 
-function hierarchyLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
-  const parts = [`站点 ${displayCode(bucket.siteCode, '未解析')}`]
+function hierarchyLabel(
+  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
+  names: OeeDisplayNames,
+) {
+  const parts = [`工厂 ${displayName(names.site, bucket.siteCode, '未解析')}`]
   if (bucket.dimension === 'workshop') return parts.join(' › ')
 
   if (
@@ -356,12 +386,23 @@ function hierarchyLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
     bucket.dimension === 'workCenter' ||
     bucket.dimension === 'shift'
   ) {
-    parts.push(`车间 ${displayCode(bucket.workshopCode, '未解析')}`)
+    parts.push(`车间 ${displayName(names.workshop, bucket.workshopCode, '未解析')}`)
   }
   if (bucket.dimension === 'workCenter' || bucket.dimension === 'shift') {
-    parts.push(`产线 ${displayCode(bucket.lineCode, '未解析')}`)
+    parts.push(`产线 ${displayName(names.line, bucket.lineCode, '未解析')}`)
   }
   return parts.join(' › ')
+}
+
+/** 优先主数据名称；名录里没有就显示编码；编码也没有才用兜底说法。 */
+function displayName(
+  resolve: (code?: string | null) => string | undefined,
+  code: string | null | undefined,
+  fallback: string,
+) {
+  const trimmed = code?.trim()
+  if (!trimmed) return fallback
+  return resolve(trimmed) ?? trimmed
 }
 
 function trendSeries(siteLabel: string): OeeTrendSeries[] {
@@ -419,10 +460,6 @@ function formatWindow(start?: string | null, end?: string | null) {
 
 function percentNumber(value: number | null | undefined) {
   return Number((value! * 100).toFixed(1))
-}
-
-function displayCode(value: string | null | undefined, fallback: string) {
-  return value?.trim() || fallback
 }
 
 function nullable(value: string | null | undefined) {
