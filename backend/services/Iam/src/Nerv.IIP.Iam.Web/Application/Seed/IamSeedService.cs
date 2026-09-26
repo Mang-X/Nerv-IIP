@@ -22,6 +22,16 @@ public sealed class IamSeedService(
 {
     private const string ErpFinanceRoleId = "role-erp-finance";
 
+    // #3827 之前财务专员的默认权限；只有仍等于这一版的存量角色才补维修工单只读。
+    private static readonly string[] ErpFinanceDefaultPermissionsBeforeMaintenanceRead =
+    [
+        "business.masterdata.resources.read",
+        "business.erp.procurement.read",
+        "business.erp.sales.read",
+        "business.erp.finance.read",
+        "business.erp.finance.manage",
+    ];
+
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         var seed = options.Value;
@@ -82,9 +92,12 @@ public sealed class IamSeedService(
                     && existingRole.RoleName == seedRole.RoleName
                     && SetEquals(
                         existingRole.Permissions.Select(x => x.PermissionCode),
-                        seedRole.PermissionCodes.Where(x => x != NervIipPermissionCodes.MaintenanceWorkOrdersRead)))
+                        ErpFinanceDefaultPermissionsBeforeMaintenanceRead))
                 {
-                    existingRole.ReplacePermissions(seedRole.PermissionCodes);
+                    existingRole.ReplacePermissions([
+                        .. ErpFinanceDefaultPermissionsBeforeMaintenanceRead,
+                        NervIipPermissionCodes.MaintenanceWorkOrdersRead,
+                    ]);
                 }
 
                 continue;

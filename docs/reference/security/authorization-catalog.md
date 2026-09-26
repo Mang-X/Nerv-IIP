@@ -183,7 +183,7 @@
 
 IAM 仅在对应角色缺失时创建默认角色；重复 seed 不应覆盖同 ID 角色已经被运营调整的名称、权限或 data scope。
 
-默认权限扩充时按一次性回填处理：`role-erp-finance` 的维修工单只读（#3827）只补给权限仍等于上一版默认集合的存量角色，补完记 seed manifest `iam-erp-finance-maintenance-work-orders-read:v1`，之后运营撤掉也不会再补回。
+默认权限扩充时按一次性回填处理：`role-erp-finance` 的维修工单只读（#3827）只补给角色名仍是默认名、且权限仍等于上一版默认集合的存量角色，补完记 seed manifest `iam-erp-finance-maintenance-work-orders-read:v1`，之后运营撤掉也不会再补回。
 
 | 角色 ID | 角色名称 | 默认权限 | 默认 scope |
 | --- | --- | --- | --- |
