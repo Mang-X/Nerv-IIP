@@ -388,8 +388,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         context: intent.context,
       })
       if (!isCurrent()) return
-      const taskLabel = [task.workOrderNo, task.operationTaskNo].filter(Boolean).join(' · ')
-      const description = [taskLabel, `报工单号 ${reportNo}`].filter(Boolean)
+      const description = [`${workOrderId} · ${operationTaskId}`, `报工单号 ${reportNo}`]
       if (intent.payload?.completesOperation) description.push('本工序已标记完工')
       intent.status = 'success'
       intent.result = {

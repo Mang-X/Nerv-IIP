@@ -108,8 +108,6 @@ const TELEMETRY_CANDIDATE_SUSPENSION_LABELS: Readonly<Record<string, string>> = 
   'active-alarm': '设备存在未处理报警',
   'no-work-center-mapping': '设备未绑定工作中心',
   'no-current-work-order': '工作中心当前无在制工单',
-  'no-operation-task': '工作中心当前无进行中的工序任务',
-  'signal-stale': '采集信号已过期',
 }
 
 const TELEMETRY_CANDIDATE_STATUS_LABELS: Readonly<Record<string, string>> = {

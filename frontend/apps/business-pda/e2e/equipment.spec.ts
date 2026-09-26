@@ -804,7 +804,7 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await page.goto('/equipment/repair?deviceAssetId=DEV-ROUTE&sourceAlarmId=ALM-9')
   await expect(page.getByRole('heading', { name: '故障报修' })).toBeVisible()
   await expect(page.getByTestId('device-trigger')).toContainText('DEV-ROUTE')
-  await expect(page.getByTestId('device-trigger')).toContainText('报警上下文 · ALM-9')
+  await expect(page.getByTestId('device-trigger')).toContainText('由报警发起报修')
   await expect(page.getByTestId('device-input')).toHaveCount(0)
   await expect(page.locator('select')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
@@ -1195,7 +1195,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
 
   // 穿透后报修页设备已预填
   await expect(page.getByTestId('device-trigger')).toContainText('DEV-A')
-  await expect(page.getByTestId('device-trigger')).toContainText('报警上下文 · ALM-1')
+  await expect(page.getByTestId('device-trigger')).toContainText('由报警发起报修')
 
   await page.getByTestId('priority-trigger').click()
   await page.getByRole('button', { name: '高', exact: true }).click()

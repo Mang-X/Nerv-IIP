@@ -869,7 +869,7 @@ async function onScanAccepted(value: MesScanAccepted) {
           v-if="showOperationTasksEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
-          当前主体授权作业范围内暂无工序任务
+          当前作业范围内暂无工序任务
         </div>
 
         <div v-else class="overflow-hidden rounded-lg border border-border">

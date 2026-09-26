@@ -613,7 +613,7 @@ async function onScanAccepted(value: MesScanAccepted) {
             @click="toggleTelemetryCandidate(candidate.candidateId)"
           >
             <span class="block font-medium"
-              >{{ candidate.goodQuantity }} 件 ·
+              >设备 {{ candidate.deviceAssetId }} · {{ candidate.goodQuantity }} 件 ·
               {{ formatOperationDateTime(candidate.bucketStartUtc) }}</span
             ><span class="block text-xs text-muted-foreground">{{
               telemetryCandidateStateLabel(candidate)

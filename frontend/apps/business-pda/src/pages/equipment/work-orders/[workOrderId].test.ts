@@ -15,8 +15,8 @@ const state = vi.hoisted(() => ({
   workOrder: undefined as AuthoritativeMaintenanceWorkOrderDetail | undefined,
   device: undefined as BusinessConsoleResourceItem | undefined,
   identities: {
-    users: { 'principal-1': '张维修' },
-    teams: { 'team-a': '甲班' },
+    users: { 'principal-1': '张维修', 'principal-2': '李班长' },
+    teams: { 'team-a': '甲班', 'team-b': '乙班' },
   },
   identitiesUnavailable: false,
   requestedId: undefined as ComputedRef<string> | undefined,
@@ -108,9 +108,9 @@ describe('maintenance work-order authoritative detail page', () => {
           action: 'accept',
           fromStatus: 'open',
           toStatus: 'accepted',
-          actorPrincipalId: 'principal-1',
+          actorPrincipalId: 'principal-2',
           technicianUserId: 'principal-1',
-          teamId: 'team-a',
+          teamId: 'team-b',
           reason: '现场接单',
           resultingVersion: 7,
           occurredAtUtc: '2026-08-02T01:02:03.000Z',
@@ -136,9 +136,9 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('紧急')
     expect(wrapper.text()).toContain('维修人员 张维修')
     expect(wrapper.text()).toContain('班组 甲班')
-    expect(wrapper.text()).toContain('操作人 张维修')
-    expect(wrapper.text()).toContain('维修人员 张维修')
-    expect(wrapper.text()).toContain('班组 甲班')
+    expect(wrapper.get('[data-testid="maintenance-lifecycle-event"]').text()).toContain(
+      '操作人 李班长 · 维修人员 张维修 · 班组 乙班 ·',
+    )
     expect(wrapper.text()).toContain('由报警报修创建')
     expect(wrapper.text()).not.toContain('019f0000-0000-7000-8000-000000000101')
     expect(wrapper.text()).not.toContain('device-1')

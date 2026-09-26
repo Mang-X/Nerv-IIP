@@ -90,27 +90,28 @@ const taskFilters = reactive({
 const defaultWorkOrders = [
   {
     workOrderId: 'WO-2026-0001',
-    workOrderNo: 'WO-2026-0001',
+    workOrderNo: 'WONO-A',
     skuId: 'SKU-A',
     quantity: 100,
     status: 'Released',
   },
   {
     workOrderId: 'WO-2026-0002',
-    workOrderNo: 'WO-2026-0002',
+    workOrderNo: 'WONO-B',
     skuId: 'SKU-B',
     quantity: 50,
     status: 'Released',
   },
 ]
 const workOrdersRef = ref<Array<Record<string, unknown>>>(defaultWorkOrders)
+const telemetryCandidatesRef = ref<Array<Record<string, unknown>>>([])
 
 const defaultOperationTasks = [
   {
     operationTaskId: 'OP-1',
-    operationTaskNo: 'OP-1',
+    operationTaskNo: 'OPNO-1',
     workOrderId: 'WO-2026-0001',
-    workOrderNo: 'WO-2026-0001',
+    workOrderNo: 'WONO-A',
     status: 'InProgress',
     allowedActions: ['report'],
     operationSequence: 10,
@@ -118,9 +119,9 @@ const defaultOperationTasks = [
   },
   {
     operationTaskId: 'OP-2',
-    operationTaskNo: 'OP-2',
+    operationTaskNo: 'OPNO-2',
     workOrderId: 'WO-2026-0001',
-    workOrderNo: 'WO-2026-0001',
+    workOrderNo: 'WONO-A',
     status: 'Queued',
     allowedActions: ['report'],
     operationSequence: 20,
@@ -128,9 +129,9 @@ const defaultOperationTasks = [
   },
   {
     operationTaskId: 'OP-3',
-    operationTaskNo: 'OP-3',
+    operationTaskNo: 'OPNO-3',
     workOrderId: 'WO-2026-0002',
-    workOrderNo: 'WO-2026-0002',
+    workOrderNo: 'WONO-B',
     status: 'Ready',
     allowedActions: ['report'],
     operationSequence: 10,
@@ -308,8 +309,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshScrapReasonCodes: vi.fn(async () => undefined),
   }),
   useMesTelemetryProductionReportCandidates: () => ({
-    candidates: computed(() => []),
-    total: computed(() => 0),
+    candidates: computed(() => telemetryCandidatesRef.value),
+    total: computed(() => telemetryCandidatesRef.value.length),
     pending: ref(false),
     promote: vi.fn(),
     dismiss: vi.fn(),
@@ -387,6 +388,7 @@ describe('PDA MES production reporting page', () => {
     ))
       clearPendingBusinessIntent(entry)
     sessionStorage.clear()
+    telemetryCandidatesRef.value = []
     serialRequired.value = false
     serialValid.value = true
     serialTemplateId.value = ''
@@ -727,9 +729,9 @@ describe('PDA MES production reporting page', () => {
       await flushPromises()
 
       const issue = wrapper.get('[data-testid="report-route-issue"]').text()
-      expect(issue).toContain('报工任务读取范围未就绪')
       expect(issue).toContain(scopeMessage)
-      expect(issue).not.toContain('未找到链接中的')
+      expect(issue).not.toContain('未找到工单')
+      expect(issue).not.toContain('未找到工单 WO-2026-0001 下的工序任务')
       expect(recordReport).not.toHaveBeenCalled()
       expect(refreshExactTask).not.toHaveBeenCalled()
     },
@@ -773,7 +775,7 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.get('[data-testid="work-order-detail-error"]').text()).toContain(
       '工单详情查询失败',
     )
-    expect(wrapper.text()).not.toContain('未找到链接中的工单')
+    expect(wrapper.text()).not.toContain('未找到工单 WO-2026-0001')
     expect(wrapper.text()).not.toContain('该工单暂无工序')
 
     await wrapper.get('[data-testid="work-order-detail-error"] button').trigger('click')
@@ -1154,7 +1156,7 @@ describe('PDA MES production reporting page', () => {
     const wrapper = mount(ReportPage, { attachTo: document.body })
     await flushPromises()
     expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('详情加载失败')
-    expect(wrapper.text()).not.toContain('未找到链接中的工单')
+    expect(wrapper.text()).not.toContain('未找到工单')
     expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
     expect(recordReport).not.toHaveBeenCalled()
   })
@@ -1361,16 +1363,20 @@ describe('PDA MES production reporting page', () => {
 
   it.each([
     ['缺少工单 ID', { operationTaskId: 'OP-1' }, '报工链接缺少工单'],
-    ['工单不存在', { workOrderId: 'WO-MISSING', operationTaskId: 'OP-404' }, '未找到链接中的工单'],
+    [
+      '工单不存在',
+      { workOrderId: 'WO-MISSING', operationTaskId: 'OP-404' },
+      '未找到工单 WO-MISSING',
+    ],
     [
       '工序任务不存在',
       { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-MISSING' },
-      '未在该工单下找到链接中的工序任务',
+      '未找到工单 WO-2026-0002 下的工序任务 OP-MISSING',
     ],
     [
       'pair 不匹配',
       { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-1' },
-      '未在该工单下找到链接中的工序任务',
+      '未找到工单 WO-2026-0002 下的工序任务 OP-1',
     ],
   ])('%s 时显示明确安全状态且不写入', async (_name, query, message) => {
     route.query = query
@@ -1380,6 +1386,33 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(message)
     expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
     expect(recordReport).not.toHaveBeenCalled()
+  })
+
+  it('遥测待确认候选显示设备编码与中文状态，不显示原始状态码', async () => {
+    telemetryCandidatesRef.value = [
+      {
+        candidateId: 'cand-1',
+        deviceAssetId: 'DEV-CNC-01',
+        goodQuantity: 12,
+        status: 'draft',
+        suspensionReason: 'active-alarm',
+      },
+      {
+        candidateId: 'cand-2',
+        deviceAssetId: 'DEV-CNC-02',
+        goodQuantity: 8,
+        status: 'pending-confirmation',
+        suspensionReason: null,
+      },
+    ]
+    const wrapper = mount(ReportPage)
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).toContain('设备 DEV-CNC-01 · 12 件')
+    expect(text).toContain('设备存在未处理报警')
+    expect(text).toMatch(/设备 DEV-CNC-02 · 8 件[^设]*待确认/)
+    expect(text).not.toContain('active-alarm')
+    expect(text).not.toContain('pending-confirmation')
   })
 
   it('命令与可见 pair 精确一致，并只显示契约实际返回的回执字段', async () => {

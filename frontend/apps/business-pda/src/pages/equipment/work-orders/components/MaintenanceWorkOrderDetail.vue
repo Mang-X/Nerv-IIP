@@ -122,6 +122,7 @@ function teamName(teamId: string | null | undefined) {
         <li
           v-for="(event, index) in lifecycle"
           :key="`${event.resultingVersion}:${event.occurredAtUtc}:${index}`"
+          data-testid="maintenance-lifecycle-event"
           class="border-l-2 border-brand/30 pl-3"
         >
           <p class="text-sm font-medium text-foreground">

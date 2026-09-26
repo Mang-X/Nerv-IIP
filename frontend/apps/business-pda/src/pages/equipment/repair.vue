@@ -305,7 +305,7 @@ const selectedDeviceSubtitle = computed(() => {
   const device = selectedDevice.value
   if (!device) return '可按名称或编码搜索，也可直接扫码'
   if (device.source === 'route') {
-    return sourceAlarmId.value ? `报警上下文 · ${sourceAlarmId.value}` : '来自页面上下文'
+    return sourceAlarmId.value ? '由报警发起报修' : ''
   }
   if (device.source === 'scan') return `来自扫码 · ${device.deviceAssetId}`
   const context = [
