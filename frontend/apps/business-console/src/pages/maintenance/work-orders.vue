@@ -802,7 +802,6 @@ watch(
                 :disabled="!createForm.deviceAssetId.trim()"
                 title="选择关联报警"
                 :placeholder="createForm.deviceAssetId.trim() ? '可选' : '先选设备'"
-                source-text="数据来自该设备的报警记录"
                 empty-text="该设备当前没有报警"
                 :loading="alarmsPending"
                 clearable
@@ -1003,7 +1002,6 @@ watch(
                   :options="uomOptions"
                   title="选择单位"
                   placeholder="跟随物料"
-                  source-text="数据来自基础数据计量单位"
                   empty-text="暂无计量单位，请先在基础数据维护单位"
                   :loading="uomsPending"
                   clearable

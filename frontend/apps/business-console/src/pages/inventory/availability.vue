@@ -25,7 +25,6 @@ import {
 } from '@/composables/useInventorySiteStock'
 import {
   useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
   WAREHOUSE_LOCATION_EMPTY_TEXT,
   WAREHOUSE_LOT_EMPTY_TEXT,
   WAREHOUSE_SERIAL_EMPTY_TEXT,
@@ -581,7 +580,6 @@ async function refreshCurrentView() {
           :options="skuOptions"
           title="选择物料"
           placeholder="选择物料"
-          source-text="数据来自基础数据物料主数据"
           empty-text="暂无物料主数据，请先在基础数据维护物料"
           :loading="skusPending"
           clearable
@@ -599,7 +597,6 @@ async function refreshCurrentView() {
           :options="siteOptions"
           title="选择工厂"
           placeholder="选择工厂"
-          source-text="数据来自基础数据工厂主数据"
           empty-text="暂无工厂主数据，请先在基础数据维护工厂"
           :loading="sitesPending"
           aria-label="工厂"
@@ -612,7 +609,6 @@ async function refreshCurrentView() {
           :options="locationOptions"
           title="选择库位"
           placeholder="库位"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
           :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
           :loading="warehouseCatalogPending"
           clearable
@@ -625,7 +621,6 @@ async function refreshCurrentView() {
           :options="lotOptions"
           title="选择批次"
           placeholder="批次"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
           :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
           :loading="warehouseCatalogPending"
           clearable
@@ -638,7 +633,6 @@ async function refreshCurrentView() {
           :options="serialOptions"
           title="选择序列号"
           placeholder="序列号"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
           :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
           :loading="warehouseCatalogPending"
           clearable

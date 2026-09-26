@@ -49,8 +49,11 @@ const scopeLevels = computed(() => [
 ## NvEntityPicker 实体选择弹窗
 
 相比 [`NvSearchSelect`](/components/desktop/combobox) 的弹出列表，对话框给出更大的展示
-空间：每行展示**名称 + 编码 + 辅助信息**，底部注明数据来源。`clearable` 时触发按钮出现
-清除叉。
+空间：每行展示**名称 + 编码 + 辅助信息**。`clearable` 时触发按钮出现清除叉。
+
+下拉里只放用户做选择要用的东西：不写数据来自哪个模块，也不报「共 N 条」。目录大到要服务端
+搜索时（`server-search` + `total-count`），结果多于当前列出的条目才在底部提示「输入关键字继续
+筛选」。
 
 <Demo>
   <div style="max-width: 360px">
@@ -62,7 +65,6 @@ const scopeLevels = computed(() => [
         :options="materialOptions"
         title="选择物料"
         placeholder="请选择物料"
-        source-text="数据来自物料主数据"
         aria-label="物料"
         clearable
       />
@@ -77,7 +79,6 @@ const scopeLevels = computed(() => [
   :options="[{ value: 'SKU-FG-100', label: '前减振器总成', hint: '成品' }]"
   title="选择物料"
   placeholder="请选择物料"
-  source-text="数据来自物料主数据"
   :invalid="submitted && !material"
   clearable
 />

@@ -159,7 +159,6 @@ const sourceDocumentCatalog = computed<{
   options: EntityPickerOption[]
   pending: boolean
   placeholder: string
-  sourceText: string
   emptyText: string
 } | null>(() => {
   if (form.sourceType === 'procurement') {
@@ -167,7 +166,6 @@ const sourceDocumentCatalog = computed<{
       options: payableSourceOptions.value,
       pending: payableSourcesPending.value,
       placeholder: '选择采购订单',
-      sourceText: '数据来自采购订单',
       emptyText: '暂无采购订单',
     }
   }
@@ -176,7 +174,6 @@ const sourceDocumentCatalog = computed<{
       options: receivableSourceOptions.value,
       pending: receivableSourcesPending.value,
       placeholder: '选择销售订单或发货单',
-      sourceText: '数据来自销售订单与发货单',
       emptyText: '暂无销售订单或发货单',
     }
   }
@@ -320,7 +317,6 @@ async function submit() {
                 :options="sourceDocumentCatalog.options"
                 title="选择来源单据"
                 :placeholder="sourceDocumentCatalog.placeholder"
-                :source-text="sourceDocumentCatalog.sourceText"
                 :empty-text="sourceDocumentCatalog.emptyText"
                 :loading="sourceDocumentCatalog.pending"
                 aria-label="来源单据"

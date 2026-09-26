@@ -109,9 +109,6 @@ const codeLabel = computed(() => (form.kind === 'engineering' ? '父项物料' :
 const catalogEntries = computed(() =>
   form.kind === 'engineering' ? engineeringEntries.value : skuEntries.value,
 )
-const catalogSourceText = computed(() =>
-  form.kind === 'engineering' ? '数据来自工程物料目录' : '数据来自基础数据物料主数据',
-)
 const catalogEmptyText = computed(() =>
   form.kind === 'engineering'
     ? '暂无工程物料，请先在工程数据维护物料修订'
@@ -138,9 +135,6 @@ const componentPickerOptions = computed(() => pickerOptions(form.componentCode))
 // 修订从属于 BOM 编码：先选编码，修订只列该编码下已发布的修订；换了编码就清空下游修订。
 const { bomCodeOptions, revisionOptions, bomVersionsPending } = useBomVersionPickerCatalog()
 
-const bomVersionSourceText = computed(() =>
-  form.kind === 'engineering' ? '数据来自已发布 EBOM 版本' : '数据来自已发布 MBOM 版本',
-)
 const bomVersionEmptyText = computed(() =>
   form.kind === 'engineering'
     ? '暂无已发布 EBOM，请先在设计 BOM 发布版本'
@@ -690,7 +684,6 @@ function diagnosticLabel(severity?: string | null) {
             :options="rootPickerOptions"
             title="选择物料"
             placeholder="选择物料"
-            :source-text="catalogSourceText"
             :empty-text="catalogEmptyText"
             :loading="catalogPending"
             :aria-label="codeLabel"
@@ -708,7 +701,6 @@ function diagnosticLabel(severity?: string | null) {
             :options="componentPickerOptions"
             title="选择物料"
             placeholder="选择物料"
-            :source-text="catalogSourceText"
             :empty-text="catalogEmptyText"
             :loading="catalogPending"
             aria-label="组件物料"
@@ -740,7 +732,6 @@ function diagnosticLabel(severity?: string | null) {
             :options="fromBomOptions"
             title="选择来源 BOM"
             placeholder="选择来源 BOM"
-            :source-text="bomVersionSourceText"
             :empty-text="bomVersionEmptyText"
             :loading="bomVersionsPending"
             aria-label="来源 BOM"
@@ -768,7 +759,6 @@ function diagnosticLabel(severity?: string | null) {
             :options="toBomOptions"
             title="选择目标 BOM"
             placeholder="选择目标 BOM"
-            :source-text="bomVersionSourceText"
             :empty-text="bomVersionEmptyText"
             :loading="bomVersionsPending"
             aria-label="目标 BOM"
@@ -806,7 +796,6 @@ function diagnosticLabel(severity?: string | null) {
             :options="specifiedBomOptions"
             title="选择 BOM 版本"
             placeholder="留空自动选择"
-            :source-text="bomVersionSourceText"
             :empty-text="bomVersionEmptyText"
             :loading="bomVersionsPending"
             aria-label="指定 BOM"

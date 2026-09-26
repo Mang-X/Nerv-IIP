@@ -442,7 +442,6 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
             :options="skuCatalog.skuOptions.value"
             title="选择 SKU"
             placeholder="选择 SKU"
-            source-text="数据来自基础数据物料主数据"
             :loading="skuCatalog.skusPending.value"
             clearable
             aria-label="按 SKU 查找"
