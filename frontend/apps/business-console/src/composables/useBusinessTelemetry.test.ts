@@ -626,9 +626,9 @@ describe('business telemetry composables', () => {
     expect(formatOeeRate(undefined)).toBe('无数据')
     expect(formatOeeQuantity(12.5, 'PCS')).toBe('12.5 PCS')
     expect(describeTelemetryOeeLimitations()).toContain('OEE = 可用率 × 性能率 × 质量率')
-    expect(describeTelemetryOeeDegradation('production-facts-missing')).toBe('缺少 MES 报工事实')
+    expect(describeTelemetryOeeDegradation('production-facts-missing')).toBe('缺少报工记录')
     expect(describeTelemetryOeeDegradation('historicalTimezoneMissing')).toBe(
-      '历史事实缺少站点时区',
+      '报工记录缺少工厂时区',
     )
   })
 

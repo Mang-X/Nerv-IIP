@@ -44,6 +44,9 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveUom: () => undefined,
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
+      // OEE 页把工厂、班次编码换成主数据名称；名录里没有的编码原样显示。
+      resolveSite: (code?: string | null) => (code === 'SITE-SUZHOU' ? '苏州工厂' : undefined),
+      resolveShift: (code?: string | null) => (code === 'SHIFT-DAY' ? '白班' : undefined),
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
       deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
@@ -794,8 +797,8 @@ describe('equipment telemetry pages', () => {
     expect(charts.map((chart) => Number(chart.text().split(' ')[0]))).toEqual([20, 10])
     expect(chartText).toContain('7/1')
     expect(chartText).toContain('7/31')
-    expect(chartText).toContain('SITE-SUZHOU · OEE')
-    expect(wrapper.text()).toContain('按 1 个站点分别展示')
+    expect(chartText).toContain('苏州工厂 · OEE')
+    expect(wrapper.text()).toContain('按 1 个工厂分别展示')
     expect(wrapper.text()).toContain('所选时段共 31 条日统计')
     expect(wrapper.text()).toContain('1 条日统计缺少数据，图中未按 0%')
   })
@@ -824,7 +827,7 @@ describe('equipment telemetry pages', () => {
 
     expect(points).toHaveLength(2)
     expect(wrapper.findAll('[data-oee-site]')).toHaveLength(2)
-    expect(wrapper.text()).toContain('按 2 个站点分别展示')
+    expect(wrapper.text()).toContain('按 2 个工厂分别展示')
   })
 
   it('renders equal site and business date windows as distinct segments', () => {
@@ -895,8 +898,13 @@ describe('equipment telemetry pages', () => {
     const wrapper = mount(TelemetryOeePage, { global: { stubs } })
     const rows = wrapper.findAll('[data-testid="data-row"]')
 
-    expect(wrapper.text()).toContain('站点 SITE-SUZHOU › 车间 WS-MACHINING › 产线 LINE-CNC')
-    expect(wrapper.text()).toContain('站点 SITE-WUXI › 车间 WS-ASSEMBLY › 产线 LINE-FINAL')
+    expect(wrapper.text()).toContain('工厂 苏州工厂 › 车间 WS-MACHINING › 产线 LINE-CNC')
+    expect(rows.map((row) => row.text())).toEqual([
+      expect.stringContaining('白班'),
+      expect.stringContaining('白班'),
+    ])
+    expect(wrapper.text()).not.toContain('SHIFT-DAY')
+    expect(wrapper.text()).toContain('工厂 SITE-WUXI › 车间 WS-ASSEMBLY › 产线 LINE-FINAL')
     expect(rows).toHaveLength(2)
     expect(rows[0]?.attributes('data-row-key')).not.toBe(rows[1]?.attributes('data-row-key'))
     expect(wrapper.get('[data-testid="data-table"]').attributes('data-total')).toBe('2')

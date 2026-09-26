@@ -7,6 +7,7 @@ import {
   useBusinessTelemetryOeeAggregates,
   useBusinessTelemetryOeeTrend,
 } from '@/composables/useBusinessTelemetry'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import {
   localDatesFromOeeWindow,
@@ -103,6 +104,13 @@ watch(
 const dimensionLabel = computed(
   () => dimensions.find((item) => item.value === filters.dimension)?.label ?? '',
 )
+const displayNames = useMasterDataDisplayNames({
+  sites: true,
+  workshops: true,
+  lines: true,
+  workCenters: true,
+  shifts: true,
+})
 const errorMessage = computed(() => inlineErrorMessage(aggregateError.value))
 const trendErrorMessage = computed(() => inlineErrorMessage(trendError.value))
 const reportPresentation = computed(() =>
@@ -111,12 +119,19 @@ const reportPresentation = computed(() =>
     trendBuckets: trendBuckets.value,
     tableBuckets: aggregateBuckets.value,
     tableTotal: aggregateTotal.value,
+    names: {
+      site: displayNames.resolveSite,
+      workshop: displayNames.resolveWorkshop,
+      line: displayNames.resolveLine,
+      workCenter: displayNames.resolveWorkCenter,
+      shift: displayNames.resolveShift,
+    },
   }),
 )
 
 const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
   { key: 'primaryLabel', header: '对比对象' },
-  { key: 'hierarchyLabel', header: '站点 / 层级' },
+  { key: 'hierarchyLabel', header: '工厂 / 层级' },
   ...(filters.dimension === 'day' || filters.dimension === 'shift'
     ? [{ key: 'businessDateLabel', header: '业务日' }]
     : []),
@@ -305,7 +320,7 @@ function refreshReport() {
       <template v-else-if="!trendErrorMessage">
         <p class="text-sm text-muted-foreground" role="status">
           所选时段共 {{ reportPresentation.trendBucketCount }} 条日统计，按
-          {{ reportPresentation.trendGroups.length }} 个站点分别展示。
+          {{ reportPresentation.trendGroups.length }} 个工厂分别展示。
         </p>
         <p
           v-if="reportPresentation.omittedTrendBucketCount > 0"
@@ -323,7 +338,7 @@ function refreshReport() {
             :data-oee-site="group.siteCode ?? ''"
           >
             <div>
-              <h3 class="text-sm font-semibold text-foreground">站点 {{ group.siteLabel }}</h3>
+              <h3 class="text-sm font-semibold text-foreground">{{ group.siteLabel }}</h3>
               <p class="text-xs text-muted-foreground">
                 {{ group.bucketCount }} 条日统计，{{ group.pointCount }} 条数据完整<span
                   v-if="group.omittedCount > 0"

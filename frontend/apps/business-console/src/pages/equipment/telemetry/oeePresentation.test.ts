@@ -446,8 +446,8 @@ describe('OEE aggregate presentation', () => {
     expect(new Set(report.tableRows.map((row) => row.key)).size).toBe(2)
     expect(report.tableRows.map((row) => row.primaryLabel)).toEqual(['SHIFT-DAY', 'SHIFT-DAY'])
     expect(report.tableRows.map((row) => row.hierarchyLabel)).toEqual([
-      '站点 SITE-A › 车间 WS-A › 产线 LINE-A',
-      '站点 SITE-B › 车间 WS-B › 产线 LINE-B',
+      '工厂 SITE-A › 车间 WS-A › 产线 LINE-A',
+      '工厂 SITE-B › 车间 WS-B › 产线 LINE-B',
     ])
     expect(report.tableRows.every((row) => row.businessDateLabel === '2026-08-01')).toBe(true)
   })
@@ -456,22 +456,22 @@ describe('OEE aggregate presentation', () => {
     [
       'workCenter',
       { dimensionValue: 'WC-01', siteCode: 'SITE-A', workshopCode: 'WS-A', lineCode: 'LINE-A' },
-      '站点 SITE-A › 车间 WS-A › 产线 LINE-A',
+      '工厂 SITE-A › 车间 WS-A › 产线 LINE-A',
     ],
     [
       'line',
       { dimensionValue: 'LINE-01', siteCode: 'SITE-A', workshopCode: 'WS-A', lineCode: 'LINE-01' },
-      '站点 SITE-A › 车间 WS-A',
+      '工厂 SITE-A › 车间 WS-A',
     ],
     [
       'workshop',
       { dimensionValue: 'WS-01', siteCode: 'SITE-A', workshopCode: 'WS-01' },
-      '站点 SITE-A',
+      '工厂 SITE-A',
     ],
     [
       'shift',
       { dimensionValue: 'SHIFT-DAY', siteCode: 'SITE-A', workshopCode: 'WS-A', lineCode: 'LINE-A' },
-      '站点 SITE-A › 车间 WS-A › 产线 LINE-A',
+      '工厂 SITE-A › 车间 WS-A › 产线 LINE-A',
     ],
   ])(
     'uses the full %s composite identity and relevant hierarchy',
@@ -527,6 +527,78 @@ describe('OEE aggregate presentation', () => {
       degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
     })
     expect(report).toMatchObject({ tableTotal: 27 })
+  })
+})
+
+describe('OEE 对比对象与层级显示主数据名称', () => {
+  const names = {
+    site: (code?: string | null) => ({ 'SITE-001': '一号工厂' })[code ?? ''],
+    workshop: (code?: string | null) => ({ 'WS-01': '一车间 · 机加车间' })[code ?? ''],
+    line: (code?: string | null) => ({ 'LINE-ROD-01': '活塞杆一线' })[code ?? ''],
+    workCenter: (code?: string | null) => ({ 'WC-ROD-01': '活塞杆加工中心一线' })[code ?? ''],
+    shift: (code?: string | null) => ({ NIGHT: '夜班' })[code ?? ''],
+  }
+  const hierarchy = {
+    siteCode: 'SITE-001',
+    workshopCode: 'WS-01',
+    lineCode: 'LINE-ROD-01',
+    businessDate: '2026-09-26',
+  }
+
+  it.each<[OeeReportDimension, string, string, string]>([
+    ['shift', 'NIGHT', '夜班', '工厂 一号工厂 › 车间 一车间 · 机加车间 › 产线 活塞杆一线'],
+    [
+      'workCenter',
+      'WC-ROD-01',
+      '活塞杆加工中心一线',
+      '工厂 一号工厂 › 车间 一车间 · 机加车间 › 产线 活塞杆一线',
+    ],
+    ['line', 'LINE-ROD-01', '活塞杆一线', '工厂 一号工厂 › 车间 一车间 · 机加车间'],
+    ['workshop', 'WS-01', '一车间 · 机加车间', '工厂 一号工厂'],
+  ])('按%s对比时，编码 %s 显示为「%s」', (dimension, code, name, expectedHierarchy) => {
+    const report = presentOeeReport({
+      dimension,
+      trendBuckets: [],
+      tableBuckets: [bucket({ dimension, dimensionValue: code, ...hierarchy })],
+      tableTotal: 1,
+      names,
+    })
+
+    expect(report.tableRows[0]).toMatchObject({
+      primaryLabel: name,
+      hierarchyLabel: expectedHierarchy,
+    })
+  })
+
+  it('按天趋势的分组标题用工厂名称；名录里没有的编码原样显示', () => {
+    const report = presentOeeReport({
+      dimension: 'shift',
+      trendBuckets: [],
+      tableBuckets: [
+        bucket({
+          dimension: 'shift',
+          dimensionValue: 'MIDDLE',
+          ...hierarchy,
+          lineCode: 'LINE-NEW',
+        }),
+      ],
+      tableTotal: 1,
+      names,
+    })
+    const trend = presentOeeReport({
+      dimension: 'day',
+      trendBuckets: [bucket({ siteCode: 'SITE-001' })],
+      tableBuckets: [],
+      tableTotal: 1,
+      names,
+    })
+
+    expect(report.tableRows[0]?.primaryLabel).toBe('MIDDLE')
+    expect(report.tableRows[0]?.hierarchyLabel).toBe(
+      '工厂 一号工厂 › 车间 一车间 · 机加车间 › 产线 LINE-NEW',
+    )
+    expect(trend.trendGroups[0]?.siteLabel).toBe('一号工厂')
+    expect(trend.trendGroups[0]?.series[0]?.label).toBe('一号工厂 · OEE')
   })
 })
 
