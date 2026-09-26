@@ -2,6 +2,7 @@ import type {
   BusinessConsoleTelemetryOeeAggregateBucket,
   BusinessConsoleTelemetryOeeAggregateDimension,
 } from '@nerv-iip/api-client'
+import { formatDateTime } from '@/utils/format'
 
 export type OeeReportDimension = BusinessConsoleTelemetryOeeAggregateDimension
 
@@ -403,22 +404,17 @@ function shortBusinessDate(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
   if (businessDate) return `${Number(businessDate[2])}/${Number(businessDate[3])}`
   if (!bucket.bucketStartUtc) return '—'
   const date = new Date(bucket.bucketStartUtc)
-  return Number.isNaN(date.getTime()) ? '—' : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
+  return Number.isNaN(date.getTime()) ? '—' : `${date.getMonth() + 1}/${date.getDate()}`
 }
 
 function displayBusinessDate(value?: string | null) {
   return value?.trim() || '未解析业务日'
 }
 
+/** 统计时段按使用者本地时间显示（与控制台其它时间列同一口径，见 `@/utils/format`）。 */
 function formatWindow(start?: string | null, end?: string | null) {
-  return `${formatDateTime(start)} – ${formatDateTime(end)}`
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString('zh-CN', { timeZone: 'UTC', hour12: false })
+  if (!start || !end) return '—'
+  return `${formatDateTime(start)} 至 ${formatDateTime(end)}`
 }
 
 function percentNumber(value: number | null | undefined) {
@@ -431,4 +427,39 @@ function displayCode(value: string | null | undefined, fallback: string) {
 
 function nullable(value: string | null | undefined) {
   return value ?? null
+}
+
+/**
+ * 统计时段在界面上按本地日期选择（起止均含当天），查询接口收的是时刻区间 `[起, 止)`。
+ * 两个方向的换算只在这里做：本地日期的 0 点 ⇄ 对应时刻。
+ */
+export function oeeWindowFromLocalDates(start: string, end: string) {
+  return { windowStartUtc: localMidnight(start, 0), windowEndUtc: localMidnight(end, 1) }
+}
+
+export function localDatesFromOeeWindow(windowStartUtc: string, windowEndUtc: string) {
+  return { start: localDate(windowStartUtc, 0), end: localDate(windowEndUtc, -1) }
+}
+
+/** 默认统计时段：含今天在内的最近 `days` 天。 */
+export function recentOeeWindow(days: number, now = new Date()) {
+  const today = localDateOf(now)
+  const first = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1))
+  return oeeWindowFromLocalDates(localDateOf(first), today)
+}
+
+function localMidnight(value: string, dayOffset: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year!, month! - 1, day! + dayOffset).toISOString()
+}
+
+function localDate(value: string, dayOffset: number) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setDate(date.getDate() + dayOffset)
+  return localDateOf(date)
+}
+
+function localDateOf(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
