@@ -60,10 +60,7 @@ export const WMS_OUTBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
  *
  * `inventory-transfer` 码值是本 PR 把旧值 `InventoryTransfer` 改的小写-连字符形式，
  * 后端 `WmsSourceDocumentTypes` 没有为它声明常量，全仓也没有任何下游按字面量比对这个值，
- * 所以字面量本身可以自由选取。校验上，`CreateInboundOrderCommand` 有
- * `NotEmpty`/`MaximumLength(100)` 的 FluentValidation 校验器；`CreateOutboundOrderCommand`
- * 没有对应的校验器，只在领域层 `OutboundOrder.Create` 里靠 `WmsText.Required` 做非空校验，
- * 没有长度上限。两条命令都原样存库。
+ * 所以字面量本身可以自由选取。
  */
 export const WMS_INBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
   { value: 'inventory-transfer', label: '库存调拨' },
