@@ -14,8 +14,8 @@ using Nerv.IIP.ServiceAuth;
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 /// <summary>
-/// 生产准备检查的三项基础数据缺口（#3771）：工作中心成本费率（ERP）、MES 配置库位（Inventory）、
-/// 待开工工序的设备绑定（MES）。全新部署上这三类数据为零时，链路只会静默失败（#3730），
+/// 生产准备检查的基础数据缺口（#3771、#3795）：工作中心成本费率、会计期间与机器制造费用率（ERP）、
+/// MES 配置库位（Inventory）、待开工工序的设备绑定（MES）。全新部署上这三类数据为零时，链路只会静默失败（#3730），
 /// 这里证明检查能指出缺的是哪一条，补齐后该项转为就绪。
 /// </summary>
 public sealed class MesFoundationReadinessDataGapTests
@@ -55,6 +55,44 @@ public sealed class MesFoundationReadinessDataGapTests
         await ReadAreaAsync(dbContext, sources, "erp", siteCode: "SITE-001", lineCode: "LINE-TUB", workCenterCode: "WC-TUB-01");
 
         Assert.Equal(("SITE-001", "LINE-TUB", "WC-TUB-01"), sources.LastWorkCenterScope);
+    }
+
+    [Fact]
+    public async Task Cost_rate_area_blocks_a_missing_accounting_period_then_each_work_center_without_a_machine_overhead_rate()
+    {
+        await using var dbContext = CreateDbContext();
+        var machineOverheadRated = new HashSet<string>(StringComparer.Ordinal);
+        var sources = new FakeFoundationSources
+        {
+            WorkCenters = [new("WC-TUB-01", "制管一线"), new("WC-TUB-02", "制管二线")],
+            AccountingPeriodCode = null,
+            MachineOverheadRatedWorkCenters = machineOverheadRated,
+        };
+        sources.RatedWorkCenters.UnionWith(["WC-TUB-01", "WC-TUB-02"]);
+
+        var noPeriod = await ReadAreaAsync(dbContext, sources, "erp");
+
+        Assert.Equal("Blocked", noPeriod.Status);
+        var periodIssue = Assert.Single(noPeriod.Issues);
+        Assert.Equal("ACCOUNTING_PERIOD_MISSING", periodIssue.Code);
+        Assert.Contains("会计期间", periodIssue.FixHint, StringComparison.Ordinal);
+
+        sources.AccountingPeriodCode = "2026-09";
+        machineOverheadRated.Add("WC-TUB-02");
+        var missingRate = await ReadAreaAsync(dbContext, sources, "erp");
+
+        Assert.Equal("Blocked", missingRate.Status);
+        var rateIssue = Assert.Single(missingRate.Issues);
+        Assert.Equal("WORK_CENTER_MACHINE_OVERHEAD_RATE_MISSING", rateIssue.Code);
+        Assert.Equal("WC-TUB-01", rateIssue.ReferenceId);
+        Assert.Contains("2026-09", rateIssue.Message, StringComparison.Ordinal);
+        Assert.Contains("经营管理 ▸ 财务 ▸ 机器制造费用率", rateIssue.FixHint, StringComparison.Ordinal);
+
+        machineOverheadRated.Add("WC-TUB-01");
+        var ready = await ReadAreaAsync(dbContext, sources, "erp");
+
+        Assert.Equal("Ready", ready.Status);
+        Assert.Empty(ready.Issues);
     }
 
     [Fact]
@@ -178,6 +216,22 @@ public sealed class MesFoundationReadinessDataGapTests
         var request = Assert.Single(handler.Requests);
         Assert.Equal("/api/business/v1/erp/finance/work-center-cost-rates", request.RequestUri!.AbsolutePath);
         Assert.Contains("workCenterId=WC-TUB-01", request.RequestUri.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Http_reader_asks_erp_for_the_machine_overhead_rate_coverage_of_the_given_date()
+    {
+        var handler = new StubHttpMessageHandler(_ => Json(
+            "{\"data\":{\"accountingPeriodCode\":\"2026-09\",\"configuredWorkCenterIds\":[\"WC-TUB-01\"]},\"success\":true}"));
+        var reader = CreateReader(erp: handler);
+
+        var coverage = await reader.GetMachineOverheadRateCoverageAsync("org-001", "env-dev", new DateOnly(2026, 9, 23), CancellationToken.None);
+
+        Assert.Equal("2026-09", coverage.AccountingPeriodCode);
+        Assert.Equal(["WC-TUB-01"], coverage.ConfiguredWorkCenterIds);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("/api/business/v1/erp/finance/machine-overhead-rate-coverage", request.RequestUri!.AbsolutePath);
+        Assert.Contains("date=2026-09-23", request.RequestUri.Query, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -313,6 +367,11 @@ public sealed class MesFoundationReadinessDataGapTests
 
         public (string?, string?, string?) LastWorkCenterScope { get; private set; }
 
+        public string? AccountingPeriodCode { get; set; } = "2026-09";
+
+        /// <summary>为空时视为所有工作中心都已配置机器制造费用率，让只关心别的检查的用例不受干扰。</summary>
+        public HashSet<string>? MachineOverheadRatedWorkCenters { get; init; }
+
         public Task<IReadOnlyCollection<MesFoundationWorkCenter>> ListActiveWorkCentersAsync(
             string organizationId,
             string environmentId,
@@ -330,6 +389,15 @@ public sealed class MesFoundationReadinessDataGapTests
             string environmentId,
             string workCenterId,
             CancellationToken cancellationToken) => Task.FromResult(RatedWorkCenters.Contains(workCenterId));
+
+        public Task<MesMachineOverheadRateCoverage> GetMachineOverheadRateCoverageAsync(
+            string organizationId,
+            string environmentId,
+            DateOnly date,
+            CancellationToken cancellationToken)
+            => Task.FromResult(new MesMachineOverheadRateCoverage(
+                AccountingPeriodCode,
+                MachineOverheadRatedWorkCenters?.ToArray() ?? WorkCenters.Select(x => x.Code).ToArray()));
 
         public Task<MesFoundationStockLocation?> FindStockLocationAsync(
             string organizationId,
@@ -384,6 +452,12 @@ internal static class FoundationReadinessServices
             string environmentId,
             string workCenterId,
             CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<MesMachineOverheadRateCoverage> GetMachineOverheadRateCoverageAsync(
+            string organizationId,
+            string environmentId,
+            DateOnly date,
+            CancellationToken cancellationToken) => Task.FromResult(new MesMachineOverheadRateCoverage("2026-09", []));
 
         public Task<MesFoundationStockLocation?> FindStockLocationAsync(
             string organizationId,

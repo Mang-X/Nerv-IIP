@@ -350,6 +350,50 @@ public sealed class WorkCenterMachineOverheadRateApplicationTests
         Assert.Contains("未唯一匹配", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Period_coverage_lists_work_centers_configured_for_the_uniquely_matched_period()
+    {
+        await using var db = CreateDb();
+        db.AccountingPeriods.AddRange(
+            Period("org-a", "env-a", "2026-06", 6),
+            Period("org-a", "env-a", "2026-07", 7));
+        db.WorkCenterMachineOverheadRates.AddRange(
+            Rate("org-a", "env-a", "WC-01", "2026-06", 1, 30_000m),
+            Rate("org-a", "env-a", "WC-01", "2026-06", 2, 31_000m),
+            WorkCenterMachineOverheadRate.DefineNotApplicable(
+                "org-a", "env-a", "WC-02", "2026-06", "CNY", 1, "system:test", "无机器费用", ChangedAtUtc),
+            Rate("org-a", "env-a", "WC-03", "2026-07", 1, 30_000m),
+            Rate("org-b", "env-a", "WC-04", "2026-06", 1, 30_000m),
+            Rate("org-a", "env-b", "WC-05", "2026-06", 1, 30_000m));
+        await db.SaveChangesAsync();
+
+        var coverage = await new GetMachineOverheadRatePeriodCoverageQueryHandler(db).Handle(
+            new(" org-a ", " env-a ", new DateOnly(2026, 6, 30)), CancellationToken.None);
+
+        Assert.Equal("2026-06", coverage.AccountingPeriodCode);
+        Assert.Equal(["WC-01", "WC-02"], coverage.ConfiguredWorkCenterIds);
+    }
+
+    [Fact]
+    public async Task Period_coverage_reports_no_period_when_the_date_is_uncovered_or_matches_overlapping_periods()
+    {
+        await using var db = CreateDb();
+        db.AccountingPeriods.AddRange(
+            Period("org-a", "env-a", "2026-06", 6),
+            AccountingPeriod.Open("org-a", "env-a", "2026-H2-overlap", new(2026, 6, 15), new(2026, 7, 15)));
+        db.WorkCenterMachineOverheadRates.Add(Rate("org-a", "env-a", "WC-01", "2026-06", 1, 30_000m));
+        await db.SaveChangesAsync();
+        var handler = new GetMachineOverheadRatePeriodCoverageQueryHandler(db);
+
+        var overlapping = await handler.Handle(new("org-a", "env-a", new DateOnly(2026, 6, 20)), CancellationToken.None);
+        var uncovered = await handler.Handle(new("org-a", "env-a", new DateOnly(2026, 8, 1)), CancellationToken.None);
+
+        Assert.Null(overlapping.AccountingPeriodCode);
+        Assert.Empty(overlapping.ConfiguredWorkCenterIds);
+        Assert.Null(uncovered.AccountingPeriodCode);
+        Assert.Empty(uncovered.ConfiguredWorkCenterIds);
+    }
+
     private static ConfigureWorkCenterMachineOverheadRateCommand ApplicableCommand(
         string accountingPeriodCode,
         decimal fixedBudget) =>

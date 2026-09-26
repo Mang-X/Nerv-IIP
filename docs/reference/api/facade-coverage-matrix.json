@@ -755,6 +755,14 @@
     },
     {
       "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/machine-overhead-rate-coverage",
+      "operationId": "getErpMachineOverheadRatePeriodCoverage",
+      "classification": "internal",
+      "rationale": "Service-to-service read for the MES foundation readiness check (#3795): current accounting period by date and the work centers with a machine overhead rate configured for it; not a user-facing Gateway action."
+    },
+    {
+      "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/finance/cash-receipts",
       "operationId": "registerErpCashReceipt",
