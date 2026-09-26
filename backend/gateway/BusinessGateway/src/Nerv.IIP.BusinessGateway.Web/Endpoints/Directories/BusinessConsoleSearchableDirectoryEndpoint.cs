@@ -198,7 +198,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                     ? resource.DeviceAssetId
                     : resource.Code,
                 resource.DisplayName,
-                request.DirectoryType == "station" ? resource.StationCode : resource.Code,
+                resource.Code,
                 "master-data",
                 Context(
                     ("siteCode", resource.SiteCode),

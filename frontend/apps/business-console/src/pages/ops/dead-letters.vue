@@ -210,9 +210,10 @@ const KNOWN_FAILURE_REASONS: Record<string, FailureHint> = {
     linkLabel: '去补充工作中心费率',
   },
   'missing-machine-overhead-rate': {
-    reason: '该工作中心在结算时点没有生效的机器制造费用率，或所属会计期间未能唯一匹配。',
-    linkPath: '/erp/finance/machine-overhead',
-    linkLabel: '去查看机器制造费用',
+    reason:
+      '该工作中心在完工日期所属的会计期间没有机器制造费用率，或完工日期未能唯一匹配到会计期间。',
+    linkPath: '/erp/finance/machine-overhead-rates',
+    linkLabel: '去补充机器制造费用率',
   },
   'unavailable-machine-time-fact': {
     reason: 'MES 未提供或未确认权威的机器工时数据，机器制造费用暂无法结算。',

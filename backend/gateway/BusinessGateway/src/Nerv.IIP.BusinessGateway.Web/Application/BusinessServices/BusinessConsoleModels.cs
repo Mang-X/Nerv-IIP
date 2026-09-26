@@ -570,6 +570,15 @@ public sealed record BusinessConsoleCreateProductionLineRequest(
     string? WorkshopCode = null,
     string? IdempotencyKey = null);
 
+public sealed record BusinessConsoleCreateStationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Code,
+    string Name,
+    string LineCode,
+    string? WorkCenterCode = null,
+    string? IdempotencyKey = null);
+
 public sealed record BusinessConsoleCreateWorkCenterRequest(
     string OrganizationId,
     string EnvironmentId,

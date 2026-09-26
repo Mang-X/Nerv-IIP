@@ -2642,6 +2642,19 @@
     {
       "service": "MasterData",
       "method": "POST",
+      "route": "/api/business/v1/master-data/stations",
+      "operationId": "createBusinessMasterDataStation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleStation"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
       "route": "/api/business/v1/master-data/reference-data",
       "operationId": "createBusinessMasterDataReferenceDataCode",
       "classification": "exposed",

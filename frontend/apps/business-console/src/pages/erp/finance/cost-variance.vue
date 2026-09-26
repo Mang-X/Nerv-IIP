@@ -9,7 +9,7 @@ import {
   type NvDataTableColumn,
 } from '@nerv-iip/ui'
 import { computed, ref } from 'vue'
-import { useErpWorkOrderCostVariance } from '@/composables/useBusinessErp'
+import { useErpWorkOrderCostVariance } from '@/composables/useErpCostAccounting'
 import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage } from '@/utils/notify'
