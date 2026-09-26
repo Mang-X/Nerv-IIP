@@ -166,7 +166,7 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
       return '正在获取已授权的作业范围…'
     }
     if (envelope.value.success !== true || scopeOptions.value.length === 0) {
-      return '作业范围目录未返回任何已授权范围，请到 IAM 为本账号配置站点授权或作业池成员资格。'
+      return '当前账号还没有已授权的作业范围，请联系管理员为本账号配置站点授权或作业池成员资格。'
     }
     return hasSelection.value ? '' : '请先在上方选择作业范围。'
   })

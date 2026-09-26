@@ -185,7 +185,7 @@ describe('WorkOrderTransformationDialog', () => {
     })
 
     expect(wrapper.find('[data-testid="transformation-status"]').text()).toContain(
-      '工单已被他人修改',
+      '提交与工单当前状态冲突',
     )
     expect(wrapper.emitted('submit')).toBeUndefined()
   })

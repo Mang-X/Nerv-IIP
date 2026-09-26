@@ -169,7 +169,7 @@ export const MES_WORK_SCOPE_REQUIRED_MESSAGE =
 
 export const MES_WORK_SCOPE_UNAVAILABLE_MESSAGE =
   '当前账号在本组织没有已授权的作业范围，无法读取现场数据。' +
-  '请联系管理员在 IAM 为该账号配置数据范围（组织/车间/工作中心/班组/本人）后重新登录。'
+  '请联系管理员为该账号配置数据范围（组织/车间/工作中心/班组/本人）后重新登录。'
 
 function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
   if (!snapshot || typeof snapshot !== 'object') {

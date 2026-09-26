@@ -186,6 +186,12 @@ beforeEach(() => {
           message: '变更会影响 MRP、MES、APS 和在制执行候选。',
           relatedVersionId: 'MBOM-1:B',
         },
+        {
+          code: 'production-version-not-found',
+          severity: 'warning',
+          message: "Production version 'PV-404' was not found.",
+          relatedVersionId: 'PV-404',
+        },
       ],
     }
     return impactPreview.value
@@ -333,6 +339,12 @@ describe('engineering eco page', () => {
     expect(wrapper.text()).toContain('暂无入口')
     expect(wrapper.find('[data-router-link]').exists()).toBe(true)
     expect(wrapper.text()).toContain('变更会影响 MRP、MES、APS 和在制执行候选')
+    // 风险级别与服务端英文原文都换成中文，版本主键不上屏。
+    expect(wrapper.text()).toContain('警告')
+    expect(wrapper.text()).toContain('找不到该生产版本，请确认版本是否存在。')
+    expect(wrapper.text()).not.toContain('warning')
+    expect(wrapper.text()).not.toContain('was not found')
+    expect(wrapper.text()).not.toContain('PV-404')
   })
 
   it('校验拦截：变更信息未填点发布出现汇总提示且不发请求', async () => {
@@ -368,6 +380,7 @@ describe('engineering eco page', () => {
       affectedVersions: [
         { versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' },
         { versionKind: 'ProductionVersion', versionId: 'PV-1' },
+        { versionKind: 'ProductionVersion', versionId: 'PV-GONE' },
       ],
     })
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
@@ -383,5 +396,8 @@ describe('engineering eco page', () => {
     // 生产版本存的是版本主键，上屏的是「物料 · 生效日」。
     expect(sheet.text()).toContain('SKU-1 · 生效 2026-01-01')
     expect(sheet.text()).not.toContain('PV-1')
+    // 读不到名称（无权限、清单截断或仍在加载）时说中性话，不回吐主键。
+    expect(sheet.text()).toContain('暂无法显示版本名称')
+    expect(sheet.text()).not.toContain('PV-GONE')
   })
 })

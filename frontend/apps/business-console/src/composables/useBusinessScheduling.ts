@@ -226,7 +226,9 @@ export function useBusinessScheduling() {
             endUtc: input.endUtc,
           },
         })
-        .then((envelope) => assertEnvelopeSuccess(envelope, '未确认工序已持久锁定，请刷新后核实。'))
+        .then((envelope) =>
+          assertEnvelopeSuccess(envelope, '未确认工序已持久锁定，请再点一次「持久锁定」。'),
+        )
     },
     upsertOperationOverrideError: operationOverrideMutation.error,
     upsertOperationOverridePending: operationOverrideMutation.isLoading,

@@ -118,7 +118,7 @@ const statusText = computed(() => {
     case 'success':
       return '操作已完成，结果已回读。'
     case 'conflict':
-      return '工单已被他人修改，请刷新工单后重试。'
+      return '提交与工单当前状态冲突，请刷新后核对填写内容再试。'
     case 'error':
       return props.errorMessage || '操作失败，请检查填写内容后重试。'
     default:

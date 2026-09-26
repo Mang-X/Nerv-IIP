@@ -426,19 +426,19 @@ interface UnlinkedNodeSpec {
 const UNLINKED_NODES: Readonly<Partial<Record<FulfillmentNodeKey, UnlinkedNodeSpec>>> = {
   'production-report': {
     title: '生产报工',
-    ruleNote: '生产报工与产出批次以工单为键，可从上方工单继续下钻；本时间线尚未直接汇总。',
+    ruleNote: '生产报工与产出批次按工单记录，可从上方工单继续查看；本时间线尚未直接汇总。',
   },
   'quality-result': {
     title: '质量结果 / NCR / 冻结',
-    ruleNote: '质量检验任务的来源单据指向工单，可从上方工单继续下钻；本时间线尚未直接汇总。',
+    ruleNote: '质量检验任务按工单生成，可从上方工单继续查看；本时间线尚未直接汇总。',
   },
   'finished-goods-receipt': {
     title: '完工入库',
-    ruleNote: '完工入库请求以工单号为键，可从上方工单继续下钻；本时间线尚未直接汇总。',
+    ruleNote: '完工入库按工单办理，可从上方工单继续查看；本时间线尚未直接汇总。',
   },
   'finished-goods-inventory': {
     title: '成品批次与库存',
-    ruleNote: '成品库存联动以完工入库单号为键，需先经完工入库才能回溯到本单。',
+    ruleNote: '成品库存由完工入库带入，需先完成完工入库才能回溯到本单。',
   },
   'wms-outbound': {
     title: 'WMS 出库',
@@ -446,7 +446,7 @@ const UNLINKED_NODES: Readonly<Partial<Record<FulfillmentNodeKey, UnlinkedNodeSp
   },
   voucher: {
     title: '凭证',
-    ruleNote: '会计凭证按科目借贷过账，不带单据级来源，因此无法稳定回溯到某一张销售订单。',
+    ruleNote: '会计凭证按科目汇总过账，无法对应到某一张销售订单。',
   },
 }
 

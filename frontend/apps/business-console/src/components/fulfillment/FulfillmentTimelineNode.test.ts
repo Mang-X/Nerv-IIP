@@ -64,6 +64,17 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
     expect(wrapper.find('a').exists()).toBe(true)
   })
 
+  it('established: 合批说明作为补充说明上屏', () => {
+    const wrapper = mountNode({
+      key: 'mes-work-order',
+      title: 'MES 工单',
+      status: 'established',
+      businessNo: 'WO-1',
+      note: '该工单为合批工单，同时承接 SO-A 等订单',
+    })
+    expect(wrapper.text()).toContain('该工单为合批工单，同时承接 SO-A 等订单')
+  })
+
   it('unlinked: shows an explicit rule note and never fabricates data', () => {
     const wrapper = mountNode({
       key: 'mes-work-order',
@@ -107,7 +118,7 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'failed',
       failureKind: 'conflict',
     })
-    expect(wrapper.text()).toContain('数据已被他人修改')
+    expect(wrapper.text()).toContain('数据已发生变化')
     const button = wrapper.find('button')
     expect(button.exists()).toBe(true)
     await button.trigger('click')

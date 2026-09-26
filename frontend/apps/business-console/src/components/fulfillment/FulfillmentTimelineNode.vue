@@ -16,7 +16,7 @@ const emit = defineEmits<{ retry: [] }>()
 const failureText = computed(() => {
   switch (props.node.failureKind) {
     case 'conflict':
-      return '数据已被他人修改，请刷新后重试。'
+      return '数据已发生变化，请刷新后重试。'
     case 'timeout':
       return '请求超时或网络中断，请重试。'
     default:

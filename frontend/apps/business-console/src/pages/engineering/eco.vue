@@ -124,7 +124,7 @@ function affectedVersionLabel(kind?: string | null, versionId?: string | null) {
   if (kind !== 'ProductionVersion') return versionId
   return (
     productionVersionOptions.value.find((option) => option.value === versionId)?.label ??
-    '生产版本已不在当前清单中'
+    '暂无法显示版本名称'
   )
 }
 function affectedVersionOptions(kind: string, current: string) {
@@ -225,7 +225,7 @@ const impactColumns: NvDataTableColumn<BusinessConsoleEngineeringChangeImpactNod
 ]
 const riskColumns: NvDataTableColumn<BusinessConsoleEngineeringChangeImpactRisk>[] = [
   { key: 'severity', header: '级别', width: 'w-24' },
-  { key: 'message', header: '风险提示' },
+  { key: 'message', header: '风险提示', accessor: (row) => riskMessage(row) },
 ]
 
 // ── 发布变更向导（一步发布，非多步审批）────────────────────────
@@ -402,6 +402,21 @@ function impactLevelLabel(level?: string | null) {
     candidate: '候选',
   }
   return labels[(level ?? '').toLowerCase()] ?? (level || '候选')
+}
+
+function riskSeverityLabel(severity?: string | null) {
+  const labels: Record<string, string> = { critical: '严重', error: '严重', warning: '警告' }
+  return labels[(severity ?? '').toLowerCase()] ?? '提示'
+}
+
+// 影响预览的风险说明有三条是英文原文，按风险码给中文说法；其余沿用服务端给的中文。
+const RISK_MESSAGES: Record<string, string> = {
+  'unsupported-affected-version': '该类受影响版本暂不支持影响预览。',
+  'invalid-production-version-id': '生产版本标识无效，请重新选择生产版本。',
+  'production-version-not-found': '找不到该生产版本，请确认版本是否存在。',
+}
+function riskMessage(risk: BusinessConsoleEngineeringChangeImpactRisk) {
+  return RISK_MESSAGES[risk.code ?? ''] ?? risk.message ?? '—'
 }
 
 function riskTone(severity?: string | null): StatusTone {
@@ -634,11 +649,11 @@ function riskTone(severity?: string | null): StatusTone {
                   empty-message="没有风险提示。"
                 >
                   <template #cell-severity="{ row }">
-                    <NvStatusBadge :label="row.severity || 'info'" :tone="riskTone(row.severity)" />
+                    <NvStatusBadge
+                      :label="riskSeverityLabel(row.severity)"
+                      :tone="riskTone(row.severity)"
+                    />
                   </template>
-                  <template #cell-relatedVersionId="{ row }">{{
-                    row.relatedVersionId || '—'
-                  }}</template>
                 </NvDataTable>
               </div>
 
