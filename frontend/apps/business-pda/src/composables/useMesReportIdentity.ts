@@ -28,6 +28,11 @@ interface UseMesReportIdentityOptions {
   reportableTasksReady: Readonly<Ref<boolean>>
 }
 
+/** 「工序任务 OP-001 」；取不到人读单号时只写「工序任务」。 */
+function taskName(task: Task) {
+  return task.operationTaskNo ? `工序任务 ${task.operationTaskNo} ` : '工序任务'
+}
+
 function queryId(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -154,7 +159,7 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       return '报工链接缺少工单，已阻止报工。'
     }
     if (workOrderId && options.workOrderDetailError.value) {
-      return `工单 ${workOrderId} 详情加载失败，已阻止报工，请重试。`
+      return '工单详情加载失败，已阻止报工，请重试。'
     }
     const detail = options.workOrderDetail.value
     if (
@@ -163,10 +168,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       detail?.workOrderId === workOrderId &&
       !hasCompleteReworkAuthority(detail)
     ) {
-      return `工单 ${workOrderId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
+      return '工单的返工来源信息不完整，已阻止报工，请刷新后重试。'
     }
     if (workOrderId && !options.workOrderDetailPending.value && !selectedWorkOrder.value) {
-      return `未找到工单 ${workOrderId}，已阻止报工。`
+      return '未找到链接中的工单，已阻止报工。'
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && selectedTask.value) {
       if (!options.reportableTasksReady.value) {
@@ -177,13 +182,13 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
         return '可报工工序尚未加载完成，已阻止报工。'
       }
       if (!hasCompleteReworkAuthority(selectedTask.value)) {
-        return `工序任务 ${operationTaskId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
+        return `${taskName(selectedTask.value)}的返工来源信息不完整，已阻止报工，请刷新后重试。`
       }
       if (!hasSameMesWorkOrderAuthority(selectedWorkOrder.value, selectedTask.value)) {
-        return `工序任务 ${operationTaskId} 的返工来源与工单不一致，已阻止报工，请刷新后重试。`
+        return `${taskName(selectedTask.value)}的返工来源与工单不一致，已阻止报工，请刷新后重试。`
       }
       if (!canReport(selectedTask.value, selectedWorkOrder.value, reportableTaskKeys.value)) {
-        return `工序任务 ${operationTaskId} 当前不可报工。`
+        return `${taskName(selectedTask.value)}当前不可报工。`
       }
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && !selectedTask.value) {
@@ -193,10 +198,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
         return `报工任务读取范围未就绪：${scopeMessage}`
       }
       if (options.exactOperationTaskError.value) {
-        return `工单 ${workOrderId} 下的工序任务 ${operationTaskId} 精确查询失败，已阻止报工，请重试。`
+        return '工序任务查询失败，已阻止报工，请重试。'
       }
       if (options.exactOperationTaskPending.value) return null
-      return `未找到工单 ${workOrderId} 下的工序任务 ${operationTaskId}，已阻止报工。`
+      return '未在该工单下找到链接中的工序任务，已阻止报工。'
     }
     return null
   })

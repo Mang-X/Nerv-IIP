@@ -46,7 +46,11 @@ import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
-import { reworkSourceLabel, withReworkLabel } from './components/operationPresentation'
+import {
+  formatOperationDateTime,
+  reworkSourceLabel,
+  withReworkLabel,
+} from './components/operationPresentation'
 
 definePage({
   meta: {
@@ -608,7 +612,8 @@ async function onScanAccepted(value: MesScanAccepted) {
             @click="toggleTelemetryCandidate(candidate.candidateId)"
           >
             <span class="block font-medium"
-              >{{ candidate.deviceAssetId }} · {{ candidate.goodQuantity }} 件</span
+              >{{ candidate.goodQuantity }} 件 ·
+              {{ formatOperationDateTime(candidate.bucketStartUtc) }}</span
             ><span class="block text-xs text-muted-foreground">{{
               candidate.suspensionReason ?? candidate.status
             }}</span>
@@ -616,11 +621,11 @@ async function onScanAccepted(value: MesScanAccepted) {
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
             <NvMobileInput
               v-model="telemetryWorkOrderId"
-              :placeholder="candidate.workOrderId ?? '工单号'"
+              :placeholder="candidate.workOrderId ? '留空则沿用已关联工单' : '工单号'"
             />
             <NvMobileInput
               v-model="telemetryOperationTaskId"
-              :placeholder="candidate.operationTaskId ?? '工序任务号'"
+              :placeholder="candidate.operationTaskId ? '留空则沿用已关联工序' : '工序任务号'"
             />
             <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
             <div class="grid grid-cols-2 gap-2">

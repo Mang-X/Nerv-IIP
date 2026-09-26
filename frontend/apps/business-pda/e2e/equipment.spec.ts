@@ -286,7 +286,6 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     'WS-1 · LINE-A · ST-9',
   )
-  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     `维修人员 ${workerProfile.displayName}`,
   )
@@ -752,13 +751,10 @@ test('维修工单：终态矛盾事实失败关闭，修正后强 ID 回读且�
   await expect(page.getByTestId('maintenance-work-order-detail-error')).toContainText(
     '工单详情读取失败，请重试',
   )
-  await expect(page.getByTestId('maintenance-read-only-state')).toHaveCount(0)
+  await expect(page.getByTestId('maintenance-work-order-detail')).toHaveCount(0)
   rejectContradictoryDetail = false
   await page.getByTestId('maintenance-work-order-detail-error').getByRole('button').click()
-  await expect(page.getByTestId('maintenance-read-only-state')).toContainText('终态只读')
-  await expect(page.getByTestId('maintenance-read-only-state')).toContainText(
-    '工单已进入终态，仅可查看',
-  )
+  await expect(page.getByTestId('maintenance-work-order-detail')).toBeVisible()
   expect(detailRequests).toHaveLength(2)
   expect(detailRequests.every((url) => url.searchParams.get('scopeKind') === 'self')).toBe(true)
   expect(

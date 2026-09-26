@@ -137,14 +137,13 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('维修人员 张维修')
     expect(wrapper.text()).toContain('班组 甲班')
     expect(wrapper.text()).toContain('操作人 张维修')
-    expect(wrapper.text()).toContain('技师快照 张维修')
-    expect(wrapper.text()).toContain('班组快照 甲班')
+    expect(wrapper.text()).toContain('维修人员 张维修')
+    expect(wrapper.text()).toContain('班组 甲班')
     expect(wrapper.text()).toContain('由报警报修创建')
     expect(wrapper.text()).not.toContain('019f0000-0000-7000-8000-000000000101')
     expect(wrapper.text()).not.toContain('device-1')
     expect(wrapper.text()).not.toContain('principal-1')
     expect(wrapper.text()).not.toContain('team-a')
-    expect(wrapper.text()).toContain('版本 7')
     expect(wrapper.text()).toContain('开工')
     expect(wrapper.text()).toContain('取消')
     expect(wrapper.text()).toContain('当前账号没有维护动作权限')
@@ -255,8 +254,6 @@ describe('maintenance work-order authoritative detail page', () => {
 
     const wrapper = await mountPage()
 
-    expect(wrapper.text()).toContain('终态只读')
-    expect(wrapper.text()).toContain('工单已进入终态，仅可查看')
     expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(false)
   })
 

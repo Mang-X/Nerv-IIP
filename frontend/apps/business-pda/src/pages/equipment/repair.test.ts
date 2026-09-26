@@ -27,6 +27,7 @@ const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '11111111-1111-1111-1111-111111111111',
     deviceAssetId: 'DEV-1001',
+    sourceReferenceId: 'MWO-2026-0101',
     priority: 'high',
     status: 'open',
     openedAtUtc: '2026-06-10T08:00:00Z',
@@ -34,6 +35,7 @@ const workOrders = ref<Array<Record<string, unknown>>>([
   {
     workOrderId: '22222222-2222-2222-2222-222222222222',
     deviceAssetId: 'DEV-2002',
+    sourceReferenceId: 'MWO-2026-0102',
     priority: 'planned',
     status: 'completed',
     openedAtUtc: '2026-06-09T10:30:00Z',
@@ -407,10 +409,11 @@ describe('PDA equipment repair page', () => {
   it('renders recent maintenance work orders with Chinese priority + status', () => {
     const wrapper = mount(RepairPage)
     const text = wrapper.text()
-    expect(text).toContain('DEV-1001')
+    expect(text).toContain('MWO-2026-0101')
+    expect(text).not.toContain('DEV-1001')
     expect(text).toContain('高') // priority high
     expect(text).toContain('待处理') // status open
-    expect(text).toContain('DEV-2002')
+    expect(text).toContain('MWO-2026-0102')
     expect(text).toContain('计划保养') // priority planned
     expect(text).toContain('已完成') // status completed
   })
@@ -428,7 +431,7 @@ describe('PDA equipment repair page', () => {
     const wrapper = mount(RepairPage)
     expect(wrapper.find('[data-testid="task-list-retained-error"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('下一页加载失败')
-    expect(wrapper.text()).toContain('DEV-1001')
+    expect(wrapper.text()).toContain('MWO-2026-0101')
   })
 
   it('submits a new repair with an operation key but WITHOUT org/env/openedBy', async () => {
