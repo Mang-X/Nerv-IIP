@@ -239,7 +239,22 @@ Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web
 | `Quality:Seed:Enabled` | BusinessQuality | 缺失的质量原因码等基础目录 |
 | `MasterData:Seed:Enabled` | BusinessMasterData | 缺失的编码规则、受控字典（不含工厂自定义码集的样例值）、计量单位与换算、班次、工作日历、部门 |
 
-目标租户与 IAM 引导种子读同一组键（#3812）：四个服务都读 `Iam:Seed:OrganizationId` / `Iam:Seed:EnvironmentId`，缺省为 `org-001` / `env-dev`；Approval 模板的审批人读 `Iam:Seed:AdminUserId`，缺省为 `user-admin`。IAM 引导种子只在 Development 下执行（见 `docs/governance/data/persistence-startup.md`）；非 Development 环境里这组键只决定四个产品基线 seed 写到哪个租户、审批人填谁，对应的组织、环境和管理员账号必须另行建好。部署到其它租户时，这三个键要进到 IAM 与四个服务的进程环境：AppHost 拓扑下在 AppHost 进程环境里设置一次 `Iam__Seed__OrganizationId` / `Iam__Seed__EnvironmentId` / `Iam__Seed__AdminUserId` 即可，各服务继承；Compose 拓扑（`infra/compose/nerv-iip.platform.yml`）只把 `environment` 里列出的键传进容器，需要把这三个键加进 `dotnet-env` 锚点或逐个服务添加，只在 `.env` 或 shell 里设置不会生效。不设则开箱数据写进缺省租户。`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 引导种子不在此列。MasterData 的演示员工、班组、技能、产品分类、工厂自定义字典样例，以及 Maintenance 的点检保养计划，只随 `LeaderDemo:Seed:Enabled` 写入；Maintenance 没有产品基线 seed。
+IAM 平台引导（#3846）：非 Development 下 IAM Web 启动时（库结构须已由第 4 节 migrator 建好）只补缺写入最高权限管理员、其默认组织与环境、平台管理员角色（全部权限 + 默认组织数据范围）和成员关系，不覆盖已存在的行；默认执行，显式设 `Iam:Bootstrap:Enabled=false` 才关闭。
+
+| 键 | 作用 |
+|---|---|
+| `Iam:Seed:OrganizationId` / `Iam:Seed:OrganizationName` | 默认组织，缺省 `org-001` / `Nerv IIP` |
+| `Iam:Seed:EnvironmentId` / `Iam:Seed:EnvironmentName` | 默认环境，缺省 `env-dev` / `Development` |
+| `Iam:Seed:AdminUserId` / `Iam:Seed:AdminLoginName` / `Iam:Seed:AdminEmail` | 管理员账号，缺省 `user-admin` / `admin` / `admin@nerv-iip.local` |
+| `Iam:Seed:AdminRoleId` | 平台管理员角色，缺省 `role-platform-admin` |
+| `Iam:Seed:AdminPassword` | 初始口令，只从部署配置注入（AppHost 参数 `iam-seed-admin-password`、Compose `NERV_IIP_IAM_SEED_ADMIN_PASSWORD`、安装脚本 `-IamSeedAdminPassword`），不得写入仓库或日志 |
+
+- 管理员不存在时必须提供 `Iam:Seed:AdminPassword`，且须满足 `Iam:PasswordPolicy`，否则 IAM 启动失败；管理员已存在时不读、不改口令，修改配置里的口令不会回写。
+- 新建的管理员带「须改密」标记：登录响应的 `passwordChangeRequired=true`，用 `/api/iam/v1/auth/change-password` 改密后清除。首次登录后立即改密，并从部署配置里移除初始口令。
+- 该管理员不能被停用或设置账号过期，平台管理员角色不能去掉权限、不能去掉默认组织数据范围（IAM 返回 400）。IAM 没有删除用户的入口。
+- 连接器凭据、外部客户端、ERP 岗位角色、演示账号和 PDA 账号只随 Development 开发种子写入，不属于平台引导。
+
+目标租户与 IAM 平台引导读同一组键（#3812）：四个服务都读 `Iam:Seed:OrganizationId` / `Iam:Seed:EnvironmentId`，缺省为 `org-001` / `env-dev`；Approval 模板的审批人读 `Iam:Seed:AdminUserId`，缺省为 `user-admin`。这三个键在 IAM 与四个服务之间必须取同一值，产品基线数据和审批人才会落在平台引导建好的组织与管理员上。部署到其它租户时，这三个键要进到 IAM 与四个服务的进程环境：AppHost 拓扑下在 AppHost 进程环境里设置一次 `Iam__Seed__OrganizationId` / `Iam__Seed__EnvironmentId` / `Iam__Seed__AdminUserId` 即可，各服务继承；Compose 拓扑（`infra/compose/nerv-iip.platform.yml`）只把 `environment` 里列出的键传进容器，需要把这三个键加进 `dotnet-env` 锚点或逐个服务添加，只在 `.env` 或 shell 里设置不会生效。不设则开箱数据写进缺省租户。`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 开发种子不在此列。MasterData 的演示员工、班组、技能、产品分类、工厂自定义字典样例，以及 Maintenance 的点检保养计划，只随 `LeaderDemo:Seed:Enabled` 写入；Maintenance 没有产品基线 seed。
 
 只补缺意味着种子定义以后再改时（例如标准编码规则的段定义、字典显示名），不会回写到已有环境；需要改已有环境的值时，走对应的维护入口或单独的数据 migration。
 
