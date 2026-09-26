@@ -238,7 +238,7 @@ Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web
 | `Inventory:Seed:Enabled` | BusinessInventory | 缺失的库位 | `Inventory:Seed:OrganizationId` / `Inventory:Seed:EnvironmentId` |
 | `Quality:Seed:Enabled` | BusinessQuality | 缺失的质量原因码等基础目录 | `Quality:Seed:OrganizationId` / `Quality:Seed:EnvironmentId` |
 
-目标租户配置缺省为 `org-001` / `env-dev`；部署到其它租户时必须显式配置，否则开箱数据会写进缺省租户（与 IAM 引导租户同源由 #3812 跟进）。`MasterData:Seed:Enabled`、`Maintenance:Seed:Enabled` 不在此列，仍需显式开启或随 Development 下的 AutoMigrate 执行；`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 引导种子也不在此列。
+目标租户配置缺省为 `org-001` / `env-dev`；部署到其它租户时必须显式配置组织与环境，否则开箱数据会写进缺省租户。`MasterData:Seed:Enabled`、`Maintenance:Seed:Enabled` 不在此列，仍需显式开启或随 Development 下的 AutoMigrate 执行；`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 引导种子也不在此列。
 
 诊断输出至少能关联：
 
