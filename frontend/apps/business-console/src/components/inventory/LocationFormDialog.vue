@@ -81,7 +81,12 @@ const siteCode = computed({
 const siteOptions = computed(() => {
   const options = [...catalogSiteOptions.value]
   // 工厂主数据没加载到、或正在编辑的库位挂在目录外的工厂上时，当前值也要能显示和保留。
-  if (siteCode.value && !options.some((o) => o.value === siteCode.value)) {
+  // 目录还在路上时不补：先挂上只有编码的临时项，目录回来后下拉仍会显示编码而不是名称。
+  if (
+    !siteCatalog.resourcesPending.value &&
+    siteCode.value &&
+    !options.some((o) => o.value === siteCode.value)
+  ) {
     options.unshift({ value: siteCode.value, label: siteCode.value })
   }
   return options
