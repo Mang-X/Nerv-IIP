@@ -139,7 +139,7 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).toContain('操作人 张维修')
     expect(wrapper.text()).toContain('技师快照 张维修')
     expect(wrapper.text()).toContain('班组快照 甲班')
-    expect(wrapper.text()).toContain('来源：报警报修创建结果')
+    expect(wrapper.text()).toContain('由报警报修创建')
     expect(wrapper.text()).not.toContain('019f0000-0000-7000-8000-000000000101')
     expect(wrapper.text()).not.toContain('device-1')
     expect(wrapper.text()).not.toContain('principal-1')
@@ -232,9 +232,7 @@ describe('maintenance work-order authoritative detail page', () => {
       `/equipment/work-orders/019f0000-0000-7000-8000-000000000101?sourceAlarmId=${sourceAlarmId.toUpperCase()}`,
     )
 
-    expect(wrapper.get('[data-testid="maintenance-source-context"]').text()).toBe(
-      '来源：报警报修创建结果',
-    )
+    expect(wrapper.get('[data-testid="maintenance-source-context"]').text()).toBe('由报警报修创建')
   })
 
   it('does not claim ordinary repair source context without an authoritative alarm link', async () => {

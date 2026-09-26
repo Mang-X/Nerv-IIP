@@ -69,9 +69,11 @@ describe('resolveTusRequestUrl', () => {
 
   it('refuses an absolute or protocol-relative upload URL', () => {
     // 网关只会回内部相对路径；出现绝对 URL 只可能是响应被改写，跟着走就是把 Bearer 发给第三方。
-    expect(() => resolveTusRequestUrl('https://evil.example.com/tus/s1')).toThrow('网关内部路径')
-    expect(() => resolveTusRequestUrl('//evil.example.com/tus/s1')).toThrow('网关内部路径')
-    expect(() => resolveTusRequestUrl('api/files/v1/tus/s1')).toThrow('网关内部路径')
+    expect(() => resolveTusRequestUrl('https://evil.example.com/tus/s1')).toThrow(
+      '附件上传地址无效',
+    )
+    expect(() => resolveTusRequestUrl('//evil.example.com/tus/s1')).toThrow('附件上传地址无效')
+    expect(() => resolveTusRequestUrl('api/files/v1/tus/s1')).toThrow('附件上传地址无效')
   })
 })
 
@@ -236,7 +238,7 @@ describe('sendShiftHandoverAttachmentBytes', () => {
   it.each([
     // 这四档 describeRequestError 认可并原样透传 → 定制文案真的上屏
     [404, '上传会话已失效或已过期，请重新拍照。'],
-    [409, '上传进度与服务端不一致，请重新拍照上传。'],
+    [409, '上传进度不一致，请重新拍照上传。'],
     [413, '照片超出交接班附件大小上限，请重拍或压缩后再传。'],
     [415, '照片格式不被接受，交接班附件只支持 JPG / PNG。'],
     // 这三档由 describeRequestError 接管 → 断言它的文案，不是我们的
@@ -283,7 +285,7 @@ describe('sendShiftHandoverAttachmentBytes', () => {
       sendShiftHandoverAttachmentBytes({ uploadUrl: '  ' }, new Blob(['x']), scope, {
         fetch: doFetch,
       }),
-    ).rejects.toThrow('文件服务未返回可用的附件上传地址。')
+    ).rejects.toThrow('未取得附件上传地址，请重新拍照上传。')
 
     await expect(
       sendShiftHandoverAttachmentBytes(

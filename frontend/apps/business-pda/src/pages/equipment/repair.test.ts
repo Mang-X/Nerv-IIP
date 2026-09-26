@@ -622,7 +622,7 @@ describe('PDA equipment repair page', () => {
 
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('网络超时，请检查连接后重试')
-    expect(wrapper.text()).toContain('相同操作编号')
+    expect(wrapper.text()).toContain('可直接重试，不会重复')
     expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
     const firstPayload = createWorkOrder.mock.calls[0][0]
 

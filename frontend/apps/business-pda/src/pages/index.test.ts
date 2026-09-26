@@ -383,7 +383,7 @@ describe('PDA home', () => {
     inspectionHasFailedResponse.value = true
     const wrapper = mount(HomePage)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务服务未返回成功结果')
+    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务加载失败')
     expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshInspection).toHaveBeenCalledTimes(1)

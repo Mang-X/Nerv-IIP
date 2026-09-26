@@ -405,7 +405,7 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
       case 'rejected':
         return '该扫码对象未通过当前上下文预校验。'
       case 'error':
-        return '扫码解析或预校验服务暂不可用，已阻止当前操作。'
+        return '扫码校验暂不可用，已阻止当前操作。'
       default:
         return ''
     }

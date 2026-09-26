@@ -141,9 +141,7 @@ test('完工报工刷新后只恢复原标签准备，不重新开放新报工',
   expect(writes[1]).toEqual(writes[0])
   expect(writes[0].completesOperation).toBe(true)
   await page.reload()
-  await expect(
-    page.getByText('工序任务 OP-1 当前不可报工，服务端未开放 report 动作。'),
-  ).toBeVisible()
+  await expect(page.getByText('工序任务 OP-1 当前不可报工。')).toBeVisible()
   await expect(page.getByTestId('submit-report')).toHaveCount(0)
 })
 
@@ -456,9 +454,7 @@ test('标签准备收敛前不开始新报工，失败仍保留成功，收敛�
   await expect(page.getByTestId('continue-report')).toBeDisabled()
   expect(writes).toHaveLength(1)
   await page.goto('/mes/report?workOrderId=WO-2&operationTaskId=OP-3')
-  await expect(
-    page.getByText('工序任务 OP-3 当前不可报工，服务端未开放 report 动作。'),
-  ).toBeVisible()
+  await expect(page.getByText('工序任务 OP-3 当前不可报工。')).toBeVisible()
   await expect(page.getByRole('heading', { name: '报工成功' })).toHaveCount(0)
   await expect(page.getByTestId('retry-label-preparation')).toHaveCount(0)
   await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')

@@ -148,7 +148,7 @@ function openDetail(row: ShiftHandoverRow) {
 
       <RetryableListError
         v-if="error || hasFailedResponse"
-        :error="error ?? '班次交接服务未成功返回'"
+        :error="error"
         :pending="pending"
         fallback="交接单加载失败，请重试。"
         test-id="handovers-error"
@@ -189,7 +189,7 @@ function openDetail(row: ShiftHandoverRow) {
       <NvMobileEmpty
         v-else-if="showEmpty"
         data-testid="handovers-empty"
-        description="当前组织/环境范围内没有该状态的交接单。"
+        description="暂无该状态的交接单。"
       />
     </div>
   </NvAppShellMobile>

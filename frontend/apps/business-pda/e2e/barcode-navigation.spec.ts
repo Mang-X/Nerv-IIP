@@ -157,7 +157,7 @@ test('过期强 ID：解析后虽可导航，目标页仍按当前权限精确�
 
   await expect(page).toHaveURL('/mes/operation?workOrderId=WO-STALE&operationTaskId=OP-STALE')
   await expect(page.getByTestId('operation-deep-link-message')).toContainText(
-    '未在当前主体授权作业范围内找到指定工序任务',
+    '未在当前作业范围内找到指定工序任务',
   )
   await expectNoHorizontalOverflow(page)
 })

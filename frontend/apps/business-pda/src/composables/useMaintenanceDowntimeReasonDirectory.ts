@@ -124,7 +124,7 @@ export function useMaintenanceDowntimeReasonDirectory() {
       case 'unavailable':
         // 语义是"权威服务没配这份词表"（producer 的 `directory-authority-unconfigured`），
         // 是配置事实而非瞬时故障——写"请稍后重试"会让人白等。
-        return '权威服务尚未配置停机原因词表，请联系管理员配置'
+        return '尚未配置停机原因，请联系管理员配置'
       case 'empty':
         return keyword.value.trim() ? '没有匹配的停机原因' : '当前组织尚未配置可用停机原因'
       default:

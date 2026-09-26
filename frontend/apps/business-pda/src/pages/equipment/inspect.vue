@@ -391,7 +391,7 @@ function inspectionSubtitle(item: {
 
           <RetryableListError
             v-if="plansError || plansHasFailedResponse"
-            :error="plansError ?? '保养计划服务未成功返回'"
+            :error="plansError"
             :pending="plansPending"
             fallback="保养计划加载失败，请稍后重试。"
             test-id="plans-error"
@@ -522,7 +522,7 @@ function inspectionSubtitle(item: {
 
         <RetryableListError
           v-if="inspectionsError || inspectionsHasFailedResponse"
-          :error="inspectionsError ?? '点检记录服务未成功返回'"
+          :error="inspectionsError"
           :pending="inspectionsPending"
           fallback="点检记录加载失败，请稍后重试。"
           test-id="inspections-error"

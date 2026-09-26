@@ -67,7 +67,7 @@ const {
 const alarmTotal = computed(() => total.value)
 const alarmScopeReady = computed(() => scopeReady.value)
 const alarmListError = computed(
-  () => error.value ?? (hasFailedResponse.value ? '设备报警服务未成功返回' : undefined),
+  () => error.value ?? (hasFailedResponse.value ? '设备报警加载失败，请重试。' : undefined),
 )
 const alarmFilterState = computed(() => ({
   deviceAssetId: filters.deviceAssetId ?? '',
@@ -377,8 +377,8 @@ function showToast(message: string, type: 'success' | 'error') {
         :filter-state="alarmFilterState"
         :empty-description="
           alarmScopeReady
-            ? '暂无设备报警（当前组织/环境范围没有符合筛选条件的记录）。'
-            : '缺少组织或环境范围，未发起查询。'
+            ? '暂无符合筛选条件的设备报警。'
+            : '当前账号暂无法查看，请重新登录或联系管理员。'
         "
         @refresh="refresh"
         @retry="refresh"

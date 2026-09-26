@@ -1226,7 +1226,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
   expect(detailUrl.searchParams.get('source')).toBeNull()
   await page.goto(`${detailUrl.pathname}?sourceAlarmId=${sourceAlarmId.toUpperCase()}`)
   expect(new URL(page.url()).searchParams.get('sourceAlarmId')).toBe(sourceAlarmId.toUpperCase())
-  await expect(page.getByTestId('maintenance-source-context')).toHaveText('来源：报警报修创建结果')
+  await expect(page.getByTestId('maintenance-source-context')).toHaveText('由报警报修创建')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('装配线冲压机')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     'WS-1 · LINE-A · ST-1',

@@ -75,7 +75,7 @@ const listFailure = computed(() =>
   error.value
     ? error.value
     : hasFailedResponse.value
-      ? new Error('完工入库申请服务未返回成功结果，请重试。')
+      ? new Error('完工入库申请加载失败，请重试。')
       : null,
 )
 
@@ -337,7 +337,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        当前组织/环境范围暂无完工入库申请
+        暂无完工入库申请
       </div>
 
       <div

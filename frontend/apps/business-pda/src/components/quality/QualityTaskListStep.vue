@@ -102,8 +102,7 @@ const sourceServiceOptions: DropdownOption[] = [
 ]
 const listError = computed(
   () =>
-    props.error ??
-    (props.hasFailedResponse ? new Error('质检待检任务服务未成功返回，请刷新重试。') : null),
+    props.error ?? (props.hasFailedResponse ? new Error('待检任务加载失败，请刷新重试。') : null),
 )
 
 function isOverdue(task: Task) {
@@ -167,7 +166,7 @@ function restoreState(state: { filters: Record<string, unknown> }) {
     :load-more-error="props.loadMoreError"
     error-test-id="tasks-error"
     :filter-state="{ status, keyword, sourceType, sourceService, overdue }"
-    empty-description="当前账号没有符合筛选条件的质检任务；缺少登录主体或组织环境时不会发起查询。"
+    empty-description="当前账号没有符合筛选条件的质检任务。"
     @refresh="emit('refresh')"
     @retry="emit('refresh')"
     @load-more="emit('loadMore')"

@@ -374,7 +374,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         const reportNo = receiptEnvelope.data?.reportNo?.trim()
         const productionReportId = receiptEnvelope.data?.productionReportId?.trim()
         if (!reportNo || !productionReportId) {
-          throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
+          throw new Error('报工结果缺少报工单号，已阻止成功确认。')
         }
         intent.receipt = { ...receiptEnvelope.data, reportNo, productionReportId }
         savePreparation(intent)
@@ -388,11 +388,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         context: intent.context,
       })
       if (!isCurrent()) return
-      const description = [
-        `${workOrderId} · ${operationTaskId}`,
-        `报工单号 ${reportNo}`,
-        `回执 ID ${productionReportId}`,
-      ]
+      const description = [`${workOrderId} · ${operationTaskId}`, `报工单号 ${reportNo}`]
       if (intent.payload?.completesOperation) description.push('本工序已标记完工')
       intent.status = 'success'
       intent.result = {

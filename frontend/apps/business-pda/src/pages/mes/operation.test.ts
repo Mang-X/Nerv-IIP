@@ -297,7 +297,8 @@ describe('PDA MES operation execution page', () => {
       )!
       submit.click()
       await flushPromises()
-      expect(document.body.textContent).toContain('andon-created-1')
+      expect(document.body.textContent).toContain('呼叫已确认')
+      expect(document.body.textContent).not.toContain('andon-created-1')
       expect(andonSdk.raise.mock.calls[0][0].body).toMatchObject({
         workOrderId: 'WO-2026-0001',
         operationTaskId: 'OP-1',
@@ -721,7 +722,7 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="operation-deep-link-message"]').text()).toContain(
-      '未在当前主体授权作业范围内找到指定工序任务',
+      '未在当前作业范围内找到指定工序任务',
     )
     expect(
       document.body.querySelector('[data-slot="mobile-sheet-content"][data-state="open"]'),
@@ -815,7 +816,7 @@ describe('PDA MES operation execution page', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="operation-deep-link-message"]').text()).toContain(
-      '未在当前主体授权作业范围内找到指定工序任务',
+      '未在当前作业范围内找到指定工序任务',
     )
     expect(wrapper.findAll('[data-row]')).toHaveLength(0)
     expect(

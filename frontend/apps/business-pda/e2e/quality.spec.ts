@@ -301,11 +301,7 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
       ),
     )
     .toBe(true)
-  await expect(
-    page
-      .getByText('当前账号没有符合筛选条件的质检任务；缺少登录主体或组织环境时不会发起查询。')
-      .last(),
-  ).toBeVisible()
+  await expect(page.getByText('当前账号没有符合筛选条件的质检任务。').last()).toBeVisible()
   await page.getByRole('button', { name: '进行中', exact: true }).first().click()
   await page.getByRole('button', { name: '待领取', exact: true }).click()
 

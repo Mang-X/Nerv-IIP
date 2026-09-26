@@ -1343,7 +1343,7 @@ describe('PDA MES production reporting page', () => {
   })
 
   it.each([
-    ['缺少工单 ID', { operationTaskId: 'OP-1' }, '报工链接缺少工单 ID'],
+    ['缺少工单 ID', { operationTaskId: 'OP-1' }, '报工链接缺少工单'],
     [
       '工单不存在',
       { workOrderId: 'WO-MISSING', operationTaskId: 'OP-404' },
@@ -1401,7 +1401,7 @@ describe('PDA MES production reporting page', () => {
     })
     expect(wrapper.text()).toContain('WO-2026-0002 · OP-3')
     expect(wrapper.text()).toContain('报工单号 RPT-2026-0003')
-    expect(wrapper.text()).toContain('回执 ID 019f-report-0003')
+    expect(wrapper.text()).not.toContain('019f-report-0003')
   })
 
   it('records a report with the bound fields after entering quantity', async () => {
@@ -1531,9 +1531,7 @@ describe('PDA MES production reporting page', () => {
     route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-DONE' }
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
-      '服务端未开放 report 动作',
-    )
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('当前不可报工')
     expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
     expect(recordReport).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -1577,9 +1575,7 @@ describe('PDA MES production reporting page', () => {
 
     route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-2' }
     await flushPromises()
-    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
-      '服务端未开放 report 动作',
-    )
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('当前不可报工')
     expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
     wrapper.unmount()
   })
@@ -1595,15 +1591,13 @@ describe('PDA MES production reporting page', () => {
     reportableTasksPendingRef.value = false
     reportableTasksErrorRef.value = new Error('authority unavailable')
     await flushPromises()
-    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('权威范围读取失败')
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('可报工工序读取失败')
 
     reportableTasksErrorRef.value = null
     reportableTasksReadyRef.value = true
     reportableTasksOverrideRef.value = []
     await flushPromises()
-    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
-      '服务端未开放 report 动作',
-    )
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('当前不可报工')
     wrapper.unmount()
   })
 

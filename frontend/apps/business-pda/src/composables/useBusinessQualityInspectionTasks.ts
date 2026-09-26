@@ -404,7 +404,7 @@ export function useBusinessQualityInspectionTasks() {
       !['passed', 'rejected', 'conditional-release'].includes(result)
     ) {
       throw new BusinessOperationUnconfirmedError(
-        '检验任务已提交，但未能按记录 ID 确认权威结果，请保留当前页面并重试。',
+        '检验任务已提交，但未能确认检验结果，请保留当前页面并重试。',
         'quality.inspection-task.submit',
       )
     }
@@ -493,7 +493,7 @@ export function useBusinessQualityInspectionTasks() {
       const inspectionRecordId = confirmed.data?.inspectionRecordId?.trim()
       if (!inspectionRecordId) {
         throw new BusinessOperationUnconfirmedError(
-          '检验提交未返回检验记录 ID，请保留当前页面并重试。',
+          '检验提交未返回检验记录，请保留当前页面并重试。',
           'quality.inspection-task.submit',
         )
       }

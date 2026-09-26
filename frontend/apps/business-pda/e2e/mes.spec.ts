@@ -572,7 +572,7 @@ test('工序执行：固定双强 ID 在新 scope 缺失时关闭旧对象并 fa
 
     releaseScopeB()
     await expect(page.getByTestId('operation-deep-link-message')).toContainText(
-      '未在当前主体授权作业范围内找到指定工序任务',
+      '未在当前作业范围内找到指定工序任务',
     )
     await expect(page.getByRole('heading', { name: /工单信息未提供 · 工序/ })).toHaveCount(0)
   } finally {
@@ -625,7 +625,7 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
     await scopeTrigger.click()
     await page.getByRole('button', { name: '精加工二线（工作中心）', exact: true }).click()
     await expect(page.getByTestId('operation-deep-link-message')).toContainText(
-      '未在当前主体授权作业范围内找到指定工序任务',
+      '未在当前作业范围内找到指定工序任务',
     )
 
     releaseScopeA()
@@ -633,7 +633,7 @@ test('工序执行：scope 快速切换后迟到的旧响应不能复活固定�
       page.getByRole('heading', { name: '工单信息未提供 · 工序 10', exact: true }),
     ).toHaveCount(0)
     await expect(page.getByTestId('operation-deep-link-message')).toContainText(
-      '未在当前主体授权作业范围内找到指定工序任务',
+      '未在当前作业范围内找到指定工序任务',
     )
   } finally {
     releaseScopeA()
@@ -718,7 +718,7 @@ test('报工：选工单 → 选工序 → 录良品数 → 提交 → 成功结
   await expect(result).toBeVisible()
   await expect(result.getByText('报工成功')).toBeVisible()
   await expect(result).toContainText('RPT-E2E-0001')
-  await expect(result).toContainText('019f-e2e-production-report')
+  await expect(result).not.toContainText('019f-e2e-production-report')
   expect(readbackCount).toBe(1)
   expect(submittedReport).toMatchObject({
     workOrderId: 'WO-1',
@@ -837,7 +837,7 @@ test('报工：workshop 写范围只消费服务端权威 reportable 集合', as
   )
 
   await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-2')
-  await expect(page.getByTestId('report-route-issue')).toContainText('服务端未开放 report 动作')
+  await expect(page.getByTestId('report-route-issue')).toContainText('当前不可报工')
   await expect(page.getByTestId('submit-report')).toHaveCount(0)
 })
 

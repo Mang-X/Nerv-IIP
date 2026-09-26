@@ -89,7 +89,7 @@ const listFailure = computed(() =>
   error.value
     ? error.value
     : hasFailedResponse.value
-      ? new Error('领料申请服务未返回成功结果，请重试。')
+      ? new Error('领料申请加载失败，请重试。')
       : null,
 )
 
@@ -537,7 +537,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        当前组织/环境范围暂无领料申请
+        暂无领料申请
       </div>
 
       <div

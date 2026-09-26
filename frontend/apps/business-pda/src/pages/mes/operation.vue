@@ -131,9 +131,7 @@ const visibleOperationTasks = computed(() =>
       : operationTasks.value,
 )
 const mesEmptyExplanation = computed(() =>
-  operationListScopeReady.value
-    ? '当前主体授权作业范围内暂无工序任务。'
-    : operationListScopeMessage.value || '尚未取得当前主体的授权作业范围，未发起查询。',
+  operationListScopeReady.value ? '当前作业范围内暂无工序任务。' : operationListScopeMessage.value,
 )
 const showOperationTasksEmpty = computed(
   () =>
@@ -145,7 +143,7 @@ const showOperationTasksEmpty = computed(
 )
 const operationListError = computed(() =>
   error.value || hasFailedResponse.value
-    ? (error.value ?? new Error('工序任务服务未成功返回'))
+    ? (error.value ?? new Error('工序任务加载失败，请重试。'))
     : undefined,
 )
 const {
@@ -391,7 +389,7 @@ watch(
       return
     const exactTask = tasks[0]
     if (!exactTask) {
-      deepLinkMessage.value = '未在当前主体授权作业范围内找到指定工序任务。'
+      deepLinkMessage.value = '未在当前作业范围内找到指定工序任务。'
       return
     }
     deepLinkMessage.value = ''

@@ -44,7 +44,7 @@ export function useNonIdempotentWriteResult(options: NonIdempotentWriteResultOpt
   const errorDescription = computed(() =>
     errorInfo.value.indeterminate
       ? options.idempotent
-        ? `${errorInfo.value.message}。可使用相同操作编号安全重试，服务端不会重复${options.verifyVerb}。`
+        ? `${errorInfo.value.message}。可直接重试，不会重复${options.verifyVerb}。`
         : `${errorInfo.value.message}。请勿重复提交，返回后在"${options.verifyListLabel}"中核实是否已${options.verifyVerb}。`
       : errorInfo.value.message,
   )

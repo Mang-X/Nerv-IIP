@@ -158,7 +158,7 @@ function backToList() {
 
       <RetryableListError
         v-if="detail.error.value || detail.hasFailedResponse.value"
-        :error="detail.error.value ?? '班次交接详情服务未成功返回'"
+        :error="detail.error.value"
         :pending="detail.pending.value"
         fallback="交接单详情加载失败，请重试。"
         test-id="handover-detail-error"

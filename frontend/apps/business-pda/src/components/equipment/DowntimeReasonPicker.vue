@@ -64,7 +64,7 @@ function clearSearch() {
   <NvBottomSheet
     :open="open"
     title="选择设备占用原因"
-    description="只能选择本组织/环境已配置的停机原因；设备仍可用时选择「不登记设备不可用」"
+    description="只能选择已配置的停机原因；设备仍可用时选择「不登记设备不可用」"
     @update:open="open = $event"
   >
     <div class="space-y-3 pb-2">

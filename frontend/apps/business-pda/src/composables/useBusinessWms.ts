@@ -916,7 +916,7 @@ function unwrapTaskActionResult(
     !envelope.data ||
     envelope.data.warehouseTaskId !== warehouseTaskId
   ) {
-    throw new Error('WMS 作业动作回执无效，请刷新后重试')
+    throw new Error('作业提交结果无法确认，请刷新后重试')
   }
   return envelope.data
 }

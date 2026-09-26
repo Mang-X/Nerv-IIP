@@ -581,7 +581,7 @@ async function onScanAccepted(value: MesScanAccepted) {
         class="space-y-2"
       >
         <RetryableListError
-          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :error="workOrderDetailError"
           :pending="workOrderDetailPending"
           fallback="加载工单详情失败，请重试。"
           test-id="work-order-detail-error"
@@ -616,11 +616,11 @@ async function onScanAccepted(value: MesScanAccepted) {
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
             <NvMobileInput
               v-model="telemetryWorkOrderId"
-              :placeholder="candidate.workOrderId ?? '真实工单号'"
+              :placeholder="candidate.workOrderId ?? '工单号'"
             />
             <NvMobileInput
               v-model="telemetryOperationTaskId"
-              :placeholder="candidate.operationTaskId ?? '真实工序任务号'"
+              :placeholder="candidate.operationTaskId ?? '工序任务号'"
             />
             <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
             <div class="grid grid-cols-2 gap-2">
@@ -662,7 +662,7 @@ async function onScanAccepted(value: MesScanAccepted) {
         </p>
         <RetryableListError
           v-else-if="workOrdersError || workOrdersHasFailedResponse"
-          :error="workOrdersError ?? '生产工单服务未成功返回'"
+          :error="workOrdersError"
           :pending="workOrdersPending"
           fallback="加载工单失败，请下拉刷新或重试。"
           test-id="work-orders-error"
@@ -708,7 +708,7 @@ async function onScanAccepted(value: MesScanAccepted) {
 
         <RetryableListError
           v-if="workOrderDetailError || workOrderDetailHasFailedResponse"
-          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :error="workOrderDetailError"
           :pending="workOrderDetailPending"
           fallback="加载工单详情失败，请重试。"
           test-id="work-order-detail-error"

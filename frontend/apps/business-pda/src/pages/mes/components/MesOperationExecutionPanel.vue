@@ -192,7 +192,7 @@ const blockReasonDisplays = computed(() =>
             >
               <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
               <p class="text-xs text-muted-foreground">
-                {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+                {{ sop.documentNumber }} · 版本 {{ sop.revision }} · 生效
                 {{ formatOperationDate(sop.effectiveDate) }}
               </p>
               <NvMobileButton

@@ -104,7 +104,7 @@ export function isShiftHandoverPhotoContentType(
 export function resolveTusRequestUrl(uploadUrl: string, baseUrl?: string): string {
   const trimmed = uploadUrl.trim()
   if (!trimmed.startsWith('/') || trimmed.startsWith('//')) {
-    throw new Error('附件上传地址不是网关内部路径，已拒绝上传。')
+    throw new Error('附件上传地址无效，已拒绝上传。')
   }
   const base = (baseUrl ?? '').trim().replace(/\/+$/, '')
   return base ? `${base}${trimmed}` : trimmed
@@ -173,7 +173,7 @@ function transferFailure(action: string, status: number): Error {
  */
 function transferFailureMessage(action: string, status: number): string {
   if (status === 404) return '上传会话已失效或已过期，请重新拍照。'
-  if (status === 409) return '上传进度与服务端不一致，请重新拍照上传。'
+  if (status === 409) return '上传进度不一致，请重新拍照上传。'
   if (status === 413) return '照片超出交接班附件大小上限，请重拍或压缩后再传。'
   if (status === 415) return '照片格式不被接受，交接班附件只支持 JPG / PNG。'
   return `${action}失败，请稍后重试。`
@@ -200,7 +200,7 @@ export async function sendShiftHandoverAttachmentBytes(
   transport: ShiftHandoverTusTransport = {},
 ): Promise<ShiftHandoverTusTransferResult> {
   const uploadUrl = target.uploadUrl?.trim()
-  if (!uploadUrl) throw new Error('文件服务未返回可用的附件上传地址。')
+  if (!uploadUrl) throw new Error('未取得附件上传地址，请重新拍照上传。')
   if (!scope.organizationId.trim() || !scope.environmentId.trim()) {
     throw new Error('缺少组织或环境范围，未发起附件上传。')
   }
@@ -220,7 +220,7 @@ export async function sendShiftHandoverAttachmentBytes(
   // 不会静默写歪。
   const startOffset = readUploadOffset(head) ?? 0
   if (startOffset > bytes.size) {
-    throw new Error('服务端已记录的上传进度超过本张照片大小，请重新拍照上传。')
+    throw new Error('已上传的进度超过本张照片大小，请重新拍照上传。')
   }
 
   const payload = startOffset > 0 ? bytes.slice(startOffset) : bytes

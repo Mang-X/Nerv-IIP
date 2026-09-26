@@ -65,7 +65,7 @@ const maintenanceTotal = computed(() => workOrdersTotal.value)
 const workOrderListError = computed(
   () =>
     workOrdersError.value ??
-    (workOrdersHasFailedResponse.value ? '维修工单服务未成功返回' : undefined),
+    (workOrdersHasFailedResponse.value ? '维修工单加载失败，请重试。' : undefined),
 )
 const workOrderFilterState = computed(() => ({
   status: workOrderFilters.status ?? '',
@@ -574,9 +574,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           error-test-id="work-orders-error"
           :filter-state="workOrderFilterState"
           :empty-description="
-            scopeReady
-              ? '当前组织/环境范围暂无维修工单；暂不支持按维修人员归属筛选，空态不代表个人工单。'
-              : '缺少组织或环境范围，未发起查询。'
+            scopeReady ? '暂无维修工单。' : '当前账号暂无法查看，请重新登录或联系管理员。'
           "
           @refresh="refreshWorkOrders"
           @retry="refreshWorkOrders"

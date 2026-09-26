@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-test('四类异常可从阻塞工序呼叫，失败重试沿用同一载荷并呈现服务端凭据', async ({ page }) => {
+test('四类异常可从阻塞工序呼叫，失败重试沿用同一载荷并确认呼叫', async ({ page }) => {
   const requests: Array<Record<string, unknown>> = []
   await page.route('**/api/business-console/v1/mes/andon-calls', async (route) => {
     const body = route.request().postDataJSON()
@@ -72,7 +72,8 @@ test('四类异常可从阻塞工序呼叫，失败重试沿用同一载荷并�
   await expect(panel.getByRole('button', { name: '设备呼叫' })).toBeDisabled()
   await expect(panel).not.toContainText('呼叫已确认')
   await panel.getByRole('button', { name: '重试原呼叫' }).click()
-  await expect(panel).toContainText('andon-materialShortage')
+  await expect(panel).toContainText('呼叫已确认')
+  await expect(panel).not.toContainText('andon-materialShortage')
   expect(requests[1]).toEqual(requests[0])
   expect(requests[0]).toMatchObject({
     organizationId: 'org-001',
@@ -91,7 +92,8 @@ test('四类异常可从阻塞工序呼叫，失败重试沿用同一载荷并�
     await panel.getByRole('button', { name: '发起另一笔呼叫' }).click()
     await panel.getByRole('button', { name: label }).click()
     await panel.getByRole('button', { name: '发起呼叫', exact: true }).click()
-    await expect(panel).toContainText(`andon-${category}`)
+    await expect(panel).toContainText('呼叫已确认')
+    await expect(panel).not.toContainText(`andon-${category}`)
   }
   expect(requests).toHaveLength(5)
   expect(new Set(requests.map((body) => body.idempotencyKey)).size).toBe(4)

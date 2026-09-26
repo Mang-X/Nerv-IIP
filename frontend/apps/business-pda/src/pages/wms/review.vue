@@ -280,9 +280,6 @@ function goHome() {
           :location-options="candidates.locationOptions.value"
           :lot-options="candidates.lotOptions.value"
           :ready="candidates.ready.value"
-          :source-label="candidates.sourceLabel.value"
-          :as-of-utc="candidates.asOfUtc.value"
-          :freshness-utc="candidates.freshnessUtc.value"
           :truncated="candidates.truncated.value"
           :pending="candidates.pending.value"
           :error="candidates.error.value"
@@ -297,7 +294,7 @@ function goHome() {
         state-key="wms-outbound-review"
         empty-description="暂无待发货单据"
         :filter-state="taskListFilterState"
-        :error="error ?? (hasFailedResponse ? '出库复核服务未成功返回' : undefined)"
+        :error="error ?? (hasFailedResponse ? '待发货单据加载失败，请重试。' : undefined)"
         :load-more-error="loadMoreError"
         :refreshing="refreshing"
         :loading-more="loadingMore"
@@ -315,7 +312,7 @@ function goHome() {
             v-if="showEmpty"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
-            “{{ reviewScope }}”在当前状态下暂无待发货单据；数据来自 WMS 派工
+            “{{ reviewScope }}”在当前状态下暂无待发货单据
           </div>
 
           <div v-else class="overflow-hidden rounded-lg border border-border">

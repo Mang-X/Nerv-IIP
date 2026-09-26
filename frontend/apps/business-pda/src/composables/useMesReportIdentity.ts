@@ -151,7 +151,7 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     const workOrderId = requestedWorkOrderId.value
     const operationTaskId = requestedOperationTaskId.value
     if (operationTaskId && !workOrderId) {
-      return '报工链接缺少工单 ID，已阻止报工。'
+      return '报工链接缺少工单，已阻止报工。'
     }
     if (workOrderId && options.workOrderDetailError.value) {
       return `工单 ${workOrderId} 详情加载失败，已阻止报工，请重试。`
@@ -171,10 +171,10 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
     if (workOrderId && operationTaskId && selectedWorkOrder.value && selectedTask.value) {
       if (!options.reportableTasksReady.value) {
         if (options.reportableTasksError.value) {
-          return '可报工任务权威范围读取失败，已阻止报工，请重试。'
+          return '可报工工序读取失败，已阻止报工，请重试。'
         }
         if (options.reportableTasksPending.value) return null
-        return '可报工任务权威范围尚未就绪，已阻止报工。'
+        return '可报工工序尚未加载完成，已阻止报工。'
       }
       if (!hasCompleteReworkAuthority(selectedTask.value)) {
         return `工序任务 ${operationTaskId} 的返工来源信息不完整，已阻止报工，请刷新后重试。`
@@ -183,7 +183,7 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
         return `工序任务 ${operationTaskId} 的返工来源与工单不一致，已阻止报工，请刷新后重试。`
       }
       if (!canReport(selectedTask.value, selectedWorkOrder.value, reportableTaskKeys.value)) {
-        return `工序任务 ${operationTaskId} 当前不可报工，服务端未开放 report 动作。`
+        return `工序任务 ${operationTaskId} 当前不可报工。`
       }
     }
     if (workOrderId && operationTaskId && selectedWorkOrder.value && !selectedTask.value) {
