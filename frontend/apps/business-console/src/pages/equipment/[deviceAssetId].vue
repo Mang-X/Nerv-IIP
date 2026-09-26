@@ -467,14 +467,47 @@ watch(
 )
 
 // 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+const { resolveDevice, resolveDeviceCode, resolveWorkCenter } = useMasterDataDisplayNames({
   devices: true,
   workCenters: true,
 })
+// 本页这台设备。路由里的设备引用可能是编码，也可能是设备公开 ID（从维保可用窗口进来时），
+// 名称和编码都从主数据按引用解析，不依赖设备有没有运行数据。
+const deviceName = computed(() => resolveDevice(filters.deviceAssetId))
+const deviceCode = computed(
+  () => resolveDeviceCode(filters.deviceAssetId) ?? readFaceText(filters.deviceAssetId, ''),
+)
+const deviceTitle = computed(() => {
+  if (deviceName.value && deviceCode.value && deviceName.value !== deviceCode.value) {
+    return `${deviceName.value}（${deviceCode.value}）`
+  }
+  return deviceName.value || deviceCode.value
+})
+// 从没上报过状态、眼下也没有采集：设备还没接入采集，既不是「采集过期」也不是「未知状态」。
+const notConnected = computed(
+  () =>
+    Boolean(currentState.value) &&
+    !currentState.value?.currentState &&
+    !currentState.value?.isSourceFresh,
+)
+// 没接入过采集的设备，IIoT 给的可用性窗口原因码是「采集过期」；本页已知它从未接入，按实情说。
+function windowReason(reasonCode?: string | null) {
+  if (notConnected.value && reasonCode === 'equipment.sourceStale') {
+    return { label: '尚未接入采集', nextStep: '为设备配置采集连接后即可看到运行状态' }
+  }
+  return describeEquipmentReason(reasonCode ?? '')
+}
+const stateText = computed(() =>
+  notConnected.value ? '尚未接入采集' : statusLabel(currentState.value?.currentState),
+)
+const sourceText = computed(() => {
+  if (currentState.value?.isSourceFresh) return '采集正常'
+  return notConnected.value ? '尚未接入' : '采集过期'
+})
 /** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
-function deviceLabel(code?: string | null, fallback = '无设备') {
-  if (!code) return fallback
-  return resolveDevice(code) ?? readFaceText(code, fallback)
+function deviceLabel(reference?: string | null) {
+  if (!reference) return '—'
+  return resolveDevice(reference) ?? readFaceText(reference)
 }
 function workCenterLabel(code?: string | null, fallback = '未绑定') {
   if (!code) return fallback
@@ -487,7 +520,7 @@ const columns: NvDataTableColumn<Window>[] = [
   {
     key: 'reason',
     header: '原因',
-    accessor: (r) => describeEquipmentReason(r.reasonCode ?? '').label,
+    accessor: (r) => windowReason(r.reasonCode).label,
   },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => workCenterLabel(r.workCenterId) },
   { key: 'startUtc', header: '开始', width: 'w-44' },
@@ -647,9 +680,7 @@ function recordDowntime() {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="
-        filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'
-      "
+      :title="deviceTitle ? `设备详情：${deviceTitle}` : '设备详情'"
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
     >
       <template #actions>
@@ -777,7 +808,7 @@ function recordDowntime() {
         <NvMetricCard
           variant="alert"
           label="当前状态"
-          :value="statusLabel(currentState?.currentState)"
+          :value="stateText"
           :tone="
             equipmentStatusTone(currentState?.currentState) === 'danger' ? 'danger' : 'neutral'
           "
@@ -791,7 +822,7 @@ function recordDowntime() {
         <NvMetricCard
           variant="icon"
           label="数据状态"
-          :value="currentState?.isSourceFresh ? '采集正常' : '采集过期'"
+          :value="sourceText"
           :tone="currentState?.isSourceFresh ? 'success' : 'warning'"
           :icon="RadioIcon"
         />
@@ -818,10 +849,10 @@ function recordDowntime() {
             <div class="mt-3 flex items-center justify-between gap-3">
               <div class="min-w-0">
                 <p class="truncate text-lg font-semibold text-foreground">
-                  {{ deviceLabel(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                  {{ deviceName || deviceCode || '—' }}
                 </p>
                 <p class="truncate text-xs text-muted-foreground">
-                  {{ readFaceText(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                  {{ deviceCode || '—' }}
                 </p>
                 <p class="mt-1 text-sm text-muted-foreground">
                   状态时间 {{ formatDateTime(currentState?.stateOccurredAtUtc) }}
@@ -830,14 +861,14 @@ function recordDowntime() {
               <NvBadge
                 class="rounded-sm"
                 :variant="badgeVariant(equipmentStatusTone(currentState?.currentState))"
-                >{{ statusLabel(currentState?.currentState) }}</NvBadge
+                >{{ stateText }}</NvBadge
               >
             </div>
             <div class="mt-3">
               <NvBadge
                 class="rounded-sm"
                 :variant="currentState?.isSourceFresh ? 'success' : 'warning'"
-                >{{ currentState?.isSourceFresh ? '采集正常' : '采集过期' }}</NvBadge
+                >{{ sourceText }}</NvBadge
               >
             </div>
           </div>
@@ -908,10 +939,10 @@ function recordDowntime() {
             <template #cell-reason="{ row }">
               <div class="grid gap-1">
                 <span class="font-medium text-foreground">{{
-                  describeEquipmentReason(row.reasonCode ?? '').label
+                  windowReason(row.reasonCode).label
                 }}</span>
                 <span class="text-xs text-muted-foreground">{{
-                  describeEquipmentReason(row.reasonCode ?? '').nextStep
+                  windowReason(row.reasonCode).nextStep
                 }}</span>
               </div>
             </template>

@@ -115,6 +115,7 @@ public sealed class GetBusinessConsoleEquipmentDeviceEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
     IBusinessMaintenanceClient maintenance,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessEquipmentProxyEndpoint<BusinessConsoleEquipmentContextRequest, BusinessConsoleEquipmentDeviceDetailResponse>(
         auth,
@@ -157,13 +158,28 @@ public sealed class GetBusinessConsoleEquipmentDeviceEndpoint(
             deviceAssetId,
             availabilityRequest,
             cancellationToken);
+        // 设备状态 / 采集过期窗口说的是这台设备本身，IIoT 只能把调用方传来的设备引用原样回填为标签；
+        // 引用是设备公开 ID（GUID）时界面「关联业务」就成了 GUID。这类窗口的人读标识统一取主数据设备编码，
+        // 主数据查不到时留空，由界面显示占位。
+        var device = await DeviceAssetMasterDataLookup.FindAsync(
+            deviceAssetId,
+            masterData,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+        var windows = BusinessConsoleEquipmentAvailabilityMerger.Merge(iiot.Items, maintenanceWindows.Items)
+            .Select(window => window.SourceType is EquipmentRuntimeSourceType.DeviceState or EquipmentRuntimeSourceType.StaleSource
+                ? window with { SourceReferenceLabel = device?.Code }
+                : window)
+            .ToArray();
         var availability = new EquipmentRuntimeAvailabilityResponse(
             iiot.ContractVersion,
             availabilityRequest.OrganizationId,
             availabilityRequest.EnvironmentId,
             availabilityRequest.WindowStartUtc,
             availabilityRequest.WindowEndUtc,
-            BusinessConsoleEquipmentAvailabilityMerger.Merge(iiot.Items, maintenanceWindows.Items));
+            windows);
         return new BusinessConsoleEquipmentDeviceDetailResponse(currentState, availability);
     }
 }
