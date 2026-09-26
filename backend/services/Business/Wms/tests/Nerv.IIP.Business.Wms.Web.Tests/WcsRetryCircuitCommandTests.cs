@@ -229,6 +229,61 @@ public sealed class WcsRetryCircuitCommandTests
                 claimPoolAssignment: true));
     }
 
+    [Fact]
+    public async Task Redispatch_without_payload_resends_the_original_dispatch_payload()
+    {
+        const string originalPayload = """{"taskNo":"WT-REDISPATCH-001","from":"RECV-01","to":"STAGE-01"}""";
+        var now = new DateTimeOffset(2026, 7, 10, 1, 0, 0, TimeSpan.Zero);
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-REDISPATCH-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext, now.AddHours(-1)),
+            new WcsTestTimeProvider(now.AddHours(-1))).Handle(
+            DispatchCommand(warehouseTask, "EXT-REDISPATCH-001", expectedVersion: 1) with { PayloadJson = originalPayload },
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wcsTask = await dbContext.WcsTasks.SingleAsync();
+        wcsTask.Fail("E001", "blocked aisle", now.UtcDateTime.AddHours(-1));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext, now),
+            new WcsTestTimeProvider(now)).Handle(
+            DispatchCommand(warehouseTask, "EXT-REDISPATCH-001", warehouseTask.Version) with { PayloadJson = null },
+            CancellationToken.None);
+
+        Assert.Equal(WcsTaskStatus.Dispatched, wcsTask.Status);
+        Assert.Equal(2, wcsTask.AttemptCount);
+        Assert.Equal(originalPayload, wcsTask.PayloadJson);
+    }
+
+    [Fact]
+    public async Task First_dispatch_without_payload_is_rejected_because_there_is_nothing_to_resend()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-FIRST-NO-PAYLOAD-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<WmsUnprocessableException>(() => new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext)).Handle(
+            DispatchCommand(warehouseTask, "EXT-FIRST-NO-PAYLOAD-001", expectedVersion: 1) with { PayloadJson = null },
+            CancellationToken.None));
+
+        Assert.Empty(dbContext.WcsTasks.Local);
+    }
+
     private static WarehouseTask CreateWarehouseTask(string taskNo) =>
         WarehouseTask.CreatePutaway(
             "org-001",

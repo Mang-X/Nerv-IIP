@@ -2437,7 +2437,7 @@ public sealed record DispatchWcsTaskCommand(
     long ExpectedVersion,
     string AdapterType,
     string ExternalTaskId,
-    string PayloadJson,
+    string? PayloadJson,
     string? DeviceId = null) : ICommand<WcsTaskId>;
 
 public sealed class DispatchWcsTaskCommandHandler(
@@ -2488,7 +2488,6 @@ public sealed class DispatchWcsTaskCommandHandler(
                 ? adapterType
                 : WmsText.Required(request.DeviceId, nameof(request.DeviceId));
             _ = WmsText.Required(request.ExternalTaskId, nameof(request.ExternalTaskId));
-            _ = WmsText.Required(request.PayloadJson, nameof(request.PayloadJson));
         }
         catch (ArgumentException exception)
         {
@@ -2511,13 +2510,21 @@ public sealed class DispatchWcsTaskCommandHandler(
         var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(
             x => x.WarehouseTaskId == request.WarehouseTaskId,
             cancellationToken);
+        // 不带派发内容 = 人工「重新下发原报文」：沿用已存报文。首次派发没有可沿用的报文，必须显式给出。
+        var resendOriginal = string.IsNullOrWhiteSpace(request.PayloadJson);
+        var payloadJson = resendOriginal
+            ? existing?.PayloadJson
+                ?? throw new WmsUnprocessableException("payloadJson is required for the first dispatch.")
+            : request.PayloadJson!;
         if (existing is not null)
         {
             var claimReference = existing.Id.Id.ToString("D");
-            if (existing.MatchesDispatch(
+            // 失败任务上的「重新下发原报文」是明确的重试意图，不能被当成原请求的幂等重放吞掉。
+            var retryFailedOriginal = resendOriginal && existing.Status == WcsTaskStatus.Failed;
+            if (!retryFailedOriginal && existing.MatchesDispatch(
                     adapterType,
                     request.ExternalTaskId,
-                    request.PayloadJson,
+                    payloadJson,
                     deviceId))
             {
                 warehouseTask.ValidateWcsExecution(claimReference);
@@ -2531,7 +2538,7 @@ public sealed class DispatchWcsTaskCommandHandler(
                     request.ExpectedVersion);
                 try
                 {
-                    existing.Retry(request.ExternalTaskId, request.PayloadJson, (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
+                    existing.Retry(request.ExternalTaskId, payloadJson, (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
                 }
                 catch (InvalidOperationException exception)
                 {
@@ -2557,7 +2564,7 @@ public sealed class DispatchWcsTaskCommandHandler(
                 request.WarehouseTaskId,
                 adapterType,
                 request.ExternalTaskId,
-                request.PayloadJson,
+                payloadJson,
                 deviceId);
         }
         catch (ArgumentException exception)

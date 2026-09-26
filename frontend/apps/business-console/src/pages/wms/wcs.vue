@@ -25,6 +25,7 @@ import {
   NvDialogTitle,
   NvDropdownMenuItem,
   NvField,
+  NvFieldDescription,
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
@@ -80,9 +81,8 @@ type Action = 'dispatch' | 'fail' | 'complete'
 const openAction = shallowRef<Action | ''>('')
 const pendingTask = shallowRef<WcsRow>()
 const formError = shallowRef('')
-const dispatchForm = reactive({ adapterType: '', externalTaskId: '', payloadJson: '{}' })
 const failForm = reactive({ failureCode: '', failureMessage: '' })
-const completeForm = reactive({ completionPayloadJson: '{}' })
+const completeForm = reactive<{ quantity: string | number }>({ quantity: '' })
 
 const actionPending = computed(
   () => dispatchWcsPending.value || failWcsPending.value || completeWcsPending.value,
@@ -91,49 +91,30 @@ const actionPending = computed(
 function openDialog(action: Action, row: WcsRow) {
   pendingTask.value = row
   formError.value = ''
-  if (action === 'dispatch') {
-    dispatchForm.adapterType = row.adapterType ?? ''
-    dispatchForm.externalTaskId = row.externalTaskId ?? ''
-    dispatchForm.payloadJson = '{}'
-  } else if (action === 'fail') {
+  if (action === 'fail') {
     failForm.failureCode = ''
     failForm.failureMessage = ''
-  } else {
-    completeForm.completionPayloadJson = '{}'
+  } else if (action === 'complete') {
+    // 累计完成数量默认带出计划数量：设备回执通常就是整单做完。
+    completeForm.quantity = row.plannedQuantity === undefined ? '' : String(row.plannedQuantity)
   }
   openAction.value = action
 }
 
-function invalidJson(value: string) {
-  try {
-    JSON.parse(value)
-    return false
-  } catch {
-    return true
-  }
-}
-
+// 重新下发原报文：任务身份与报文都由系统沿用，操作员只确认。
 async function submitDispatch() {
-  const id = pendingTask.value?.warehouseTaskId
-  if (!id) return
-  if (!dispatchForm.adapterType.trim() || !dispatchForm.externalTaskId.trim()) {
-    formError.value = '请填写设备类型与外部任务号。'
-    return
-  }
-  if (invalidJson(dispatchForm.payloadJson)) {
-    formError.value = '派发内容必须是合法的 JSON 格式。'
-    return
-  }
+  const task = pendingTask.value
+  if (!task?.warehouseTaskId) return
   try {
-    await dispatchWcs(id, {
-      adapterType: dispatchForm.adapterType.trim(),
-      externalTaskId: dispatchForm.externalTaskId.trim(),
-      payloadJson: dispatchForm.payloadJson,
+    await dispatchWcs(task.warehouseTaskId, {
+      adapterType: task.adapterType ?? '',
+      externalTaskId: task.externalTaskId ?? '',
+      expectedVersion: task.warehouseTaskVersion,
     })
     openAction.value = ''
-    notifySuccess('WCS 任务已派发')
+    notifySuccess('已按原报文重新下发给设备')
   } catch (error) {
-    notifyOperationFailure('派发 WCS 任务失败', error, '派发 WCS 任务失败，请稍后重试。')
+    notifyOperationFailure('重新下发失败', error, '重新下发失败，请稍后重试。')
   }
 }
 
@@ -157,22 +138,32 @@ async function submitFail() {
 }
 
 async function submitComplete() {
-  const id = pendingTask.value?.externalTaskId
-  if (!id) return
-  if (invalidJson(completeForm.completionPayloadJson)) {
-    formError.value = '完成回执必须是合法的 JSON 格式。'
+  const task = pendingTask.value
+  if (!task?.externalTaskId) return
+  // 数字输入框回写的是数字，空着时是空串。
+  const raw = String(completeForm.quantity).trim()
+  const quantity = Number(raw)
+  if (!raw || !(quantity > 0)) {
+    formError.value = '请填写大于 0 的累计完成数量。'
     return
   }
   try {
-    await completeWcs(id, { completionPayloadJson: completeForm.completionPayloadJson })
+    await completeWcs(task.externalTaskId, {
+      completionPayloadJson: JSON.stringify({ actualQuantity: quantity }),
+    })
     openAction.value = ''
-    notifySuccess('WCS 任务已完成')
+    // 累计数量没到计划数量时，后端只记进度、任务仍在执行，不能说「已完成」。
+    if (task.plannedQuantity !== undefined && quantity < task.plannedQuantity) {
+      notifySuccess(`已记录进度，未完成：累计 ${quantity}，计划 ${task.plannedQuantity}`)
+    } else {
+      notifySuccess('设备任务已完成')
+    }
   } catch (error) {
     notifyOperationFailure('标记完成失败', error, '标记完成失败，请稍后重试。')
   }
 }
 
-// 任务身份由所选行带出，只读展示；行上没有的值才留输入框（重新派发时可能需要改写适配器）。
+// 任务身份由所选行带出，只读展示。
 const taskContextItems = computed(() => {
   const task = pendingTask.value
   if (!task) return []
@@ -182,8 +173,14 @@ const taskContextItems = computed(() => {
     { label: '设备类型', value: adapterTypeLabel(task.adapterType) },
   ]
 })
-const hasCarriedAdapter = computed(() => Boolean(pendingTask.value?.adapterType))
-const hasCarriedExternalTaskId = computed(() => Boolean(pendingTask.value?.externalTaskId))
+const completeContextItems = computed(() => [
+  ...taskContextItems.value,
+  { label: '计划数量', value: formatQuantity(pendingTask.value?.plannedQuantity) },
+  { label: '已完成', value: formatQuantity(pendingTask.value?.executedQuantity) },
+])
+function formatQuantity(value?: number) {
+  return value === undefined ? '—' : String(value)
+}
 /**
  * 数字口径：页头与「设备任务」KPI 一律用**服务端总数**；失败/执行中只能按当前页算，
  * 一律带「本页」前缀。读不到数（上下文未就绪 / 读取中 / 读失败）时显 `—` 并明说取不到，
@@ -413,7 +410,7 @@ function formatDateTime(value?: string | null) {
         <NvRowActions :label="`WCS 任务操作 ${row.externalTaskId ?? ''}`">
           <NvDropdownMenuItem :disabled="!row.warehouseTaskId" @click="openDialog('dispatch', row)">
             <SendIcon aria-hidden="true" />
-            重新派发
+            重新下发
           </NvDropdownMenuItem>
           <NvDropdownMenuItem :disabled="!row.externalTaskId" @click="openDialog('fail', row)">
             <XCircleIcon aria-hidden="true" />
@@ -437,39 +434,16 @@ function formatDateTime(value?: string | null) {
     >
       <NvDialogContent>
         <NvDialogHeader>
-          <NvDialogTitle>重新派发 WCS 任务</NvDialogTitle>
-          <!-- 任务身份已在下方只读区呈现；此处仅供读屏播报。 -->
-          <NvDialogDescription class="sr-only">
-            外部任务 {{ pendingTask?.externalTaskId ?? '' }} 的重新派发。
-          </NvDialogDescription>
+          <NvDialogTitle>重新下发设备任务</NvDialogTitle>
+          <NvDialogDescription>按原报文重新下发给设备，任务内容不变。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitDispatch">
-          <CarriedContextSummary label="派发对象" :items="taskContextItems" />
-          <NvFieldGroup>
-            <NvField v-if="!hasCarriedAdapter">
-              <NvFieldLabel for="wcs-adapter">设备类型</NvFieldLabel>
-              <NvInput id="wcs-adapter" v-model="dispatchForm.adapterType" autocomplete="off" />
-            </NvField>
-            <NvField v-if="!hasCarriedExternalTaskId">
-              <NvFieldLabel for="wcs-external">外部任务号</NvFieldLabel>
-              <NvInput id="wcs-external" v-model="dispatchForm.externalTaskId" autocomplete="off" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="wcs-payload">派发内容（JSON 格式）</NvFieldLabel>
-              <NvInput
-                id="wcs-payload"
-                v-model="dispatchForm.payloadJson"
-                class="font-mono"
-                autocomplete="off"
-              />
-            </NvField>
-            <NvFieldError v-if="formError" :errors="[formError]" />
-          </NvFieldGroup>
+          <CarriedContextSummary label="下发对象" :items="taskContextItems" />
           <NvDialogFooter>
             <NvDialogClose as-child>
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
-            <NvButton type="submit" :disabled="actionPending">重新派发</NvButton>
+            <NvButton type="submit" :disabled="actionPending">确认重新下发</NvButton>
           </NvDialogFooter>
         </form>
       </NvDialogContent>
@@ -530,23 +504,29 @@ function formatDateTime(value?: string | null) {
     >
       <NvDialogContent>
         <NvDialogHeader>
-          <NvDialogTitle>标记 WCS 任务完成</NvDialogTitle>
+          <NvDialogTitle>标记设备任务完成</NvDialogTitle>
           <!-- 任务身份已在下方只读区呈现；此处仅供读屏播报。 -->
           <NvDialogDescription class="sr-only">
             外部任务 {{ pendingTask?.externalTaskId ?? '' }} 的完成回执。
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
-          <CarriedContextSummary label="完成任务" :items="taskContextItems" />
+          <CarriedContextSummary label="完成任务" :items="completeContextItems" />
           <NvFieldGroup>
-            <NvField>
-              <NvFieldLabel for="wcs-completion">完成回执（JSON 格式）</NvFieldLabel>
+            <NvField :data-invalid="Boolean(formError) || undefined">
+              <NvFieldLabel for="wcs-completion">累计完成数量</NvFieldLabel>
               <NvInput
                 id="wcs-completion"
-                v-model="completeForm.completionPayloadJson"
-                class="font-mono"
+                v-model="completeForm.quantity"
+                type="number"
+                min="0"
+                step="any"
+                inputmode="decimal"
                 autocomplete="off"
               />
+              <NvFieldDescription
+                >填设备回报的累计数量；不足计划数量时只记录进度。</NvFieldDescription
+              >
             </NvField>
             <NvFieldError v-if="formError" :errors="[formError]" />
           </NvFieldGroup>

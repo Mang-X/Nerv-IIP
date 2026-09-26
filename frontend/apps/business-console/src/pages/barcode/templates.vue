@@ -7,7 +7,18 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeTemplates } from '@/composables/useBusinessBarcode'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
+  emptyVariableRow,
+  LABEL_DATA_ITEMS,
+  parseVariableRows,
+  rowDisplayLabel,
+  serializeVariableRows,
+  variableRowsError,
+  variableSummary,
+  type LabelVariableRow,
+} from '@/components/barcode/labelTemplateVariables'
+import {
   NvButton,
+  NvCheckbox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -31,7 +42,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { PencilIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
@@ -70,9 +81,9 @@ const form = reactive({
   templateCode: '',
   templateName: '',
   templateFileId: '',
-  variableSchemaJson: '{"fields":["skuCode","lotNo","expiryDate"]}',
   status: 'active',
 })
+const variableRows = shallowRef<LabelVariableRow[]>([emptyVariableRow()])
 
 const columns: NvDataTableColumn<BusinessConsoleBarcodeTemplateItem>[] = [
   {
@@ -88,7 +99,7 @@ const columns: NvDataTableColumn<BusinessConsoleBarcodeTemplateItem>[] = [
     width: 'w-40',
     accessor: (r) => r.templateFileId ?? '无',
   },
-  { key: 'variableSchemaJson', header: '字段说明' },
+  { key: 'variableSchemaJson', header: '标签数据项' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
@@ -120,17 +131,41 @@ const canSubmit = computed(
     form.templateCode.trim().length > 0 &&
     form.templateName.trim().length > 0 &&
     form.templateFileId.trim().length > 0 &&
-    form.variableSchemaJson.trim().length > 0 &&
-    isValidJson(form.variableSchemaJson),
+    !variableError.value,
 )
+const variableError = computed(() => variableRowsError(variableRows.value))
 
-function isValidJson(value: string) {
-  try {
-    JSON.parse(value)
-    return true
-  } catch {
-    return false
+// 每行的数据项选项：平台目录 + 本行已存的目录外数据项（只显示它的中文名称）。
+function dataItemOptions(row: LabelVariableRow) {
+  const options = LABEL_DATA_ITEMS.map((item) => ({ value: item.name, label: item.label }))
+  if (row.name && !options.some((option) => option.value === row.name)) {
+    options.unshift({ value: row.name, label: rowDisplayLabel(row.name, row.label) })
   }
+  return options
+}
+function selectDataItem(index: number, value: unknown) {
+  const name = typeof value === 'string' ? value : ''
+  const rows = [...variableRows.value]
+  const previous = rows[index]!
+  const previousDefault = rowDisplayLabel(previous.name, '')
+  // 显示名称没被手改过时，跟着数据项换成新的中文名。
+  const label =
+    !previous.label.trim() || previous.label === previousDefault
+      ? (LABEL_DATA_ITEMS.find((item) => item.name === name)?.label ?? '')
+      : previous.label
+  rows[index] = { ...previous, name, label }
+  variableRows.value = rows
+}
+function updateRow(index: number, patch: Partial<LabelVariableRow>) {
+  const rows = [...variableRows.value]
+  rows[index] = { ...rows[index]!, ...patch }
+  variableRows.value = rows
+}
+function addVariableRow() {
+  variableRows.value = [...variableRows.value, emptyVariableRow()]
+}
+function removeVariableRow(index: number) {
+  variableRows.value = variableRows.value.filter((_, i) => i !== index)
 }
 
 function resetForm() {
@@ -138,9 +173,9 @@ function resetForm() {
     templateCode: '',
     templateName: '',
     templateFileId: '',
-    variableSchemaJson: '{"fields":["skuCode","lotNo","expiryDate"]}',
     status: 'active',
   })
+  variableRows.value = [emptyVariableRow()]
   editingTemplateCode.value = null
   showErrors.value = false
 }
@@ -150,83 +185,13 @@ function openEdit(row: BusinessConsoleBarcodeTemplateItem) {
     templateCode: row.templateCode ?? '',
     templateName: row.templateName ?? '',
     templateFileId: row.templateFileId ?? '',
-    variableSchemaJson: row.variableSchemaJson ?? '{"fields":["skuCode","lotNo","expiryDate"]}',
     status: row.status === 'disabled' ? 'disabled' : 'active',
   })
+  const rows = parseVariableRows(row.variableSchemaJson)
+  variableRows.value = rows.length ? rows : [emptyVariableRow()]
   editingTemplateCode.value = row.templateCode ?? null
   showErrors.value = false
   open.value = true
-}
-
-/**
- * 模板变量名 → 中文说明。
- *
- * 只在模板 JSON 用旧的 `{fields:[...]}` 形态（没带 label）时才需要：种子写的
- * `{variables:[{name,label}]}` 自带中文 label，走 label 就够了。
- */
-const TEMPLATE_FIELD_LABELS: Record<string, string> = {
-  gtin: 'GTIN',
-  skucode: '物料编码',
-  skuname: '物料名称',
-  lotno: '批次号',
-  serialno: '序列号',
-  serialprefix: '序列号前缀',
-  quantity: '数量',
-  uomcode: '计量单位',
-  suppliercode: '供应商编码',
-  customercode: '客户编码',
-  workordercode: '工单号',
-  workorderno: '工单号',
-  workcentercode: '工作中心编码',
-  workcentername: '工作中心名称',
-  sitecode: '厂区',
-  sourcedocumentid: '来源单号',
-  expirydate: '有效期',
-  productiondate: '生产日期',
-  printedon: '打印日期',
-}
-function templateFieldLabel(name: string) {
-  return TEMPLATE_FIELD_LABELS[name.toLowerCase().replace(/[-_\s]/g, '')] ?? name
-}
-
-/**
- * 「字段说明」列的取文。
- *
- * 模板 JSON 有两种形态：现网种子写的是 `{version, variables:[{name,label,type}]}`
- * （`WorldHistoryLabelSpec.BuildSchema`，**label 本来就是中文**），旧表单默认值写的是
- * `{fields:[...]}`。之前只认后者，前者整段落到 `return value`，于是把 `version`、
- * `variables`、`gtin`、`lotNo` 这些 JSON 字段名连同花括号一起摊到了列上。
- * 现在优先取 `variables[].label`（没有 label 才退回 `name`），拿不到结构才认为是未配置。
- */
-function fieldSummary(value?: string | null) {
-  if (!value) return '未配置字段'
-  try {
-    const parsed = JSON.parse(value) as {
-      fields?: unknown
-      variables?: unknown
-    }
-    if (Array.isArray(parsed.variables)) {
-      const names = parsed.variables.flatMap((variable) => {
-        if (typeof variable === 'string') return [templateFieldLabel(variable)]
-        if (variable && typeof variable === 'object') {
-          const entry = variable as { label?: unknown; name?: unknown }
-          // label 是模板作者写的中文说明，直接用；只有退回 name 时才查词表。
-          if (typeof entry.label === 'string' && entry.label.trim()) return [entry.label.trim()]
-          if (typeof entry.name === 'string' && entry.name.trim()) {
-            return [templateFieldLabel(entry.name.trim())]
-          }
-        }
-        return []
-      })
-      if (names.length) return names.join('、')
-    }
-    if (Array.isArray(parsed.fields) && parsed.fields.length) {
-      return parsed.fields.map((field) => templateFieldLabel(String(field))).join('、')
-    }
-  } catch {
-    return '字段说明格式有误'
-  }
-  return '未配置字段'
 }
 
 function statusLabel(value?: string | null) {
@@ -246,7 +211,7 @@ async function submitTemplate() {
       templateCode: form.templateCode.trim(),
       templateName: form.templateName.trim(),
       templateFileId: form.templateFileId.trim(),
-      variableSchemaJson: form.variableSchemaJson.trim(),
+      variableSchemaJson: serializeVariableRows(variableRows.value),
       status: form.status,
     })
     notifySuccess(`标签模板「${form.templateName.trim()}」已保存。`)
@@ -303,7 +268,7 @@ async function submitTemplate() {
                 :items="carriedItems"
               />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写模板编码、名称、模板文件，并按 JSON 格式填写字段说明。
+                请填写模板编码、名称、模板文件，并补全标签数据项。
               </p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField
@@ -353,20 +318,96 @@ async function submitTemplate() {
                     </NvSelectContent>
                   </NvSelect>
                 </NvField>
-                <NvField
-                  class="sm:col-span-2"
-                  :data-invalid="showErrors && !isValidJson(form.variableSchemaJson)"
-                >
-                  <NvFieldLabel for="barcode-template-schema"
-                    >字段说明 <span class="text-destructive">*</span></NvFieldLabel
+                <div class="grid gap-2 sm:col-span-2">
+                  <span class="text-sm font-medium">
+                    标签数据项 <span class="text-destructive">*</span>
+                  </span>
+                  <div
+                    v-for="(row, index) in variableRows"
+                    :key="index"
+                    class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[1fr_1fr_auto_6rem_auto]"
                   >
-                  <textarea
-                    id="barcode-template-schema"
-                    v-model="form.variableSchemaJson"
-                    class="min-h-24 rounded-md border bg-background px-3 py-2 text-sm"
-                  />
-                  <NvFieldDescription>按 JSON 格式填写。</NvFieldDescription>
-                </NvField>
+                    <NvField>
+                      <NvFieldLabel :for="`barcode-template-item-${index}`">数据项</NvFieldLabel>
+                      <NvSelect
+                        :model-value="row.name"
+                        @update:model-value="(value) => selectDataItem(index, value)"
+                      >
+                        <NvSelectTrigger :id="`barcode-template-item-${index}`">
+                          <NvSelectValue placeholder="选择数据项" />
+                        </NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem
+                            v-for="option in dataItemOptions(row)"
+                            :key="option.value"
+                            :value="option.value"
+                            >{{ option.label }}</NvSelectItem
+                          >
+                        </NvSelectContent>
+                      </NvSelect>
+                    </NvField>
+                    <NvField>
+                      <NvFieldLabel :for="`barcode-template-label-${index}`">显示名称</NvFieldLabel>
+                      <NvInput
+                        :id="`barcode-template-label-${index}`"
+                        :model-value="row.label"
+                        autocomplete="off"
+                        @update:model-value="
+                          (value) => updateRow(index, { label: String(value ?? '') })
+                        "
+                      />
+                    </NvField>
+                    <label class="flex h-9 items-center gap-2 text-sm">
+                      <NvCheckbox
+                        :model-value="row.required"
+                        :aria-label="`第 ${index + 1} 行必填`"
+                        @update:model-value="
+                          (value) => updateRow(index, { required: value === true })
+                        "
+                      />
+                      必填
+                    </label>
+                    <NvField>
+                      <NvFieldLabel :for="`barcode-template-max-${index}`">最大长度</NvFieldLabel>
+                      <NvInput
+                        :id="`barcode-template-max-${index}`"
+                        :model-value="row.maxLength"
+                        type="number"
+                        min="1"
+                        step="1"
+                        @update:model-value="
+                          (value) => updateRow(index, { maxLength: String(value ?? '') })
+                        "
+                      />
+                    </NvField>
+                    <NvButton
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      :aria-label="`删除第 ${index + 1} 行数据项`"
+                      @click="removeVariableRow(index)"
+                    >
+                      <Trash2Icon aria-hidden="true" />
+                    </NvButton>
+                  </div>
+                  <NvButton
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    class="justify-self-start"
+                    @click="addVariableRow"
+                  >
+                    <PlusIcon aria-hidden="true" />
+                    添加数据项
+                  </NvButton>
+                  <p
+                    v-if="showErrors && variableError"
+                    class="text-sm text-destructive"
+                    role="alert"
+                  >
+                    {{ variableError }}
+                  </p>
+                </div>
               </NvFieldGroup>
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
@@ -413,13 +454,13 @@ async function submitTemplate() {
       :rows="templates"
       row-key="templateId"
       :loading="templatesPending"
-      empty-message="暂无标签模板。请先维护模板文件引用和字段说明。"
+      empty-message="暂无标签模板。请先维护模板文件和标签数据项。"
       :searchable="false"
       :column-settings="false"
     >
       <template #cell-variableSchemaJson="{ row }">
         <div class="grid gap-1">
-          <span class="text-sm">{{ fieldSummary(row.variableSchemaJson) }}</span>
+          <span class="text-sm">{{ variableSummary(row.variableSchemaJson) }}</span>
         </div>
       </template>
       <template #cell-status="{ row }">

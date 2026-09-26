@@ -36344,8 +36344,7 @@
         "required": [
           "expectedVersion",
           "adapterType",
-          "externalTaskId",
-          "payloadJson"
+          "externalTaskId"
         ],
         "properties": {
           "expectedVersion": {
@@ -36368,8 +36367,7 @@
           },
           "payloadJson": {
             "type": "string",
-            "minLength": 1,
-            "nullable": false
+            "nullable": true
           },
           "deviceId": {
             "type": "string",
@@ -36552,6 +36550,18 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "warehouseTaskVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "plannedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "executedQuantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },

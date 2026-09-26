@@ -426,7 +426,6 @@ describe('business WMS composables', () => {
       dispatchWcs('warehouse-task-1', {
         adapterType: 'mock',
         externalTaskId: 'EXT-001',
-        payloadJson: '{}',
       }),
     ).rejects.toMatchObject({ source: 'preflight' })
   })

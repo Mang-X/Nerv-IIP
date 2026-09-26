@@ -63,6 +63,8 @@ const wms = vi.hoisted(() => ({
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
   failWcs: vi.fn(),
+  dispatchWcs: vi.fn(),
+  completeWcs: vi.fn(),
   createInbound: vi.fn(),
   createOutbound: vi.fn(),
   inventoryContext: undefined as unknown,
@@ -231,22 +233,25 @@ vi.mock('@/composables/useBusinessWms', () => ({
         wcsTaskId: 'w-1',
         externalTaskId: 'EXT-1',
         warehouseTaskId: 'WT-1',
-        adapterType: 'docker',
-        status: 'dispatched',
+        adapterType: 'agv',
+        status: 'Failed',
         attemptCount: 1,
+        warehouseTaskVersion: 7,
+        plannedQuantity: 10,
+        executedQuantity: 4,
       },
     ]),
     wcsTasksError: shallowRef(undefined),
     wcsTasksPending: shallowRef(false),
     wcsTasksTotal: computed(() => 1),
     refreshWcsTasks: vi.fn(),
-    dispatchWcs: vi.fn(),
+    dispatchWcs: wms.dispatchWcs,
     dispatchWcsPending: shallowRef(false),
     dispatchWcsError: shallowRef(undefined),
     failWcs: wms.failWcs,
     failWcsPending: shallowRef(false),
     failWcsError: shallowRef(undefined),
-    completeWcs: vi.fn(),
+    completeWcs: wms.completeWcs,
     completeWcsPending: shallowRef(false),
     completeWcsError: shallowRef(undefined),
   }),
@@ -1074,6 +1079,79 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wrapper.find('button[aria-label="WCS 任务操作 EXT-1"]').exists()).toBe(true)
+  })
+
+  describe('WCS 人工处置', () => {
+    const wcsStubs = {
+      ...layoutStub,
+      RowActions: { template: '<div><slot /></div>' },
+      NvDropdownMenuItem: {
+        emits: ['click'],
+        template:
+          '<button type="button" data-menu-item @click="$emit(\'click\')"><slot /></button>',
+      },
+    }
+    async function openAction(label: string) {
+      const wrapper = mount(WcsPage, { global: { stubs: wcsStubs }, attachTo: document.body })
+      await flushPromises()
+      await wrapper
+        .findAll('[data-menu-item]')
+        .find((item) => item.text().includes(label))!
+        .trigger('click')
+      await flushPromises()
+      return document.querySelector<HTMLElement>('[role="dialog"]')!
+    }
+    async function submitDialog(dialog: HTMLElement) {
+      dialog
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await flushPromises()
+    }
+
+    it('re-dispatches with the row warehouse-task version and lets the backend resend the original payload', async () => {
+      wms.dispatchWcs.mockResolvedValue(undefined)
+      const dialog = await openAction('重新下发')
+
+      expect(dialog.querySelector('input')).toBeNull()
+      await submitDialog(dialog)
+
+      expect(wms.dispatchWcs).toHaveBeenCalledWith('WT-1', {
+        adapterType: 'agv',
+        externalTaskId: 'EXT-1',
+        expectedVersion: 7,
+      })
+    })
+
+    it('reports a completion receipt as the cumulative quantity and does not claim a partial one finished', async () => {
+      wms.completeWcs.mockResolvedValue(undefined)
+      const { toast } = await import('@nerv-iip/ui')
+      const dialog = await openAction('标记完成')
+      const quantity = dialog.querySelector<HTMLInputElement>('#wcs-completion')!
+      expect(quantity.value).toBe('10')
+
+      quantity.value = '6'
+      quantity.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      await submitDialog(dialog)
+
+      expect(wms.completeWcs).toHaveBeenCalledWith('EXT-1', {
+        completionPayloadJson: '{"actualQuantity":6}',
+      })
+      expect(toast.success).toHaveBeenCalledWith('已记录进度，未完成：累计 6，计划 10')
+    })
+
+    it('reports a full completion receipt as finished', async () => {
+      wms.completeWcs.mockResolvedValue(undefined)
+      const { toast } = await import('@nerv-iip/ui')
+      const dialog = await openAction('标记完成')
+
+      await submitDialog(dialog)
+
+      expect(wms.completeWcs).toHaveBeenCalledWith('EXT-1', {
+        completionPayloadJson: '{"actualQuantity":10}',
+      })
+      expect(toast.success).toHaveBeenCalledWith('设备任务已完成')
+    })
   })
 })
 vi.mock('@/composables/useWmsOperationalCandidates', async () => {

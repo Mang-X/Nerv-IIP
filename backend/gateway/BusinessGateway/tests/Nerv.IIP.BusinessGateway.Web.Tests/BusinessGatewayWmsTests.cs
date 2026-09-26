@@ -1083,12 +1083,12 @@ public sealed class BusinessGatewayWmsTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
+        // 控制台「确认重新下发」不带派发内容：网关原样不带，由 WMS 沿用已存的原报文。
         var dispatch = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
         {
             expectedVersion = 3,
             adapterType = "agv",
             externalTaskId = "EXT-001",
-            payloadJson = "{}",
         });
         var fail = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/EXT-001/fail?organizationId=org-001&environmentId=env-dev", new
         {
@@ -1111,7 +1111,6 @@ public sealed class BusinessGatewayWmsTests
             expectedVersion = 0,
             adapterType = "agv",
             externalTaskId = "EXT-001",
-            payloadJson = "{}",
         });
         Assert.Equal(HttpStatusCode.BadRequest, rejectedZeroVersion.StatusCode);
 
@@ -1121,6 +1120,7 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("user-admin", wms.LastDispatchWcsRequest.DispatcherPrincipalId);
         Assert.Equal(["S1"], wms.LastDispatchWcsRequest.AuthorizedSiteCodes);
         Assert.Equal(3, wms.LastDispatchWcsRequest.ExpectedVersion);
+        Assert.Null(wms.LastDispatchWcsRequest.PayloadJson);
         Assert.Equal("EXT-001", wms.LastFailWcsRequest!.ExternalTaskId);
         Assert.Equal("EXT-001", wms.LastCompleteWcsRequest!.ExternalTaskId);
     }
@@ -3621,7 +3621,10 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 null,
                 DateTime.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
                 null,
-                null),
+                null,
+                3,
+                10m,
+                4m),
         ],
         14));
     }
