@@ -91,8 +91,6 @@ const form = reactive({
   lotNo: '',
   serialNo: '',
   qualityStatus: 'available',
-  ownerType: 'owned',
-  ownerId: '',
   quantity: '1',
   // 调拨专用：入库库位。调拨必须两腿配平，缺腿后端整笔拒绝。
   transferInLocationCode: '',
@@ -227,8 +225,8 @@ async function submitMovement() {
     lotNo: optionalText(form.lotNo),
     serialNo: optionalText(form.serialNo),
     qualityStatus: form.qualityStatus.trim(),
-    ownerType: form.ownerType.trim(),
-    ownerId: optionalText(form.ownerId),
+    // 手工移动只记本公司库存；寄售库存的货主差异走盘点差异确认，不在这里补录。
+    ownerType: 'owned',
     quantity: transferQuantity === undefined ? quantity : -transferQuantity,
     transferInLocationCode: isTransfer.value ? form.transferInLocationCode.trim() : undefined,
     transferInQuantity: transferQuantity,
@@ -430,14 +428,6 @@ function isNonEmpty(value: string) {
                   }}</NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="movement-owner-id">货主</NvFieldLabel>
-              <NvInput
-                id="movement-owner-id"
-                v-model="form.ownerId"
-                placeholder="可选货主名称或编码"
-              />
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-lot">批次</NvFieldLabel>

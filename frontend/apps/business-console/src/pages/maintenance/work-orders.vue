@@ -25,6 +25,7 @@ import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
+import { CURRENCY_OPTIONS } from '@/data/currencyReference'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
@@ -558,7 +559,7 @@ async function submitComplete() {
       ...(actualLaborMinutes !== undefined ? { actualLaborMinutes } : {}),
       ...(sparePartCostAmount !== undefined ? { sparePartCostAmount } : {}),
       ...(externalServiceCostAmount !== undefined ? { externalServiceCostAmount } : {}),
-      costCurrencyCode: completeForm.costCurrencyCode.trim() || undefined,
+      costCurrencyCode: completeForm.costCurrencyCode,
       // #897：完工登记实际执行技师（userId）；空则不带该字段。
       actualTechnicianUserId: completeForm.actualTechnicianUserId.trim() || undefined,
     })
@@ -1057,10 +1058,12 @@ watch(
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-currency">币种</NvFieldLabel>
-              <NvInput
+              <NvSearchSelect
                 id="mwo-currency"
                 v-model="completeForm.costCurrencyCode"
-                autocomplete="off"
+                :options="CURRENCY_OPTIONS"
+                search-placeholder="搜索币种代码或名称"
+                aria-label="币种"
               />
             </NvField>
           </NvFieldGroup>

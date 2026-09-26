@@ -140,8 +140,8 @@ describe('工作中心费率', () => {
     await flushPromises()
     const add = wrapper.findAll('button').find((button) => button.text().includes('新增修订'))
     await add!.trigger('click')
-    const currency = wrapper.get<HTMLInputElement>('#erp-wcr-currency')
-    expect(currency.element.value).toBe('USD')
+    const currency = wrapper.get('#erp-wcr-currency')
+    expect(currency.text()).toBe('USD 美元')
     expect(currency.attributes('disabled')).toBeDefined()
 
     await wrapper.get('#erp-wcr-rate').setValue('70.5')

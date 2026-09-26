@@ -8,6 +8,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
+import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
@@ -150,6 +151,19 @@ const { siteOptions, sitesPending } = useInventoryScopeDefaults(taskForm)
 // 库位/批次/序列号后端无主数据读面，从既有台账与仓储作业记录派生可选项。
 const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
   useWarehouseCodeCatalog()
+// 寄售库存的货主是业务伙伴：客户寄售选客户、供应商寄售选供应商；其余货主类型没有货主可选。
+const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
+const ownerPartner = computed(() => {
+  if (taskForm.ownerType === 'customer') return { options: customerOptions.value, role: '客户' }
+  if (taskForm.ownerType === 'supplier') return { options: supplierOptions.value, role: '供应商' }
+  return undefined
+})
+watch(
+  () => taskForm.ownerType,
+  () => {
+    taskForm.ownerId = ''
+  },
+)
 // 物料 / 工厂 / 库位读面只回编码，名称在主数据里，按编码 join 出中文名。
 const { resolveSkuName } = useSkuNames()
 const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
@@ -520,12 +534,18 @@ function isNonEmpty(value: string) {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField>
+            <NvField v-if="ownerPartner">
               <NvFieldLabel for="count-task-owner-id">货主</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="count-task-owner-id"
                 v-model="taskForm.ownerId"
-                placeholder="可选货主名称或编码"
+                :options="ownerPartner.options"
+                :title="`选择${ownerPartner.role}`"
+                :placeholder="`选择${ownerPartner.role}`"
+                :empty-text="`暂无${ownerPartner.role}，请先在基础数据维护业务伙伴`"
+                :loading="partnersPending"
+                clearable
+                aria-label="货主"
               />
             </NvField>
             <NvField>
