@@ -461,9 +461,6 @@ function goPutaway() {
           :location-options="candidates.locationOptions.value"
           :lot-options="candidates.lotOptions.value"
           :ready="candidates.ready.value"
-          :source-label="candidates.sourceLabel.value"
-          :as-of-utc="candidates.asOfUtc.value"
-          :freshness-utc="candidates.freshnessUtc.value"
           :truncated="candidates.truncated.value"
           :pending="candidates.pending.value"
           :error="candidates.error.value"
@@ -478,7 +475,7 @@ function goPutaway() {
         state-key="wms-inbound-orders"
         empty-description="暂无收货单据"
         :filter-state="taskListFilterState"
-        :error="error ?? (hasFailedResponse ? '收货入库服务未成功返回' : undefined)"
+        :error="error ?? (hasFailedResponse ? '收货单据加载失败，请重试。' : undefined)"
         :load-more-error="loadMoreError"
         :refreshing="refreshing"
         :loading-more="loadingMore"
@@ -496,7 +493,7 @@ function goPutaway() {
             v-if="showEmpty"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
-            “{{ inboundScope }}”在当前状态下暂无收货单据；数据来自 WMS 派工
+            “{{ inboundScope }}”在当前状态下暂无收货单据
           </div>
 
           <div v-else class="overflow-hidden rounded-lg border border-border">
@@ -544,7 +541,7 @@ function goPutaway() {
         </p>
         <RetryableListError
           v-else-if="linesError || linesHasFailedResponse"
-          :error="linesError ?? '收货明细服务未成功返回'"
+          :error="linesError"
           :pending="linesPending"
           fallback="收货明细加载失败，请重试。"
           test-id="lines-error"

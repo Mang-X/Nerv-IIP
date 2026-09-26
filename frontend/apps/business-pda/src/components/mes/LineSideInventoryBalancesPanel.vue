@@ -75,7 +75,7 @@ function quantity(value?: number | null) {
       v-else-if="ready && items.length === 0"
       class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
     >
-      当前组织/环境范围暂无线边库存余额
+      暂无线边库存余额
     </div>
     <div v-else-if="items.length > 0" class="overflow-hidden rounded-lg border border-border">
       <NvListRow

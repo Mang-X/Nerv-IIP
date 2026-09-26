@@ -283,10 +283,9 @@ function planSubtitle(item: { deviceAssetId?: string; interval?: string }) {
   return parts.join(' · ')
 }
 
-function inspectionTitle(item: { planId?: string | null; workOrderId?: string | null }) {
-  if (item.planId) return `计划 ${item.planId}`
-  if (item.workOrderId) return `工单 ${item.workOrderId}`
-  return '点检记录'
+function inspectionTitle(item: { planId?: string | null }) {
+  const planCode = allPlans.value.find((plan) => plan.planId === item.planId)?.planCode
+  return planCode ? `计划 ${planCode}` : '点检记录'
 }
 
 function inspectionSubtitle(item: {
@@ -391,7 +390,7 @@ function inspectionSubtitle(item: {
 
           <RetryableListError
             v-if="plansError || plansHasFailedResponse"
-            :error="plansError ?? '保养计划服务未成功返回'"
+            :error="plansError"
             :pending="plansPending"
             fallback="保养计划加载失败，请稍后重试。"
             test-id="plans-error"
@@ -522,7 +521,7 @@ function inspectionSubtitle(item: {
 
         <RetryableListError
           v-if="inspectionsError || inspectionsHasFailedResponse"
-          :error="inspectionsError ?? '点检记录服务未成功返回'"
+          :error="inspectionsError"
           :pending="inspectionsPending"
           fallback="点检记录加载失败，请稍后重试。"
           test-id="inspections-error"

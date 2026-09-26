@@ -1,13 +1,5 @@
 <script setup lang="ts">
-import {
-  Building2,
-  CircleUserRound,
-  IdCard,
-  ShieldCheck,
-  UsersRound,
-  Wifi,
-  WifiOff,
-} from '@lucide/vue'
+import { Building2, IdCard, ShieldCheck, UsersRound, Wifi, WifiOff } from '@lucide/vue'
 import {
   NvAppShellMobile,
   NvCell,
@@ -89,11 +81,8 @@ function formatResolvedAt(value: string) {
       </section>
 
       <section>
-        <h2 class="mb-2 text-sm font-semibold text-foreground">主体与岗位</h2>
+        <h2 class="mb-2 text-sm font-semibold text-foreground">岗位信息</h2>
         <NvCellGroup class="overflow-hidden rounded-xl border border-border">
-          <NvCell title="当前主体" :value="profile.principalId.value || '未返回'">
-            <template #icon><CircleUserRound /></template>
-          </NvCell>
           <NvCell title="工号" :value="profile.employeeNo.value || '未关联'">
             <template #icon><IdCard /></template>
           </NvCell>

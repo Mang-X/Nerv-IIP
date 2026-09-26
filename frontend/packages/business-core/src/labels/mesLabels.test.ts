@@ -27,6 +27,19 @@ describe('workOrderStatusLabel', () => {
     expect(workOrderStatusLabel('OnHold')).toBe('已挂起')
   })
 
+  it('maps the lowercase MES domain codes returned by the work-order read model', () => {
+    expect(workOrderStatusLabel('created')).toBe('待下达')
+    expect(workOrderStatusLabel('released')).toBe('已下达')
+    expect(workOrderStatusLabel('started')).toBe('生产中')
+    expect(workOrderStatusLabel('hold')).toBe('已挂起')
+    expect(workOrderStatusLabel('completed')).toBe('已完成')
+    expect(workOrderStatusLabel('closed')).toBe('已关闭')
+    expect(workOrderStatusLabel('cancelled')).toBe('已取消')
+    expect(workOrderStatusLabel('scrapped')).toBe('已报废')
+    expect(workOrderStatusLabel('split')).toBe('已拆分')
+    expect(workOrderStatusLabel('merged')).toBe('已合并')
+  })
+
   it('falls back to 未知状态 for unknown / missing status', () => {
     expect(workOrderStatusLabel('Nope')).toBe('未知状态')
     expect(workOrderStatusLabel(undefined)).toBe('未知状态')

@@ -477,7 +477,7 @@ export function useShiftHandoverSubmission() {
           throwOnError: true,
         })
       const session = sessionEnvelope?.success ? sessionEnvelope.data : undefined
-      if (!session?.uploadSessionId) throw new Error('文件服务未返回可用的上传会话，请重试。')
+      if (!session?.uploadSessionId) throw new Error('照片上传未能开始，请重试。')
 
       await sendShiftHandoverAttachmentBytes(
         { uploadUrl: session.uploadUrl, uploadHeaders: session.uploadHeaders },
@@ -502,7 +502,7 @@ export function useShiftHandoverSubmission() {
         },
       )
       const attachment = completeEnvelope?.success ? completeEnvelope.data : undefined
-      if (!attachment?.fileId) throw new Error('文件服务未确认照片落盘，请重试。')
+      if (!attachment?.fileId) throw new Error('照片未保存成功，请重试。')
       return attachment
     },
 
@@ -558,7 +558,7 @@ export function useShiftHandoverAttachmentViewer() {
         },
         throwOnError: true,
       })
-      if (!(data instanceof Blob)) throw new Error('文件服务未返回照片内容，请重试。')
+      if (!(data instanceof Blob)) throw new Error('未能读取照片，请重试。')
       const blobUrl = URL.createObjectURL(data)
       const link = document.createElement('a')
       link.href = blobUrl

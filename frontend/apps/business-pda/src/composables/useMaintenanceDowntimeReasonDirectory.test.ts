@@ -150,7 +150,7 @@ describe('useMaintenanceDowntimeReasonDirectory', () => {
         queryState.data.value = envelope({ status: 'unavailable', items: [], total: 0 })
       },
       'unavailable',
-      '权威服务尚未配置停机原因词表，请联系管理员配置',
+      '尚未配置停机原因，请联系管理员配置',
     ],
     [
       '403',

@@ -25,9 +25,6 @@ const props = withDefaults(
     searchKeyword?: string
     scanOverrides?: Readonly<Partial<Record<'location' | 'lot', string>>>
     showLot?: boolean
-    sourceLabel: string
-    asOfUtc?: string
-    freshnessUtc?: string
     truncated?: boolean
     pending?: boolean
     active?: boolean
@@ -41,8 +38,6 @@ const props = withDefaults(
     searchKeyword: '',
     scanOverrides: () => ({}),
     showLot: true,
-    asOfUtc: undefined,
-    freshnessUtc: undefined,
     truncated: false,
     pending: false,
     active: true,
@@ -158,16 +153,6 @@ function clearScanOverride(target: 'location' | 'lot') {
   }
 }
 
-function formatTime(value?: string) {
-  if (!value) return '尚无时间'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return '时间未知'
-  const age = Date.now() - parsed.getTime()
-  if (age >= 0 && age < 60_000) return '刚刚'
-  if (age >= 0 && age < 3_600_000) return `${Math.max(1, Math.floor(age / 60_000))} 分钟前`
-  return parsed.toLocaleString('zh-CN', { hour12: false })
-}
-
 watch(
   () => props.showLot,
   (showLot) => {
@@ -219,10 +204,10 @@ watch(
           !ready
             ? '请先选择可用作业范围'
             : error
-              ? '候选加载失败，不能按空候选继续'
+              ? '候选加载失败'
               : filteredLocationOptions.length
                 ? `${filteredLocationOptions.length} 个候选`
-                : '当前范围仓储作业记录中暂无库位候选'
+                : '当前范围暂无库位候选'
         "
         :arrow="ready && !error"
         @click="openLocationPicker"
@@ -235,7 +220,7 @@ watch(
           !ready
             ? '请先选择可用作业范围'
             : error
-              ? '候选加载失败，不能按空候选继续'
+              ? '候选加载失败'
               : locationCode
                 ? filteredLotOptions.length
                   ? `${filteredLotOptions.length} 个候选，已按库位收窄`
@@ -257,7 +242,7 @@ watch(
       <div v-if="props.scanOverrides[target]" class="space-y-1 px-1">
         <p class="text-sm text-warning">
           {{ target === 'location' ? '库位' : '批次' }} {{ props.scanOverrides[target] }}
-          已作为扫码筛选值应用；未在当前候选中，候选可能因范围或截断不完整，未验证为主数据。
+          已按扫码值筛选，但不在当前候选中，请核对。
         </p>
         <NvMobileButton size="sm" variant="text" @click="clearScanOverride(target)">
           清除扫码筛选
@@ -266,9 +251,9 @@ watch(
     </template>
 
     <div class="space-y-0.5 px-1 text-xs text-muted-foreground">
-      <p v-if="!ready">请先选择可用作业范围，范围就绪前不会请求或应用候选。</p>
+      <p v-if="!ready">请先选择可用作业范围。</p>
       <div v-else-if="error" class="space-y-1 text-destructive">
-        <p>候选加载失败，请重试；当前不会把失败伪装为空候选。</p>
+        <p>候选加载失败，请重试。</p>
         <NvMobileButton
           data-testid="candidate-retry"
           size="sm"
@@ -278,12 +263,7 @@ watch(
           重试
         </NvMobileButton>
       </div>
-      <p v-else>{{ sourceLabel }}</p>
-      <p v-if="ready && !error && pending">候选加载中…</p>
-      <p v-else-if="ready && !error && (asOfUtc || freshnessUtc)">
-        截至 {{ formatTime(asOfUtc)
-        }}<span v-if="freshnessUtc"> · 数据新鲜度 {{ formatTime(freshnessUtc) }}</span>
-      </p>
+      <p v-else-if="pending">候选加载中…</p>
       <p v-if="ready && !error && truncated" class="text-warning">候选已截断，请搜索进一步收窄。</p>
     </div>
 

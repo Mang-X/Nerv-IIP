@@ -17,25 +17,19 @@ function mountPicker(showLot = true) {
       locationOptions,
       lotOptions,
       showLot,
-      sourceLabel: '当前范围仓储作业记录候选',
       ready: true,
       searchKeyword: '',
-      asOfUtc: '2026-07-30T01:00:00Z',
-      freshnessUtc: '2026-07-30T00:59:00Z',
       truncated: true,
     },
   })
 }
 
 describe('WMS operational candidate picker', () => {
-  it('uses mobile picker and scanner components and exposes source metadata', () => {
+  it('uses mobile picker and scanner components', () => {
     const wrapper = mountPicker()
 
     expect(wrapper.findAllComponents(NvPicker)).toHaveLength(2)
     expect(wrapper.findAllComponents(NvScanBar)).toHaveLength(1)
-    expect(wrapper.text()).toContain('当前范围仓储作业记录候选')
-    expect(wrapper.text()).not.toContain('wms-operational-facts')
-    expect(wrapper.text()).not.toContain('2026-07-30T01:00:00Z')
     expect(wrapper.text()).toContain('候选已截断')
     expect(wrapper.findAllComponents(NvPicker)[0]!.props('options')[0]).toEqual({
       label: '全部库位',
@@ -56,9 +50,8 @@ describe('WMS operational candidate picker', () => {
     expect(wrapper.emitted('update:locationCode')?.at(-1)).toEqual(['UNKNOWN'])
     expect(wrapper.emitted('scanOverrideChange')?.at(-2)).toEqual(['location', 'UNKNOWN'])
     await wrapper.setProps({ scanOverrides: { location: 'UNKNOWN' } })
-    expect(wrapper.text()).toContain('已作为扫码筛选值应用')
-    expect(wrapper.text()).toContain('候选可能因范围或截断不完整')
-    expect(wrapper.text()).toContain('未验证为主数据')
+    expect(wrapper.text()).toContain('已按扫码值筛选')
+    expect(wrapper.text()).toContain('不在当前候选中')
 
     await wrapper
       .findAll('button')
@@ -103,7 +96,6 @@ describe('WMS operational candidate picker', () => {
       props: {
         locationOptions,
         lotOptions,
-        sourceLabel: '当前范围仓储作业记录候选',
         ready: false,
       },
     })
@@ -114,7 +106,6 @@ describe('WMS operational candidate picker', () => {
       props: {
         locationOptions: [],
         lotOptions: [],
-        sourceLabel: '当前范围仓储作业记录候选',
         ready: true,
         error: new Error('network'),
       },

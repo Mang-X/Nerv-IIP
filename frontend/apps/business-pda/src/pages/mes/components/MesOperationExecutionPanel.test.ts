@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest'
 import MesOperationExecutionPanel from './MesOperationExecutionPanel.vue'
 
 const task: BusinessConsoleMesOperationTaskRow = {
-  operationTaskId: 'operation-task-internal-20',
-  workOrderId: 'work-order-internal-42',
+  operationTaskId: 'WO-2026-0042-OP-20',
+  workOrderId: 'WO-2026-0042',
   workOrderNo: 'MO-2026-0042',
   operationTaskNo: undefined,
   operationCode: 'OP-STANDARD-20',
@@ -57,12 +57,11 @@ describe('MesOperationExecutionPanel', () => {
     await flushPromises()
 
     const taskDefinition = [...document.body.querySelectorAll('dt')].find(
-      (term) => term.textContent === '工序任务',
+      (term) => term.textContent === '工序',
     )?.nextElementSibling
-    expect(taskDefinition?.textContent).toBe('工序任务信息未提供')
+    expect(taskDefinition?.textContent).toBe('工序 20')
     expect(document.body.textContent).toContain('OP-STANDARD-20')
-    expect(document.body.textContent).not.toContain('operation-task-internal-20')
-    expect(document.body.textContent).not.toContain('work-order-internal-42')
+    expect(document.body.textContent).not.toContain('MO-2026-0042')
   })
 
   it('renders shared gate details and emits only a recognized server action', async () => {
@@ -87,10 +86,10 @@ describe('MesOperationExecutionPanel', () => {
     })
     await flushPromises()
 
-    expect(document.body.textContent).toContain('返工 · MO-2026-0042 · 工序 20')
+    expect(document.body.textContent).toContain('返工 · WO-2026-0042 · 工序 20')
     expect(
       document.body.querySelector('[data-testid="operation-rework-source"]')?.textContent?.trim(),
-    ).toBe('来源 NCR NCR-2026-0001（ncr-001） · 源工单 WO-SOURCE-001')
+    ).toBe('来源 NCR NCR-2026-0001 · 源工单 WO-SOURCE-001')
   })
 
   it('fails closed when a rework task omits authoritative source fields', async () => {

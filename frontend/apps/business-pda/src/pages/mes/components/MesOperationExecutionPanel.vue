@@ -122,7 +122,7 @@ const blockReasonDisplays = computed(() =>
       >
         <dt class="text-muted-foreground">工单</dt>
         <dd class="min-w-0 break-all text-foreground">{{ workOrderLabel(selected) }}</dd>
-        <dt class="text-muted-foreground">工序任务</dt>
+        <dt class="text-muted-foreground">工序</dt>
         <dd class="min-w-0 break-all text-foreground">{{ operationTaskLabel(selected) }}</dd>
         <dt class="text-muted-foreground">设备</dt>
         <dd class="min-w-0 break-all text-foreground">{{ deviceLabel(selected) }}</dd>
@@ -192,7 +192,7 @@ const blockReasonDisplays = computed(() =>
             >
               <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
               <p class="text-xs text-muted-foreground">
-                {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+                {{ sop.documentNumber }} · 版本 {{ sop.revision }} · 生效
                 {{ formatOperationDate(sop.effectiveDate) }}
               </p>
               <NvMobileButton

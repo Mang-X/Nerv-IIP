@@ -10,6 +10,7 @@ import {
   peekPendingBusinessIntent,
   type PendingBusinessIntentScope,
   type ReportCtx,
+  operationSequenceLabel,
 } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { mesReportIntentScope } from './mesReportIntent'
@@ -374,7 +375,7 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
         const reportNo = receiptEnvelope.data?.reportNo?.trim()
         const productionReportId = receiptEnvelope.data?.productionReportId?.trim()
         if (!reportNo || !productionReportId) {
-          throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
+          throw new Error('报工结果缺少报工单号，已阻止成功确认。')
         }
         intent.receipt = { ...receiptEnvelope.data, reportNo, productionReportId }
         savePreparation(intent)
@@ -389,9 +390,8 @@ export function useMesReportSubmission(options: MesReportSubmissionOptions) {
       })
       if (!isCurrent()) return
       const description = [
-        `${workOrderId} · ${operationTaskId}`,
+        `${workOrderId} · ${operationSequenceLabel(task.operationSequence)}`,
         `报工单号 ${reportNo}`,
-        `回执 ID ${productionReportId}`,
       ]
       if (intent.payload?.completesOperation) description.push('本工序已标记完工')
       intent.status = 'success'

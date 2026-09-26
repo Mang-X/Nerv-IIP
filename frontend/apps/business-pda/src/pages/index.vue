@@ -106,7 +106,7 @@ const inspectionFailure = computed(() =>
   inspection.error.value
     ? inspection.error.value
     : inspection.hasFailedResponse.value
-      ? new Error('待检任务服务未返回成功结果，请重试。')
+      ? new Error('待检任务加载失败，请重试。')
       : null,
 )
 
@@ -275,7 +275,7 @@ function openRoute(route: string) {
           "
           class="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
         >
-          当前组织/环境范围暂无待检任务；此列表不是个人待检
+          暂无待检任务
         </div>
       </section>
 

@@ -35,13 +35,13 @@ const statusCopy = computed(() => {
     case 'ambiguous':
       return '找到多个候选，请手动选择；系统不会猜测。'
     case 'unknown':
-      return '无法确认该扫码内容。可查询当前权限范围内的服务端候选。'
+      return '无法确认该扫码内容，可查询当前权限范围内的候选。'
     case 'unsupported':
       return '已识别，但当前 PDA 暂不支持直达该对象。'
     case 'forbidden':
       return '当前账号无权解析该扫码内容。'
     case 'error':
-      return '解析服务暂不可用，请稍后重试。'
+      return '扫码解析暂不可用，请稍后重试。'
     default:
       return ''
   }
@@ -141,7 +141,7 @@ async function onCandidate(candidate: BusinessConsoleBarcodeResolveCandidate) {
         :disabled="resolver.searchStatus.value === 'pending'"
         @click="resolver.searchUnknownCandidates"
       >
-        {{ resolver.searchStatus.value === 'pending' ? '正在查询候选…' : '查询服务端候选' }}
+        {{ resolver.searchStatus.value === 'pending' ? '正在查询候选…' : '查询候选' }}
       </NvMobileButton>
 
       <section

@@ -233,7 +233,7 @@ describe('PDA MES material issue page', () => {
     lineSideInventoryError.value = null
     lineSideInventoryReady.value = true
     await flushPromises()
-    expect(wrapper.text()).toContain('当前组织/环境范围暂无线边库存余额')
+    expect(wrapper.text()).toContain('暂无线边库存余额')
 
     await wrapper
       .findAll('button')
@@ -260,7 +260,7 @@ describe('PDA MES material issue page', () => {
     const wrapper = mount(IssuePage)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('当前组织/环境范围暂无领料申请')
+    expect(wrapper.text()).toContain('暂无领料申请')
   })
 
   it('shows a retryable failure for success:false instead of a business empty state', async () => {
@@ -270,8 +270,8 @@ describe('PDA MES material issue page', () => {
     const wrapper = mount(IssuePage)
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('领料申请服务未返回成功结果')
-    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无领料申请')
+    expect(wrapper.find('[role="alert"]').text()).toContain('领料申请加载失败')
+    expect(wrapper.text()).not.toContain('暂无领料申请')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshRequests).toHaveBeenCalledTimes(1)
   })

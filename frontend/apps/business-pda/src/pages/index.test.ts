@@ -334,7 +334,7 @@ describe('PDA home', () => {
     const wrapper = mount(HomePage)
 
     expect(wrapper.find('[data-testid="home-inspection"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+    expect(wrapper.text()).not.toContain('暂无待检任务')
   })
 
   it('does not render cached inspection rows after the organization scope is lost', async () => {
@@ -363,7 +363,7 @@ describe('PDA home', () => {
     const wrapper = mount(HomePage)
 
     expect(wrapper.find('[role="alert"]').text()).toContain('待检任务加载失败')
-    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+    expect(wrapper.text()).not.toContain('暂无待检任务')
 
     await wrapper
       .get('[data-testid="home-inspection-error"]')
@@ -375,7 +375,7 @@ describe('PDA home', () => {
   it('shows the inspection business empty state only after a successful scoped response', () => {
     const wrapper = mount(HomePage)
 
-    expect(wrapper.text()).toContain('当前组织/环境范围暂无待检任务')
+    expect(wrapper.text()).toContain('暂无待检任务')
   })
 
   it('shows a retryable inspection failure for success:false instead of a business empty state', async () => {
@@ -383,8 +383,8 @@ describe('PDA home', () => {
     inspectionHasFailedResponse.value = true
     const wrapper = mount(HomePage)
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务服务未返回成功结果')
-    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务加载失败')
+    expect(wrapper.text()).not.toContain('暂无待检任务')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshInspection).toHaveBeenCalledTimes(1)
   })

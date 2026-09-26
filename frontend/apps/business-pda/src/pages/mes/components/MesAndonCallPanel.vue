@@ -35,7 +35,6 @@ const categories: Array<{ value: BusinessConsoleMesAndonCategory; label: string 
     <template v-if="receipt">
       <div role="status" class="space-y-1 text-sm text-foreground">
         <p>呼叫已确认</p>
-        <p class="break-all">呼叫凭据：{{ receipt.id }}</p>
         <p>发起时间：{{ formatOperationDateTime(receipt.raisedAtUtc) }}</p>
       </div>
       <NvMobileButton

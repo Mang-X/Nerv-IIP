@@ -360,7 +360,7 @@ describe('PDA equipment alarms page', () => {
   it('shows the empty state only when not pending and no error', () => {
     alarms.value = []
     const wrapper = mount(AlarmsPage)
-    expect(wrapper.text()).toContain('暂无设备报警')
+    expect(wrapper.text()).toContain('暂无符合筛选条件的设备报警')
   })
 
   it('shows an error banner (not the empty state) when error is set', () => {

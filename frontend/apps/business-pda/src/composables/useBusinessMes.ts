@@ -98,7 +98,7 @@ export const MES_WORK_SCOPE_REQUIRED_MESSAGE =
 
 export const MES_WORK_SCOPE_UNAVAILABLE_MESSAGE =
   '当前账号在本组织没有已授权的作业范围，无法读取现场数据。' +
-  '请联系管理员在 IAM 为该账号配置数据范围（组织/车间/工作中心/班组/本人）后重新登录。'
+  '请联系管理员为该账号配置数据范围（组织/车间/工作中心/班组/本人）后重新登录。'
 
 export interface MesListFilters {
   organizationId: string
@@ -1532,7 +1532,7 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
           })
           const envelope = response.data
           if (!envelope?.success || !envelope.data) {
-            throw new Error(envelope?.message?.trim() || '可报工任务权威集合读取失败。')
+            throw new Error(envelope?.message?.trim() || '可报工工序读取失败，请重试。')
           }
           const page = envelope.data.items ?? []
           items.push(...page)
@@ -1744,7 +1744,7 @@ export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
           })
         }
         if (!samePair || (!isReplay && !reportAllowed)) {
-          throw new Error('当前工序不可报工，服务端未开放 report 动作。')
+          throw new Error('当前工序不可报工。')
         }
       } catch (error) {
         if (!isReplay) {
@@ -1942,7 +1942,7 @@ export function useMesLineSideInventoryBalances() {
       : responsePageMismatch.value
         ? new Error('线边库存响应页码与请求不一致，请重试。')
         : currentResponse.value !== undefined && currentResponse.value.success !== true
-          ? new Error(currentResponse.value.message ?? '线边库存服务未返回成功结果，请重试。')
+          ? new Error(currentResponse.value.message ?? '线边库存加载失败，请重试。')
           : null,
   )
   const total = computed(() => pagination.value.lastSuccessfulTotal)

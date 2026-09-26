@@ -34,7 +34,7 @@ const sourceContext = computed(() => {
     workOrder.value?.sourceAlarmId,
   )
   return requestedSourceAlarmId && requestedSourceAlarmId === authoritativeSourceAlarmId
-    ? '来源：报警报修创建结果'
+    ? '由报警报修创建'
     : ''
 })
 

@@ -1416,7 +1416,7 @@ describe('pda useBusinessMes composables', () => {
         completesOperation: false,
         idempotencyKey: 'report-done',
       }),
-    ).rejects.toThrow('服务端未开放 report 动作')
+    ).rejects.toThrow('当前工序不可报工')
     expect(mutateAsync).not.toHaveBeenCalled()
   })
 

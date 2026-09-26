@@ -143,7 +143,8 @@ describe('PDA equipment inspect page', () => {
     const wrapper = mount(InspectPage)
     const text = wrapper.text()
     expect(text).toContain('通过') // result pass → 通过
-    expect(text).toContain('PLAN-A') // planId resolved to business plan code is not available; planId shown
+    expect(text).toContain('计划 PLAN-A')
+    expect(text).not.toContain('p1111111-1111-1111-1111-111111111111')
   })
 
   it('shows the empty state when there are no inspections', () => {

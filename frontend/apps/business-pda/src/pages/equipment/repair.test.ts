@@ -246,6 +246,7 @@ describe('PDA equipment repair page', () => {
     route.query = { deviceAssetId: 'DEV-ROUTE-1' }
     const wrapper = mount(RepairPage, { attachTo: document.body })
 
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).not.toContain('由报警发起报修')
     expect(wrapper.find('[data-testid="priority-select"]').exists()).toBe(false)
     await selectPriority(wrapper, label as '高' | '中' | '低')
     await wrapper.get('[data-testid="submit"]').trigger('click')
@@ -278,6 +279,7 @@ describe('PDA equipment repair page', () => {
   it('keeps the selected priority when the ActionSheet is cancelled', async () => {
     route.query = { deviceAssetId: 'DEV-ROUTE-1' }
     const wrapper = mount(RepairPage, { attachTo: document.body })
+    expect(wrapper.get('[data-testid="device-trigger"]').text()).not.toContain('由报警发起报修')
 
     await selectPriority(wrapper, '中')
 
@@ -300,7 +302,8 @@ describe('PDA equipment repair page', () => {
 
     expect(wrapper.find('[data-testid="device-input"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-1')
-    expect(wrapper.text()).toContain('报警上下文')
+    expect(wrapper.text()).toContain('由报警发起报修')
+    expect(wrapper.text()).not.toContain('ALM-9')
     expect(wrapper.find('input[name="sourceAlarmId"]').exists()).toBe(false)
     expect(wrapper.find('input[name="openedBy"]').exists()).toBe(false)
     expect(wrapper.find('input[name="assignedTechnicianUserId"]').exists()).toBe(false)
@@ -325,12 +328,13 @@ describe('PDA equipment repair page', () => {
     route.query = { deviceAssetId: 'DEV-B', sourceAlarmId: 'ALM-B' }
     await wrapper.vm.$nextTick()
     expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-B')
-    expect(wrapper.text()).toContain('报警上下文 · ALM-B')
+    expect(wrapper.text()).toContain('由报警发起报修')
+    expect(wrapper.text()).not.toContain('ALM-B')
 
     route.query = { deviceAssetId: 'DEV-A', sourceAlarmId: 'ALM-A' }
     await wrapper.vm.$nextTick()
     expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-A')
-    expect(wrapper.text()).toContain('报警上下文 · ALM-A')
+    expect(wrapper.text()).toContain('由报警发起报修')
 
     await selectPriority(wrapper, '高')
     await wrapper.get('[data-testid="submit"]').trigger('click')
@@ -353,7 +357,7 @@ describe('PDA equipment repair page', () => {
 
     expect(wrapper.get('[data-testid="device-trigger"]').text()).toContain('DEV-SCAN-9')
     expect(wrapper.get('[data-testid="priority-trigger"]').text()).toContain('低')
-    expect(wrapper.text()).not.toContain('报警上下文')
+    expect(wrapper.text()).not.toContain('由报警发起报修')
     expect(wrapper.get('[data-testid="reason-trigger"]').text()).toContain('液压泄漏')
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
@@ -622,7 +626,7 @@ describe('PDA equipment repair page', () => {
 
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('网络超时，请检查连接后重试')
-    expect(wrapper.text()).toContain('相同操作编号')
+    expect(wrapper.text()).toContain('可直接重试，不会重复')
     expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
     const firstPayload = createWorkOrder.mock.calls[0][0]
 

@@ -75,9 +75,6 @@ const props = withDefaults(
     locationOptions?: WarehouseTaskCandidateOption[]
     lotOptions?: WarehouseTaskCandidateOption[]
     candidateReady?: boolean
-    candidateSourceLabel?: string
-    candidateAsOfUtc?: string
-    candidateFreshnessUtc?: string
     candidateTruncated?: boolean
     candidatePending?: boolean
     candidateError?: unknown
@@ -101,9 +98,6 @@ const props = withDefaults(
     locationOptions: () => [],
     lotOptions: () => [],
     candidateReady: false,
-    candidateSourceLabel: '当前范围仓储作业记录候选',
-    candidateAsOfUtc: undefined,
-    candidateFreshnessUtc: undefined,
     candidateTruncated: false,
     candidatePending: false,
     candidateError: undefined,
@@ -356,7 +350,7 @@ function emitQuantityAction(action: 'progress' | 'complete') {
       :load-more-error="loadMoreError"
       error-test-id="error-banner"
       :filter-state="filterState"
-      empty-description="当前范围暂无任务。任务来自 WMS 派工，可切换作业范围或状态后重试。"
+      empty-description="当前范围暂无任务，可切换作业范围或状态后重试。"
       @refresh="emit('refresh')"
       @load-more="emit('loadMore')"
       @retry="emit('retry')"
@@ -372,9 +366,6 @@ function emitQuantityAction(action: 'progress' | 'complete') {
             :location-options="locationOptions"
             :lot-options="lotOptions"
             :ready="candidateReady"
-            :source-label="candidateSourceLabel"
-            :as-of-utc="candidateAsOfUtc"
-            :freshness-utc="candidateFreshnessUtc"
             :truncated="candidateTruncated"
             :pending="candidatePending"
             :error="candidateError"

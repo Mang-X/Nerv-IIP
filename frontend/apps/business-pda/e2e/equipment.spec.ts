@@ -286,7 +286,6 @@ test('维修工单：服务端 Self 筛选与分页 → 强 ID 详情重新校�
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     'WS-1 · LINE-A · ST-9',
   )
-  await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('版本 7')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     `维修人员 ${workerProfile.displayName}`,
   )
@@ -752,13 +751,10 @@ test('维修工单：终态矛盾事实失败关闭，修正后强 ID 回读且�
   await expect(page.getByTestId('maintenance-work-order-detail-error')).toContainText(
     '工单详情读取失败，请重试',
   )
-  await expect(page.getByTestId('maintenance-read-only-state')).toHaveCount(0)
+  await expect(page.getByTestId('maintenance-work-order-detail')).toHaveCount(0)
   rejectContradictoryDetail = false
   await page.getByTestId('maintenance-work-order-detail-error').getByRole('button').click()
-  await expect(page.getByTestId('maintenance-read-only-state')).toContainText('终态只读')
-  await expect(page.getByTestId('maintenance-read-only-state')).toContainText(
-    '工单已进入终态，仅可查看',
-  )
+  await expect(page.getByTestId('maintenance-work-order-detail')).toBeVisible()
   expect(detailRequests).toHaveLength(2)
   expect(detailRequests.every((url) => url.searchParams.get('scopeKind') === 'self')).toBe(true)
   expect(
@@ -808,7 +804,7 @@ test('报修：375×812 路由/扫码/设备搜索 → ActionSheet → 键盘态
   await page.goto('/equipment/repair?deviceAssetId=DEV-ROUTE&sourceAlarmId=ALM-9')
   await expect(page.getByRole('heading', { name: '故障报修' })).toBeVisible()
   await expect(page.getByTestId('device-trigger')).toContainText('DEV-ROUTE')
-  await expect(page.getByTestId('device-trigger')).toContainText('报警上下文 · ALM-9')
+  await expect(page.getByTestId('device-trigger')).toContainText('由报警发起报修')
   await expect(page.getByTestId('device-input')).toHaveCount(0)
   await expect(page.locator('select')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
@@ -1199,7 +1195,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
 
   // 穿透后报修页设备已预填
   await expect(page.getByTestId('device-trigger')).toContainText('DEV-A')
-  await expect(page.getByTestId('device-trigger')).toContainText('报警上下文 · ALM-1')
+  await expect(page.getByTestId('device-trigger')).toContainText('由报警发起报修')
 
   await page.getByTestId('priority-trigger').click()
   await page.getByRole('button', { name: '高', exact: true }).click()
@@ -1226,7 +1222,7 @@ test('报警 → 报修 → 已确认强 ID 详情：真实入口保留上下文
   expect(detailUrl.searchParams.get('source')).toBeNull()
   await page.goto(`${detailUrl.pathname}?sourceAlarmId=${sourceAlarmId.toUpperCase()}`)
   expect(new URL(page.url()).searchParams.get('sourceAlarmId')).toBe(sourceAlarmId.toUpperCase())
-  await expect(page.getByTestId('maintenance-source-context')).toHaveText('来源：报警报修创建结果')
+  await expect(page.getByTestId('maintenance-source-context')).toHaveText('由报警报修创建')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText('装配线冲压机')
   await expect(page.getByTestId('maintenance-work-order-detail')).toContainText(
     'WS-1 · LINE-A · ST-1',
