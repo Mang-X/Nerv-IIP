@@ -206,16 +206,6 @@ vi.mock('@/composables/useQualityPickerCatalog', async () => {
   }
 })
 
-vi.mock('@/composables/useEquipmentPickerCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    useEquipmentWorkCenterCatalog: () => ({
-      workCenterOptions: computed(() => [{ value: 'WC-001', label: '总装一线' }]),
-      workCentersPending: shallowRef(false),
-    }),
-  }
-})
-
 vi.mock('@/composables/useBusinessQuality', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
 

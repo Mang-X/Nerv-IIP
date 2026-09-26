@@ -168,8 +168,6 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
   }),
   useEquipmentSkuCatalog: () => ({
     baseUomBySku: computed(() => new Map([['BRG-6205', 'pcs']])),
-    skuOptions: computed(() => [{ value: 'BRG-6205', label: '深沟球轴承 6205', hint: 'pcs' }]),
-    skusPending: shallowRef(false),
   }),
   useEquipmentTeamCatalog: () => ({
     teamOptions: computed(() => [{ value: '设备保全班', label: '设备保全班', hint: 'TEAM-PM' }]),

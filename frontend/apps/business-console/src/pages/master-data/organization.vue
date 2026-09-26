@@ -15,7 +15,6 @@ import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
-  useBusinessMasterDataResources,
   useMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
@@ -69,9 +68,6 @@ const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest
 const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
 // 班组挂靠班次：「所属班次」用班次选择器（可就地新增）；这里的列表只用来在只有一个班次时自动选中。
 const shifts = useMasterDataResource('shift')
-// 班组是车间级的（一个班次的人覆盖本车间全部工作中心）；派工按「工作中心 → 车间 → 班组」找人，
-// 所以班组绑的是车间。
-const teamWorkshops = useBusinessMasterDataResources('workshop')
 const deptActions = useMasterDataResourceActions('department')
 const teamActions = useMasterDataResourceActions('team')
 // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
@@ -86,7 +82,6 @@ const includeDisabled = useIncludeDisabledFilter([
   teams.filters,
   shifts.filters,
 ])
-teamWorkshops.filters.take = TREE_TAKE
 
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -95,7 +90,6 @@ function refreshAll() {
   void departments.refresh()
   void teams.refresh()
   void shifts.refresh()
-  void teamWorkshops.refreshResources()
 }
 
 // ================= 部门多层树（按 parentDepartmentCode 前端拼） =================
@@ -1023,20 +1017,13 @@ function openMembers(row: BusinessConsoleResourceItem) {
             </NvField>
             <NvField>
               <NvFieldLabel for="team-workshop">所属车间</NvFieldLabel>
-              <NvSelect v-model="teamForm.workshopCode">
-                <NvSelectTrigger id="team-workshop"
-                  ><NvSelectValue placeholder="请选择车间"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="w in teamWorkshops.resources.value"
-                    :key="w.code"
-                    :value="w.code ?? NONE_PARENT"
-                  >
-                    {{ w.displayName ?? w.code }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <DirectoryPicker
+                id="team-workshop"
+                v-model="teamForm.workshopCode"
+                directory-type="workshop"
+                placeholder="请选择车间"
+                creatable
+              />
               <NvFieldDescription
                 >绑定后，该车间各工作中心的派工都能从本班组选人。</NvFieldDescription
               >

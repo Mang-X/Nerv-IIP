@@ -30,6 +30,7 @@ import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSel
 import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
 import PlanningForecastManagement from '@/components/planning/PlanningForecastManagement.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
 import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
@@ -221,11 +222,6 @@ function siteLabel(code?: string | null) {
   return siteNameByCode.value.get(code) ?? code
 }
 
-const skuOptions = computed(() =>
-  skus.value
-    .filter((s) => s.code)
-    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
-)
 const siteOptions = computed(() =>
   sites.value
     .filter((s) => s.code)
@@ -950,16 +946,13 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
               <NvField>
                 <NvFieldLabel for="mps-sku">SKU</NvFieldLabel>
-                <NvSelect v-model="mpsForm.skuCode">
-                  <NvSelectTrigger id="mps-sku"
-                    ><NvSelectValue placeholder="选择 SKU"
-                  /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                      o.label
-                    }}</NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
+                <DirectoryPicker
+                  id="mps-sku"
+                  v-model="mpsForm.skuCode"
+                  directory-type="material"
+                  creatable
+                  placeholder="选择 SKU"
+                />
               </NvField>
               <NvField>
                 <NvFieldLabel for="mps-site">工厂</NvFieldLabel>
@@ -1052,16 +1045,13 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               </NvField>
               <NvField>
                 <NvFieldLabel for="demand-sku">SKU</NvFieldLabel>
-                <NvSelect v-model="demandForm.skuCode">
-                  <NvSelectTrigger id="demand-sku"
-                    ><NvSelectValue placeholder="选择 SKU"
-                  /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                      o.label
-                    }}</NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
+                <DirectoryPicker
+                  id="demand-sku"
+                  v-model="demandForm.skuCode"
+                  directory-type="material"
+                  creatable
+                  placeholder="选择 SKU"
+                />
               </NvField>
               <NvField>
                 <NvFieldLabel for="demand-site">工厂</NvFieldLabel>
