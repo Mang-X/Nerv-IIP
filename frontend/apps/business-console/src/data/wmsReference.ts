@@ -10,7 +10,6 @@
  * - `OutboundOrderStatus` Open / Completed / InventoryPostingFailed / Cancelled / InventoryPostingPending
  */
 import type { SearchSelectOption } from '@nerv-iip/ui'
-import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 
 /** 「全部」在筛选条里用这个哨兵值，避免和真实码值撞。 */
 export const WMS_STATUS_ANY = 'all'
@@ -51,37 +50,26 @@ export const WMS_OUTBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
 ]
 
 /**
- * 上下游单据类型：入库来自采购收货或生产完工，出库去向生产领料或销售发货。
+ * 控制台手建出入库单的来源类型：只保留没有上游单据的类型。
  *
- * 码值对齐后端 `WmsSourceDocumentTypes` 常量（`backend/common/Contracts/Nerv.IIP.Contracts.Wms/WmsIntegrationEvents.cs`）
- * 与世界观种子 `WorldHistoryWmsSpec` 里同语义单据使用的字面量，不是随手起的 PascalCase 名字（#3822）：
- * WMS 建单时按原样存下这个值不做归一化，销售发货必须等于 `erp-delivery-order` 事件才会带上发货单号，
- * 应收消费者才查得到、才会生成应收；采购收货则决定完工入库能不能取到单位成本。
+ * 采购收货、生产完工入库、销售退货、生产领料、销售发货、采购退货都由上游业务单据
+ * （ERP 采购收货/发货单、质检放行、MES 领料/完工申请）自动生成对应的 WMS 出入库单，
+ * 手建会跳过上游单据本该携带的关联字段（如发货单行号、采购收货过账路径），要么
+ * 生成不了下游应收/成本，要么直接把单据送进死信（owner 2026-09-26 裁定，见 #3822）。
+ * 库存调拨没有上游单据、天然只能由仓库手建，因此是控制台仅保留的入库/出库来源类型。
+ *
+ * `inventory-transfer` 码值对齐 #3822 原定的字面量；后端 `WmsSourceDocumentTypes`
+ * 没有为它声明常量，`CreateInboundOrderCommand`/`CreateOutboundOrderCommand` 的
+ * `SourceDocumentType` 只做 `NotEmpty`/`MaximumLength(100)` 校验、原样存库，没有任何
+ * 下游按字面量比对这个值，所以字面量本身可以自由选取，这里延用既有码值。
  */
 export const WMS_INBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
-  { value: 'purchase-receipt', label: '采购收货' },
-  { value: 'production-receipt', label: '生产完工入库' },
-  { value: 'sales-return-rma', label: '销售退货' },
   { value: 'inventory-transfer', label: '库存调拨' },
 ]
 
 export const WMS_OUTBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
-  { value: 'material-issue', label: '生产领料' },
-  { value: 'erp-delivery-order', label: '销售发货' },
-  { value: 'purchase-receipt-return', label: '采购退货' },
   { value: 'inventory-transfer', label: '库存调拨' },
 ]
-
-/**
- * 来源单据按类型可选的单据目录（值为该单据的人读单号，与系统生成的出入库单同口径）。
- * 采购收货、销售退货、库存调拨没有可搜列表，不在表里（自由输入）。
- */
-export const WMS_SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
-  'production-receipt': 'mes-finished-goods-receipt',
-  'material-issue': 'mes-material-issue',
-  'erp-delivery-order': 'erp-delivery-order',
-  'purchase-receipt-return': 'wms-supplier-return',
-}
 
 export const wmsWarehouseTaskStatusFilterOptions = withAnyOption(
   WMS_WAREHOUSE_TASK_STATUS_OPTIONS,

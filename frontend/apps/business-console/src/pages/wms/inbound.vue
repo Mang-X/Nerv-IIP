@@ -28,7 +28,6 @@ import {
   wmsInboundOrderStatusFilterOptions,
   wmsInboundOrderStatusLabel,
   WMS_INBOUND_SOURCE_TYPE_OPTIONS,
-  WMS_SOURCE_DOCUMENT_KINDS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
@@ -686,11 +685,7 @@ function formatDateTime(value?: string | null) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-in-srcid">来源单据</NvFieldLabel>
-              <SourceDocumentPicker
-                id="wms-in-srcid"
-                v-model="createForm.sourceDocumentId"
-                :kind="WMS_SOURCE_DOCUMENT_KINDS[createForm.sourceDocumentType]"
-              />
+              <SourceDocumentPicker id="wms-in-srcid" v-model="createForm.sourceDocumentId" />
             </NvField>
           </NvFieldGroup>
 

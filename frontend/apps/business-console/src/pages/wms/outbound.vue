@@ -28,7 +28,6 @@ import {
   wmsOutboundOrderStatusFilterOptions,
   wmsOutboundOrderStatusLabel,
   WMS_OUTBOUND_SOURCE_TYPE_OPTIONS,
-  WMS_SOURCE_DOCUMENT_KINDS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
@@ -674,11 +673,7 @@ function refreshAll() {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-out-srcid">来源单据</NvFieldLabel>
-              <SourceDocumentPicker
-                id="wms-out-srcid"
-                v-model="createForm.sourceDocumentId"
-                :kind="WMS_SOURCE_DOCUMENT_KINDS[createForm.sourceDocumentType]"
-              />
+              <SourceDocumentPicker id="wms-out-srcid" v-model="createForm.sourceDocumentId" />
             </NvField>
           </NvFieldGroup>
 
