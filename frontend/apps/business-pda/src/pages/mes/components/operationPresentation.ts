@@ -48,11 +48,11 @@ export function actionsForOperationTask(
 }
 
 export function workOrderLabel(task: BusinessConsoleMesOperationTaskRow) {
-  return task.workOrderNo?.trim() || '工单信息未提供'
+  return task.workOrderId?.trim() || '工单信息未提供'
 }
 
 export function operationTaskLabel(task: BusinessConsoleMesOperationTaskRow) {
-  return task.operationTaskNo?.trim() || '工序任务信息未提供'
+  return task.operationTaskId?.trim() || '工序任务信息未提供'
 }
 
 export function deviceLabel(task: BusinessConsoleMesOperationTaskRow) {

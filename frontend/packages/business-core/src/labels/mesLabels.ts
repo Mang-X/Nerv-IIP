@@ -11,17 +11,28 @@ const UNKNOWN_STATUS_LABEL = '未知状态'
 
 /** 工单状态可读标签（report / issue / receipt 页面共用，原本三份相同副本）。 */
 export const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
+  Created: '待下达',
   Released: '已下达',
   Planned: '已计划',
   InProgress: '生产中',
   Started: '生产中',
+  Hold: '已挂起',
+  OnHold: '已挂起',
   Completed: '已完成',
   Closed: '已关闭',
-  OnHold: '已挂起',
+  Cancelled: '已取消',
+  Scrapped: '已报废',
+  Split: '已拆分',
+  Merged: '已合并',
 }
 
+// MES 工单读面回显的是域常量的小写码（`created` / `released` …），按不区分大小写查表。
+const WORK_ORDER_STATUS_LABELS_BY_CODE = new Map(
+  Object.entries(WORK_ORDER_STATUS_LABELS).map(([code, label]) => [code.toLowerCase(), label]),
+)
+
 export function workOrderStatusLabel(status?: string | null): string {
-  return WORK_ORDER_STATUS_LABELS[status ?? ''] ?? UNKNOWN_STATUS_LABEL
+  return WORK_ORDER_STATUS_LABELS_BY_CODE.get((status ?? '').toLowerCase()) ?? UNKNOWN_STATUS_LABEL
 }
 
 /** 工序任务状态可读标签（operation / report 页面共用，原本两份相同副本）。 */

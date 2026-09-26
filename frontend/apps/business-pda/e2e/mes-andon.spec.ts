@@ -119,7 +119,7 @@ test('呼叫权限被拒绝时不发起业务写', async ({ page }) => {
     return route.fulfill({ status: 403 })
   })
   await page.goto('/mes/operation')
-  await page.getByText('MO-ANDON · 工序 10', { exact: true }).click()
+  await page.getByText('WO-ANDON · 工序 10', { exact: true }).click()
   const panel = page.getByRole('region', { name: '异常呼叫' })
   await expect(panel.getByRole('button', { name: '缺料呼叫' })).toBeDisabled()
   await expect(panel).toContainText('作业范围核验失败')
