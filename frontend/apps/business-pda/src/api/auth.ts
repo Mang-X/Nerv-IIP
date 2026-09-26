@@ -12,7 +12,7 @@ export const consoleAuthApi = createConsoleAuthApi({
   },
   messages: {
     invalidCredentialsOrExpiredSession: '账号密码错误或会话已过期。',
-    loginFallback: '无法连接认证服务。',
+    loginFallback: '无法登录，请检查网络后重试。',
     principalFallback: '无法加载当前登录用户。',
     refreshFallback: '无法刷新会话。',
   },

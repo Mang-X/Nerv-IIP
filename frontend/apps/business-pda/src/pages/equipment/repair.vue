@@ -3,7 +3,6 @@ import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import DowntimeReasonPicker from '@/components/equipment/DowntimeReasonPicker.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import { maintenanceWorkOrderTitle } from './work-orders/maintenanceWorkOrderPresentation'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
 import {
   useMaintenanceDowntimeReasonDirectory,
@@ -606,7 +605,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
             <NvListRow
               v-for="item in workOrders"
               :key="item.workOrderId"
-              :title="maintenanceWorkOrderTitle(item.sourceReferenceId)"
+              :title="item.deviceAssetId ?? '未知设备'"
               :subtitle="workOrderSubtitle(item)"
               :interactive="false"
             />
