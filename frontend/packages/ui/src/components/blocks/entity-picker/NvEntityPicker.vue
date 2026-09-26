@@ -84,6 +84,8 @@ const props = withDefaults(
     createText?: string
     id?: string
     ariaLabel?: string
+    /** 字段错误提示的 id，挂到触发按钮上，读屏在这个字段上能念到错误。 */
+    ariaDescribedby?: string
     class?: HTMLAttributes['class']
   }>(),
   {
@@ -183,6 +185,7 @@ function clear() {
           :aria-haspopup="variant === 'dialog' ? 'dialog' : 'listbox'"
           :aria-expanded="open"
           :aria-invalid="invalid || undefined"
+          :aria-describedby="ariaDescribedby"
           :disabled="disabled"
           :class="
             cn(

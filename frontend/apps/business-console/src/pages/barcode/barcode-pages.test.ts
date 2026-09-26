@@ -243,7 +243,7 @@ const dialogStubs = {
 }
 /**
  * 表单里的「只选」字段桩：
- * - NvEntityPicker / NvSearchSelect 本身是弹层选择器，桩成带同名 id 的输入位，
+ * - NvEntityPicker / NvSearchSelect / DirectoryPicker 本身是弹层选择器，桩成带同名 id 的输入位，
  *   让用例继续用 `setInput('#id', ...)` 表达「选中了某个候选」。
  * - NvSelect 的 id 挂在 NvSelectTrigger 上（真实组件是 button），桩件里把它上提到
  *   `<select>` 元素，`#id` 选择器与 `setValue` 语义都保持不变。
@@ -260,6 +260,7 @@ const selectTriggerIdKey = Symbol('nv-select-stub-trigger-id')
 const selectStubs = {
   NvEntityPicker: idInputStub,
   NvSearchSelect: idInputStub,
+  DirectoryPicker: idInputStub,
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],

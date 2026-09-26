@@ -10,6 +10,7 @@ import {
   useEquipmentUomCatalog,
   useTelemetryTagCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -392,16 +393,11 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-device">设备</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="rule-device"
                 v-model="form.deviceAssetId"
-                :options="deviceOptions"
-                title="选择设备"
-                placeholder="选择设备"
-                source-text="数据来自基础数据设备资产"
-                empty-text="暂无设备资产，请先在基础数据登记设备"
-                :loading="devicesPending"
-                aria-label="设备"
+                directory-type="equipment"
+                creatable
               />
             </NvField>
             <NvField v-if="!formEditing">

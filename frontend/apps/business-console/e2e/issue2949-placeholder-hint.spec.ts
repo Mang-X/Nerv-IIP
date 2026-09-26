@@ -185,16 +185,8 @@ test('#2949 半栏栅格 hint 迁移后真实排版核验', async ({ page }, tes
 
   const dialog = '[data-slot="dialog-content"], [role="dialog"]'
 
-  // 1. 维护工单（#2706 抓到「…如 DEV」的原始现场）
-  await page.goto('/maintenance/work-orders', { waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: '新建维护工单' }).click()
-  await expect(page.getByLabel('设备', { exact: true })).toBeVisible()
-  await capture(page, outDir, '01-maintenance-work-orders', {
-    input: '#mwo-device',
-    hint: '也可直接输入设备编号',
-    container: '[data-slot="nv-sheet-content"]',
-  })
-  await page.keyboard.press('Escape')
+  // 1. 维护工单的设备字段（#2706 抓到「…如 DEV」的原始现场）已改成只能从台账选或就地新增
+  //    （#3816），没有示例文本了，不再截。
 
   // 2. 保养计划
   await page.goto('/maintenance/plans', { waitUntil: 'domcontentloaded' })

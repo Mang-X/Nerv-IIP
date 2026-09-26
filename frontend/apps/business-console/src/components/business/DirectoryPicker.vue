@@ -47,9 +47,9 @@ const DIRECTORY_TEXT: Record<SearchableType | ListType, { noun: string; source: 
   site: { noun: '工厂', source: '数据来自基础数据工厂' },
 }
 
-// 其余 `NvEntityPicker` 属性（id / placeholder / clearable / disabled / invalid / aria-label / class）
-// 透传给选择器（模板里放在最后，调用方给的值覆盖这里的默认文案）。新增弹窗与选择器并列成两个
-// 根节点，所以关掉自动透传、显式绑定。
+// 其余 `NvEntityPicker` 属性（id / placeholder / clearable / disabled / invalid / aria-label /
+// aria-describedby / class）透传给选择器（模板里放在最后，调用方给的值覆盖这里的默认文案）。
+// 新增弹窗与选择器并列成两个根节点，所以关掉自动透传、显式绑定。
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{
   directoryType: SearchableType | ListType

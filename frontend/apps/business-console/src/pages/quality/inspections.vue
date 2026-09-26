@@ -25,7 +25,6 @@ import {
 } from '@/composables/useQualityPickerCatalog'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import {
@@ -307,7 +306,6 @@ const planCatalog = useQualityInspectionPlanCatalog()
 const skuCatalog = useQualitySkuCatalog()
 const uomCatalog = useQualityUomCatalog()
 const reasonCatalog = useQualityReasonCatalog()
-const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
 const { activateFirstArticlePlan, activateFirstArticlePlanPending } =
   useQualityFirstArticlePlanActions(filters)
 // 换检验方案等于换了检验对象：方案自带的物料要跟着走，已填的特性行不再属于新方案，重置回一行空行。
@@ -958,10 +956,6 @@ function isPresent(value: string | undefined | null): value is string {
       v-model:open="firstArticlePlanSheetOpen"
       :organization-id="filters.organizationId"
       :environment-id="filters.environmentId"
-      :sku-options="skuCatalog.skuOptions.value"
-      :skus-pending="skuCatalog.skusPending.value"
-      :work-center-options="workCenterOptions"
-      :work-centers-pending="workCentersPending"
       @completed="refreshInspectionPlans"
     />
 
@@ -1037,14 +1031,12 @@ function isPresent(value: string | undefined | null): value is string {
             </NvField>
             <NvField>
               <NvFieldLabel for="record-sku">SKU</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="record-sku"
                 v-model="recordForm.skuCode"
-                :options="skuCatalog.skuOptions.value"
-                title="选择 SKU"
+                directory-type="material"
+                creatable
                 placeholder="选择 SKU"
-                source-text="数据来自基础数据物料主数据"
-                :loading="skuCatalog.skusPending.value"
                 aria-label="SKU"
               />
             </NvField>

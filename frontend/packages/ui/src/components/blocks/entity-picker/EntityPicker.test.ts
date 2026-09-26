@@ -23,6 +23,14 @@ describe('NvEntityPicker', () => {
     expect(trigger.classes()).toContain('border-destructive')
   })
 
+  it('links the trigger to the field error message for screen readers', () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: { options, title: '选择物料', invalid: true, ariaDescribedby: 'sku-error' },
+    })
+
+    expect(wrapper.get('button[aria-haspopup]').attributes('aria-describedby')).toBe('sku-error')
+  })
+
   it('shows the placeholder when nothing is selected, and name + code when selected', () => {
     const empty = mount(NvEntityPicker, {
       props: { options, title: '选择物料', placeholder: '请选择物料' },

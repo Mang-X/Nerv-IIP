@@ -2,6 +2,7 @@
 import type { BusinessConsoleTelemetryDeviceControlBindingItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useBusinessDeviceControlBindings } from '@/composables/useBusinessDeviceControlBinding'
 import {
   useConnectorInstanceCatalog,
@@ -247,15 +248,11 @@ function formatDateTime(value?: string | null) {
                   <NvFieldLabel for="binding-device"
                     >设备编号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvEntityPicker
+                  <DirectoryPicker
                     id="binding-device"
                     v-model="form.deviceAssetId"
-                    :options="deviceOptions"
-                    title="选择设备"
-                    placeholder="选择设备"
-                    source-text="数据来自基础数据设备资产"
-                    empty-text="暂无设备资产，请先在基础数据登记设备"
-                    :loading="devicesPending"
+                    directory-type="equipment"
+                    creatable
                     aria-label="设备编号"
                   />
                   <p

@@ -330,20 +330,15 @@ function maintenanceWorkOrderStatusLabel(status?: string | null) {
   return WORK_ORDER_STATUS_LABELS[key] ?? key
 }
 
-/** 备件物料目录：备件需求与工单完工登记的换件行。 */
+/**
+ * 备件物料的基本单位：备件需求与工单完工登记的换件行选完物料后自动带出单位。
+ * 物料本身用可新增的物料选择器（`DirectoryPicker material`）选。
+ */
 export function useEquipmentSkuCatalog() {
   const skuCatalog = useBusinessSkus()
   skuCatalog.filters.take = CATALOG_TAKE
 
   return {
-    skuOptions: computed<EntityPickerOption[]>(() =>
-      skuCatalog.skus.value
-        .filter((row) => row.active !== false)
-        .flatMap((row) => toOption(row.code, row.displayName, row.baseUomCode))
-        .sort(byLabel),
-    ),
-    skusPending: skuCatalog.skusPending,
-    /** 所选物料的基本单位，用来在选完物料后自动带出单位。 */
     baseUomBySku: toBaseUomBySku(skuCatalog.skus),
   }
 }
