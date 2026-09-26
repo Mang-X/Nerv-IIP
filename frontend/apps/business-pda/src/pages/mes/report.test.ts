@@ -160,6 +160,9 @@ const workScopeOptionsRef = ref([
   { label: '精加工二线（工作中心）', value: 'work-center:WC-B' },
 ])
 const workScopeSelectionRef = ref<string | undefined>('work-center:WC-A')
+const workOrderListScopeReadyRef = ref(true)
+const workOrderListScopeUnavailableRef = ref(false)
+const workOrderListScopeMessageRef = ref('')
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrders: () => ({
@@ -176,8 +179,10 @@ vi.mock('@/composables/useBusinessMes', () => ({
       id: 'WC-A',
       displayName: '精加工一线',
     }),
-    workOrderReadScopeMessage: ref(''),
-    workOrderReadScopeReady: ref(true),
+    workOrderReadScopeMessage: workOrderListScopeMessageRef,
+    workOrderReadScopePending: ref(false),
+    workOrderReadScopeReady: workOrderListScopeReadyRef,
+    workOrderReadScopeUnavailable: workOrderListScopeUnavailableRef,
   }),
   useMesOperationTasks: () => {
     operationTaskDiscoveryCalls += 1
@@ -379,6 +384,9 @@ describe('PDA MES production reporting page', () => {
     refreshExactTask.mockClear()
     cancelPendingTasks.mockClear()
     workOrdersErrorRef.value = null
+    workOrderListScopeReadyRef.value = true
+    workOrderListScopeUnavailableRef.value = false
+    workOrderListScopeMessageRef.value = ''
     tasksErrorRef.value = null
     workOrdersPendingRef.value = false
     tasksPendingRef.value = false
@@ -709,6 +717,19 @@ describe('PDA MES production reporting page', () => {
       expect(refreshExactTask).not.toHaveBeenCalled()
     },
   )
+
+  it('tells the operator in business terms when the account has no work-order scope', () => {
+    workOrdersRef.value = []
+    workOrderListScopeReadyRef.value = false
+    workOrderListScopeUnavailableRef.value = true
+    workOrderListScopeMessageRef.value = '请联系管理员在 IAM 为该账号配置数据范围'
+
+    const wrapper = mount(ReportPage)
+
+    const notice = wrapper.get('[data-testid="work-order-scope-notice"]').text()
+    expect(notice).toBe('当前账号没有可查看的工单范围，请联系管理员开通。')
+    expect(wrapper.text()).not.toContain('IAM')
+  })
 
   it('shows the business empty state for a work order without operations', async () => {
     workOrderDetailRef.value = {

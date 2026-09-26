@@ -89,7 +89,18 @@ const {
   refresh: refreshWorkOrders,
   hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
   hasFailedResponse: workOrdersHasFailedResponse,
+  workOrderReadScopeMessage,
+  workOrderReadScopePending,
+  workOrderReadScopeReady,
+  workOrderReadScopeUnavailable,
 } = useMesWorkOrders()
+// 工单读取范围没就绪时，列表区不会发查询；这里要告诉操作工为什么选不了工单。
+// 「没有授权范围」的原文带 IAM 配置指引，面向操作工改说业务话术。
+const workOrderScopeNotice = computed(() => {
+  if (workOrderReadScopeReady.value || workOrderReadScopePending.value) return ''
+  if (workOrderReadScopeUnavailable.value) return '当前账号没有可查看的工单范围，请联系管理员开通。'
+  return workOrderReadScopeMessage.value
+})
 
 const {
   workOrder: workOrderDetail,
@@ -642,8 +653,15 @@ async function onScanAccepted(value: MesScanAccepted) {
           @status-change="scanGate.set('list', $event)"
         />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
+        <p
+          v-if="workOrderScopeNotice"
+          data-testid="work-order-scope-notice"
+          class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+        >
+          {{ workOrderScopeNotice }}
+        </p>
         <RetryableListError
-          v-if="workOrdersError || workOrdersHasFailedResponse"
+          v-else-if="workOrdersError || workOrdersHasFailedResponse"
           :error="workOrdersError ?? '生产工单服务未成功返回'"
           :pending="workOrdersPending"
           fallback="加载工单失败，请下拉刷新或重试。"

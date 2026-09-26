@@ -555,6 +555,7 @@ export function useMesWorkOrders() {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
+    workOrderReadScopeUnavailable: workOrderReadScope.scopeUnavailable,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
