@@ -25,11 +25,11 @@ public sealed class IamSeedService(
     // #3827 之前财务专员的默认权限；只有仍等于这一版的存量角色才补维修工单只读。
     private static readonly string[] ErpFinanceDefaultPermissionsBeforeMaintenanceRead =
     [
-        "business.masterdata.resources.read",
-        "business.erp.procurement.read",
-        "business.erp.sales.read",
-        "business.erp.finance.read",
-        "business.erp.finance.manage",
+        NervIipPermissionCodes.MasterDataResourcesRead,
+        NervIipPermissionCodes.ErpProcurementRead,
+        NervIipPermissionCodes.ErpSalesRead,
+        NervIipPermissionCodes.ErpFinanceRead,
+        NervIipPermissionCodes.ErpFinanceManage,
     ];
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
