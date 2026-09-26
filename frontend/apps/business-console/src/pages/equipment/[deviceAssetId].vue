@@ -76,6 +76,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
 import { readFaceText } from '@/utils/readFace'
+import { formatDateTime } from '@/utils/format'
 
 definePage({
   meta: {
@@ -640,11 +641,6 @@ function quantityLabel(row: { quantity?: number | null; uomCode?: string | null 
 }
 function recordDowntime() {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: filters.deviceAssetId } })
-}
-function formatDateTime(value?: string | null) {
-  if (!value) return '无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 </script>
 
