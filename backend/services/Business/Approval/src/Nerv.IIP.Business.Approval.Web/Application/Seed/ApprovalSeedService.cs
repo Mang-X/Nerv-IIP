@@ -9,11 +9,11 @@ namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
 /// Approval 产品基线 seed：为全新环境补齐跨业务域开链所需的六张模板。
 /// 本 seed 不依赖 LeaderDemo/WorldHistory；按 org/env + templateCode 幂等只补缺，
 /// 已存在的模板（包括被租户停用或改写的定义）一律保留。
+/// 审批人由调用方传入 IAM 引导种子的管理员（#3812）。
 /// </summary>
 public sealed class ApprovalSeedService(ApplicationDbContext dbContext)
 {
     private const string ActorTypeUser = "user";
-    private const string AdminUserId = "user-admin";
     private const int StepDueInHours = 24;
 
     private sealed record TemplateSeed(string TemplateCode, string DocumentType, string StepName);
@@ -31,6 +31,7 @@ public sealed class ApprovalSeedService(ApplicationDbContext dbContext)
     public async Task<int> SeedAsync(
         string organizationId,
         string environmentId,
+        string approverUserId,
         CancellationToken cancellationToken = default)
     {
         var templateCodes = Templates.Select(x => x.TemplateCode).ToArray();
@@ -63,7 +64,7 @@ public sealed class ApprovalSeedService(ApplicationDbContext dbContext)
                         StepName: seed.StepName,
                         ParallelGroupKey: null,
                         ApproverType: ActorTypeUser,
-                        ApproverRef: AdminUserId,
+                        ApproverRef: approverUserId,
                         DueInHours: StepDueInHours),
                 ]));
             written++;
