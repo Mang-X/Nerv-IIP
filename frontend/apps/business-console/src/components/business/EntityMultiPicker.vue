@@ -20,8 +20,6 @@ const props = withDefaults(
     /** 选择弹窗标题，如「选择供应商」。 */
     title: string
     placeholder?: string
-    /** 底部数据来源说明。 */
-    sourceText?: string
     /** 目录为空时的指路文案。 */
     emptyText?: string
     loading?: boolean
@@ -113,7 +111,6 @@ function remove(code: string) {
       :options="availableOptions"
       :title="title"
       :placeholder="placeholder"
-      :source-text="sourceText"
       :empty-text="emptyText"
       :loading="loading"
       :disabled="disabled"

@@ -252,7 +252,6 @@ async function submit() {
                 :options="customerOptions"
                 title="选择客户"
                 placeholder="选择客户"
-                source-text="数据来自基础数据业务伙伴（客户角色）"
                 empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
                 :loading="partnersPending"
                 aria-label="客户"

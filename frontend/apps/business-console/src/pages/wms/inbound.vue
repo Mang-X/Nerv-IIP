@@ -20,7 +20,6 @@ import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCand
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
   WAREHOUSE_LOCATION_EMPTY_TEXT,
   WAREHOUSE_LOT_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
@@ -486,7 +485,6 @@ function formatDateTime(value?: string | null) {
         :options="skuOptions"
         title="选择物料"
         placeholder="选择物料"
-        source-text="数据来自基础数据物料主数据"
         empty-text="暂无物料主数据，请先在基础数据维护物料"
         :loading="skusPending"
         aria-label="选择物料带出库存可用量"
@@ -520,7 +518,6 @@ function formatDateTime(value?: string | null) {
           :options="skuOptions"
           title="选择物料"
           placeholder="选择物料"
-          source-text="数据来自基础数据物料主数据"
           empty-text="暂无物料主数据，请先在基础数据维护物料"
           :loading="skusPending"
           clearable
@@ -532,7 +529,6 @@ function formatDateTime(value?: string | null) {
           :options="siteOptions"
           title="选择工厂"
           placeholder="工厂"
-          source-text="数据来自基础数据工厂主数据"
           empty-text="暂无工厂主数据，请先在基础数据维护工厂"
           :loading="sitesPending"
           clearable
@@ -665,7 +661,6 @@ function formatDateTime(value?: string | null) {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂主数据，请先在基础数据维护工厂"
                 :loading="sitesPending"
                 clearable
@@ -731,7 +726,6 @@ function formatDateTime(value?: string | null) {
                 :options="locationOptions"
                 title="选择暂存库位"
                 placeholder="暂存库位*"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
                 :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable

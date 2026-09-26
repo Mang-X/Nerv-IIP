@@ -5,8 +5,8 @@ import { cn } from '../../../lib/utils'
 import type { EntityPickerOption } from './types'
 
 /**
- * 内部件（不从包外导出）：NvEntityPicker 两种形态共用的「搜索框 + 实体列表 + 来源注脚」。
- * 抽出来是为了保证下拉形态和弹窗形态的行数、留白、空态、计数完全一致 ——
+ * 内部件（不从包外导出）：NvEntityPicker 两种形态共用的「搜索框 + 实体列表」。
+ * 抽出来是为了保证下拉形态和弹窗形态的行数、留白、空态、继续筛选提示完全一致 ——
  * 两种形态各写一遍模板迟早会漂移。
  */
 const props = withDefaults(
@@ -15,7 +15,6 @@ const props = withDefaults(
     modelValue?: string
     searchPlaceholder?: string
     emptyText?: string
-    sourceText?: string
     loading?: boolean
     /** 搜索框的可访问名称。 */
     searchAriaLabel?: string
@@ -27,7 +26,7 @@ const props = withDefaults(
     search?: string
     /** 目录由服务端按搜索词过滤：本地不再二次过滤，`options` 即当前结果。 */
     serverSearch?: boolean
-    /** 服务端搜索时目录的匹配总数；大于当前条数即说明还有没显示出来的。 */
+    /** 服务端搜索时目录的匹配总数；大于当前条数即说明还有没显示出来的，提示用户继续输入。 */
     totalCount?: number
     /** 新增入口文案（如「新增车间」）；传了才在列表下方出现入口，点击发出 `create`。 */
     createText?: string
@@ -78,7 +77,7 @@ const filtered = computed(() => {
   )
 })
 
-// 目录比当前显示的多时如实说明还有多少，并给出「继续输入」的出路，
+// 目录比当前显示的多时给出「继续输入」的出路，
 // 免得用户以为列表就这么多、新建的条目「不见了」。
 const hasMore = computed(
   () => props.serverSearch && props.totalCount != null && props.totalCount > filtered.value.length,
@@ -195,20 +194,13 @@ defineExpose({ focus: () => inputEl.value?.focus() })
       </button>
     </div>
 
-    <div
+    <p
+      v-if="hasMore && !loading"
       :class="
-        cn(
-          'flex items-center justify-between gap-3 border-t border-border py-2.5 text-xs text-muted-foreground',
-          dense ? 'px-2.5' : 'px-6',
-        )
+        cn('border-t border-border py-2.5 text-xs text-muted-foreground', dense ? 'px-2.5' : 'px-6')
       "
     >
-      <span class="truncate">
-        {{ hasMore ? '输入关键字继续筛选' : (sourceText ?? '') }}
-      </span>
-      <span v-if="!loading" class="shrink-0 tabular-nums">
-        {{ hasMore ? `显示 ${filtered.length} / 共 ${totalCount} 条` : `共 ${filtered.length} 条` }}
-      </span>
-    </div>
+      输入关键字继续筛选
+    </p>
   </div>
 </template>

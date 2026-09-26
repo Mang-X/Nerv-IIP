@@ -288,7 +288,6 @@ function formatDateTime(value?: string | null) {
                     :options="instancePickerOptions"
                     title="选择连接器实例"
                     placeholder="选择连接器实例"
-                    source-text="数据来自连接器采集健康上报"
                     empty-text="还没有连接器上报采集健康，请先让连接器接入并上报"
                     :loading="connectorsPending"
                     aria-label="实例标识"
@@ -320,7 +319,6 @@ function formatDateTime(value?: string | null) {
           :options="deviceOptions"
           title="选择设备"
           placeholder="全部设备"
-          source-text="数据来自基础数据设备资产"
           empty-text="暂无设备资产，请先在基础数据登记设备"
           :loading="devicesPending"
           clearable

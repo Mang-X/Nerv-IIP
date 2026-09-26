@@ -1,15 +1,15 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
-using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
 /// <summary>
-/// 常规（非 leader-demo）主数据 seed：显示名必须为中文，且技能目录/人员技能/产品分类/部门
-/// 这些页面可见的基础目录不得为空；重复执行幂等，已存在的租户事实一律不覆写。
+/// 产品基线主数据 seed：显示名必须为中文；重复执行幂等，已存在的租户事实一律不覆写、不停用（#3811）。
+/// 技能目录/人员技能/产品分类/班组这些演示目录由 <see cref="LeaderDemoSeedService"/> 写入。
 /// </summary>
 public sealed class MasterDataSeedServiceTests
 {
@@ -40,11 +40,12 @@ public sealed class MasterDataSeedServiceTests
     }
 
     [Fact]
-    public async Task Seed_fills_department_team_skill_and_category_catalogs()
+    public async Task Leader_demo_seed_fills_team_skill_and_category_catalogs_on_top_of_the_baseline()
     {
         await using var db = CreateDbContext();
 
         await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
+        await new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev");
 
         Assert.Equal("生产部", (await db.Departments.SingleAsync(x => x.Code == "DEPT-PROD")).Name);
         Assert.Equal(5, await db.Departments.CountAsync());
@@ -81,7 +82,6 @@ public sealed class MasterDataSeedServiceTests
     {
         await using var db = CreateDbContext();
         db.Departments.Add(Department.Create("org-001", "env-dev", "DEPT-PROD", "制造中心", null));
-        db.Skills.Add(Skill.Create("org-001", "env-dev", "welding", "焊工（租户）", "自定义组", false, null, null));
         await db.SaveChangesAsync();
 
         var seed = new MasterDataSeedService(db);
@@ -89,19 +89,51 @@ public sealed class MasterDataSeedServiceTests
         await seed.SeedAsync("org-001", "env-dev");
 
         Assert.Equal("制造中心", (await db.Departments.SingleAsync(x => x.Code == "DEPT-PROD")).Name);
-        Assert.Equal("焊工（租户）", (await db.Skills.SingleAsync(x => x.SkillCode == "welding")).SkillName);
         Assert.Equal(5, await db.Departments.CountAsync());
-        Assert.Equal(6, await db.Skills.CountAsync());
-        Assert.Equal(6, await db.ProductCategories.CountAsync());
-        Assert.Equal(2, await db.Teams.CountAsync());
-        Assert.Equal(6, await db.TeamMembers.CountAsync());
-        Assert.Equal(13, await db.PersonnelSkills.CountAsync());
         Assert.Equal(
             MasterDataDictionaryRules.StandardReferenceData.Count(x => x.CodeSet == "inventory-location"),
             await db.ReferenceDataCodes.CountAsync(x =>
                 x.OrganizationId == "org-001" &&
                 x.EnvironmentId == "env-dev" &&
                 x.CodeSet == "inventory-location"));
+    }
+
+    /// <summary>
+    /// #3811 验收：租户改过的编码规则、字典、计量单位在服务重启（重复 seed）后保持不变。
+    /// 以前 seed 对已有编码规则无条件回写种子定义、对字典与计量单位改回种子名称，并停用一批旧码；
+    /// 默认开启后每次重启都会跑，所以必须只补缺。
+    /// </summary>
+    [Fact]
+    public async Task Seed_never_rewrites_or_disables_rows_the_tenant_already_has()
+    {
+        await using var db = CreateDbContext();
+        await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
+
+        var workOrderRule = await db.CodeRules.SingleAsync(x => x.RuleKey == "work-order");
+        var tenantSegments = """[{"type":"literal","value":"WO-T"}]""";
+        workOrderRule.ReplaceDefinition("租户工单号", workOrderRule.AppliesTo, workOrderRule.Scope, tenantSegments, false, workOrderRule.Version + 1);
+        var dry = await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "storage-condition" && x.Code == "dry");
+        dry.Update("防潮库");
+        var raw = await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "material-type" && x.Code == "raw-material");
+        raw.Disable("租户停用");
+        var kg = await db.UnitsOfMeasure.SingleAsync(x => x.Code == "kg");
+        kg.Update("公斤", "mass", 2, "half-even");
+        db.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "uom-dimension", "mass", "质量"));
+        await db.SaveChangesAsync();
+        var versionCount = await db.CodeRuleVersions.CountAsync();
+
+        await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
+
+        workOrderRule = await db.CodeRules.SingleAsync(x => x.RuleKey == "work-order");
+        Assert.Equal("租户工单号", workOrderRule.DisplayName);
+        Assert.Equal(tenantSegments, workOrderRule.SegmentsJson);
+        Assert.False(workOrderRule.IsActive);
+        Assert.Equal(versionCount, await db.CodeRuleVersions.CountAsync());
+        Assert.Equal("防潮库", (await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "storage-condition" && x.Code == "dry")).Name);
+        Assert.True((await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "material-type" && x.Code == "raw-material")).Disabled);
+        Assert.False((await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "uom-dimension" && x.Code == "mass")).Disabled);
+        kg = await db.UnitsOfMeasure.SingleAsync(x => x.Code == "kg");
+        Assert.Equal(("公斤", "mass", 2, "half-even"), (kg.Name, kg.DimensionType, kg.Precision, kg.RoundingMode));
     }
 
     /// <summary>
@@ -117,6 +149,7 @@ public sealed class MasterDataSeedServiceTests
         await using var db = CreateDbContext();
 
         await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
+        await new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev");
         await new WorldBibleSeedService(db).SeedAsync("org-001", "env-dev");
 
         var shifts = await db.Shifts
@@ -153,6 +186,7 @@ public sealed class MasterDataSeedServiceTests
         await using var db = CreateDbContext();
 
         await new MasterDataSeedService(db).SeedAsync("org-001", "env-dev");
+        await new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev");
         await new WorldBibleSeedService(db).SeedAsync("org-001", "env-dev");
 
         var shiftNames = await db.Shifts

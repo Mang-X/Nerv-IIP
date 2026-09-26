@@ -299,7 +299,6 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
           :options="deviceOptions"
           title="选择设备"
           placeholder="全部设备"
-          source-text="数据来自基础数据设备资产"
           empty-text="暂无设备资产，请先在基础数据登记设备"
           :loading="devicesPending"
           clearable
@@ -409,7 +408,6 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
                 title="选择采集标签"
                 :placeholder="form.deviceAssetId ? '选择采集标签' : '请先选择设备'"
                 :disabled="!form.deviceAssetId"
-                source-text="数据来自该设备已配置的采集标签"
                 empty-text="该设备还没有配置采集标签，请先完成采集映射"
                 :loading="tagsPending"
                 aria-label="采集标签"
@@ -482,7 +480,6 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
                 :options="unitPickerOptions"
                 title="选择单位"
                 placeholder="选择单位"
-                source-text="数据来自基础数据计量单位"
                 empty-text="暂无计量单位，请先在基础数据维护单位"
                 :loading="uomsPending"
                 aria-label="单位"

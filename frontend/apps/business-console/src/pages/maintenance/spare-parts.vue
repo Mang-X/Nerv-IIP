@@ -297,7 +297,6 @@ async function submitCreate() {
                 :options="workOrderOptions"
                 title="选择维修工单"
                 placeholder="选择维修工单"
-                source-text="数据来自维护工单"
                 empty-text="暂无维护工单，请先建单再登记备件需求"
                 :loading="workOrdersPending"
                 aria-label="维修工单"
@@ -332,7 +331,6 @@ async function submitCreate() {
                 :options="uomOptions"
                 title="选择单位"
                 placeholder="跟随物料基本单位"
-                source-text="数据来自基础数据计量单位"
                 empty-text="暂无计量单位，请先在基础数据维护单位"
                 :loading="uomsPending"
                 clearable

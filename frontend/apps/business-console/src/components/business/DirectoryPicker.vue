@@ -34,17 +34,17 @@ type SearchableType =
   | 'batch'
   | 'serial'
 
-const DIRECTORY_TEXT: Record<SearchableType | ListType, { noun: string; source: string }> = {
-  'work-center': { noun: '工作中心', source: '数据来自基础数据工作中心' },
-  station: { noun: '工位', source: '数据来自基础数据工位' },
-  material: { noun: '物料', source: '数据来自基础数据物料主数据' },
-  equipment: { noun: '设备', source: '数据来自基础数据设备台账' },
-  workshop: { noun: '车间', source: '数据来自基础数据车间' },
-  batch: { noun: '批次', source: '数据来自库存中有在库量的批次' },
-  serial: { noun: '序列号', source: '数据来自库存中有在库量的序列号' },
-  shift: { noun: '班次', source: '数据来自基础数据班次' },
-  'production-line': { noun: '产线', source: '数据来自基础数据产线' },
-  site: { noun: '工厂', source: '数据来自基础数据工厂' },
+const DIRECTORY_NOUN: Record<SearchableType | ListType, string> = {
+  'work-center': '工作中心',
+  station: '工位',
+  material: '物料',
+  equipment: '设备',
+  workshop: '车间',
+  batch: '批次',
+  serial: '序列号',
+  shift: '班次',
+  'production-line': '产线',
+  site: '工厂',
 }
 
 // 其余 `NvEntityPicker` 属性（id / placeholder / clearable / disabled / invalid / aria-label /
@@ -65,7 +65,7 @@ const props = defineProps<{
 const model = defineModel<string>({ default: '' })
 
 const type = props.directoryType
-const text = DIRECTORY_TEXT[type]
+const noun = DIRECTORY_NOUN[type]
 const source =
   isListType(type) || (props.parent && isHierarchyType(type))
     ? useMasterDataListPicker(type, () => props.parent)
@@ -123,17 +123,16 @@ function isHierarchyType(type: SearchableType): type is 'workshop' | 'work-cente
     v-model="model"
     :search="search"
     :options="options"
-    :title="`选择${text.noun}`"
-    :placeholder="`选择${text.noun}`"
-    :search-placeholder="`搜索${text.noun}名称 / 编码…`"
-    :source-text="text.source"
-    :empty-text="`没有匹配的${text.noun}`"
+    :title="`选择${noun}`"
+    :placeholder="`选择${noun}`"
+    :search-placeholder="`搜索${noun}名称 / 编码…`"
+    :empty-text="`没有匹配的${noun}`"
     :loading="pending"
     :server-search="serverSearch"
     :total-count="total"
     :show-code="showCode"
-    :aria-label="text.noun"
-    :create-text="canCreate ? `新增${text.noun}` : undefined"
+    :aria-label="noun"
+    :create-text="canCreate ? `新增${noun}` : undefined"
     @update:search="updateSearch"
     v-bind="$attrs"
     @create="openCreate"

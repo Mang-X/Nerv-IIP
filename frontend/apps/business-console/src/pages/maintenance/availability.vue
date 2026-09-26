@@ -224,7 +224,6 @@ function formatDateTime(value?: string | null) {
             :options="workCenterOptions"
             title="选择工作中心"
             placeholder="可选，添加工作中心"
-            source-text="数据来自基础数据工作中心"
             empty-text="暂无工作中心，请先在基础数据维护工作中心"
             selection-empty-text="未限定工作中心（统计范围内全部设备）"
             :loading="workCentersPending"

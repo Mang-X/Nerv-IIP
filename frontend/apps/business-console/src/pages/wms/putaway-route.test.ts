@@ -137,7 +137,6 @@ vi.mock('@/composables/useBusinessWms', async () => {
 vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
   const { computed, shallowRef } = await import('vue')
   return {
-    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
     WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
     WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
     WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',

@@ -145,17 +145,6 @@ public static class MasterDataDictionaryRules
         new("work-center-type", "station-group", "工位组", ReferenceDataCodeSetKind.SystemEnum)
     ];
 
-    public static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> ObsoleteSeedCodes =
-        new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
-        {
-            ["batch-tracking-policy"] = new HashSet<string>(["lot"], StringComparer.Ordinal),
-            ["product-category"] = new HashSet<string>(["finished-good", "raw-material", "packaging", "spare-part"], StringComparer.Ordinal),
-            ["material-type"] = new HashSet<string>(["material", "service"], StringComparer.Ordinal),
-            ["serial-tracking-policy"] = new HashSet<string>(["serial"], StringComparer.Ordinal),
-            ["shelf-life-policy"] = new HashSet<string>(["180d", "365d"], StringComparer.Ordinal),
-            ["uom-dimension"] = new HashSet<string>(["mass", "quantity"], StringComparer.Ordinal)
-        };
-
     /// <summary>
     /// SKU 创建时需要按受控字典校验的字段。
     /// **不含产品分类**：分类的权威值域是产品分类目录实体，由 <c>SkuCategoryValidator</c>

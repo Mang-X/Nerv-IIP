@@ -81,11 +81,22 @@ public sealed class MasterDataDictionaryRulesTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var seed = new MasterDataSeedService(dbContext);
+        await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
+        await AssertSeededCodeSetsAsync(dbContext, ExpectedDictionaryCodes.Where(x => !FactoryCustomCodeSets.Contains(x.Key)));
+        await AssertSeededCodeSetsAsync(dbContext, FactoryCustomCodeSets.Select(x => KeyValuePair.Create(x, Array.Empty<string>())));
 
-        await seed.SeedAsync("org-001", "env-dev", CancellationToken.None);
+        // 工厂自定义码集的样例值是演示数据，只随 LeaderDemo 种子写入（#3811）。
+        await new LeaderDemoSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
+        await AssertSeededCodeSetsAsync(dbContext, ExpectedDictionaryCodes);
+    }
 
-        foreach (var (codeSet, expectedCodes) in ExpectedDictionaryCodes)
+    private static readonly string[] FactoryCustomCodeSets = ["skill", "operation", "quality-reason"];
+
+    private static async Task AssertSeededCodeSetsAsync(
+        ApplicationDbContext dbContext,
+        IEnumerable<KeyValuePair<string, string[]>> expected)
+    {
+        foreach (var (codeSet, expectedCodes) in expected)
         {
             var actualCodes = await dbContext.ReferenceDataCodes
                 .Where(x =>
@@ -121,73 +132,6 @@ public sealed class MasterDataDictionaryRulesTests
         Assert.Equal(("升", "volume"), units["l"]);
         Assert.Equal(("分钟", "time"), units["min"]);
         Assert.Equal(("件", "count"), units["pcs"]);
-    }
-
-    [Fact]
-    public async Task MasterData_seed_disables_obsolete_system_dictionary_codes_without_deleting_them()
-    {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "product-category", "finished-good", "Finished Good"));
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "batch-tracking-policy", "lot", "Lot Tracking"));
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "serial-tracking-policy", "serial", "Serial Tracking"));
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "shelf-life-policy", "180d", "180 Days"));
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "shelf-life-policy", "365d", "365 Days"));
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "uom-dimension", "mass", "Mass"));
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "uom-dimension", "quantity", "Quantity"));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
-
-        foreach (var (codeSet, code) in new[]
-        {
-            ("product-category", "finished-good"),
-            ("batch-tracking-policy", "lot"),
-            ("serial-tracking-policy", "serial"),
-            ("shelf-life-policy", "180d"),
-            ("shelf-life-policy", "365d"),
-            ("uom-dimension", "mass"),
-            ("uom-dimension", "quantity")
-        })
-        {
-            var obsolete = await dbContext.ReferenceDataCodes.SingleAsync(x =>
-                x.OrganizationId == "org-001" &&
-                x.EnvironmentId == "env-dev" &&
-                x.CodeSet == codeSet &&
-                x.Code == code,
-                CancellationToken.None);
-            Assert.True(obsolete.Disabled);
-        }
-    }
-
-    [Fact]
-    public async Task MasterData_seed_repairs_existing_authoritative_names_and_uom_dimensions()
-    {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "dry", "Dry"));
-        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
-
-        var dry = await dbContext.ReferenceDataCodes.SingleAsync(x =>
-            x.OrganizationId == "org-001" &&
-            x.EnvironmentId == "env-dev" &&
-            x.CodeSet == "storage-condition" &&
-            x.Code == "dry",
-            CancellationToken.None);
-        Assert.Equal("干燥防潮", dry.Name);
-
-        var kg = await dbContext.UnitsOfMeasure.SingleAsync(x =>
-            x.OrganizationId == "org-001" &&
-            x.EnvironmentId == "env-dev" &&
-            x.Code == "kg",
-            CancellationToken.None);
-        Assert.Equal("千克", kg.Name);
-        Assert.Equal("weight", kg.DimensionType);
     }
 
     [Fact]

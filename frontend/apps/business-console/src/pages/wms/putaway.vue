@@ -16,7 +16,6 @@ import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import {
   useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
   WAREHOUSE_LOCATION_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import {
@@ -522,7 +521,6 @@ function firstQuery(value: unknown) {
                 :options="inboundOrderOptions"
                 title="选择入库单"
                 placeholder="选择入库单"
-                source-text="数据来自仓储入库单"
                 empty-text="暂无入库单，请先登记收货入库"
                 :loading="inboundOrdersPending"
                 clearable
@@ -543,7 +541,6 @@ function firstQuery(value: unknown) {
                 :disabled="!createForm.inboundOrderId"
                 title="选择入库单行"
                 :placeholder="createForm.inboundOrderId ? '选择入库单行' : '先选入库单'"
-                source-text="数据来自所选入库单的收货行"
                 empty-text="该入库单还没有收货行"
                 :loading="receivingQualityGatesPending"
                 aria-label="入库单行"
@@ -557,7 +554,6 @@ function firstQuery(value: unknown) {
                 :options="locationOptions"
                 title="选择暂存库位"
                 placeholder="暂存库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
                 :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable
@@ -572,7 +568,6 @@ function firstQuery(value: unknown) {
                 :options="locationOptions"
                 title="选择货架库位"
                 placeholder="货架库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
                 :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable

@@ -110,7 +110,6 @@ vi.mock('@nerv-iip/ui', () => {
         'placeholder',
         'searchPlaceholder',
         'emptyText',
-        'sourceText',
         'loading',
         'disabled',
         'clearable',

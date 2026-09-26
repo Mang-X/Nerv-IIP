@@ -1480,7 +1480,6 @@ function formatStatus(value?: string | null) {
               :options="operationTaskOptions"
               title="选择工序任务"
               placeholder="可留空，指定后领料归属该工序"
-              source-text="数据来自本工单的工序任务"
               empty-text="本工单还没有工序任务"
               :show-code="false"
               clearable

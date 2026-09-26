@@ -147,18 +147,6 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // 点检保养计划 seed（默认随 autoMigrate 开启，或显式 Maintenance:Seed:Enabled）：
-    // 全新环境补齐可选保养计划，供 PDA 点检页选计划 → 录测量值/超差/拍照走通（幂等只补缺失）。
-    var seedEnabled = builder.Configuration.GetValue<bool>("Maintenance:Seed:Enabled") || autoMigrate;
-    if (seedEnabled)
-    {
-        using var scope = app.Services.CreateScope();
-        var seed = scope.ServiceProvider.GetRequiredService<MaintenanceSeedService>();
-        await seed.SeedAsync(
-            builder.Configuration["Maintenance:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["Maintenance:Seed:EnvironmentId"] ?? "env-dev");
-    }
-
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
     if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
     {
@@ -173,6 +161,10 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
+        // 点检保养计划绑定设定集设备（DEV-CNC-01 等），属演示数据，只随 LeaderDemo 写入（#3811）。
+        await scope.ServiceProvider.GetRequiredService<MaintenanceSeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
         await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
             builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");

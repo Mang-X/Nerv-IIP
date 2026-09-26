@@ -343,7 +343,6 @@ function submitForm() {
               :options="teamOptions"
               title="选择负责班组"
               placeholder="选择负责班组"
-              source-text="数据来自基础数据班组"
               empty-text="暂无班组，请先在基础数据维护班组"
               :loading="teamsPending"
               aria-label="负责班组"

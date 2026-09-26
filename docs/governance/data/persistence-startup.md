@@ -36,7 +36,7 @@
 1. Web/Worker 默认不自动 migration。
 2. `Persistence:AutoMigrate=true` 只在 [`../../runbooks/database-release.md`](../../runbooks/database-release.md) 允许的环境边界内生效；非 Development/未授权环境必须 fail closed。
 3. 自动迁移调用仍走正式 EF migrations，不使用 `EnsureCreated` 或手写建表 SQL 旁路 migration history。
-4. seed 与 migration 是两件事：允许 AutoMigrate 不自动意味着可以执行任何 demo/business seed。例外是 Approval/Inventory/Quality 的产品基线 seed（`<Service>:Seed:Enabled`，只补缺不覆盖）：默认随 Web 启动执行，不依赖 `AutoMigrate`，显式设为 `false` 才关闭。这类受配置开关控制、可显式关闭的启动 seed，视为 [ADR 0009](../../adr/0009-database-migration-release-and-seed-strategy.md) 决策第 6 条所说的「受控 seed command」；清单与目标租户配置见 [`../../runbooks/database-release.md`](../../runbooks/database-release.md) 第 7 节。MasterData/Maintenance 的 seed 仍需显式开启或随 Development 下的 AutoMigrate 执行；`LeaderDemo:*`、`Walkthrough:*` 演示种子默认关闭且只允许在 Development 开启；IAM 引导种子只随 Development 下的 AutoMigrate 执行。
+4. seed 与 migration 是两件事：开启 AutoMigrate 不代表可以顺带执行任何 seed，seed 的开关与 AutoMigrate 无关。产品基线 seed（Approval/Inventory/Quality/MasterData 的 `<Service>:Seed:Enabled`，只补缺不覆盖）默认随 Web 启动执行，显式设为 `false` 才关闭。这类受配置开关控制、可显式关闭的启动 seed，视为 [ADR 0009](../../adr/0009-database-migration-release-and-seed-strategy.md) 决策第 6 条所说的「受控 seed command」；清单与目标租户配置见 [`../../runbooks/database-release.md`](../../runbooks/database-release.md) 第 7 节。`LeaderDemo:*`、`Walkthrough:*` 演示种子默认关闭且只允许在 Development 开启。仍随 AutoMigrate 执行的只有 IAM 的种子（引导种子，以及受 `LeaderDemo:World:Enabled` 控制的设定集员工/PDA 演示账号种子），且只在 Development 下执行。
 5. 启动迁移失败必须让服务启动失败并保留可诊断日志；不能 catch 后继续以部分 schema 运行。
 
 ## FileStorage 等窄例外
