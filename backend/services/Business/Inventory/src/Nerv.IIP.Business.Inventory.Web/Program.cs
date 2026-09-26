@@ -153,8 +153,8 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // Inventory 产品基线 seed（#3770）：默认开启（#3805），显式 false 可关闭；本地 autoMigrate 时也强制执行。
-    var seedEnabled = builder.Configuration.GetValue("Inventory:Seed:Enabled", true) || autoMigrate;
+    // Inventory 产品基线 seed（#3770）：默认开启（#3805），显式 false 可关闭。
+    var seedEnabled = builder.Configuration.GetValue("Inventory:Seed:Enabled", true);
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();
