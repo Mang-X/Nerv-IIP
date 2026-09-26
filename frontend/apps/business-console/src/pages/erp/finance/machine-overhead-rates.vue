@@ -17,6 +17,7 @@ import {
   NvPageHeader,
   NvRadioGroup,
   NvRadioGroupItem,
+  NvSearchSelect,
   NvSheet,
   NvSheetContent,
   NvSheetDescription,
@@ -31,6 +32,7 @@ import { PlusIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { useErpWorkCenterMachineOverheadRates } from '@/composables/useErpCostAccounting'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { currencyOptionsIncluding } from '@/data/currencyReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -145,7 +147,6 @@ const invalid = computed(() => {
   return {
     budget: isApplicable.value && !(fixed >= 0 && variable >= 0 && (fixed > 0 || variable > 0)),
     capacity: isApplicable.value && !(Number(form.normalCapacityMachineHours) > 0),
-    currencyCode: !/^[A-Za-z]{3}$/.test(form.currencyCode.trim()),
     reason: !form.reason.trim(),
   }
 })
@@ -175,7 +176,7 @@ async function submit() {
       fixedOverheadBudget: amount(form.fixedOverheadBudget),
       variableOverheadBudget: amount(form.variableOverheadBudget),
       normalCapacityMachineHours: amount(form.normalCapacityMachineHours),
-      currencyCode: form.currencyCode.trim().toUpperCase(),
+      currencyCode: form.currencyCode,
       reason: form.reason.trim(),
     })
     open.value = false
@@ -358,12 +359,13 @@ async function submit() {
               <NvFieldLabel for="erp-mor-currency">
                 币种 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvSearchSelect
                 id="erp-mor-currency"
                 v-model="form.currencyCode"
-                maxlength="3"
+                :options="currencyOptionsIncluding(form.currencyCode)"
+                search-placeholder="搜索币种代码或名称"
+                aria-label="币种"
                 :disabled="Boolean(fixedCurrency)"
-                :invalid="showErrors && invalid.currencyCode"
               />
               <NvFieldDescription v-if="fixedCurrency">
                 该工作中心的币种已固定为 {{ fixedCurrency }}。

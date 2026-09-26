@@ -420,7 +420,7 @@ describe('master-data devices page', () => {
     expect(stub.toastError).not.toHaveBeenCalled()
   })
 
-  it('部件数量非法时不提交，并把币种提交为大写编码', async () => {
+  it('部件数量非法时不提交，并提交所选币种编码', async () => {
     stub.create.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
@@ -429,7 +429,7 @@ describe('master-data devices page', () => {
     })
     await flushPromises()
     await openAndFillValid(wrapper)
-    await wrapper.find('#dev-currency').setValue('usd')
+    await wrapper.find('#dev-currency').setValue('USD')
     await wrapper.find('#dev-component-qty-0').setValue('0')
 
     await wrapper.find('form').trigger('submit')

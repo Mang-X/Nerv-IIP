@@ -169,8 +169,8 @@ describe('机器制造费用率', () => {
     const wrapper = render()
     await flushPromises()
     await openSheet(wrapper)
-    const currency = wrapper.get<HTMLInputElement>('#erp-mor-currency')
-    expect(currency.element.value).toBe('USD')
+    const currency = wrapper.get('#erp-mor-currency')
+    expect(currency.text()).toBe('USD 美元')
     expect(currency.attributes('disabled')).toBeDefined()
     // 预算与产能从当前修订（第 2 版）带出，而不是已被取代的第 1 版。
     expect(wrapper.get<HTMLInputElement>('#erp-mor-fixed').element.value).toBe('12000')

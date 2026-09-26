@@ -1,3 +1,4 @@
+import { NvSearchSelect } from '@nerv-iip/ui'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -277,7 +278,8 @@ describe('master-data partners page', () => {
 
     expect(wrapper.text()).toContain('信用额度')
     await wrapper.find('#partner-credit-limit').setValue('500000')
-    await wrapper.find('#partner-credit-currency').setValue('CNY')
+    // 币种从 GB/T 12406 常用币种表里选，默认人民币；改选美元后提交三位代码。
+    wrapper.findComponent(NvSearchSelect).vm.$emit('update:modelValue', 'USD')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -286,7 +288,7 @@ describe('master-data partners page', () => {
       creditCurrencyCode?: string
     }
     expect(body.creditLimit).toBe(500000)
-    expect(body.creditCurrencyCode).toBe('CNY')
+    expect(body.creditCurrencyCode).toBe('USD')
   })
 
   it('编辑客户时清空信用额度会提交 clearCreditLimit', async () => {
