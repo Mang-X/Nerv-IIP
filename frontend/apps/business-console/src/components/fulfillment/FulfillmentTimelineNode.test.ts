@@ -31,7 +31,6 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'established',
       businessNo: 'SO-1',
       detailStatusLabel: '高风险',
-      source: 'Planning · 紧急度读面',
     })
     expect(wrapper.text()).toContain('高风险')
     expect(warn.mock.calls.flat().join(' ')).not.toContain('词表缺失')
@@ -45,7 +44,6 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'established',
       businessNo: 'WO-1',
       detailStatus: 'released',
-      source: 'MES · 工单读面',
     })
     expect(wrapper.text()).toContain('已下达')
   })
@@ -57,15 +55,12 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'established',
       businessNo: 'DO-1',
       detailStatus: 'released',
-      linkLabel: 'salesOrderNo = SO-1',
       drill: { path: '/erp/sales/deliveries' },
-      source: 'ERP · 发货单读面',
     })
     expect(wrapper.text()).toContain('DO-1')
     // 各来源回的英文状态码走全站状态字典映射，原文不上屏。
     expect(wrapper.text()).toContain('已下达')
     expect(wrapper.text()).not.toContain('released')
-    expect(wrapper.text()).toContain('salesOrderNo = SO-1')
     expect(wrapper.find('a').exists()).toBe(true)
   })
 

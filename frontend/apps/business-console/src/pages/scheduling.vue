@@ -436,9 +436,9 @@ async function persistOperationOverride(taskId: string) {
     if (!persistedOperationKeys.value.includes(key)) {
       persistedOperationKeys.value = [...persistedOperationKeys.value, key]
     }
-    toast.success('工序 override 已持久化，重排程自动继承')
+    toast.success('工序已持久锁定，之后重新排程也保持不变')
   } catch (error) {
-    notifyOperationFailure('持久化失败', error, '持久化失败，请稍后重试')
+    notifyOperationFailure('持久锁定失败', error, '持久锁定失败，请稍后重试')
   }
 }
 

@@ -895,8 +895,8 @@ describe('equipment pages', () => {
 
     expect(wrapper.text()).toContain('读取失败')
     // Aggregate hint, not attributed to a specific (wrong) plan.
-    expect(wrapper.text()).toContain('运行小时读面读取失败，请稍后重试')
-    expect(wrapper.text()).not.toContain('运行小时型计划 PM-CNC-RUNTIME · 运行小时读面读取失败')
+    expect(wrapper.text()).toContain('运行小时读取失败，请稍后重试')
+    expect(wrapper.text()).not.toContain('运行小时型计划 PM-CNC-RUNTIME · 运行小时读取失败')
   })
 
   it('surfaces 阈值缺失 (consistent with the list, not 无样本) when all candidates are invalid', () => {

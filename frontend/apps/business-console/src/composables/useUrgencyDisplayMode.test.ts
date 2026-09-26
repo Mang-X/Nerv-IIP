@@ -43,7 +43,7 @@ describe('formatUrgencyDisplay', () => {
     ['dynamicUrgency', '高风险'],
     ['executionRisk', '关注'],
     ['criticalRatio', 'CR 0.8'],
-    ['slack', 'Slack -2h'],
+    ['slack', '松弛 -2h'],
     ['expectedDelay', '延误 5h'],
   ]
 

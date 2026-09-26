@@ -481,7 +481,7 @@ describe('MES downtime record entry', () => {
     expect(notifyOperationFailure).toHaveBeenCalledWith(
       '停机登记失败',
       serviceError,
-      '停机登记失败，请根据服务端原因检查后重试。',
+      '停机登记失败，请稍后重试。',
     )
   })
 })

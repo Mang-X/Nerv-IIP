@@ -121,7 +121,7 @@ async function submitDispatch() {
     return
   }
   if (invalidJson(dispatchForm.payloadJson)) {
-    formError.value = '派发载荷必须是合法 JSON。'
+    formError.value = '派发内容必须是合法的 JSON 格式。'
     return
   }
   try {
@@ -160,7 +160,7 @@ async function submitComplete() {
   const id = pendingTask.value?.externalTaskId
   if (!id) return
   if (invalidJson(completeForm.completionPayloadJson)) {
-    formError.value = '完成回执必须是合法 JSON。'
+    formError.value = '完成回执必须是合法的 JSON 格式。'
     return
   }
   try {
@@ -455,7 +455,7 @@ function formatDateTime(value?: string | null) {
               <NvInput id="wcs-external" v-model="dispatchForm.externalTaskId" autocomplete="off" />
             </NvField>
             <NvField>
-              <NvFieldLabel for="wcs-payload">派发载荷（JSON）</NvFieldLabel>
+              <NvFieldLabel for="wcs-payload">派发内容（JSON 格式）</NvFieldLabel>
               <NvInput
                 id="wcs-payload"
                 v-model="dispatchForm.payloadJson"
@@ -540,7 +540,7 @@ function formatDateTime(value?: string | null) {
           <CarriedContextSummary label="完成任务" :items="taskContextItems" />
           <NvFieldGroup>
             <NvField>
-              <NvFieldLabel for="wcs-completion">完成回执（JSON）</NvFieldLabel>
+              <NvFieldLabel for="wcs-completion">完成回执（JSON 格式）</NvFieldLabel>
               <NvInput
                 id="wcs-completion"
                 v-model="completeForm.completionPayloadJson"

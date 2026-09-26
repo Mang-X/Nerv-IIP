@@ -201,7 +201,7 @@ describe('BusinessLayout (T-shaped)', () => {
 
     const wrapper = mountLayout(pinia)
 
-    expect(wrapper.text()).toContain('未选择业务上下文')
+    expect(wrapper.text()).toContain('账号尚未分配组织')
     expect(wrapper.text()).toContain('重新登录')
   })
 

@@ -436,7 +436,7 @@ function riskTone(severity?: string | null): StatusTone {
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本 ID。
+                请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本。
               </p>
               <p
                 v-if="showErrors && !changeNumberValid"
@@ -744,7 +744,7 @@ function riskTone(severity?: string | null): StatusTone {
               <thead class="bg-muted/40 text-muted-foreground">
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">对象种类</th>
-                  <th class="px-3 py-2 text-left font-medium">版本 ID</th>
+                  <th class="px-3 py-2 text-left font-medium">受影响版本</th>
                 </tr>
               </thead>
               <tbody>

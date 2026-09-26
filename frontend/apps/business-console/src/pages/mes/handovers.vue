@@ -338,9 +338,7 @@ function readReceiptOutcome(response: unknown, action: string): 'accepted' | 'co
 
 function receiptMessage(action: 'create' | 'accept', outcome: 'accepted' | 'confirmed') {
   const status = outcome === 'confirmed' ? '确认' : '受理'
-  return action === 'create'
-    ? `班次交接创建成功，服务端已${status}。`
-    : `接班已${status}，服务端已${status}。`
+  return action === 'create' ? `班次交接已${status}。` : `接班已${status}。`
 }
 
 async function refreshAfterWrite() {
@@ -856,7 +854,7 @@ function formatDateTime(value?: string | null) {
               </p>
             </NvField>
           </NvFieldGroup>
-          <p class="text-xs text-muted-foreground">未结事项由服务端按当前可见范围生成快照。</p>
+          <p class="text-xs text-muted-foreground">未结事项会按你当前可见的范围自动带入。</p>
           <NvDialogFooter>
             <NvButton
               type="button"
@@ -880,9 +878,7 @@ function formatDateTime(value?: string | null) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>确认接班</NvDialogTitle>
-          <NvDialogDescription class="sr-only"
-            >确认接收当前待接班交接单，服务端将按当前权限核验状态。</NvDialogDescription
-          >
+          <NvDialogDescription class="sr-only">确认接收当前待接班交接单。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" data-testid="accept-handover-form" @submit.prevent="submitAccept">
           <dl class="grid gap-2 text-sm">
@@ -898,9 +894,7 @@ function formatDateTime(value?: string | null) {
           <p v-if="acceptOutcomeUnknown" class="text-sm text-destructive" role="alert">
             接班结果尚未确认，请刷新列表核实；本页已阻止重复提交。
           </p>
-          <p v-else class="text-sm text-muted-foreground">
-            确认接收当前待接班交接单；服务端将按当前权限核验状态。
-          </p>
+          <p v-else class="text-sm text-muted-foreground">确认接收当前待接班交接单。</p>
           <NvDialogFooter>
             <NvButton
               type="button"

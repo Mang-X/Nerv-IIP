@@ -473,7 +473,7 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       expect(notifyOperationFailure).toHaveBeenCalledWith(
         '缺陷登记失败',
         rejection,
-        '缺陷登记失败，请根据服务端原因检查后重试。',
+        '缺陷登记失败，请稍后重试。',
       )
       expect(wrapper.text()).toContain('登记生产过程缺陷')
       const firstPayload = structuredClone(recordDefect.mock.calls[0]?.[0])

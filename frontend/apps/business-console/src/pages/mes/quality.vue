@@ -236,7 +236,7 @@ const defectEntryBlocker = computed(() => {
   if (!canWriteQuality.value) return '没有缺陷登记权限'
   if (!canReadOperationContext.value) return '没有工序上下文读取权限'
   if (!filters.organizationId.trim() || !filters.environmentId.trim()) {
-    return '尚未进入有效组织与环境'
+    return '尚未确定当前组织'
   }
   if (qualityWriteScope.scopePending.value) return '正在核验质量登记范围'
   if (!qualityWriteScope.scopeReady.value) {
@@ -373,7 +373,7 @@ async function submitDefect() {
       )
     }
   } catch (error) {
-    notifyOperationFailure('缺陷登记失败', error, '缺陷登记失败，请根据服务端原因检查后重试。')
+    notifyOperationFailure('缺陷登记失败', error, '缺陷登记失败，请稍后重试。')
   }
 }
 </script>

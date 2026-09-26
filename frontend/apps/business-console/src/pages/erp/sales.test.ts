@@ -601,7 +601,7 @@ describe('ERP sales order and delivery pages', () => {
     // 语义在界面明确：谁发起、谁裁决、通过后订单回到什么状态。
     expect(wrapper.text()).toContain('提交信用解冻复核')
     expect(wrapper.text()).toContain('审批')
-    expect(wrapper.text()).toContain('已下达（released）')
+    expect(wrapper.text()).toContain('恢复为「已下达」')
 
     await wrapper
       .findAll('button')

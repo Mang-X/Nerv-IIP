@@ -12,8 +12,7 @@ import { isSchedulingWorkbenchQuery } from './useSchedulingWorkbench'
 const SCHEDULING_IDS = ['listBusinessConsoleSchedulingPlans', 'getBusinessConsoleSchedulingPlan']
 
 /** 单单排产入口缺权限时的统一说明（三处入口 + 弹窗共用一句话）。 */
-export const SINGLE_ORDER_SCHEDULING_DENIED_REASON =
-  '当前账号没有排产管理权限（business.scheduling.plans.manage）。'
+export const SINGLE_ORDER_SCHEDULING_DENIED_REASON = '当前账号没有排产管理权限。'
 
 /**
  * 能否发起单单排产。三处入口（销售订单 / MES 工单详情 / 计划建议行）与弹窗共用同一判定，
@@ -65,7 +64,7 @@ export function useSingleOrderScheduling() {
     const workOrderId = request.workOrderId.trim()
     // 空业务范围 / 空工单一律不发请求：宁可留在弹窗里报错，也不打一串必失败的请求。
     if (!hasBusinessContext(context)) {
-      throw new Error('请先选择组织与环境后再排产。')
+      throw new Error('尚未确定当前组织，暂不能排产。')
     }
     if (!workOrderId) {
       throw new Error('请先选择要排产的工单。')

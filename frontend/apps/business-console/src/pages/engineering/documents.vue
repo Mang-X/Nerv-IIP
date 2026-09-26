@@ -410,13 +410,9 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
                   <NvFieldLabel for="doc-file-id"
-                    >文件引用 ID <span class="text-destructive">*</span></NvFieldLabel
+                    >文件编号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="doc-file-id"
-                    v-model="form.fileId"
-                    placeholder="填写文件存储引用 ID"
-                  />
+                  <NvInput id="doc-file-id" v-model="form.fileId" placeholder="填写文件编号" />
                 </NvField>
                 <NvField :data-invalid="showErrors && !fileNameValid">
                   <NvFieldLabel for="doc-file-name"
@@ -546,7 +542,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               <span class="font-medium">{{ viewTarget.contentType || '—' }}</span>
             </div>
             <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">文件引用 ID</span>
+              <span class="text-muted-foreground">文件编号</span>
               <span class="font-medium break-all text-right">{{ viewTarget.fileId || '—' }}</span>
             </div>
             <div class="flex justify-between gap-3">

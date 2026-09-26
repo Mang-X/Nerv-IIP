@@ -1608,7 +1608,7 @@ describe('business MES composables', () => {
         scopeKind: 'work-center',
         scopeId: 'WC-2',
       }),
-    ).rejects.toThrow('尚未进入有效组织与环境')
+    ).rejects.toThrow('尚未确定当前组织')
 
     const mutation = vi.mocked(recordBusinessConsoleMesDefectV2MutationOptions).mock.results.at(-1)
       ?.value.mutation as ReturnType<typeof vi.fn>

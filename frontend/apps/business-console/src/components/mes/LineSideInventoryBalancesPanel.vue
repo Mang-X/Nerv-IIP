@@ -75,7 +75,7 @@ function rowKey(item: BusinessConsoleMesLineSideInventoryBalanceItem) {
       v-else-if="ready && items.length === 0"
       class="rounded-md border border-dashed bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground"
     >
-      当前组织/环境范围暂无线边库存余额。
+      暂无线边库存余额。
     </div>
 
     <div

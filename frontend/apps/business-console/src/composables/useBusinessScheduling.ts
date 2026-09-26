@@ -188,7 +188,7 @@ export function useBusinessScheduling() {
     revokePlan: (planId: string) => {
       const scope = mutationScope()
       if (!hasBusinessContext(scope) || !planId.trim()) {
-        return Promise.reject(new Error('缺少组织/环境上下文或方案标识，未发起撤销请求。'))
+        return Promise.reject(new Error('尚未确定当前组织或方案，未撤销。'))
       }
       return revokeMutation
         .mutateAsync({
@@ -214,9 +214,7 @@ export function useBusinessScheduling() {
         !input.operationId.trim() ||
         !input.resourceId.trim()
       ) {
-        return Promise.reject(
-          new Error('缺少组织/环境上下文、方案、工序或资源标识，未发起持久化请求。'),
-        )
+        return Promise.reject(new Error('尚未确定当前组织、方案、工序或资源，未持久锁定。'))
       }
       return operationOverrideMutation
         .mutateAsync({
@@ -228,7 +226,7 @@ export function useBusinessScheduling() {
             endUtc: input.endUtc,
           },
         })
-        .then((envelope) => assertEnvelopeSuccess(envelope, '排程服务未确认工序持久化结果。'))
+        .then((envelope) => assertEnvelopeSuccess(envelope, '未确认工序已持久锁定，请刷新后核实。'))
     },
     upsertOperationOverrideError: operationOverrideMutation.error,
     upsertOperationOverridePending: operationOverrideMutation.isLoading,

@@ -311,7 +311,7 @@ const runtimeUntilNextCardHint = computed(() => {
     }
     return `运行小时型计划 ${code} · 阈值 ${mostUrgent.plan.nextDueRuntimeHours ?? '—'} 小时`
   }
-  if (runtimeRemainingHasErrorCandidate.value) return '运行小时读面读取失败，请稍后重试'
+  if (runtimeRemainingHasErrorCandidate.value) return '运行小时读取失败，请稍后重试'
   if (runtimeRemainingHasInvalidCandidate.value) return '运行小时阈值与游标不成对，计划数据不完整'
   return '当前窗口无运行样本'
 })
@@ -356,7 +356,7 @@ const cumulativeRuntimeCardValue = computed(() => {
 })
 const runtimeHoursCardHint = computed(() => {
   if (runtimeHoursPending.value) return '正在读取运行小时'
-  if (runtimeHoursError.value) return '运行小时读面读取失败，请稍后重试'
+  if (runtimeHoursError.value) return '运行小时读取失败，请稍后重试'
   if (!hasRuntimeHoursSamples.value) return '当前窗口无运行样本，等于设备暂无运行事实'
   return currentDeviceRuntimePlan.value
     ? '自运行小时型计划起算日累计'
@@ -1330,7 +1330,7 @@ function formatDateTime(value?: string | null) {
                 v-if="!maintenancePending && !maintenanceAvailabilityWindows.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前设备没有 Maintenance 可用窗口。
+                当前设备没有可用的维护窗口。
               </div>
             </div>
           </div>

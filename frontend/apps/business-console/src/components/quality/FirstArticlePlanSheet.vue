@@ -67,7 +67,7 @@ const openModel = computed({
 const blockers = computed(() => {
   const messages: string[] = []
   if (!props.organizationId.trim() || !props.environmentId.trim()) {
-    messages.push('业务范围尚未就绪，请先选择组织与环境。')
+    messages.push('尚未确定当前组织。')
   }
   if (!form.planCode.trim()) messages.push('请填写方案编号。')
   if (!form.skuCode.trim()) messages.push('请选择适用物料。')

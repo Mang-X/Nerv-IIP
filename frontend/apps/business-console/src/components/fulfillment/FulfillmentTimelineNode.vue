@@ -48,7 +48,7 @@ const detailStatusLabel = computed(
           >更新于 {{ formatDateTime(node.updatedAt) }}</span
         >
       </div>
-      <p v-if="node.linkLabel" class="nv-ft-node-link">关联键：{{ node.linkLabel }}</p>
+      <p v-if="node.note" class="nv-ft-node-note">{{ node.note }}</p>
       <RouterLink v-if="node.drill" :to="node.drill" class="nv-ft-drill">查看详情 →</RouterLink>
     </template>
 
@@ -57,13 +57,13 @@ const detailStatusLabel = computed(
       <p class="nv-ft-node-muted" role="status">加载中…</p>
     </template>
 
-    <!-- 尚未产生（空态，有稳定关联键） -->
+    <!-- 尚未产生 -->
     <template v-else-if="node.status === 'pending'">
       <p class="nv-ft-node-muted">尚未产生</p>
       <p v-if="node.ruleNote" class="nv-ft-node-rule">{{ node.ruleNote }}</p>
     </template>
 
-    <!-- 尚未建立关联（无稳定关联键） -->
+    <!-- 尚未建立关联 -->
     <template v-else-if="node.status === 'unlinked'">
       <p class="nv-ft-node-muted">尚未建立关联</p>
       <p v-if="node.ruleNote" class="nv-ft-node-rule">{{ node.ruleNote }}</p>
@@ -88,8 +88,6 @@ const detailStatusLabel = computed(
         重试
       </NvButton>
     </template>
-
-    <p v-if="node.source" class="nv-ft-node-source">数据源：{{ node.source }}</p>
   </div>
 </template>
 
@@ -134,7 +132,7 @@ const detailStatusLabel = computed(
   font-size: 0.75rem;
   color: var(--muted-foreground);
 }
-.nv-ft-node-link {
+.nv-ft-node-note {
   margin: 0;
   font-size: 0.75rem;
   color: var(--muted-foreground);
@@ -173,11 +171,5 @@ const detailStatusLabel = computed(
 }
 .nv-ft-node-failed {
   color: var(--destructive);
-}
-.nv-ft-node-source {
-  margin: 0.15rem 0 0;
-  font-size: 0.6875rem;
-  color: var(--muted-foreground);
-  opacity: 0.85;
 }
 </style>

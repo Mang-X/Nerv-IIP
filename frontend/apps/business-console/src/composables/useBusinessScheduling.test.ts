@@ -158,7 +158,7 @@ describe('business scheduling composable', () => {
   it('suppresses revoke when the business scope is empty', async () => {
     const { revokePlan } = useBusinessScheduling()
 
-    await expect(revokePlan('plan-001')).rejects.toThrow('未发起撤销请求')
+    await expect(revokePlan('plan-001')).rejects.toThrow('未撤销')
     expect(
       vi.mocked(revokeBusinessConsoleSchedulingPlanMutationOptions).mock.results[0]?.value.mutation,
     ).not.toHaveBeenCalled()
@@ -235,7 +235,7 @@ describe('business scheduling composable', () => {
 
     await expect(
       upsertOperationOverride({ planId: 'plan-001', operationId: 'op-010', resourceId: ' ' }),
-    ).rejects.toThrow('未发起持久化请求')
+    ).rejects.toThrow('未持久锁定')
     expect(
       vi.mocked(upsertBusinessConsoleSchedulingOperationOverrideMutationOptions).mock.results[0]
         ?.value.mutation,

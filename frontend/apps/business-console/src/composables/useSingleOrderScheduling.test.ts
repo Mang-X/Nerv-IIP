@@ -94,7 +94,7 @@ describe('单单排产（MAN-694 / #1262）', () => {
         horizonStartUtc: '2026-08-01T00:00:00.000Z',
         horizonEndUtc: '2026-08-02T00:00:00.000Z',
       }),
-    ).rejects.toThrow('请先选择组织与环境后再排产。')
+    ).rejects.toThrow('尚未确定当前组织，暂不能排产。')
     expect(state.bodies).toHaveLength(0)
   })
 

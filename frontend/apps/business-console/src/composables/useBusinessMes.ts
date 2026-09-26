@@ -173,7 +173,7 @@ export const MES_WORK_SCOPE_UNAVAILABLE_MESSAGE =
 
 function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
   if (!snapshot || typeof snapshot !== 'object') {
-    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+    throw new Error(`${operation}缺少上次未完成提交的内容，请保留当前页面并人工核实。`)
   }
   return snapshot as T
 }
@@ -441,7 +441,7 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
       !scopeReady.value,
   )
   const scopeMessage = computed(() => {
-    if (!hasBusinessContext(context)) return '尚未进入有效组织与环境，当前操作已禁用。'
+    if (!hasBusinessContext(context)) return '尚未确定当前组织，当前操作已禁用。'
     if (workContextQuery.isLoading.value) return '正在核验当前作业范围…'
     if (workContextQuery.error.value) return '作业范围核验失败，当前操作已禁用。请刷新后重试。'
     if (scopeReady.value) return ''
@@ -2974,7 +2974,7 @@ export function useMesQualityContext() {
       const organizationId = filters.organizationId.trim()
       const environmentId = filters.environmentId.trim()
       if (!organizationId || !environmentId) {
-        throw new Error('尚未进入有效组织与环境，不能登记缺陷。')
+        throw new Error('尚未确定当前组织，不能登记缺陷。')
       }
       const operationTaskId = body.operationTaskId?.trim()
       const safeBody: BusinessConsoleMesRecordDefectV2Request = {
@@ -3109,7 +3109,7 @@ export function useMesDowntimeEvents() {
       const environmentId = filters.environmentId.trim()
       const selectedScope = downtimeWriteScope.requireSelectedScope()
       if (!organizationId || !environmentId) {
-        throw new Error('尚未进入有效组织与环境，不能登记停机。')
+        throw new Error('尚未确定当前组织，不能登记停机。')
       }
       if (body.scopeKind !== selectedScope.kind || body.scopeId !== selectedScope.id) {
         throw new Error('停机登记范围已变化，请重新选择工单与工序。')

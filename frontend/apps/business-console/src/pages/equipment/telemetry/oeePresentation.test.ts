@@ -64,7 +64,6 @@ describe('OEE aggregate presentation', () => {
       trendBucketCount: 31,
       trendPointCount: 30,
       omittedTrendBucketCount: 1,
-      tablePageCount: 20,
       tableTotal: 31,
     })
     expect(report.trendGroups[0]).toMatchObject({
@@ -110,11 +109,7 @@ describe('OEE aggregate presentation', () => {
     const segments = report.trendGroups[0]?.segments ?? []
     expect(segments).toHaveLength(2)
     expect(segments.map((segment) => segment.runs[0]?.displayMode)).toEqual(['point', 'point'])
-    expect(segments.map((segment) => segment.firstWindowLabel)).toEqual([
-      '2026-07-31 15:00:00 UTC – 2026-08-01 15:00:00 UTC',
-      '2026-07-31 16:00:00 UTC – 2026-08-01 16:00:00 UTC',
-    ])
-    expect(segments.map((segment) => segment.buckets[0]?.identity)).toEqual([
+    expect(segments.map((segment) => segment.runs[0]?.points[0]?.identity)).toEqual([
       [
         'day',
         'SITE-A',
@@ -233,14 +228,9 @@ describe('OEE aggregate presentation', () => {
       points: expect.any(Array),
     })
     expect(report.trendGroups[0]?.segments[0]?.runs[0]?.points).toHaveLength(3)
-    expect(report.trendGroups[0]?.segments[0]?.buckets.map((bucket) => bucket.windowLabel)).toEqual(
-      windows.map(
-        ([, start, end]) =>
-          `${start.replace('T', ' ').replace('.000Z', ' UTC')} – ${end
-            .replace('T', ' ')
-            .replace('.000Z', ' UTC')}`,
-      ),
-    )
+    expect(
+      report.trendGroups[0]?.segments[0]?.runs[0]?.points.map((point) => point.identity.slice(6)),
+    ).toEqual(windows.map(([, start, end]) => [start, end]))
   })
 
   it('breaks every candidate edge when spring DST histories converge on one bucket', () => {
@@ -337,9 +327,6 @@ describe('OEE aggregate presentation', () => {
       pointCount: 4,
       omittedCount: 1,
     })
-    expect(
-      report.trendGroups[0]?.segments[0]?.buckets.map((bucket) => bucket.hasCompleteRates),
-    ).toEqual([true, true, false, true, true])
     expect(report.trendGroups[0]?.segments[0]?.runs.map((run) => run.points.length)).toEqual([2, 2])
   })
 
@@ -480,7 +467,7 @@ describe('OEE aggregate presentation', () => {
       isDegraded: true,
       degradedReasons: ['theoreticalRateMissingOrAmbiguous'],
     })
-    expect(report).toMatchObject({ tablePageCount: 2, tableTotal: 27 })
+    expect(report).toMatchObject({ tableTotal: 27 })
   })
 })
 

@@ -303,7 +303,7 @@ async function submitTemplate() {
                 :items="carriedItems"
               />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写模板编码、名称、模板文件，并提供合法 JSON 字段说明。
+                请填写模板编码、名称、模板文件，并按 JSON 格式填写字段说明。
               </p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField
@@ -365,10 +365,7 @@ async function submitTemplate() {
                     v-model="form.variableSchemaJson"
                     class="min-h-24 rounded-md border bg-background px-3 py-2 text-sm"
                   />
-                  <!-- JSON 结构不是显然的，保留一行语法示例。 -->
-                  <NvFieldDescription
-                    >JSON 格式，如 {"fields":["skuCode","lotNo"]}</NvFieldDescription
-                  >
+                  <NvFieldDescription>按 JSON 格式填写。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
               <NvDialogFooter>
@@ -423,7 +420,6 @@ async function submitTemplate() {
       <template #cell-variableSchemaJson="{ row }">
         <div class="grid gap-1">
           <span class="text-sm">{{ fieldSummary(row.variableSchemaJson) }}</span>
-          <span class="text-xs text-muted-foreground">适用对象和字段由模板 JSON 明确声明。</span>
         </div>
       </template>
       <template #cell-status="{ row }">

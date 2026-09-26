@@ -798,7 +798,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
         >
           <span class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</span>
           <span class="text-xs text-muted-foreground">
-            {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+            {{ sop.documentNumber }} · 版本 {{ sop.revision }} · 生效
             {{ formatDate(sop.effectiveDate) }}
           </span>
           <NvButton

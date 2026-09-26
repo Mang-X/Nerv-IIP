@@ -153,13 +153,12 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     expect(state.mesCalls).toBe(1)
   })
 
-  it('界面上写明语义：新建只含该单的方案，插入现有方案尚不可用', () => {
+  it('界面上写明语义：新建只含该单的方案，现有方案保持不变', () => {
     const wrapper = mountDialog({ workOrderId: 'WO-77' })
     const semantics = wrapper.get('[data-testid="single-order-scheduling-semantics"]').text()
 
     expect(semantics).toContain('新建一个只含该单的排程方案')
     expect(semantics).toContain('现有方案保持不变')
-    expect(semantics).toContain('MAN-674')
   })
 
   it('提交时把用户指定的窗口与固定工单送进单单排产，并跳到该方案', async () => {
@@ -191,11 +190,11 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
 
     expect(state.requests).toHaveLength(0)
     expect(wrapper.text()).toContain('请先选择要排产的工单')
-    // 契约里没有 销售订单→工单 的关联键，这一点必须写在界面上，不能让人以为是自动带出的。
-    expect(wrapper.text()).toContain('稳定关联键')
+    // 销售订单号带不出对应工单，这一点必须写在界面上，不能让人以为是自动带出的。
+    expect(wrapper.text()).toContain('不会自动带出对应工单')
   })
 
-  it('只读（无排产管理权限）时不发请求，并说明缺哪个权限码', async () => {
+  it('只读（无排产管理权限）时不发请求，并说明缺排产管理权限', async () => {
     state.permissionCodes = []
     const wrapper = mountDialog({ workOrderId: 'WO-77' })
 
@@ -203,7 +202,8 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     await flushPromises()
 
     expect(state.requests).toHaveLength(0)
-    expect(wrapper.text()).toContain('business.scheduling.plans.manage')
+    expect(wrapper.text()).toContain('当前账号没有排产管理权限')
+    expect(wrapper.text()).not.toContain('business.scheduling.plans.manage')
   })
 
   it('服务端的中文领域拒绝理由原样留在弹窗里，用户改完就能重试', async () => {

@@ -155,7 +155,7 @@ describe('Console MES materials page line-side inventory', () => {
     lineSideInventoryError.value = null
     lineSideInventoryReady.value = true
     await flushPromises()
-    expect(wrapper.text()).toContain('当前组织/环境范围暂无线边库存余额')
+    expect(wrapper.text()).toContain('暂无线边库存余额')
 
     await wrapper
       .findAll('button')

@@ -246,7 +246,7 @@ async function submitCreditHoldRelease() {
   try {
     await orders.releaseCreditHold({ salesOrderNo })
     creditHoldOpen.value = false
-    notifySuccess('已提交信用解冻复核，审批通过后订单将恢复为已下达（released）')
+    notifySuccess('已提交信用解冻复核，审批通过后订单将恢复为已下达')
   } catch (error) {
     notifyOperationFailure(
       '提交信用解冻复核失败',
@@ -458,7 +458,7 @@ async function submit() {
         </NvDialogHeader>
         <p class="text-sm text-muted-foreground">
           提交后将以你的账号发起「信用解冻」审批，由审批中心的信用复核人（厂长/管理员）裁决；
-          审批通过后订单自动恢复为「已下达（released）」，可继续发货履约。
+          审批通过后订单自动恢复为「已下达」，可继续发货履约。
         </p>
         <NvDialogFooter>
           <NvDialogClose as-child>

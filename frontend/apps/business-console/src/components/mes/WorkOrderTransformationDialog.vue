@@ -210,7 +210,7 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
           拆成多个新的子工单；数量必须守恒，目标标识不能已存在。
         </NvDialogDescription>
         <NvDialogDescription v-else>
-          将选中的同 SKU 工单合并为一个新工单；服务端会按源工单数量合计生成目标数量。
+          将选中的同 SKU 工单合并为一个新工单，新工单数量为各源工单数量之和。
         </NvDialogDescription>
       </NvDialogHeader>
 

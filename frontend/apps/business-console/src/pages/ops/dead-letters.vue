@@ -282,7 +282,7 @@ function notifyReplayError(error: unknown, unansweredCount: number) {
     notifyOperationFailure(
       '重放未确认',
       error,
-      `${unansweredCount} 条未收到服务端答复，结果未知；请刷新列表核实是否已重放，勿直接重试。`,
+      `${unansweredCount} 条没有收到重放结果，结果未知；请刷新列表核实是否已重放，勿直接重试。`,
     )
     return
   }
@@ -628,7 +628,7 @@ function formatPayload(value: string | null | undefined) {
             <dd class="break-all">{{ selectedDeadLetter.consumerName ?? '—' }}</dd>
             <dt class="text-muted-foreground">事件来源</dt>
             <dd class="break-all">{{ selectedDeadLetter.sourceService ?? '—' }}</dd>
-            <dt class="text-muted-foreground">事件 ID</dt>
+            <dt class="text-muted-foreground">事件编号</dt>
             <dd class="break-all">{{ selectedDeadLetter.eventId ?? '—' }}</dd>
             <dt class="text-muted-foreground">幂等键</dt>
             <dd class="break-all">{{ selectedDeadLetter.idempotencyKey ?? '—' }}</dd>

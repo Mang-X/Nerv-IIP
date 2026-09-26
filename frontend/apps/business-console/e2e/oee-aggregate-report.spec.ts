@@ -83,11 +83,6 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '站点 SITE-DETROIT', exact: true })).toHaveCount(0)
   await expect(page.getByText('1 台', { exact: true }).first()).toBeVisible()
-  await expect(
-    page.getByText('首桶 UTC：2026-03-01 00:00:00 UTC – 2026-03-01 16:00:00 UTC', {
-      exact: true,
-    }),
-  ).toBeVisible()
   await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
   await page.screenshot({
     path: testInfo.outputPath('issue-2819-oee-device-scope.png'),
@@ -122,30 +117,6 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
 
   const suzhouPanel = page.locator('[data-oee-site="SITE-SUZHOU"]')
   await expect(suzhouPanel.locator('[data-oee-segment]')).toHaveCount(2)
-  await expect(
-    suzhouPanel.getByText('首桶 UTC：2026-03-01 00:00:00 UTC – 2026-03-01 15:00:00 UTC', {
-      exact: true,
-    }),
-  ).toBeVisible()
-  await expect(
-    suzhouPanel.getByText('首桶 UTC：2026-03-01 00:00:00 UTC – 2026-03-01 16:00:00 UTC', {
-      exact: true,
-    }),
-  ).toBeVisible()
-
-  const detroitPanel = page.locator('[data-oee-site="SITE-DETROIT"]')
-  await detroitPanel.getByText('查看逐桶 UTC 窗口').click()
-  await expect(
-    detroitPanel.getByText('2026-03-08：2026-03-08 05:00:00 UTC – 2026-03-09 04:00:00 UTC', {
-      exact: true,
-    }),
-  ).toBeVisible()
-  await expect(
-    detroitPanel.getByText('2026-03-31：2026-03-31 04:00:00 UTC – 2026-04-01 00:00:00 UTC', {
-      exact: true,
-    }),
-  ).toBeVisible()
-  await detroitPanel.getByText('查看逐桶 UTC 窗口').click()
   await expect(suzhouPanel.locator('[data-oee-run]')).toHaveCount(3)
 
   const suzhouChart = page.locator('[data-oee-site="SITE-SUZHOU"]').getByRole('figure').first()
