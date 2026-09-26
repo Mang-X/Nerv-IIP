@@ -144,7 +144,8 @@ public sealed record BusinessConsoleInventoryDirectoryRequest(
     string? SiteCode = null,
     string? SkuCode = null,
     int Skip = 0,
-    int Take = 20);
+    int Take = 20,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null);
 
 public sealed record BusinessConsoleInventoryDirectoryItem(
     string Id,

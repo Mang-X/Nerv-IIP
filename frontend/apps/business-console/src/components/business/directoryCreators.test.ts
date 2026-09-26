@@ -14,6 +14,7 @@ vi.mock('@/stores/auth', () => ({
       permissionCodes: [
         'business.masterdata.products.manage',
         'business.masterdata.resources.manage',
+        'business.inventory.locations.manage',
       ],
     },
   }),
@@ -45,6 +46,7 @@ const CREATED = {
   workshop: { path: '/master-data/workshops', code: 'WS-0042', name: '涂装车间' },
   'production-line': { path: '/master-data/production-lines', code: 'LINE-0042', name: '涂装线' },
   'work-center': { path: '/master-data/work-centers', code: 'WC-0042', name: '喷涂中心' },
+  location: { path: '/inventory/locations', code: 'LOC-NEW-01', name: 'LOC-NEW-01' },
 } as const
 
 // 基础数据资源列表：带出的上级编码靠它显示成名称，工作日历只有一条时自动选中。
@@ -174,6 +176,33 @@ describe('已注册的新增弹窗（#3797）', () => {
     expect(wrapper.get('button[aria-haspopup]').text()).toContain('不锈钢法兰盘')
     // 选择器取的是可搜目录：新建之后必须重新拉，否则搜不到刚建的物料。
     expect(directoryReads(requests, 'material')).toBeGreaterThan(readsBefore)
+  })
+
+  // #3832 审核 S1：表单里要选的库位还没建时，就地建好并自动选中；建好后可搜目录要刷新。
+  it('库位：在选择器里新建后自动选中，并刷新可搜目录', async () => {
+    const { model, requests, wrapper } = harness('location')
+    await flushPromises()
+    await openCreateDialog(wrapper, '库位')
+
+    setInput('#location-code', 'LOC-NEW-01')
+    await flushPromises()
+    const readsBefore = directoryReads(requests, 'location')
+    document.body.querySelector('form')!.requestSubmit()
+    await flushPromises()
+
+    const post = requests.find((r) => r.method === 'POST')!
+    expect(post.url.pathname).toBe('/api/business-console/v1/inventory/locations')
+    expect(post.body).toMatchObject({
+      organizationId: 'org-a',
+      environmentId: 'env-a',
+      locationCode: 'LOC-NEW-01',
+      locationType: 'storage',
+      siteCode: 'PLANT-A',
+      status: 'active',
+    })
+    expect(model.value).toBe('LOC-NEW-01')
+    expect(wrapper.get('button[aria-haspopup]').text()).toContain('LOC-NEW-01')
+    expect(directoryReads(requests, 'location')).toBeGreaterThan(readsBefore)
   })
 
   it('班次：在选择器里新建后自动选中并显示名称', async () => {

@@ -684,6 +684,7 @@ function refreshAll() {
                 v-model="line.pickLocationCode"
                 class="w-36"
                 directory-type="location"
+                creatable
                 title="选择拣货库位"
                 placeholder="拣货库位*"
                 clearable

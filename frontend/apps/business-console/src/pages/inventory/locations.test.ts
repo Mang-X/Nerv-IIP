@@ -1,6 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { computed } from 'vue'
+import { useBusinessContextStore } from '@/stores/businessContext'
 
 import LocationsPage from './locations.vue'
 
@@ -33,7 +35,6 @@ vi.mock('@/composables/useBusinessInventory', async () => {
       stub.filters = filters
       return {
         filters,
-        locationCodeExists: stub.locationCodeExists,
         locationRows: computed(() => stub.rows),
         locationsError: shallowRef(undefined),
         locationsPage: shallowRef(1),
@@ -41,10 +42,13 @@ vi.mock('@/composables/useBusinessInventory', async () => {
         locationsPending: shallowRef(false),
         locationsTotal: computed(() => stub.rows.length),
         refreshLocations: vi.fn(),
-        saveLocation: stub.saveLocation,
-        saveLocationPending: shallowRef(false),
       }
     },
+    useInventoryLocationSave: () => ({
+      locationCodeExists: stub.locationCodeExists,
+      saveLocation: stub.saveLocation,
+      saveLocationPending: shallowRef(false),
+    }),
   }
 })
 
@@ -76,7 +80,10 @@ const stubs = {
 }
 
 async function mountPage() {
-  const wrapper = mount(LocationsPage, { global: { stubs } })
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+  const wrapper = mount(LocationsPage, { global: { stubs, plugins: [pinia] } })
   await flushPromises()
   return wrapper
 }

@@ -1,7 +1,6 @@
 import {
   listBusinessConsoleSearchableDirectory,
   listBusinessConsoleSearchableDirectoryQueryKey,
-  type BusinessConsoleSearchableDirectoryEnvelope,
   type ListBusinessConsoleSearchableDirectoryData,
 } from '@nerv-iip/api-client'
 import type { EntityPickerOption } from '@nerv-iip/ui'
@@ -9,6 +8,7 @@ import { useInfiniteQuery } from '@pinia/colada'
 import { refDebounced } from '@vueuse/core'
 import { computed, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import { isForbiddenError } from '@/utils/notify'
 import { hasBusinessContext } from './businessContextBinding'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 
@@ -67,7 +67,7 @@ export function useSearchableDirectoryPicker(
         signal,
         throwOnError: true,
       })
-      return data as BusinessConsoleSearchableDirectoryEnvelope
+      return data
     },
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages, lastPageParam) => {
@@ -115,9 +115,11 @@ export function useSearchableDirectoryPicker(
     // 只有第一页还没回来时算加载中；取下一页时列表照常显示、继续滚动。
     pending: computed(() => query.isPending.value && query.isLoading.value),
     total: computed(() => pages.value.at(-1)?.data?.total ?? 0),
-    /** 选择器滚到底部时取下一页；上一页还在路上时不重复发。 */
+    /** 目录拒绝了当前角色（403）：选择器要说「无权查看」，不能说成「没有匹配」。 */
+    forbidden: computed(() => isForbiddenError(query.error.value)),
+    /** 选择器滚到底部时取下一页；上一页还在路上时复用在途的请求，不重复发。 */
     loadMore() {
-      if (query.hasNextPage.value && !query.isLoading.value) void query.loadNextPage()
+      if (query.hasNextPage.value) void query.loadNextPage({ cancelRefetch: false })
     },
     /** 就地新建的项：目录刷新回来之前（或不在第一页时）已选项也显示名称。 */
     remember(option: EntityPickerOption) {

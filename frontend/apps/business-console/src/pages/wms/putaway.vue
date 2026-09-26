@@ -523,6 +523,7 @@ function firstQuery(value: unknown) {
                 id="wms-putaway-from"
                 v-model="createForm.fromLocationCode"
                 directory-type="location"
+                creatable
                 title="选择暂存库位"
                 placeholder="暂存库位"
                 clearable
@@ -535,6 +536,7 @@ function firstQuery(value: unknown) {
                 id="wms-putaway-to"
                 v-model="createForm.toLocationCode"
                 directory-type="location"
+                creatable
                 title="选择货架库位"
                 placeholder="货架库位"
                 clearable
