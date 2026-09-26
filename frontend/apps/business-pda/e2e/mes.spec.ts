@@ -96,7 +96,7 @@ test('任务列表壳：375×812 深恢复次页失败停止自旋，显式重�
   await page.addInitScript(() => {
     sessionStorage.setItem(
       'nerv-iip.business-pda.task-list.mes-operation-tasks',
-      JSON.stringify({ filters: { status: '' }, scrollTop: 2_400 }),
+      JSON.stringify({ filters: { status: '' }, scrollTop: 2_200 }),
     )
   })
   const tasks = Array.from({ length: 60 }, (_, index) => ({
@@ -144,7 +144,7 @@ test('任务列表壳：375×812 深恢复次页失败停止自旋，显式重�
   const scroller = page.locator('[data-slot="pull-refresh"] .nv-m-pr-scroll')
   await expect
     .poll(() => scroller.evaluate((element) => element.scrollTop))
-    .toBeGreaterThanOrEqual(2_399)
+    .toBeGreaterThanOrEqual(2_199)
   expect(attempts.get(20)).toBe(2)
   expect(attempts.get(40) ?? 0).toBe(0)
 })
