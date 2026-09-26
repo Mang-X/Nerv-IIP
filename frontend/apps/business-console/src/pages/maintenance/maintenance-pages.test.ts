@@ -30,6 +30,8 @@ const state = vi.hoisted(() => ({
   refreshRemaining: vi.fn(async () => {}),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  // 物料编码 → 基本单位；用例里改它来模拟物料列表晚一步刷新回来。
+  baseUomBySku: undefined as unknown as { value: Map<string, string> },
 }))
 
 vi.mock('@nerv-iip/ui', async (importOriginal) => {
@@ -166,9 +168,10 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
     ]),
     devicesPending: shallowRef(false),
   }),
-  useEquipmentSkuCatalog: () => ({
-    baseUomBySku: computed(() => new Map([['BRG-6205', 'pcs']])),
-  }),
+  useEquipmentSkuCatalog: () => {
+    state.baseUomBySku ??= shallowRef(new Map([['BRG-6205', 'pcs']]))
+    return { baseUomBySku: state.baseUomBySku }
+  },
   useEquipmentTeamCatalog: () => ({
     teamOptions: computed(() => [{ value: '设备保全班', label: '设备保全班', hint: 'TEAM-PM' }]),
     teamsPending: shallowRef(false),
@@ -561,6 +564,54 @@ describe('maintenance work orders page', () => {
     expect(body.actualTechnicianUserId).toBe('user-1')
     // 回归 #1285：备件单位来自物料主档的基本单位，不是页面写死的兜底单位。
     expect(body).toMatchObject({ spareParts: [expect.objectContaining({ uomCode: 'pcs' })] })
+  })
+
+  it('换件行就地新建物料后物料列表晚一步刷新回来，单位仍按新物料的基本单位带出', async () => {
+    state.query = {}
+    state.baseUomBySku.value = new Map([['BRG-6205', 'pcs']])
+    state.workOrders = [
+      {
+        workOrderId: 'wo-new-sku',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+        assignedTechnicianUserId: 'user-1',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+    await flushPromises()
+    ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((el) => el.textContent?.includes('完成工单'))!
+      .click()
+    await flushPromises()
+
+    // 选择器选中新建的物料时，物料列表还没刷新回它，查不到基本单位。
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'SKU-NEW'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const spareUom = document.body.querySelector<HTMLInputElement>('[id^="spare-uom-"]')!
+    expect(spareUom.value).toBe('')
+
+    // 物料列表刷新回来，基本单位查得到了。
+    state.baseUomBySku.value = new Map([
+      ['BRG-6205', 'pcs'],
+      ['SKU-NEW', 'kg'],
+    ])
+    await flushPromises()
+    expect(spareUom.value).toBe('kg')
+
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    const [, body] = state.completeWorkOrder.mock.calls.at(-1)!
+    expect(body).toMatchObject({
+      spareParts: [expect.objectContaining({ skuCode: 'SKU-NEW', uomCode: 'kg' })],
+    })
   })
 })
 

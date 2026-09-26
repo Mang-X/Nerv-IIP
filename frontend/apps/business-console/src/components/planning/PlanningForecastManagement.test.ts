@@ -234,6 +234,9 @@ describe('PlanningForecastManagement', () => {
     expect(wrapper.get('#forecast-start').classes()).toContain('border-destructive')
     expect(wrapper.get('#forecast-end').classes()).toContain('border-destructive')
     expect(wrapper.get('[aria-label="预测 SKU"]').attributes('data-invalid')).toBe('true')
+    expect(wrapper.get('[aria-label="预测 SKU"]').attributes('aria-describedby')).toBe(
+      'forecast-sku-error',
+    )
     expect(wrapper.get('#forecast-start').attributes('aria-invalid')).toBe('true')
     expect(wrapper.get('#forecast-start').attributes('aria-describedby')).toBe(
       'forecast-start-error',

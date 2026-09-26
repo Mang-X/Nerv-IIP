@@ -115,8 +115,22 @@ const { resources: deviceResources } = useBusinessMasterDataResources('device-as
 const { baseUomBySku } = useEquipmentSkuCatalog()
 const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 function applySpareRowSku(row: { skuCode: string; uomCode: string }) {
-  const baseUom = baseUomBySku.value.get(row.skuCode.trim())
-  if (baseUom) row.uomCode = baseUom
+  const code = row.skuCode.trim()
+  const baseUom = baseUomBySku.value.get(code)
+  if (baseUom) {
+    row.uomCode = baseUom
+    return
+  }
+  if (!code) return
+  // 就地新建的物料要等物料列表刷新回来才查得到基本单位：等到查得到再带出，期间该行换了物料就作废。
+  const stop = watch(
+    () => baseUomBySku.value.get(code),
+    (next) => {
+      if (!next) return
+      stop()
+      if (row.skuCode.trim() === code) row.uomCode = next
+    },
+  )
 }
 const deviceNameByCode = computed(() => {
   const map = new Map<string, string>()

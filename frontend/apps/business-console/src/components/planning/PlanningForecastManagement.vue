@@ -370,6 +370,9 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 placeholder="选择 SKU"
                 aria-label="预测 SKU"
                 :invalid="submitted && fieldErrors.skuCode.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.skuCode.length ? 'forecast-sku-error' : undefined
+                "
               />
               <NvFieldError
                 v-if="submitted && fieldErrors.skuCode.length"

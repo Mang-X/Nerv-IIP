@@ -79,10 +79,10 @@ const { workOrderOptions, workOrdersPending } = useMaintenanceDocumentCatalog()
 const { baseUomBySku } = useEquipmentSkuCatalog()
 const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 // 备件领用单位默认跟随物料的基本单位，避免手选错单位对不上库存台账。
+// 除了换物料，也跟着「所选物料的基本单位」变：就地新建的物料要等物料目录刷新回来才查得到。
 watch(
-  () => createForm.skuCode,
-  (skuCode) => {
-    const baseUom = baseUomBySku.value.get(skuCode.trim())
+  [() => createForm.skuCode, () => baseUomBySku.value.get(createForm.skuCode.trim())],
+  ([, baseUom]) => {
     if (baseUom) createForm.uomCode = baseUom
   },
 )
