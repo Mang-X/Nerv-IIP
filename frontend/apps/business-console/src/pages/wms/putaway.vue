@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
@@ -13,10 +14,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import {
   wmsWarehouseTaskStatusFilterOptions,
   wmsWarehouseTaskStatusLabel,
@@ -102,10 +99,6 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.scopeId,
   ],
 })
-// 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
-const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
-  scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
-})
 // 入库单是真实读面（只要组织/环境即可列出），上架任务必须挂在已存在的入库单下。
 const {
   filters: inboundOrderFilters,
@@ -149,6 +142,12 @@ const inboundOrderNoById = computed(() => {
   for (const [no, id] of inboundOrderIdByNo.value) map.set(id, no)
   return map
 })
+// 就地新增库位时预填所选入库单的工厂：库位要建在单据所在的工厂下。
+const createSiteCode = computed(
+  () =>
+    inboundOrders.value.find((order) => order.inboundOrderId?.trim() === createForm.inboundOrderId)
+      ?.siteCode ?? '',
+)
 const inboundOrderSelection = computed({
   // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
   get: () => inboundOrderNoById.value.get(createForm.inboundOrderId) ?? createForm.inboundOrderId,
@@ -526,28 +525,28 @@ function firstQuery(value: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-putaway-from">来源库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="wms-putaway-from"
                 v-model="createForm.fromLocationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :create-context="{ siteCode: createSiteCode }"
                 title="选择暂存库位"
                 placeholder="暂存库位"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="来源库位"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-putaway-to">目标库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="wms-putaway-to"
                 v-model="createForm.toLocationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :create-context="{ siteCode: createSiteCode }"
                 title="选择货架库位"
                 placeholder="货架库位"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="目标库位"
               />

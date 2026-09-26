@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import NvEntityPicker from './NvEntityPicker.vue'
 
 const options = [
@@ -278,6 +278,141 @@ describe('NvEntityPicker', () => {
 
       expect(document.body.textContent).toContain('输入关键字继续筛选')
       expect(document.body.textContent).not.toContain('4760')
+
+      wrapper.unmount()
+    })
+  })
+
+  // #3832：库位多的仓库几千个候选。只渲染可视区附近的行，滚到哪里就渲染到哪里，
+  // 第 2601 个照样点得到；服务端搜索时滚近底部向调用方要下一页。
+  describe('大目录：虚拟化与滚动加载', () => {
+    // 用例中途失败时残留的浮层会让下一条取错列表：每条之后清掉。
+    afterEach(() => {
+      document.body.innerHTML = ''
+    })
+    function listbox() {
+      return document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    }
+    function scrollListTo(el: HTMLElement, box: { top: number; height: number; client: number }) {
+      Object.defineProperty(el, 'scrollTop', { configurable: true, value: box.top })
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: box.height })
+      Object.defineProperty(el, 'clientHeight', { configurable: true, value: box.client })
+      el.dispatchEvent(new Event('scroll'))
+    }
+    const many = Array.from({ length: 3000 }, (_, i) => ({
+      value: `LOC-${String(i + 1).padStart(4, '0')}`,
+      label: `LOC-${String(i + 1).padStart(4, '0')}`,
+    }))
+
+    it('几千个候选只渲染可视区附近的行，滚到后面的行照样能选', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options: many, title: '选择库位', showCode: false },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const rendered = () => [...document.body.querySelectorAll('[role="option"]')]
+      expect(rendered().length).toBeLessThan(40)
+      expect(rendered()[0]?.textContent).toContain('LOC-0001')
+
+      // 单行候选行高 36px：滚到第 2601 个所在的位置。
+      scrollListTo(listbox(), { top: 2600 * 36, height: 3000 * 36, client: 288 })
+      await flushPromises()
+
+      const target = rendered().find((row) => row.textContent?.includes('LOC-2601'))
+      expect(target).toBeDefined()
+      expect(rendered().length).toBeLessThan(40)
+      ;(target as HTMLElement).click()
+      await flushPromises()
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['LOC-2601'])
+
+      wrapper.unmount()
+    })
+
+    it('键盘往下移到可视区之外的候选，它被渲染出来并高亮', async () => {
+      const scrolled: number[] = []
+      const original = Element.prototype.scrollIntoView
+      Element.prototype.scrollIntoView = function () {
+        // jsdom 不做布局：就近滚入 = 把这一行滚到可视区底部（可视区 288px，行高 36px）。
+        const list = this.closest<HTMLElement>('[role="listbox"]')!
+        const index = [...list.querySelectorAll('[role="option"]')].indexOf(this)
+        const top = Number(this.id.split('-opt-').at(-1)) * 36
+        scrolled.push(index)
+        Object.defineProperty(list, 'scrollTop', {
+          configurable: true,
+          value: Math.max(0, top + 36 - 288),
+        })
+        Object.defineProperty(list, 'clientHeight', { configurable: true, value: 288 })
+        list.dispatchEvent(new Event('scroll'))
+      }
+      try {
+        const wrapper = mount(NvEntityPicker, {
+          props: { options: many, title: '选择库位', showCode: false },
+          attachTo: document.body,
+        })
+        await wrapper.get('button[aria-haspopup]').trigger('click')
+        await flushPromises()
+
+        const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+        for (let i = 0; i < 20; i++) {
+          search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+          await flushPromises()
+        }
+
+        const active = document.body.querySelector('[role="option"][data-active]')
+        expect(active?.textContent).toContain('LOC-0021')
+        expect(scrolled.length).toBeGreaterThan(0)
+        wrapper.unmount()
+      } finally {
+        Element.prototype.scrollIntoView = original
+      }
+    })
+
+    it('从首项按上键绕回末项：末项此前没渲染，也要滚过去并高亮', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options: many, title: '选择库位', showCode: false },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+      expect(listbox().textContent).not.toContain('LOC-3000')
+
+      const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+      search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+      await flushPromises()
+
+      const active = document.body.querySelector('[role="option"][data-active]')
+      expect(active?.textContent).toContain('LOC-3000')
+      wrapper.unmount()
+    })
+
+    it('服务端搜索时滚近底部才要下一页；已经列全就不再要', async () => {
+      const firstPage = many.slice(0, 50)
+      const wrapper = mount(NvEntityPicker, {
+        props: {
+          options: firstPage,
+          title: '选择库位',
+          showCode: false,
+          serverSearch: true,
+          search: '',
+          totalCount: 3000,
+        },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const box = { height: 50 * 36 + 16, client: 288 }
+      scrollListTo(listbox(), { ...box, top: 0 })
+      expect(wrapper.emitted('load-more')).toBeUndefined()
+
+      scrollListTo(listbox(), { ...box, top: box.height - box.client })
+      expect(wrapper.emitted('load-more')).toHaveLength(1)
+
+      await wrapper.setProps({ totalCount: 50 })
+      scrollListTo(listbox(), { ...box, top: box.height - box.client })
+      expect(wrapper.emitted('load-more')).toHaveLength(1)
 
       wrapper.unmount()
     })

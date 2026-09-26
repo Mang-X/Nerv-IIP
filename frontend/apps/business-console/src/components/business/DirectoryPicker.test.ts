@@ -50,7 +50,9 @@ vi.mock('./directoryCreators', () => ({
   directoryCreatorFor: (type: string) =>
     type === 'work-center' || type === 'shift' || type === 'station'
       ? { permission: 'business.masterdata.resources.manage', dialog: StubCreateDialog }
-      : undefined,
+      : type === 'location'
+        ? { permission: 'business.inventory.locations.manage', dialog: StubCreateDialog }
+        : undefined,
 }))
 
 interface Recorded {
@@ -337,5 +339,151 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
       .join()
     expect(optionText).toContain('ST-B1')
     expect(optionText).not.toContain('WC-0042')
+  })
+})
+
+// #3832：库位 / 批次 / 序列号走服务端搜索。库位多的仓库几千个：
+// 列表滚到底接着取下一页，输入关键字由服务端在全部库位里找，第 501 个以后照样选得到。
+describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832）', () => {
+  const TOTAL = 1200
+  const code = (n: number) => `LOC-${String(n).padStart(4, '0')}`
+
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    configureApiClient()
+    document.body.innerHTML = ''
+  })
+
+  function mountLocationPicker(
+    options: { failStatus?: number; holdLaterPages?: Promise<void> } = {},
+  ) {
+    const requests: URL[] = []
+    configureApiClient({
+      baseUrl: 'http://gateway.local',
+      fetch: (async (request: Request) => {
+        const url = new URL(request.url)
+        requests.push(url)
+        if (options.failStatus) {
+          return Response.json(
+            { success: false, message: 'directory-unavailable', code: options.failStatus },
+            { status: options.failStatus },
+          )
+        }
+        const keyword = url.searchParams.get('keyword')
+        const pageIndex = Number(url.searchParams.get('pageIndex'))
+        if (pageIndex > 1) await options.holdLaterPages
+        const pageSize = Number(url.searchParams.get('pageSize'))
+        const all = Array.from({ length: TOTAL }, (_, i) => code(i + 1)).filter(
+          (value) => !keyword || value.includes(keyword),
+        )
+        const items = all
+          .slice((pageIndex - 1) * pageSize, pageIndex * pageSize)
+          .map((value) => ({ code: value, displayName: value, context: { siteCode: 'SITE-A' } }))
+        return Response.json({ success: true, data: { items, total: all.length } })
+      }) as typeof fetch,
+    })
+    const model = ref('')
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          useBusinessContextStore().patchContext({
+            organizationId: 'org-a',
+            environmentId: 'env-a',
+          })
+          return () =>
+            h(DirectoryPicker, {
+              directoryType: 'location',
+              creatable: true,
+              modelValue: model.value,
+              'onUpdate:modelValue': (value: string) => (model.value = value),
+            })
+        },
+      }),
+      { global: { plugins: [createPinia(), PiniaColada] }, attachTo: document.body },
+    )
+    mounted.push(wrapper)
+    return { model, requests, wrapper }
+  }
+
+  const optionTexts = () =>
+    [...document.body.querySelectorAll('[role="option"]')].map((row) => row.textContent ?? '')
+
+  function scrollToBottom() {
+    const list = document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 5000 })
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 288 })
+    Object.defineProperty(list, 'scrollTop', { configurable: true, value: 5000 - 288 })
+    list.dispatchEvent(new Event('scroll'))
+  }
+
+  it('滚到底取下一页并接在后面', async () => {
+    let release!: () => void
+    const holdLaterPages = new Promise<void>((resolve) => (release = resolve))
+    const { requests, wrapper } = mountLocationPicker({ holdLaterPages })
+    await openPicker(wrapper)
+
+    expect(requests.at(-1)?.pathname).toBe('/api/business-console/v1/directories/location')
+    expect(optionTexts()).toHaveLength(50)
+    expect(optionTexts().some((text) => text.includes(code(51)))).toBe(false)
+
+    scrollToBottom()
+    // 取下一页期间列表照常显示，不整列换成「加载中…」（否则滚动位置丢失）；
+    // 连着触发两次也只发一次请求。
+    await flushPromises()
+    expect(optionTexts()).toHaveLength(50)
+    expect(document.body.textContent).not.toContain('加载中')
+    scrollToBottom()
+    await flushPromises()
+    release()
+    await flushPromises()
+
+    expect(requests.filter((url) => url.searchParams.get('pageIndex') === '2')).toHaveLength(1)
+    expect(optionTexts().some((text) => text.includes(code(1)))).toBe(true)
+    expect(optionTexts().some((text) => text.includes(code(100)))).toBe(true)
+  })
+
+  // 取数失败时不能说成「没有匹配」，也不给「新增」入口（会引导用户去新建可能已存在的库位）；
+  // 403 与其它失败说法不同（审核 R2-2）。对照：取数成功时有新增权限就有入口。
+  it('取数成功时给新增入口', async () => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { wrapper } = mountLocationPicker()
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain('新增库位')
+  })
+
+  it.each([
+    [403, '当前角色无权查看库位', '库位加载失败'],
+    [502, '库位加载失败，请稍后重试', '无权查看'],
+  ])('目录返回 %i 时如实说明、不给新增入口', async (status, shown, notShown) => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { wrapper } = mountLocationPicker({ failStatus: status })
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain(shown)
+    expect(document.body.textContent).not.toContain(notShown)
+    expect(document.body.textContent).not.toContain('没有匹配的库位')
+    expect(document.body.textContent).not.toContain('新增库位')
+  })
+
+  it('输入关键字由服务端在全部库位里找，第 501 个以后也选得到', async () => {
+    const { model, requests, wrapper } = mountLocationPicker()
+    await openPicker(wrapper)
+
+    const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+    search.value = code(1001)
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    // 搜索词去抖 300ms 后才发请求。
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    await flushPromises()
+
+    expect(requests.at(-1)?.searchParams.get('keyword')).toBe(code(1001))
+    const target = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes(code(1001)),
+    )
+    expect(target).toBeDefined()
+    target!.click()
+    await flushPromises()
+    expect(model.value).toBe(code(1001))
   })
 })

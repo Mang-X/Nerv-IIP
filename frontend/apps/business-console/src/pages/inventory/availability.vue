@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
@@ -23,12 +24,6 @@ import {
   useInventorySiteStockOverview,
   type SiteStockRow,
 } from '@/composables/useInventorySiteStock'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-  WAREHOUSE_SERIAL_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { buildKpiTrend } from '@/utils/kpiTrend'
 import { notifyError } from '@/utils/notify'
@@ -124,9 +119,6 @@ const {
   siteStockScanning,
   siteStockTotalSkuCount,
 } = useInventorySiteStockOverview(() => filters.siteCode)
-// 库位/批次/序列号后端无主数据读面，从已加载的台账行与仓储作业记录里派生可选项。
-const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
-  useWarehouseCodeCatalog(() => availabilityLines.value)
 
 // 上下文穿透：从 MES 齐套/领料/完工入库带入 SKU/批次/库位/工厂查询库存事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -601,40 +593,33 @@ async function refreshCurrentView() {
           :loading="sitesPending"
           aria-label="工厂"
         />
-        <!-- 库位/批次/序列号后端无主数据读面，选项从真实台账与仓储作业记录派生，来源已注明。 -->
-        <NvEntityPicker
+        <DirectoryPicker
           v-if="!showSiteOverview"
           v-model="filters.locationCode"
           class="w-36"
-          :options="locationOptions"
+          directory-type="location"
           title="选择库位"
           placeholder="库位"
-          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
           clearable
           aria-label="库位"
         />
-        <NvEntityPicker
+        <DirectoryPicker
           v-if="!nearExpiryOnly && !showSiteOverview"
           v-model="filters.lotNo"
           class="w-36"
-          :options="lotOptions"
+          directory-type="batch"
           title="选择批次"
           placeholder="批次"
-          :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
           clearable
           aria-label="批次"
         />
-        <NvEntityPicker
+        <DirectoryPicker
           v-if="!nearExpiryOnly && !showSiteOverview"
           v-model="filters.serialNo"
           class="w-36"
-          :options="serialOptions"
+          directory-type="serial"
           title="选择序列号"
           placeholder="序列号"
-          :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
           clearable
           aria-label="序列号"
         />

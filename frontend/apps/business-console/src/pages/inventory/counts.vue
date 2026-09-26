@@ -12,12 +12,6 @@ import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-  WAREHOUSE_SERIAL_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -147,9 +141,6 @@ watch(
 
 // 工厂给默认值、单位跟随物料，仓管只需要选物料与库位。
 const { siteOptions, sitesPending } = useInventoryScopeDefaults(taskForm)
-// 库位/批次/序列号后端无主数据读面，从既有台账与仓储作业记录派生可选项。
-const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
-  useWarehouseCodeCatalog()
 // 寄售库存的货主是业务伙伴：客户寄售选客户、供应商寄售选供应商；其余货主类型没有货主可选。
 const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
 const ownerPartner = computed(() => {
@@ -497,14 +488,14 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-location">库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-location"
                 v-model="taskForm.locationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :create-context="{ siteCode: taskForm.siteCode }"
                 title="选择库位"
                 placeholder="选择库位"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="库位"
               />
@@ -547,28 +538,24 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-lot">批次</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-lot"
                 v-model="taskForm.lotNo"
-                :options="lotOptions"
+                directory-type="batch"
                 title="选择批次"
                 placeholder="选择批次"
-                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="批次"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-serial">序列号</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-serial"
                 v-model="taskForm.serialNo"
-                :options="serialOptions"
+                directory-type="serial"
                 title="选择序列号"
                 placeholder="选择序列号"
-                :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="序列号"
               />

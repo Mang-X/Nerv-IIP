@@ -141,10 +141,11 @@ public sealed record BusinessConsoleInventoryDirectoryRequest(
     string EnvironmentId,
     string DirectoryType,
     string? Keyword = null,
-    string? SiteCode = null,
     string? SkuCode = null,
     int Skip = 0,
-    int Take = 20);
+    int Take = 20,
+    // 调用方授权可见的工厂集合；null 表示组织级授权、不按工厂收窄。
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null);
 
 public sealed record BusinessConsoleInventoryDirectoryItem(
     string Id,

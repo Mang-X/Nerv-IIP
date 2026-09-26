@@ -34,7 +34,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Equal(BusinessGatewayPermissions.InventoryLedgerRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("site", auth.LastRequirement.ResourceType);
         Assert.Equal("SITE-A", auth.LastRequirement.ResourceId);
-        Assert.Contains("siteCode=SITE-A", downstream.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Equal(["SITE-A"], AuthorizedSites(downstream));
     }
 
     [Fact]
@@ -72,27 +72,93 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("siteCode=SITE-A", downstream.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Equal(["SITE-A"], AuthorizedSites(downstream));
     }
 
+    // #3832 审核 B1：库位 / 批次 / 序列号按工厂切分，可见范围是授权工厂的并集。
+    // 种子账号 user-emp-049「仓储库管（PDA）」= 角色 site:SITE-001 + membership self；
+    // 过去任一条 self 或第二个工厂都会让整个目录 403，WMS 表单里的库位选不到、单子提交不了。
     [Theory]
-    [InlineData("site", "SITE-A", "site", "SITE-B")]
-    [InlineData("self", "user-admin", null, null)]
-    public async Task Ambiguous_or_incompatible_implicit_grants_fail_closed(
-        string firstKind,
-        string firstId,
-        string? secondKind,
-        string? secondId)
+    [InlineData("location", new[] { "site:SITE-A", "site:SITE-B" }, new[] { "SITE-A", "SITE-B" })]
+    [InlineData("location", new[] { "site:SITE-001", "self:user-emp-049" }, new[] { "SITE-001" })]
+    [InlineData("batch", new[] { "site:SITE-B", "self:user-emp-049", "site:SITE-A" }, new[] { "SITE-A", "SITE-B" })]
+    [InlineData("serial", new[] { "site:SITE-A", "work-center:WC-01" }, new[] { "SITE-A" })]
+    public async Task Inventory_directory_narrows_to_the_union_of_authorized_sites(
+        string directoryType,
+        string[] grants,
+        string[] expectedSites)
     {
-        var grants = new List<AuthorizationScopeGrant>
-        {
-            Grant(firstKind, firstId, BusinessGatewayPermissions.InventoryLedgerRead),
-        };
-        if (secondKind is not null && secondId is not null)
-        {
-            grants.Add(Grant(secondKind, secondId, BusinessGatewayPermissions.InventoryLedgerRead));
-        }
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: grants);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            .. grants.Select(grant => grant.Split(':')).Select(parts =>
+                Grant(parts[0], parts[1], BusinessGatewayPermissions.InventoryLedgerRead)),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expectedSites, AuthorizedSites(downstream));
+        Assert.DoesNotContain("siteCode=", downstream.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Organization_wide_grant_reads_inventory_directory_without_site_narrowing()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+            Grant("self", "user-admin", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(AuthorizedSites(downstream));
+    }
+
+    // 两条各自单独变异都会存活的防线：IAM 判定 DenyAll、或只有别的组织的组织级授权，都不能读到库存目录。
+    [Theory]
+    [InlineData("deny-all")]
+    [InlineData("other-organization")]
+    public async Task Deny_all_or_other_organization_grant_cannot_read_inventory_directory(string kind)
+    {
+        var auth = kind == "deny-all"
+            ? FakeBusinessGatewayAuthorizationClient.Allowed(
+                dataScope: new AuthorizationDataScope([], [], [], DenyAll: true),
+                scopeGrants: [Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead)])
+            : FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+            [
+                Grant("organization", "org-999", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+            ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(downstream.RequestUri);
+    }
+
+    [Fact]
+    public async Task Grant_without_any_site_fails_closed()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("self", "user-admin", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
@@ -131,10 +197,29 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Null(downstream.RequestUri);
     }
 
+    // 不适用本权限的工厂授权不参与并集：它既不拒绝，也不把别的工厂放进来。
+    [Fact]
+    public async Task Site_grant_for_another_permission_is_not_part_of_the_union()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+            Grant("site", "SITE-B", BusinessGatewayPermissions.MasterDataResourcesRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["SITE-A"], AuthorizedSites(downstream));
+    }
+
     [Theory]
     [InlineData("malformed-source")]
-    [InlineData("self-scope")]
-    [InlineData("wrong-permission")]
     [InlineData("restricted-organization")]
     public async Task Valid_grant_mixed_with_unrepresentable_grant_fails_closed_without_reaching_owner(
         string extraGrantKind)
@@ -147,8 +232,6 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 "site",
                 "SITE-B",
                 [BusinessGatewayPermissions.InventoryLedgerRead]),
-            "self-scope" => Grant("self", "user-admin", BusinessGatewayPermissions.InventoryLedgerRead),
-            "wrong-permission" => Grant("site", "SITE-B", BusinessGatewayPermissions.MasterDataResourcesRead),
             "restricted-organization" => Grant(
                 "organization",
                 "org-001",
@@ -490,7 +573,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
 
         var response = await client.ListDirectoryAsync(
             "internal-token",
-            new BusinessConsoleInventoryDirectoryRequest("org-1", "env-1", "batch", "lot", "SITE-A", "SKU-1"),
+            new BusinessConsoleInventoryDirectoryRequest("org-1", "env-1", "batch", "lot", "SKU-1", AuthorizedSiteCodes: ["SITE-A"]),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -502,7 +585,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Contains("\"skip\":0", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"take\":20", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("directoryType=batch", handler.RequestUri!.Query, StringComparison.Ordinal);
-        Assert.Contains("siteCode=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("authorizedSiteCodes=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -776,6 +859,13 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-token"));
             });
+
+    private static string[] AuthorizedSites(JsonHandler downstream) =>
+    [
+        .. downstream.RequestUri!.Query.TrimStart('?').Split('&')
+            .Where(pair => pair.StartsWith("authorizedSiteCodes=", StringComparison.Ordinal))
+            .Select(pair => Uri.UnescapeDataString(pair["authorizedSiteCodes=".Length..])),
+    ];
 
     private static AuthorizationScopeGrant Grant(
         string scopeKind,

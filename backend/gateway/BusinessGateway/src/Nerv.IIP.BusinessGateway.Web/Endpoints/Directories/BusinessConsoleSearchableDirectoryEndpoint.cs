@@ -77,40 +77,74 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
         var authorization = HttpContext.Items[BusinessGatewayAuthorization.PrincipalItemKey]
             as BusinessGatewayAuthorizationResult;
-        var authorizedScope = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedScope(
-            definition,
-            authorization,
-            req.OrganizationId,
-            scopeKind,
-            scopeId);
-        if (authorizedScope is null)
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                HttpContext,
-                StatusCodes.Status403Forbidden,
-                "directory-scope-not-authorized",
-                ct);
-            return;
-        }
-        scopeKind = authorizedScope.Kind;
-        scopeId = authorizedScope.Id;
-
         try
         {
-            var response = definition.Owner switch
+            var response = await QueryAuthorizedAsync(
+                definition,
+                authorization,
+                req with { DirectoryType = directoryType },
+                scopeKind,
+                scopeId,
+                pageOffset,
+                ct);
+            if (response is null)
             {
-                "master-data" => await QueryMasterDataAsync(req with { DirectoryType = directoryType }, scopeKind, scopeId, pageOffset, ct),
-                "inventory" => await QueryInventoryAsync(req with { DirectoryType = directoryType }, scopeKind, scopeId, pageOffset, ct),
-                "quality" => await QueryQualityAsync(req with { DirectoryType = directoryType }, pageOffset, ct),
-                "maintenance" => await QueryMaintenanceAsync(req with { DirectoryType = directoryType }, pageOffset, ct),
-                _ => throw new InvalidOperationException("Unknown directory owner."),
-            };
+                await ResponseDataEndpointResults.WriteErrorAsync(
+                    HttpContext,
+                    StatusCodes.Status403Forbidden,
+                    "directory-scope-not-authorized",
+                    ct);
+                return;
+            }
+
             await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status200OK, response, ct);
         }
         catch (BusinessServiceProxyException ex)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, ex, ct);
         }
+    }
+
+    /// <summary>按授权范围查询目录；授权范围解析不出来（拒绝）时返回 null。</summary>
+    private async Task<BusinessConsoleSearchableDirectoryResponse?> QueryAuthorizedAsync(
+        BusinessConsoleSearchableDirectoryDefinition definition,
+        BusinessGatewayAuthorizationResult? authorization,
+        BusinessConsoleSearchableDirectoryRequest request,
+        string? scopeKind,
+        string? scopeId,
+        int pageOffset,
+        CancellationToken cancellationToken)
+    {
+        // 库存目录（库位 / 批次 / 序列号）按工厂切分：可见范围取授权工厂的并集；其余目录解析成单一范围。
+        if (definition.Owner == "inventory")
+        {
+            var sites = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedSites(
+                definition,
+                authorization,
+                request.OrganizationId,
+                scopeKind,
+                scopeId);
+            return sites is null ? null : await QueryInventoryAsync(request, sites, pageOffset, cancellationToken);
+        }
+
+        var scope = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedScope(
+            definition,
+            authorization,
+            request.OrganizationId,
+            scopeKind,
+            scopeId);
+        if (scope is null)
+        {
+            return null;
+        }
+
+        return definition.Owner switch
+        {
+            "master-data" => await QueryMasterDataAsync(request, scope.Kind, scope.Id, pageOffset, cancellationToken),
+            "quality" => await QueryQualityAsync(request, pageOffset, cancellationToken),
+            "maintenance" => await QueryMaintenanceAsync(request, pageOffset, cancellationToken),
+            _ => throw new InvalidOperationException("Unknown directory owner."),
+        };
     }
 
     private async Task<BusinessConsoleSearchableDirectoryResponse> QueryMasterDataAsync(
@@ -213,8 +247,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
     private async Task<BusinessConsoleSearchableDirectoryResponse> QueryInventoryAsync(
         BusinessConsoleSearchableDirectoryRequest request,
-        string? scopeKind,
-        string? scopeId,
+        BusinessConsoleAuthorizedSites authorizedSites,
         int pageOffset,
         CancellationToken cancellationToken)
     {
@@ -225,10 +258,10 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 request.EnvironmentId,
                 request.DirectoryType,
                 request.Keyword,
-                scopeKind == "site" ? scopeId : null,
                 request.SkuCode,
                 pageOffset,
-                request.PageSize),
+                request.PageSize,
+                authorizedSites.OrganizationWide ? null : authorizedSites.SiteCodes),
             cancellationToken);
         ValidateInventory(response, request, pageOffset);
 
