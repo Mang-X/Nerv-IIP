@@ -218,14 +218,15 @@ try
 
     // 产品基线种子（编码规则/字典/计量单位/班次/日历/部门）：基础功能必需，默认开启、只补缺，
     // 显式 false 才关闭（#3811）。演示数据在下方 LeaderDemo 开关里。
+    // 目标租户读 IAM 引导种子的同一份配置（#3812），部署只配一处。
     var seedEnabled = builder.Configuration.GetValue("MasterData:Seed:Enabled", true);
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();
         var seed = scope.ServiceProvider.GetRequiredService<MasterDataSeedService>();
         await seed.SeedAsync(
-            builder.Configuration["MasterData:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["MasterData:Seed:EnvironmentId"] ?? "env-dev");
+            builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     var walkthroughSeedEnabled = builder.Configuration.GetValue<bool>("Walkthrough:Seed:Enabled");

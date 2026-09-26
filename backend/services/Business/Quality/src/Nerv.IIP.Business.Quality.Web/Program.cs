@@ -222,14 +222,15 @@ try
     }
 
     // 质量基础目录 seed（原因码等）：默认开启（#3805），显式 false 可关闭；幂等补缺。
+    // 目标租户读 IAM 引导种子的同一份配置（#3812），部署只配一处。
     var seedEnabled = builder.Configuration.GetValue("Quality:Seed:Enabled", true);
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();
         var seed = scope.ServiceProvider.GetRequiredService<QualitySeedService>();
         await seed.SeedAsync(
-            builder.Configuration["Quality:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["Quality:Seed:EnvironmentId"] ?? "env-dev");
+            builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");

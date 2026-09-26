@@ -154,13 +154,14 @@ try
     }
 
     // Inventory 产品基线 seed（#3770）：默认开启（#3805），显式 false 可关闭。
+    // 目标租户读 IAM 引导种子的同一份配置（#3812），部署只配一处。
     var seedEnabled = builder.Configuration.GetValue("Inventory:Seed:Enabled", true);
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();
         var written = await scope.ServiceProvider.GetRequiredService<InventoryLocationSeedService>().SeedAsync(
-            builder.Configuration["Inventory:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["Inventory:Seed:EnvironmentId"] ?? "env-dev");
+            builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
         app.Logger.LogInformation("Inventory product seed completed: {Locations} missing stock locations added.", written);
     }
 
