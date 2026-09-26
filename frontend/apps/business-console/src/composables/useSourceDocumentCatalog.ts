@@ -28,7 +28,7 @@ import { refDebounced } from '@vueuse/core'
 import { computed, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext } from './businessContextBinding'
-import { maintenanceWorkOrderNo } from './useEquipmentPickerCatalog'
+import { maintenanceWorkOrderNo, maintenanceWorkOrderOption } from './useEquipmentPickerCatalog'
 import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from './useWmsWorkScope'
 
 /** 一次取回的候选条数；更多的靠搜索收窄，匹配总数如实交给选择器提示。 */
@@ -45,62 +45,76 @@ interface CatalogQuery {
   scopeId?: string
 }
 
-// 各列表端点的行形状不同，映射函数按各自的行读字段；这里只约束信封形状。
-type ListRow = Record<string, unknown>
-interface ListEnvelope {
+interface ListEnvelope<TRow> {
   success?: boolean
-  data?: { items?: ListRow[] | null; total?: number } | null
+  data?: { items?: TRow[] | null; total?: number } | null
 }
 
-interface SourceDocumentCatalogSpec {
+interface CatalogSpecFields {
   /** 单据名词，用于标题、占位与空态文案。 */
   noun: string
   sourceText: string
   searchPlaceholder: string
   /** 端点支持按单号关键字搜索时走服务端搜索；否则取一批在本地过滤。 */
   serverSearch: boolean
-  queryOptions: (query: CatalogQuery) => unknown
-  /** 行 → 选项；返回 `undefined` 表示这一行不能作为来源单据（如已转订单的报价）。 */
-  toOption: (row: ListRow) => EntityPickerOption | undefined
   /** 列表按 WMS 作业范围授权时，取哪一类作业范围。 */
   wmsWorkScope?: WmsWorkScopeCatalogKind
 }
 
-function text(value: unknown) {
-  return typeof value === 'string' ? value.trim() : ''
+interface TypedCatalogSpec<TRow> extends CatalogSpecFields {
+  /** 生成的列表查询选项；行类型从它的返回值推出，`toOption` 读的字段因此受契约类型检查。 */
+  queryOptions: (query: CatalogQuery) => {
+    query: (context: never) => Promise<ListEnvelope<TRow>>
+  }
+  /** 行 → 选项；返回 `undefined` 表示这一行不能作为来源单据（如已转订单的报价）。 */
+  toOption: (row: TRow) => EntityPickerOption | undefined
+}
+
+/** 运行期只按信封形状取行、交回同一条 spec 的 `toOption`，不再需要行类型。 */
+interface SourceDocumentCatalogSpec extends CatalogSpecFields {
+  queryOptions: (query: CatalogQuery) => object
+  toOption: (row: unknown) => EntityPickerOption | undefined
+}
+
+/** 定义处按行类型检查，收进表里时擦成统一形状（行只会交回推出它的那条 spec）。 */
+function defineSpec<TRow>(spec: TypedCatalogSpec<TRow>): SourceDocumentCatalogSpec {
+  return spec as unknown as SourceDocumentCatalogSpec
 }
 
 function documentOption(
-  value: unknown,
-  label: unknown,
-  ...hints: unknown[]
+  value: string | null | undefined,
+  label: string | null | undefined,
+  ...hints: (string | null | undefined)[]
 ): EntityPickerOption | undefined {
-  const optionValue = text(value)
+  const optionValue = value?.trim()
   if (!optionValue) return undefined
-  const hint = hints.map(text).filter(Boolean).join(' · ')
-  return { value: optionValue, label: text(label) || optionValue, ...(hint ? { hint } : {}) }
+  const hint = hints
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(' · ')
+  return { value: optionValue, label: label?.trim() || optionValue, ...(hint ? { hint } : {}) }
 }
 
 const SPECS = {
   // 生产工单：制造执行的工单 ID 就是工单号（列表的 workOrderNo 与它同值），
   // 条码生产标签、检验结论回写质量保留都按它比对。
-  'mes-work-order': {
+  'mes-work-order': defineSpec({
     noun: '生产工单',
     sourceText: '数据来自制造执行生产工单',
     searchPlaceholder: '搜索工单…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleMesWorkOrdersQueryOptions({ query }),
     toOption: (row) => documentOption(row.workOrderId, row.workOrderNo, row.skuCode),
-  },
-  'mes-production-report': {
+  }),
+  'mes-production-report': defineSpec({
     noun: '报工单',
     sourceText: '数据来自制造执行报工记录',
     searchPlaceholder: '搜索报工单号 / 工单…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleMesProductionReportsQueryOptions({ query }),
     toOption: (row) => documentOption(row.reportNo, row.reportNo, row.workOrderNo),
-  },
-  'mes-finished-goods-receipt': {
+  }),
+  'mes-finished-goods-receipt': defineSpec({
     noun: '完工入库单',
     sourceText: '数据来自制造执行完工入库申请',
     searchPlaceholder: '搜索入库申请号 / 工单…',
@@ -108,9 +122,9 @@ const SPECS = {
     queryOptions: (query) =>
       listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({ query }),
     toOption: (row) => documentOption(row.requestNo, row.requestNo, row.workOrderNo, row.skuCode),
-  },
+  }),
   // 领料申请：列表的 requestId 就是申请单号（WMS 出库单的源单据号也用它）。
-  'mes-material-issue': {
+  'mes-material-issue': defineSpec({
     noun: '领料申请',
     sourceText: '数据来自制造执行领料申请',
     searchPlaceholder: '搜索领料单号 / 工单…',
@@ -118,8 +132,8 @@ const SPECS = {
     queryOptions: (query) => listBusinessConsoleMesMaterialIssueRequestsQueryOptions({ query }),
     toOption: (row) =>
       documentOption(row.requestId, row.requestId, row.workOrderNo, row.materialCode),
-  },
-  'wms-inbound-order': {
+  }),
+  'wms-inbound-order': defineSpec({
     noun: '入库单',
     sourceText: '数据来自当前作业范围的仓储入库单',
     searchPlaceholder: '搜索入库单号…',
@@ -127,8 +141,8 @@ const SPECS = {
     queryOptions: (query) => listBusinessConsoleWmsInboundOrdersQueryOptions({ query }),
     wmsWorkScope: 'receipts',
     toOption: (row) => documentOption(row.inboundOrderNo, row.inboundOrderNo, row.siteCode),
-  },
-  'wms-supplier-return': {
+  }),
+  'wms-supplier-return': defineSpec({
     noun: '供应商退货单',
     sourceText: '数据来自仓储供应商退货',
     searchPlaceholder: '搜索退货单号 / 入库单号…',
@@ -136,8 +150,8 @@ const SPECS = {
     queryOptions: (query) => listBusinessConsoleWmsSupplierReturnRequestsQueryOptions({ query }),
     toOption: (row) =>
       documentOption(row.supplierReturnNo, row.supplierReturnNo, row.inboundOrderNo, row.skuCode),
-  },
-  'erp-delivery-order': {
+  }),
+  'erp-delivery-order': defineSpec({
     noun: '发货单',
     sourceText: '数据来自经营管理发货单',
     searchPlaceholder: '搜索发货单号…',
@@ -145,9 +159,9 @@ const SPECS = {
     queryOptions: (query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }),
     toOption: (row) =>
       documentOption(row.deliveryOrderNo, row.deliveryOrderNo, row.customerCode, row.salesOrderNo),
-  },
+  }),
   // 已批准且还没转过订单的报价单：转过的再转会被拒（一张报价只能转一张订单）。
-  'erp-approved-quotation': {
+  'erp-approved-quotation': defineSpec({
     noun: '已批准报价单',
     sourceText: '数据来自经营管理已批准的报价单',
     searchPlaceholder: '搜索报价单号…',
@@ -155,18 +169,18 @@ const SPECS = {
     queryOptions: (query) =>
       listBusinessConsoleErpQuotationsQueryOptions({ query: { ...query, status: 'Approved' } }),
     toOption: (row) =>
-      text(row.convertedSalesOrderNo)
+      row.convertedSalesOrderNo?.trim()
         ? undefined
         : documentOption(
             row.quotationNo,
             row.quotationNo,
             row.customerCode,
-            row.expiresOn && `有效期至 ${text(row.expiresOn)}`,
+            row.expiresOn && `有效期至 ${row.expiresOn}`,
           ),
-  },
+  }),
   // 质量检验：条码侧记的是「被检验的那张单据」（检验记录的来源单据），与检验页互链同口径。
-  // 检验记录列表的关键字按物料编码过滤。
-  'quality-inspection': {
+  // 维修检验的来源单据是维修工单 ID，显示时换成人读单号。检验记录列表的关键字按物料编码过滤。
+  'quality-inspection': defineSpec({
     noun: '检验对象',
     sourceText: '数据来自质量检验记录的来源单据',
     searchPlaceholder: '按物料编码搜索…',
@@ -175,26 +189,23 @@ const SPECS = {
     toOption: (row) =>
       documentOption(
         row.sourceDocumentId,
-        row.sourceDocumentId,
-        text(row.sourceType) && qualitySourceTypeLabel(text(row.sourceType)),
+        row.sourceType === 'maintenance'
+          ? maintenanceWorkOrderNo(row.sourceDocumentId)
+          : row.sourceDocumentId,
+        row.sourceType && qualitySourceTypeLabel(row.sourceType),
         row.skuCode,
       ),
-  },
-  // 维修工单只有系统 ID：提交 ID，显示人读单号。
-  'maintenance-work-order': {
+  }),
+  // 维修工单只有系统 ID：提交 ID，显示人读单号（与维护页的工单选择器同一个映射）。
+  'maintenance-work-order': defineSpec({
     noun: '维修工单',
     sourceText: '数据来自设备维护维修工单',
     searchPlaceholder: '搜索工单号…',
     serverSearch: false,
     queryOptions: (query) => listBusinessConsoleMaintenanceWorkOrdersQueryOptions({ query }),
-    toOption: (row) =>
-      documentOption(
-        row.workOrderId,
-        maintenanceWorkOrderNo(text(row.workOrderId)),
-        row.deviceAssetId,
-      ),
-  },
-} satisfies Record<string, SourceDocumentCatalogSpec>
+    toOption: maintenanceWorkOrderOption,
+  }),
+}
 
 export type SourceDocumentKind = keyof typeof SPECS
 
@@ -234,7 +245,7 @@ export function useSourceDocumentCatalog(
   })
 
   const response = computed(() => {
-    const envelope = query.data.value as ListEnvelope | undefined
+    const envelope = query.data.value as ListEnvelope<unknown> | undefined
     return envelope?.success ? envelope.data : undefined
   })
 

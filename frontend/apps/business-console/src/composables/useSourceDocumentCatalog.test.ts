@@ -86,7 +86,13 @@ describe('source document catalog', () => {
     colada.data = {
       success: true,
       data: {
-        items: [{ workOrderId: '0199a1b2-0000-7000-8000-00000000abcd', deviceAssetId: 'CNC-01' }],
+        items: [
+          {
+            workOrderId: '0199a1b2-0000-7000-8000-00000000abcd',
+            deviceAssetId: 'CNC-01',
+            status: 'in_progress',
+          },
+        ],
         total: 1,
       },
     }
@@ -99,7 +105,38 @@ describe('source document catalog', () => {
       query: { organizationId: 'org-001', environmentId: 'env-dev', take: 200 },
     })
     expect(catalog.options.value).toEqual([
-      { value: '0199a1b2-0000-7000-8000-00000000abcd', label: 'WO-0000ABCD', hint: 'CNC-01' },
+      {
+        value: '0199a1b2-0000-7000-8000-00000000abcd',
+        label: 'WO-0000ABCD',
+        hint: 'CNC-01 · 执行中',
+      },
+    ])
+  })
+
+  it('records the inspected document and shows maintenance work orders by readable number', () => {
+    colada.data = {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 'rec-1',
+            sourceType: 'maintenance',
+            sourceDocumentId: '0199a1b2-0000-7000-8000-00000000abcd',
+            skuCode: 'SP-01',
+          },
+          { id: 'rec-2', sourceType: 'final', sourceDocumentId: 'WO-0007', skuCode: 'FG-01' },
+          { id: 'rec-3', sourceType: 'final', sourceDocumentId: 'WO-0007', skuCode: 'FG-01' },
+        ],
+        total: 3,
+      },
+    }
+
+    const catalog = useSourceDocumentCatalog('quality-inspection', '')
+
+    // 同一张被检单据的多条检验记录只列一次；维修工单 ID 不直接上屏。
+    expect(catalog.options.value.map(({ value, label }) => ({ value, label }))).toEqual([
+      { value: '0199a1b2-0000-7000-8000-00000000abcd', label: 'WO-0000ABCD' },
+      { value: 'WO-0007', label: 'WO-0007' },
     ])
   })
 
