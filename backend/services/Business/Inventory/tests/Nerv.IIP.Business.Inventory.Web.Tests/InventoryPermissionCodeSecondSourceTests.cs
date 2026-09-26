@@ -46,6 +46,7 @@ public sealed class InventoryPermissionCodeSecondSourceTests
             ["reserveInventoryStockByFefo"] = "business.inventory.reservations.manage", // POST /api/inventory/v1/reservations/fefo
             ["releaseInventoryReservation"] = "business.inventory.reservations.manage", // POST /api/inventory/v1/reservations/{reservationId}/release
             ["renewInventoryReservation"] = "business.inventory.reservations.manage", // POST /api/inventory/v1/reservations/{reservationId}/renew
+            ["markInventoryReservationPicked"] = "business.inventory.reservations.manage", // POST /api/inventory/v1/reservations/{reservationId}/pick
             ["listInventoryExpiryAlerts"] = "business.inventory.ledger.read", // GET /api/inventory/v1/expiry-alerts
             ["postInventoryStatusTransfer"] = "business.inventory.movements.create", // POST /api/inventory/v1/status-transfers
         };

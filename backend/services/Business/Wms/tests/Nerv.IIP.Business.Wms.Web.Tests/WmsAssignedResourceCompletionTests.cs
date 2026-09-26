@@ -599,6 +599,11 @@ public sealed class WmsAssignedResourceCompletionTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<WmsInventoryReservationPickedResult> MarkPickedAsync(
+            WmsInventoryReservationPickedRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(
             WmsInventoryCountTaskRequest request,
             CancellationToken cancellationToken)

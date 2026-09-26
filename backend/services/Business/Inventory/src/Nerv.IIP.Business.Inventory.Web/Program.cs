@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
+using Nerv.IIP.Business.Inventory.Web.Application.Errors;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
@@ -266,6 +267,7 @@ try
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
+    app.UseMiddleware<InventoryDomainExceptionMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();

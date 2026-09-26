@@ -43,7 +43,7 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(21, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/inventory/v1/line-side-balances"
             && x.PermissionCode == InventoryPermissionCodes.LedgerRead
@@ -1211,6 +1211,62 @@ public sealed class InventoryEndpointContractTests
         // 缺陷侧的判别：非法取值不得再被报成「未知错误」（500 / code 99999）。
         Assert.DoesNotContain("99999", body, StringComparison.Ordinal);
         Assert.Contains("quarantine", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #3836：库存领域规则拒绝在 HTTP 边界走服务既有的已知业务错误传输（200 + success:false + 业务消息），
+    /// 不再是「未知错误」500。用例：对已过期的预留确认拣货完成。
+    /// 反向读数：去掉 <c>InventoryDomainExceptionMiddleware</c> 的注册，本用例读到 500 / 99999。
+    /// </summary>
+    [Fact]
+    public async Task Inventory_reports_reservation_domain_rejection_as_known_error_not_server_failure()
+    {
+        var databaseName = $"reservation-domain-rejection-{Guid.NewGuid():N}";
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false");
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<ApplicationDbContext>();
+                    services.RemoveAll<DbContextOptions>();
+                    services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                    services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                    services.AddDbContext<ApplicationDbContext>(options => options
+                        .UseInMemoryDatabase(databaseName)
+                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+                });
+            });
+
+        StockReservationId reservationId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ledger = StockLedger.Create("org-001", "env-dev", "SKU-FG-1000", "pcs", "SITE-01", "LOC-A-01", null, null, "unrestricted", "production", null);
+            ledger.ApplyMovement(StockMovement.Post("org-001", "env-dev", "inbound", "mes", "FGR-001", null, "fgr-inbound-001", "SKU-FG-1000", "pcs", "SITE-01", "LOC-A-01", null, null, "unrestricted", "production", null, 5m));
+            var deadline = DateTime.UtcNow.AddMinutes(5);
+            var reservation = StockReservation.Reserve(ledger, "wms", "DO-001", "10", "wms-pick-res:expired", 2m, deadline);
+            ledger.Reserve(reservation);
+            ledger.ExpireReservation(reservation, deadline.AddMinutes(1));
+            dbContext.StockLedgers.Add(ledger);
+            dbContext.StockReservations.Add(reservation);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            reservationId = reservation.Id;
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync(
+            $"/api/inventory/v1/reservations/{reservationId}/pick",
+            new { reservationId = reservationId.ToString() });
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"success\":false", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("99999", body, StringComparison.Ordinal);
+        Assert.Contains("库存预留分配被拒绝", body, StringComparison.Ordinal);
     }
 
     [Fact]

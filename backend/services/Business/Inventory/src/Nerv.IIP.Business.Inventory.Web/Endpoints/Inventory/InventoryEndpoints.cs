@@ -286,6 +286,10 @@ public sealed record RenewStockReservationRequest(StockReservationId Reservation
 
 public sealed record RenewStockReservationResponse(string ReservationId, DateTime ExpiresAtUtc);
 
+public sealed record MarkStockReservationPickedRequest(StockReservationId ReservationId);
+
+public sealed record MarkStockReservationPickedResponse(string ReservationId, string Status, decimal OpenQuantity);
+
 public sealed record PostStockStatusTransferRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -627,6 +631,21 @@ public sealed class RenewStockReservationEndpoint(ISender sender)
     }
 }
 
+public sealed class MarkStockReservationPickedEndpoint(ISender sender)
+    : InventoryEndpoint<MarkStockReservationPickedRequest, ResponseData<MarkStockReservationPickedResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<MarkStockReservationPickedEndpoint>());
+    }
+
+    public override async Task HandleAsync(MarkStockReservationPickedRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new MarkStockReservationPickedCommand(req.ReservationId), ct);
+        await Send.OkAsync(new MarkStockReservationPickedResponse(result.ReservationId.ToString(), result.Status, result.OpenQuantity).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class PostStockStatusTransferEndpoint(ISender sender)
     : InventoryEndpoint<PostStockStatusTransferRequest, ResponseData<PostStockStatusTransferResponse>>
 {
@@ -850,6 +869,7 @@ public static class InventoryEndpointContracts
         new(typeof(ReserveFefoStockEndpoint), "POST", "/api/inventory/v1/reservations/fefo", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "reserveInventoryStockByFefo"),
         new(typeof(ReleaseStockReservationEndpoint), "POST", "/api/inventory/v1/reservations/{reservationId}/release", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "releaseInventoryReservation"),
         new(typeof(RenewStockReservationEndpoint), "POST", "/api/inventory/v1/reservations/{reservationId}/renew", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "renewInventoryReservation"),
+        new(typeof(MarkStockReservationPickedEndpoint), "POST", "/api/inventory/v1/reservations/{reservationId}/pick", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "markInventoryReservationPicked"),
         new(typeof(ListStockExpiryAlertsEndpoint), "GET", "/api/inventory/v1/expiry-alerts", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryExpiryAlerts"),
         new(typeof(PostStockStatusTransferEndpoint), "POST", "/api/inventory/v1/status-transfers", InventoryPermissionCodes.MovementsCreate, InternalServiceAuthorizationPolicy.Name, "postInventoryStatusTransfer"),
     ];

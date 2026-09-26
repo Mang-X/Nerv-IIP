@@ -34,7 +34,7 @@
 | DemandPlanning | 22 | 22 | 0 | 0 |
 | Erp | 70 | 54 | 13 | 3 |
 | IndustrialTelemetry | 34 | 31 | 1 | 2 |
-| Inventory | 26 | 21 | 0 | 5 |
+| Inventory | 27 | 21 | 0 | 6 |
 | Maintenance | 33 | 27 | 4 | 2 |
 | MasterData | 51 | 46 | 1 | 4 |
 | Mes | 77 | 73 | 2 | 2 |
@@ -42,7 +42,7 @@
 | Quality | 49 | 36 | 12 | 1 |
 | Scheduling | 21 | 19 | 1 | 1 |
 | Wms | 55 | 43 | 7 | 5 |
-| **Total** | **514** | **436** | **47** | **31** |
+| **Total** | **515** | **436** | **47** | **32** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 

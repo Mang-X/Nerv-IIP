@@ -757,7 +757,7 @@ public sealed class RecordWarehouseTaskProgressCommandHandler(
                 "record-warehouse-task-progress",
                 exception.Message);
         }
-        await WarehouseTaskInventoryReservationRenewal.RenewAfterProgressAsync(
+        await WarehouseTaskInventoryReservationSync.SyncAfterExecutionAsync(
             dbContext,
             inventoryReservationClient,
             task,
@@ -767,9 +767,13 @@ public sealed class RecordWarehouseTaskProgressCommandHandler(
     }
 }
 
-internal static class WarehouseTaskInventoryReservationRenewal
+/// <summary>
+/// 拣货执行推进后同步 Inventory 预留：进行中登记进度时续期；拣货一旦完成就把预留标记为已拣，
+/// 让它保持到出库过账核销，不再因超时过期（#3836）。
+/// </summary>
+internal static class WarehouseTaskInventoryReservationSync
 {
-    public static async Task RenewAfterProgressAsync(
+    public static async Task SyncAfterExecutionAsync(
         ApplicationDbContext dbContext,
         IWmsInventoryReservationClient? inventoryReservationClient,
         WarehouseTask task,
@@ -777,10 +781,15 @@ internal static class WarehouseTaskInventoryReservationRenewal
         ILogger? logger,
         CancellationToken cancellationToken)
     {
-        if (inventoryReservationClient is null ||
-            task.TaskType != WarehouseTaskType.Picking ||
-            task.Status is not (WarehouseTaskStatus.Open or WarehouseTaskStatus.InProgress) ||
-            task.ExecutedQuantity <= previouslyExecutedQuantity)
+        if (inventoryReservationClient is null || task.TaskType != WarehouseTaskType.Picking)
+        {
+            return;
+        }
+
+        var picked = task.Status is WarehouseTaskStatus.Completed or WarehouseTaskStatus.CompletedWithDifference;
+        var progressed = task.Status is WarehouseTaskStatus.Open or WarehouseTaskStatus.InProgress
+            && task.ExecutedQuantity > previouslyExecutedQuantity;
+        if (!picked && !progressed)
         {
             return;
         }
@@ -795,6 +804,15 @@ internal static class WarehouseTaskInventoryReservationRenewal
             .SingleOrDefaultAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(reservationId))
         {
+            return;
+        }
+
+        if (picked)
+        {
+            // 标记失败就让拣货完成一起失败回滚：已拣货物不能带着一个仍会过期的预留进入复核。
+            await inventoryReservationClient.MarkPickedAsync(
+                new WmsInventoryReservationPickedRequest(reservationId),
+                cancellationToken);
             return;
         }
 
@@ -822,7 +840,9 @@ internal static class WarehouseTaskInventoryReservationRenewal
 
 public sealed record CompleteWarehouseTaskCommand(WarehouseTaskId WarehouseTaskId) : ICommand;
 
-public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class CompleteWarehouseTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null)
     : ICommandHandler<CompleteWarehouseTaskCommand>
 {
     public async Task Handle(CompleteWarehouseTaskCommand request, CancellationToken cancellationToken)
@@ -838,6 +858,7 @@ public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbC
             ?? throw new WmsLifecycleConflictException(
                 "complete-warehouse-task",
                 "missing-active-wcs-task");
+        var previouslyExecutedQuantity = task.ExecutedQuantity;
         try
         {
             task.RecordWcsProgress(
@@ -850,6 +871,14 @@ public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbC
                 "complete-warehouse-task",
                 exception.Message);
         }
+
+        await WarehouseTaskInventoryReservationSync.SyncAfterExecutionAsync(
+            dbContext,
+            inventoryReservationClient,
+            task,
+            previouslyExecutedQuantity,
+            logger: null,
+            cancellationToken);
     }
 }
 
@@ -1057,7 +1086,7 @@ public sealed class RecordWarehouseTaskProgressActionCommandHandler(
                 request.ActorPrincipalId,
                 request.ExpectedVersion),
             cancellationToken);
-        await WarehouseTaskInventoryReservationRenewal.RenewAfterProgressAsync(
+        await WarehouseTaskInventoryReservationSync.SyncAfterExecutionAsync(
             dbContext,
             inventoryReservationClient,
             task!,
@@ -1099,13 +1128,15 @@ public sealed class ReportWarehouseTaskExceptionCommandHandler(
 
 public sealed class CompleteWarehouseTaskActionCommandHandler(
     ApplicationDbContext dbContext,
-    WarehouseWorkScopeAuthorizer authorizer)
+    WarehouseWorkScopeAuthorizer authorizer,
+    IWmsInventoryReservationClient? inventoryReservationClient = null)
     : ICommandHandler<CompleteWarehouseTaskActionCommand, WarehouseTaskActionResult>
 {
-    public Task<WarehouseTaskActionResult> Handle(
+    public async Task<WarehouseTaskActionResult> Handle(
         CompleteWarehouseTaskActionCommand request,
-        CancellationToken cancellationToken) =>
-        WarehouseTaskActionExecution.ExecuteAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = await WarehouseTaskActionExecution.ExecuteAsync(
             dbContext,
             authorizer,
             request,
@@ -1124,6 +1155,16 @@ public sealed class CompleteWarehouseTaskActionCommandHandler(
                 request.DifferenceReason,
                 request.ExpectedVersion),
             cancellationToken);
+        var task = await dbContext.WarehouseTasks.SingleAsync(x => x.Id == request.WarehouseTaskId, cancellationToken);
+        await WarehouseTaskInventoryReservationSync.SyncAfterExecutionAsync(
+            dbContext,
+            inventoryReservationClient,
+            task,
+            previouslyExecutedQuantity: task.ExecutedQuantity,
+            logger: null,
+            cancellationToken);
+        return result;
+    }
 }
 
 public sealed class WarehouseTaskActionCommandLock<TCommand> : ICommandLock<TCommand>
@@ -2579,7 +2620,9 @@ public sealed class CompleteWcsTaskCommandValidator : AbstractValidator<Complete
     }
 }
 
-public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class CompleteWcsTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null)
     : ICommandHandler<CompleteWcsTaskCommand>
 {
     public async Task Handle(CompleteWcsTaskCommand request, CancellationToken cancellationToken)
@@ -2599,6 +2642,7 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"未找到仓库任务，任务 ID = {task.WarehouseTaskId}");
         var claimReference = task.Id.Id.ToString("D");
+        var previouslyExecutedQuantity = warehouseTask.ExecutedQuantity;
         try
         {
             warehouseTask.ValidateWcsExecution(claimReference);
@@ -2621,6 +2665,14 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
         {
             return;
         }
+
+        await WarehouseTaskInventoryReservationSync.SyncAfterExecutionAsync(
+            dbContext,
+            inventoryReservationClient,
+            warehouseTask,
+            previouslyExecutedQuantity,
+            logger: null,
+            cancellationToken);
 
         try
         {
