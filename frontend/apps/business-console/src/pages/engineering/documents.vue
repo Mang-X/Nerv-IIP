@@ -500,7 +500,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
       :loading="documentsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前范围没有工程文档。可登记文档号 + 修订，并填写文件引用 ID 与类型。"
+      empty-message="当前范围没有工程文档。可登记文档号 + 修订，并填写文件编号与类型。"
     >
       <template #cell-documentType="{ row }">{{ documentTypeLabel(row.documentType) }}</template>
       <template #cell-itemCode="{ row }">{{ row.itemCode || '—' }}</template>
