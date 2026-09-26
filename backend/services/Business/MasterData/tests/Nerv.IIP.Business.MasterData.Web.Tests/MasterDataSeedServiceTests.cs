@@ -117,7 +117,7 @@ public sealed class MasterDataSeedServiceTests
         var raw = await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "material-type" && x.Code == "raw-material");
         raw.Disable("租户停用");
         var kg = await db.UnitsOfMeasure.SingleAsync(x => x.Code == "kg");
-        kg.Update("公斤", "weight", 2, "half-even");
+        kg.Update("公斤", "mass", 2, "half-even");
         db.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "uom-dimension", "mass", "质量"));
         await db.SaveChangesAsync();
         var versionCount = await db.CodeRuleVersions.CountAsync();
@@ -133,7 +133,7 @@ public sealed class MasterDataSeedServiceTests
         Assert.True((await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "material-type" && x.Code == "raw-material")).Disabled);
         Assert.False((await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "uom-dimension" && x.Code == "mass")).Disabled);
         kg = await db.UnitsOfMeasure.SingleAsync(x => x.Code == "kg");
-        Assert.Equal(("公斤", 2, "half-even"), (kg.Name, kg.Precision, kg.RoundingMode));
+        Assert.Equal(("公斤", "mass", 2, "half-even"), (kg.Name, kg.DimensionType, kg.Precision, kg.RoundingMode));
     }
 
     /// <summary>
