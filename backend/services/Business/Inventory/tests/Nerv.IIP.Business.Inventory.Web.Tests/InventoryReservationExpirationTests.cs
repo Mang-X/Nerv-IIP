@@ -116,6 +116,88 @@ public sealed class InventoryReservationExpirationTests
         Assert.Equal("expired", reservation.Status);
     }
 
+    /// <summary>
+    /// #3836：拣货完成后预留保持到出库过账。已拣预留过了原失效时间也不被扫描回收；
+    /// 短拣释放余量后剩余部分仍是已拣、仍不过期；过账核销后才结束。
+    /// </summary>
+    [Fact]
+    public async Task Picked_reservation_is_held_past_its_deadline_until_posting_consumes_it()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = CreateLedger();
+        var deadline = DateTime.UtcNow.AddMinutes(5);
+        var reservation = StockReservation.Reserve(ledger, "wms", "OUT-PICK-001", "10", "reservation-picked-hold", 4m, deadline);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var picked = await new MarkStockReservationPickedCommandHandler(dbContext)
+            .Handle(new MarkStockReservationPickedCommand(reservation.Id), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var scanner = new ExpiredStockReservationService(dbContext, Options.Create(new StockReservationExpirationOptions()));
+
+        Assert.Equal(StockReservation.PickedStatus, picked.Status);
+        Assert.Equal(0, await scanner.ExpireOpenReservationsAsync(deadline.AddHours(1), CancellationToken.None));
+        Assert.Equal(4m, reservation.OpenQuantity);
+        Assert.Equal(4m, ledger.ReservedQuantity);
+
+        ledger.ReleaseReservation(reservation, 1m);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(StockReservation.PickedStatus, reservation.Status);
+        Assert.Equal(0, await scanner.ExpireOpenReservationsAsync(deadline.AddHours(2), CancellationToken.None));
+        Assert.Equal(3m, reservation.OpenQuantity);
+
+        ledger.AllocateReservation(reservation, 3m);
+
+        Assert.Equal("allocated", reservation.Status);
+        Assert.Equal(0m, ledger.ReservedQuantity);
+    }
+
+    /// <summary>
+    /// #3836：一张卡住的出库单背后，预留早已过期或已被核销，WMS 的过账失败回执仍要释放它。
+    /// 释放必须是幂等的：什么也不做、成功返回，账面预留量不被重复扣减，失败回执才能走完。
+    /// </summary>
+    [Theory]
+    [InlineData("expired")]
+    [InlineData("released")]
+    [InlineData("allocated")]
+    public async Task Releasing_a_reservation_that_is_no_longer_open_succeeds_without_touching_the_ledger(string closedBy)
+    {
+        await using var dbContext = CreateContext();
+        var ledger = CreateLedger();
+        var deadline = DateTime.UtcNow.AddMinutes(5);
+        var reservation = StockReservation.Reserve(ledger, "wms", "OUT-CLOSED-001", "10", "reservation-closed-release", 4m, deadline);
+        ledger.Reserve(reservation);
+        switch (closedBy)
+        {
+            case "expired":
+                ledger.ExpireReservation(reservation, deadline.AddMinutes(1));
+                break;
+            case "released":
+                ledger.ReleaseReservation(reservation, 4m);
+                break;
+            default:
+                ledger.AllocateReservation(reservation, 4m);
+                break;
+        }
+
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var reservedBefore = ledger.ReservedQuantity;
+        var availableBefore = ledger.AvailableQuantity;
+
+        var result = await new ReleaseStockReservationCommandHandler(dbContext)
+            .Handle(new ReleaseStockReservationCommand(reservation.Id, 4m), CancellationToken.None);
+
+        Assert.Equal(0m, result.OpenQuantity);
+        Assert.Equal(availableBefore, result.AvailableQuantity);
+        Assert.Equal(reservedBefore, ledger.ReservedQuantity);
+        Assert.Equal(closedBy, reservation.Status);
+    }
+
     [Fact]
     public async Task Expiration_scan_dispatches_the_reservation_expired_domain_event_without_a_caller_save()
     {
