@@ -62,6 +62,17 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   }
 
   const deviceByCode = computed(() => indexOf(deviceSource?.resources.value))
+  // 设备引用在全平台可以是设备编码，也可以是设备公开 ID（GUID），两种都要解析到同一台设备。
+  const deviceByReference = computed(() => {
+    const map = new Map<string, { code: string; displayName: string }>()
+    for (const item of deviceSource?.resources.value ?? []) {
+      if (!item.code) continue
+      const device = { code: item.code, displayName: item.displayName ?? item.code }
+      map.set(item.code, device)
+      if (item.deviceAssetId) map.set(item.deviceAssetId, device)
+    }
+    return map
+  })
   const locationByCode = computed(() => indexOf(locationSource?.resources.value))
   const workCenterByCode = computed(() => indexOf(workCenterSource?.resources.value))
   const teamByCode = computed(() => indexOf(teamSource?.resources.value))
@@ -76,8 +87,12 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   }
 
   return {
-    /** 设备名；查不到返回 undefined（不编造名字）。 */
-    resolveDevice: resolver(deviceByCode),
+    /** 设备名（按设备编码或设备公开 ID）；查不到返回 undefined（不编造名字）。 */
+    resolveDevice: (reference?: string | null) =>
+      reference ? deviceByReference.value.get(reference)?.displayName : undefined,
+    /** 设备编码（按设备编码或设备公开 ID）；查不到返回 undefined。 */
+    resolveDeviceCode: (reference?: string | null) =>
+      reference ? deviceByReference.value.get(reference)?.code : undefined,
     resolveLocation: resolver(locationByCode),
     resolveWorkCenter: resolver(workCenterByCode),
     resolveTeam: resolver(teamByCode),

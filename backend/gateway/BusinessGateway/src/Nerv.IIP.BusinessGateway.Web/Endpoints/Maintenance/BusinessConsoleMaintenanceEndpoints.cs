@@ -994,7 +994,7 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
             await throttle.WaitAsync(cancellationToken);
             try
             {
-                var detail = await GetDeviceAssetDetailAsync(deviceAssetId, masterData, internalBearerToken, organizationId, environmentId, cancellationToken);
+                var detail = await DeviceAssetMasterDataLookup.FindAsync(deviceAssetId, masterData, internalBearerToken, organizationId, environmentId, cancellationToken);
                 return (DeviceAssetId: deviceAssetId, Detail: detail);
             }
             finally
@@ -1004,36 +1004,6 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
         });
         var results = await Task.WhenAll(tasks);
         return results.ToDictionary(x => x.DeviceAssetId, x => x.Detail, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static async Task<BusinessConsoleMasterDataResourceDetail?> GetDeviceAssetDetailAsync(
-        string deviceAssetId,
-        IBusinessMasterDataClient masterData,
-        string internalBearerToken,
-        string organizationId,
-        string environmentId,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await masterData.GetResourceDetailAsync(
-                internalBearerToken,
-                new BusinessConsoleMasterDataResourceRequest(organizationId, environmentId, "device-asset", deviceAssetId),
-                cancellationToken);
-        }
-        catch (BusinessServiceProxyException exception) when (
-            BusinessConsoleReadEnrichmentFailurePolicy.CanDegrade(exception.StatusCode))
-        {
-            return null;
-        }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return null;
-        }
     }
 
     private static string WarrantyStatus(DateOnly? warrantyExpiresOn)

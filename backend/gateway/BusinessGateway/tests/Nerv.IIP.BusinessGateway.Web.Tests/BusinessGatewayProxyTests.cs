@@ -9666,6 +9666,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -9714,6 +9716,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -9731,6 +9735,82 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("RUNNING", data.GetProperty("currentState").GetProperty("currentState").GetString());
         Assert.Contains(data.GetProperty("availability").GetProperty("items").EnumerateArray(), item =>
             item.GetProperty("sourceReferenceId").GetString() == "alarm-001");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Equipment_device_detail_labels_device_self_windows_with_master_data_code_not_the_route_reference(bool masterDataMissing)
+    {
+        // 新注册设备从维保可用窗口进入详情时路由是设备公开 ID（GUID）；IIoT 只会把这个引用原样回成标签。
+        const string publicId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        var stale = CreateWindow(
+            publicId,
+            publicId,
+            EquipmentRuntimeSourceType.StaleSource,
+            EquipmentRuntimeReasonCodes.SourceStale,
+            EquipmentRuntimeSeverity.Warning,
+            "2026-06-01T08:00:00Z",
+            "2026-06-01T16:00:00Z") with { SourceReferenceLabel = publicId };
+        var stateUnavailable = CreateWindow(
+            publicId,
+            "11111111-2222-3333-4444-555555555555",
+            EquipmentRuntimeSourceType.DeviceState,
+            EquipmentRuntimeReasonCodes.StateUnavailable,
+            EquipmentRuntimeSeverity.Blocked,
+            "2026-06-01T08:00:00Z",
+            "2026-06-01T16:00:00Z") with { SourceReferenceLabel = publicId };
+        var workOrderWindow = CreateWindow(
+            publicId,
+            "22222222-3333-4444-5555-666666666666",
+            EquipmentRuntimeSourceType.MaintenanceWindow,
+            EquipmentRuntimeReasonCodes.MaintenanceWindow,
+            EquipmentRuntimeSeverity.Warning,
+            "2026-06-01T09:00:00Z",
+            "2026-06-01T10:00:00Z") with { SourceReferenceLabel = "MWO000001" };
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient
+        {
+            DeviceRuntimeAvailabilityResponse = CreateAvailabilityResponse(stale, stateUnavailable),
+        };
+        var maintenance = new RecordingMaintenanceClient
+        {
+            AssetAvailabilityResponse = CreateAvailabilityResponse(workOrderWindow),
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            ResourceDetailResponse = new BusinessConsoleMasterDataResourceDetail(
+                "device-asset", "EQ00001", "五轴加工中心", true, "v1", "org-001", "env-dev", "五轴加工中心"),
+            DetailFailure = masterDataMissing ? new BusinessServiceProxyException(HttpStatusCode.NotFound, "not-found") : null,
+        };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync($"/api/business-console/v1/equipment/devices/{publicId}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var detailRequest = Assert.Single(masterData.DetailRequests);
+        Assert.Equal(new BusinessConsoleMasterDataResourceRequest("org-001", "env-dev", "device-asset", publicId), detailRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var labels = document.RootElement.GetProperty("data").GetProperty("availability").GetProperty("items")
+            .EnumerateArray()
+            .ToDictionary(
+                item => item.GetProperty("reasonCode").GetString()!,
+                item => item.TryGetProperty("sourceReferenceLabel", out var label) ? label.GetString() : null);
+        var expectedDeviceLabel = masterDataMissing ? null : "EQ00001";
+        Assert.Equal(expectedDeviceLabel, labels[EquipmentRuntimeReasonCodes.SourceStale]);
+        Assert.Equal(expectedDeviceLabel, labels[EquipmentRuntimeReasonCodes.StateUnavailable]);
+        Assert.Equal("MWO000001", labels[EquipmentRuntimeReasonCodes.MaintenanceWindow]);
     }
 
     [Fact]

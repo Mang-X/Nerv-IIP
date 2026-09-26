@@ -19,6 +19,7 @@ const readFaceState = vi.hoisted(() => ({
   activeAlarms: [] as Array<Record<string, unknown>>,
   availabilityWindows: [] as Array<Record<string, unknown>>,
   currentDeviceAssetId: 'DEV-OIL-01',
+  currentState: undefined as Record<string, unknown> | undefined,
   workOrders: undefined as Array<Record<string, unknown>> | undefined,
   spareParts: undefined as Array<Record<string, unknown>> | undefined,
 }))
@@ -57,6 +58,11 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
         code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
         readFaceState.catalogResolved
           ? '五轴加工中心'
+          : undefined,
+      resolveDeviceCode: (code?: string | null) =>
+        code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
+        readFaceState.catalogResolved
+          ? 'EQ00001'
           : undefined,
       resolveLocation: () => undefined,
       resolveWorkCenter: (code?: string | null) =>
@@ -322,7 +328,7 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
     activeAlarms: computed(() => readFaceState.activeAlarms),
     availabilityWindows: computed(() => readFaceState.availabilityWindows),
     device: computed(() => ({
-      currentState: {
+      currentState: readFaceState.currentState ?? {
         deviceAssetId: readFaceState.currentDeviceAssetId,
         currentState: 'running',
         isSourceFresh: true,
@@ -590,6 +596,7 @@ describe('equipment pages', () => {
     readFaceState.activeAlarms = []
     readFaceState.availabilityWindows = []
     readFaceState.currentDeviceAssetId = 'DEV-OIL-01'
+    readFaceState.currentState = undefined
     readFaceState.workOrders = undefined
     readFaceState.spareParts = undefined
   })
@@ -774,6 +781,38 @@ describe('equipment pages', () => {
     expect(visibleText).toContain('维修工单')
     expect(visibleText).not.toMatch(UUID_PATTERN)
     expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('新注册、未接采集的设备按公开 ID 打开详情：标题显示名称与编码，状态显示尚未接入采集', () => {
+    const deviceId = '019fbb41-5555-7555-8555-555555555555'
+    routeState.route!.params.deviceAssetId = deviceId
+    equipmentComposableState.deviceFilters = reactive({ deviceAssetId: deviceId })
+    readFaceState.currentState = {
+      deviceAssetId: deviceId,
+      currentState: null,
+      stateOccurredAtUtc: null,
+      isSourceFresh: false,
+    }
+
+    const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(visibleText).toContain('设备详情：五轴加工中心（EQ00001）')
+    expect(visibleText).toContain('尚未接入采集')
+    expect(visibleText).not.toContain('无设备')
+    expect(visibleText).not.toContain('采集过期')
+    expect(visibleText).not.toContain('未知状态')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+  })
+
+  it('有过状态但采集已停的设备仍显示采集过期，不误报尚未接入', () => {
+    readFaceState.currentState = {
+      deviceAssetId: 'DEV-OIL-01',
+      currentState: 'running',
+      isSourceFresh: false,
+    }
+
+    const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(visibleText).toContain('采集过期')
+    expect(visibleText).not.toContain('尚未接入')
   })
 
   it('equipment detail read-face guard：目录与关联解析失败时显示占位符且不泄露 ID', () => {
