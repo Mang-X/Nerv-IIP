@@ -19,6 +19,36 @@ public sealed class IamSeedService(
     IamPasswordService passwordService,
     IamTokenService tokenService)
 {
+    /// <summary>
+    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，
+    /// 不覆盖已存在的行。组织/环境/管理员/角色 id 读 <c>Iam:Seed:*</c>（与产品基线 seed 同源）。
+    /// 新建管理员时初始口令只来自部署配置 <c>Iam:Seed:AdminPassword</c>，须满足口令策略，并标记首次登录须改密。
+    /// 连接器凭据、外部客户端、ERP 岗位角色与演示账号不在此列。
+    /// </summary>
+    public async Task BootstrapAsync(CancellationToken cancellationToken = default)
+    {
+        var seed = options.Value;
+        var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
+        var passwordPolicy = serviceProvider.GetRequiredService<IamPasswordPolicy>();
+        await EnsurePlatformAdministratorAsync(dbContext, seed, () =>
+        {
+            if (string.IsNullOrWhiteSpace(seed.AdminPassword))
+            {
+                throw new InvalidOperationException(
+                    "Iam:Seed:AdminPassword is required to create the initial platform administrator.");
+            }
+
+            passwordPolicy.ValidateComplexity(seed.AdminPassword);
+            var now = DateTimeOffset.UtcNow;
+            return NewAdministrator(
+                seed,
+                passwordChangedAtUtc: now,
+                passwordExpiresAtUtc: passwordPolicy.GetPasswordExpiresAtUtc(now),
+                passwordChangeRequired: true);
+        }, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         var seed = options.Value;
@@ -40,9 +70,6 @@ public sealed class IamSeedService(
         var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
         var organizationId = new OrganizationId(seed.OrganizationId);
         var environmentId = new IamEnvironmentId(seed.EnvironmentId);
-        var adminUserId = new UserId(seed.AdminUserId);
-        var adminRoleId = new RoleId(seed.AdminRoleId);
-        var membershipId = new MembershipId($"{seed.AdminUserId}:{seed.OrganizationId}:{seed.EnvironmentId}");
         var credentialId = new ConnectorHostCredentialId(seed.ConnectorHostCredentialId);
         var manifestId = new SeedManifestId("iam-default-seed:v1");
         var principalScopeBackfillManifestId = new SeedManifestId("iam-admin-principal-scope-backfill:v1");
@@ -50,16 +77,6 @@ public sealed class IamSeedService(
         var principalScopeBackfillApplied = await dbContext.SeedManifests
             .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
-
-        if (await dbContext.Organizations.FindAsync([organizationId], cancellationToken) is null)
-        {
-            dbContext.Organizations.Add(new Organization(organizationId, seed.OrganizationName, "active"));
-        }
-
-        if (await dbContext.Environments.FindAsync([environmentId], cancellationToken) is null)
-        {
-            dbContext.Environments.Add(new IamEnvironment(environmentId, organizationId, seed.EnvironmentName, "active"));
-        }
 
         foreach (var seedRole in NervIipSeedRoles.ErpJobRoles)
         {
@@ -76,17 +93,13 @@ public sealed class IamSeedService(
             dbContext.Roles.Add(erpRole);
         }
 
-        var role = await dbContext.Roles
-            .Include(x => x.Permissions)
-            .Include(x => x.DataScopes)
-            .SingleOrDefaultAsync(x => x.Id == adminRoleId, cancellationToken);
-        if (role is null)
-        {
-            role = new Role(adminRoleId, "Platform Administrator", NervIipSeedPermissions.All);
-            role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
-            dbContext.Roles.Add(role);
-        }
-        else if (!principalScopeBackfillApplied
+        var (role, roleCreated, user, userCreated) = await EnsurePlatformAdministratorAsync(
+            dbContext,
+            seed,
+            () => NewAdministrator(seed, null, null, passwordChangeRequired: false),
+            cancellationToken);
+        if (!roleCreated
+            && !principalScopeBackfillApplied
             && seedAlreadyApplied
             && role.RoleName == "Platform Administrator"
             && role.DataScopes.Count == 0
@@ -95,30 +108,9 @@ public sealed class IamSeedService(
             role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
         }
 
-        var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
-        if (user is null)
-        {
-            user = new User(
-                adminUserId,
-                seed.AdminLoginName,
-                seed.AdminEmail,
-                passwordService.Hash(seed.AdminPassword),
-                true,
-                Guid.NewGuid().ToString("n"),
-                1);
-            dbContext.Users.Add(user);
-        }
-        else if (!seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
+        if (!userCreated && !seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
         {
             user.UpdatePasswordHash(passwordService.Hash(seed.AdminPassword), now, now.AddDays(90), false, 5);
-        }
-
-        var membership = await dbContext.Memberships
-            .Include(x => x.Roles)
-            .SingleOrDefaultAsync(x => x.Id == membershipId, cancellationToken);
-        if (membership is null)
-        {
-            dbContext.Memberships.Add(new Membership(membershipId, adminUserId, organizationId, environmentId, [adminRoleId]));
         }
 
         var connectorCapabilities = NervIipSeedPermissions.All
@@ -215,6 +207,75 @@ public sealed class IamSeedService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<(Role Role, bool RoleCreated, User User, bool UserCreated)> EnsurePlatformAdministratorAsync(
+        ApplicationDbContext dbContext,
+        IamSeedOptions seed,
+        Func<User> createAdministrator,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = new OrganizationId(seed.OrganizationId);
+        var environmentId = new IamEnvironmentId(seed.EnvironmentId);
+        var adminUserId = new UserId(seed.AdminUserId);
+        var adminRoleId = new RoleId(seed.AdminRoleId);
+        var membershipId = new MembershipId($"{seed.AdminUserId}:{seed.OrganizationId}:{seed.EnvironmentId}");
+
+        if (await dbContext.Organizations.FindAsync([organizationId], cancellationToken) is null)
+        {
+            dbContext.Organizations.Add(new Organization(organizationId, seed.OrganizationName, "active"));
+        }
+
+        if (await dbContext.Environments.FindAsync([environmentId], cancellationToken) is null)
+        {
+            dbContext.Environments.Add(new IamEnvironment(environmentId, organizationId, seed.EnvironmentName, "active"));
+        }
+
+        var role = await dbContext.Roles
+            .Include(x => x.Permissions)
+            .Include(x => x.DataScopes)
+            .SingleOrDefaultAsync(x => x.Id == adminRoleId, cancellationToken);
+        var roleCreated = role is null;
+        if (role is null)
+        {
+            role = new Role(adminRoleId, "Platform Administrator", NervIipSeedPermissions.All);
+            role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
+            dbContext.Roles.Add(role);
+        }
+
+        var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
+        var userCreated = user is null;
+        if (user is null)
+        {
+            user = createAdministrator();
+            dbContext.Users.Add(user);
+        }
+
+        if (!await dbContext.Memberships.AnyAsync(x => x.Id == membershipId, cancellationToken))
+        {
+            dbContext.Memberships.Add(new Membership(membershipId, adminUserId, organizationId, environmentId, [adminRoleId]));
+        }
+
+        return (role, roleCreated, user, userCreated);
+    }
+
+    private User NewAdministrator(
+        IamSeedOptions seed,
+        DateTimeOffset? passwordChangedAtUtc,
+        DateTimeOffset? passwordExpiresAtUtc,
+        bool passwordChangeRequired)
+    {
+        return new User(
+            new UserId(seed.AdminUserId),
+            seed.AdminLoginName,
+            seed.AdminEmail,
+            passwordService.Hash(seed.AdminPassword),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1,
+            passwordChangedAtUtc: passwordChangedAtUtc,
+            passwordExpiresAtUtc: passwordExpiresAtUtc,
+            passwordChangeRequired: passwordChangeRequired);
     }
 
     private static bool SetEquals(IEnumerable<string> current, IEnumerable<string> desired)

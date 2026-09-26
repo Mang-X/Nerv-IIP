@@ -705,10 +705,19 @@ public sealed class IamPostgresProfileTests
 
         var patchAdminRoleScopes = await client.PatchAsJsonAsync(
             "/api/iam/v1/roles/role-platform-admin/data-scopes",
-            new { dataScopes = new[] { new { scopeType = "workshop", scopeCode = "WS-PG" } } });
+            new
+            {
+                dataScopes = new[]
+                {
+                    new { scopeType = "organization", scopeCode = "org-001" },
+                    new { scopeType = "workshop", scopeCode = "WS-PG" },
+                },
+            });
         patchAdminRoleScopes.EnsureSuccessStatusCode();
         var adminRoleScopes = await ReadResponseDataAsync<DataScopeListResponse>(patchAdminRoleScopes);
-        Assert.Equal([new DataScopeResponse("workshop", "WS-PG")], adminRoleScopes!.DataScopes);
+        Assert.Equal(
+            [new DataScopeResponse("organization", "org-001"), new DataScopeResponse("workshop", "WS-PG")],
+            adminRoleScopes!.DataScopes);
 
         var patchAdminMembershipScopes = await client.PatchAsJsonAsync(
             "/api/iam/v1/users/user-admin/membership-data-scopes",

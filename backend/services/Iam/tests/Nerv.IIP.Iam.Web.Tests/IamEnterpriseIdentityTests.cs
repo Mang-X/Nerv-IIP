@@ -296,6 +296,7 @@ public sealed class IamEnterpriseIdentityTests
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
                 builder.UseSetting("Persistence:Provider", "PostgreSQL");
                 builder.UseSetting("ConnectionStrings:IamDb", IamRefusedPersistence.ConnectionString());
+                builder.UseSetting("Iam:Bootstrap:Enabled", "false");
             });
     }
 
