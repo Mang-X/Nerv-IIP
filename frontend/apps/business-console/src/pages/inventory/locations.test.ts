@@ -55,6 +55,7 @@ vi.mock('@/composables/useBusinessInventory', async () => {
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: () => ({
     resources: computed(() => [{ code: 'SITE-001', displayName: '一号工厂' }]),
+    resourcesPending: computed(() => false),
   }),
 }))
 
