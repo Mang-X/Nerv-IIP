@@ -948,6 +948,7 @@ public sealed class InventoryEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
             });
         using var scope = factory.Services.CreateScope();
 
@@ -1105,6 +1106,7 @@ public sealed class InventoryEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
             });
         using var client = factory.CreateClient();
 
@@ -1219,6 +1221,7 @@ public sealed class InventoryEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
             });
 
         using var scope = factory.Services.CreateScope();
