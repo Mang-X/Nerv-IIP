@@ -1,7 +1,7 @@
 import {
   listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
-  listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
 } from '@nerv-iip/api-client'
 import { createPinia, setActivePinia } from 'pinia'
@@ -22,7 +22,7 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => {
     ...(await importOriginal<object>()),
     listBusinessConsoleErpQuotationsQueryOptions: options(),
     listBusinessConsoleMaintenanceWorkOrdersQueryOptions: options(),
-    listBusinessConsoleMesProductionReportsQueryOptions: options(),
+    listBusinessConsoleMesWorkOrdersQueryOptions: options(),
     listBusinessConsoleWmsInboundOrdersQueryOptions: options(),
   }
 })
@@ -71,14 +71,14 @@ describe('source document catalog', () => {
   })
 
   it('searches the document list by number inside the business scope', async () => {
-    const catalog = useSourceDocumentCatalog('mes-production-report', '')
+    const catalog = useSourceDocumentCatalog('mes-work-order', '')
 
-    catalog.search.value = ' RPT-07 '
+    catalog.search.value = ' WO-07 '
     await vi.advanceTimersByTimeAsync(300)
     colada.factory!()
 
-    expect(listBusinessConsoleMesProductionReportsQueryOptions).toHaveBeenLastCalledWith({
-      query: { organizationId: 'org-001', environmentId: 'env-dev', take: 50, keyword: 'RPT-07' },
+    expect(listBusinessConsoleMesWorkOrdersQueryOptions).toHaveBeenLastCalledWith({
+      query: { organizationId: 'org-001', environmentId: 'env-dev', take: 50, keyword: 'WO-07' },
     })
   })
 

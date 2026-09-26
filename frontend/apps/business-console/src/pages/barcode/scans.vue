@@ -6,7 +6,6 @@ import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue
 import { useBarcodeScans } from '@/composables/useBusinessBarcode'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
-import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
@@ -36,8 +35,13 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { BARCODE_SCAN_WORKFLOW_OPTIONS, barcodeScanWorkflowLabel } from './workflow-options'
+import { RouterLink, useRoute } from 'vue-router'
+import {
+  BARCODE_SCAN_WORKFLOW_OPTIONS,
+  barcodeScanWorkflowLabel,
+  barcodeSourceDocumentKind,
+  barcodeSourceDocumentRoute,
+} from './workflow-options'
 
 definePage({
   meta: {
@@ -48,14 +52,6 @@ definePage({
 })
 
 const WORKFLOW_OPTIONS = BARCODE_SCAN_WORKFLOW_OPTIONS
-
-// 业务对象按动作来源从单据目录里选，取值与互链同口径：生产报工扫码挂在工单上（打印批次按工单 ID
-// 跳到这里），仓储收货记入库单号，质量检验记被检验的那张单据。库存类动作没有可搜列表，自由输入。
-const SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
-  'production.report': 'mes-work-order',
-  'wms.receiving': 'wms-inbound-order',
-  'quality.inspection': 'quality-inspection',
-}
 
 const RESULT_OPTIONS = [
   { value: 'accepted', label: '已接受' },
@@ -374,7 +370,7 @@ function firstQuery(value: unknown) {
                   <SourceDocumentPicker
                     id="barcode-scan-source-id"
                     v-model="form.sourceDocumentId"
-                    :kind="SOURCE_DOCUMENT_KINDS[form.sourceWorkflow]"
+                    :kind="barcodeSourceDocumentKind(form.sourceWorkflow)"
                     :invalid="showErrors && !form.sourceDocumentId.trim()"
                   />
                 </NvField>
@@ -460,6 +456,16 @@ function firstQuery(value: unknown) {
     >
       <template #cell-parsed="{ row }">
         <span class="text-sm">{{ parsedBarcodeSummary(row.scannedValue) }}</span>
+      </template>
+      <template #cell-sourceDocumentId="{ row }">
+        <RouterLink
+          v-if="barcodeSourceDocumentRoute(row.sourceWorkflow, row.sourceDocumentId)"
+          class="underline underline-offset-2"
+          :to="barcodeSourceDocumentRoute(row.sourceWorkflow, row.sourceDocumentId)!"
+        >
+          {{ row.sourceDocumentId }}
+        </RouterLink>
+        <span v-else>{{ row.sourceDocumentId ?? '无' }}</span>
       </template>
       <template #cell-sourceWorkflow="{ row }">
         {{ workflowLabel(row.sourceWorkflow) }}

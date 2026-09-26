@@ -18,6 +18,7 @@ const barcode = vi.hoisted(() => ({
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
   printBatchStatus: 'completed',
+  templateId: 'tpl-1',
   route: { query: {} as Record<string, unknown> },
   ruleFilters: undefined as undefined | { keyword?: string; skip: number; take: number },
   templateFilters: undefined as undefined | { skip: number; take: number },
@@ -106,7 +107,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       filters,
       templates: computed(() => [
         {
-          templateId: 'tpl-1',
+          templateId: barcode.templateId,
           templateCode: 'SKU_BOX',
           templateName: '外箱标签',
           templateFileId: 'file-label-box',
@@ -207,10 +208,19 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
           rejectionReason: 'parse-failed',
           scannedAtUtc: '2026-07-02T02:00:00Z',
         },
+        {
+          scanRecordId: 'scan-3',
+          deviceCode: 'PDA-03',
+          scannedValue: '(01)06912345678901(10)WO-001',
+          sourceWorkflow: 'production.report',
+          sourceDocumentId: 'WO-001',
+          result: 'accepted',
+          scannedAtUtc: '2026-07-02T03:00:00Z',
+        },
       ]),
       scansError: shallowRef(undefined),
       scansPending: shallowRef(false),
-      scansTotal: computed(() => 2),
+      scansTotal: computed(() => 3),
       refreshScans: vi.fn(),
       recordScan: barcode.recordScan,
       recordScanPending: shallowRef(false),
@@ -298,6 +308,7 @@ describe('barcode pages', () => {
     barcode.route.query = {}
     barcode.printBatchSourceDocumentType = 'production.report'
     barcode.printBatchStatus = 'completed'
+    barcode.templateId = 'tpl-1'
     barcode.ruleFilters = undefined
     barcode.templateFilters = undefined
     barcode.printBatchFilters = undefined
@@ -571,6 +582,56 @@ describe('barcode pages', () => {
     expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
   })
 
+  // #3824：生产报工的业务对象一律是工单——打印批次、扫码补录都从工单目录里选，点进去都到同一张工单。
+  it('points production-report objects at the same work order from print batches and scans', async () => {
+    const stubs = { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub }
+    const batches = mount(PrintBatchesPage, { global: { stubs } })
+    const scans = mount(ScansPage, { global: { stubs } })
+    await flushPromises()
+
+    const workOrderLink = (wrapper: ReturnType<typeof mount>) =>
+      wrapper
+        .findAll('[data-router-link]')
+        .find((link) => link.text() === 'WO-001')
+        ?.attributes('data-to')
+    expect(workOrderLink(batches)).toBe(JSON.stringify('/mes/work-orders/WO-001'))
+    expect(workOrderLink(scans)).toBe(workOrderLink(batches))
+
+    await batches
+      .findAll('button')
+      .find((b) => b.text().includes('新建打印批次'))!
+      .trigger('click')
+    await setInput(batches, '#barcode-print-source-type', 'production.report')
+    await scans
+      .findAll('button')
+      .find((b) => b.text().includes('补录扫码审计'))!
+      .trigger('click')
+    await setInput(scans, '#barcode-scan-workflow', 'production.report')
+    await flushPromises()
+
+    expect(batches.find('#barcode-print-source-id').attributes('kind')).toBe('mes-work-order')
+    expect(scans.find('#barcode-scan-source-id').attributes('kind')).toBe('mes-work-order')
+  })
+
+  // 只有工单能按单号直达；其它类型的目标页找不到那张单据，业务对象只显示文本。
+  it.each(['wms.receiving', 'quality.inspection', 'purchase-receipt', 'inventory.count'])(
+    'shows %s business objects as plain text instead of a dead-end link',
+    async (sourceDocumentType) => {
+      barcode.printBatchSourceDocumentType = sourceDocumentType
+      const stubs = { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub }
+      const batches = mount(PrintBatchesPage, { global: { stubs } })
+      const scans = mount(ScansPage, { global: { stubs } })
+      await flushPromises()
+
+      const linkTexts = (wrapper: ReturnType<typeof mount>) =>
+        wrapper.findAll('[data-router-link]').map((link) => link.text())
+      expect(batches.text()).toContain('WO-001')
+      expect(linkTexts(batches)).not.toContain('WO-001')
+      expect(scans.text()).toContain('IB-001')
+      expect(linkTexts(scans)).not.toContain('IB-001')
+    },
+  )
+
   it.each(['inventory.receipt', 'inventory.issue'])(
     'keeps %s print batches filtered when drilling into scan records',
     async (sourceDocumentType) => {
@@ -623,6 +684,42 @@ describe('barcode pages', () => {
         requestedQuantity: 3,
       }),
     )
+  })
+
+  // 模板选择器回传的是模板主键（GUID），选中后屏幕上只能出现模板名称 / 编码。
+  it('shows the template name and code, never its internal id, after picking a label template', async () => {
+    const templateId = '01a0de6f-211c-71c5-83ed-2348ece32398'
+    barcode.templateId = templateId
+    const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
+    const wrapper = mount(PrintBatchesPage, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...stubsWithRealPicker,
+          RouterLink: routerLinkStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建打印批次'))!
+      .trigger('click')
+    await wrapper.find('#barcode-print-template').trigger('click')
+    await flushPromises()
+    const option = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (element) => element.textContent?.includes('外箱标签'),
+    )
+    expect(option?.textContent).not.toContain(templateId)
+    option!.click()
+    await flushPromises()
+
+    expect(wrapper.find('#barcode-print-template').text()).toContain('外箱标签')
+    expect(document.body.textContent).not.toContain(templateId)
+    wrapper.unmount()
   })
 
   it('reuses the print batch idempotency key while retrying the same dialog submission', async () => {

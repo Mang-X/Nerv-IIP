@@ -6,7 +6,6 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { useBarcodePrintBatches, useBarcodeTemplates } from '@/composables/useBusinessBarcode'
-import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -38,7 +37,11 @@ import {
 import { EyeIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { isBarcodeScanWorkflow } from './workflow-options'
+import {
+  barcodeSourceDocumentKind,
+  barcodeSourceDocumentRoute,
+  isBarcodeScanWorkflow,
+} from './workflow-options'
 
 definePage({
   meta: {
@@ -58,16 +61,6 @@ const SOURCE_OPTIONS = [
   { value: 'quality.inspection', label: '质量检验' },
   { value: 'work-order', label: '生产工单' },
 ]
-
-// 业务对象按类型从单据目录里选，取值与本页互链同口径：生产工单记工单 ID（详情路由、生产标签都按它），
-// 生产报工记报工单号，仓储收货记入库单号，质量检验记被检验的那张单据（检验页按它带入）。
-// 采购收货、库存入库 / 出库 / 盘点没有可搜列表，自由输入。
-const SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
-  'work-order': 'mes-work-order',
-  'production.report': 'mes-production-report',
-  'wms.receiving': 'wms-inbound-order',
-  'quality.inspection': 'quality-inspection',
-}
 
 const STATUS_OPTIONS = [
   { value: 'requested', label: '已请求' },
@@ -108,22 +101,18 @@ const form = reactive({
   requestedQuantity: '1',
 })
 
-// 标签模板绑定的是模板主键（GUID），没人能手输——一律从模板目录里选，展示模板名 + 编码。
+// 标签模板绑定的是模板主键（GUID），没人能手输——一律从模板目录里选。选择器只展示模板名与编码，
+// 主键不上屏（选择器上关掉编码位，否则它会拿主键当编码显示）。
 const { templates, templatesPending } = useBarcodeTemplates()
-const templateOptions = computed(() => {
-  const options = templates.value
+const templateOptions = computed(() =>
+  templates.value
     .filter((template) => !!template.templateId)
     .map((template) => ({
       value: template.templateId as string,
       label: template.templateName || template.templateCode || '未命名模板',
       hint: template.templateCode ?? undefined,
-    }))
-  const current = form.labelTemplateId.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    options.unshift({ value: current, label: current, hint: undefined })
-  }
-  return options
-})
+    })),
+)
 
 const batchColumns: NvDataTableColumn<BusinessConsoleBarcodePrintBatchItem>[] = [
   {
@@ -273,31 +262,6 @@ function statusLabel(value?: string | null) {
   return STATUS_OPTIONS.find((option) => option.value === value)?.label ?? '其他状态'
 }
 
-function sourceDocumentRoute(batch: BusinessConsoleBarcodePrintBatchItem) {
-  const id = batch.sourceDocumentId?.trim()
-  if (!id) return undefined
-  if (batch.sourceDocumentType === 'work-order') return `/mes/work-orders/${encodeURIComponent(id)}`
-  if (batch.sourceDocumentType === 'production.report') {
-    return { path: '/mes/production-reports', query: { reportNo: id } }
-  }
-  if (batch.sourceDocumentType === 'purchase-receipt') {
-    return { path: '/erp/procurement/receipts', query: { keyword: id } }
-  }
-  if (batch.sourceDocumentType === 'wms.receiving') {
-    return { path: '/wms/inbound', query: { inboundOrderNo: id } }
-  }
-  if (batch.sourceDocumentType === 'inventory.count') {
-    return { path: '/inventory/counts', query: { countTaskId: id } }
-  }
-  if (batch.sourceDocumentType?.startsWith('inventory.')) {
-    return { path: '/inventory/movements', query: { sourceDocumentId: id } }
-  }
-  if (batch.sourceDocumentType === 'quality.inspection') {
-    return { path: '/quality/inspections', query: { sourceDocumentId: id } }
-  }
-  return undefined
-}
-
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
@@ -360,6 +324,7 @@ function firstQuery(value: unknown) {
                     id="barcode-print-template"
                     v-model="form.labelTemplateId"
                     :options="templateOptions"
+                    :show-code="false"
                     title="选择标签模板"
                     placeholder="选择标签模板"
                     empty-text="暂无标签模板，请先在标签模板维护"
@@ -407,7 +372,7 @@ function firstQuery(value: unknown) {
                   <SourceDocumentPicker
                     id="barcode-print-source-id"
                     v-model="form.sourceDocumentId"
-                    :kind="SOURCE_DOCUMENT_KINDS[form.sourceDocumentType]"
+                    :kind="barcodeSourceDocumentKind(form.sourceDocumentType)"
                     :invalid="showErrors && !form.sourceDocumentId.trim()"
                   />
                 </NvField>
@@ -486,9 +451,9 @@ function firstQuery(value: unknown) {
       >
         <template #cell-sourceDocumentId="{ row }">
           <RouterLink
-            v-if="sourceDocumentRoute(row)"
+            v-if="barcodeSourceDocumentRoute(row.sourceDocumentType, row.sourceDocumentId)"
             class="underline underline-offset-2"
-            :to="sourceDocumentRoute(row)!"
+            :to="barcodeSourceDocumentRoute(row.sourceDocumentType, row.sourceDocumentId)!"
           >
             {{ row.sourceDocumentId }}
           </RouterLink>
