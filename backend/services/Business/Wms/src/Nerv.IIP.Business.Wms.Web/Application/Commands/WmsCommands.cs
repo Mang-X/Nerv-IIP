@@ -1689,7 +1689,9 @@ public sealed class CompleteOutboundOrderCommandHandler
             .Where(x => x.OrganizationId == outbound.OrganizationId
                 && x.EnvironmentId == outbound.EnvironmentId
                 && x.TaskType == WarehouseTaskType.Picking
-                && x.SourceOrderNo == outbound.OutboundOrderNo)
+                && x.SourceOrderNo == outbound.OutboundOrderNo
+                // 已作废的拣货任务（如预留过期被取消）不是执行事实；以重建的任务为准复核（#3836）。
+                && x.Status != WarehouseTaskStatus.Cancelled)
             .Select(x => new
             {
                 LineNo = x.SourceOrderLineNo,

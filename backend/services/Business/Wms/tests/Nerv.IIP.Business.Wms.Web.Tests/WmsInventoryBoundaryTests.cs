@@ -896,6 +896,39 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(4m, movementRequest.Quantity);
     }
 
+    /// <summary>
+    /// #3836：预留过期会取消该行未完成的拣货任务，仓库随后重建任务拣完。作废的任务不是执行事实，
+    /// 不能让出库复核永远卡在「拣货未完成」；复核以重建任务的实拣为准。
+    /// </summary>
+    [Fact]
+    public async Task Complete_outbound_ignores_a_cancelled_picking_task_replaced_by_a_completed_one()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RECREATED-001",
+            "sales-delivery",
+            "SO-RECREATED-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        var cancelledTask = outbound.CreatePickingTask("TASK-CANCELLED-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, assignedPoolCode: "POOL-PICKING");
+        cancelledTask.Cancel();
+        dbContext.WarehouseTasks.Add(cancelledTask);
+        dbContext.WarehouseTasks.Add(outbound.CreatePickingTask("TASK-RECREATED-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, assignedPoolCode: "POOL-PICKING"));
+        CompletePickingTasks(dbContext, outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-RECREATED-001", true, "idem-out-recreated-001")
+                .TrustedFor(dbContext, outbound),
+            CancellationToken.None);
+
+        Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
+        Assert.Equal(4m, Assert.Single(dbContext.InventoryMovementRequests.Local).Quantity);
+    }
+
     [Fact]
     public async Task Complete_outbound_has_a_per_order_distributed_lock()
     {
