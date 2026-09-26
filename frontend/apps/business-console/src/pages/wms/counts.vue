@@ -22,7 +22,6 @@ import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import {
   useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
   WAREHOUSE_LOCATION_EMPTY_TEXT,
 } from '@/composables/useWarehouseCodeCatalog'
 import {
@@ -651,7 +650,6 @@ function refreshAll() {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂主数据，请先在基础数据维护工厂"
                 :loading="sitesPending"
                 clearable
@@ -666,7 +664,6 @@ function refreshAll() {
                 :options="locationOptions"
                 title="选择库位"
                 placeholder="选择库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
                 :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
                 :loading="warehouseCatalogPending"
                 clearable

@@ -28,7 +28,6 @@ watch(model, () => {
     :title="`选择${spec.noun}`"
     :placeholder="`选择${spec.noun}`"
     :search-placeholder="spec.searchPlaceholder"
-    :source-text="spec.sourceText"
     :empty-text="`没有匹配的${spec.noun}`"
     :loading="pending"
     :server-search="spec.serverSearch"

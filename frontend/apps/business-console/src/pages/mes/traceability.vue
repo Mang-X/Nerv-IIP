@@ -193,7 +193,6 @@ function firstQuery(value: unknown) {
           title="选择工单"
           placeholder="选择工单"
           search-placeholder="搜索工单号 / 物料…"
-          source-text="数据来自制造执行工单列表"
           empty-text="当前范围内没有匹配的工单"
           :loading="workOrderCatalog.workOrdersPending.value"
           server-search
@@ -208,7 +207,6 @@ function firstQuery(value: unknown) {
           :options="producedLotOptions"
           title="选择产出批次"
           placeholder="选择产出批次"
-          source-text="数据来自该工单的报工产出批次"
           empty-text="该工单还没有产出批次"
           :loading="producedLotsPending"
           clearable

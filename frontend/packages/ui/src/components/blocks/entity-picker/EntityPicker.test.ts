@@ -53,7 +53,7 @@ describe('NvEntityPicker', () => {
   // 默认形态必须是「点一下直接展开下拉、下拉内自带搜索框」，不是先弹一个对话框。
   it('defaults to the dropdown form: one click opens an in-place listbox with a search box', async () => {
     const wrapper = mount(NvEntityPicker, {
-      props: { options, title: '选择物料', sourceText: '数据来自物料主数据' },
+      props: { options, title: '选择物料' },
       attachTo: document.body,
     })
 
@@ -65,9 +65,12 @@ describe('NvEntityPicker', () => {
     expect(panelOpen()).toBe(true)
     expect(document.body.querySelector('input[role="combobox"]')).not.toBeNull()
     expect(document.body.querySelector('[role="listbox"]')?.textContent).toContain('前减振器总成')
-    // 编码与来源注脚是 NvEntityPicker 区别于 NvSearchSelect 的地方，两种形态都要有。
+    // 编码是 NvEntityPicker 区别于 NvSearchSelect 的地方。
     expect(document.body.textContent).toContain('SKU-FG-100')
-    expect(document.body.textContent).toContain('数据来自物料主数据')
+    // #3823：条数是开发者关心的事，下拉里不报「共 N 条」。
+    expect(document.body.textContent).not.toMatch(/共\s*\d+\s*条/)
+    // 本地过滤时目录已全部列出，不能提示「继续筛选」。
+    expect(document.body.textContent).not.toContain('输入关键字继续筛选')
 
     wrapper.unmount()
   })
@@ -264,7 +267,7 @@ describe('NvEntityPicker', () => {
       wrapper.unmount()
     })
 
-    it('目录还有没显示出来的条目时如实说明，并给出继续输入的出路', async () => {
+    it('目录还有没显示出来的条目时提示继续输入，但不报条数', async () => {
       const wrapper = mount(NvEntityPicker, {
         props: { options, title: '选择工单', serverSearch: true, search: '', totalCount: 4760 },
         attachTo: document.body,
@@ -273,8 +276,8 @@ describe('NvEntityPicker', () => {
       await wrapper.get('button[aria-haspopup]').trigger('click')
       await flushPromises()
 
-      expect(document.body.textContent).toContain('显示 2 / 共 4760 条')
       expect(document.body.textContent).toContain('输入关键字继续筛选')
+      expect(document.body.textContent).not.toContain('4760')
 
       wrapper.unmount()
     })

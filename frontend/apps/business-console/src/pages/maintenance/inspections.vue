@@ -380,7 +380,6 @@ function formatDateTime(value?: string | null) {
                 :options="planOptions"
                 title="选择保养计划"
                 placeholder="可选，选择保养计划"
-                source-text="数据来自保养计划"
                 empty-text="暂无保养计划，可先在保养计划登记周期保养"
                 :loading="plansPending"
                 clearable
@@ -395,7 +394,6 @@ function formatDateTime(value?: string | null) {
                 :options="workOrderOptions"
                 title="选择维修工单"
                 placeholder="可选，选择维修工单"
-                source-text="数据来自维护工单"
                 empty-text="暂无维护工单"
                 :loading="workOrdersPending"
                 clearable
@@ -482,7 +480,6 @@ function formatDateTime(value?: string | null) {
                     :options="uomOptions"
                     title="选择单位"
                     placeholder="选择单位"
-                    source-text="数据来自基础数据计量单位"
                     empty-text="暂无计量单位，请先在基础数据维护单位"
                     :loading="uomsPending"
                     clearable

@@ -53,7 +53,6 @@ interface ListEnvelope<TRow> {
 interface CatalogSpecFields {
   /** 单据名词，用于标题、占位与空态文案。 */
   noun: string
-  sourceText: string
   searchPlaceholder: string
   /** 端点支持按单号关键字搜索时走服务端搜索；否则取一批在本地过滤。 */
   serverSearch: boolean
@@ -100,7 +99,6 @@ const SPECS = {
   // 条码生产标签、检验结论回写质量保留都按它比对。
   'mes-work-order': defineSpec({
     noun: '生产工单',
-    sourceText: '数据来自制造执行生产工单',
     searchPlaceholder: '搜索工单…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleMesWorkOrdersQueryOptions({ query }),
@@ -108,7 +106,6 @@ const SPECS = {
   }),
   'mes-production-report': defineSpec({
     noun: '报工单',
-    sourceText: '数据来自制造执行报工记录',
     searchPlaceholder: '搜索报工单号 / 工单…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleMesProductionReportsQueryOptions({ query }),
@@ -116,7 +113,6 @@ const SPECS = {
   }),
   'mes-finished-goods-receipt': defineSpec({
     noun: '完工入库单',
-    sourceText: '数据来自制造执行完工入库申请',
     searchPlaceholder: '搜索入库申请号 / 工单…',
     serverSearch: true,
     queryOptions: (query) =>
@@ -126,7 +122,6 @@ const SPECS = {
   // 领料申请：列表的 requestId 就是申请单号（WMS 出库单的源单据号也用它）。
   'mes-material-issue': defineSpec({
     noun: '领料申请',
-    sourceText: '数据来自制造执行领料申请',
     searchPlaceholder: '搜索领料单号 / 工单…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleMesMaterialIssueRequestsQueryOptions({ query }),
@@ -135,7 +130,6 @@ const SPECS = {
   }),
   'wms-inbound-order': defineSpec({
     noun: '入库单',
-    sourceText: '数据来自当前作业范围的仓储入库单',
     searchPlaceholder: '搜索入库单号…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleWmsInboundOrdersQueryOptions({ query }),
@@ -144,7 +138,6 @@ const SPECS = {
   }),
   'wms-supplier-return': defineSpec({
     noun: '供应商退货单',
-    sourceText: '数据来自仓储供应商退货',
     searchPlaceholder: '搜索退货单号 / 入库单号…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleWmsSupplierReturnRequestsQueryOptions({ query }),
@@ -153,7 +146,6 @@ const SPECS = {
   }),
   'erp-delivery-order': defineSpec({
     noun: '发货单',
-    sourceText: '数据来自经营管理发货单',
     searchPlaceholder: '搜索发货单号…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }),
@@ -163,7 +155,6 @@ const SPECS = {
   // 已批准且还没转过订单的报价单：转过的再转会被拒（一张报价只能转一张订单）。
   'erp-approved-quotation': defineSpec({
     noun: '已批准报价单',
-    sourceText: '数据来自经营管理已批准的报价单',
     searchPlaceholder: '搜索报价单号…',
     serverSearch: true,
     queryOptions: (query) =>
@@ -182,7 +173,6 @@ const SPECS = {
   // 维修检验的来源单据是维修工单 ID，显示时换成人读单号。检验记录列表的关键字按物料编码过滤。
   'quality-inspection': defineSpec({
     noun: '检验对象',
-    sourceText: '数据来自质量检验记录的来源单据',
     searchPlaceholder: '按物料编码搜索…',
     serverSearch: true,
     queryOptions: (query) => listBusinessConsoleQualityInspectionRecordsQueryOptions({ query }),
@@ -199,7 +189,6 @@ const SPECS = {
   // 维修工单只有系统 ID：提交 ID，显示人读单号（与维护页的工单选择器同一个映射）。
   'maintenance-work-order': defineSpec({
     noun: '维修工单',
-    sourceText: '数据来自设备维护维修工单',
     searchPlaceholder: '搜索工单号…',
     serverSearch: false,
     queryOptions: (query) => listBusinessConsoleMaintenanceWorkOrdersQueryOptions({ query }),

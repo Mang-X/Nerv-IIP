@@ -446,7 +446,6 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                   :options="itemPickerOptions"
                   title="选择关联物料"
                   placeholder="可留空"
-                  source-text="数据来自工程物料目录"
                   empty-text="暂无工程物料，请先在工程物料维护物料修订"
                   :loading="engineeringItemsPending"
                   aria-label="关联物料"

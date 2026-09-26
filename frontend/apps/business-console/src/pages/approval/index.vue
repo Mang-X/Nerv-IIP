@@ -1043,7 +1043,6 @@ function toIsoFromLocalInput(value: string) {
                 :options="delegateOptions"
                 title="选择代理人"
                 placeholder="选择代理人"
-                source-text="数据来自员工名录"
                 empty-text="暂无员工，请先在基础数据维护员工"
                 :loading="workersPending"
                 aria-label="代理人"
@@ -1200,9 +1199,6 @@ function toIsoFromLocalInput(value: string) {
                 :options="approverOptions"
                 :title="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
                 :placeholder="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
-                :source-text="
-                  templateForm.approverType === 'user' ? '数据来自员工名录' : '数据来自部门主数据'
-                "
                 :empty-text="
                   templateForm.approverType === 'user'
                     ? '暂无员工，请先在基础数据维护员工'

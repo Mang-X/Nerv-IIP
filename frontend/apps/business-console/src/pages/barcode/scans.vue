@@ -433,7 +433,6 @@ function firstQuery(value: unknown) {
           class="h-9 w-40"
           title="选择设备/终端"
           placeholder="全部终端"
-          source-text="数据来自基础数据设备台账"
           empty-text="暂无设备台账，请先在基础数据维护设备"
           :loading="devicesPending"
           aria-label="终端"

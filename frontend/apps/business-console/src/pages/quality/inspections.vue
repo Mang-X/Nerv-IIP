@@ -1006,7 +1006,6 @@ function isPresent(value: string | undefined | null): value is string {
                 :options="planCatalog.inspectionPlanOptions.value"
                 title="选择检验方案"
                 placeholder="选择检验方案"
-                source-text="数据来自质量检验方案"
                 empty-text="当前范围内没有检验方案"
                 :loading="planCatalog.inspectionPlansPending.value"
                 clearable
@@ -1230,7 +1229,6 @@ function isPresent(value: string | undefined | null): value is string {
                     :options="uomCatalog.uomOptions.value"
                     title="选择计量单位"
                     placeholder="选择单位"
-                    source-text="数据来自基础数据计量单位"
                     :loading="uomCatalog.uomsPending.value"
                     clearable
                     :aria-label="`第 ${index + 1} 个特性单位`"

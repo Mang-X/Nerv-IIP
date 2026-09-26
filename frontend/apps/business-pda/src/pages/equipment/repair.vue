@@ -202,7 +202,6 @@ const prioritySheetOpen = ref(false)
 const reasonPickerOpen = ref(false)
 const {
   reasonOptions,
-  reasonsTotal,
   reasonsTruncated,
   state: reasonDirectoryState,
   stateMessage: reasonDirectoryMessage,
@@ -637,7 +636,6 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       :state-message="reasonDirectoryMessage"
       :can-select="canSelectReason"
       :truncated="reasonsTruncated"
-      :total="reasonsTotal"
       @select="onReasonSelected"
       @search="searchReasons"
       @retry="refreshReasons"
