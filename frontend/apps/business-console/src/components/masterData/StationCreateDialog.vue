@@ -13,10 +13,8 @@ import type {
   DirectoryCreateContext,
   DirectoryCreatedItem,
 } from '@/components/business/directoryCreators'
-import {
-  useBusinessMasterDataResources,
-  useMasterDataResource,
-} from '@/composables/useBusinessMasterData'
+import { useMasterDataResource } from '@/composables/useBusinessMasterData'
+import { useMasterDataDisplayName } from '@/composables/useMasterDataDisplayName'
 import {
   NvButton,
   NvDialog,
@@ -41,17 +39,12 @@ const emit = defineEmits<{ created: [item: DirectoryCreatedItem] }>()
 
 const carriedLineCode = props.context?.lineCode?.trim() ?? ''
 const stations = useMasterDataResource<BusinessConsoleCreateStationRequest>('station')
-// 与产线选择器同一份整表查询，只用来把带出的产线编码显示成名称。
-const lines = useBusinessMasterDataResources('production-line')
-lines.filters.take = 500
+const lineName = useMasterDataDisplayName('production-line')
 
 const form = reactive({ name: '', lineCode: carriedLineCode, workCenterCode: '' })
 const showErrors = shallowRef(false)
 const canSubmit = computed(() => !!form.name.trim() && !!form.lineCode.trim())
-const carriedLineName = computed(() => {
-  const line = lines.resources.value.find((row) => row.code === carriedLineCode)
-  return line?.displayName || carriedLineCode
-})
+const carriedLineName = computed(() => lineName(carriedLineCode))
 
 // 换了产线，原先选的工作中心可能不在新产线下，清掉让用户重选。
 function setLine(lineCode: string) {

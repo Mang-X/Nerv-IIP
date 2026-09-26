@@ -42,7 +42,17 @@ const stubs = {
 const CREATED = {
   material: { path: '/master-data/skus', code: 'SKU-0042', name: '不锈钢法兰盘' },
   shift: { path: '/master-data/shifts', code: 'SHIFT-0042', name: '中班' },
+  workshop: { path: '/master-data/workshops', code: 'WS-0042', name: '涂装车间' },
+  'production-line': { path: '/master-data/production-lines', code: 'LINE-0042', name: '涂装线' },
+  'work-center': { path: '/master-data/work-centers', code: 'WC-0042', name: '喷涂中心' },
 } as const
+
+// 基础数据资源列表：带出的上级编码靠它显示成名称，工作日历只有一条时自动选中。
+const RESOURCE_ROWS: Record<string, Array<{ code: string; displayName: string }>> = {
+  site: [{ code: 'PLANT-A', displayName: '宁波工厂' }],
+  'production-line': [{ code: 'LINE-A', displayName: '前桥线' }],
+  'work-calendar': [{ code: 'CAL-A', displayName: '标准日历' }],
+}
 
 interface Recorded {
   method: string
@@ -52,7 +62,7 @@ interface Recorded {
 
 const mounted: Array<ReturnType<typeof mount>> = []
 
-function harness(directoryType: keyof typeof CREATED) {
+function harness(directoryType: keyof typeof CREATED, createContext?: Record<string, string>) {
   const requests: Recorded[] = []
   configureApiClient({
     baseUrl: 'http://gateway.local',
@@ -74,7 +84,13 @@ function harness(directoryType: keyof typeof CREATED) {
         })
       }
       // 目录与资源列表都不含新建项：名称只能来自弹窗回传。
-      return Response.json({ success: true, data: { items: [], resources: [], total: 0 } })
+      const rows = url.pathname.endsWith('/master-data/resources')
+        ? (RESOURCE_ROWS[url.searchParams.get('resourceType') ?? ''] ?? [])
+        : []
+      return Response.json({
+        success: true,
+        data: { items: rows, resources: rows, total: rows.length },
+      })
     }) as typeof fetch,
   })
   const model = ref('')
@@ -86,6 +102,7 @@ function harness(directoryType: keyof typeof CREATED) {
           h(DirectoryPicker, {
             directoryType,
             creatable: true,
+            createContext,
             modelValue: model.value,
             'onUpdate:modelValue': (value: string) => (model.value = value),
           })
@@ -183,5 +200,93 @@ describe('已注册的新增弹窗（#3797）', () => {
     })
     expect(model.value).toBe('SHIFT-0042')
     expect(wrapper.get('button[aria-haspopup]').text()).toContain('中班')
+  })
+
+  it('车间：工厂从调用方带出为只读，新建后自动选中并显示名称', async () => {
+    const { model, requests, wrapper } = harness('workshop', { siteCode: 'PLANT-A' })
+    await flushPromises()
+    await openCreateDialog(wrapper, '车间')
+
+    const carried = document.body.querySelector('[data-slot="carried-context"]')!
+    expect(carried.textContent).toContain('宁波工厂')
+    expect(document.body.querySelector('#workshop-site')).toBeNull()
+    setInput('#workshop-name', '涂装车间')
+    await flushPromises()
+    document.body.querySelector('form')!.requestSubmit()
+    await flushPromises()
+
+    const post = requests.find((r) => r.method === 'POST')!
+    expect(post.body).toMatchObject({ name: '涂装车间', siteCode: 'PLANT-A' })
+    expect(model.value).toBe('WS-0042')
+    expect(wrapper.get('button[aria-haspopup]').text()).toContain('涂装车间')
+  })
+
+  it('车间：调用方没给工厂时由用户自选，不选不提交', async () => {
+    const { model, requests, wrapper } = harness('workshop', { siteCode: '' })
+    await flushPromises()
+    await openCreateDialog(wrapper, '车间')
+
+    expect(document.body.querySelector('[data-slot="carried-context"]')).toBeNull()
+    expect(document.body.querySelector('#workshop-site')).not.toBeNull()
+    setInput('#workshop-name', '涂装车间')
+    await flushPromises()
+    document.body.querySelector('form')!.requestSubmit()
+    await flushPromises()
+
+    expect(requests.some((r) => r.method === 'POST')).toBe(false)
+    expect(document.body.textContent).toContain('请完整填写带 * 的必填项')
+    expect(model.value).toBe('')
+  })
+
+  it('产线：已选工厂带出、车间留给用户选，不选车间则直挂工厂', async () => {
+    const { model, requests, wrapper } = harness('production-line', {
+      siteCode: 'PLANT-A',
+      workshopCode: '',
+    })
+    await flushPromises()
+    await openCreateDialog(wrapper, '产线')
+
+    const carried = document.body.querySelector('[data-slot="carried-context"]')!
+    expect(carried.textContent).toContain('宁波工厂')
+    expect(document.body.querySelector('#line-site')).toBeNull()
+    expect(document.body.querySelector('#line-workshop')).not.toBeNull()
+    setInput('#line-name', '涂装线')
+    await flushPromises()
+    document.body.querySelector('form')!.requestSubmit()
+    await flushPromises()
+
+    const post = requests.find((r) => r.method === 'POST')!
+    expect(post.body).toMatchObject({ name: '涂装线', siteCode: 'PLANT-A' })
+    expect(post.body).not.toHaveProperty('workshopCode')
+    expect(model.value).toBe('LINE-0042')
+    expect(wrapper.get('button[aria-haspopup]').text()).toContain('涂装线')
+  })
+
+  it('工作中心：工厂与产线带出，唯一的工作日历自动选中，新建后自动选中', async () => {
+    const { model, requests, wrapper } = harness('work-center', {
+      siteCode: 'PLANT-A',
+      lineCode: 'LINE-A',
+    })
+    await flushPromises()
+    await openCreateDialog(wrapper, '工作中心')
+
+    const carried = document.body.querySelector('[data-slot="carried-context"]')!
+    expect(carried.textContent).toContain('宁波工厂')
+    expect(carried.textContent).toContain('前桥线')
+    setInput('#wc-name', '喷涂中心')
+    await flushPromises()
+    document.body.querySelector('form')!.requestSubmit()
+    await flushPromises()
+
+    const post = requests.find((r) => r.method === 'POST')!
+    expect(post.body).toMatchObject({
+      name: '喷涂中心',
+      plantCode: 'PLANT-A',
+      lineCode: 'LINE-A',
+      defaultCalendarCode: 'CAL-A',
+      capacityMinutesPerDay: 480,
+    })
+    expect(model.value).toBe('WC-0042')
+    expect(wrapper.get('button[aria-haspopup]').text()).toContain('喷涂中心')
   })
 })

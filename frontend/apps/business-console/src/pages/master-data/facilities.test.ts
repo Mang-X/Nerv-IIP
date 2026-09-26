@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import FacilitiesPage from './facilities.vue'
@@ -156,10 +157,16 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useBusinessWorkshops: () => stubWorkshops(),
   useMasterDataResourceActions: () => stubActions(),
-  // 工位新建弹窗用它把带出的产线编码显示成名称。
-  useBusinessMasterDataResources: () => ({
+  // 新建弹窗走它：只建不列。
+  useCreateMasterDataResource: (resourceType: string) => ({
+    create: CREATE_BY_TYPE[resourceType],
+    error: shallowRef(undefined),
+    pending: shallowRef(false),
+  }),
+  // 新建弹窗用它把带出的上级编码显示成名称。
+  useBusinessMasterDataResources: (resourceType: string) => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 500 }),
-    resources: computed(() => LINE_ROWS),
+    resources: computed(() => ({ ...ROWS_BY_TYPE, workshop: WORKSHOP_ROWS })[resourceType] ?? []),
   }),
 }))
 
@@ -231,6 +238,9 @@ function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
 const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub } } }
 
 describe('master-data facilities tree page', () => {
+  // 新建弹窗从业务上下文取组织 / 环境。
+  beforeEach(() => setActivePinia(createPinia()))
+
   it('renders title and tree nodes for all four levels', async () => {
     const wrapper = mount(FacilitiesPage, mountOpts)
     await flushPromises()
@@ -295,7 +305,7 @@ describe('master-data facilities tree page', () => {
 
     // 对话框：标题「新建车间」，父归属走只读上下文区（显示工厂名，不做 disabled 输入框）。
     expect(wrapper.text()).toContain('新建车间')
-    expect(wrapper.find('#create-site').exists()).toBe(false)
+    expect(wrapper.find('#workshop-site').exists()).toBe(false)
     const carried = wrapper.find('[data-slot="carried-context"]')
     expect(carried.exists()).toBe(true)
     expect(carried.text()).toContain('所属工厂')
@@ -317,9 +327,7 @@ describe('master-data facilities tree page', () => {
       .trigger('click')
     await flushPromises()
 
-    // 新建态不再有编码输入框（编码由系统自动生成）。
-    expect(wrapper.find('#create-code').exists()).toBe(false)
-    await wrapper.find('#create-name').setValue('涂装车间')
+    await wrapper.find('#workshop-name').setValue('涂装车间')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -337,6 +345,68 @@ describe('master-data facilities tree page', () => {
     expect(stub.toastError).not.toHaveBeenCalled()
   })
 
+  it('在车间上新建产线：工厂取自车间自身的归属，车间与工厂都带出为只读', async () => {
+    stub.createLine.mockClear()
+    const wrapper = mount(FacilitiesPage, mountOpts)
+    await flushPromises()
+
+    // 不先选工厂：归属只能来自车间节点自己，不来自选中路径。
+    await findNodeButton(wrapper, '总装车间')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建产线'))!
+      .trigger('click')
+    await flushPromises()
+
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.text()).toContain('宁波工厂')
+    expect(carried.text()).toContain('总装车间')
+    expect(wrapper.find('#line-site').exists()).toBe(false)
+    expect(wrapper.find('#line-workshop').exists()).toBe(false)
+    await wrapper.find('#line-name').setValue('涂装线')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createLine).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '涂装线', siteCode: 'PLANT-A', workshopCode: 'WS-A' }),
+    )
+  })
+
+  it('在产线上新建工作中心：工厂取自产线自身的归属，产线带出为只读', async () => {
+    stub.createWorkCenter.mockClear()
+    const wrapper = mount(FacilitiesPage, mountOpts)
+    await flushPromises()
+
+    await findNodeButton(wrapper, '后桥线')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建工作中心'))!
+      .trigger('click')
+    await flushPromises()
+
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.text()).toContain('宁波工厂')
+    expect(carried.text()).toContain('后桥线')
+    expect(wrapper.find('#wc-plant').exists()).toBe(false)
+    expect(wrapper.find('#wc-line').exists()).toBe(false)
+    await wrapper.find('#wc-name').setValue('装配中心')
+    await wrapper.find('#wc-cal').setValue('CAL-A')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createWorkCenter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: '装配中心',
+        plantCode: 'PLANT-A',
+        lineCode: 'LINE-B',
+        defaultCalendarCode: 'CAL-A',
+        capacityMinutesPerDay: 480,
+      }),
+    )
+  })
+
   it('新建根工厂：填全必填后提交调用 create 并弹成功 toast', async () => {
     stub.createSite.mockClear()
     stub.toastSuccess.mockClear()
@@ -349,9 +419,7 @@ describe('master-data facilities tree page', () => {
       .trigger('click')
     await flushPromises()
 
-    // 新建态不再有编码输入框（编码由系统自动生成）。
-    expect(wrapper.find('#create-code').exists()).toBe(false)
-    await wrapper.find('#create-name').setValue('广州工厂')
+    await wrapper.find('#site-name').setValue('广州工厂')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -399,7 +467,7 @@ describe('master-data facilities tree page', () => {
       .find((b) => b.text().includes('新建工厂'))!
       .trigger('click')
     await flushPromises()
-    await wrapper.find('#create-name').setValue('广州工厂')
+    await wrapper.find('#site-name').setValue('广州工厂')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -410,7 +478,7 @@ describe('master-data facilities tree page', () => {
     )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 对话框仍开、输入保留。
-    expect((wrapper.find('#create-name').element as HTMLInputElement).value).toBe('广州工厂')
+    expect((wrapper.find('#site-name').element as HTMLInputElement).value).toBe('广州工厂')
   })
 
   const editStubs = {
