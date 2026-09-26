@@ -70,6 +70,8 @@ public static class NervIipSeedRoles
                 "business.erp.sales.read",
                 "business.erp.finance.read",
                 "business.erp.finance.manage",
+                // 维护成本的来源单据是维修工单，登记成本候选时要能选（#3827）；只读。
+                "business.maintenance.work-orders.read",
             ]),
     ];
 }

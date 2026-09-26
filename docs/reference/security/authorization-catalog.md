@@ -183,11 +183,13 @@
 
 IAM 仅在对应角色缺失时创建默认角色；重复 seed 不应覆盖同 ID 角色已经被运营调整的名称、权限或 data scope。
 
+默认权限扩充时按一次性回填处理：`role-erp-finance` 的维修工单只读（#3827）只补给角色名仍是默认名、且权限仍等于上一版默认集合的存量角色，补完记 seed manifest `iam-erp-finance-maintenance-work-orders-read:v1`，之后运营撤掉也不会再补回。
+
 | 角色 ID | 角色名称 | 默认权限 | 默认 scope |
 | --- | --- | --- | --- |
 | `role-erp-procurement` | ERP 采购专员 | `business.masterdata.products.read`、`business.masterdata.resources.read`、`business.erp.procurement.read`、`business.erp.procurement.manage` | Organization |
 | `role-erp-sales` | ERP 销售专员 | `business.masterdata.products.read`、`business.masterdata.resources.read`、`business.erp.sales.read`、`business.erp.sales.manage` | Organization |
-| `role-erp-finance` | ERP 财务专员 | `business.masterdata.resources.read`、`business.erp.procurement.read`、`business.erp.sales.read`、`business.erp.finance.read`、`business.erp.finance.manage` | Organization |
+| `role-erp-finance` | ERP 财务专员 | `business.masterdata.resources.read`、`business.erp.procurement.read`、`business.erp.sales.read`、`business.erp.finance.read`、`business.erp.finance.manage`、`business.maintenance.work-orders.read` | Organization |
 
 角色是否仍由当前 seed 创建以及实际默认集合，以 `IamFacts.cs` / `IamSeedService.cs` 为准。
 
