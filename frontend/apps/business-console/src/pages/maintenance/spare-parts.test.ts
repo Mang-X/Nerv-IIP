@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
+import { useAuthStore } from '@/stores/auth'
 import SparePartsPage from './spare-parts.vue'
 
 const state = vi.hoisted(() => ({
@@ -76,7 +78,27 @@ async function type(wrapper: ReturnType<typeof mount>, selector: string, value: 
   await flushPromises()
 }
 
+function signInWith(permissionCodes: string[]) {
+  useAuthStore().$patch({
+    principal: { principalType: 'user', principalId: 'user-1', loginName: 'user', permissionCodes },
+  })
+}
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  signInWith(['business.maintenance.work-orders.read', 'business.maintenance.work-orders.manage'])
+})
+
 describe('备件需求新建', () => {
+  it('只读角色看不到「新建备件需求」', async () => {
+    signInWith(['business.maintenance.work-orders.read'])
+    const wrapper = mount(SparePartsPage, { global: { stubs } })
+    await flushPromises()
+
+    // 对话框被桩成常显，标题也叫「新建备件需求」；这里只看页头有没有这颗按钮。
+    expect(wrapper.findAll('button').some((b) => b.text().includes('新建备件需求'))).toBe(false)
+  })
+
   it('就地新建物料后物料列表晚一步刷新回来，单位仍按新物料的基本单位带出', async () => {
     const wrapper = mount(SparePartsPage, { global: { stubs } })
     await flushPromises()

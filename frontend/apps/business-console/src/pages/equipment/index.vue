@@ -10,6 +10,8 @@ import {
 } from '@/composables/useBusinessEquipment'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { friendlyErrorMessage } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { equipmentStateLabel } from '@nerv-iip/business-core'
@@ -47,6 +49,10 @@ definePage({
 })
 
 const router = useRouter()
+const auth = useAuthStore()
+const canCreateMaintenanceWorkOrder = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
+)
 const {
   activeBlocks,
   deviceRosterError,
@@ -386,7 +392,7 @@ function formatDateTime(value?: string | null) {
               <WrenchIcon aria-hidden="true" />
               记录停机
             </NvDropdownMenuItem>
-            <NvDropdownMenuItem as-child>
+            <NvDropdownMenuItem v-if="canCreateMaintenanceWorkOrder" as-child>
               <RouterLink
                 :to="{
                   path: '/maintenance/work-orders',
@@ -455,7 +461,14 @@ function formatDateTime(value?: string | null) {
               <WrenchIcon aria-hidden="true" />
               记录停机
             </NvButton>
-            <NvButton size="sm" type="button" variant="outline" class="justify-self-start" as-child>
+            <NvButton
+              v-if="canCreateMaintenanceWorkOrder"
+              size="sm"
+              type="button"
+              variant="outline"
+              class="justify-self-start"
+              as-child
+            >
               <RouterLink
                 :to="{
                   path: '/maintenance/work-orders',

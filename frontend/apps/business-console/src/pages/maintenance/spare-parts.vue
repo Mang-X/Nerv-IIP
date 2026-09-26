@@ -16,6 +16,8 @@ import { useSkuNames } from '@/composables/useSkuNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   Empty,
   EmptyDescription,
@@ -63,6 +65,10 @@ const {
   createSparePart,
   createSparePartPending,
 } = useMaintenanceSpareParts()
+const auth = useAuthStore()
+const canManageSpareParts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
+)
 const { page, pageSize } = usePagedList(filters)
 
 const createOpen = shallowRef(false)
@@ -195,7 +201,7 @@ async function submitCreate() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageSpareParts" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建备件需求
         </NvButton>

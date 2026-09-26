@@ -14,6 +14,7 @@ import {
 } from '@/composables/useEquipmentPickerCatalog'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -85,6 +86,9 @@ const { workers } = useBusinessWorkers()
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const currentUserId = computed(() => principal.value?.principalId ?? '')
+const canRecordInspections = computed(() =>
+  (principal.value?.permissionCodes ?? []).includes(P.maintenancePlansManage),
+)
 const workerOptions = computed(() =>
   workers.value
     .map((w) => ({
@@ -309,7 +313,7 @@ function formatDateTime(value?: string | null) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openRecord">
+        <NvButton v-if="canRecordInspections" size="sm" type="button" @click="openRecord">
           <PlusIcon aria-hidden="true" />
           记录点检
         </NvButton>
