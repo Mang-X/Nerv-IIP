@@ -69,6 +69,8 @@ describe('NvEntityPicker', () => {
     expect(document.body.textContent).toContain('SKU-FG-100')
     // #3823：条数是开发者关心的事，下拉里不报「共 N 条」。
     expect(document.body.textContent).not.toMatch(/共\s*\d+\s*条/)
+    // 本地过滤时目录已全部列出，不能提示「继续筛选」。
+    expect(document.body.textContent).not.toContain('输入关键字继续筛选')
 
     wrapper.unmount()
   })
