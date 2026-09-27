@@ -71,21 +71,43 @@ export function materialIssueStatusLabel(status?: string | null): string {
   return MATERIAL_ISSUE_STATUS_LABELS[status ?? ''] ?? UNKNOWN_STATUS_LABEL
 }
 
-/** 完工入库申请状态可读标签（receipt 页面专用状态集，集中存放一处便于维护）。 */
+/**
+ * 完工入库申请状态可读标签（receipt 页面专用状态集，集中存放一处便于维护）。
+ *
+ * ## 键集取自真实值域，不是从别处抄来的枚举名
+ *
+ * 权威是 MES 域 `FinishedGoodsReceiptRequest` 的 5 个状态常量
+ * （`RequestedStatus` / `PartiallyPostedStatus` / `PostedStatus` /
+ * `InventoryPostingFailedStatus` / `CancelledStatus`），聚合根里对 `Status` 的赋值也只落在
+ * 这 5 个值上。原先这张表写的是 `Pending` / `Created` / `Submitted` / `PartiallyReceived` /
+ * `Received` / `Completed` / `Rejected`——域里**没有任何一处会产出它们**，而
+ * `PartiallyPosted` / `Posted` / `InventoryPostingFailed` 这三个真实码**一个都不在表里**，
+ * 于是完工入库页把它们全渲染成「未知状态」（#3898）。这里按真实值域重建，不保留幻影码。
+ *
+ * ## 大小写不敏感查表
+ *
+ * 读面拿到的运行时值是域常量的 PascalCase（网关按 Ordinal 比较 `"Requested"`，见
+ * `BusinessConsoleMesEndpoints.cs`），而生成契约 `types.gen.ts` 的 `receiptStatus` 枚举是
+ * 展示层处理器 `MesListDisplayOpenApiDocumentProcessor` 改写出来的全小写拼写。两侧都要能命中，
+ * 所以按下表存小写码、按输入小写查——与本文件 `workOrderStatusLabel` 同一口径。
+ *
+ * 文案与 PC 读面 `useMesReferenceLabels` 的 `RECEIPT_STATUS_LABELS` 对齐：同一张入库单在
+ * PDA 与 PC 上必须读作同一个词，`posted` 是「已入库」而不是通用的「已完成」。
+ */
 export const RECEIPT_STATUS_LABELS: Record<string, string> = {
-  Requested: '待入库',
-  Pending: '待入库',
-  Created: '待入库',
-  Submitted: '待入库',
-  PartiallyReceived: '部分入库',
-  Received: '已入库',
-  Completed: '已入库',
-  Cancelled: '已取消',
-  Rejected: '已驳回',
+  requested: '待入库',
+  partiallyPosted: '部分入库',
+  posted: '已入库',
+  inventoryPostingFailed: '入库失败',
+  cancelled: '已取消',
 }
 
+const RECEIPT_STATUS_LABELS_BY_CODE = new Map(
+  Object.entries(RECEIPT_STATUS_LABELS).map(([code, label]) => [code.toLowerCase(), label]),
+)
+
 export function receiptStatusLabel(status?: string | null): string {
-  return RECEIPT_STATUS_LABELS[status ?? ''] ?? UNKNOWN_STATUS_LABEL
+  return RECEIPT_STATUS_LABELS_BY_CODE.get((status ?? '').toLowerCase()) ?? UNKNOWN_STATUS_LABEL
 }
 
 /**
