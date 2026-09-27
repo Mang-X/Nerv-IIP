@@ -270,7 +270,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
   <BusinessLayout>
     <NvPageHeader
       title="报警规则"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="`${alarmRulesTotal} 条规则`"
     >
       <template #actions>
