@@ -9,6 +9,7 @@ using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Testing.PostgreSql;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -72,15 +73,10 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         widenScope.EnsureSuccessStatusCode();
     }
 
-    [Fact]
+    [IamRealPostgresFact]
     public async Task Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
-        if (string.IsNullOrWhiteSpace(postgresConnectionString))
-        {
-            return;
-        }
-
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "nerv_iam_bootstrap");
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
@@ -98,6 +94,12 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         {
             var missing = Assert.Throws<InvalidOperationException>(() => withoutPassword.CreateClient());
             Assert.Contains("Iam:Seed:AdminPassword", missing.Message, StringComparison.Ordinal);
+        }
+
+        await using (var weakPassword = ProductionFactory("abc"))
+        {
+            var rejected = Assert.Throws<KnownException>(() => weakPassword.CreateClient());
+            Assert.StartsWith("Password must", rejected.Message, StringComparison.Ordinal);
         }
 
         await using (var factory = ProductionFactory("Bootstrap123!"))
@@ -160,4 +162,15 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
 
     private sealed record AuthResponse(string AccessToken, bool PasswordChangeRequired);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+}
+
+internal sealed class IamRealPostgresFactAttribute : FactAttribute
+{
+    public IamRealPostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL IAM production bootstrap proof.";
+        }
+    }
 }

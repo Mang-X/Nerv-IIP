@@ -93,13 +93,12 @@ public sealed class IamSeedService(
             dbContext.Roles.Add(erpRole);
         }
 
-        var (role, roleCreated, user, userCreated) = await EnsurePlatformAdministratorAsync(
+        var (role, user) = await EnsurePlatformAdministratorAsync(
             dbContext,
             seed,
             () => NewAdministrator(seed, null, null, passwordChangeRequired: false),
             cancellationToken);
-        if (!roleCreated
-            && !principalScopeBackfillApplied
+        if (!principalScopeBackfillApplied
             && seedAlreadyApplied
             && role.RoleName == "Platform Administrator"
             && role.DataScopes.Count == 0
@@ -108,7 +107,7 @@ public sealed class IamSeedService(
             role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
         }
 
-        if (!userCreated && !seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
+        if (!seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
         {
             user.UpdatePasswordHash(passwordService.Hash(seed.AdminPassword), now, now.AddDays(90), false, 5);
         }
@@ -209,7 +208,7 @@ public sealed class IamSeedService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<(Role Role, bool RoleCreated, User User, bool UserCreated)> EnsurePlatformAdministratorAsync(
+    private async Task<(Role Role, User User)> EnsurePlatformAdministratorAsync(
         ApplicationDbContext dbContext,
         IamSeedOptions seed,
         Func<User> createAdministrator,
@@ -235,7 +234,6 @@ public sealed class IamSeedService(
             .Include(x => x.Permissions)
             .Include(x => x.DataScopes)
             .SingleOrDefaultAsync(x => x.Id == adminRoleId, cancellationToken);
-        var roleCreated = role is null;
         if (role is null)
         {
             role = new Role(adminRoleId, "Platform Administrator", NervIipSeedPermissions.All);
@@ -244,7 +242,6 @@ public sealed class IamSeedService(
         }
 
         var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
-        var userCreated = user is null;
         if (user is null)
         {
             user = createAdministrator();
@@ -256,7 +253,7 @@ public sealed class IamSeedService(
             dbContext.Memberships.Add(new Membership(membershipId, adminUserId, organizationId, environmentId, [adminRoleId]));
         }
 
-        return (role, roleCreated, user, userCreated);
+        return (role, user);
     }
 
     private User NewAdministrator(

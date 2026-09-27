@@ -1507,7 +1507,9 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # 所以那侧的绿证不到这侧。⭐ 登记两条而不是一条，是因为 Maintenance 注册的是自己的 store 副本，
 # 与共享实现**不同形**（它的 eventType 谓词多一段 EventClrType，见 #3758）——
 # 「照抄了 canonical」在这里是待核主张，不能让一条用例替两份实现作证。
-Assert-Equal 60 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3846 登记 IAM 生产引导的真库证据（非 Development 启动时只补缺管理员/默认组织/环境、
+# 口令策略与重启不覆盖，只有真库上的 Production 启动分得开），增至 61。
+Assert-Equal 61 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)

@@ -731,6 +731,22 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterFilterPostgresTests.Failure_code_and_dead_lettered_window_are_filtered_by_the_maintenance_store"
       ]
+    },
+    {
+      "id": "iam-production-bootstrap-postgres",
+      "service": "Iam",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant",
+      "databasePrefix": "nerv_iam_bootstrap",
+      "diagnosticSchemas": [
+        "iam"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant"
+      ]
     }
   ],
   "scaleSeedExemptions": [

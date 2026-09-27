@@ -228,7 +228,7 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 
 ## 7. Seed 契约
 
-Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
+Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed，以及下文非 Development 下随 IAM 启动执行的平台引导。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
 
 产品基线 seed 例外（#3805、#3811）：以下 seed 是基础功能必需的开箱数据，**默认在服务 Web 启动时执行**，不依赖 `Persistence:AutoMigrate`；显式设为 `false` 才关闭。它们只补缺、不覆盖已有行，重复执行不改变租户已有数据。
 
