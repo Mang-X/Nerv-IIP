@@ -137,6 +137,12 @@ public sealed class PostStockMovementCommandHandler(
                 existingInboundLedger?.OnHandQuantity);
         }
 
+        await EnsureRegisteredLocationAsync(request, request.SiteCode, request.LocationCode, cancellationToken);
+        if (isTransfer)
+        {
+            await EnsureRegisteredLocationAsync(request, ResolveTransferInSiteCode(request), request.TransferInLocationCode!, cancellationToken);
+        }
+
         var provenance = ResolveExpiryProvenance(request);
         var ledger = await GetOrCreateLedgerAsync(movement, provenance.ShelfLifeDays, provenance.Source, cancellationToken);
         if (request.Quantity < 0 && ledger.IsExpired(GetBusinessDate(request)) && !HasExpiredStockOverride(request.AllowExpiredStock, request.ExpiryOverridePermissionGranted))
@@ -234,6 +240,26 @@ public sealed class PostStockMovementCommandHandler(
                 && x.SourceDocumentId == movement.SourceDocumentId
                 && x.IdempotencyKey == idempotencyKey,
             cancellationToken);
+    }
+
+    private async Task EnsureRegisteredLocationAsync(
+        PostStockMovementCommand request,
+        string siteCode,
+        string locationCode,
+        CancellationToken cancellationToken)
+    {
+        var registered = await dbContext.StockLocations.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SiteCode == siteCode
+                && x.LocationCode == locationCode,
+            cancellationToken);
+        if (!registered)
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                "库存库位未登记在当前组织、环境与工厂，请先维护库位主数据。");
+        }
     }
 
     private async Task<PostStockMovementCommand> ApplySkuShelfLifeDefaultAsync(
