@@ -973,9 +973,9 @@ describe('maintenance plans page', () => {
     const wrapper = mount(PlansPage, mountOptions())
     await flushPromises()
 
-    // A failed telemetry read is never mislabeled as "暂无样本".
+    // A failed telemetry read is never mislabeled as "暂无运行记录".
     expect(wrapper.text()).toContain('运行小时（读取失败）')
-    expect(wrapper.text()).toContain('运行小时（暂无样本）')
+    expect(wrapper.text()).toContain('运行小时（暂无运行记录）')
   })
 
   it('shows a loading state for a runtime plan whose remaining read is in flight (not a stale value)', async () => {

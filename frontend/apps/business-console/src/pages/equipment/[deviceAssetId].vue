@@ -278,7 +278,7 @@ const runtimeRemainingUnknownReason = computed(() => {
   return (
     [
       ['error', '读取失败'],
-      ['no-samples', '暂无样本'],
+      ['no-samples', '暂无运行记录'],
       ['invalid', '阈值缺失'],
     ] as const
   )
@@ -297,7 +297,7 @@ const runtimeUntilNextCardValue = computed(() => {
   // 没有任何已知(ok)计划：按具体未知成因区分,与计划列表口径一致——不把「阈值缺失」误报成「无样本」。
   if (runtimeRemainingHasErrorCandidate.value) return '读取失败'
   if (runtimeRemainingHasInvalidCandidate.value) return '阈值缺失'
-  return '无样本'
+  return '暂无记录'
 })
 // 主卡描述随口径同步：有已知值但也有未知候选时，主 label 本身就说明是「已知计划最少还需」，
 // 不把已知最小值当成全体最紧迫的确定断言。
@@ -320,8 +320,8 @@ const runtimeUntilNextCardHint = computed(() => {
     return `运行小时型计划 ${code} · 阈值 ${mostUrgent.plan.nextDueRuntimeHours ?? '—'} 小时`
   }
   if (runtimeRemainingHasErrorCandidate.value) return '运行小时读取失败，请稍后重试'
-  if (runtimeRemainingHasInvalidCandidate.value) return '运行小时阈值与游标不成对，计划数据不完整'
-  return '当前窗口无运行样本'
+  if (runtimeRemainingHasInvalidCandidate.value) return '保养计划的运行小时阈值未维护完整'
+  return '统计时段内没有运行记录'
 })
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
@@ -359,16 +359,16 @@ function refreshAll() {
 const cumulativeRuntimeCardValue = computed(() => {
   if (runtimeHoursPending.value) return '读取中…'
   if (runtimeHoursError.value) return '读取失败'
-  if (!hasRuntimeHoursSamples.value) return '无样本'
+  if (!hasRuntimeHoursSamples.value) return '暂无记录'
   return formatHours(totalRuntimeHours.value)
 })
 const runtimeHoursCardHint = computed(() => {
   if (runtimeHoursPending.value) return '正在读取运行小时'
   if (runtimeHoursError.value) return '运行小时读取失败，请稍后重试'
-  if (!hasRuntimeHoursSamples.value) return '当前窗口无运行样本，等于设备暂无运行事实'
+  if (!hasRuntimeHoursSamples.value) return '统计时段内没有设备运行记录'
   return currentDeviceRuntimePlan.value
     ? '自运行小时型计划起算日累计'
-    : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天窗口累计`
+    : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天累计`
 })
 const currentDeviceSpareParts = computed(() =>
   spareParts.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
@@ -418,7 +418,7 @@ const reliabilityCells = computed<NvMetricStripCell[]>(() => [
     key: 'mtbf',
     label: 'MTBF',
     value: metricLabel(reliability.value?.mtbfHours, ' 小时'),
-    meta: reliability.value?.mtbfRuntimeHasSamples ? '按维修记录样本计算' : '当前窗口无运行样本',
+    meta: reliability.value?.mtbfRuntimeHasSamples ? '按维修记录计算' : '统计时段内没有运行记录',
   },
   {
     key: 'mttr',
@@ -564,11 +564,11 @@ function availabilityVariant(value?: string | null) {
   return 'neutral'
 }
 function metricLabel(value?: number | null, suffix = '') {
-  if (value === null || value === undefined) return '无样本'
+  if (value === null || value === undefined) return '暂无记录'
   return `${Number(value).toFixed(1)}${suffix}`
 }
 function formatHours(value?: number | null) {
-  if (value === null || value === undefined) return '无样本'
+  if (value === null || value === undefined) return '暂无记录'
   return `${Number(value).toFixed(1)} 小时`
 }
 function historyTypeLabel(value?: string | null) {
@@ -576,7 +576,7 @@ function historyTypeLabel(value?: string | null) {
     alarm: '报警',
     daily: '日汇总',
     hourly: '小时汇总',
-    sample: '采样',
+    sample: '采集值',
     state: '状态',
   }
   // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
@@ -870,7 +870,7 @@ function recordDowntime() {
               >
                 <div class="flex items-center justify-between gap-2">
                   <p class="truncate text-sm font-semibold text-foreground">
-                    {{ alarm.alarmCode ?? '无代码' }}
+                    {{ alarm.alarmCode ?? '未编号报警' }}
                   </p>
                   <NvBadge class="rounded-sm" :variant="severityVariant(alarm.severity)">{{
                     severityLabel(alarm.severity)
@@ -1069,7 +1069,7 @@ function recordDowntime() {
             </div>
             <div class="grid gap-3 p-4">
               <div v-if="telemetryPending" class="text-sm text-muted-foreground">
-                正在读取遥测历史。
+                正在读取历史数据。
               </div>
               <div
                 v-for="item in historyPreview"
@@ -1093,7 +1093,7 @@ function recordDowntime() {
                 v-if="!telemetryPending && !historyPreview.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                所选时间范围内没有历史采样；不代表设备未接入，可换个时间范围再看。
+                所选时间范围内没有历史数据；不代表设备未接入，可换个时间范围再看。
               </div>
             </div>
           </div>
@@ -1192,7 +1192,7 @@ function recordDowntime() {
           <NvMetricStrip :cells="reliabilityCells" />
           <NvMetricCard
             variant="breakdown"
-            label="窗口内维护事件"
+            label="统计时段内维护事件"
             :value="maintenanceEventTotal"
             unit=" 次"
             :segments="maintenanceEventSegments"
@@ -1206,7 +1206,7 @@ function recordDowntime() {
             </div>
             <div class="grid gap-3 p-4">
               <div v-if="maintenancePending" class="text-sm text-muted-foreground">
-                正在读取维护上下文。
+                正在读取维护记录。
               </div>
               <div
                 v-for="row in currentDeviceWorkOrders"
@@ -1233,7 +1233,7 @@ function recordDowntime() {
                 v-if="!maintenancePending && !currentDeviceWorkOrders.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前数据窗口没有该设备的维修工单。可前往维护工单查看完整记录或新建工单。
+                统计时段内没有该设备的维修工单。可前往维护工单查看完整记录或新建工单。
               </div>
             </div>
           </div>
@@ -1276,7 +1276,7 @@ function recordDowntime() {
                 "
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前返回窗口未包含可关联的保养计划或点检记录；点检以工单/计划关联，缺少设备字段时不在详情页冒充已关联。
+                暂无与该设备关联的保养计划或点检记录。点检通过维护工单或保养计划关联到设备，未关联设备的点检不在此显示。
               </div>
             </div>
           </div>

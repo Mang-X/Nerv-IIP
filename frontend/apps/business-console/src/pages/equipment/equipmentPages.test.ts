@@ -854,14 +854,14 @@ describe('equipment pages', () => {
     expect(wrapper.text()).not.toContain('可能更紧迫')
   })
 
-  it('shows 无样本 (not 0.0 小时) for cumulative runtime hours when the device has no real samples', () => {
+  it('shows 暂无记录 (not 0.0 小时) for cumulative runtime hours when the device has no real samples', () => {
     runtimeHoursState.total = 0
     runtimeHoursState.hasSamples = false
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     // NvSectionCard renders description immediately followed by its value — assert the cumulative card
-    // value is the honest "无样本", never a fabricated definitive "0.0 小时".
-    expect(wrapper.text()).toContain('累计运行小时无样本')
+    // value is the honest "暂无记录", never a fabricated definitive "0.0 小时".
+    expect(wrapper.text()).toContain('累计运行小时暂无记录')
     expect(wrapper.text()).not.toContain('累计运行小时0.0')
   })
 
@@ -882,7 +882,7 @@ describe('equipment pages', () => {
     // Reason names the actual status (读取失败) and does not enumerate absent causes.
     expect(wrapper.text()).toContain('另 1 个计划读取失败')
     expect(wrapper.text()).not.toContain('阈值缺失')
-    expect(wrapper.text()).not.toContain('暂无样本')
+    expect(wrapper.text()).not.toContain('暂无运行记录')
   })
 
   it('shows read-failed for the hours-until-next card when every candidate runtime plan read failed', () => {
@@ -913,16 +913,16 @@ describe('equipment pages', () => {
     expect(wrapper.text()).not.toContain('运行小时型计划 PM-CNC-RUNTIME · 运行小时读取失败')
   })
 
-  it('surfaces 阈值缺失 (consistent with the list, not 无样本) when all candidates are invalid', () => {
+  it('surfaces 阈值缺失 (consistent with the list, not 暂无记录) when all candidates are invalid', () => {
     runtimeRemainingState.map = {
       'plan-2': { status: 'invalid' },
       'plan-3': { status: 'invalid' },
     }
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
-    // Detail card must use the same data-truth wording as the list — invalid is not "无样本".
+    // Detail card must use the same data-truth wording as the list — invalid is not "暂无记录".
     expect(wrapper.text()).toContain('阈值缺失')
-    expect(wrapper.text()).not.toContain('距下次保养还需无样本')
+    expect(wrapper.text()).not.toContain('距下次保养还需暂无记录')
   })
 
   it('flags incompleteness including invalid candidates alongside a known value', () => {
@@ -941,7 +941,7 @@ describe('equipment pages', () => {
     // Must NOT enumerate reasons that do not apply — otherwise the operator would think it might also be
     // a telemetry read failure or no-samples, when the only real cause is a missing threshold.
     expect(wrapper.text()).not.toContain('读取失败')
-    expect(wrapper.text()).not.toContain('暂无样本')
+    expect(wrapper.text()).not.toContain('暂无运行记录')
   })
 
   it('renders the device control action and command history when the user can control the device', () => {

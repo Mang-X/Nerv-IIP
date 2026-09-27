@@ -139,7 +139,7 @@ function statusFor(status: BusinessConsoleEquipmentHealthRuleStatus) {
             label="健康评分"
             value="暂无数据"
             :status="{ label: '历史数据积累中', tone: 'warning' }"
-            foot-start="评分依赖的遥测 / 报警 / 运行记录尚未积累，暂不给出健康结论。"
+            foot-start="评分依赖的采集数据、报警和运行记录尚未积累，暂不给出健康结论。"
           />
           <template v-else>
             <NvMetricCard

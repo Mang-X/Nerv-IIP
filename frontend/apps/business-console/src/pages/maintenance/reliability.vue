@@ -122,15 +122,15 @@ const windowRange = computed<DateRange>({
 })
 
 // 无运行样本时后端仍会给出一个窗口兜底值（如 720 小时＝整窗口无故障的名义值）。
-// 那不是实测 MTBF，读数与副行「当前窗口无运行样本」直接打架，所以两处口径统一：
+// 那不是实测 MTBF，读数与副行「统计时段内没有运行记录」直接打架，所以两处口径统一：
 // 没有运行样本就走无样本态，不显示任何小时数（MTTR 已是这个做法）。
 const mtbfHasSamples = computed(() => reliability.value?.mtbfRuntimeHasSamples === true)
 const reliabilityCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'mtbf',
     label: 'MTBF',
-    value: mtbfHasSamples.value ? metricLabel(reliability.value?.mtbfHours, ' 小时') : '无样本',
-    meta: mtbfHasSamples.value ? '按运行样本计算' : '当前窗口无运行样本',
+    value: mtbfHasSamples.value ? metricLabel(reliability.value?.mtbfHours, ' 小时') : '暂无记录',
+    meta: mtbfHasSamples.value ? '按运行记录计算' : '统计时段内没有运行记录',
   },
   {
     key: 'mttr',
@@ -243,7 +243,7 @@ function moneyLabel(value?: number | null, currency?: string | null) {
   return `${currency ? `${currency} ` : ''}${Number(value).toFixed(2)}`
 }
 function metricLabel(value?: number | null, suffix = '') {
-  if (value === null || value === undefined) return '无样本'
+  if (value === null || value === undefined) return '暂无记录'
   return `${Number(value).toFixed(1)}${suffix}`
 }
 function shortDateTime(value?: string | null) {
