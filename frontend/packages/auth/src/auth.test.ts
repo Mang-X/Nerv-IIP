@@ -340,6 +340,29 @@ describe('auth store factory', () => {
     expect(auth.isAuthenticated).toBe(true)
   })
 
+  it('keeps the password-change flag when a full page reload restores the session', async () => {
+    const { api, client } = createApi()
+    const useAuthStore = createAuthStore({
+      api,
+      messages,
+      storageKey: 'nerv-iip.test.auth',
+      storeId: 'test-auth',
+    })
+    localStorage.setItem(
+      'nerv-iip.test.auth',
+      JSON.stringify({ principal, refreshToken: 'stored-refresh', sessionId: 'session-001' }),
+    )
+    client.refreshConsoleSession.mockResolvedValue({
+      data: { success: true, data: { ...session, passwordChangeRequired: true } },
+    })
+    const auth = useAuthStore()
+
+    await auth.restoreSession()
+
+    expect(auth.isAuthenticated).toBe(true)
+    expect(auth.passwordChangeRequired).toBe(true)
+  })
+
   it('keeps the session and flag when the password change is rejected', async () => {
     const { api, client } = createApi()
     const useAuthStore = createAuthStore({

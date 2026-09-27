@@ -877,6 +877,13 @@ public sealed class IamPostgresProfileTests
                 sessions.Single(x => x.Id == new UserSessionId(otherAuth.SessionId)).RevokedReason);
         }
 
+        var currentRefresh = await client.PostAsJsonAsync(
+            "/api/iam/v1/auth/refresh",
+            new { userAuth.RefreshToken });
+        Assert.Equal(HttpStatusCode.OK, currentRefresh.StatusCode);
+        var refreshedAuth = await ReadResponseDataAsync<LifecycleAuthResponse>(currentRefresh);
+        Assert.False(refreshedAuth.PasswordChangeRequired);
+
         var oldBearerChange = await client.PostAsJsonAsync(
             "/api/iam/v1/auth/change-password",
             new { currentPassword = "ChangedPassword123!", newPassword = "AnotherPassword123!" });
@@ -907,7 +914,7 @@ public sealed class IamPostgresProfileTests
         client.DefaultRequestHeaders.Authorization = null;
         var disabledRefresh = await client.PostAsJsonAsync(
             "/api/iam/v1/auth/refresh",
-            new { userAuth.RefreshToken });
+            new { refreshedAuth.RefreshToken });
         Assert.Equal(HttpStatusCode.Unauthorized, disabledRefresh.StatusCode);
 
         var disabledLogin = await client.PostAsJsonAsync(
