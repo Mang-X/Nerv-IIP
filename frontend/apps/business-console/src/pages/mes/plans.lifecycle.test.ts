@@ -65,7 +65,7 @@ const stubs = {
     template: `
       <table><tbody>
         <tr v-for="row in rows" :key="row.productionPlanId">
-          <td data-column="readiness"><slot name="cell-readinessStatus" :row="row" /></td>
+          <td data-column="status"><slot name="cell-status" :row="row" /></td>
           <td data-column="actions"><slot name="cell-actions" :row="row" /></td>
         </tr>
       </tbody></table>
@@ -96,8 +96,8 @@ describe('MES 生产计划生命周期入口', () => {
     const wrapper = mount(PlansPage, { global: { stubs } })
     const row = wrapper.find('tbody tr')
 
-    expect(row.get('[data-column="readiness"]').text()).toBe(expectedLabel)
-    expect(row.text()).not.toContain('可转工单')
+    expect(row.get('[data-column="status"]').text()).toBe(expectedLabel)
+    expect(wrapper.text()).not.toContain('可转工单')
     expect(row.find('button').exists()).toBe(false)
   })
 })

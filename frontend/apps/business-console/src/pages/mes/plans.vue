@@ -40,10 +40,9 @@ const { resolveSkuLabel } = useMesDisplayNames()
 
 const keyword = ref('')
 const sourceFilter = ref(normalizeSourceQuery(route.query.source))
-const readinessFilter = ref('all')
 const sort = ref<NvDataTableSort | null>(null)
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [keyword, sourceFilter, readinessFilter],
+  resetOn: [keyword, sourceFilter],
 })
 
 const sourceOptions = [
@@ -53,13 +52,6 @@ const sourceOptions = [
   { label: '安全库存补充', value: 'safety' },
   { label: '预测需求', value: 'forecast' },
 ]
-const readinessOptions = [
-  { label: '全部就绪状态', value: 'all' },
-  { label: '可转工单', value: 'Ready' },
-  { label: '有预警', value: 'Warning' },
-  { label: '受阻', value: 'Blocked' },
-]
-
 watchDebounced(
   keyword,
   (value) => {
@@ -71,13 +63,6 @@ watch(
   sourceFilter,
   (value) => {
     filters.source = value === 'all' ? undefined : value
-  },
-  { immediate: true },
-)
-watch(
-  readinessFilter,
-  (value) => {
-    filters.readinessStatus = value === 'all' ? undefined : value
   },
   { immediate: true },
 )
@@ -100,8 +85,7 @@ const errorMessage = computed(() => inlineErrorMessage(productionPlansError.valu
 const hasActiveFilters = computed(
   () =>
     Boolean(keyword.value.trim()) ||
-    sourceFilter.value !== 'all' ||
-    readinessFilter.value !== 'all',
+    sourceFilter.value !== 'all',
 )
 const emptyMessage = computed(() =>
   hasActiveFilters.value
@@ -126,20 +110,16 @@ const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
     width: 'w-44',
     accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0),
   },
-  { key: 'readinessStatus', header: '就绪状态', width: 'w-28' },
+  { key: 'status', header: '工单状态', width: 'w-28' },
 ]
 
 function resetFilters() {
   keyword.value = ''
   sourceFilter.value = 'all'
-  readinessFilter.value = 'all'
 }
 
-function isPlanCompleted(plan: BusinessConsoleMesProductionPlanRow) {
+function workOrderStatus(plan: BusinessConsoleMesProductionPlanRow) {
   return plan.status === 'completed'
-}
-function planRowReadiness(plan: BusinessConsoleMesProductionPlanRow) {
-  return isPlanCompleted(plan)
     ? { label: '已完工', tone: 'neutral' as const }
     : { label: '已转工单', tone: 'neutral' as const }
 }
@@ -220,16 +200,6 @@ function normalizeSourceQuery(value: unknown): string {
             }}</NvSelectItem>
           </NvSelectContent>
         </NvSelect>
-        <NvSelect v-model="readinessFilter">
-          <NvSelectTrigger class="h-9 w-36" aria-label="就绪状态"
-            ><NvSelectValue
-          /></NvSelectTrigger>
-          <NvSelectContent>
-            <NvSelectItem v-for="o in readinessOptions" :key="o.value" :value="o.value">{{
-              o.label
-            }}</NvSelectItem>
-          </NvSelectContent>
-        </NvSelect>
       </template>
       <template #actions>
         <NvButton type="button" variant="ghost" size="sm" @click="resetFilters">重置</NvButton>
@@ -274,8 +244,8 @@ function normalizeSourceQuery(value: unknown): string {
         <span v-if="row.uomCode" class="ml-1 text-xs text-muted-foreground">{{ row.uomCode }}</span>
       </template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
-      <template #cell-readinessStatus="{ row }">
-        <NvStatusBadge :label="planRowReadiness(row).label" :tone="planRowReadiness(row).tone" />
+      <template #cell-status="{ row }">
+        <NvStatusBadge :label="workOrderStatus(row).label" :tone="workOrderStatus(row).tone" />
       </template>
     </NvDataTable>
   </BusinessLayout>
