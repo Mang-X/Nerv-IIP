@@ -78,6 +78,7 @@ public sealed class WorkOrderReleaseProjectionBackfillRedisCapTransportTests
         {
             ["Persistence:Provider"] = "PostgreSQL",
             ["Persistence:AutoMigrate"] = "false",
+            ["Quality:Seed:Enabled"] = "false",
             ["ConnectionStrings:PostgreSQL"] = QualityPostgresLaneDatabase.ConnectionString,
             ["Messaging:Provider"] = "Redis",
             ["Messaging:Redis:ConnectionString"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS"),
