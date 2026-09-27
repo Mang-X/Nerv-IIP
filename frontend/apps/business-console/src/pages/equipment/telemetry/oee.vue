@@ -135,7 +135,7 @@ const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
   ...(filters.dimension === 'day' || filters.dimension === 'shift'
     ? [{ key: 'businessDateLabel', header: '业务日' }]
     : []),
-  { key: 'windowLabel', header: '统计时段' },
+  { key: 'windowLabel', header: '本行时段' },
   { key: 'oeeRate', header: 'OEE', accessor: (row) => rateCell(row.oeeRate) },
   {
     key: 'availabilityRate',

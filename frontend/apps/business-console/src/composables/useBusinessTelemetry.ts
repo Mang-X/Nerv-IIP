@@ -157,12 +157,12 @@ export function describeTelemetryOeeLimitations() {
 export function describeTelemetryOeeDegradation(reason: string) {
   const labels: Record<string, string> = {
     runtimeStateFactsMissing: '缺少设备运行状态记录',
-    runtimeStateCoverageIncomplete: '设备运行状态没有覆盖整个统计时段',
+    runtimeStateCoverageIncomplete: '设备运行状态没有覆盖该时段',
     productionUomAmbiguous: '报工单位不一致，无法合并',
     productionOutputMissing: '缺少可用于计算的报工产出',
     theoreticalRateMissingOrAmbiguous: '缺少或存在冲突的工序标准速率',
-    productiveRuntimeMissing: '统计时段内没有有效的生产运行时长',
-    loadingRuntimeMissing: '统计时段内没有有效的负荷运行时长',
+    productiveRuntimeMissing: '该时段内没有有效的生产运行时长',
+    loadingRuntimeMissing: '该时段内没有有效的负荷运行时长',
     historicalDimensionLegacyUnresolved: '部分早期报工缺少归属信息，无法按所选视角统计',
     historicalHierarchyMissing: '报工记录缺少工厂、车间或产线归属',
     historicalTimezoneMissing: '报工记录缺少工厂时区',
@@ -185,7 +185,7 @@ export function describeTelemetryOeeDegradation(reason: string) {
     'production-uom-ambiguous': '报工单位不一致，无法合并',
     'production-output-missing': '报工总产出不为正，无法计算质量率',
     'theoretical-rate-missing-or-ambiguous': '缺少或存在冲突的工序标准速率',
-    'productive-runtime-missing': '统计时段内没有有效的生产运行时长',
+    'productive-runtime-missing': '该时段内没有有效的生产运行时长',
   }
   // 对照表以外的原因码不上屏：原因码是系统枚举，解析不出来显示「—」。
   return labels[reason] ?? '—'

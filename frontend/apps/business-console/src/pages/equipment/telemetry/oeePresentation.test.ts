@@ -11,7 +11,7 @@ import {
 // 国内工厂的使用者在东八区：接口给的是 UTC 时刻，屏上必须是当地时间。
 process.env.TZ = 'Asia/Shanghai'
 
-describe('OEE 统计时段按当地时间显示与查询', () => {
+describe('OEE 本行时段与统计时段按当地时间显示和查询', () => {
   it('把接口的 UTC 时段换算成当地时间显示（按天、按班次）', () => {
     const report = presentOeeReport({
       dimension: 'shift',

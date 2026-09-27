@@ -241,7 +241,8 @@ function summaryRowKey(row: SummaryRow) {
 
 function technicianLabel(userId?: string | null) {
   if (!userId) return '未指派'
-  return workers.value.find((w) => w.userId === userId)?.displayName ?? userId
+  // 技师账号是系统标识，名录里查不到姓名时显示「—」，不回吐账号。
+  return workers.value.find((w) => w.userId === userId)?.displayName ?? '—'
 }
 function minutesLabel(value?: number | null) {
   if (value === null || value === undefined) return '—'
@@ -394,10 +395,10 @@ function refreshAll() {
         </div>
       </section>
 
-      <!-- 按技师聚合的工时与费用 -->
+      <!-- 按技师汇总的工时与费用 -->
       <section class="grid gap-3">
         <div>
-          <h2 class="text-sm font-medium text-foreground">工时与费用（按技师聚合）</h2>
+          <h2 class="text-sm font-medium text-foreground">工时与费用（按技师汇总）</h2>
           <p class="text-sm text-muted-foreground">
             统计时段内，该设备完工工单按指派技师汇总的工时与成本。
           </p>
