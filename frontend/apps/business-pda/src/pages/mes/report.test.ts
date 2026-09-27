@@ -1517,6 +1517,81 @@ describe('PDA MES production reporting page', () => {
     expect(document.body.textContent).toContain('已忽略这条遥测记录')
   })
 
+  it('候选自带的工序不在设备列表里时仍按候选自带的转正', async () => {
+    telemetryTargetTasksRef.value = []
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-linked-only',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'active-alarm',
+      workOrderId: 'WO-2026-0009',
+      operationTaskId: 'OP-9',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0009')
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-linked-only', 'WO-2026-0009', 'OP-9')
+  })
+
+  it('改选后可以取消，回到原来的目标', async () => {
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-cancel',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('[data-testid="telemetry-change-target"]').trigger('click')
+    expect(wrapper.find('[data-testid="telemetry-target"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="telemetry-cancel-change"]').trigger('click')
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0001 · 工序 10')
+  })
+
+  it('其它设备上的工序标出「非本设备」，选中后目标上也保留标记', async () => {
+    telemetryTargetTasksRef.value = [
+      { ...deviceTasks[0], deviceAssetId: 'DEV-CNC-01' },
+      { ...deviceTasks[1], deviceAssetId: 'DEV-CNC-99' },
+    ]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-other-device',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    const own = wrapper.get('[data-testid="telemetry-target-option-OP-1"]')
+    const other = wrapper.get('[data-testid="telemetry-target-option-OP-3"]')
+    expect(own.text()).not.toContain('非本设备')
+    expect(other.text()).toContain('非本设备')
+    await other.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="telemetry-target-other-device"]').text()).toBe('非本设备')
+  })
+
+  it('忽略被拒时上屏业务原因且候选保留', async () => {
+    telemetryDismiss.mockRejectedValueOnce({
+      success: false,
+      code: 400,
+      message: '该遥测记录已被处理。',
+      errorData: [],
+    })
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-dismiss-reject',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('input[placeholder="忽略原因（忽略时必填）"]').setValue('重复采集')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '忽略')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('该遥测记录已被处理。')
+    expect(document.body.textContent).not.toContain('已忽略这条遥测记录')
+    expect(wrapper.find('input[placeholder="忽略原因（忽略时必填）"]').exists()).toBe(true)
+  })
+
   it('设备上只有一道执行中的工序时直接带出', async () => {
     telemetryTargetTasksRef.value = [deviceTasks[0]]
     const wrapper = await openTelemetryCandidate({

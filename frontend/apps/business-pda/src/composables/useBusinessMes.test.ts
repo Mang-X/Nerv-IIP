@@ -33,6 +33,7 @@ import {
   useMesProductionMaterialLots,
   useMesReceipts,
   useMesTelemetryCandidateTargetTasks,
+  useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
   useMesWorkOrders,
 } from './useBusinessMes'
@@ -170,6 +171,15 @@ vi.mock('@nerv-iip/api-client', () => ({
   ),
   recordBusinessConsoleMesProductionReportMutationOptions: mockMutationOptions(
     'recordBusinessConsoleMesProductionReport',
+  ),
+  listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions: mockQueryOptions(
+    'listBusinessConsoleMesTelemetryProductionReportCandidates',
+  ),
+  promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions: mockMutationOptions(
+    'promoteBusinessConsoleMesTelemetryProductionReportCandidate',
+  ),
+  dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions: mockMutationOptions(
+    'dismissBusinessConsoleMesTelemetryProductionReportCandidate',
   ),
   createBusinessConsoleMesMaterialIssueRequestMutationOptions: mockMutationOptions(
     'createBusinessConsoleMesMaterialIssueRequest',
@@ -2930,5 +2940,26 @@ describe('pda useBusinessMes composables', () => {
         query: expect.objectContaining({ deviceAssetId: undefined, keyword: 'WO-1' }),
       }),
     )
+  })
+
+  it('遥测候选转正 / 忽略：success=false 的信封按失败抛出，成功时返回报工单号', async () => {
+    const queue = useMesTelemetryProductionReportCandidates()
+    const promote = coladaState.mutateById.get(
+      'promoteBusinessConsoleMesTelemetryProductionReportCandidate',
+    )!
+    const dismiss = coladaState.mutateById.get(
+      'dismissBusinessConsoleMesTelemetryProductionReportCandidate',
+    )!
+    const rejected = { success: false, message: '工序已完工，不能再报工。', data: null }
+
+    promote.mockResolvedValueOnce(rejected)
+    await expect(queue.promote('cand-1', 'WO-1', 'OP-1')).rejects.toBe(rejected)
+    dismiss.mockResolvedValueOnce(rejected)
+    await expect(queue.dismiss('cand-1', '重复采集')).rejects.toBe(rejected)
+
+    promote.mockResolvedValueOnce({ success: true, data: { reportNo: 'PRPT-1' } })
+    await expect(queue.promote('cand-1', 'WO-1', 'OP-1')).resolves.toBe('PRPT-1')
+    dismiss.mockResolvedValueOnce({ success: true, data: { accepted: true } })
+    await expect(queue.dismiss('cand-1', '重复采集')).resolves.toBeUndefined()
   })
 })

@@ -97,8 +97,8 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             status: "dismissed");
 
     /// <summary>
-    /// #3844：MES 端候选号是强类型标识，只从路由绑定；请求体里再带一份字符串候选号，JSON 反序列化失败，
-    /// 转正 / 忽略整单 400。候选号只能出现在路径上；转正应答按真实下游形状（报工单号是 { id } 对象）读。
+    /// #3844：MES 端候选号是强类型标识，HTTP 端点没注册它的 JSON 转换器，只能从路由绑定；请求体里再带一份
+    /// 字符串候选号，JSON 反序列化失败，转正 / 忽略整单 400。候选号只能出现在路径上；转正应答按真实下游形状（报工单号是 { id } 对象）读。
     /// </summary>
     [Fact]
     public async Task Telemetry_candidate_promote_and_dismiss_use_the_real_mes_wire_shapes()
