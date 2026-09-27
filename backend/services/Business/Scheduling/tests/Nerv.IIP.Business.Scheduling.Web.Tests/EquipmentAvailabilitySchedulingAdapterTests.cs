@@ -332,6 +332,30 @@ public class EquipmentAvailabilitySchedulingAdapterTests
         Assert.Contains(plan.EquipmentRisks!, x => x.Message.Contains("采集数据已过期", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 还没接入采集的设备同样是「状态未知」的软约束：工序照排，风险说明按实情写「尚未接入采集」。
+    /// </summary>
+    [Fact]
+    public void Apply_soft_mode_describes_not_connected_device_as_not_connected()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var availability = CreateAvailability(
+            CreateWindow(
+                deviceAssetId: "DEV-WELD-01",
+                workCenterId: "WC-TUBE-WELD",
+                status: EquipmentRuntimeAvailabilityStatus.Unknown,
+                reasonCode: EquipmentRuntimeReasonCodes.SourceNotConnected,
+                startUtc: problem.HorizonStartUtc,
+                endUtc: problem.HorizonEndUtc));
+
+        var applied = EquipmentAvailabilitySchedulingAdapter.Apply(problem, availability);
+        var plan = new FiniteCapacityScheduler().Schedule(applied, "plan-3845-not-connected", GeneratedAtUtc);
+
+        Assert.Empty(plan.UnscheduledOperations);
+        Assert.Contains(plan.EquipmentRisks!, x => x.Message.Contains("设备尚未接入采集", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.EquipmentRisks!, x => x.Message.Contains("采集数据已过期", StringComparison.Ordinal));
+    }
+
     private static EquipmentRuntimeAvailabilityResponse CreateAvailability(
         params EquipmentRuntimeAvailabilityWindowContract[] items)
     {

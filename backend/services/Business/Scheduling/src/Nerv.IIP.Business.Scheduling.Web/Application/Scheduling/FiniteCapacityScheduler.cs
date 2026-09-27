@@ -1767,6 +1767,7 @@ file sealed class SchedulerState
         return reasonCode switch
         {
             EquipmentRuntimeReasonCodes.SourceStale => "采集数据已过期",
+            EquipmentRuntimeReasonCodes.SourceNotConnected => "设备尚未接入采集",
             HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode => "采集源当前不可达",
             EquipmentRuntimeReasonCodes.TagMappingMissing => "采集点位未映射",
             _ => "缺少运行时状态"
