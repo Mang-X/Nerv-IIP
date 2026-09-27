@@ -57,7 +57,7 @@ internal static class ErpFinanceSourceDocumentFixtures
                 environmentId,
                 purchaseReceiptNo,
                 purchaseOrder.PurchaseOrderNo,
-                [new PurchaseReceiptCommandLine("L1", 1m, "accepted")]),
+                [new PurchaseReceiptCommandLine("L1", 1m, "accepted", "RAW-A-01")]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
     }
@@ -87,7 +87,7 @@ internal static class ErpFinanceSourceDocumentFixtures
                 environmentId,
                 $"RCV-SRC-{invoiceNo}",
                 purchaseOrder.PurchaseOrderNo,
-                [new PurchaseReceiptCommandLine("L1", 1m, "accepted")]),
+                [new PurchaseReceiptCommandLine("L1", 1m, "accepted", "RAW-A-01")]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

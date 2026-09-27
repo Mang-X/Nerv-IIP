@@ -898,7 +898,7 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
-            throw new KnownException("采购收货数据无效，请检查收货数量、质量状态和批次。", exception);
+            throw new KnownException("采购收货数据无效，请检查收货数量、质量状态、收货库位和批次。", exception);
         }
 
         dbContext.PurchaseReceipts.Add(receipt);

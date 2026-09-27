@@ -7511,6 +7511,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     purchaseOrderLineNo: string;
     receivedQuantity?: number;
     qualityStatus: string;
+    locationCode?: string | null;
 };
 
 export type NervIipContractsErpPurchaseReceiptInventoryPostingRoute = 'direct' | 'wms';

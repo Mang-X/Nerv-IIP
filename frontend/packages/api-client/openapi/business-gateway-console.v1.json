@@ -62567,6 +62567,12 @@
             "maxLength": 50,
             "minLength": 0,
             "nullable": false
+          },
+          "locationCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },

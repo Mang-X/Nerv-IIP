@@ -30,8 +30,8 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
                 new PurchaseOrderLineDraft("LINE-002", "SKU-RM-002", "kg", 5m, 7.25m, new DateOnly(2026, 7, 1)),
             ],
             [
-                new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted"),
-                new PurchaseReceiptCommandLine("LINE-002", 3m, "accepted"),
+                new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01"),
+                new PurchaseReceiptCommandLine("LINE-002", 3m, "accepted", "RAW-A-01"),
             ]);
         var receipt = await dbContext.PurchaseReceipts
             .Include(x => x.Lines)
@@ -71,13 +71,13 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
             "PO-AP-101",
             "RCV-AP-101",
             [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-001", "kg", 5m, 12.5m, new DateOnly(2026, 7, 1))],
-            [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted")]);
+            [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01")]);
         await RecordReceiptAsync(
             dbContext,
             "PO-AP-102",
             "RCV-AP-102",
             [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-001", "kg", 5m, 12.5m, new DateOnly(2026, 7, 1))],
-            [new PurchaseReceiptCommandLine("LINE-001", 3m, "accepted")]);
+            [new PurchaseReceiptCommandLine("LINE-001", 3m, "accepted", "RAW-A-01")]);
 
         await handler.HandleAsync(await BuildReceiptRecordedEventAsync(dbContext, "RCV-AP-101"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -116,7 +116,7 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
             "PO-AP-INSPECTION",
             "RCV-AP-INSPECTION",
             [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-001", "kg", 5m, 12.5m, new DateOnly(2026, 7, 1))],
-            [new PurchaseReceiptCommandLine("LINE-001", 2m, "inspection")]);
+            [new PurchaseReceiptCommandLine("LINE-001", 2m, "inspection", "RAW-A-01")]);
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = CreateHandler(scope, dbContext, deadLetters);
 
@@ -177,7 +177,7 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
             "PO-AP-DAMAGED",
             "RCV-AP-DAMAGED",
             [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-001", "kg", 5m, 12.5m, new DateOnly(2026, 7, 1))],
-            [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted")]);
+            [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01")]);
 
         var receipt = await dbContext.PurchaseReceipts
             .Include(x => x.Lines)

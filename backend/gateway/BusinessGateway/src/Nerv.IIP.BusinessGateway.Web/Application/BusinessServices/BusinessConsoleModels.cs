@@ -3726,7 +3726,8 @@ public sealed record BusinessConsoleRecordErpPurchaseReceiptRequest(
 public sealed record BusinessConsoleErpPurchaseReceiptLine(
     string PurchaseOrderLineNo,
     decimal ReceivedQuantity,
-    string QualityStatus);
+    string QualityStatus,
+    string? LocationCode = null);
 
 public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId);
 

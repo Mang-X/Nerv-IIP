@@ -203,7 +203,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
 
     private static RecordPurchaseReceiptCommand Command(string suffix) => new(
         "org-route", "env-route", $"RCV-{suffix}", $"PO-{suffix}",
-        [new PurchaseReceiptCommandLine("10", 2m, "unrestricted")], $"receipt-{suffix}");
+        [new PurchaseReceiptCommandLine("10", 2m, "unrestricted", "RAW-A-01")], $"receipt-{suffix}");
 
     private static RecordPurchaseReceiptCommandHandler Handler(IServiceProvider services) => new(
         services.GetRequiredService<ApplicationDbContext>(), services.GetRequiredService<ErpCodingService>());

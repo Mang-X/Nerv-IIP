@@ -21,7 +21,7 @@ public sealed class ErpProcurementIntegrationEventTests
             [new PurchaseOrderLineDraft("10", "SKU", "pcs", 10m, 1.4m, new DateOnly(2026, 9, 1))]);
         order.MarkApprovalRequested("approval");
         order.ReleaseAfterApproval("approval");
-        var receipt = PurchaseReceipt.Record(order, "RCV-cost", [new PurchaseReceiptLineDraft("10", 8m, "unrestricted")]);
+        var receipt = PurchaseReceipt.Record(order, "RCV-cost", [new PurchaseReceiptLineDraft("10", 8m, "unrestricted", "RAW-A-01")]);
         var change = order.RequestChange([new PurchaseOrderLineChangeDraft("10", 10m, 9m, new DateOnly(2026, 9, 1))]);
         change.AssignApprovalChain("amendment");
         order.ApplyApprovedChange("amendment");
@@ -91,7 +91,7 @@ public sealed class ErpProcurementIntegrationEventTests
             [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
         order.MarkApprovalRequested("approval-chain-001");
         order.ReleaseAfterApproval("approval-chain-001");
-        var receipt = PurchaseReceipt.Record(order, "RCV-001", [new PurchaseReceiptLineDraft("LINE-001", 2m, "accepted")]);
+        var receipt = PurchaseReceipt.Record(order, "RCV-001", [new PurchaseReceiptLineDraft("LINE-001", 2m, "accepted", "RAW-A-01")]);
         var converter = new PurchaseReceiptRecordedIntegrationEventConverter();
 
         var integrationEvent = converter.Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
