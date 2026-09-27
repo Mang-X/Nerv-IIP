@@ -1091,9 +1091,10 @@ describe('WMS operate actions', () => {
       ...layoutStub,
       RowActions: { template: '<div><slot /></div>' },
       NvDropdownMenuItem: {
+        props: ['disabled'],
         emits: ['click'],
         template:
-          '<button type="button" data-menu-item @click="$emit(\'click\')"><slot /></button>',
+          '<button type="button" data-menu-item :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
       },
     }
     async function openAction(label: string) {
@@ -1147,6 +1148,7 @@ describe('WMS operate actions', () => {
 
     it.each([
       ['重新下发', 'wcs-retry-not-due', '还没到允许重新下发的时间'],
+      ['重新下发', 'wcs-retry-limit-reached', '重新下发次数已用完'],
       ['标记完成', 'wcs-completion-quantity-out-of-range', '累计完成数量不能超过计划数量'],
     ])('names the real reason when %s is refused with %s', async (action, code, reason) => {
       // 网关对 409/422 的信封：稳定原因码放在 message 位。
@@ -1181,10 +1183,16 @@ describe('WMS operate actions', () => {
           executedQuantity: 1,
         },
       ]
-      const wrapper = mount(WcsPage, { global: { stubs: layoutStub } })
+      const wrapper = mount(WcsPage, { global: { stubs: wcsStubs } })
       await flushPromises()
 
       expect(wrapper.text()).toContain('本页无失败')
+      expect(wrapper.text()).toMatch(/本页执行中\s*0/)
+      // 不在失败状态的任务不能重新下发：点了设备侧什么也收不到。
+      const redispatch = wrapper
+        .findAll('[data-menu-item]')
+        .find((item) => item.text().includes('重新下发'))!
+      expect(redispatch.attributes('disabled')).toBeDefined()
       expect(wrapper.text()).not.toContain('设备故障')
       expect(wrapper.text()).not.toContain('需人工跟进')
     })

@@ -2494,6 +2494,30 @@ public sealed class DispatchWcsTaskCommandHandler(
             throw new WmsUnprocessableException(exception.Message);
         }
 
+        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(
+            x => x.WarehouseTaskId == request.WarehouseTaskId,
+            cancellationToken);
+        // 不带派发内容 = 人工「重新下发原报文」：沿用已存报文与原设备。首次派发没有可沿用的报文，必须显式给出。
+        var resendOriginal = string.IsNullOrWhiteSpace(request.PayloadJson);
+        var payloadJson = resendOriginal
+            ? existing?.PayloadJson
+                ?? throw new WmsUnprocessableException("payloadJson is required for the first dispatch.")
+            : request.PayloadJson!;
+        if (resendOriginal)
+        {
+            // 只有失败的任务才需要重新下发；否则设备侧什么也收不到，却会被当成「已下发」。
+            if (existing!.Status != WcsTaskStatus.Failed)
+            {
+                throw new WmsLifecycleConflictException(
+                    "dispatch-wcs-task",
+                    $"redispatch-requires-failed-task-{existing.Status.ToString().ToLowerInvariant()}",
+                    WmsUnprocessableReasonCodes.WcsRedispatchRequiresFailedTask);
+            }
+
+            // 熔断按设备记账（失败时记在任务的 DeviceId 上），重派必须按同一台设备查。
+            deviceId = existing.DeviceId;
+        }
+
         var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
             x => x.OrganizationId == warehouseTask.OrganizationId
                 && x.EnvironmentId == warehouseTask.EnvironmentId
@@ -2504,24 +2528,15 @@ public sealed class DispatchWcsTaskCommandHandler(
         {
             throw new WmsLifecycleConflictException(
                 "dispatch-wcs-task",
-                circuit.RejectionReason!);
+                circuit.RejectionReason!,
+                WmsUnprocessableReasonCodes.WcsDeviceCircuitOpen);
         }
 
-        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(
-            x => x.WarehouseTaskId == request.WarehouseTaskId,
-            cancellationToken);
-        // 不带派发内容 = 人工「重新下发原报文」：沿用已存报文。首次派发没有可沿用的报文，必须显式给出。
-        var resendOriginal = string.IsNullOrWhiteSpace(request.PayloadJson);
-        var payloadJson = resendOriginal
-            ? existing?.PayloadJson
-                ?? throw new WmsUnprocessableException("payloadJson is required for the first dispatch.")
-            : request.PayloadJson!;
         if (existing is not null)
         {
             var claimReference = existing.Id.Id.ToString("D");
-            // 失败任务上的「重新下发原报文」是明确的重试意图，不能被当成原请求的幂等重放吞掉。
-            var retryFailedOriginal = resendOriginal && existing.Status == WcsTaskStatus.Failed;
-            if (!retryFailedOriginal && existing.MatchesDispatch(
+            // 「重新下发原报文」（此处必为失败任务）是明确的重试意图，不能被当成原请求的幂等重放吞掉。
+            if (!resendOriginal && existing.MatchesDispatch(
                     adapterType,
                     request.ExternalTaskId,
                     payloadJson,

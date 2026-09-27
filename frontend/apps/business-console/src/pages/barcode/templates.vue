@@ -29,6 +29,9 @@ import {
   NvDialogTrigger,
   NvField,
   NvFieldDescription,
+  NvFieldError,
+  NvFieldLegend,
+  NvFieldSet,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -318,10 +321,10 @@ async function submitTemplate() {
                     </NvSelectContent>
                   </NvSelect>
                 </NvField>
-                <div class="grid gap-2 sm:col-span-2">
-                  <span class="text-sm font-medium">
+                <NvFieldSet class="gap-2 sm:col-span-2">
+                  <NvFieldLegend variant="label">
                     标签数据项 <span class="text-destructive">*</span>
-                  </span>
+                  </NvFieldLegend>
                   <div
                     v-for="(row, index) in variableRows"
                     :key="index"
@@ -357,16 +360,16 @@ async function submitTemplate() {
                         "
                       />
                     </NvField>
-                    <label class="flex h-9 items-center gap-2 text-sm">
+                    <NvField orientation="horizontal" class="h-9 items-center">
                       <NvCheckbox
+                        :id="`barcode-template-required-${index}`"
                         :model-value="row.required"
-                        :aria-label="`第 ${index + 1} 行必填`"
                         @update:model-value="
                           (value) => updateRow(index, { required: value === true })
                         "
                       />
-                      必填
-                    </label>
+                      <NvFieldLabel :for="`barcode-template-required-${index}`">必填</NvFieldLabel>
+                    </NvField>
                     <NvField>
                       <NvFieldLabel :for="`barcode-template-max-${index}`">最大长度</NvFieldLabel>
                       <NvInput
@@ -400,14 +403,10 @@ async function submitTemplate() {
                     <PlusIcon aria-hidden="true" />
                     添加数据项
                   </NvButton>
-                  <p
-                    v-if="showErrors && variableError"
-                    class="text-sm text-destructive"
-                    role="alert"
-                  >
-                    {{ variableError }}
-                  </p>
-                </div>
+                  <NvField v-if="showErrors && variableError" data-invalid>
+                    <NvFieldError :errors="[variableError]" />
+                  </NvField>
+                </NvFieldSet>
               </NvFieldGroup>
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>

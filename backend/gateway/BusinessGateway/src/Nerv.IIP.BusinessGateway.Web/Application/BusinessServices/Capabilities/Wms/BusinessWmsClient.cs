@@ -237,6 +237,8 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
         "wcs-completion-quantity-out-of-range",
         "wcs-retry-not-due",
         "wcs-retry-limit-reached",
+        "wcs-redispatch-requires-failed-task",
+        "wcs-device-circuit-open",
     };
 
     protected override bool IsRegisteredLegacySemanticCode(string? code) =>

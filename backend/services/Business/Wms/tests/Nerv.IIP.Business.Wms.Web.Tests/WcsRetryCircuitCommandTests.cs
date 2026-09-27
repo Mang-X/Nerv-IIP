@@ -302,6 +302,132 @@ public sealed class WcsRetryCircuitCommandTests
     }
 
     [Fact]
+    public async Task Redispatch_of_a_task_that_has_not_failed_is_refused_instead_of_reported_as_sent()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-REDISPATCH-LIVE-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new DispatchWcsTaskCommandHandler(dbContext, CreateAuthorizer(dbContext));
+        await handler.Handle(
+            DispatchCommand(warehouseTask, "EXT-REDISPATCH-LIVE-001", expectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() => handler.Handle(
+            DispatchCommand(warehouseTask, "EXT-REDISPATCH-LIVE-001", warehouseTask.Version) with { PayloadJson = null },
+            CancellationToken.None));
+
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsRedispatchRequiresFailedTask, exception.ReasonCode);
+        Assert.Equal(1, (await dbContext.WcsTasks.SingleAsync()).AttemptCount);
+    }
+
+    [Fact]
+    public async Task Redispatch_checks_the_circuit_of_the_device_the_task_was_sent_to()
+    {
+        var now = new DateTimeOffset(2026, 7, 10, 2, 0, 0, TimeSpan.Zero);
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-REDISPATCH-CIRCUIT-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext, now.AddHours(-1)),
+            new WcsTestTimeProvider(now.AddHours(-1))).Handle(
+            DispatchCommand(warehouseTask, "EXT-REDISPATCH-CIRCUIT-001", expectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wcsTask = await dbContext.WcsTasks.SingleAsync();
+        wcsTask.Fail("E001", "blocked aisle", now.UtcDateTime.AddHours(-1));
+        // 任务发给的是 AGV-01；这台设备的熔断已打开。
+        var circuit = WcsDispatchCircuit.Create("org-001", "env-dev", "agv", "AGV-01");
+        circuit.RecordFailure(now.UtcDateTime.AddMinutes(-3), 3);
+        circuit.RecordFailure(now.UtcDateTime.AddMinutes(-2), 3);
+        circuit.RecordFailure(now.UtcDateTime.AddMinutes(-1), 3);
+        dbContext.Add(circuit);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 控制台重派不带设备号。
+        var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new DispatchWcsTaskCommandHandler(
+                dbContext,
+                CreateAuthorizer(dbContext, now),
+                new WcsTestTimeProvider(now)).Handle(
+                DispatchCommand(warehouseTask, "EXT-REDISPATCH-CIRCUIT-001", warehouseTask.Version)
+                    with { PayloadJson = null, DeviceId = null },
+                CancellationToken.None));
+
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsDeviceCircuitOpen, exception.ReasonCode);
+        Assert.Equal(WcsTaskStatus.Failed, wcsTask.Status);
+    }
+
+    [Fact]
+    public async Task Redispatch_after_the_retry_budget_is_spent_reports_the_limit()
+    {
+        var now = new DateTimeOffset(2026, 7, 10, 3, 0, 0, TimeSpan.Zero);
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-REDISPATCH-LIMIT-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateAuthorizer(dbContext, now.AddHours(-1)),
+            new WcsTestTimeProvider(now.AddHours(-1))).Handle(
+            DispatchCommand(warehouseTask, "EXT-REDISPATCH-LIMIT-001", expectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wcsTask = await dbContext.WcsTasks.SingleAsync();
+        wcsTask.Fail("E001", "blocked aisle", now.UtcDateTime.AddHours(-1), maxRetryAttempts: 1);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.True(wcsTask.IsTerminalFailure);
+
+        var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new DispatchWcsTaskCommandHandler(
+                dbContext,
+                CreateAuthorizer(dbContext, now),
+                new WcsTestTimeProvider(now)).Handle(
+                DispatchCommand(warehouseTask, "EXT-REDISPATCH-LIMIT-001", warehouseTask.Version) with { PayloadJson = null },
+                CancellationToken.None));
+
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsRetryLimitReached, exception.ReasonCode);
+        Assert.Equal(WcsTaskStatus.Failed, wcsTask.Status);
+    }
+
+    [Fact]
+    public async Task Completion_repeating_the_recorded_quantity_is_accepted()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-QTY-REPEAT-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(dbContext, CreateAuthorizer(dbContext)).Handle(
+            DispatchCommand(warehouseTask, "EXT-QTY-REPEAT-001", expectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteWcsTaskCommandHandler(dbContext);
+        var command = new CompleteWcsTaskCommand("org-001", "env-dev", "EXT-QTY-REPEAT-001", """{"actualQuantity":2}""");
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 设备重复回报同一累计数量（下界本身）不是倒退。
+        await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(2m, warehouseTask.ExecutedQuantity);
+    }
+
+    [Fact]
     public async Task First_dispatch_without_payload_is_rejected_because_there_is_nothing_to_resend()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();

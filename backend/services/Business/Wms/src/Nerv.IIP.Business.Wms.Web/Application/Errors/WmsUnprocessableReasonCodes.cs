@@ -1,7 +1,8 @@
 namespace Nerv.IIP.Business.Wms.Web.Application.Errors;
 
 /// <summary>
-/// WMS 422（领域拒绝）的**稳定机读原因代码**。
+/// WMS 领域拒绝的**稳定机读原因代码**：主要是 422；WCS 人工处置的几条是 409 生命周期冲突，
+/// 经 <see cref="WmsLifecycleConflictException.ReasonCode"/> 外发（#3842）。
 ///
 /// 背景（#1397 / 第三轮走查台账 #81）：出库复核必 422，但响应体恒为
 /// <c>{"message":"unprocessable","errorData":[]}</c> —— 拒绝理由只进了服务端日志，
@@ -62,6 +63,12 @@ public static class WmsUnprocessableReasonCodes
 
     /// <summary>WCS 任务的重新下发次数已用完（409，同上）。</summary>
     public const string WcsRetryLimitReached = "wcs-retry-limit-reached";
+
+    /// <summary>只有失败的 WCS 任务才能重新下发（409，同上）。</summary>
+    public const string WcsRedispatchRequiresFailedTask = "wcs-redispatch-requires-failed-task";
+
+    /// <summary>该设备的派发熔断已打开，暂停向它下发（409，同上）。</summary>
+    public const string WcsDeviceCircuitOpen = "wcs-device-circuit-open";
 
     /// <summary>
     /// 把仓库任务聚合抛出的 <see cref="ArgumentException"/> 归类成稳定代码。

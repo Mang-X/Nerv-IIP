@@ -80,6 +80,8 @@ public sealed class WmsUnprocessableReasonCodeTests
     [InlineData(WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange)]
     [InlineData(WmsUnprocessableReasonCodes.WcsRetryNotDue)]
     [InlineData(WmsUnprocessableReasonCodes.WcsRetryLimitReached)]
+    [InlineData(WmsUnprocessableReasonCodes.WcsRedispatchRequiresFailedTask)]
+    [InlineData(WmsUnprocessableReasonCodes.WcsDeviceCircuitOpen)]
     public void Every_reason_code_survives_the_gateway_safe_message_filter(string code)
     {
         Assert.Equal(code, WmsLifecycleConflictMiddleware.SafeOutboundCode(code, "fallback"));

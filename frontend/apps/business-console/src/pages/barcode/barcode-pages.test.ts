@@ -544,6 +544,38 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('第 1 行：请选择数据项。')
   })
 
+  it.each([
+    ['duplicate data item', 'skuCode', '200', '第 2 行：数据项与前面重复。'],
+    ['non-positive max length', 'lotNo', '0', '第 2 行：最大长度需为正整数。'],
+  ])('does not submit a template with a %s', async (_case, secondItem, maxLength, message) => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建模板'))!
+      .trigger('click')
+    await flushPromises()
+    await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
+    await setInput(wrapper, '#barcode-template-name', '托盘标签')
+    await setInput(wrapper, '#barcode-template-file', 'file-pallet')
+    await wrapper.find('#barcode-template-item-0').setValue('skuCode')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('添加数据项'))!
+      .trigger('click')
+    await flushPromises()
+    await wrapper.find('#barcode-template-item-1').setValue(secondItem)
+    await setInput(wrapper, '#barcode-template-max-1', maxLength)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.saveTemplate).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain(message)
+  })
+
   it('rewrites a legacy field list into the variable list the printer accepts on update', async () => {
     const wrapper = mount(TemplatesPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },

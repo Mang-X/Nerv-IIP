@@ -411,7 +411,10 @@ function formatDateTime(value?: string | null) {
       </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`WCS 任务操作 ${row.externalTaskId ?? ''}`">
-          <NvDropdownMenuItem :disabled="!row.warehouseTaskId" @click="openDialog('dispatch', row)">
+          <NvDropdownMenuItem
+            :disabled="!row.warehouseTaskId || !isFailed(row)"
+            @click="openDialog('dispatch', row)"
+          >
             <SendIcon aria-hidden="true" />
             重新下发
           </NvDropdownMenuItem>

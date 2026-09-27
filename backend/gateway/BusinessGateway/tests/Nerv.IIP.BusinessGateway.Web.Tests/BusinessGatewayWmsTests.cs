@@ -19,6 +19,8 @@ public sealed class BusinessGatewayWmsTests
     [Theory]
     [InlineData(HttpStatusCode.Conflict, "wcs-retry-not-due")]
     [InlineData(HttpStatusCode.Conflict, "wcs-retry-limit-reached")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-redispatch-requires-failed-task")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-device-circuit-open")]
     [InlineData(HttpStatusCode.UnprocessableEntity, "wcs-completion-quantity-out-of-range")]
     public async Task Wms_http_client_preserves_the_wcs_manual_action_refusal_reason(
         HttpStatusCode status,

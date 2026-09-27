@@ -83,9 +83,6 @@ const REASON_MESSAGES: Record<string, (context?: WmsReasonContext) => string> = 
 
   'missing-work-scope-id': () => '本次操作没有带上作业范围，请在页面顶部选择库区/站点后重试。',
 
-  // —— 422（作业池写面，#1910）——
-  // 该写面尚未经 BusinessGateway 暴露（作业池管理页面未立项），当前控制台走不到这条。
-  // 仍按 `WmsUnprocessableReasonCodes.cs` 的「新增代码必须同步」契约登记，避免开门时漏成兜底文案。
   // —— 设备任务（WCS）人工处置（#3842）——
   // 此前重派被拒一律显示「状态已被其他操作更新」、回执被拒一律显示「服务暂时不可用」，都不是真因。
   'wcs-retry-not-due': () =>
@@ -94,9 +91,18 @@ const REASON_MESSAGES: Record<string, (context?: WmsReasonContext) => string> = 
   'wcs-retry-limit-reached': () =>
     '该设备任务的重新下发次数已用完，不能再下发。请先在设备侧排查故障，再联系仓储负责人处理这条仓库任务。',
 
+  'wcs-redispatch-requires-failed-task': () =>
+    '只有执行失败的设备任务才能重新下发；该任务当前不在失败状态，设备侧不会收到任何内容。请刷新列表核实状态。',
+
+  'wcs-device-circuit-open': () =>
+    '这台设备连续失败，已暂停向它下发任务。请先在设备侧排查恢复，再重新下发。',
+
   'wcs-completion-quantity-out-of-range': () =>
     '累计完成数量不能超过计划数量，也不能少于已记录的数量。请按设备回报的累计数量重新填写。',
 
+  // —— 422（作业池写面，#1910）——
+  // 该写面尚未经 BusinessGateway 暴露（作业池管理页面未立项），当前控制台走不到这条。
+  // 仍按 `WmsUnprocessableReasonCodes.cs` 的「新增代码必须同步」契约登记，避免开门时漏成兜底文案。
   'membership-window-not-forward': () =>
     '作业池成员的生效结束时间不晚于开始时间，这段资格窗口不成立。请把结束时间改到开始时间之后，或留空表示长期有效。',
 }
