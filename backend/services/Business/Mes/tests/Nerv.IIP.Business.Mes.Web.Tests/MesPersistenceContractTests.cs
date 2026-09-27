@@ -2299,6 +2299,7 @@ public sealed class MesPersistenceContractTests
     {
         var services = CreateServices(nameof(Production_report_that_completes_operation_persists_operation_completion));
         var now = DateTimeOffset.Parse("2026-05-30T08:00:00Z");
+        var operationTaskId = $"OP-{new string('A', 78)}";
 
         using (var scope = services.CreateScope())
         {
@@ -2308,7 +2309,7 @@ public sealed class MesPersistenceContractTests
                 "org-001",
                 "env-dev",
                 "WO-REPORT-COMPLETE-001",
-                "WO-REPORT-COMPLETE-001-OP-10",
+                operationTaskId,
                 OperationTaskLifecycleStatus.InProgress,
                 10,
                 "WC-FILL",
@@ -2323,7 +2324,7 @@ public sealed class MesPersistenceContractTests
                 "env-dev",
                 "MIR-REPORT-COMPLETE-001",
                 "WO-REPORT-COMPLETE-001",
-                "WO-REPORT-COMPLETE-001-OP-10",
+                operationTaskId,
                 "MAT-SCRAP",
                 "PCS",
                 10m,
@@ -2338,7 +2339,7 @@ public sealed class MesPersistenceContractTests
                     "org-001",
                     "env-dev",
                     "WO-REPORT-COMPLETE-001",
-                    "WO-REPORT-COMPLETE-001-OP-10",
+                    operationTaskId,
                     9m,
                     1m,
                     true,
@@ -2352,14 +2353,14 @@ public sealed class MesPersistenceContractTests
         using var recreatedScope = services.CreateScope();
         var task = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
             .OperationTasks
-            .SingleAsync(x => x.OperationTaskIdValue == "WO-REPORT-COMPLETE-001-OP-10");
+            .SingleAsync(x => x.OperationTaskIdValue == operationTaskId);
 
         Assert.Equal(OperationTaskLifecycleStatus.Completed, task.Status);
         Assert.Equal(now.AddMinutes(40), task.ExistingEndUtc);
         var report = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
             .ProductionReports.SingleAsync(x => x.WorkOrderId == "WO-REPORT-COMPLETE-001");
-        Assert.Equal($"WO-REPORT-COMPLETE-001-OP-10-{report.ReportNo}", report.ProducedLotNo);
-        Assert.DoesNotContain("WO-REPORT-COMPLETE-001-WO-REPORT-COMPLETE-001", report.ProducedLotNo);
+        Assert.Equal($"LOT-{report.ReportNo}", report.ProducedLotNo);
+        Assert.DoesNotContain("WO-REPORT-COMPLETE-001", report.ProducedLotNo);
         Assert.True(report.ProducedLotNo!.Length <= 100);
     }
 

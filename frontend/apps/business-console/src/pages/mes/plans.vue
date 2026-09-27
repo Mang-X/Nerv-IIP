@@ -164,7 +164,7 @@ const emptyMessage = computed(() =>
 )
 
 const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
-  { key: 'productionPlanId', header: '来源需求号', cellClass: 'font-medium' },
+  { key: 'sourceDemandReference', header: '来源需求号', cellClass: 'font-medium' },
   { key: 'sourceSystem', header: '来源' },
   { key: 'skuId', header: '物料' },
   {
@@ -241,7 +241,6 @@ function planBlockHint(plan: BusinessConsoleMesProductionPlanRow) {
   return '尚未就绪，需处理后再转'
 }
 function sortValue(plan: BusinessConsoleMesProductionPlanRow, key: string) {
-  if (key === 'productionPlanId') return plan.sourceDemandReference ?? ''
   if (key === 'plannedQuantity') return plan.plannedQuantity ?? 0
   if (key === 'plannedStartUtc')
     return plan.plannedStartUtc ? new Date(plan.plannedStartUtc).getTime() : 0
@@ -371,7 +370,7 @@ function newPlanIdempotencyKey(scope: string) {
       :empty-message="emptyMessage"
       @retry="refreshProductionPlans"
     >
-      <template #cell-productionPlanId="{ row }">
+      <template #cell-sourceDemandReference="{ row }">
         <span v-if="row.sourceDemandReference">{{ row.sourceDemandReference }}</span>
         <span v-else class="text-muted-foreground">暂无需求号</span>
       </template>

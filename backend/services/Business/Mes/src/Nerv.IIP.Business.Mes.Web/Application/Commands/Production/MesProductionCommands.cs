@@ -304,7 +304,7 @@ public sealed class RecordProductionReportCommandHandler(
         var producedLotNo = request.ProducedLotNo;
         if (isOutputOperation && request.GoodQuantity > 0m && string.IsNullOrWhiteSpace(producedLotNo))
         {
-            producedLotNo = $"{request.OperationTaskId}-{allocation.Code}";
+            producedLotNo = $"LOT-{allocation.Code}";
         }
 
         var oeeProjection = ProductionReportOeeProjectionFactory.Create(operationTask);

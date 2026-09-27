@@ -396,7 +396,7 @@ const uiStubs = {
   NvDataTable: {
     props: ['rows', 'columns', 'rowKey', 'sort', 'clientSort', 'loading', 'emptyMessage'],
     template: `<div><template v-for="(row, i) in rows" :key="i">
-      <slot name="cell-productionPlanId" :row="row" />
+      <slot name="cell-sourceDemandReference" :row="row" />
       <slot name="cell-sourceSystem" :row="row" />
       <slot name="cell-workOrderId" :row="row" />
       <slot name="cell-status" :row="row" />
@@ -637,6 +637,7 @@ describe('MES workflow copy', () => {
     expect(wrapper.find('#add-plan-id').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('生成')
     expect(wrapper.text()).toContain('MD-V3-01')
+    expect(wrapper.text().match(/MD-V3-01/g)).toHaveLength(1)
     expect(wrapper.text()).not.toContain('01a0c7cb-8e5f-7292-a808-10ab91f74031')
     expectNoForbiddenVisibleTerms(wrapper.text())
   })
