@@ -94,19 +94,9 @@ describe('receiptStatusLabel', () => {
   // 键集权威是 MES 域 `FinishedGoodsReceiptRequest` 的 5 个状态常量
   // （RequestedStatus / PartiallyPostedStatus / PostedStatus / InventoryPostingFailedStatus /
   // CancelledStatus），聚合根对 Status 的赋值也只落在这 5 个值上（#3898）。
-  // 断言按这个值域写，不按任何一份抄来的枚举名写。
+  // 运行时值是这些常量的 PascalCase：值从网关 JSON 原样进来（网关 BusinessConsoleMesEndpoints.cs
+  // 直传 receipt.ReceiptStatus），查询侧原样投影、前端不改写。
   it('maps every status the MES receipt aggregate can actually be in to Chinese', () => {
-    expect(receiptStatusLabel('requested')).toBe('待入库')
-    expect(receiptStatusLabel('partiallyPosted')).toBe('部分入库')
-    expect(receiptStatusLabel('posted')).toBe('已入库')
-    expect(receiptStatusLabel('inventoryPostingFailed')).toBe('入库失败')
-    expect(receiptStatusLabel('cancelled')).toBe('已取消')
-  })
-
-  it('resolves the PascalCase spelling the gateway actually sends at runtime', () => {
-    // 运行时值是域常量的 PascalCase（网关按 Ordinal 比较 "Requested"，
-    // 见 BusinessConsoleMesEndpoints.cs），types.gen 的小写枚举只是展示层处理器
-    // MesListDisplayOpenApiDocumentProcessor 改写的契约文档。两种拼写都在生产里真实可达。
     expect(receiptStatusLabel('Requested')).toBe('待入库')
     expect(receiptStatusLabel('PartiallyPosted')).toBe('部分入库')
     expect(receiptStatusLabel('Posted')).toBe('已入库')
@@ -116,6 +106,12 @@ describe('receiptStatusLabel', () => {
 
   it('falls back to 未知状态 for unknown / missing status', () => {
     expect(receiptStatusLabel('Nope')).toBe('未知状态')
+    // 生成契约 types.gen.ts 里的 camelCase 枚举（`posted` 等）是展示层处理器
+    // MesListDisplayOpenApiDocumentProcessor 改写出的产物，运行时不可达。刻意钉住它落空：
+    // 后端若哪天真开始发小写，这条会红，从而不会静默地把契约漂移藏在前端适配层里
+    // （docs/governance/api/contracts-and-codegen.md：不得用前端临时适配掩盖后端漂移）。
+    expect(receiptStatusLabel('posted')).toBe('未知状态')
+    expect(receiptStatusLabel('partiallyPosted')).toBe('未知状态')
     expect(receiptStatusLabel(undefined)).toBe('未知状态')
     expect(receiptStatusLabel(null)).toBe('未知状态')
   })

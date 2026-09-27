@@ -2,7 +2,13 @@
  * MES 一线作业的可读中文状态标签（框架无关，纯 TS）。
  *
  * 这些映射原先在 4 个 PDA MES 页面（工序执行 / 报工 / 领料 / 完工入库）各自重复维护。
- * 集中到 business-core 后，页面只消费函数，不再复制标签表；渲染文案对每个已处理状态保持不变。
+ * 集中到 business-core 后，页面只消费函数，不再复制标签表。
+ *
+ * 键集以各域**运行时真实取值**为准，不以 `types.gen.ts` 里的契约为准：生成契约的 MES 状态
+ * 枚举是展示层处理器 `MesListDisplayOpenApiDocumentProcessor` 改写出的产物，与服务器实际值
+ * 的大小写不符。完工入库状态集（#3898）已按此订正过一次——该表原先抄的是域里不存在的枚举名，
+ * 真实的 `PartiallyPosted` / `Posted` / `InventoryPostingFailed` 一个都没落进去，页面恒显
+ * 「未知状态」。契约枚举的正确性归生产者，不在前端加归一化层兜住（`contracts-and-codegen.md`）。
  *
  * 约定：未知/缺失状态一律回落到 `未知状态`，与各页面原有兜底一致——不向一线暴露原始状态码。
  */
@@ -74,40 +80,40 @@ export function materialIssueStatusLabel(status?: string | null): string {
 /**
  * 完工入库申请状态可读标签（receipt 页面专用状态集，集中存放一处便于维护）。
  *
- * ## 键集取自真实值域，不是从别处抄来的枚举名
+ * ## 键集取自运行时真实值域
  *
- * 权威是 MES 域 `FinishedGoodsReceiptRequest` 的 5 个状态常量
- * （`RequestedStatus` / `PartiallyPostedStatus` / `PostedStatus` /
- * `InventoryPostingFailedStatus` / `CancelledStatus`），聚合根里对 `Status` 的赋值也只落在
- * 这 5 个值上。原先这张表写的是 `Pending` / `Created` / `Submitted` / `PartiallyReceived` /
- * `Received` / `Completed` / `Rejected`——域里**没有任何一处会产出它们**，而
- * `PartiallyPosted` / `Posted` / `InventoryPostingFailed` 这三个真实码**一个都不在表里**，
- * 于是完工入库页把它们全渲染成「未知状态」（#3898）。这里按真实值域重建，不保留幻影码。
+ * 权威是 MES 域 `FinishedGoodsReceiptRequest` 的 5 个状态常量（`RequestedStatus` /
+ * `PartiallyPostedStatus` / `PostedStatus` / `InventoryPostingFailedStatus` /
+ * `CancelledStatus`），聚合根对 `Status` 的赋值点（`:49`/`:180`/`:193`/`:217`/`:234`）也
+ * 只落在这 5 个值上；查询侧原样投影、网关原样透传、前端不改写。原先这张表写的 `Pending` /
+ * `Created` / `Submitted` / `PartiallyReceived` / `Received` / `Completed` / `Rejected`
+ * **域里没有任何一处会产出**，而 `PartiallyPosted` / `Posted` / `InventoryPostingFailed`
+ * 这三个真实码**一个都不在表里**，于是完工入库页把它们全渲染成「未知状态」（#3898）。
+ * 这里按真实值域重建，不保留幻影码。
  *
- * ## 大小写不敏感查表
+ * ## 查表不做大小写归一化：那是给后端漂移打掩护
  *
- * 读面拿到的运行时值是域常量的 PascalCase（网关按 Ordinal 比较 `"Requested"`，见
- * `BusinessConsoleMesEndpoints.cs`），而生成契约 `types.gen.ts` 的 `receiptStatus` 枚举是
- * 展示层处理器 `MesListDisplayOpenApiDocumentProcessor` 改写出来的全小写拼写。两侧都要能命中，
- * 所以按下表存小写码、按输入小写查——与本文件 `workOrderStatusLabel` 同一口径。
+ * 生成契约 `types.gen.ts` 里 `receiptStatus` 的小写枚举是展示层处理器
+ * `MesListDisplayOpenApiDocumentProcessor` 改写出的产物，与服务器实际值不符；**camelCase 在
+ * 运行时不可达**（值从网关 JSON 原样进来，网关 `:2307` 直传，前端无改写）。加一层
+ * `toLowerCase()` 查表表面上让两侧都命中，实际后果是后端哪天真的改发小写、前端会静默继续
+ * 接受，没有任何测试或类型会失败——正是 `docs/governance/api/contracts-and-codegen.md`
+ * 「不得用前端临时适配掩盖后端漂移」所禁止的。契约枚举的正确性归生产者（另开治理项），
+ * 本表按运行时真实值直查。
  *
  * 文案与 PC 读面 `useMesReferenceLabels` 的 `RECEIPT_STATUS_LABELS` 对齐：同一张入库单在
- * PDA 与 PC 上必须读作同一个词，`posted` 是「已入库」而不是通用的「已完成」。
+ * PDA 与 PC 上必须读作同一个词，`Posted` 是「已入库」而不是通用的「已完成」。
  */
 export const RECEIPT_STATUS_LABELS: Record<string, string> = {
-  requested: '待入库',
-  partiallyPosted: '部分入库',
-  posted: '已入库',
-  inventoryPostingFailed: '入库失败',
-  cancelled: '已取消',
+  Requested: '待入库',
+  PartiallyPosted: '部分入库',
+  Posted: '已入库',
+  InventoryPostingFailed: '入库失败',
+  Cancelled: '已取消',
 }
 
-const RECEIPT_STATUS_LABELS_BY_CODE = new Map(
-  Object.entries(RECEIPT_STATUS_LABELS).map(([code, label]) => [code.toLowerCase(), label]),
-)
-
 export function receiptStatusLabel(status?: string | null): string {
-  return RECEIPT_STATUS_LABELS_BY_CODE.get((status ?? '').toLowerCase()) ?? UNKNOWN_STATUS_LABEL
+  return RECEIPT_STATUS_LABELS[status ?? ''] ?? UNKNOWN_STATUS_LABEL
 }
 
 /**
@@ -284,11 +290,13 @@ export interface ReceiptPendingReasonRow {
  * 在等哪一环。
  *
  * business-console 和 PDA 调用的是同一个列表接口
- * （`listBusinessConsoleMesFinishedGoodsReceiptRequests`）。网关按 Ordinal 比较运行时状态值
- * `"Requested"`（`BusinessConsoleMesEndpoints.cs`），生成类型 types.gen 里的小写枚举值只是
- * 展示层处理器（`MesListDisplayOpenApiDocumentProcessor`）改写的契约文档，不是运行时实际大小写；
- * 这里对 `Requested` 做大小写不敏感比较，不依赖某一侧的具体大小写拼写，与本文件其余大小写
- * 混杂的状态表（历史遗留、各自域的独立值域）无关。
+ * （`listBusinessConsoleMesFinishedGoodsReceiptRequests`）。运行时状态值是域常量的 PascalCase
+ * `"Requested"`（网关按 Ordinal 比较，见 `BusinessConsoleMesEndpoints.cs`）；生成类型 types.gen
+ * 里的小写枚举只是展示层处理器（`MesListDisplayOpenApiDocumentProcessor`）改写的契约文档，
+ * 不是运行时实际大小写。本函数做大小写不敏感比较，让两种输入都判为「待入库」——
+ * 与同文件 `receiptStatusLabel` 不同，这里不设"camelCase 必须落空"的负向断言：
+ * 该函数只做**识别**不做**展示**，识别宽松不会把契约漂移藏进标签表（漂移由标签表那条负向
+ * 断言守着），而收紧它会改变 #3728/#3767 既有判据，超出本票范围。
  */
 export function receiptPendingReason(row: ReceiptPendingReasonRow): string | null {
   if ((row.receiptStatus ?? '').toLowerCase() !== 'requested') return null
