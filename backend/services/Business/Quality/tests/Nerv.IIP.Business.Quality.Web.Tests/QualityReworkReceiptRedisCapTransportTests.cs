@@ -87,6 +87,7 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
         {
             ["Persistence:Provider"] = "PostgreSQL",
             ["Persistence:AutoMigrate"] = "false",
+            ["Quality:Seed:Enabled"] = "false",
             ["ConnectionStrings:PostgreSQL"] = QualityPostgresLaneDatabase.ConnectionString,
             ["Messaging:Provider"] = "Redis",
             ["Messaging:Redis:ConnectionString"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS"),
