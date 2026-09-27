@@ -356,6 +356,12 @@ public sealed class GatewayConsoleIamAdminTests
         public Task LogoutAsync(string bearerToken, ConsoleLogoutRequest request, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task ChangePasswordAsync(
+            string bearerToken,
+            ConsoleChangePasswordRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ConsolePrincipalResponse> GetMeAsync(string bearerToken, CancellationToken cancellationToken)
         {
             GetMeCallCount++;

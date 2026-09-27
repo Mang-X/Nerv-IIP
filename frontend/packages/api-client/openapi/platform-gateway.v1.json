@@ -2262,6 +2262,43 @@
           }
         ]
       }
+    },
+    "/api/console/v1/auth/change-password": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "changeConsolePassword",
+        "requestBody": {
+          "x-name": "ConsoleChangePasswordRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -4562,6 +4599,18 @@
             }
           }
         ]
+      },
+      "NervIIPPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "currentPassword": {
+            "type": "string"
+          },
+          "newPassword": {
+            "type": "string"
+          }
+        }
       }
     },
     "securitySchemes": {
