@@ -945,15 +945,33 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         SendAsync<BusinessConsoleMesTelemetryCandidateRow>(internalBearerToken, HttpMethod.Get,
             $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}?organizationId={Uri.EscapeDataString(organizationId)}&environmentId={Uri.EscapeDataString(environmentId)}", null, cancellationToken);
 
-    public Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleRecordProductionReportResponse>(internalBearerToken, HttpMethod.Post,
+    public async Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken)
+    {
+        // #3844：候选号只走路由——MES 请求体里的候选号是强类型标识，JSON 不认字符串，放进 body 会整单 400。
+        // 应答与直接报工同形（报工单号是 { id } 对象），按同一份下游形状读，再映射成控制台契约。
+        var response = await SendAsync<DownstreamRecordProductionReportResponse>(internalBearerToken, HttpMethod.Post,
             $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}/promote",
-            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.WorkOrderId, request.OperationTaskId, Actor = actor }, cancellationToken);
+            new { request.OrganizationId, request.EnvironmentId, request.WorkOrderId, request.OperationTaskId, Actor = actor }, cancellationToken);
+        if (response.ProductionReportId is null ||
+            response.ProductionReportId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.ReportNo) ||
+            response.SerialNumbers is null)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "downstream-invalid-response");
+        }
+
+        return new BusinessConsoleRecordProductionReportResponse(
+            response.ProductionReportId.Id.ToString(),
+            response.ReportNo,
+            response.SerialNumbers);
+    }
 
     public Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidateDismissRequest request, string actor, CancellationToken cancellationToken) =>
         SendAcceptedAsync(internalBearerToken,
             $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}/dismiss",
-            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.Reason, Actor = actor },
+            new { request.OrganizationId, request.EnvironmentId, request.Reason, Actor = actor },
             MesTelemetryCandidateDocumentType, cancellationToken);
 
     public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(

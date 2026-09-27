@@ -59,15 +59,22 @@ watch(
   { immediate: true },
 )
 
-function taskTitle(task: Task) {
-  const sequence =
-    task.operationSequence === undefined || task.operationSequence === null
-      ? ''
-      : ` · 工序 ${task.operationSequence}`
-  return withReworkLabel(`${task.workOrderId ?? ''}${sequence}`, task)
+function sequenceLabel(task: Task) {
+  return task.operationSequence === undefined || task.operationSequence === null
+    ? ''
+    : `工序 ${task.operationSequence}`
 }
-function taskSubtitle(task: Task) {
-  return [task.deviceAssetName, task.workCenterName].filter(Boolean).join(' · ')
+function targetLabel(task: Task) {
+  return withReworkLabel([task.workOrderId, sequenceLabel(task)].filter(Boolean).join(' · '), task)
+}
+// 手持屏窄：列表行标题只放工单号，工序与设备放副标题，免得工序号被截掉。
+function rowTitle(task: Task) {
+  return withReworkLabel(task.workOrderId ?? '', task)
+}
+function rowSubtitle(task: Task) {
+  return [sequenceLabel(task), task.deviceAssetName, task.workCenterName]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function choose(task: Task) {
@@ -84,8 +91,8 @@ function choose(task: Task) {
     >
       <div class="min-w-0">
         <p class="text-xs text-muted-foreground">报工到</p>
-        <p data-testid="telemetry-target" class="truncate font-medium text-foreground">
-          {{ taskTitle(target) }}
+        <p data-testid="telemetry-target" class="font-medium break-words text-foreground">
+          {{ targetLabel(target) }}
         </p>
       </div>
       <button
@@ -127,8 +134,8 @@ function choose(task: Task) {
             v-for="task in tasks"
             :key="task.operationTaskId"
             :data-testid="`telemetry-target-option-${task.operationTaskId}`"
-            :title="taskTitle(task)"
-            :subtitle="taskSubtitle(task)"
+            :title="rowTitle(task)"
+            :subtitle="rowSubtitle(task)"
             @select="choose(task)"
           />
         </div>
