@@ -54,6 +54,9 @@ vi.mock('@nerv-iip/api-client', () => ({
       }
     }),
   })),
+  replaceConsoleIamUserMembershipMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+  })),
   resetConsoleIamUserPasswordMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
   })),

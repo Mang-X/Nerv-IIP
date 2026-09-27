@@ -474,6 +474,21 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPassw
     newPassword?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse = {
+    userId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    roleIds?: Array<string>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest = {
+    roleIds?: Array<string>;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamRoleResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamRoleResponse | null;
 };
@@ -1403,6 +1418,64 @@ export type ResetConsoleIamUserPasswordResponses = {
 };
 
 export type ResetConsoleIamUserPasswordResponse = ResetConsoleIamUserPasswordResponses[keyof ResetConsoleIamUserPasswordResponses];
+
+export type GetConsoleIamUserMembershipData = {
+    body?: never;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/membership';
+};
+
+export type GetConsoleIamUserMembershipErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleIamUserMembershipResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse;
+};
+
+export type GetConsoleIamUserMembershipResponse = GetConsoleIamUserMembershipResponses[keyof GetConsoleIamUserMembershipResponses];
+
+export type ReplaceConsoleIamUserMembershipData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/membership';
+};
+
+export type ReplaceConsoleIamUserMembershipErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplaceConsoleIamUserMembershipResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse;
+};
+
+export type ReplaceConsoleIamUserMembershipResponse = ReplaceConsoleIamUserMembershipResponses[keyof ReplaceConsoleIamUserMembershipResponses];
 
 export type ListConsoleIamRolesData = {
     body?: never;

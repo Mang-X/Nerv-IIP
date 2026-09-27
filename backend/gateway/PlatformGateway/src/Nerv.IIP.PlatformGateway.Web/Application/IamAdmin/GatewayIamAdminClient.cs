@@ -34,6 +34,17 @@ public interface IGatewayIamAdminClient
         ConsoleResetIamUserPasswordRequest request,
         CancellationToken cancellationToken);
 
+    Task<ConsoleIamUserMembershipResponse> GetUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        CancellationToken cancellationToken);
+
+    Task<ConsoleIamUserMembershipResponse> ReplaceUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        ConsoleReplaceIamUserMembershipRequest request,
+        CancellationToken cancellationToken);
+
     Task<PagedListResponse<ConsoleIamRoleResponse>> ListRolesAsync(
         string bearerToken,
         ConsoleIamListRequest request,
@@ -123,6 +134,29 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
             () => JsonContent.Create(request),
             HttpMethod.Post,
             $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/reset-password",
+            bearerToken,
+            cancellationToken);
+
+    public Task<ConsoleIamUserMembershipResponse> GetUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<ConsoleIamUserMembershipResponse>(
+            () => null,
+            HttpMethod.Get,
+            $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/membership",
+            bearerToken,
+            cancellationToken);
+
+    public Task<ConsoleIamUserMembershipResponse> ReplaceUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        ConsoleReplaceIamUserMembershipRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<ConsoleIamUserMembershipResponse>(
+            () => JsonContent.Create(request),
+            HttpMethod.Put,
+            $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/membership",
             bearerToken,
             cancellationToken);
 
