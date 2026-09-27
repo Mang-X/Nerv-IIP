@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
@@ -21,7 +22,8 @@ public sealed class OperationExecutionProjectionConsumerTests
 
         await new MesOperationTaskPausedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
             .HandleAsync(Lifecycle<MesOperationTaskPausedIntegrationEvent>("evt-pause", BaseTime.AddMinutes(20)), CancellationToken.None);
-        await new MesOperationTaskStartedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+        await new MesOperationTaskStartedIntegrationEventHandlerForProjectExecution(
+                db, deadLetters, mutationLock, TimeProvider.System, SchedulingExecutionDeviationToleranceOption.Disabled)
             .HandleAsync(Lifecycle<MesOperationTaskStartedIntegrationEvent>("evt-start", BaseTime.AddMinutes(10)), CancellationToken.None);
 
         var projection = await db.OperationExecutionProjections.SingleAsync();
@@ -67,7 +69,8 @@ public sealed class OperationExecutionProjectionConsumerTests
         Assert.False(resumedProjection.IsPaused);
         Assert.Equal("evt-resume", resumedProjection.LifecycleEventId);
 
-        await new MesOperationTaskCompletedIntegrationEventHandlerForProjectExecution(db, deadLetters, mutationLock)
+        await new MesOperationTaskCompletedIntegrationEventHandlerForProjectExecution(
+                db, deadLetters, mutationLock, TimeProvider.System, SchedulingExecutionDeviationToleranceOption.Disabled)
             .HandleAsync(Lifecycle<MesOperationTaskCompletedIntegrationEvent>("evt-complete", BaseTime.AddMinutes(30)), CancellationToken.None);
 
         var projection = await db.OperationExecutionProjections.SingleAsync();
