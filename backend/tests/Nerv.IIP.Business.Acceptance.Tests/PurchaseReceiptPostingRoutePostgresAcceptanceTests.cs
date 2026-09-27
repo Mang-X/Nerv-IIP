@@ -30,6 +30,7 @@ using MediatR;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedLocks;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
@@ -276,6 +277,12 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
         var db = scope.ServiceProvider.GetRequiredService<InventoryDb>();
         AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         await db.Database.MigrateAsync();
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, Organization, EnvironmentId, receipt.Payload.LocationCode,
+                "receiving", receipt.Payload.SiteCode, null, "active"),
+            StockLocation.CreateOrUpdate(null, Organization, EnvironmentId, "LINE-SIDE",
+                "line-side", receipt.Payload.SiteCode, null, "active"));
+        await db.SaveChangesAsync();
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
         var consumer = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
             NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
