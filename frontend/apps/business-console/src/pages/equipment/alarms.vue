@@ -121,6 +121,9 @@ const dispositionFacets = computed<NvMetricFacet[]>(() => [
 ])
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageAlarms = computed(() => permissionCodes.value.includes(P.iiotAlarmsWrite))
+const canCreateMaintenanceWorkOrder = computed(() =>
+  permissionCodes.value.includes(P.maintenanceWorkOrdersManage),
+)
 const currentActor = computed(
   () => auth.principal?.loginName ?? auth.principal?.principalId ?? 'business-console',
 )
@@ -895,7 +898,7 @@ function formatDateTime(value?: string | null) {
             <WrenchIcon aria-hidden="true" />
             记录停机
           </NvDropdownMenuItem>
-          <NvDropdownMenuItem as-child>
+          <NvDropdownMenuItem v-if="canCreateMaintenanceWorkOrder" as-child>
             <RouterLink
               :to="{
                 path: '/maintenance/work-orders',

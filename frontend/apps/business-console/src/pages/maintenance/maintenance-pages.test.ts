@@ -277,10 +277,32 @@ beforeEach(() => {
       principalType: 'user',
       principalId: 'user-admin',
       loginName: 'admin',
-      permissionCodes: ['business.maintenance.plans.read', 'business.maintenance.plans.manage'],
+      permissionCodes: [
+        'business.maintenance.work-orders.read',
+        'business.maintenance.work-orders.manage',
+        'business.maintenance.plans.read',
+        'business.maintenance.plans.manage',
+      ],
     },
   })
 })
+
+/** 表头里有没有「操作」这一列。 */
+function hasActionsColumn() {
+  return [...document.body.querySelectorAll('th')].some((th) => th.textContent?.trim() === '操作')
+}
+
+/** 只读角色（如财务专员）：两块维护读权限都有，manage 一个都没有。 */
+function signInAsMaintenanceReader() {
+  useAuthStore().$patch({
+    principal: {
+      principalType: 'user',
+      principalId: 'user-reader',
+      loginName: 'reader',
+      permissionCodes: ['business.maintenance.work-orders.read', 'business.maintenance.plans.read'],
+    },
+  })
+}
 
 describe('maintenance work orders page', () => {
   it('renders plan-generated work orders with a stable Chinese priority', async () => {
@@ -299,6 +321,45 @@ describe('maintenance work orders page', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('计划保养')
+  })
+
+  it('只读角色看不到新建和行内菜单，从设备/报警带参进来也不自动弹出建单', async () => {
+    signInAsMaintenanceReader()
+
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    expect(document.body.textContent).not.toContain('新建维护工单')
+    expect(document.body.querySelector('[aria-label="维护工单操作 无工单号"]')).toBeNull()
+    expect(document.body.querySelector('[data-slot="carried-context"]')).toBeNull()
+  })
+
+  it('只读角色的维护工单列表不渲染「操作」列', async () => {
+    signInAsMaintenanceReader()
+    state.query = {}
+
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    // 哨兵：表头确实渲染出来了。
+    expect(
+      [...document.body.querySelectorAll('th')].some((th) => th.textContent?.includes('开单时间')),
+    ).toBe(true)
+    expect(hasActionsColumn()).toBe(false)
+  })
+
+  it('有维护工单管理权限时新建按钮与行内菜单都在', async () => {
+    state.query = {}
+
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    expect(
+      [...document.body.querySelectorAll('button')].some((b) =>
+        b.textContent?.includes('新建维护工单'),
+      ),
+    ).toBe(true)
+    expect(document.body.querySelector('[aria-label="维护工单操作 无工单号"]')).not.toBeNull()
   })
 
   it('prefills maintenance work order creation from equipment alarm context', async () => {
@@ -680,6 +741,35 @@ describe('maintenance inspections page', () => {
     expect(wrapper.find('[data-testid^="measurements-"]').exists()).toBe(false)
   })
 
+  it('只读角色看不到「记录点检」', async () => {
+    signInAsMaintenanceReader()
+
+    mount(InspectionsPage, mountOptions())
+    await flushPromises()
+
+    expect(document.body.textContent).not.toContain('记录点检')
+  })
+
+  it('记录点检只看保养计划管理权限：只有计划管理、没有工单管理也能记录', async () => {
+    useAuthStore().$patch({
+      principal: {
+        principalType: 'user',
+        principalId: 'user-planner',
+        loginName: 'planner',
+        permissionCodes: ['business.maintenance.plans.read', 'business.maintenance.plans.manage'],
+      },
+    })
+
+    mount(InspectionsPage, mountOptions())
+    await flushPromises()
+
+    expect(
+      [...document.body.querySelectorAll('button')].some((b) =>
+        b.textContent?.includes('记录点检'),
+      ),
+    ).toBe(true)
+  })
+
   it('defaults the inspector to the current user and makes characteristic a select (not free text)', async () => {
     mount(InspectionsPage, mountOptions())
     await flushPromises()
@@ -723,7 +813,7 @@ describe('maintenance plans page', () => {
     await flushPromises()
   }
 
-  it('does not expose the edit row action to a principal with plans.read only', async () => {
+  it('does not expose any write entry to a principal with plans.read only', async () => {
     useAuthStore().$patch({
       principal: {
         principalType: 'user',
@@ -747,6 +837,39 @@ describe('maintenance plans page', () => {
 
     expect(document.body.textContent).not.toContain('编辑触发条件')
     expect(document.body.querySelector('[aria-label="保养计划操作 PM-READ-ONLY"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('新建保养计划')
+    expect(document.body.textContent).not.toContain('生成到期工单')
+  })
+
+  it('只读角色的保养计划列表不渲染「操作」列', async () => {
+    signInAsMaintenanceReader()
+    state.plans = [
+      {
+        planId: 'p-ro',
+        deviceAssetId: 'DEV-RO',
+        planCode: 'PM-RO',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+      },
+    ]
+
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(
+      [...document.body.querySelectorAll('th')].some((th) => th.textContent?.includes('计划编号')),
+    ).toBe(true)
+    expect(hasActionsColumn()).toBe(false)
+  })
+
+  it('有计划管理权限时「生成到期工单」「新建保养计划」与「操作」列都在', async () => {
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const buttons = [...document.body.querySelectorAll('button')].map((b) => b.textContent ?? '')
+    expect(buttons.some((text) => text.includes('生成到期工单'))).toBe(true)
+    expect(buttons.some((text) => text.includes('新建保养计划'))).toBe(true)
+    expect(hasActionsColumn()).toBe(true)
   })
 
   it('allows a principal with plans.manage to open the edit dialog', async () => {

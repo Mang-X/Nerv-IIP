@@ -153,6 +153,9 @@ const { spareParts, sparePartsError, sparePartsPending } = useMaintenanceSparePa
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canControlDevice = computed(() => permissionCodes.value.includes(P.iiotDeviceControlWrite))
+const canCreateMaintenanceWorkOrder = computed(() =>
+  permissionCodes.value.includes(P.maintenanceWorkOrdersManage),
+)
 const controlSheetOpen = ref(false)
 const deviceAssetIdRef = computed(() => filters.deviceAssetId)
 const { health, healthError, healthPending, refreshHealth } =
@@ -695,7 +698,13 @@ function recordDowntime() {
           <WrenchIcon aria-hidden="true" />
           记录停机
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
+        <NvButton
+          v-if="canCreateMaintenanceWorkOrder"
+          size="sm"
+          type="button"
+          variant="outline"
+          as-child
+        >
           <RouterLink
             :to="{
               path: '/maintenance/work-orders',

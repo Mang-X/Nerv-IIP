@@ -128,7 +128,8 @@ const MISSING_PLAN_CODE = '无计划编号'
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 
 type PlanRow = BusinessConsoleMaintenancePlanItem
-const columns: NvDataTableColumn<PlanRow>[] = [
+// 没有可用操作的角色不渲染「操作」列，免得只剩表头、整列空白。
+const columns = computed<NvDataTableColumn<PlanRow>[]>(() => [
   {
     key: 'planCode',
     header: '计划编号',
@@ -146,8 +147,10 @@ const columns: NvDataTableColumn<PlanRow>[] = [
   { key: 'triggerMode', header: '触发模式', accessor: (r) => triggerModeLabel(r) },
   { key: 'interval', header: '保养周期', accessor: (r) => intervalLabel(r.interval) },
   { key: 'nextDue', header: '下次到期', accessor: (r) => nextDueLabel(r) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
-]
+  ...(canManagePlans.value
+    ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
+    : []),
+])
 
 /** 保养周期：先查预置选项，其余按 ISO 8601 周期翻译（P7D → 每 7 天），不回吐原串。 */
 function intervalLabel(value?: string | null) {
@@ -276,11 +279,17 @@ async function submitGenerate() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" @click="openGenerate">
+        <NvButton
+          v-if="canManagePlans"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="openGenerate"
+        >
           <CalendarClockIcon aria-hidden="true" />
           生成到期工单
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManagePlans" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建保养计划
         </NvButton>
@@ -314,10 +323,7 @@ async function submitGenerate() {
         />
       </template>
       <template #cell-actions="{ row }">
-        <NvRowActions
-          v-if="canManagePlans"
-          :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`"
-        >
+        <NvRowActions :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`">
           <NvDropdownMenuItem :disabled="!row.planId" @click="openEdit(row)">
             <PencilIcon aria-hidden="true" />
             编辑触发条件
