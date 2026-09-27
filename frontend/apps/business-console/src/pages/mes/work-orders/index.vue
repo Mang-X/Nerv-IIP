@@ -652,6 +652,17 @@ function formatDateTime(value?: string | null) {
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
 }
+const terminalWorkOrderStatuses = new Set([
+  'completed',
+  'closed',
+  'cancelled',
+  'scrapped',
+  'split',
+  'merged',
+])
+function isTerminalWorkOrderStatus(status?: string | null) {
+  return terminalWorkOrderStatuses.has(status?.toLowerCase() ?? '')
+}
 function formatStatus(value?: string | null) {
   const map: Record<string, string> = {
     blocked: '阻塞',
@@ -835,7 +846,11 @@ function isNonEmpty(value: string) {
         </div>
       </template>
       <template #cell-urgency="{ row }">
+        <span v-if="isTerminalWorkOrderStatus(row.status)" class="text-xs text-muted-foreground">
+          已结束
+        </span>
         <OrderUrgencyBadge
+          v-else
           :order-reference="row.workOrderId ?? ''"
           :mode="displayMode"
           :urgency="
