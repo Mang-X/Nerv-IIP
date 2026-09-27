@@ -114,7 +114,7 @@ async function assertDeclaredWidthsHold(
     const measured = await head.evaluate((element) => ({
       width: element.getBoundingClientRect().width,
       inlineWidth: element.style.width,
-      hasWidthClass: Array.from(element.classList).some((name) => /^w-/.test(name)),
+      hasWidthClass: Array.from(element.classList).some((name) => name.startsWith('w-')),
     }))
     expect(
       Math.abs(measured.width - column.expectedPx),
