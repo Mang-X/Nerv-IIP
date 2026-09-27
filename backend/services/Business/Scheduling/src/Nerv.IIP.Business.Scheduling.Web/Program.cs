@@ -58,6 +58,10 @@ try
     {
         client.BaseAddress = mesBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IOrderUrgencyMesDueDateProvider, HttpOrderUrgencyMesDueDateProvider>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName, client =>
     {
         client.BaseAddress = mesBaseAddress;
