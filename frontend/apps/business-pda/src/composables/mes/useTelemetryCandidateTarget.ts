@@ -3,6 +3,7 @@ import type {
   BusinessConsoleMesTelemetryCandidateRow,
 } from '@nerv-iip/api-client'
 import { computed, ref, shallowRef, watch, type Ref } from 'vue'
+import { useDeviceAssetNames } from '@/composables/useBusinessDeviceDirectory'
 import {
   type MesReportExecutionContext,
   useMesTelemetryCandidateTargetTasks,
@@ -20,6 +21,8 @@ export function useTelemetryCandidateTarget(
 ) {
   const keyword = ref('')
   const chosen = shallowRef<Task | null>(null)
+  // 「改选」进行中时旧目标不算数：此时不许转正，免得提交的是用户正要换掉的那道。
+  const choosing = ref(false)
   const deviceAssetId = computed(() => candidate.value?.deviceAssetId?.trim() ?? '')
   const { tasks, pending, error, refresh } = useMesTelemetryCandidateTargetTasks(
     context,
@@ -50,8 +53,18 @@ export function useTelemetryCandidateTarget(
     () => {
       keyword.value = ''
       chosen.value = null
+      choosing.value = false
     },
   )
+
+  // 列表行要说清是哪台设备（尤其标了「非本设备」的行）；工序读面只回设备标识，名称回主数据查。
+  const { resolveDeviceName } = useDeviceAssetNames(
+    computed(() => tasks.value.map((task) => task.deviceAssetId ?? '')),
+  )
+  function deviceLabel(task: Task) {
+    if (!task.deviceAssetId?.trim()) return '未派设备'
+    return task.deviceAssetName?.trim() || resolveDeviceName(task.deviceAssetId) || '设备信息未提供'
+  }
 
   return {
     keyword,
@@ -61,8 +74,11 @@ export function useTelemetryCandidateTarget(
     error,
     refresh,
     target,
+    choosing,
+    deviceLabel,
     choose: (task: Task) => {
       chosen.value = task
+      choosing.value = false
     },
   }
 }

@@ -331,6 +331,17 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
 }))
 
+const deviceNames: Record<string, string> = {
+  'DEV-CNC-01': '数控车床一号（EQ00001）',
+  'DEV-CNC-99': '数控车床九号（EQ00099）',
+}
+vi.mock('@/composables/useBusinessDeviceDirectory', () => ({
+  useDeviceAssetNames: () => ({
+    resolveDeviceName: (deviceAssetId?: string | null) =>
+      deviceAssetId ? deviceNames[deviceAssetId] : undefined,
+  }),
+}))
+
 import ReportPage from './report.vue'
 
 const serialRequired = ref(false)
@@ -1543,7 +1554,9 @@ describe('PDA MES production reporting page', () => {
 
     await wrapper.get('[data-testid="telemetry-change-target"]').trigger('click')
     expect(wrapper.find('[data-testid="telemetry-target"]').exists()).toBe(false)
+    await wrapper.get('input[placeholder="按工单号搜索执行中的工序"]').setValue('WO-2026')
     await wrapper.get('[data-testid="telemetry-cancel-change"]').trigger('click')
+    // 取消改选要连同关键词一起清掉，否则「设备上唯一一道」的自动目标回不来（下一行断言）。
     expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0001 · 工序 10')
   })
 
@@ -1561,10 +1574,56 @@ describe('PDA MES production reporting page', () => {
     const own = wrapper.get('[data-testid="telemetry-target-option-OP-1"]')
     const other = wrapper.get('[data-testid="telemetry-target-option-OP-3"]')
     expect(own.text()).not.toContain('非本设备')
+    expect(own.text()).toContain('工序 10 · 数控车床一号（EQ00001）')
     expect(other.text()).toContain('非本设备')
+    expect(other.text()).toContain('工序 10 · 数控车床九号（EQ00099）')
     await other.trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="telemetry-target-other-device"]').text()).toBe('非本设备')
+    expect(wrapper.text()).toContain('数控车床九号（EQ00099）')
+  })
+
+  it('改选期间禁用确认转正，选定新工序后恢复', async () => {
+    telemetryTargetTasksRef.value = deviceTasks
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-choosing',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'active-alarm',
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="telemetry-change-target"]').trigger('click')
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="telemetry-target-option-OP-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-choosing', 'WO-2026-0002', 'OP-3')
+  })
+
+  it('返工工序在列表行标「返工」', async () => {
+    telemetryTargetTasksRef.value = [
+      {
+        ...deviceTasks[0],
+        deviceAssetId: 'DEV-CNC-01',
+        workOrderType: 'rework',
+        sourceWorkOrderId: 'WO-2026-0000',
+        sourceNcrId: 'ncr-1',
+        sourceNcrCode: 'NCR-0001',
+      },
+      { ...deviceTasks[1], deviceAssetId: 'DEV-CNC-01' },
+    ]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-rework',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target-option-OP-1"]').text()).toContain('返工')
+    expect(wrapper.get('[data-testid="telemetry-target-option-OP-3"]').text()).not.toContain('返工')
   })
 
   it('忽略被拒时上屏业务原因且候选保留', async () => {

@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { NvListRow, NvMobileButton, NvMobileTag, NvSearchBar } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import RetryableListError from '@/components/RetryableListError.vue'
-import { operationTaskLabel, operationTaskRowTitle, workOrderLabel } from './operationPresentation'
+import {
+  isAuthorizedRework,
+  operationTaskLabel,
+  operationTaskRowTitle,
+  workOrderLabel,
+} from './operationPresentation'
 
 /**
  * 遥测候选转正的「报工到哪道工序」。目标由父级派生（见 useTelemetryCandidateTarget），
@@ -18,11 +23,13 @@ const props = defineProps<{
   pending: boolean
   error: unknown
   scopeReady: boolean
+  deviceLabel: (task: Task) => string
 }>()
 const keyword = defineModel<string>('keyword', { required: true })
+// 改选状态上报给父级：父级据此在改选期间禁用转正。
+const choosing = defineModel<boolean>('choosing', { required: true })
 const emit = defineEmits<{ choose: [task: Task]; retry: [] }>()
 
-const choosing = ref(false)
 const searching = computed(() => keyword.value.trim() !== '')
 
 // 搜索会放开设备限制：其它机台的工序也会列出来，转过去产量和稼动就记到那台设备上，必须醒目提示。
@@ -32,7 +39,6 @@ function isOtherDevice(task: Task) {
 
 function choose(task: Task) {
   emit('choose', task)
-  choosing.value = false
 }
 function cancelChoosing() {
   choosing.value = false
@@ -51,13 +57,14 @@ function cancelChoosing() {
         <p data-testid="telemetry-target" class="font-medium break-words text-foreground">
           {{ operationTaskRowTitle(target) }}
         </p>
-        <NvMobileTag
+        <p
           v-if="target.deviceAssetId && isOtherDevice(target)"
-          variant="warning"
-          size="sm"
-          data-testid="telemetry-target-other-device"
-          >非本设备</NvMobileTag
+          class="flex items-center gap-1 text-sm text-foreground"
         >
+          <NvMobileTag variant="warning" size="sm" data-testid="telemetry-target-other-device"
+            >非本设备</NvMobileTag
+          >{{ deviceLabel(target) }}
+        </p>
       </div>
       <button
         type="button"
@@ -99,17 +106,25 @@ function cancelChoosing() {
             :key="task.operationTaskId"
             :data-testid="`telemetry-target-option-${task.operationTaskId}`"
             :title="workOrderLabel(task)"
-            :subtitle="operationTaskLabel(task)"
+            :subtitle="`${operationTaskLabel(task)} · ${deviceLabel(task)}`"
             @select="choose(task)"
           >
-            <template v-if="isOtherDevice(task)" #meta>
-              <NvMobileTag
-                variant="warning"
-                size="sm"
-                class="mt-1"
-                data-testid="telemetry-target-other-device"
-                >非本设备</NvMobileTag
-              >
+            <template v-if="isOtherDevice(task) || isAuthorizedRework(task)" #meta>
+              <div class="mt-1 flex gap-1">
+                <NvMobileTag
+                  v-if="isAuthorizedRework(task)"
+                  variant="brand"
+                  size="sm"
+                  data-testid="telemetry-target-rework"
+                  >返工</NvMobileTag
+                ><NvMobileTag
+                  v-if="isOtherDevice(task)"
+                  variant="warning"
+                  size="sm"
+                  data-testid="telemetry-target-other-device"
+                  >非本设备</NvMobileTag
+                >
+              </div>
             </template>
           </NvListRow>
         </div>

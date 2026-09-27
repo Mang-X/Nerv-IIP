@@ -643,12 +643,14 @@ async function onScanAccepted(value: MesScanAccepted) {
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
             <TelemetryCandidateTarget
               v-model:keyword="telemetryTarget.keyword.value"
+              v-model:choosing="telemetryTarget.choosing.value"
               :device-asset-id="telemetryTarget.deviceAssetId.value"
               :target="telemetryTarget.target.value"
               :tasks="telemetryTarget.tasks.value"
               :pending="telemetryTarget.pending.value"
               :error="telemetryTarget.error.value"
               :scope-ready="Boolean(reportContext)"
+              :device-label="telemetryTarget.deviceLabel"
               @choose="telemetryTarget.choose"
               @retry="telemetryTarget.refresh"
             />
@@ -657,7 +659,9 @@ async function onScanAccepted(value: MesScanAccepted) {
               <NvMobileButton
                 variant="primary"
                 data-testid="telemetry-promote"
-                :disabled="!telemetryTarget.target.value || scanPending"
+                :disabled="
+                  !telemetryTarget.target.value || telemetryTarget.choosing.value || scanPending
+                "
                 @click="promoteTelemetryCandidate(candidate.candidateId)"
                 >确认转正</NvMobileButton
               ><NvMobileButton
