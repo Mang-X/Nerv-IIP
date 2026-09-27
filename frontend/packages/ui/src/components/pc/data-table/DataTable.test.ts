@@ -244,6 +244,11 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
 // 真的落到了承载该宽度的元素上**（`w-*` 走 class、CSS 尺寸走 inline style），
 // 也就是 fixed 布局要按它算列宽的那份输入；「声明宽度 == 渲染宽度」本身由
 // `table-layout: fixed` 保证，见 NvDataTable.vue 样式块里的理由。
+//
+// 注意：本 describe 对样式块**零鉴别力**——把 `:deep(.nv-dt-table)` 回退成裸
+// `.nv-dt-table`（即第 1 轮那版死 CSS）这里仍全绿。真正的防线是
+// `apps/business-console/e2e/issue3734-column-width.spec.ts`，只有它能在真实浏览器
+// 里量到渲染宽度。别把本组测试当成 `:deep` / `fixed` 的覆盖。
 describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
   const rows: Row[] = [{ id: 'A', name: 'a' }]
 
@@ -291,37 +296,15 @@ describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
     wrapper.unmount()
   })
 
-  // 审核第 1 轮：table-layout: fixed 只认 width，min-w-* 挂在 <th> 上不参与列宽
-  // 计算，wms/inbound 的〈质检门禁〉因此被算成 0px。组件按类名解析出等价 width。
-  it('min-w-* 类照挂，并另解析出等价的 width 交给 fixed 布局', async () => {
+  // 审核第 1、2 轮：table-layout: fixed 只认 width，min-w-* 挂在 <th> 上不参与列宽
+  // 计算，wms/inbound 的〈质检门禁〉因此被算成 0px。这里刻意不解析 min-w-*（等于在
+  // 本仓库重写一份 Tailwind 主题表，认不出的写法会静默变成 0px 的列），调用方改用
+  // 任意值宽度类 `w-[22rem]`。本格钉的是「任意值宽度类原样作为 class 落到 <th>」。
+  it('任意值宽度类 w-[22rem] 原样作为 class 落到表头', async () => {
     const wrapper = mount(NvDataTable, {
       props: {
         ...base,
-        columns: [
-          { key: 'id', header: '质检门禁', width: 'min-w-[22rem]' },
-          { key: 'name', header: '名称', width: 'min-w-72' },
-        ],
-        rows,
-        pagination: false,
-      },
-    })
-    await nextTick()
-
-    const [arbitrary, scale] = wrapper.findAll('thead th')
-    // 类本身照挂（Tailwind 的 min-width 仍对内容生效）。
-    expect(arbitrary.classes()).toContain('min-w-[22rem]')
-    expect(arbitrary.attributes('style')).toContain('width: 22rem')
-    // 数字档按 Tailwind 间距刻度换算：72 × 0.25rem = 18rem。
-    expect(scale.classes()).toContain('min-w-72')
-    expect(scale.attributes('style')).toContain('width: 18rem')
-    wrapper.unmount()
-  })
-
-  it('min-w-full 这类没有确定长度的写法不解析，按未声明宽度处理', async () => {
-    const wrapper = mount(NvDataTable, {
-      props: {
-        ...base,
-        columns: [{ key: 'id', header: '名称', width: 'min-w-full' }],
+        columns: [{ key: 'id', header: '质检门禁', width: 'w-[22rem]' }],
         rows,
         pagination: false,
       },
@@ -329,7 +312,10 @@ describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
     await nextTick()
 
     const head = wrapper.get('thead th')
+    expect(head.classes()).toContain('w-[22rem]')
     expect(head.attributes('style')).toBeUndefined()
+    // 声明了宽度就不该再进均分池（否则 `width: 100%` 会盖掉声明值）。
+    expect(head.classes()).not.toContain('nv-dt-fill')
     wrapper.unmount()
   })
 })

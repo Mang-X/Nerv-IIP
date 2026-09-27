@@ -26,12 +26,14 @@ export interface NvDataTableColumn<T = Record<string, unknown>> {
   /** Explicit enum options; defaults to the distinct values found in `rows`. */
   filterOptions?: NvDataTableFilterOption[]
   /**
-   * Column width declaration: a Tailwind width class (`w-40`), a CSS dimension
-   * (`120px`), or a Tailwind min-width class (`min-w-[22rem]`). Columns are laid
-   * out with `table-layout: fixed`, so the declaration holds: the column is
-   * never squeezed narrower to fit its content, and never widened by it. When
-   * the declared widths leave spare room, that surplus is shared out — size a
-   * column to the content it holds, and leave room for the undeclared columns.
+   * Column width declaration: a Tailwind width class (`w-40`, arbitrary values
+   * included — `w-[22rem]`) or a CSS dimension (`120px`). `min-w-*` is not a
+   * width declaration here: columns are laid out with `table-layout: fixed`,
+   * which sizes columns from `width` alone, so a `min-width` is ignored.
+   * Columns are never squeezed narrower to fit their content, and never widened
+   * by it. When the declared widths leave spare room, that surplus is shared out
+   * — size a column to the content it holds, and leave room for the undeclared
+   * columns.
    */
   width?: string
   headerClass?: string

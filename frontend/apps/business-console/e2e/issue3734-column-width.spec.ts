@@ -47,24 +47,20 @@ test('NvDataTable：声明宽 == 渲染宽，Tailwind 类与 CSS 尺寸两种写
   await page.goto('/mes/receipts', { waitUntil: 'domcontentloaded' })
   await expect(page.locator('table.nv-dt-table')).toBeVisible({ timeout: 15_000 })
 
-  // 完工入库页的列定义：数量/成本 w-28、状态 w-48、登记时间 w-44、操作 w-28，
-  // 另有未声明宽度的列走均分。两种写法都在这张表上：w-* 走 class。
+  // 票面验收第 3 条要「覆盖 w-* class 与 CSS 尺寸两种写法」，这张表上两种都有：
+  // w-* 走 class（数量/成本/状态/操作），登记时间走 CSS 尺寸 inline style。
+  // 另有未声明宽度的列走均分，不参与断言。
   await assertDeclaredWidthsHold(page, [
-    { header: '入库数量', expectedPx: 112 },
-    { header: '单位成本', expectedPx: 112 },
-    { header: '入库状态', expectedPx: 192 },
-    { header: '登记时间', expectedPx: 176 },
-    { header: '操作', expectedPx: 112 },
+    { header: '入库数量', expectedPx: 112, style: 'class' },
+    { header: '单位成本', expectedPx: 112, style: 'class' },
+    { header: '入库状态', expectedPx: 192, style: 'class' },
+    { header: '登记时间', expectedPx: 176, style: 'dimension' },
+    { header: '操作', expectedPx: 112, style: 'class' },
   ])
 
   // 票面验收第 2 条：〈入库状态〉的徽标完整显示，不再被截成一个字。
   // 判据与票面实测一致：徽标内层 span 的可视宽 == 内容宽（scrollWidth ==
   // clientWidth）。票面记录的是 14 / 36（可视 14px、内容 36px）——被截断。
-  //
-  // 这里只钉「没被裁切」这一件本 PR 负责的事，不断言标签文案：页面把
-  // RECEIPT_STATUS_LABELS 按 PascalCase 查表、而接口给的是小写枚举，真实值
-  // 一律落到「未知状态」（与本票的列宽问题无关，另行登记）。用「未知状态」
-  // 这四个字当样本，恰恰说明「四个字放不下而只剩一个字」确实被修好了。
   const badge = page
     .locator('table.nv-dt-table tbody tr')
     .first()
@@ -73,8 +69,7 @@ test('NvDataTable：声明宽 == 渲染宽，Tailwind 类与 CSS 尺寸两种写
     .locator('span.truncate')
     .first()
   await expect(badge).toBeVisible()
-  const badgeText = (await badge.textContent())?.trim() ?? ''
-  expect(badgeText.length).toBeGreaterThan(1)
+  await expect(badge).toHaveText('已入库')
   const measured = await badge.evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
@@ -85,30 +80,53 @@ test('NvDataTable：声明宽 == 渲染宽，Tailwind 类与 CSS 尺寸两种写
   ).toBeLessThanOrEqual(measured.clientWidth)
 })
 
-test('NvDataTable：最小宽度类同样按声明生效（#3734 审核第 1 轮回归）', async ({ page }) => {
-  // wms/inbound 的〈质检门禁〉声明 min-w-[22rem]。table-layout: fixed 只认 width，
-  // 若组件不把 min-w-* 解析成 width，这列会被算成 0px（审核第 1 轮实测）。
+test('NvDataTable：任意值宽度类同样按声明生效（#3734 审核第 1、2 轮回归）', async ({ page }) => {
+  // wms/inbound 的〈质检门禁〉声明 w-[22rem]（任意值宽度类）。table-layout: fixed
+  // 只认 width，审核第 1 轮这里写的是 min-w-[22rem]，实测被算成 0px。
   await page.goto('/wms/inbound', { waitUntil: 'domcontentloaded' })
   const head = page.locator('table.nv-dt-table thead th', { hasText: '质检门禁' })
   await expect(head).toBeVisible({ timeout: 15_000 })
-  const width = await head.evaluate((element) => element.getBoundingClientRect().width)
-  expect(width).toBeGreaterThan(0)
-  expect(width).toBeCloseTo(352, -1)
+  const measured = await head.evaluate((element) => ({
+    width: element.getBoundingClientRect().width,
+    hasWidthClass: Array.from(element.classList).some((name) => name === 'w-[22rem]'),
+  }))
+  expect(measured.hasWidthClass, '列「质检门禁」应走 w-[22rem] 任意值宽度类').toBe(true)
+  expect(
+    Math.abs(measured.width - 352),
+    `列「质检门禁」声明 352px，实际渲染 ${measured.width.toFixed(1)}px`,
+  ).toBeLessThanOrEqual(1)
 })
 
-/** 逐列断言：渲染宽度落在声明宽度的 ±1px 内（subpixel 舍入）。 */
+/**
+ * 逐列断言「声明宽 == 渲染宽」，容差 ±1px（subpixel 舍入）。
+ *
+ * 同时核对声明是以哪种写法落到表头上的：`w-*` 应当只走 class，CSS 尺寸应当只走
+ * inline style。只量宽度不核对落地形式的话，组件把某列悄悄换成另一种写法也能过，
+ * 那正是「两种写法都覆盖」要防的。
+ */
 async function assertDeclaredWidthsHold(
   page: Page,
-  expected: { header: string; expectedPx: number }[],
+  expected: { header: string; expectedPx: number; style: 'class' | 'dimension' }[],
 ) {
   for (const column of expected) {
     const head = page.locator('table.nv-dt-table thead th', { hasText: column.header })
     await expect(head, `列头未渲染：${column.header}`).toBeVisible()
-    const width = await head.evaluate((element) => element.getBoundingClientRect().width)
+    const measured = await head.evaluate((element) => ({
+      width: element.getBoundingClientRect().width,
+      inlineWidth: element.style.width,
+      hasWidthClass: Array.from(element.classList).some((name) => /^w-/.test(name)),
+    }))
     expect(
-      Math.abs(width - column.expectedPx),
-      `列「${column.header}」声明 ${column.expectedPx}px，实际渲染 ${width.toFixed(1)}px`,
+      Math.abs(measured.width - column.expectedPx),
+      `列「${column.header}」声明 ${column.expectedPx}px，实际渲染 ${measured.width.toFixed(1)}px`,
     ).toBeLessThanOrEqual(1)
+    if (column.style === 'class') {
+      expect(measured.hasWidthClass, `列「${column.header}」应走 w-* class 写法`).toBe(true)
+      expect(measured.inlineWidth, `列「${column.header}」不该同时挂 inline width`).toBe('')
+    } else {
+      expect(measured.inlineWidth, `列「${column.header}」应走 CSS 尺寸 inline style`).not.toBe('')
+      expect(measured.hasWidthClass, `列「${column.header}」不该同时挂 w-* class`).toBe(false)
+    }
   }
 }
 
@@ -151,8 +169,9 @@ async function routeBusinessConsoleApi(route: Route) {
               skuCode: 'SKU-001',
               quantity: 5,
               unitCost: 1280,
-              // 线上枚举是小写（generated types 的联合类型即小写），页面按它查标签表。
-              receiptStatus: 'completed',
+              // 取 api-client 生成类型 receiptStatus 联合类型里的真值（页面按它查标签表）：
+              // `posted` 才是「已入库」（`completed` 属工单状态域，入库语境不查这张表）。
+              receiptStatus: 'posted',
               requestedAtUtc: '2026-09-22T10:31:00.000Z',
             },
           ],

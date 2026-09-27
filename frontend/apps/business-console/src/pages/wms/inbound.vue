@@ -390,7 +390,9 @@ const columns: NvDataTableColumn<InboundRow>[] = [
     accessor: (r) => r.inboundOrderNo ?? '无',
   },
   { key: 'status', header: '状态', width: 'w-28' },
-  { key: 'quality', header: '质检门禁', width: 'min-w-[22rem]' },
+  // `w-[22rem]` 而不是 `min-w-[22rem]`：表格是 `table-layout: fixed`，只认 `width`，
+  // `min-width` 不参与列宽计算（#3734）。
+  { key: 'quality', header: '质检门禁', width: 'w-[22rem]' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]

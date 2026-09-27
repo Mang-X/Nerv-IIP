@@ -164,30 +164,19 @@ function valueOf(row: T, column: NvDataTableColumn<T>): unknown {
   return column.accessor ? column.accessor(row) : (row as Record<string, unknown>)[column.key]
 }
 
-// 列宽有三种写法，落到 <th> 上的方式各不相同。
+// 列宽只有两种写法，落到 <th> 上的方式各不相同：
 // 1) 原始 CSS 尺寸（`160px`）→ inline style。
-// 2) Tailwind 宽度类（`w-48`）→ 原样作为 class，Tailwind 自己解析成 width。
-// 3) Tailwind 最小宽度类（`min-w-[22rem]`）→ class 照挂（它的 `min-width` 在
-//    `table-layout: fixed` 下不参与列宽计算，见样式块），另按类名解析出一条等价的
-//    `width` 兜给 fixed 布局，否则这列会被算成 0px（#3734 审核第 1 轮）。
+// 2) Tailwind 宽度类（`w-48`、`w-[22rem]`）→ 原样作为 class，Tailwind 自己解析成
+//    width。任意值写法 `w-[…]` 也走这条，`table-layout: fixed` 只认 width，
+//    而 w-* 解析出来的正是 width。
+//
+// 这里刻意不解析 `min-w-*`：它的 `min-width` 在 fixed 下不参与列宽计算，若靠正则
+// 反推等价 width 等于在本仓库重写一份 Tailwind 主题表，认不出的写法会静默变成
+// 0px 的列。要「至少这么宽」就写 `w-[22rem]`。
 function isCssDimension(width?: string): boolean {
   return !!width && /^\d+(\.\d+)?(px|rem|em|%|vh|vw|ch)$/.test(width)
 }
-
-// `min-w-[22rem]` / `min-w-72` / `min-w-1/2` → 等价 width。只认数字开头的尺寸，
-// 不认 `min-w-full` 这类没有确定长度的写法（那种列交给均分）。
-function minWidthClassToCss(width: string): string | undefined {
-  const m = /^min-w-(?:\[(.+)\]|(\d+(?:\.\d+)?))$/.exec(width)
-  if (!m) return undefined
-  if (m[1]) return m[1]
-  return `${Number(m[2]) * 0.25}rem`
-}
-
-const widthStyle = (w?: string) => {
-  if (isCssDimension(w)) return { width: w }
-  const resolved = w ? minWidthClassToCss(w) : undefined
-  return resolved ? { width: resolved } : undefined
-}
+const widthStyle = (w?: string) => (isCssDimension(w) ? { width: w } : undefined)
 const widthClass = (w?: string) => (w && !isCssDimension(w) ? w : undefined)
 
 // ── Column visibility & density ──
