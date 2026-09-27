@@ -2308,7 +2308,7 @@ public sealed class MesPersistenceContractTests
                 "org-001",
                 "env-dev",
                 "WO-REPORT-COMPLETE-001",
-                "OP-REPORT-COMPLETE-10",
+                "WO-REPORT-COMPLETE-001-OP-10",
                 OperationTaskLifecycleStatus.InProgress,
                 10,
                 "WC-FILL",
@@ -2323,7 +2323,7 @@ public sealed class MesPersistenceContractTests
                 "env-dev",
                 "MIR-REPORT-COMPLETE-001",
                 "WO-REPORT-COMPLETE-001",
-                "OP-REPORT-COMPLETE-10",
+                "WO-REPORT-COMPLETE-001-OP-10",
                 "MAT-SCRAP",
                 "PCS",
                 10m,
@@ -2338,7 +2338,7 @@ public sealed class MesPersistenceContractTests
                     "org-001",
                     "env-dev",
                     "WO-REPORT-COMPLETE-001",
-                    "OP-REPORT-COMPLETE-10",
+                    "WO-REPORT-COMPLETE-001-OP-10",
                     9m,
                     1m,
                     true,
@@ -2352,10 +2352,15 @@ public sealed class MesPersistenceContractTests
         using var recreatedScope = services.CreateScope();
         var task = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
             .OperationTasks
-            .SingleAsync(x => x.OperationTaskIdValue == "OP-REPORT-COMPLETE-10");
+            .SingleAsync(x => x.OperationTaskIdValue == "WO-REPORT-COMPLETE-001-OP-10");
 
         Assert.Equal(OperationTaskLifecycleStatus.Completed, task.Status);
         Assert.Equal(now.AddMinutes(40), task.ExistingEndUtc);
+        var report = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .ProductionReports.SingleAsync(x => x.WorkOrderId == "WO-REPORT-COMPLETE-001");
+        Assert.Equal($"WO-REPORT-COMPLETE-001-OP-10-{report.ReportNo}", report.ProducedLotNo);
+        Assert.DoesNotContain("WO-REPORT-COMPLETE-001-WO-REPORT-COMPLETE-001", report.ProducedLotNo);
+        Assert.True(report.ProducedLotNo!.Length <= 100);
     }
 
     [Fact]
