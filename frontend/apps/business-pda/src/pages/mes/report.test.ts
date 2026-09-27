@@ -107,6 +107,7 @@ const workOrdersRef = ref<Array<Record<string, unknown>>>(defaultWorkOrders)
 const telemetryCandidatesRef = ref<Array<Record<string, unknown>>>([])
 const telemetryTargetTasksRef = ref<Array<Record<string, unknown>>>([])
 const telemetryPromote = vi.fn()
+const telemetryDismiss = vi.fn()
 
 const defaultOperationTasks = [
   {
@@ -315,7 +316,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     total: computed(() => telemetryCandidatesRef.value.length),
     pending: ref(false),
     promote: telemetryPromote,
-    dismiss: vi.fn(),
+    dismiss: telemetryDismiss,
   }),
   useMesTelemetryCandidateTargetTasks: () => ({
     tasks: computed(() => telemetryTargetTasksRef.value),
@@ -398,7 +399,8 @@ describe('PDA MES production reporting page', () => {
     sessionStorage.clear()
     telemetryCandidatesRef.value = []
     telemetryTargetTasksRef.value = []
-    telemetryPromote.mockReset()
+    telemetryPromote.mockReset().mockResolvedValue('PRPT-20260927-000001')
+    telemetryDismiss.mockReset().mockResolvedValue(undefined)
     serialRequired.value = false
     serialValid.value = true
     serialTemplateId.value = ''
@@ -1458,6 +1460,61 @@ describe('PDA MES production reporting page', () => {
     await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
     await flushPromises()
     expect(telemetryPromote).toHaveBeenCalledWith('cand-1', 'WO-2026-0002', 'OP-3')
+  })
+
+  it('转正成功后提示报工单号并收起候选', async () => {
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-ok',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('已转为报工 PRPT-20260927-000001')
+    expect(wrapper.find('[data-testid="telemetry-target"]').exists()).toBe(false)
+  })
+
+  it('转正被拒时上屏业务原因且保留当前选择', async () => {
+    telemetryPromote.mockRejectedValueOnce({
+      success: false,
+      code: 400,
+      message: '工序已完工，不能再报工。',
+      errorData: [],
+    })
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-reject',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('工序已完工，不能再报工。')
+    expect(document.body.textContent).not.toContain('已转为报工')
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0001 · 工序 10')
+  })
+
+  it('忽略成功后给出提示', async () => {
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-dismiss',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('input[placeholder="忽略原因（忽略时必填）"]').setValue('重复采集')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '忽略')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(telemetryDismiss).toHaveBeenCalledWith('cand-dismiss', '重复采集')
+    expect(document.body.textContent).toContain('已忽略这条遥测记录')
   })
 
   it('设备上只有一道执行中的工序时直接带出', async () => {

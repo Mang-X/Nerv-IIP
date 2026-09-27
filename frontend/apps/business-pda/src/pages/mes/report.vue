@@ -21,7 +21,7 @@ import {
   NvMobileToast,
   NvNumberKeyboard,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   useMesExactOperationTask,
@@ -30,6 +30,7 @@ import {
   useMesWorkOrderDetail,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
+import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
@@ -173,19 +174,40 @@ function toggleTelemetryCandidate(candidateId?: string) {
     telemetryCandidateId.value === candidateId ? null : (candidateId ?? null)
 }
 
+// 转正 / 忽略的结果必须上屏：成功时候选只是从列表里消失，失败时什么都不显示，操作工会以为没生效而重复点。
+const telemetryToast = shallowRef<{ show: boolean; message: string; type: 'success' | 'error' }>({
+  show: false,
+  message: '',
+  type: 'success',
+})
+function showTelemetryToast(message: string, type: 'success' | 'error') {
+  telemetryToast.value = { show: true, message, type }
+}
 async function promoteTelemetryCandidate(candidateId?: string) {
   if (scanPending.value) return
   const workOrderId = telemetryTarget.value?.workOrderId
   const operationTaskId = telemetryTarget.value?.operationTaskId
   if (!candidateId || !workOrderId || !operationTaskId) return
-  await telemetryQueue.promote(candidateId, workOrderId, operationTaskId)
+  try {
+    const reportNo = await telemetryQueue.promote(candidateId, workOrderId, operationTaskId)
+    showTelemetryToast(reportNo ? `已转为报工 ${reportNo}` : '已转为报工', 'success')
+  } catch (error) {
+    showTelemetryToast(describeRequestError(error, '转为报工失败，请重试。').message, 'error')
+    return
+  }
   telemetryCandidateId.value = null
   resetTelemetryAction()
 }
 async function dismissTelemetryCandidate(candidateId?: string) {
   if (scanPending.value) return
   if (!candidateId || !telemetryDismissReason.value.trim()) return
-  await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
+  try {
+    await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
+    showTelemetryToast('已忽略这条遥测记录', 'success')
+  } catch (error) {
+    showTelemetryToast(describeRequestError(error, '忽略失败，请重试。').message, 'error')
+    return
+  }
   telemetryCandidateId.value = null
   resetTelemetryAction()
 }
@@ -928,6 +950,12 @@ async function onScanAccepted(value: MesScanAccepted) {
       </div>
     </NvBottomSheet>
 
+    <NvMobileToast
+      :show="telemetryToast.show"
+      :message="telemetryToast.message"
+      :type="telemetryToast.type"
+      @update:show="telemetryToast = { ...telemetryToast, show: $event }"
+    />
     <NvMobileToast
       :show="lifecycleRecovery.toast.value.show"
       :message="lifecycleRecovery.toast.value.message"

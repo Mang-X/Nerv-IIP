@@ -1840,18 +1840,24 @@ export function useMesTelemetryProductionReportCandidates() {
     ),
     total: computed(() => envelopeTotal(query.data.value as CandidateEnvelope | undefined)),
     pending: query.isLoading,
-    promote: (candidateId: string, workOrderId: string, operationTaskId: string) =>
-      promoteMutation.mutateAsync({
+    /** 转为正式报工，返回报工单号；业务拒绝（含 success=false 信封）一律抛出，交给页面上屏原因。 */
+    promote: async (candidateId: string, workOrderId: string, operationTaskId: string) => {
+      const envelope = await promoteMutation.mutateAsync({
         path: { candidateId },
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
         body: { workOrderId, operationTaskId },
-      }),
-    dismiss: (candidateId: string, reason: string) =>
-      dismissMutation.mutateAsync({
+      })
+      if (!envelope?.success) throw envelope
+      return envelope.data?.reportNo ?? ''
+    },
+    dismiss: async (candidateId: string, reason: string) => {
+      const envelope = await dismissMutation.mutateAsync({
         path: { candidateId },
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
         body: { reason },
-      }),
+      })
+      if (!envelope?.success) throw envelope
+    },
   }
 }
 
