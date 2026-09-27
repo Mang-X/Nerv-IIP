@@ -41,6 +41,8 @@ public sealed record SeedRoleDefinition(
 
 public static class NervIipSeedRoles
 {
+    public const string PlatformAdministratorRoleName = "平台管理员";
+
     public static readonly SeedRoleDefinition[] ErpJobRoles =
     [
         new(

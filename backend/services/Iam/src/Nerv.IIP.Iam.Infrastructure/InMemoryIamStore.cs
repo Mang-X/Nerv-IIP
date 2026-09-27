@@ -814,7 +814,7 @@ public sealed class InMemoryIamStore
     {
         _organizations.Add(new OrganizationFact("org-001", "Nerv IIP", "active"));
         _environments.Add(new IamEnvironmentFact("env-dev", "org-001", "Development", "active"));
-        _roles.Add(new RoleFact("role-platform-admin", "Platform Administrator", NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal)));
+        _roles.Add(new RoleFact("role-platform-admin", NervIipSeedRoles.PlatformAdministratorRoleName, NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal)));
         _roleDataScopes["role-platform-admin"] =
             new HashSet<DataScopeBinding>
             {
