@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { computed, reactive, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import PlansPage from './plans.vue'
 
@@ -13,11 +13,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
-  describeMesReadinessReason: (reason: string) => ({ label: reason, detail: '', nextStep: '' }),
-  describeMesReadinessReasons: () => [],
   useMesProductionPlans: () => ({
-    convertPlanToWorkOrder: vi.fn(),
-    convertPlanToWorkOrderPending: ref(false),
     filters: reactive({ organizationId: 'org-1', environmentId: 'env-1', skip: 0, take: 20 }),
     productionPlans: computed(() => state.productionPlans),
     productionPlansError: ref(undefined),
@@ -87,43 +83,21 @@ const stubs = {
   NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { template: '<div><slot /></div>' },
-  NvDialog: {
-    props: ['open'],
-    emits: ['update:open'],
-    template: '<div v-if="open"><slot /></div>',
-  },
-  NvDialogContent: { template: '<section><slot /></section>' },
-  NvDialogDescription: { template: '<p><slot /></p>' },
-  NvDialogFooter: { template: '<footer><slot /></footer>' },
-  NvDialogHeader: { template: '<header><slot /></header>' },
-  NvDialogTitle: { template: '<h2><slot /></h2>' },
-  NvField: { template: '<div><slot /></div>' },
-  NvFieldGroup: { template: '<div><slot /></div>' },
-  NvFieldLabel: { template: '<label><slot /></label>' },
-  NvInput: { template: '<input />' },
-  Spinner: true,
 }
 
 describe('MES 生产计划生命周期入口', () => {
-  beforeEach(() => {
-    state.productionPlans = [
-      plan(),
-      plan({
-        productionPlanId: 'PLAN-202609-002',
-        sourceDocumentId: 'SP-202609-002',
-        status: 'completed',
-      }),
-    ]
-  })
-
-  it('已完工计划不显示转工单入口，进行中且就绪的计划仍可转', () => {
+  it.each([
+    ['created', '已转工单'],
+    ['released', '已转工单'],
+    ['started', '已转工单'],
+    ['completed', '已完工'],
+  ])('%s 状态的已转工单不提供再次转工单入口', (status, expectedLabel) => {
+    state.productionPlans = [plan({ status })]
     const wrapper = mount(PlansPage, { global: { stubs } })
-    const [inProgressRow, completedRow] = wrapper.findAll('tbody tr')
+    const row = wrapper.find('tbody tr')
 
-    expect(inProgressRow?.get('[data-column="readiness"]').text()).toBe('可转工单')
-    expect(inProgressRow?.get('[data-column="actions"] button').text()).toContain('转工单')
-
-    expect(completedRow?.get('[data-column="readiness"]').text()).toBe('已完工')
-    expect(completedRow?.find('[data-column="actions"] button').exists()).toBe(false)
+    expect(row.get('[data-column="readiness"]').text()).toBe(expectedLabel)
+    expect(row.text()).not.toContain('可转工单')
+    expect(row.find('button').exists()).toBe(false)
   })
 })
