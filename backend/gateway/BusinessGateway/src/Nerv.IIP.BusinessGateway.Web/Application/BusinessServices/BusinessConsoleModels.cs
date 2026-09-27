@@ -3713,10 +3713,10 @@ public sealed record BusinessConsoleErpPurchaseOrderCommandLine(
 
 public sealed record BusinessConsoleCreateErpPurchaseOrderResponse(string PurchaseOrderId);
 
+// #3900：我方收货单号只由 ERP 编码规则生成，控制台契约不提供手填通道。
 public sealed record BusinessConsoleRecordErpPurchaseReceiptRequest(
     string OrganizationId,
     string EnvironmentId,
-    string? PurchaseReceiptNo,
     string PurchaseOrderNo,
     IReadOnlyCollection<BusinessConsoleErpPurchaseReceiptLine> Lines,
     string? IdempotencyKey = null,

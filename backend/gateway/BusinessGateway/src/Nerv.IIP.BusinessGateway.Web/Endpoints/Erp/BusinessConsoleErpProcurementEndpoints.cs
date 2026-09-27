@@ -257,7 +257,6 @@ public sealed class BusinessConsoleRecordErpPurchaseReceiptRequestValidator
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.PurchaseReceiptNo).MaximumLength(100);
         RuleFor(x => x.PurchaseOrderNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
         RuleFor(x => x.Lines).NotEmpty();
