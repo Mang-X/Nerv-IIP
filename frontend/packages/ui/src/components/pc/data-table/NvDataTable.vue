@@ -946,9 +946,29 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 
 <style scoped>
 @layer nv-components {
+  /* `table-layout: fixed` is what makes a column's `width` a real contract
+   instead of a suggestion: under the default `auto`, a width is only a hint the
+   layout algorithm is free to trade away against cell content, so a declared
+   column could render at its min-content and clip its own content (the receipt
+   status badge rendered one character wide — #3734). `fixed` lays columns out
+   from the first row's widths alone, so the column *is* the declared width.
+   `min-width: 100%` (rather than the primitive's `w-full`) lets the table grow
+   past a container that is narrower than the columns, which is what the
+   primitive's `overflow-x-auto` wrapper exists to scroll. */
   .nv-dt-table {
+    table-layout: fixed;
+    min-width: 100%;
     border-collapse: separate;
     border-spacing: 0;
+  }
+
+  /* A fixed layout pins the column box, and `min-width: 100%` can size the table
+   past the viewport for a narrow window. Without this, cell content (and the
+   padding around it) would spill outside the column; with it, a column too
+   narrow for its content scrolls inside the cell instead of pushing the layout
+   apart. `nowrap` cells keep this from ever applying to the header labels. */
+  .nv-dt-th {
+    overflow: auto;
   }
 
   /* Columns without an explicit `width` share the leftover space so the table

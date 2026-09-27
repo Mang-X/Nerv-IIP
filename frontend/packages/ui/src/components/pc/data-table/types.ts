@@ -25,7 +25,13 @@ export interface NvDataTableColumn<T = Record<string, unknown>> {
   filter?: 'text' | 'enum'
   /** Explicit enum options; defaults to the distinct values found in `rows`. */
   filterOptions?: NvDataTableFilterOption[]
-  /** Tailwind width class (e.g. `w-40`) or a CSS width string (e.g. `120px`). */
+  /**
+   * Tailwind width class (e.g. `w-40`) or a CSS width string (e.g. `120px`).
+   * The declared width is the rendered width — columns are laid out with
+   * `table-layout: fixed`, so a column with a `width` is never widened or
+   * squeezed to fit its content. Content wider than a narrow column scrolls
+   * inside the cell; size the column to fit the content it holds.
+   */
   width?: string
   headerClass?: string
   cellClass?: string
