@@ -472,18 +472,20 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
     private static BusinessPriorityFact DefaultPriority() =>
         new(BusinessPriorityLevel.P2, "authoritative-default", "No manual business-priority override.", DateTimeOffset.UnixEpoch, null, 0);
 
-    private static OrderUrgencyContract MissingContract(
+    internal static OrderUrgencyContract MissingContract(
         string organizationId,
         string environmentId,
         string orderReference,
-        DateTimeOffset calculatedAtUtc)
+        DateTimeOffset calculatedAtUtc,
+        DateTimeOffset? dueUtc = null)
     {
-        var inputFingerprint = Fingerprint($"missing|{organizationId}|{environmentId}|{orderReference}");
+        var fingerprintInput = $"missing|{organizationId}|{environmentId}|{orderReference}";
+        var inputFingerprint = Fingerprint(dueUtc.HasValue ? $"{fingerprintInput}|{dueUtc:O}" : fingerprintInput);
         var result = OrderUrgencyCalculator.Calculate(new OrderUrgencyCalculationInput(
             orderReference,
             orderReference,
             calculatedAtUtc,
-            null,
+            dueUtc,
             TimeSpan.Zero,
             DefaultPriority(),
             [],
@@ -521,11 +523,28 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
 public sealed record ListOrderUrgenciesQuery(string OrganizationId, string EnvironmentId, IReadOnlyCollection<string> References)
     : IQuery<IReadOnlyCollection<OrderUrgencyContract>>;
 
-public sealed class ListOrderUrgenciesQueryHandler(OrderUrgencyService service)
+public sealed class ListOrderUrgenciesQueryHandler(
+    OrderUrgencyService service,
+    IOrderUrgencyMesDueDateProvider mesDueDates,
+    TimeProvider timeProvider)
     : IQueryHandler<ListOrderUrgenciesQuery, IReadOnlyCollection<OrderUrgencyContract>>
 {
-    public Task<IReadOnlyCollection<OrderUrgencyContract>> Handle(ListOrderUrgenciesQuery request, CancellationToken cancellationToken) =>
-        service.ListAsync(request.OrganizationId, request.EnvironmentId, request.References, cancellationToken);
+    public async Task<IReadOnlyCollection<OrderUrgencyContract>> Handle(ListOrderUrgenciesQuery request, CancellationToken cancellationToken)
+    {
+        var items = await service.ListAsync(request.OrganizationId, request.EnvironmentId, request.References, cancellationToken);
+        var missing = items.Where(x => x.ExecutionRisk.IsSourceMissing).ToArray();
+        if (missing.Length == 0) return items;
+
+        var dueDates = await mesDueDates.ResolveAsync(
+            request.OrganizationId, request.EnvironmentId,
+            missing.Select(x => x.OrderId).ToArray(), cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        return items.Select(item => dueDates.TryGetValue(item.OrderId, out var dueUtc)
+                ? OrderUrgencyService.MissingContract(
+                    request.OrganizationId, request.EnvironmentId, item.OrderId, now, dueUtc)
+                : item)
+            .ToArray();
+    }
 }
 
 public sealed record GetOrderUrgencyQuery(string OrganizationId, string EnvironmentId, string OrderReference)
