@@ -713,6 +713,14 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:man527-acceptance'
     }
+    Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/locations" -Headers $headers -Body @{
+        organizationId = 'org-001'
+        environmentId = 'env-dev'
+        locationCode = 'LOC-A-01'
+        locationType = 'bin'
+        siteCode = $wmsSiteCode
+        status = 'active'
+    } | Out-Null
     $businessAdmission = Invoke-Man527FirstBusinessActionAfterConsumerReady `
         -ComposeFile $composeFile `
         -ManagedProcess $erpProcess `

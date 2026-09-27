@@ -65,6 +65,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
         });
 
         var source = await SeedReceiptPairAsync(mesPostgres, probeRunId);
+        await SeedInventoryLocationAsync(inventoryPostgres, source);
         await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
         await WaitForConsumerGroupsAsync(redis, capVersion);
