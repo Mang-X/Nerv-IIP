@@ -1,0 +1,128 @@
+import { mount } from '@vue/test-utils'
+import { computed, reactive, ref } from 'vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import PlansPage from './plans.vue'
+
+const state = vi.hoisted(() => ({
+  productionPlans: [] as Array<Record<string, unknown>>,
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
+}))
+
+vi.mock('@/composables/useBusinessMes', () => ({
+  describeMesReadinessReason: (reason: string) => ({ label: reason, detail: '', nextStep: '' }),
+  describeMesReadinessReasons: () => [],
+  useMesProductionPlans: () => ({
+    convertPlanToWorkOrder: vi.fn(),
+    convertPlanToWorkOrderPending: ref(false),
+    filters: reactive({ organizationId: 'org-1', environmentId: 'env-1', skip: 0, take: 20 }),
+    productionPlans: computed(() => state.productionPlans),
+    productionPlansError: ref(undefined),
+    productionPlansPending: ref(false),
+    productionPlansTotal: computed(() => state.productionPlans.length),
+    refreshProductionPlans: vi.fn(),
+  }),
+}))
+
+vi.mock('@/composables/mes/useMesDisplayNames', () => ({
+  useMesDisplayNames: () => ({ resolveSkuLabel: () => '活塞杆组件' }),
+}))
+
+vi.mock('@/composables/usePagedList', () => ({
+  usePagedList: () => ({ page: ref(1), pageSize: ref(20) }),
+}))
+
+vi.mock('@/utils/notify', () => ({
+  inlineErrorMessage: () => '',
+  notifyOperationFailure: vi.fn(),
+  notifySuccess: vi.fn(),
+}))
+
+function plan(overrides: Record<string, unknown> = {}) {
+  return {
+    productionPlanId: 'PLAN-202609-001',
+    sourceSystem: 'APS',
+    sourceDocumentType: 'SchedulePlan',
+    sourceDocumentId: 'SP-202609-001',
+    sourceDemandReference: null,
+    skuId: 'SKU-PISTON-001',
+    plannedQuantity: 30,
+    uomCode: 'pcs',
+    status: 'started',
+    readinessStatus: 'Ready',
+    blockingReasons: [],
+    plannedStartUtc: '2026-09-27T08:00:00Z',
+    plannedEndUtc: '2026-09-27T16:00:00Z',
+    ...overrides,
+  }
+}
+
+const stubs = {
+  BusinessLayout: { template: '<main><slot /></main>' },
+  NvPageHeader: { template: '<header><slot name="actions" /></header>' },
+  NvToolbar: { template: '<div><slot name="filters" /><slot name="actions" /></div>' },
+  NvDataTable: {
+    props: ['rows'],
+    template: `
+      <table><tbody>
+        <tr v-for="row in rows" :key="row.productionPlanId">
+          <td data-column="readiness"><slot name="cell-readinessStatus" :row="row" /></td>
+          <td data-column="actions"><slot name="cell-actions" :row="row" /></td>
+        </tr>
+      </tbody></table>
+    `,
+  },
+  NvButton: {
+    inheritAttrs: false,
+    props: ['disabled', 'type'],
+    template: '<button v-bind="$attrs" :type="type || \'button\'" :disabled="disabled"><slot /></button>',
+  },
+  NvStatusBadge: { props: ['label'], template: '<span>{{ label }}</span>' },
+  NvSelect: { template: '<div><slot /></div>' },
+  NvSelectTrigger: { template: '<button><slot /></button>' },
+  NvSelectValue: { template: '<span />' },
+  NvSelectContent: { template: '<div><slot /></div>' },
+  NvSelectItem: { template: '<div><slot /></div>' },
+  NvDialog: {
+    props: ['open'],
+    emits: ['update:open'],
+    template: '<div v-if="open"><slot /></div>',
+  },
+  NvDialogContent: { template: '<section><slot /></section>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogFooter: { template: '<footer><slot /></footer>' },
+  NvDialogHeader: { template: '<header><slot /></header>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvField: { template: '<div><slot /></div>' },
+  NvFieldGroup: { template: '<div><slot /></div>' },
+  NvFieldLabel: { template: '<label><slot /></label>' },
+  NvInput: { template: '<input />' },
+  Spinner: true,
+}
+
+describe('MES 生产计划生命周期入口', () => {
+  beforeEach(() => {
+    state.productionPlans = [
+      plan(),
+      plan({
+        productionPlanId: 'PLAN-202609-002',
+        sourceDocumentId: 'SP-202609-002',
+        status: 'completed',
+      }),
+    ]
+  })
+
+  it('已完工计划不显示转工单入口，进行中且就绪的计划仍可转', () => {
+    const wrapper = mount(PlansPage, { global: { stubs } })
+    const [inProgressRow, completedRow] = wrapper.findAll('tbody tr')
+
+    expect(inProgressRow?.get('[data-column="readiness"]').text()).toBe('可转工单')
+    expect(inProgressRow?.get('[data-column="actions"] button').text()).toContain('转工单')
+
+    expect(completedRow?.get('[data-column="readiness"]').text()).toBe('已完工')
+    expect(completedRow?.find('[data-column="actions"] button').exists()).toBe(false)
+  })
+})
