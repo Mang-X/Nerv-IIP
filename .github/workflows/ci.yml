@@ -2127,6 +2127,14 @@ jobs:
           NERV_IIP_OUT_DIR: ${{ runner.temp }}/issue-2098-tooling-browser
         run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue1974-tooling-visual.spec.ts --project=desktop --reporter=list
 
+      # 声明宽 == 渲染宽只能在真实浏览器里量：jsdom 不实现表格布局，用
+      # getComputedStyle 在单测里量列宽只会假绿（#3734）。与上面同一条 lane。
+      - name: Test NvDataTable column width invariants
+        id: business-console-column-width-tests
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 10
+        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue3734-column-width.spec.ts --project=desktop --reporter=list
+
       - name: Upload Business Console browser diagnostics
         timeout-minutes: 5
         if: failure() && steps.business-console-browser-tests.outcome == 'failure'

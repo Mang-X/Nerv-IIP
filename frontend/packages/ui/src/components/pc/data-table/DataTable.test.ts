@@ -286,8 +286,50 @@ describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
     const head = wrapper.get('thead th')
     expect(head.attributes('style')).toContain('width: 160px')
     // 两种写法互斥：CSS 尺寸是 inline style，不再同时挂一个宽度类。
-    expect(head.classes().some((c) => /^w-/.test(c))).toBe(false)
+    expect(head.classes().some((c) => c.startsWith('w-'))).toBe(false)
     expect(head.classes()).not.toContain('nv-dt-fill')
+    wrapper.unmount()
+  })
+
+  // 审核第 1 轮：table-layout: fixed 只认 width，min-w-* 挂在 <th> 上不参与列宽
+  // 计算，wms/inbound 的〈质检门禁〉因此被算成 0px。组件按类名解析出等价 width。
+  it('min-w-* 类照挂，并另解析出等价的 width 交给 fixed 布局', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        columns: [
+          { key: 'id', header: '质检门禁', width: 'min-w-[22rem]' },
+          { key: 'name', header: '名称', width: 'min-w-72' },
+        ],
+        rows,
+        pagination: false,
+      },
+    })
+    await nextTick()
+
+    const [arbitrary, scale] = wrapper.findAll('thead th')
+    // 类本身照挂（Tailwind 的 min-width 仍对内容生效）。
+    expect(arbitrary.classes()).toContain('min-w-[22rem]')
+    expect(arbitrary.attributes('style')).toContain('width: 22rem')
+    // 数字档按 Tailwind 间距刻度换算：72 × 0.25rem = 18rem。
+    expect(scale.classes()).toContain('min-w-72')
+    expect(scale.attributes('style')).toContain('width: 18rem')
+    wrapper.unmount()
+  })
+
+  it('min-w-full 这类没有确定长度的写法不解析，按未声明宽度处理', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        columns: [{ key: 'id', header: '名称', width: 'min-w-full' }],
+        rows,
+        pagination: false,
+      },
+    })
+    await nextTick()
+
+    const head = wrapper.get('thead th')
+    expect(head.attributes('style')).toBeUndefined()
     wrapper.unmount()
   })
 })
