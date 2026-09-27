@@ -1,4 +1,5 @@
 export {
+  changeConsolePasswordMutationOptions,
   getConsolePrincipalQueryOptions,
   loginConsoleUserMutationOptions,
   logoutConsoleSessionMutationOptions,
@@ -6,6 +7,7 @@ export {
 } from './generated/@pinia/colada.gen'
 
 export {
+  changeConsolePassword,
   getConsolePrincipal,
   loginConsoleUser,
   logoutConsoleSession,
@@ -16,6 +18,7 @@ import type {
   NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse,
   NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse,
   NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse,
+  NervIipPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest,
   NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest,
   NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest,
   NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse,
@@ -23,6 +26,8 @@ import type {
 } from './generated/types.gen'
 
 export type ConsoleAuthResponse = NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse
+export type ConsoleChangePasswordRequest =
+  NervIipPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest
 export type ConsoleLoginRequest = NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest
 export type ConsoleLogoutRequest = NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest
 export type ConsolePrincipalResponse =
