@@ -222,10 +222,19 @@ function planReadiness(status?: string | null): { label: string; tone: StatusTon
   if (status === 'Blocked') return { label: '受阻', tone: 'danger' }
   return { label: status || '未知', tone: 'neutral' }
 }
+function isPlanCompleted(plan: BusinessConsoleMesProductionPlanRow) {
+  return plan.status === 'completed'
+}
+function planRowReadiness(plan: BusinessConsoleMesProductionPlanRow) {
+  return isPlanCompleted(plan)
+    ? { label: '已完工', tone: 'neutral' as const }
+    : planReadiness(plan.readinessStatus)
+}
 // 行是否就绪可转：受阻或带阻塞原因的计划先处理后才能转。
 function planConvertible(plan: BusinessConsoleMesProductionPlanRow) {
   return (
     Boolean(plan.productionPlanId) &&
+    !isPlanCompleted(plan) &&
     plan.readinessStatus !== 'Blocked' &&
     (plan.blockingReasons?.length ?? 0) === 0
   )
@@ -391,8 +400,8 @@ function newPlanIdempotencyKey(scope: string) {
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-readinessStatus="{ row }">
         <NvStatusBadge
-          :label="planReadiness(row.readinessStatus).label"
-          :tone="planReadiness(row.readinessStatus).tone"
+          :label="planRowReadiness(row).label"
+          :tone="planRowReadiness(row).tone"
         />
       </template>
       <template #cell-actions="{ row }">
@@ -402,7 +411,7 @@ function newPlanIdempotencyKey(scope: string) {
             转工单
           </NvButton>
           <NvButton
-            v-else
+            v-else-if="!isPlanCompleted(row)"
             size="sm"
             type="button"
             variant="outline"
