@@ -129,27 +129,52 @@ const reportPresentation = computed(() =>
   }),
 )
 
+// 表格是 table-layout: fixed，单元格默认不换行：不声明列宽时名称一长就互相压字。
+// 这里按内容给定列宽，文字较长的几列允许换行；总宽超出容器时由表格横向滚动。
 const columns = computed<NvDataTableColumn<OeeTableRow>[]>(() => [
-  { key: 'primaryLabel', header: '对比对象' },
-  { key: 'hierarchyLabel', header: '工厂 / 层级' },
+  { key: 'primaryLabel', header: '对比对象', width: 'w-36', cellClass: 'whitespace-normal' },
+  {
+    key: 'hierarchyLabel',
+    header: '工厂 / 层级',
+    width: 'w-64',
+    cellClass: 'whitespace-normal',
+  },
   ...(filters.dimension === 'day' || filters.dimension === 'shift'
-    ? [{ key: 'businessDateLabel', header: '业务日' }]
+    ? [{ key: 'businessDateLabel', header: '业务日', width: 'w-28' }]
     : []),
-  { key: 'windowLabel', header: '本行时段' },
-  { key: 'oeeRate', header: 'OEE', accessor: (row) => rateCell(row.oeeRate) },
+  { key: 'windowLabel', header: '本行时段', width: 'w-48', cellClass: 'whitespace-normal' },
+  { key: 'oeeRate', header: 'OEE', width: 'w-20', accessor: (row) => rateCell(row.oeeRate) },
   {
     key: 'availabilityRate',
     header: '可用率',
+    width: 'w-20',
     accessor: (row) => rateCell(row.availabilityRate),
   },
   {
     key: 'performanceRate',
     header: '性能率',
+    width: 'w-20',
     accessor: (row) => rateCell(row.performanceRate),
   },
-  { key: 'qualityRate', header: '质量率', accessor: (row) => rateCell(row.qualityRate) },
-  { key: 'deviceCount', header: '设备', accessor: (row) => `${row.deviceCount ?? 0} 台` },
-  { key: 'isDegraded', header: '数据状态', accessor: degradationSummary },
+  {
+    key: 'qualityRate',
+    header: '质量率',
+    width: 'w-20',
+    accessor: (row) => rateCell(row.qualityRate),
+  },
+  {
+    key: 'deviceCount',
+    header: '设备',
+    width: 'w-14',
+    accessor: (row) => `${row.deviceCount ?? 0} 台`,
+  },
+  {
+    key: 'isDegraded',
+    header: '数据状态',
+    width: 'w-64',
+    cellClass: 'whitespace-normal',
+    accessor: degradationSummary,
+  },
 ])
 
 const windowRange = computed<DateRange>({
