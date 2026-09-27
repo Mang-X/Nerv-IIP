@@ -171,7 +171,7 @@ function mountList() {
         NvDataTable: {
           props: ['rows', 'columns'],
           template:
-            '<div><template v-for="(row, i) in rows" :key="i"><slot name="cell-urgency" :row="row" /></template></div>',
+            '<div><div v-for="(row, i) in rows" :key="i" data-testid="work-order-row" :data-status="row.status"><slot name="cell-urgency" :row="row" /></div></div>',
         },
         NvStatusBadge: { props: ['value', 'label'], template: '<span>{{ label ?? value }}</span>' },
         NvButton: { template: '<button><slot /></button>' },
@@ -199,5 +199,28 @@ describe('work-order list — shared urgency reference mapping', () => {
     const badge = wrapper.get('[data-testid="order-urgency"]')
     expect(badge.attributes('data-ref')).toBe('WO-20260722-001')
     expect(badge.attributes('data-mode')).toBe('level')
+  })
+
+  it('shows terminal semantics instead of in-progress urgency for finished work orders', () => {
+    const terminalStatuses = ['completed', 'closed', 'cancelled', 'scrapped', 'split', 'merged']
+    workOrders.items = [
+      { workOrderId: 'WO-ACTIVE', skuId: 'FG-1', status: 'released', operationTasks: [] },
+      ...terminalStatuses.map((status) => ({
+        workOrderId: `WO-${status.toUpperCase()}`,
+        skuId: 'FG-1',
+        status,
+        operationTasks: [],
+      })),
+    ]
+    const wrapper = mountList()
+
+    const activeRow = wrapper.get('[data-testid="work-order-row"][data-status="released"]')
+    expect(activeRow.get('[data-testid="order-urgency"]').attributes('data-ref')).toBe('WO-ACTIVE')
+
+    for (const status of terminalStatuses) {
+      const row = wrapper.get(`[data-testid="work-order-row"][data-status="${status}"]`)
+      expect(row.find('[data-testid="order-urgency"]').exists()).toBe(false)
+      expect(row.text()).toContain('已结束')
+    }
   })
 })
