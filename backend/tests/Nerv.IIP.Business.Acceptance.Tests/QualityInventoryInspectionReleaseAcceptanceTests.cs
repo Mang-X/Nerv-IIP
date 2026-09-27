@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
@@ -351,7 +352,11 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
         var options = new DbContextOptionsBuilder<InventoryDbContext>()
             .UseInMemoryDatabase($"quality-inventory-acceptance-{Guid.NewGuid():N}")
             .Options;
-        return new InventoryDbContext(options, new NoopMediator());
+        var db = new InventoryDbContext(options, new NoopMediator());
+        db.StockLocations.Add(StockLocation.CreateOrUpdate(
+            null, "org-001", "env-dev", "IQC-HOLD", "storage", "SITE-01", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private static QualityDbContext CreateQualityContext()

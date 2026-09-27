@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Nerv.IIP.Business.Inventory.Domain;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
@@ -223,6 +224,9 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         string idempotencyKey,
         string? ownerId = "owner-001")
     {
+        inventoryDb.StockLocations.Add(StockLocation.CreateOrUpdate(
+            null, "org-001", "env-dev", locationCode, "storage", "SITE-01", null, "active"));
+        await inventoryDb.SaveChangesAsync(CancellationToken.None);
         await new PostStockMovementCommandHandler(inventoryDb).Handle(
             new PostStockMovementCommand(
                 "org-001",
@@ -299,6 +303,10 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         string? ownerId = "owner-001")
     {
         await using var scope = inventoryProvider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        db.StockLocations.Add(StockLocation.CreateOrUpdate(
+            null, "org-001", "env-dev", locationCode, "storage", "SITE-01", null, "active"));
+        await db.SaveChangesAsync(CancellationToken.None);
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
         await sender.Send(
             new PostStockMovementCommand(

@@ -5,6 +5,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.DomainEvents;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -123,7 +124,11 @@ public sealed class BarcodeInventoryScanClosureAcceptanceTests
         var options = new DbContextOptionsBuilder<InventoryDbContext>()
             .UseInMemoryDatabase($"barcode-inventory-scan-{Guid.NewGuid():N}")
             .Options;
-        return new InventoryDbContext(options, new NoopMediator());
+        var db = new InventoryDbContext(options, new NoopMediator());
+        db.StockLocations.Add(StockLocation.CreateOrUpdate(
+            null, "org-001", "env-dev", "LOC-A-01", "storage", "SITE-01", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class InventoryCommandExecutingSender(InventoryDbContext dbContext) : ISender

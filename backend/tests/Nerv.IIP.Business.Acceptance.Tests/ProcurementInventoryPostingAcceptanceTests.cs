@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -190,7 +191,12 @@ public sealed class ProcurementInventoryPostingAcceptanceTests
         var options = new DbContextOptionsBuilder<InventoryDbContext>()
             .UseInMemoryDatabase($"procurement-inventory-posting-{Guid.NewGuid():N}")
             .Options;
-        return new InventoryDbContext(options, new NoopMediator());
+        var db = new InventoryDbContext(options, new NoopMediator());
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "RAW-A-01", "storage", "SITE-01", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "RAW-A-02", "storage", "SITE-01", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class CommandExecutingSender(InventoryDbContext dbContext) : ISender
