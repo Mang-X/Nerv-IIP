@@ -156,6 +156,59 @@ public sealed class InventoryReservationExpirationTests
     }
 
     /// <summary>
+    /// #3836 审核：短拣先释放缺货量（或先部分核销），之后取消出库单时仍按原请求量释放。
+    /// 台账预留量只能扣掉实际还 open 的那部分，不能按请求量扣成负数或扣掉别的单子的预留。
+    /// </summary>
+    [Fact]
+    public async Task Releasing_more_than_the_remaining_open_quantity_only_reduces_the_ledger_by_what_was_open()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = CreateLedger();
+        var reservation = StockReservation.Reserve(ledger, "wms", "OUT-OVER-RELEASE-001", "10", "reservation-over-release", 4m, DateTime.UtcNow.AddMinutes(5));
+        var otherReservation = StockReservation.Reserve(ledger, "wms", "OUT-OTHER-001", "10", "reservation-other", 2m, DateTime.UtcNow.AddMinutes(5));
+        ledger.Reserve(reservation);
+        ledger.Reserve(otherReservation);
+        ledger.AllocateReservation(reservation, 3m);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.AddRange(reservation, otherReservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ReleaseStockReservationCommandHandler(dbContext)
+            .Handle(new ReleaseStockReservationCommand(reservation.Id, 4m), CancellationToken.None);
+
+        Assert.Equal(0m, result.OpenQuantity);
+        Assert.Equal(2m, ledger.ReservedQuantity);
+        Assert.Equal(2m, otherReservation.OpenQuantity);
+        Assert.Equal(1m, reservation.ReleasedQuantity);
+    }
+
+    /// <summary>
+    /// #3836 审核：已拣预留被部分核销后，剩余部分仍是已拣货物，保持 picked、过了失效时间也不被回收。
+    /// </summary>
+    [Fact]
+    public async Task Partially_allocated_picked_reservation_stays_picked_and_is_not_expired()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = CreateLedger();
+        var deadline = DateTime.UtcNow.AddMinutes(5);
+        var reservation = StockReservation.Reserve(ledger, "wms", "OUT-PICK-PARTIAL-001", "10", "reservation-picked-partial", 4m, deadline);
+        ledger.Reserve(reservation);
+        reservation.MarkPicked();
+        ledger.AllocateReservation(reservation, 3m);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var expired = await new ExpiredStockReservationService(dbContext, Options.Create(new StockReservationExpirationOptions()))
+            .ExpireOpenReservationsAsync(deadline.AddHours(1), CancellationToken.None);
+
+        Assert.Equal(StockReservation.PickedStatus, reservation.Status);
+        Assert.Equal(0, expired);
+        Assert.Equal(1m, reservation.OpenQuantity);
+        Assert.Equal(1m, ledger.ReservedQuantity);
+    }
+
+    /// <summary>
     /// #3836：一张卡住的出库单背后，预留早已过期或已被核销，WMS 的过账失败回执仍要释放它。
     /// 释放必须是幂等的：什么也不做、成功返回，账面预留量不被重复扣减，失败回执才能走完。
     /// </summary>

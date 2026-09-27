@@ -1691,6 +1691,7 @@ public sealed class CompleteOutboundOrderCommandHandler
                 && x.TaskType == WarehouseTaskType.Picking
                 && x.SourceOrderNo == outbound.OutboundOrderNo
                 // 已作废的拣货任务（如预留过期被取消）不是执行事实；以重建的任务为准复核（#3836）。
+                // 取舍：作废前已登记的部分实拣也一并不计——任务作废时其预留已失效，这部分货须由重建任务重新拣出。
                 && x.Status != WarehouseTaskStatus.Cancelled)
             .Select(x => new
             {
@@ -2673,14 +2674,6 @@ public sealed class CompleteWcsTaskCommandHandler(
             return;
         }
 
-        await WarehouseTaskInventoryReservationSync.SyncAfterExecutionAsync(
-            dbContext,
-            inventoryReservationClient,
-            warehouseTask,
-            previouslyExecutedQuantity,
-            logger: null,
-            cancellationToken);
-
         try
         {
             task.Complete(request.CompletionPayloadJson);
@@ -2695,6 +2688,16 @@ public sealed class CompleteWcsTaskCommandHandler(
                 "complete-wcs-task",
                 exception.Message);
         }
+
+        // 本地校验全部通过后才远程标记已拣：否则一次被本地拒绝的迟到回调会让 Inventory 预留
+        // 已是 picked（不再过期）而 WMS 整体回滚，留下收不回的占用（#3836 审核）。
+        await WarehouseTaskInventoryReservationSync.SyncAfterExecutionAsync(
+            dbContext,
+            inventoryReservationClient,
+            warehouseTask,
+            previouslyExecutedQuantity,
+            logger: null,
+            cancellationToken);
 
         var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
             x => x.OrganizationId == task.OrganizationId

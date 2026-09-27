@@ -1215,7 +1215,7 @@ public sealed class InventoryEndpointContractTests
 
     /// <summary>
     /// #3836：库存领域规则拒绝在 HTTP 边界走服务既有的已知业务错误传输（200 + success:false + 业务消息），
-    /// 不再是「未知错误」500。用例：对已过期的预留确认拣货完成。
+    /// 不再是「未知错误」500，且按操作给出原因（不能说成「无法过账」）。用例：对已过期的预留确认拣货完成、续期。
     /// 反向读数：去掉 <c>InventoryDomainExceptionMiddleware</c> 的注册，本用例读到 500 / 99999。
     /// </summary>
     [Fact]
@@ -1266,7 +1266,15 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("\"success\":false", body, StringComparison.Ordinal);
         Assert.DoesNotContain("99999", body, StringComparison.Ordinal);
-        Assert.Contains("库存预留分配被拒绝", body, StringComparison.Ordinal);
+        Assert.Contains("库存预留已失效，无法确认拣货完成", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("过账", body, StringComparison.Ordinal);
+
+        using var renewResponse = await client.PostAsJsonAsync(
+            $"/api/inventory/v1/reservations/{reservationId}/renew",
+            new { reservationId = reservationId.ToString() });
+        var renewBody = await renewResponse.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, renewResponse.StatusCode);
+        Assert.Contains("库存预留已失效，无法续期", renewBody, StringComparison.Ordinal);
     }
 
     [Fact]
