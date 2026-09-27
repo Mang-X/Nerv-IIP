@@ -1149,6 +1149,7 @@ describe('WMS operate actions', () => {
     it.each([
       ['重新下发', 'wcs-retry-not-due', '还没到允许重新下发的时间'],
       ['重新下发', 'wcs-retry-limit-reached', '重新下发次数已用完'],
+      ['重新下发', 'wcs-device-circuit-open', '已暂停向它下发任务'],
       ['标记完成', 'wcs-completion-quantity-out-of-range', '累计完成数量不能超过计划数量'],
     ])('names the real reason when %s is refused with %s', async (action, code, reason) => {
       // 网关对 409/422 的信封：稳定原因码放在 message 位。

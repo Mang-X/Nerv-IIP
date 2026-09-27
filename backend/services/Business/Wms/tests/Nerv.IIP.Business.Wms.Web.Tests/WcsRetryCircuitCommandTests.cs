@@ -302,6 +302,28 @@ public sealed class WcsRetryCircuitCommandTests
     }
 
     [Fact]
+    public async Task Repeating_the_same_dispatch_with_its_payload_returns_the_same_task()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-DISPATCH-REPLAY-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new DispatchWcsTaskCommandHandler(dbContext, CreateAuthorizer(dbContext));
+        var command = DispatchCommand(warehouseTask, "EXT-DISPATCH-REPLAY-001", expectedVersion: 1);
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        // 带报文的重复派发是幂等重放，不是「重新下发」，不受失败状态限制。
+        var second = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first, second);
+        Assert.Equal(1, (await dbContext.WcsTasks.SingleAsync()).AttemptCount);
+    }
+
+    [Fact]
     public async Task Redispatch_of_a_task_that_has_not_failed_is_refused_instead_of_reported_as_sent()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
