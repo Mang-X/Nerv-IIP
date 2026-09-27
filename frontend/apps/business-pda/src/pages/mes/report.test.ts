@@ -1626,6 +1626,23 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.get('[data-testid="telemetry-target-option-OP-3"]').text()).not.toContain('返工')
   })
 
+  it('设备名查不到时列表行说「设备信息未提供」，不露设备标识', async () => {
+    telemetryTargetTasksRef.value = [
+      { ...deviceTasks[0], deviceAssetId: 'DEV-CNC-01' },
+      { ...deviceTasks[1], deviceAssetId: 'DEV-UNKNOWN-7' },
+    ]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-unknown-device',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    const other = wrapper.get('[data-testid="telemetry-target-option-OP-3"]')
+    expect(other.text()).toContain('工序 10 · 设备信息未提供')
+    expect(other.text()).toContain('非本设备')
+    expect(other.text()).not.toContain('DEV-UNKNOWN-7')
+  })
+
   it('忽略被拒时上屏业务原因且候选保留', async () => {
     telemetryDismiss.mockRejectedValueOnce({
       success: false,
