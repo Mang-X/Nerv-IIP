@@ -1062,7 +1062,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         string? assignedUserIds = null,
         string? teamIds = null,
         string? workCenterIds = null,
-        string? operationTaskId = null)
+        string? operationTaskId = null,
+        bool excludeTerminal = false)
     {
         var query = QueryOperationTaskEntities(
             dbContext,
@@ -1078,7 +1079,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             assignedUserIds,
             teamIds,
             workCenterIds,
-            operationTaskId);
+            operationTaskId,
+            excludeTerminal);
 
         return query
             .OrderBy(x => x.EarliestStartUtc)
@@ -1131,11 +1133,19 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         string? assignedUserIds = null,
         string? teamIds = null,
         string? workCenterIds = null,
-        string? operationTaskId = null)
+        string? operationTaskId = null,
+        bool excludeTerminal = false)
     {
         var query = dbContext.OperationTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId);
+
+        if (excludeTerminal)
+        {
+            query = query.Where(x =>
+                x.Status != OperationTaskLifecycleStatus.Completed &&
+                x.Status != OperationTaskLifecycleStatus.Cancelled);
+        }
 
         if (!string.IsNullOrWhiteSpace(operationTaskId))
         {
@@ -1959,7 +1969,8 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
                 keyword.Value,
                 request.WorkCenterId,
                 request.ShiftId,
-                request.DeviceAssetId)
+                request.DeviceAssetId,
+                excludeTerminal: string.IsNullOrWhiteSpace(request.Status))
             .CountAsync(cancellationToken);
         var tasks = await GetMesWorkOrderDetailQueryHandler
             .QueryOperationTasks(
@@ -1971,7 +1982,8 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
                 keyword,
                 request.WorkCenterId,
                 request.ShiftId,
-                request.DeviceAssetId)
+                request.DeviceAssetId,
+                excludeTerminal: string.IsNullOrWhiteSpace(request.Status))
             .ToArrayAsync(cancellationToken);
         var workOrderIds = tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var operationTaskIds = tasks.Select(x => x.OperationTaskId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();

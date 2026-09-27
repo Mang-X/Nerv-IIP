@@ -43,6 +43,9 @@ const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
 const statusFilter = shallowRef('all')
+const wipStatusOptions = mesOperationTaskStatusOptions.filter(
+  (option) => option.value !== 'completed' && option.value !== 'cancelled',
+)
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
@@ -129,7 +132,7 @@ function formatQuantity(value?: number | null) {
           /></NvSelectTrigger>
           <NvSelectContent>
             <NvSelectItem
-              v-for="option in mesOperationTaskStatusOptions"
+              v-for="option in wipStatusOptions"
               :key="option.value"
               :value="option.value"
               >{{ option.label }}</NvSelectItem

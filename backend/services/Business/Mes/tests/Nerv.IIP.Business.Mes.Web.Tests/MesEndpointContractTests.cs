@@ -2545,6 +2545,40 @@ public sealed class MesEndpointContractTests
         Assert.Null(wipItem.WorkCenterName);
     }
 
+    // Regression: #3885. The default WIP count and page must exclude completed tasks together.
+    [Fact]
+    public async Task Wip_summary_excludes_completed_tasks_from_default_total_and_page()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-09-22T08:00:00Z");
+        var order = WorkOrder.Create("org-001", "env-dev", "WO-WIP", "SKU-WIP", "PV-001", 2m, 10, now.AddDays(1));
+        var tasks = order.Release(
+            now,
+            WorkOrderReleaseFactTime.NotLaterThan(now, null),
+            [
+                new RoutingStepSnapshot("OP-WIP-10", 10, "WC-001", [], TimeSpan.FromMinutes(30)),
+                new RoutingStepSnapshot("OP-WIP-20", 20, "WC-001", [], TimeSpan.FromMinutes(30)),
+            ]).ToArray();
+        tasks[0].Start(now.AddMinutes(1));
+        tasks[0].Complete(now.AddMinutes(2), []);
+        tasks[1].Start(now.AddMinutes(3));
+        dbContext.WorkOrders.Add(order);
+        dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new GetWipSummaryQueryHandler(dbContext);
+        var current = await handler.Handle(
+            new GetWipSummaryQuery("org-001", "env-dev", null, Take: 1), CancellationToken.None);
+        var completed = await handler.Handle(
+            new GetWipSummaryQuery("org-001", "env-dev", "Completed", Take: 1), CancellationToken.None);
+
+        Assert.Equal(1, current.Total);
+        Assert.Equal("OP-WIP-20", Assert.Single(current.Items).OperationTaskId);
+        Assert.Equal("OP-WIP-10", Assert.Single(completed.Items).OperationTaskId);
+    }
+
     [Fact]
     public async Task Shift_handover_freezes_details_and_records_both_shift_workers()
     {
@@ -3864,6 +3898,7 @@ public sealed class MesEndpointContractTests
                 null,
                 null,
                 null,
+                false,
             ]));
     }
 }
