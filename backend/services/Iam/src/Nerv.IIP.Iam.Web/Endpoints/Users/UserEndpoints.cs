@@ -17,6 +17,7 @@ namespace Nerv.IIP.Iam.Web.Endpoints.Users;
 public sealed record CreateUserRequest(string LoginName, string Email, string Password, DateTimeOffset? AccountExpiresAtUtc);
 public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled, DateTimeOffset? AccountExpiresAtUtc);
 public sealed record ResetUserPasswordRequest(string NewPassword);
+public sealed record ReplaceUserMembershipRolesRequest(IReadOnlyList<string>? RoleIds);
 public sealed record ListUsersRequest(
     int? PageIndex,
     int? PageSize,
@@ -212,6 +213,78 @@ public sealed class PatchUserMembershipDataScopesEndpoint(
                 req.OrganizationId,
                 req.EnvironmentId,
                 req.DataScopes,
+                IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+[HttpGet("/api/iam/v1/users/{userId}/membership")]
+[AllowAnonymous]
+public sealed class GetUserMembershipEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<UserMembershipResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.read", ct))
+        {
+            return;
+        }
+
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is null)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized.", ct);
+            return;
+        }
+
+        var userId = Route<string>("userId") ?? string.Empty;
+        var response = await mediator.Send(
+            new GetUserMembershipQuery(userId, principal.OrganizationId, principal.EnvironmentId),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+/// <summary>
+/// 在调用者当前组织环境里替换用户的角色；没有成员关系时新建，<c>roleIds</c> 为空时移除成员关系。
+/// </summary>
+[HttpPut("/api/iam/v1/users/{userId}/membership")]
+[AllowAnonymous]
+public sealed class ReplaceUserMembershipRolesEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<UserMembershipResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
+        {
+            return;
+        }
+
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is null)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized.", ct);
+            return;
+        }
+
+        var req = await HttpContext.Request.ReadFromJsonAsync<ReplaceUserMembershipRolesRequest>(ct);
+        if (req?.RoleIds is null)
+        {
+            throw new BadHttpRequestException("roleIds is required.");
+        }
+
+        var userId = Route<string>("userId") ?? string.Empty;
+        var response = await mediator.Send(
+            new ReplaceUserMembershipRolesCommand(
+                userId,
+                principal.OrganizationId,
+                principal.EnvironmentId,
+                req.RoleIds,
                 IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
             ct);
         await Send.OkAsync(response.AsResponseData(), ct);

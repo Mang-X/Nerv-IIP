@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -28,8 +29,14 @@ public sealed class IamManagementEndpointAuthorizationTests
         AssertRoleMutationEndpointUsesMediator<PatchRoleDataScopesEndpoint>();
     }
 
-    [Fact]
-    public async Task Postgres_management_endpoints_reject_principals_without_permission_in_current_org_env()
+    [Theory]
+    [InlineData("GET", "/api/iam/v1/roles", new string[0])]
+    [InlineData("PUT", "/api/iam/v1/users/user-target/membership", new string[0])]
+    [InlineData("PUT", "/api/iam/v1/users/user-target/membership", new[] { "iam.users.read" })]
+    public async Task Postgres_management_endpoints_reject_principals_without_permission_in_current_org_env(
+        string method,
+        string path,
+        string[] grantedPermissions)
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -40,14 +47,15 @@ public sealed class IamManagementEndpointAuthorizationTests
                 {
                     services.RemoveAll<IIamAuthService>();
                     services.RemoveAll<IIamRoleApplicationService>();
-                    services.AddSingleton<IIamAuthService>(new CrossTenantAuthService());
+                    services.AddSingleton<IIamAuthService>(new CrossTenantAuthService(grantedPermissions));
                     services.AddSingleton<IIamRoleApplicationService, EmptyRoleApplicationService>();
                 });
             });
         var client = factory.CreateClient();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/iam/v1/roles");
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
         request.Headers.Authorization = new("Bearer", "scoped-test-token");
+        request.Content = JsonContent.Create(new { roleIds = new[] { "role-platform-admin" } });
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -58,6 +66,8 @@ public sealed class IamManagementEndpointAuthorizationTests
     [InlineData("POST", "/api/iam/v1/users")]
     [InlineData("PATCH", "/api/iam/v1/users/user-admin")]
     [InlineData("PATCH", "/api/iam/v1/users/user-admin/membership-data-scopes")]
+    [InlineData("GET", "/api/iam/v1/users/user-admin/membership")]
+    [InlineData("PUT", "/api/iam/v1/users/user-admin/membership")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/disable")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/reset-password")]
     [InlineData("GET", "/api/iam/v1/roles")]
@@ -94,7 +104,7 @@ public sealed class IamManagementEndpointAuthorizationTests
         Assert.DoesNotContain(typeof(IIamRoleApplicationService), parameterTypes);
     }
 
-    private sealed class CrossTenantAuthService : IIamAuthService
+    private sealed class CrossTenantAuthService(IReadOnlyCollection<string> grantedPermissions) : IIamAuthService
     {
         public Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken)
         {
@@ -126,9 +136,8 @@ public sealed class IamManagementEndpointAuthorizationTests
             _ = userId;
             _ = organizationId;
             _ = environmentId;
-            _ = permissionCode;
             _ = cancellationToken;
-            return Task.FromResult(false);
+            return Task.FromResult(grantedPermissions.Contains(permissionCode));
         }
 
         public Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken) =>

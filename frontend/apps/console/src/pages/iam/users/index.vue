@@ -9,7 +9,8 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
-import { useIamUsers } from '@/composables/useIamAdmin'
+import UserRolesDialog from '@/components/iam/UserRolesDialog.vue'
+import { useIamRoleOptions, useIamUserMembership, useIamUsers } from '@/composables/useIamAdmin'
 import { useHasPermission } from '@/composables/usePermissions'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import {
@@ -54,6 +55,9 @@ const {
   enableUserPending,
   filters,
   refreshUsers,
+  replaceUserMembership,
+  replaceUserMembershipError,
+  replaceUserMembershipPending,
   resetUserPassword,
   resetUserPasswordError,
   resetUserPasswordPending,
@@ -69,6 +73,7 @@ const {
 type CreateUserData = Parameters<typeof createUser>[0]
 type DisableUserData = Parameters<typeof disableUser>[0]
 type EnableUserData = Parameters<typeof enableUser>[0]
+type ReplaceUserMembershipData = Parameters<typeof replaceUserMembership>[0]
 type ResetUserPasswordData = Parameters<typeof resetUserPassword>[0]
 type UpdateUserData = Parameters<typeof updateUser>[0]
 type UserRow = ConsoleIamUserResponse
@@ -79,9 +84,15 @@ const canManageUsers = useHasPermission('iam.users.manage')
 const createDialogOpen = shallowRef(false)
 const editDialogOpen = shallowRef(false)
 const resetPasswordDialogOpen = shallowRef(false)
+const rolesDialogOpen = shallowRef(false)
 const disableDialogOpen = shallowRef(false)
 const selectedUser = shallowRef<ConsoleIamUserResponse>()
 const pendingDisableUser = shallowRef<ConsoleIamUserResponse>()
+
+const { roleOptions, roleOptionsError } = useIamRoleOptions()
+const { membership, membershipError, membershipPending } = useIamUserMembership(() =>
+  rolesDialogOpen.value ? selectedUser.value?.userId : undefined,
+)
 
 const pageError = computed(
   () =>
@@ -90,7 +101,10 @@ const pageError = computed(
     updateUserError.value ??
     disableUserError.value ??
     enableUserError.value ??
-    resetUserPasswordError.value,
+    resetUserPasswordError.value ??
+    replaceUserMembershipError.value ??
+    roleOptionsError.value ??
+    membershipError.value,
 )
 
 const tablePending = computed(
@@ -100,7 +114,8 @@ const tablePending = computed(
     updateUserPending.value ||
     disableUserPending.value ||
     enableUserPending.value ||
-    resetUserPasswordPending.value,
+    resetUserPasswordPending.value ||
+    replaceUserMembershipPending.value,
 )
 
 // 服务端分页桥接：composable 用 1-based pageIndex + 数字 pageSize；
@@ -151,7 +166,7 @@ const columns: NvDataTableColumn<UserRow>[] = [
     accessor: (r) => r.userId || '—',
   },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-56' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-72' },
 ]
 
 watch(
@@ -192,11 +207,33 @@ function openResetPasswordDialog(user: ConsoleIamUserResponse) {
   resetPasswordDialogOpen.value = true
 }
 
-async function handleCreate(payload: ConsoleCreateIamUserRequest) {
-  const data: CreateUserData = { body: payload }
-  await createUser(data)
+function openRolesDialog(user: ConsoleIamUserResponse) {
+  selectedUser.value = user
+  rolesDialogOpen.value = true
+}
+
+async function handleCreate(payload: { roleIds: string[]; user: ConsoleCreateIamUserRequest }) {
+  const data: CreateUserData = { body: payload.user }
+  const created = await createUser(data)
+  const userId = created.data?.userId
+  if (userId) {
+    const membershipData: ReplaceUserMembershipData = {
+      body: { roleIds: payload.roleIds },
+      path: { userId },
+    }
+    await replaceUserMembership(membershipData)
+  }
   await refreshUsers()
   toast.success('用户已创建')
+}
+
+async function handleAssignRoles(roleIds: string[]) {
+  const userId = selectedUser.value?.userId
+  if (!userId) return
+
+  const data: ReplaceUserMembershipData = { body: { roleIds }, path: { userId } }
+  await replaceUserMembership(data)
+  toast.success(roleIds.length === 0 ? '已将用户移出当前组织环境' : '角色已更新')
 }
 
 async function handleUpdate(payload: ConsoleUpdateIamUserRequest) {
@@ -322,6 +359,16 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
               size="sm"
               type="button"
               variant="outline"
+              :aria-label="`分配角色 ${userLabel(row)}`"
+              :disabled="!canManageUsers"
+              @click="openRolesDialog(row)"
+            >
+              分配角色
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
               :aria-label="`重置密码 ${userLabel(row)}`"
               :disabled="!canManageUsers"
               @click="openResetPasswordDialog(row)"
@@ -356,7 +403,19 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
 
       <NvPagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalCount" />
 
-      <UserCreateDialog v-model:open="createDialogOpen" @submit="handleCreate" />
+      <UserCreateDialog
+        v-model:open="createDialogOpen"
+        :roles="roleOptions"
+        @submit="handleCreate"
+      />
+      <UserRolesDialog
+        v-model:open="rolesDialogOpen"
+        :current-role-ids="membership?.roleIds"
+        :disabled="membershipPending || Boolean(membershipError)"
+        :roles="roleOptions"
+        :user="selectedUser"
+        @submit="handleAssignRoles"
+      />
       <UserEditDialog v-model:open="editDialogOpen" :user="selectedUser" @submit="handleUpdate" />
       <UserResetPasswordDialog
         v-model:open="resetPasswordDialogOpen"

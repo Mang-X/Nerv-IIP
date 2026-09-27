@@ -5,7 +5,9 @@ import type {
   NervIipPlatformGatewayWebApplicationIamAdminConsoleIamPermissionResponse,
   NervIipPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse,
   NervIipPlatformGatewayWebApplicationIamAdminConsoleIamSessionResponse,
+  NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse,
   NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserResponse,
+  NervIipPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest,
   NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest,
   NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamRolePermissionsRequest,
   NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamUserRequest,
@@ -25,10 +27,12 @@ export {
   createConsoleIamUserMutationOptions,
   disableConsoleIamUserMutationOptions,
   enableConsoleIamUserMutationOptions,
+  getConsoleIamUserMembershipQueryOptions,
   listConsoleIamPermissionsQueryOptions,
   listConsoleIamRolesQueryOptions,
   listConsoleIamSessionsQueryOptions,
   listConsoleIamUsersQueryOptions,
+  replaceConsoleIamUserMembershipMutationOptions,
   resetConsoleIamUserPasswordMutationOptions,
   revokeConsoleIamSessionMutationOptions,
   updateConsoleIamRolePermissionsMutationOptions,
@@ -40,10 +44,12 @@ export {
   createConsoleIamUser,
   disableConsoleIamUser,
   enableConsoleIamUser,
+  getConsoleIamUserMembership,
   listConsoleIamPermissions,
   listConsoleIamRoles,
   listConsoleIamSessions,
   listConsoleIamUsers,
+  replaceConsoleIamUserMembership,
   resetConsoleIamUserPassword,
   revokeConsoleIamSession,
   updateConsoleIamRolePermissions,
@@ -58,6 +64,10 @@ export type ConsoleUpdateIamUserRequest =
   NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamUserRequest
 export type ConsoleResetIamUserPasswordRequest =
   NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest
+export type ConsoleIamUserMembershipResponse =
+  NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse
+export type ConsoleReplaceIamUserMembershipRequest =
+  NervIipPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest
 export type ConsoleIamRoleResponse =
   NervIipPlatformGatewayWebApplicationIamAdminConsoleIamRoleResponse
 export type ConsoleCreateIamRoleRequest =

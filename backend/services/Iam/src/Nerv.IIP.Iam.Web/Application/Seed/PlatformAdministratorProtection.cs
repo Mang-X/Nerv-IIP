@@ -6,8 +6,8 @@ namespace Nerv.IIP.Iam.Web.Application.Seed;
 
 /// <summary>
 /// 引导出来的最高权限管理员（<c>Iam:Seed:AdminUserId</c>）与平台管理员角色（<c>Iam:Seed:AdminRoleId</c>）
-/// 不可被停用/设过期，角色不可被收窄。IAM 没有删除用户或改成员角色的写入口；
-/// 能让该管理员失去访问或权限的写入口只有停用、改资料（启用/过期）、改角色权限、改角色数据范围四个，
+/// 不可被停用/设过期，角色不可被收窄，也不可在默认组织环境里被拿掉平台管理员角色。IAM 没有删除用户的写入口；
+/// 能让该管理员失去访问或权限的写入口只有停用、改资料（启用/过期）、改角色权限、改角色数据范围、改成员角色五个，
 /// 各自的命令处理器在调用应用服务前经这里把关，两种持久化实现共用。
 /// </summary>
 public static class PlatformAdministratorProtection
@@ -43,6 +43,22 @@ public static class PlatformAdministratorProtection
             && !normalizedDataScopes.Contains(new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)))
         {
             throw new KnownException("The platform administrator role must keep its default organization data scope.");
+        }
+    }
+
+    public static void EnsureMembershipKeepsAdministratorRole(
+        IamSeedOptions seed,
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> roleIds)
+    {
+        if (IsAdministrator(seed, userId)
+            && string.Equals(organizationId, seed.OrganizationId, StringComparison.Ordinal)
+            && string.Equals(environmentId, seed.EnvironmentId, StringComparison.Ordinal)
+            && !roleIds.Contains(seed.AdminRoleId, StringComparer.Ordinal))
+        {
+            throw new KnownException("The platform administrator must keep the platform administrator role in its default organization environment.");
         }
     }
 

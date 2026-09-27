@@ -1,9 +1,13 @@
 using Nerv.IIP.Iam.Domain;
+using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Microsoft.Extensions.Options;
 using NetCorePal.Extensions.Primitives;
 
@@ -40,6 +44,23 @@ public interface IIamUserApplicationService
         string currentSessionId,
         string currentPassword,
         string newPassword,
+        CancellationToken cancellationToken);
+
+    Task<UserMembershipResponse> GetMembershipAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 把用户在指定组织环境里的角色整组替换为 <paramref name="roleIds"/>；没有成员关系时新建，传空集合时移除成员关系。
+    /// </summary>
+    Task<UserMembershipResponse> ReplaceMembershipRolesAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<string> roleIds,
+        SecurityAuditContext auditContext,
         CancellationToken cancellationToken);
 }
 
@@ -157,6 +178,41 @@ public sealed class InMemoryIamUserApplicationService(
         return Task.CompletedTask;
     }
 
+    public Task<UserMembershipResponse> GetMembershipAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(new UserMembershipResponse(
+            userId,
+            organizationId,
+            environmentId,
+            store.GetMembershipRoleIds(userId, organizationId, environmentId)));
+    }
+
+    public Task<UserMembershipResponse> ReplaceMembershipRolesAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<string> roleIds,
+        SecurityAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Task.FromResult(new UserMembershipResponse(
+                userId,
+                organizationId,
+                environmentId,
+                store.ReplaceMembershipRoles(userId, organizationId, environmentId, roleIds.Distinct(StringComparer.Ordinal).ToArray())));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+    }
+
     private static UserResponse ToResponse(UserFact user)
     {
         return new UserResponse(
@@ -186,6 +242,9 @@ public sealed class InMemoryIamUserApplicationService(
 public sealed class PostgreSqlIamUserApplicationService(
     IUserRepository repository,
     IUserSessionRepository userSessionRepository,
+    IMembershipRepository membershipRepository,
+    IRoleRepository roleRepository,
+    ISecurityAuditRecorder securityAudit,
     IamPasswordService passwordService,
     IamPasswordPolicy passwordPolicy) : IIamUserApplicationService
 {
@@ -355,6 +414,86 @@ public sealed class PostgreSqlIamUserApplicationService(
             session.Revoke(now, "password-changed");
         }
     }
+
+    public async Task<UserMembershipResponse> GetMembershipAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var membership = await membershipRepository.GetByUserIdAndOrgEnvAsync(
+            new UserId(userId),
+            new OrganizationId(organizationId),
+            new IamEnvironmentId(environmentId),
+            cancellationToken);
+        return new UserMembershipResponse(userId, organizationId, environmentId, RoleIdsOf(membership));
+    }
+
+    public async Task<UserMembershipResponse> ReplaceMembershipRolesAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<string> roleIds,
+        SecurityAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        var typedUserId = new UserId(userId);
+        _ = await repository.GetByIdAsync(typedUserId, cancellationToken)
+            ?? throw new KnownException($"User '{userId}' was not found.");
+
+        var desiredRoleIds = roleIds.Distinct(StringComparer.Ordinal).Select(x => new RoleId(x)).ToArray();
+        var existingRoleIds = (await roleRepository.ListByIdsAsync(desiredRoleIds, cancellationToken))
+            .Select(x => x.Id)
+            .ToHashSet();
+        var missingRoleId = desiredRoleIds.FirstOrDefault(x => !existingRoleIds.Contains(x));
+        if (missingRoleId is not null)
+        {
+            throw new KnownException($"Role '{missingRoleId.Id}' was not found.");
+        }
+
+        var membership = await membershipRepository.GetByUserIdAndOrgEnvAsync(
+            typedUserId,
+            new OrganizationId(organizationId),
+            new IamEnvironmentId(environmentId),
+            cancellationToken);
+        var before = RoleIdsOf(membership);
+        if (desiredRoleIds.Length == 0)
+        {
+            if (membership is not null)
+            {
+                membershipRepository.Delete(membership);
+            }
+        }
+        else if (membership is null)
+        {
+            membership = new Membership(
+                new MembershipId($"membership-{Guid.CreateVersion7():N}"),
+                typedUserId,
+                new OrganizationId(organizationId),
+                new IamEnvironmentId(environmentId),
+                desiredRoleIds);
+            await membershipRepository.AddAsync(membership, cancellationToken);
+        }
+        else
+        {
+            membership.ReplaceRoles(desiredRoleIds);
+        }
+
+        var after = desiredRoleIds.Select(x => x.Id).Order(StringComparer.Ordinal).ToArray();
+        await securityAudit.RecordAsync(
+            auditContext,
+            "iam.membership.roles.changed",
+            "user",
+            userId,
+            "success",
+            new { organizationId, environmentId, before, after },
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+        return new UserMembershipResponse(userId, organizationId, environmentId, after);
+    }
+
+    private static IReadOnlyList<string> RoleIdsOf(Membership? membership) =>
+        membership?.Roles.Select(x => x.RoleId.Id).Order(StringComparer.Ordinal).ToArray() ?? [];
 
     private static UserResponse ToResponse(User user)
     {
