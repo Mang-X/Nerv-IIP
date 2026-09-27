@@ -143,6 +143,14 @@ if (usesPostgreSql && autoMigrate)
     }
 }
 
+// 非 Development 的平台引导（只补缺）：最高权限管理员及其默认组织/环境。库结构由发布 migrator 先行建好；
+// 与产品基线 seed 一样默认执行，显式设 Iam:Bootstrap:Enabled=false 才关闭。
+if (!builder.Environment.IsDevelopment() && builder.Configuration.GetValue("Iam:Bootstrap:Enabled", true))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<IamSeedService>().BootstrapAsync();
+}
+
 app.Run();
 
 public partial class Program;
