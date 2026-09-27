@@ -83,9 +83,7 @@ const pagedPlans = computed(() => sortedPlans.value)
 
 const errorMessage = computed(() => inlineErrorMessage(productionPlansError.value))
 const hasActiveFilters = computed(
-  () =>
-    Boolean(keyword.value.trim()) ||
-    sourceFilter.value !== 'all',
+  () => Boolean(keyword.value.trim()) || sourceFilter.value !== 'all',
 )
 const emptyMessage = computed(() =>
   hasActiveFilters.value
