@@ -138,8 +138,8 @@ const convertContextItems = computed(() => {
   const plan = selectedPlan.value
   if (!plan) return []
   return [
-    { label: '计划号', value: plan.productionPlanId },
-    { label: '来源计划', value: formatPlanSource(plan.sourceSystem) },
+    { label: '来源需求号', value: plan.sourceDemandReference || '暂无需求号' },
+    { label: '来源', value: formatPlanSource(plan.sourceSystem) },
     { label: '物料', value: plan.skuId ? resolveSkuLabel(plan.skuId) : undefined },
     {
       label: '计划数量',
@@ -164,8 +164,8 @@ const emptyMessage = computed(() =>
 )
 
 const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
-  { key: 'productionPlanId', header: '计划号', cellClass: 'font-medium' },
-  { key: 'sourceSystem', header: '来源计划' },
+  { key: 'sourceDemandReference', header: '来源需求号', cellClass: 'font-medium' },
+  { key: 'sourceSystem', header: '来源' },
   { key: 'skuId', header: '物料' },
   {
     key: 'plannedQuantity',
@@ -324,7 +324,7 @@ function newPlanIdempotencyKey(scope: string) {
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、物料">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索需求号、来源、物料">
       <template #filters>
         <NvSelect v-model="sourceFilter">
           <NvSelectTrigger class="h-9 w-36" aria-label="来源"><NvSelectValue /></NvSelectTrigger>
@@ -370,13 +370,12 @@ function newPlanIdempotencyKey(scope: string) {
       :empty-message="emptyMessage"
       @retry="refreshProductionPlans"
     >
+      <template #cell-sourceDemandReference="{ row }">
+        <span v-if="row.sourceDemandReference">{{ row.sourceDemandReference }}</span>
+        <span v-else class="text-muted-foreground">暂无需求号</span>
+      </template>
       <template #cell-sourceSystem="{ row }">
-        <div class="flex flex-col gap-0.5">
-          <span>{{ formatPlanSource(row.sourceSystem) }}</span>
-          <span v-if="row.sourceDocumentId" class="text-xs text-muted-foreground">{{
-            row.sourceDocumentId
-          }}</span>
-        </div>
+        <span>{{ formatPlanSource(row.sourceSystem) }}</span>
       </template>
       <template #cell-skuId="{ row }">
         <span v-if="row.skuId && resolveSkuLabel(row.skuId) !== '未指定物料'">{{
@@ -422,11 +421,11 @@ function newPlanIdempotencyKey(scope: string) {
           <NvDialogTitle>下达工单</NvDialogTitle>
           <!-- 计划上下文已在下方只读区完整呈现；此处仅供读屏播报。 -->
           <NvDialogDescription class="sr-only">
-            下达对象：计划 {{ selectedPlan?.productionPlanId ?? '' }}。
+            下达对象：{{ selectedPlan?.sourceDemandReference || '暂无需求号' }}。
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitConvertPlan">
-          <!-- 计划号 / 来源 / 物料 / 数量 / 计划开始全部由所选行带出，只读呈现，不让计划员再填一遍。 -->
+          <!-- 需求号 / 来源 / 物料 / 数量 / 计划开始全部由所选行带出，只读呈现，不让计划员再填一遍。 -->
           <CarriedContextSummary label="下达对象" :items="convertContextItems" />
           <div
             v-if="selectedBlockingReasons.length"
