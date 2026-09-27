@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
@@ -1223,7 +1224,13 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         var options = new DbContextOptionsBuilder<InventoryDbContext>()
             .UseInMemoryDatabase($"mes-inventory-line-side-{Guid.NewGuid():N}")
             .Options;
-        return new InventoryDbContext(options, new NoopMediator());
+        var db = new InventoryDbContext(options, new NoopMediator());
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", MaterialSupplyTestFixtures.SourceLocationCode, "storage", MaterialSupplyTestFixtures.SiteCode, null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", MaterialSupplyTestFixtures.LineSideLocationCode, "line-side", MaterialSupplyTestFixtures.SiteCode, null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "WH-WB-FG-01", "storage", "SITE-001", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class InventoryCommandExecutingSender(InventoryDbContext dbContext) : ISender

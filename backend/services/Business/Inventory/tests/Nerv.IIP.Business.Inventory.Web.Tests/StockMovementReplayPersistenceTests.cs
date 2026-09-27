@@ -311,6 +311,16 @@ public sealed class StockMovementReplayPersistenceTests
             CREATE UNIQUE INDEX ux_stock_movements_idempotency ON stock_movements (
                 organization_id, environment_id, source_service, source_document_id, idempotency_key
             );
+            CREATE TABLE stock_locations (
+                organization_id TEXT NOT NULL,
+                environment_id TEXT NOT NULL,
+                site_code TEXT NOT NULL,
+                location_code TEXT NOT NULL
+            );
+            INSERT INTO stock_locations (organization_id, environment_id, site_code, location_code)
+            VALUES ('org-001', 'env-dev', 'SITE-01', 'LOC-A-01');
+            INSERT INTO stock_locations (organization_id, environment_id, site_code, location_code)
+            VALUES ('org-001', 'env-dev', 'SITE-01', 'LOC-B-01');
             """);
         return connection;
     }
