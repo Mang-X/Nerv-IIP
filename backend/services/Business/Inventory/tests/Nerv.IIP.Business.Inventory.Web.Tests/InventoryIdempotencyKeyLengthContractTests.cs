@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
@@ -532,7 +533,12 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"inventory-idempotency-key-{name}-{Guid.NewGuid():N}")
             .Options;
-        return new ApplicationDbContext(options, new NoopMediator());
+        var db = new ApplicationDbContext(options, new NoopMediator());
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LOC-A-01", "storage", "SITE-001", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LOC-B-01", "storage", "SITE-001", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private static ModelFixture CreateModelFixture()

@@ -1,43 +1,26 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesProductionPlanRow } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, NvDataTableSort, StatusTone } from '@nerv-iip/ui'
-import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import {
-  describeMesReadinessReason,
-  describeMesReadinessReasons,
-  useMesProductionPlans,
-} from '@/composables/useBusinessMes'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
+import { useMesProductionPlans } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
-  NvDialog,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
-  NvField,
-  NvFieldGroup,
-  NvFieldLabel,
-  NvInput,
   NvPageHeader,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
-import { ArrowRightIcon, FactoryIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { RefreshCwIcon } from '@lucide/vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({
@@ -45,8 +28,6 @@ definePage({
 })
 
 const {
-  convertPlanToWorkOrder,
-  convertPlanToWorkOrderPending,
   filters,
   productionPlans,
   productionPlansError,
@@ -59,18 +40,9 @@ const { resolveSkuLabel } = useMesDisplayNames()
 
 const keyword = ref('')
 const sourceFilter = ref(normalizeSourceQuery(route.query.source))
-const readinessFilter = ref('all')
 const sort = ref<NvDataTableSort | null>(null)
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [keyword, sourceFilter, readinessFilter],
-})
-
-const convertOpen = shallowRef(false)
-const selectedPlan = shallowRef<BusinessConsoleMesProductionPlanRow>()
-const convertForm = reactive({
-  workCenterId: '',
-  dueUtc: '',
-  idempotencyKey: newPlanIdempotencyKey('convert-plan'),
+  resetOn: [keyword, sourceFilter],
 })
 
 const sourceOptions = [
@@ -80,13 +52,6 @@ const sourceOptions = [
   { label: '安全库存补充', value: 'safety' },
   { label: '预测需求', value: 'forecast' },
 ]
-const readinessOptions = [
-  { label: '全部就绪状态', value: 'all' },
-  { label: '可转工单', value: 'Ready' },
-  { label: '有预警', value: 'Warning' },
-  { label: '受阻', value: 'Blocked' },
-]
-
 watchDebounced(
   keyword,
   (value) => {
@@ -98,13 +63,6 @@ watch(
   sourceFilter,
   (value) => {
     filters.source = value === 'all' ? undefined : value
-  },
-  { immediate: true },
-)
-watch(
-  readinessFilter,
-  (value) => {
-    filters.readinessStatus = value === 'all' ? undefined : value
   },
   { immediate: true },
 )
@@ -123,39 +81,9 @@ const sortedPlans = computed(() => {
 })
 const pagedPlans = computed(() => sortedPlans.value)
 
-const selectedBlockingReasons = computed(() =>
-  describeMesReadinessReasons(selectedPlan.value?.blockingReasons),
-)
-const selectedPlanBlocked = computed(
-  () =>
-    selectedPlan.value?.readinessStatus === 'Blocked' || selectedBlockingReasons.value.length > 0,
-)
-const canConvert = computed(
-  () => Boolean(selectedPlan.value?.productionPlanId) && !selectedPlanBlocked.value,
-)
-// 「下达工单」弹窗的只读上下文：全部来自所选计划行，计划员只补工作中心与交期。
-const convertContextItems = computed(() => {
-  const plan = selectedPlan.value
-  if (!plan) return []
-  return [
-    { label: '计划号', value: plan.productionPlanId },
-    { label: '来源计划', value: formatPlanSource(plan.sourceSystem) },
-    { label: '物料', value: plan.skuId ? resolveSkuLabel(plan.skuId) : undefined },
-    {
-      label: '计划数量',
-      value: plan.uomCode
-        ? `${formatQuantity(plan.plannedQuantity)} ${plan.uomCode}`
-        : formatQuantity(plan.plannedQuantity),
-    },
-    { label: '计划开始', value: formatDateTime(plan.plannedStartUtc) },
-  ]
-})
 const errorMessage = computed(() => inlineErrorMessage(productionPlansError.value))
 const hasActiveFilters = computed(
-  () =>
-    Boolean(keyword.value.trim()) ||
-    sourceFilter.value !== 'all' ||
-    readinessFilter.value !== 'all',
+  () => Boolean(keyword.value.trim()) || sourceFilter.value !== 'all',
 )
 const emptyMessage = computed(() =>
   hasActiveFilters.value
@@ -164,8 +92,8 @@ const emptyMessage = computed(() =>
 )
 
 const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
-  { key: 'productionPlanId', header: '计划号', cellClass: 'font-medium' },
-  { key: 'sourceSystem', header: '来源计划' },
+  { key: 'sourceDemandReference', header: '来源需求号', cellClass: 'font-medium' },
+  { key: 'sourceSystem', header: '来源' },
   { key: 'skuId', header: '物料' },
   {
     key: 'plannedQuantity',
@@ -180,85 +108,24 @@ const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
     width: 'w-44',
     accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0),
   },
-  { key: 'readinessStatus', header: '就绪状态', width: 'w-28' },
-  { key: 'actions', header: '转工单', align: 'end', width: 'w-40' },
+  { key: 'status', header: '工单状态', width: 'w-28' },
 ]
 
-function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
-  selectedPlan.value = plan
-  convertForm.workCenterId = ''
-  convertForm.dueUtc = toLocalDateTimeInput(plan.plannedEndUtc ?? plan.plannedStartUtc)
-  convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${plan.productionPlanId ?? 'plan'}`)
-  convertOpen.value = true
-}
-async function submitConvertPlan() {
-  const planId = selectedPlan.value?.productionPlanId
-  if (!planId || !canConvert.value) return
-  try {
-    await convertPlanToWorkOrder(planId, {
-      organizationId: filters.organizationId,
-      environmentId: filters.environmentId,
-      workCenterId: optionalText(convertForm.workCenterId),
-      dueUtc: convertForm.dueUtc ? toIsoFromLocalInput(convertForm.dueUtc) : undefined,
-      idempotencyKey: convertForm.idempotencyKey,
-    })
-    notifySuccess('已下达工单：该计划已转为工单，进入工单与派工。')
-    convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${planId}`)
-    convertOpen.value = false
-    refreshProductionPlans()
-  } catch (error) {
-    notifyOperationFailure('下达工单失败', error, '下达工单失败，请稍后重试。')
-  }
-}
 function resetFilters() {
   keyword.value = ''
   sourceFilter.value = 'all'
-  readinessFilter.value = 'all'
 }
 
-function planReadiness(status?: string | null): { label: string; tone: StatusTone } {
-  if (status === 'Ready') return { label: '可转工单', tone: 'success' }
-  if (status === 'Warning') return { label: '有预警', tone: 'warning' }
-  if (status === 'Blocked') return { label: '受阻', tone: 'danger' }
-  return { label: status || '未知', tone: 'neutral' }
-}
-// 行是否就绪可转：受阻或带阻塞原因的计划先处理后才能转。
-function planConvertible(plan: BusinessConsoleMesProductionPlanRow) {
-  return (
-    Boolean(plan.productionPlanId) &&
-    plan.readinessStatus !== 'Blocked' &&
-    (plan.blockingReasons?.length ?? 0) === 0
-  )
-}
-// 受阻行的一句话原因（取首条），用于禁用入口的说明。
-function planBlockHint(plan: BusinessConsoleMesProductionPlanRow) {
-  const first = plan.blockingReasons?.[0]
-  if (first) {
-    const reason = describeMesReadinessReason(first)
-    return reason.detail ? `${reason.label}：${reason.detail}` : reason.label
-  }
-  if (plan.readinessStatus === 'Warning') return '有预警，建议处理后再转'
-  return '尚未就绪，需处理后再转'
+function workOrderStatus(plan: BusinessConsoleMesProductionPlanRow) {
+  return plan.status === 'completed'
+    ? { label: '已完工', tone: 'neutral' as const }
+    : { label: '已转工单', tone: 'neutral' as const }
 }
 function sortValue(plan: BusinessConsoleMesProductionPlanRow, key: string) {
   if (key === 'plannedQuantity') return plan.plannedQuantity ?? 0
   if (key === 'plannedStartUtc')
     return plan.plannedStartUtc ? new Date(plan.plannedStartUtc).getTime() : 0
   return (plan[key as keyof BusinessConsoleMesProductionPlanRow] as string | null) ?? ''
-}
-function optionalText(value: string) {
-  const trimmed = value.trim()
-  return trimmed || undefined
-}
-function toIsoFromLocalInput(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toISOString()
-}
-function toLocalDateTimeInput(value?: string | null) {
-  const date = value ? new Date(value) : new Date(Date.now() + 86_400_000)
-  if (Number.isNaN(date.getTime())) return ''
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
@@ -298,9 +165,6 @@ function normalizeSourceQuery(value: unknown): string {
   const allowed = ['sales', 'stock', 'safety', 'forecast']
   return typeof text === 'string' && allowed.includes(text) ? text : 'all'
 }
-function newPlanIdempotencyKey(scope: string) {
-  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
 </script>
 
 <template>
@@ -324,22 +188,12 @@ function newPlanIdempotencyKey(scope: string) {
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、物料">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索需求号、来源、物料">
       <template #filters>
         <NvSelect v-model="sourceFilter">
           <NvSelectTrigger class="h-9 w-36" aria-label="来源"><NvSelectValue /></NvSelectTrigger>
           <NvSelectContent>
             <NvSelectItem v-for="o in sourceOptions" :key="o.value" :value="o.value">{{
-              o.label
-            }}</NvSelectItem>
-          </NvSelectContent>
-        </NvSelect>
-        <NvSelect v-model="readinessFilter">
-          <NvSelectTrigger class="h-9 w-36" aria-label="就绪状态"
-            ><NvSelectValue
-          /></NvSelectTrigger>
-          <NvSelectContent>
-            <NvSelectItem v-for="o in readinessOptions" :key="o.value" :value="o.value">{{
               o.label
             }}</NvSelectItem>
           </NvSelectContent>
@@ -370,13 +224,12 @@ function newPlanIdempotencyKey(scope: string) {
       :empty-message="emptyMessage"
       @retry="refreshProductionPlans"
     >
+      <template #cell-sourceDemandReference="{ row }">
+        <span v-if="row.sourceDemandReference">{{ row.sourceDemandReference }}</span>
+        <span v-else class="text-muted-foreground">暂无需求号</span>
+      </template>
       <template #cell-sourceSystem="{ row }">
-        <div class="flex flex-col gap-0.5">
-          <span>{{ formatPlanSource(row.sourceSystem) }}</span>
-          <span v-if="row.sourceDocumentId" class="text-xs text-muted-foreground">{{
-            row.sourceDocumentId
-          }}</span>
-        </div>
+        <span>{{ formatPlanSource(row.sourceSystem) }}</span>
       </template>
       <template #cell-skuId="{ row }">
         <span v-if="row.skuId && resolveSkuLabel(row.skuId) !== '未指定物料'">{{
@@ -389,85 +242,9 @@ function newPlanIdempotencyKey(scope: string) {
         <span v-if="row.uomCode" class="ml-1 text-xs text-muted-foreground">{{ row.uomCode }}</span>
       </template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
-      <template #cell-readinessStatus="{ row }">
-        <NvStatusBadge
-          :label="planReadiness(row.readinessStatus).label"
-          :tone="planReadiness(row.readinessStatus).tone"
-        />
-      </template>
-      <template #cell-actions="{ row }">
-        <div class="flex justify-end">
-          <NvButton v-if="planConvertible(row)" size="sm" type="button" @click="openConvert(row)">
-            <FactoryIcon aria-hidden="true" />
-            转工单
-          </NvButton>
-          <NvButton
-            v-else
-            size="sm"
-            type="button"
-            variant="outline"
-            disabled
-            :title="planBlockHint(row)"
-            :aria-label="`暂不可转：${planBlockHint(row)}`"
-          >
-            {{ planBlockHint(row) }}
-          </NvButton>
-        </div>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :label="workOrderStatus(row).label" :tone="workOrderStatus(row).tone" />
       </template>
     </NvDataTable>
-
-    <NvDialog v-model:open="convertOpen">
-      <NvDialogContent>
-        <NvDialogHeader>
-          <NvDialogTitle>下达工单</NvDialogTitle>
-          <!-- 计划上下文已在下方只读区完整呈现；此处仅供读屏播报。 -->
-          <NvDialogDescription class="sr-only">
-            下达对象：计划 {{ selectedPlan?.productionPlanId ?? '' }}。
-          </NvDialogDescription>
-        </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submitConvertPlan">
-          <!-- 计划号 / 来源 / 物料 / 数量 / 计划开始全部由所选行带出，只读呈现，不让计划员再填一遍。 -->
-          <CarriedContextSummary label="下达对象" :items="convertContextItems" />
-          <div
-            v-if="selectedBlockingReasons.length"
-            class="grid gap-1 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
-          >
-            <span class="font-medium text-warning">转工单前需处理：</span>
-            <span
-              v-for="(reason, i) in selectedBlockingReasons"
-              :key="i"
-              class="text-muted-foreground"
-              >· {{ reason.label }}{{ reason.detail ? `：${reason.detail}` : '' }}（{{
-                reason.nextStep
-              }}）</span
-            >
-          </div>
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="convert-wc">工作中心</NvFieldLabel>
-              <DirectoryPicker
-                id="convert-wc"
-                v-model="convertForm.workCenterId"
-                directory-type="work-center"
-                creatable
-                placeholder="按工艺路线默认"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="convert-due">交期</NvFieldLabel>
-              <NvInput id="convert-due" v-model="convertForm.dueUtc" type="datetime-local" />
-            </NvField>
-          </NvFieldGroup>
-          <NvDialogFooter>
-            <NvButton type="button" variant="outline" @click="convertOpen = false">取消</NvButton>
-            <NvButton type="submit" :disabled="convertPlanToWorkOrderPending || !canConvert">
-              <Spinner v-if="convertPlanToWorkOrderPending" aria-hidden="true" />
-              <ArrowRightIcon v-else aria-hidden="true" />
-              下达工单
-            </NvButton>
-          </NvDialogFooter>
-        </form>
-      </NvDialogContent>
-    </NvDialog>
   </BusinessLayout>
 </template>

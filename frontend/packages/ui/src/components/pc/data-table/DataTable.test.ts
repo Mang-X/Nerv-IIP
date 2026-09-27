@@ -236,3 +236,86 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
     ready.unmount()
   })
 })
+
+// #3734：列宽声明此前落在 <th> 上，而 <table> 是默认的 `table-layout: auto`，
+// 于是 width 只是建议值、内容多的列把它挤掉（完工入库页〈入库状态〉声明 w-48
+// 实测 64px，徽标被截成一个字）。修法是组件把表格切成 `table-layout: fixed`。
+// jsdom 不实现表格布局、也不加载本仓库的样式表，因此这里断言的是**声明的宽度
+// 真的落到了承载该宽度的元素上**（`w-*` 走 class、CSS 尺寸走 inline style），
+// 也就是 fixed 布局要按它算列宽的那份输入；「声明宽度 == 渲染宽度」本身由
+// `table-layout: fixed` 保证，见 NvDataTable.vue 样式块里的理由。
+//
+// 注意：本 describe 对样式块**零鉴别力**——把 `:deep(.nv-dt-table)` 回退成裸
+// `.nv-dt-table`（即第 1 轮那版死 CSS）这里仍全绿。真正的防线是
+// `apps/business-console/e2e/issue3734-column-width.spec.ts`，只有它能在真实浏览器
+// 里量到渲染宽度。别把本组测试当成 `:deep` / `fixed` 的覆盖。
+describe('NvDataTable 列宽声明落地到表头（#3734 回归）', () => {
+  const rows: Row[] = [{ id: 'A', name: 'a' }]
+
+  it('Tailwind 宽度类原样落到表头 class，不被组件改写成别的值', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        columns: [
+          { key: 'id', header: '入库单号', width: 'w-48' },
+          { key: 'name', header: '名称' },
+        ],
+        rows,
+        pagination: false,
+      },
+    })
+    await nextTick()
+
+    const heads = wrapper.findAll('thead th')
+    const declared = heads[0]
+    // 均分列不吃调用点声明的类；声明的类原样出现在表头上。
+    expect(declared.classes()).toContain('w-48')
+    expect(declared.attributes('style')).toBeUndefined()
+    // 未声明宽度的列继续走均分，且不得挂上别人的宽度类。
+    expect(heads[1].classes()).toContain('nv-dt-fill')
+    expect(heads[1].classes()).not.toContain('w-48')
+    wrapper.unmount()
+  })
+
+  it('CSS 尺寸宽度落到表头 inline style，且不与宽度类混用', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        columns: [{ key: 'id', header: '工单号', width: '160px' }],
+        rows,
+        pagination: false,
+      },
+    })
+    await nextTick()
+
+    const head = wrapper.get('thead th')
+    expect(head.attributes('style')).toContain('width: 160px')
+    // 两种写法互斥：CSS 尺寸是 inline style，不再同时挂一个宽度类。
+    expect(head.classes().some((c) => c.startsWith('w-'))).toBe(false)
+    expect(head.classes()).not.toContain('nv-dt-fill')
+    wrapper.unmount()
+  })
+
+  // 审核第 1、2 轮：table-layout: fixed 只认 width，min-w-* 挂在 <th> 上不参与列宽
+  // 计算，wms/inbound 的〈质检门禁〉因此被算成 0px。这里刻意不解析 min-w-*（等于在
+  // 本仓库重写一份 Tailwind 主题表，认不出的写法会静默变成 0px 的列），调用方改用
+  // 任意值宽度类 `w-[22rem]`。本格钉的是「任意值宽度类原样作为 class 落到 <th>」。
+  it('任意值宽度类 w-[22rem] 原样作为 class 落到表头', async () => {
+    const wrapper = mount(NvDataTable, {
+      props: {
+        ...base,
+        columns: [{ key: 'id', header: '质检门禁', width: 'w-[22rem]' }],
+        rows,
+        pagination: false,
+      },
+    })
+    await nextTick()
+
+    const head = wrapper.get('thead th')
+    expect(head.classes()).toContain('w-[22rem]')
+    expect(head.attributes('style')).toBeUndefined()
+    // 声明了宽度就不该再进均分池（否则 `width: 100%` 会盖掉声明值）。
+    expect(head.classes()).not.toContain('nv-dt-fill')
+    wrapper.unmount()
+  })
+})

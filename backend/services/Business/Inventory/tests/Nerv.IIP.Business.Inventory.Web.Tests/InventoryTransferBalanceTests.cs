@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
@@ -174,6 +175,25 @@ public sealed class InventoryTransferBalanceTests
     }
 
     [Fact]
+    public async Task Transfer_to_an_unregistered_location_rejects_both_legs()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(dbContext);
+        await SeedSourceStockAsync(handler, dbContext, 10m);
+        dbContext.StockLocations.Remove(await dbContext.StockLocations.SingleAsync(x => x.LocationCode == TargetLocation));
+        await dbContext.SaveChangesAsync();
+
+        var rejection = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() => handler.Handle(
+            TransferCommand("idem-transfer-unregistered-target", -3m, TargetLocation, 3m),
+            CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.PostingRejected, rejection.FailureCode);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(10m, Assert.Single(dbContext.StockLedgers).OnHandQuantity);
+        Assert.Empty(dbContext.StockMovements.Where(x => x.MovementType == "transfer"));
+    }
+
+    [Fact]
     public async Task Balanced_transfer_replay_is_idempotent_on_both_legs()
     {
         await using var dbContext = CreateContext();
@@ -279,7 +299,12 @@ public sealed class InventoryTransferBalanceTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"inventory-transfer-balance-{Guid.NewGuid():N}")
             .Options;
-        return new ApplicationDbContext(options, new NoopTransferMediator());
+        var db = new ApplicationDbContext(options, new NoopTransferMediator());
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", SourceLocation, "storage", "SITE-001", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", TargetLocation, "line-side", "SITE-001", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class NoopTransferMediator : IMediator

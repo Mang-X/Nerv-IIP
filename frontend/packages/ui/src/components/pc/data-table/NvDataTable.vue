@@ -164,7 +164,15 @@ function valueOf(row: T, column: NvDataTableColumn<T>): unknown {
   return column.accessor ? column.accessor(row) : (row as Record<string, unknown>)[column.key]
 }
 
-// A raw CSS dimension → inline style; anything else → a Tailwind width class.
+// 列宽只有两种写法，落到 <th> 上的方式各不相同：
+// 1) 原始 CSS 尺寸（`160px`）→ inline style。
+// 2) Tailwind 宽度类（`w-48`、`w-[22rem]`）→ 原样作为 class，Tailwind 自己解析成
+//    width。任意值写法 `w-[…]` 也走这条，`table-layout: fixed` 只认 width，
+//    而 w-* 解析出来的正是 width。
+//
+// 这里刻意不解析 `min-w-*`：它的 `min-width` 在 fixed 下不参与列宽计算，若靠正则
+// 反推等价 width 等于在本仓库重写一份 Tailwind 主题表，认不出的写法会静默变成
+// 0px 的列。要「至少这么宽」就写 `w-[22rem]`。
 function isCssDimension(width?: string): boolean {
   return !!width && /^\d+(\.\d+)?(px|rem|em|%|vh|vw|ch)$/.test(width)
 }
@@ -946,17 +954,36 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 
 <style scoped>
 @layer nv-components {
-  .nv-dt-table {
+  /* `table-layout: fixed` is what makes a column's `width` a real contract
+   instead of a suggestion: under the default `auto`, a width is only a hint the
+   layout algorithm is free to trade away against cell content, so a declared
+   column could render at its min-content and clip its own content (the receipt
+   status badge rendered one character wide — #3734). `fixed` sizes columns from
+   the first row's declared widths alone, so no column is ever narrowed or
+   widened to fit its content; when the declarations leave spare room, the
+   surplus is shared out across the columns.
+
+   `min-width: 100%` (on top of the primitive's `w-full`) is what keeps a narrow
+   window honest: the table can grow past the container and let the primitive's
+   `overflow-x-auto` wrapper scroll it, instead of squeezing the columns. Without
+   it, `fixed` would let the undeclared columns collapse toward 0px.
+
+   `:deep()` is required, not decoration: `Table` primitive's root element is the
+   scroll wrapper `<div>`, so Vue puts this component's scope id on that div —
+   the inner `<table>` never carries it, and a bare `.nv-dt-table` selector here
+   matched nothing at runtime (#3734 第 1 轮的实现就是死 CSS). */
+  :deep(.nv-dt-table) {
+    table-layout: fixed;
+    min-width: 100%;
     border-collapse: separate;
     border-spacing: 0;
   }
 
-  /* Columns without an explicit `width` share the leftover space so the table
-   fills its container instead of leaving dead space on the right (product-first
-   default — shadcn's nowrap cells otherwise lock every column to content width).
-   `nowrap` keeps each at least content-wide; equal `width:100%` distributes the
-   rest evenly. Give a column an explicit `width` to opt it out (e.g. number /
-   status columns that should stay compact). */
+  /* Columns without an explicit `width` share the leftover space, so the table
+   fills its container instead of leaving dead space on the right. Under `fixed`
+   these resolve to the table's leftover width once the declared columns are
+   subtracted; give a column an explicit `width` to take it out of that share
+   (number / status columns that should stay compact). */
   .nv-dt-fill {
     width: 100%;
   }

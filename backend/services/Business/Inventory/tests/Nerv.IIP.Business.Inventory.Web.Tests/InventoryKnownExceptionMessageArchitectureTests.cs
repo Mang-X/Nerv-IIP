@@ -39,6 +39,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
     private static readonly IReadOnlyCollection<InventoryPostingRejectedSite> ExpectedPostingRejectedSites =
     [
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "Handle", 4, 3, "公开 postInventoryMovement facade"),
+        PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "EnsureRegisteredLocationAsync", 1, 0, "公开 postInventoryMovement facade 的库位登记校验"),
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "ValidateTransferLegsOrReject", 7, 0, "公开 postInventoryMovement facade 的调拨校验"),
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "CreateTransferInMovementOrReject", 1, 0, "公开 postInventoryMovement facade 的入库腿校验"),
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "CreateMovementOrReject", 1, 0, "公开 postInventoryMovement facade 的移动创建校验"),
@@ -105,7 +106,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         var discovered = InventoryKnownExceptionUserMessageSourceAnalyzer.DiscoverPostingRejectedCalls(documents);
         var expectedKeys = ExpectedPostingRejectedSites.Select(site => site.Key).ToArray();
 
-        Assert.Equal(17, ExpectedPostingRejectedSites
+        Assert.Equal(18, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectConstructionCount));
         Assert.Equal(3, ExpectedPostingRejectedSites
@@ -114,7 +115,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         Assert.Equal(4, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectConstructionCount));
-        Assert.Equal(20, ExpectedPostingRejectedSites
+        Assert.Equal(21, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectConstructionCount + site.FromDomainCallCount));
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());

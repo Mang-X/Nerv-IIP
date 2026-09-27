@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using Nerv.IIP.Business.Inventory.Web.Application.Seed;
 
@@ -76,6 +77,35 @@ public sealed class InventoryLocationSeedServiceTests
         var item = Assert.Single(result.Items);
         Assert.Equal("loc-line-01", item.LocationCode);
         Assert.Equal(5m, item.OnHandQuantity);
+    }
+
+    [Fact]
+    public async Task Posting_to_an_unregistered_location_is_rejected_before_creating_stock()
+    {
+        await using var db = CreateDbContext();
+        var handler = new PostStockMovementCommandHandler(db);
+        var command = new PostStockMovementCommand(
+            "org-001", "env-dev", "inbound", "mes", "PICK-1", null, "idem-pick-1",
+            "RM-001", "EA", "SITE-001", "loc-line-01", null, null,
+            "unrestricted", "company", null, 5m);
+
+        var rejection = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+            handler.Handle(command, CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.PostingRejected, rejection.FailureCode);
+        Assert.Contains("库位", rejection.FailureMessage, StringComparison.Ordinal);
+        Assert.Empty(db.StockLedgers);
+        Assert.Empty(db.StockMovements);
+
+        await new InventoryLocationSeedService(db).SeedAsync("org-001", "env-dev");
+        var posted = await handler.Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        Assert.Equal(5m, posted.OnHandQuantity);
+
+        db.StockLocations.Remove(await db.StockLocations.SingleAsync(x => x.LocationCode == "loc-line-01"));
+        await db.SaveChangesAsync();
+        await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+            handler.Handle(command with { IdempotencyKey = "idem-pick-2", SourceDocumentId = "PICK-2" }, CancellationToken.None));
     }
 
     [Fact]
