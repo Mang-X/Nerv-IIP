@@ -250,12 +250,50 @@ public sealed class IamErpRoleSeedTests
         Assert.Equal("超级管理员", await AdminRoleName(dbContext));
     }
 
-    private static async Task RewindAdminRoleName(ApplicationDbContext dbContext, string roleName)
+    // 中文名已被运营自建角色占用时不改：角色名唯一，硬改会让每次启动都在 SaveChanges 上失败。
+    [Fact]
+    public async Task Reseed_keeps_the_english_name_when_an_operator_role_already_uses_the_chinese_name()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator");
+        dbContext.Roles.Add(new Role(new RoleId("role-operator-zh"), "平台管理员", ["iam.users.read"]));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await seed.SeedAsync();
+
+        Assert.Equal("Platform Administrator", await AdminRoleName(dbContext));
+    }
+
+    // 改过一次（manifest 已记录）之后，运营再改回英文名也不会被再次改掉。
+    [Fact]
+    public async Task Reseed_does_not_rename_again_once_the_manifest_is_recorded()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator", removeManifest: false);
+
+        await seed.SeedAsync();
+
+        Assert.Equal("Platform Administrator", await AdminRoleName(dbContext));
+    }
+
+    private static async Task RewindAdminRoleName(
+        ApplicationDbContext dbContext,
+        string roleName,
+        bool removeManifest = true)
     {
         var role = await dbContext.Roles.SingleAsync(candidate => candidate.Id == new RoleId("role-platform-admin"));
         role.Rename(roleName);
-        dbContext.SeedManifests.Remove(await dbContext.SeedManifests.SingleAsync(
-            manifest => manifest.Id == new SeedManifestId("iam-platform-admin-role-name-zh:v1")));
+        if (removeManifest)
+        {
+            dbContext.SeedManifests.Remove(await dbContext.SeedManifests.SingleAsync(
+                manifest => manifest.Id == new SeedManifestId("iam-platform-admin-role-name-zh:v1")));
+        }
+
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
     }

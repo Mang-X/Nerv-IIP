@@ -239,7 +239,7 @@ Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web
 | `Quality:Seed:Enabled` | BusinessQuality | 缺失的质量原因码等基础目录 |
 | `MasterData:Seed:Enabled` | BusinessMasterData | 缺失的编码规则、受控字典（不含工厂自定义码集的样例值）、计量单位与换算、班次、工作日历、部门 |
 
-IAM 平台引导（#3846）：非 Development 下 IAM Web 启动时（库结构须已由第 4 节 migrator 建好）只补缺写入最高权限管理员、其默认组织与环境、平台管理员角色（全部权限 + 默认组织数据范围）和成员关系，不覆盖已存在的行；默认执行，显式设 `Iam:Bootstrap:Enabled=false` 才关闭。
+IAM 平台引导（#3846）：非 Development 下 IAM Web 启动时（库结构须已由第 4 节 migrator 建好）只补缺写入最高权限管理员、其默认组织与环境、平台管理员角色（全部权限 + 默认组织数据范围）和成员关系，不覆盖已存在的行；唯一例外是把仍叫旧英文默认名 `Platform Administrator` 的平台管理员角色一次性改名为「平台管理员」（记 manifest `iam-platform-admin-role-name-zh:v1`，运营改过名或中文名已被占用时不改）。默认执行，显式设 `Iam:Bootstrap:Enabled=false` 才关闭。
 
 | 键 | 作用 |
 |---|---|
