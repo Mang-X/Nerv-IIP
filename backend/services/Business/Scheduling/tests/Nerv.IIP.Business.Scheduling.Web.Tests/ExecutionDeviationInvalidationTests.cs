@@ -157,6 +157,34 @@ public sealed class ExecutionDeviationInvalidationTests
     }
 
     [Fact]
+    public async Task Exact_scope_snapshot_matches_work_order_and_operation_together()
+    {
+        await using var db = CreateDbContext();
+        db.SchedulePlans.Add(CreatePlan(
+            "plan-target",
+            "org-001",
+            "env-dev",
+            [
+                Assignment("WO-001", "OP-010", PlannedStart, PlannedStart.AddHours(1)),
+                Assignment("WO-OTHER", "OP-010", PlannedStart, PlannedStart.AddHours(1)),
+            ]));
+        await db.SaveChangesAsync();
+        var handler = new RecordSchedulePlanInvalidationsCommandHandler(db, new FixedTimeProvider(RecordedAt));
+
+        await handler.Handle(DeviationCommand(
+            eventId: "evt-start",
+            reasonCode: SchedulingPlanInvalidationReasons.OperationStartDelayed,
+            milestone: SchedulePlanExecutionMilestone.Started,
+            actualAtUtc: PlannedStart.AddMinutes(16)), CancellationToken.None);
+
+        var invalidation = Assert.Single(db.SchedulePlanInvalidations.Local);
+        var domainEvent = Assert.Single(invalidation.GetDomainEvents()
+            .OfType<Nerv.IIP.Business.Scheduling.Domain.DomainEvents.SchedulePlanInvalidatedDomainEvent>());
+        var affected = Assert.Single(domainEvent.Plan.AffectedOperations);
+        Assert.Equal(("WO-001", "OP-010"), (affected.WorkOrderId, affected.OperationId));
+    }
+
+    [Fact]
     public async Task Started_consumer_persists_projection_inbox_and_precise_deviation_invalidation()
     {
         await using var provider = CreateProvider();
@@ -213,6 +241,41 @@ public sealed class ExecutionDeviationInvalidationTests
 
         Assert.Equal(PlannedStart.AddHours(2), (await db.OperationExecutionProjections.SingleAsync()).ActualCompletedAtUtc);
         Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Empty(await db.SchedulePlanInvalidations.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Older_completion_rejected_by_lifecycle_watermark_commits_inbox_without_invalidation()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.SchedulePlans.Add(CreatePlan(
+            "plan-target",
+            "org-001",
+            "env-dev",
+            [Assignment("WO-001", "OP-010", PlannedStart, PlannedStart.AddHours(1))]));
+        await db.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var mutationLock = new NoopOperationExecutionProjectionMutationLock();
+        var pausedHandler = new MesOperationTaskPausedIntegrationEventHandlerForProjectExecution(
+            db,
+            deadLetters,
+            mutationLock);
+        var completedHandler = new MesOperationTaskCompletedIntegrationEventHandlerForProjectExecution(
+            db,
+            deadLetters,
+            mutationLock,
+            scope.ServiceProvider.GetRequiredService<TimeProvider>(),
+            new SchedulingExecutionDeviationToleranceOption(15));
+
+        await pausedHandler.HandleAsync(PausedEvent("evt-pause", PlannedStart.AddHours(2)), CancellationToken.None);
+        await completedHandler.HandleAsync(
+            CompletedEvent("evt-complete", PlannedStart.AddHours(1).AddMinutes(16)),
+            CancellationToken.None);
+
+        Assert.Null((await db.OperationExecutionProjections.SingleAsync()).ActualCompletedAtUtc);
+        Assert.Equal(2, await db.ProcessedIntegrationEvents.CountAsync());
         Assert.Empty(await db.SchedulePlanInvalidations.ToArrayAsync());
     }
 
@@ -276,6 +339,21 @@ public sealed class ExecutionDeviationInvalidationTests
                 "PCS",
                 false,
                 actualAtUtc));
+
+    private static MesOperationTaskPausedIntegrationEvent PausedEvent(string eventId, DateTimeOffset actualAtUtc) =>
+        new(
+            eventId,
+            MesIntegrationEventTypes.OperationTaskPaused,
+            MesIntegrationEventVersions.V1,
+            actualAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            $"corr-{eventId}",
+            $"cause-{eventId}",
+            "org-001",
+            "env-dev",
+            "operator",
+            eventId,
+            new OperationTaskLifecyclePayload("WO-001", "OP-010", 10, "WC-CNC", actualAtUtc));
 
     private static ScheduleAssignmentContract Assignment(
         string workOrderId,

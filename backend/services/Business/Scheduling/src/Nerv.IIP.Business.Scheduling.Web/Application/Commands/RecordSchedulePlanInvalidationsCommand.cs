@@ -379,6 +379,15 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 string.Equals(x.ResourceId, normalized, StringComparison.Ordinal) ||
                 string.Equals(x.WorkCenterId, normalized, StringComparison.Ordinal));
         }
+        else if (!string.IsNullOrWhiteSpace(affectedWorkOrderId) &&
+                 !string.IsNullOrWhiteSpace(affectedOperationId))
+        {
+            var normalizedWorkOrderId = affectedWorkOrderId.Trim();
+            var normalizedOperationId = affectedOperationId.Trim();
+            assignments = assignments.Where(x =>
+                string.Equals(x.WorkOrderId, normalizedWorkOrderId, StringComparison.Ordinal) &&
+                string.Equals(x.OperationId, normalizedOperationId, StringComparison.Ordinal));
+        }
         else if (!string.IsNullOrWhiteSpace(affectedOperationId))
         {
             var normalized = affectedOperationId.Trim();

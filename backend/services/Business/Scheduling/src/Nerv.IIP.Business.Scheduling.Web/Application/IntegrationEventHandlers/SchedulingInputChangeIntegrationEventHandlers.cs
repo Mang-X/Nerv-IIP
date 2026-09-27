@@ -633,8 +633,12 @@ internal static class SchedulingPlanInvalidationService
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var actualAtUtc = milestone == SchedulePlanExecutionMilestone.Started
-            ? projection.ActualStartedAtUtc!.Value
-            : projection.ActualCompletedAtUtc!.Value;
+            ? projection.ActualStartedAtUtc
+            : projection.ActualCompletedAtUtc;
+        if (actualAtUtc is null)
+        {
+            return;
+        }
 
         var handler = new RecordSchedulePlanInvalidationsCommandHandler(dbContext, timeProvider);
         await handler.Handle(
