@@ -54,6 +54,7 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
     const sessionId = shallowRef<string>()
     const expiresAtUtc = shallowRef<string>()
     const principal = shallowRef<ConsolePrincipalResponse>()
+    const passwordChangeRequired = shallowRef(false)
     const restoreStatus = shallowRef<'idle' | 'restoring' | 'restored' | 'failed'>('idle')
     const authError = shallowRef<string>()
     let refreshTimer: ReturnType<typeof setTimeout> | undefined
@@ -138,6 +139,17 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
       persistSession()
     }
 
+    async function changePassword(currentPassword: string, newPassword: string) {
+      if (!accessToken.value) {
+        throw new Error(messages.invalidSession)
+      }
+
+      await api.changeConsolePassword(accessToken.value, { currentPassword, newPassword })
+      // 改密后 IAM 已让当前 access token 失效并吊销其它会话，只保留本会话；
+      // 用本会话的 refresh token 换发新令牌继续使用，不要求重新登录。
+      await refreshSession()
+    }
+
     async function logout() {
       const token = accessToken.value
       const currentSessionId = sessionId.value
@@ -181,6 +193,7 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
       sessionId.value = undefined
       expiresAtUtc.value = undefined
       principal.value = undefined
+      passwordChangeRequired.value = false
       localStorage.removeItem(storageKey)
     }
 
@@ -219,6 +232,7 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
       sessionId.value = completeSession.sessionId
       expiresAtUtc.value = completeSession.expiresAtUtc
       principal.value = completeSession.principal
+      passwordChangeRequired.value = completeSession.passwordChangeRequired === true
       persistSession()
       scheduleRefresh()
 
@@ -299,6 +313,7 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
     return {
       accessToken,
       authError,
+      changePassword,
       clearSession,
       displayName,
       expiresAtUtc,
@@ -308,6 +323,7 @@ export function createAuthStore(options: CreateAuthStoreOptions) {
       login,
       logout,
       logoutAndRevoke,
+      passwordChangeRequired,
       principal,
       refreshSession,
       refreshToken,

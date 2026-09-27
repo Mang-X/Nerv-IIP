@@ -147,6 +147,7 @@ public sealed class LogoutCommandHandler(IIamAuthService auth)
 
 public sealed record ChangePasswordCommand(
     string UserId,
+    string CurrentSessionId,
     string CurrentPassword,
     string NewPassword) : ICommand;
 
@@ -157,6 +158,7 @@ public sealed class ChangePasswordCommandHandler(IIamUserApplicationService user
     {
         await users.ChangePasswordAsync(
             request.UserId,
+            request.CurrentSessionId,
             request.CurrentPassword,
             request.NewPassword,
             cancellationToken);

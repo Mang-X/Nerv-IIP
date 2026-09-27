@@ -639,6 +639,7 @@ public sealed class InMemoryIamStore
 
     public void ChangePassword(
         string userId,
+        string currentSessionId,
         string currentPassword,
         string newPassword,
         InMemoryIamPasswordPolicy passwordPolicy)
@@ -665,6 +666,8 @@ public sealed class InMemoryIamStore
                 SecurityStamp = Guid.NewGuid().ToString("n"),
                 PermissionVersion = user.PermissionVersion + 1
             };
+
+            RevokeActiveUserSessions(userId, now, exceptSessionId: currentSessionId);
         }
     }
 
@@ -946,12 +949,15 @@ public sealed class InMemoryIamStore
             : changedAtUtc.AddDays(passwordPolicy.PasswordExpiresDays);
     }
 
-    private void RevokeActiveUserSessions(string userId, DateTimeOffset now)
+    private void RevokeActiveUserSessions(string userId, DateTimeOffset now, string? exceptSessionId = null)
     {
         for (var i = 0; i < _sessions.Count; i++)
         {
             var session = _sessions[i];
-            if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
+            if (session.UserId == userId
+                && session.SessionId != exceptSessionId
+                && session.RevokedAtUtc is null
+                && session.ExpiresAtUtc > now)
             {
                 _sessions[i] = session with { RevokedAtUtc = now };
             }

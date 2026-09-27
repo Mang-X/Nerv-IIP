@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, IdCard, ShieldCheck, UsersRound, Wifi, WifiOff } from '@lucide/vue'
+import { Building2, IdCard, KeyRound, ShieldCheck, UsersRound, Wifi, WifiOff } from '@lucide/vue'
 import {
   NvAppShellMobile,
   NvCell,
@@ -174,6 +174,20 @@ function formatResolvedAt(value: string) {
             >当前未选择 WMS 作业范围</span
           >
         </div>
+      </section>
+
+      <section>
+        <h2 class="mb-2 text-sm font-semibold text-foreground">账号安全</h2>
+        <NvCellGroup class="overflow-hidden rounded-xl border border-border">
+          <NvCell
+            data-testid="change-password"
+            title="修改密码"
+            arrow
+            @click="router.push('/change-password')"
+          >
+            <template #icon><KeyRound /></template>
+          </NvCell>
+        </NvCellGroup>
       </section>
 
       <p class="text-xs text-muted-foreground">

@@ -10,6 +10,7 @@ declare module 'vue-router' {
 
 export interface AuthRouteStore {
   isAuthenticated: boolean
+  passwordChangeRequired: boolean
   restoreSession: () => Promise<void>
   restoreStatus: 'idle' | 'restoring' | 'restored' | 'failed'
 }
@@ -19,6 +20,8 @@ export interface AuthSessionController {
 }
 
 export interface CreateAuthGuardOptions<TStore extends AuthRouteStore> {
+  /** 须改密账号除这一页外哪里都进不去。 */
+  changePasswordPath?: string
   defaultRedirectPath?: string
   loginPath: string
   useAuthStore: () => TStore
@@ -36,7 +39,12 @@ export interface UnauthorizedRedirectOptions {
 export function createAuthGuard<TStore extends AuthRouteStore>(
   options: CreateAuthGuardOptions<TStore>,
 ) {
-  const { defaultRedirectPath = '/', loginPath, useAuthStore } = options
+  const {
+    changePasswordPath = '/change-password',
+    defaultRedirectPath = '/',
+    loginPath,
+    useAuthStore,
+  } = options
 
   return function installAuthGuard(router: Router) {
     router.beforeEach(async (to) => {
@@ -53,6 +61,10 @@ export function createAuthGuard<TStore extends AuthRouteStore>(
             redirect: to.fullPath,
           },
         }
+      }
+
+      if (auth.isAuthenticated && auth.passwordChangeRequired && to.path !== changePasswordPath) {
+        return { path: changePasswordPath }
       }
 
       if (to.meta.guestOnly && auth.isAuthenticated) {

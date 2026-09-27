@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import { AppShellT } from '@nerv-iip/app-shell'
+import { NvDropdownMenuItem } from '@nerv-iip/ui'
 import { useAuthStore } from '@/stores/auth'
 import {
   BellIcon,
   Building2Icon,
   InboxIcon,
+  KeyRoundIcon,
   LayersIcon,
   ShieldIcon,
   TriangleAlertIcon,
@@ -106,6 +108,12 @@ function openSearch() {
     @sign-out="signOut"
     @open-search="openSearch"
   >
+    <template #user-menu-items>
+      <NvDropdownMenuItem @select="router.push('/change-password')">
+        <KeyRoundIcon class="size-4" aria-hidden="true" />
+        {{ t('nav.changePassword') }}
+      </NvDropdownMenuItem>
+    </template>
     <slot />
   </AppShellT>
 </template>

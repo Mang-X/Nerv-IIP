@@ -116,6 +116,31 @@ public sealed class IamUserLifecyclePolicyTests : IClassFixture<WebApplicationFa
     }
 
     [Fact]
+    public async Task Self_service_password_change_revokes_other_sessions_and_keeps_current_session()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var loginName = $"change-revoke-{suffix}";
+        await CreateUserAsync(loginName, $"{loginName}@nerv-iip.local", "Initial123!");
+        var current = await LoginAsync(loginName, "Initial123!");
+        var other = await LoginAsync(loginName, "Initial123!");
+
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", current.AccessToken);
+        var change = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/change-password",
+            new { currentPassword = "Initial123!", newPassword = "Changed123!" });
+        _client.DefaultRequestHeaders.Authorization = null;
+        Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
+
+        var otherRefresh = await _client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { other.RefreshToken });
+        Assert.Equal(HttpStatusCode.Unauthorized, otherRefresh.StatusCode);
+
+        var currentRefresh = await _client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { current.RefreshToken });
+        Assert.Equal(HttpStatusCode.OK, currentRefresh.StatusCode);
+        var refreshed = await ReadResponseDataAsync<AuthResponse>(currentRefresh);
+        Assert.False(refreshed.PasswordChangeRequired);
+    }
+
+    [Fact]
     public async Task InMemory_password_policy_uses_configured_options()
     {
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
