@@ -316,6 +316,39 @@ public sealed class OrderUrgencyApplicationTests
     }
 
     [Fact]
+    public async Task Mes_due_dates_sort_uncaptured_orders_by_final_urgency()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var clock = new MutableTimeProvider(Now);
+        var handler = new ListOrderUrgenciesQueryHandler(
+            new OrderUrgencyService(db, clock),
+            new StubMesDueDateProvider(new Dictionary<string, DateTimeOffset>
+            {
+                ["WO-A"] = Now.AddDays(2),
+                ["WO-Z"] = Now.AddHours(-1),
+            }),
+            clock);
+
+        var result = await handler.Handle(
+            new ListOrderUrgenciesQuery("org-001", "prod", ["WO-A", "WO-Z"]), CancellationToken.None);
+
+        Assert.Equal(["WO-Z", "WO-A"], result.Select(x => x.OrderId));
+        Assert.Equal(["urgent", "highrisk"], result.Select(x => x.Level));
+    }
+
+    private sealed class StubMesDueDateProvider(IReadOnlyDictionary<string, DateTimeOffset> dueDates)
+        : IOrderUrgencyMesDueDateProvider
+    {
+        public Task<IReadOnlyDictionary<string, DateTimeOffset>> ResolveAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<string> workOrderIds,
+            CancellationToken cancellationToken) => Task.FromResult(dueDates);
+    }
+
+    [Fact]
     public async Task Missing_order_reference_returns_an_explainable_fail_closed_result()
     {
         await using var provider = CreateProvider();

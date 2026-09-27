@@ -496,7 +496,7 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
         return OrderUrgencyContractMapper.ToContract(result);
     }
 
-    private static int UrgencyRank(string level) => level.ToLowerInvariant() switch
+    internal static int UrgencyRank(string level) => level.ToLowerInvariant() switch
     {
         "critical" => 5,
         "urgent" => 4,
@@ -543,6 +543,8 @@ public sealed class ListOrderUrgenciesQueryHandler(
                 ? OrderUrgencyService.MissingContract(
                     request.OrganizationId, request.EnvironmentId, item.OrderId, now, dueUtc)
                 : item)
+            .OrderByDescending(x => OrderUrgencyService.UrgencyRank(x.Level))
+            .ThenBy(x => x.BusinessReference, StringComparer.Ordinal)
             .ToArray();
     }
 }
