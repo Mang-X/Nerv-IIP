@@ -78,7 +78,8 @@ const stubs = {
   NvButton: {
     inheritAttrs: false,
     props: ['disabled', 'type'],
-    template: '<button v-bind="$attrs" :type="type || \'button\'" :disabled="disabled"><slot /></button>',
+    template:
+      '<button v-bind="$attrs" :type="type || \'button\'" :disabled="disabled"><slot /></button>',
   },
   NvStatusBadge: { props: ['label'], template: '<span>{{ label }}</span>' },
   NvSelect: { template: '<div><slot /></div>' },
