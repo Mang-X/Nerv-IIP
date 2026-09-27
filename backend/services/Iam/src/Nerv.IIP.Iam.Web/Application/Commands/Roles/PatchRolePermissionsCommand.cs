@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Web.Application.Roles;
+using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using NetCorePal.Extensions.Primitives;
 
@@ -9,11 +11,12 @@ public sealed record PatchRolePermissionsCommand(
     IReadOnlyList<string> PermissionCodes,
     SecurityAuditContext? AuditContext) : ICommand<RoleResponse>;
 
-public sealed class PatchRolePermissionsCommandHandler(IIamRoleApplicationService roles)
+public sealed class PatchRolePermissionsCommandHandler(IIamRoleApplicationService roles, IOptions<IamSeedOptions> seed)
     : ICommandHandler<PatchRolePermissionsCommand, RoleResponse>
 {
     public async Task<RoleResponse> Handle(PatchRolePermissionsCommand request, CancellationToken cancellationToken)
     {
+        PlatformAdministratorProtection.EnsureRolePermissionsNotReduced(seed.Value, request.RoleId, request.PermissionCodes);
         return await roles.PatchRolePermissionsAsync(
             request.RoleId,
             request.PermissionCodes,

@@ -390,6 +390,12 @@
       "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceDeadLetterFilterPostgresTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance dead-letter filter tests\\.\";$"
+    },
+    {
+      "id": "iam-production-bootstrap-postgres",
+      "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPlatformAdministratorTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL IAM production bootstrap proof\\.\";$"
     }
   ],
   "rules": [
@@ -1913,6 +1919,25 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterFilterPostgresTests.Failure_code_and_dead_lettered_window_are_filtered_by_the_maintenance_store"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "iam-production-bootstrap-postgres",
+      "sourceId": "iam-production-bootstrap-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Iam\\.Web\\.Tests\\.IamPlatformAdministratorTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL IAM production bootstrap proof\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant"
       ],
       "expectedRuntimeTestCount": 1
     }
