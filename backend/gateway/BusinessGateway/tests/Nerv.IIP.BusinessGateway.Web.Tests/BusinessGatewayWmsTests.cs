@@ -17,6 +17,31 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayWmsTests
 {
     [Theory]
+    [InlineData(HttpStatusCode.Conflict, "wcs-retry-not-due")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-retry-limit-reached")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "wcs-completion-quantity-out-of-range")]
+    public async Task Wms_http_client_preserves_the_wcs_manual_action_refusal_reason(
+        HttpStatusCode status,
+        string downstreamCode)
+    {
+        // #3842：此前这两类拒绝在控制台上被说成「状态已被其他操作更新」/「服务暂时不可用」。
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(status, new JsonObject { ["success"] = false, ["message"] = downstreamCode }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CompleteWcsTaskAsync(
+                "internal-token-001",
+                "EXT-001",
+                new BusinessConsoleCompleteWmsWcsTaskRequest("EXT-001", "org-001", "env-dev", "{\"actualQuantity\":1}"),
+                CancellationToken.None));
+
+        Assert.Equal(status, exception.StatusCode);
+        Assert.Equal(downstreamCode, exception.Message);
+    }
+
+    [Theory]
     [InlineData("missing-work-pool-assignment", false)]
     [InlineData("resource-not-assigned-to-self", true)]
     [InlineData("assignment-principal-mismatch", false)]

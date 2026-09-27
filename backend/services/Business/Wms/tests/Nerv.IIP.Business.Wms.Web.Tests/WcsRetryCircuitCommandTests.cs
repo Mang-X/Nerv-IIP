@@ -45,7 +45,8 @@ public sealed class WcsRetryCircuitCommandTests
             DispatchCommand(warehouseTask, "EXT-002", warehouseTask.Version),
             CancellationToken.None));
 
-        Assert.Contains("not due", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsRetryNotDue, exception.ReasonCode);
+        Assert.Equal(WcsTaskStatus.Failed, wcsTask.Status);
     }
 
     [Fact]
@@ -138,6 +139,42 @@ public sealed class WcsRetryCircuitCommandTests
         Assert.Equal(0m, warehouseTask.ExecutedQuantity);
         Assert.Equal(WarehouseTaskStatus.InProgress, warehouseTask.Status);
         Assert.Equal(WcsTaskStatus.Dispatched, dbContext.WcsTasks.Single().Status);
+    }
+
+    [Theory]
+    [InlineData(4)]
+    [InlineData(1)]
+    public async Task Completion_quantity_outside_the_recorded_to_planned_range_is_rejected_with_a_reason_code(
+        int reportedQuantity)
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-QTY-RANGE-001");
+        AddWorkPool(dbContext);
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(dbContext, CreateAuthorizer(dbContext)).Handle(
+            DispatchCommand(warehouseTask, "EXT-QTY-RANGE-001", expectedVersion: 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "EXT-QTY-RANGE-001", """{"actualQuantity":2}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 计划 3、已记录 2：报 4 超计划，报 1 倒退。
+        var exception = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            new CompleteWcsTaskCommandHandler(dbContext).Handle(
+                new CompleteWcsTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "EXT-QTY-RANGE-001",
+                    $$"""{"actualQuantity":{{reportedQuantity}}}"""),
+                CancellationToken.None));
+
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange, exception.ReasonCode);
+        Assert.Equal(2m, warehouseTask.ExecutedQuantity);
     }
 
     [Fact]

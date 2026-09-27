@@ -2536,9 +2536,27 @@ public sealed class DispatchWcsTaskCommandHandler(
                 warehouseTask.ValidateWcsExecution(
                     claimReference,
                     request.ExpectedVersion);
+                var retriedAtUtc = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+                // 这两条是操作员最常撞上的重派拒绝，带上稳定原因码，控制台才能说清是「次数用完」还是「还没到时间」。
+                if (existing.IsTerminalFailure)
+                {
+                    throw new WmsLifecycleConflictException(
+                        "dispatch-wcs-task",
+                        "retry-limit-reached",
+                        WmsUnprocessableReasonCodes.WcsRetryLimitReached);
+                }
+
+                if (existing.NextRetryAtUtc is { } nextRetryAtUtc && retriedAtUtc < nextRetryAtUtc)
+                {
+                    throw new WmsLifecycleConflictException(
+                        "dispatch-wcs-task",
+                        $"retry-not-due-until-{nextRetryAtUtc:O}",
+                        WmsUnprocessableReasonCodes.WcsRetryNotDue);
+                }
+
                 try
                 {
-                    existing.Retry(request.ExternalTaskId, payloadJson, (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
+                    existing.Retry(request.ExternalTaskId, payloadJson, retriedAtUtc);
                 }
                 catch (InvalidOperationException exception)
                 {
@@ -2658,6 +2676,14 @@ public sealed class CompleteWcsTaskCommandHandler(
             ?? throw new KnownException($"未找到仓库任务，任务 ID = {task.WarehouseTaskId}");
         var claimReference = task.Id.Id.ToString("D");
         var previouslyExecutedQuantity = warehouseTask.ExecutedQuantity;
+        // 越界先于一切状态变更与远程调用：越界时不落进度、也不远程标记已拣。
+        if (executedQuantity < warehouseTask.ExecutedQuantity || executedQuantity > warehouseTask.PlannedQuantity)
+        {
+            throw new WmsUnprocessableException(
+                $"WCS completion quantity {executedQuantity} is outside [{warehouseTask.ExecutedQuantity}, {warehouseTask.PlannedQuantity}]",
+                WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange);
+        }
+
         try
         {
             warehouseTask.ValidateWcsExecution(claimReference);

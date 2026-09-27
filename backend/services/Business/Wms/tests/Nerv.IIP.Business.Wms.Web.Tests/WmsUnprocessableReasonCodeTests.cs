@@ -49,6 +49,20 @@ public sealed class WmsUnprocessableReasonCodeTests
         Assert.Equal("resource-not-assigned-to-self", response.Body!.Message);
     }
 
+    [Fact]
+    public async Task Lifecycle_conflict_reports_why_a_wcs_redispatch_was_refused()
+    {
+        var response = await InvokeAsync(
+            new WmsLifecycleConflictException(
+                "dispatch-wcs-task",
+                "retry-not-due",
+                WmsUnprocessableReasonCodes.WcsRetryNotDue));
+
+        Assert.Equal(StatusCodes.Status409Conflict, response.StatusCode);
+        // #3842：此前恒为 "lifecycle-conflict"，控制台只能说「状态已被其他操作更新」。
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsRetryNotDue, response.Body!.Message);
+    }
+
     /// <summary>
     /// 外发代码必须过网关的下游消息护栏（仅 ASCII 字母数字与 <c>- _ .</c>），
     /// 否则网关会把它换成 <c>downstream-request-failed</c>——那比现在更难排查。
@@ -63,6 +77,9 @@ public sealed class WmsUnprocessableReasonCodeTests
     [InlineData(WmsUnprocessableReasonCodes.PickingOverLimit)]
     [InlineData(WmsUnprocessableReasonCodes.ExecutedQuantityOutOfRange)]
     [InlineData(WmsUnprocessableReasonCodes.WorkPoolMembershipWindowNotForward)]
+    [InlineData(WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange)]
+    [InlineData(WmsUnprocessableReasonCodes.WcsRetryNotDue)]
+    [InlineData(WmsUnprocessableReasonCodes.WcsRetryLimitReached)]
     public void Every_reason_code_survives_the_gateway_safe_message_filter(string code)
     {
         Assert.Equal(code, WmsLifecycleConflictMiddleware.SafeOutboundCode(code, "fallback"));

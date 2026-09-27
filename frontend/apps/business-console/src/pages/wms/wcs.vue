@@ -198,10 +198,13 @@ const headerCount = computed(() => {
   if (wcsTasksPending.value) return '加载中'
   return `${wcsTasksTotal.value} 个任务`
 })
-const failedCount = computed(
-  () =>
-    wcsTasks.value.filter((t) => !!t.failedAtUtc || (t.status ?? '').toLowerCase() === 'failed')
-      .length,
+// 只按当前状态算：重新下发后失败时间仍留在记录里，但任务已不在失败状态。
+function isFailed(task: WcsRow) {
+  return (task.status ?? '').toLowerCase() === 'failed'
+}
+const failedCount = computed(() => wcsTasks.value.filter(isFailed).length)
+const runningCount = computed(
+  () => wcsTasks.value.filter((t) => (t.status ?? '').toLowerCase() === 'dispatched').length,
 )
 const metricCells = computed<NvMetricStripCell[]>(() => {
   if (!listReady.value) {
@@ -216,7 +219,7 @@ const metricCells = computed<NvMetricStripCell[]>(() => {
     {
       key: 'running',
       label: '本页执行中',
-      value: wcsTasks.value.length - failedCount.value,
+      value: runningCount.value,
       unit: '条',
     },
     {
@@ -398,7 +401,7 @@ function formatDateTime(value?: string | null) {
           :tone="wmsStatusTone(row.status)"
       /></template>
       <template #cell-failure="{ row }">
-        <div v-if="row.failureCode || row.failureMessage" class="flex flex-col gap-0.5">
+        <div v-if="isFailed(row)" class="flex flex-col gap-0.5">
           <span class="text-sm text-destructive">{{ row.failureCode ?? '失败' }}</span>
           <span v-if="row.failureMessage" class="text-xs text-muted-foreground">{{
             row.failureMessage

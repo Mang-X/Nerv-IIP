@@ -52,6 +52,17 @@ public static class WmsUnprocessableReasonCodes
     /// </summary>
     public const string WorkPoolMembershipWindowNotForward = "membership-window-not-forward";
 
+    /// <summary>WCS 完成回执的累计数量超出计划数量，或低于已记录的数量。</summary>
+    public const string WcsCompletionQuantityOutOfRange = "wcs-completion-quantity-out-of-range";
+
+    /// <summary>
+    /// 失败的 WCS 任务还没到允许重新下发的时间（409，经 <see cref="WmsLifecycleConflictException.ReasonCode"/> 外发）。
+    /// </summary>
+    public const string WcsRetryNotDue = "wcs-retry-not-due";
+
+    /// <summary>WCS 任务的重新下发次数已用完（409，同上）。</summary>
+    public const string WcsRetryLimitReached = "wcs-retry-limit-reached";
+
     /// <summary>
     /// 把仓库任务聚合抛出的 <see cref="ArgumentException"/> 归类成稳定代码。
     ///
