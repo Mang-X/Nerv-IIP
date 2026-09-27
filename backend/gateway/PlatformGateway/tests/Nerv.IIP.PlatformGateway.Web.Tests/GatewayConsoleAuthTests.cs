@@ -250,6 +250,99 @@ public sealed class GatewayConsoleAuthTests
     }
 
     [Fact]
+    public async Task Console_change_password_forwards_current_bearer_and_body_to_iam()
+    {
+        var iamRequests = new List<RecordedIamCall>();
+        await using var factory = CreateFactoryWithIamHandler(async request =>
+        {
+            iamRequests.Add(new RecordedIamCall(
+                request.Method,
+                request.RequestUri!.AbsolutePath,
+                request.Headers.Authorization,
+                await request.Content!.ReadAsStringAsync()));
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayAccessToken);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/console/v1/auth/change-password",
+            new ConsoleChangePasswordRequest("Initial123!", "Changed123!"));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var call = Assert.Single(iamRequests);
+        Assert.Equal(HttpMethod.Post, call.Method);
+        Assert.Equal("/api/iam/v1/auth/change-password", call.Path);
+        Assert.Equal("Bearer", call.Authorization!.Scheme);
+        Assert.Equal(GatewayAccessToken, call.Authorization.Parameter);
+        using var body = JsonDocument.Parse(call.Body);
+        Assert.Equal("Initial123!", body.RootElement.GetProperty("currentPassword").GetString());
+        Assert.Equal("Changed123!", body.RootElement.GetProperty("newPassword").GetString());
+    }
+
+    [Fact]
+    public async Task Console_change_password_passes_iam_rejection_reason_through_as_bad_request()
+    {
+        await using var factory = CreateFactoryWithIamHandler(_ => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    "{\"success\":false,\"message\":\"Current password is invalid.\",\"code\":400,\"errorData\":[]}",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            }));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayAccessToken);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/console/v1/auth/change-password",
+            new ConsoleChangePasswordRequest("wrong", "Changed123!"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<JsonElement?>>();
+        Assert.NotNull(envelope);
+        Assert.False(envelope.Success);
+        Assert.Equal("Current password is invalid.", envelope.Message);
+    }
+
+    [Fact]
+    public async Task Console_change_password_requires_bearer()
+    {
+        var iam = new FakeGatewayIamAuthClient();
+        await using var factory = CreateFactory(iam);
+
+        var response = await factory.CreateClient().PostAsJsonAsync(
+            "/api/console/v1/auth/change-password",
+            new ConsoleChangePasswordRequest("Initial123!", "Changed123!"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(0, iam.ChangePasswordCallCount);
+    }
+
+    [Fact]
+    public async Task Iam_auth_client_maps_bad_request_without_envelope_message_to_stable_reason()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("not-json")
+            }))
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var iam = new HttpGatewayIamAuthClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(() =>
+            iam.ChangePasswordAsync(
+                "access-token",
+                new ConsoleChangePasswordRequest("wrong", "Changed123!"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("iam-bad-request", exception.Reason);
+    }
+
+    [Fact]
     public async Task Console_auth_maps_iam_unavailable_to_service_unavailable()
     {
         var iam = new FakeGatewayIamAuthClient
@@ -441,6 +534,14 @@ public sealed class GatewayConsoleAuthTests
             services.AddSingleton<IGatewayIamAuthClient>(iam);
         }));
 
+    /// <summary>保留网关真实的 <see cref="HttpGatewayIamAuthClient"/>，只把它的出站 HTTP 换成桩，以覆盖「端点 → 客户端 → IAM 响应」整条转发链。</summary>
+    private static WebApplicationFactory<Program> CreateFactoryWithIamHandler(
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> iamResponder) =>
+        PlatformGatewayTestHost.CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services
+                .AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => new AsyncStubHttpMessageHandler(iamResponder))));
+
     private static void AssertPrincipal(ConsolePrincipalResponse expected, ConsolePrincipalResponse actual)
     {
         Assert.Equal(expected.PrincipalId, actual.PrincipalId);
@@ -461,6 +562,7 @@ public sealed class GatewayConsoleAuthTests
         public ConsoleLogoutRequest? LastLogoutRequest { get; private set; }
         public string? LastLogoutBearerToken { get; private set; }
         public string? LastMeBearerToken { get; private set; }
+        public int ChangePasswordCallCount { get; private set; }
         public GatewayAuthException? ExceptionToThrow { get; init; }
 
         public Task<ConsoleAuthResponse> LoginAsync(ConsoleLoginRequest request, CancellationToken cancellationToken)
@@ -492,6 +594,15 @@ public sealed class GatewayConsoleAuthTests
             return Task.FromResult(Principal);
         }
 
+        public Task ChangePasswordAsync(
+            string bearerToken,
+            ConsoleChangePasswordRequest request,
+            CancellationToken cancellationToken)
+        {
+            ChangePasswordCallCount++;
+            return Task.CompletedTask;
+        }
+
         private void ThrowIfConfigured()
         {
             if (ExceptionToThrow is not null)
@@ -515,6 +626,19 @@ public sealed class GatewayConsoleAuthTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(responseFactory(request));
     }
+
+    private sealed class AsyncStubHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> responseFactory)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            responseFactory(request);
+    }
+
+    private sealed record RecordedIamCall(
+        HttpMethod Method,
+        string Path,
+        System.Net.Http.Headers.AuthenticationHeaderValue? Authorization,
+        string Body);
 
     private sealed class RecordingHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
         : HttpMessageHandler

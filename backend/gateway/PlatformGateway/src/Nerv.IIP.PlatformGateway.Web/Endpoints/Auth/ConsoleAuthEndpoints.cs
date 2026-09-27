@@ -98,6 +98,33 @@ public sealed class GetConsolePrincipalEndpoint(IGatewayIamAuthClient iam) : End
     }
 }
 
+/// <summary>当前登录主体修改自己的口令；操作人由 IAM 从转发的 bearer token 解析，请求体不携带用户标识。</summary>
+[HttpPost("/api/console/v1/auth/change-password")]
+[GatewayOperationId("changeConsolePassword")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class ChangeConsolePasswordEndpoint(IGatewayIamAuthClient iam) : Endpoint<ConsoleChangePasswordRequest>
+{
+    public override async Task HandleAsync(ConsoleChangePasswordRequest req, CancellationToken ct)
+    {
+        var bearerToken = await HttpContext.GetTokenAsync("access_token");
+        if (bearerToken is null)
+        {
+            await ConsoleAuthEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
+            return;
+        }
+
+        try
+        {
+            await iam.ChangePasswordAsync(bearerToken, req, ct);
+            HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+        }
+        catch (GatewayAuthException ex)
+        {
+            await ConsoleAuthEndpointResults.WriteProblemAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
 internal static class ConsoleAuthEndpointResults
 {
     public static Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)

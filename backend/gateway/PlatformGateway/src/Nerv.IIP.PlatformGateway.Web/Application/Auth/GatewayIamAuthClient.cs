@@ -42,6 +42,19 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
             cancellationToken);
     }
 
+    public async Task ChangePasswordAsync(
+        string bearerToken,
+        ConsoleChangePasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var _ = await SendAsync(
+            () => JsonContent.Create(request),
+            HttpMethod.Post,
+            "/api/iam/v1/auth/change-password",
+            bearerToken,
+            cancellationToken);
+    }
+
     public async Task<ConsolePrincipalResponse> GetMeAsync(string bearerToken, CancellationToken cancellationToken)
     {
         var principal = await SendForJsonAsync<IamCurrentPrincipalResponse>(
@@ -130,7 +143,9 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
             GatewayAuthException exception;
             try
             {
-                exception = ToGatewayException(response);
+                exception = response.StatusCode == HttpStatusCode.BadRequest
+                    ? await ToBadRequestExceptionAsync(response, cancellationToken)
+                    : ToGatewayException(response);
             }
             finally
             {
@@ -155,6 +170,27 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         {
             throw GatewayAuthException.Unavailable("iam-unavailable");
         }
+    }
+
+    /// <summary>
+    /// IAM 以 400 返回 KnownException（旧口令错误、不符合口令策略等），信封 message 是 IAM 发布的安全业务文案，
+    /// 按 400 原样透传给调用方；信封读不出 message 时退回稳定码 <c>iam-bad-request</c>。
+    /// </summary>
+    private static async Task<GatewayAuthException> ToBadRequestExceptionAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        string? message;
+        try
+        {
+            message = (await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<JsonElement>>(cancellationToken))?.Message;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            message = null;
+        }
+
+        return GatewayAuthException.BadRequest(string.IsNullOrWhiteSpace(message) ? "iam-bad-request" : message);
     }
 
     private static GatewayAuthException ToGatewayException(HttpResponseMessage response)

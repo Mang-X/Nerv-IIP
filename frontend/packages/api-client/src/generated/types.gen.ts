@@ -674,6 +674,11 @@ export type NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse = NetC
     data?: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse | null;
 };
 
+export type NervIipPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest = {
+    currentPassword?: string;
+    newPassword?: string;
+};
+
 export type RestartConsoleInstanceData = {
     body: NervIipPlatformGatewayWebEndpointsOperationsRestartInstanceRequest;
     path: {
@@ -1962,3 +1967,30 @@ export type GetConsolePrincipalResponses = {
 };
 
 export type GetConsolePrincipalResponse = GetConsolePrincipalResponses[keyof GetConsolePrincipalResponses];
+
+export type ChangeConsolePasswordData = {
+    body: NervIipPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/auth/change-password';
+};
+
+export type ChangeConsolePasswordErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ChangeConsolePasswordResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type ChangeConsolePasswordResponse = ChangeConsolePasswordResponses[keyof ChangeConsolePasswordResponses];
