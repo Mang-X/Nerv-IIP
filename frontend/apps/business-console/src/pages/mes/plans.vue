@@ -399,10 +399,7 @@ function newPlanIdempotencyKey(scope: string) {
       </template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-readinessStatus="{ row }">
-        <NvStatusBadge
-          :label="planRowReadiness(row).label"
-          :tone="planRowReadiness(row).tone"
-        />
+        <NvStatusBadge :label="planRowReadiness(row).label" :tone="planRowReadiness(row).tone" />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
