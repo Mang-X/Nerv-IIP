@@ -1,4 +1,6 @@
 using System.Data.Common;
+using System.Net;
+using System.Text;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -268,6 +270,82 @@ public sealed class OrderUrgencyApplicationTests
         Assert.True(refreshed.ExecutionRisk.IsSourceStale);
         Assert.NotEqual(original.InputFingerprint, refreshed.InputFingerprint);
         Assert.True(await db.OrderUrgencySnapshots.CountAsync() > before);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_due_date_reaches_uncaptured_order_urgency()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var clock = new MutableTimeProvider(Now);
+        var dueUtc = Now.AddDays(2);
+        using var mesClient = new HttpClient(new MesDueDateHandler(dueUtc))
+        {
+            BaseAddress = new Uri("http://mes"),
+        };
+        var handler = new ListOrderUrgenciesQueryHandler(
+            new OrderUrgencyService(db, clock),
+            new HttpOrderUrgencyMesDueDateProvider(mesClient),
+            clock);
+
+        var result = Assert.Single(await handler.Handle(
+            new ListOrderUrgenciesQuery("org-001", "prod", ["WO-001"]), CancellationToken.None));
+
+        Assert.Equal(dueUtc, result.TimeCriticality.DueUtc);
+        Assert.DoesNotContain("time.due.missing", result.TimeCriticality.ReasonCodes);
+        Assert.True(result.ExecutionRisk.IsSourceMissing);
+    }
+
+    private sealed class MesDueDateHandler(DateTimeOffset dueUtc) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal("/api/business/v1/mes/work-orders", request.RequestUri!.AbsolutePath);
+            Assert.Contains("workOrderId=WO-001", request.RequestUri.Query);
+            Assert.Contains("organizationId=org-001", request.RequestUri.Query);
+            Assert.Contains("environmentId=prod", request.RequestUri.Query);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $"{{\"data\":{{\"items\":[{{\"workOrderId\":\"WO-001\",\"dueUtc\":\"{dueUtc:O}\"}}],\"total\":1}}}}",
+                    Encoding.UTF8,
+                    "application/json"),
+            });
+        }
+    }
+
+    [Fact]
+    public async Task Mes_due_dates_sort_uncaptured_orders_by_final_urgency()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var clock = new MutableTimeProvider(Now);
+        var handler = new ListOrderUrgenciesQueryHandler(
+            new OrderUrgencyService(db, clock),
+            new StubMesDueDateProvider(new Dictionary<string, DateTimeOffset>
+            {
+                ["WO-A"] = Now.AddDays(2),
+                ["WO-Z"] = Now.AddHours(-1),
+            }),
+            clock);
+
+        var result = await handler.Handle(
+            new ListOrderUrgenciesQuery("org-001", "prod", ["WO-A", "WO-Z"]), CancellationToken.None);
+
+        Assert.Equal(["WO-Z", "WO-A"], result.Select(x => x.OrderId));
+        Assert.Equal(["urgent", "highrisk"], result.Select(x => x.Level));
+    }
+
+    private sealed class StubMesDueDateProvider(IReadOnlyDictionary<string, DateTimeOffset> dueDates)
+        : IOrderUrgencyMesDueDateProvider
+    {
+        public Task<IReadOnlyDictionary<string, DateTimeOffset>> ResolveAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<string> workOrderIds,
+            CancellationToken cancellationToken) => Task.FromResult(dueDates);
     }
 
     [Fact]

@@ -11,9 +11,11 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.MasterData;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Messaging.CAP;
@@ -236,6 +238,89 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
             Assert.Equal(["plan-eta-a", "plan-eta-b"], invalidations.Select(x => x.PlanId));
             Assert.Equal(["SKU-001", "SKU-002"], invalidations.Select(x => x.AffectedSkuCode));
+        }
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Postgres_execution_deviation_replay_commits_projection_inbox_and_exact_invalidation_atomically()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var interceptor = new FailNextSaveChangesInterceptor();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
+        services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();
+        services.AddScoped<SchedulePlanGeneratedIntegrationEventConverter>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
+        services.AddSingleton<IIntegrationEventPublisher, NoOpIntegrationEventPublisher>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        services.AddSingleton(interceptor);
+        services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
+            options.AddInterceptors(serviceProvider.GetRequiredService<FailNextSaveChangesInterceptor>()));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        await using var provider = services.BuildServiceProvider();
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+            await dbContext.Database.MigrateAsync();
+            dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-deviation", "ASSET-CNC-01"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateOperationStartedEvent();
+        interceptor.FailNextSave();
+        using (var failedScope = provider.CreateScope())
+        {
+            var dbContext = failedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync();
+            var handler = new MesOperationTaskStartedIntegrationEventHandlerForProjectExecution(
+                dbContext,
+                new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext),
+                failedScope.ServiceProvider.GetRequiredService<IOperationExecutionProjectionMutationLock>(),
+                failedScope.ServiceProvider.GetRequiredService<TimeProvider>(),
+                new SchedulingExecutionDeviationToleranceOption(15));
+
+            await Assert.ThrowsAsync<DbUpdateException>(() =>
+                handler.HandleAsync(integrationEvent, CancellationToken.None));
+        }
+
+        using (var afterFailureScope = provider.CreateScope())
+        {
+            var dbContext = afterFailureScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await dbContext.OperationExecutionProjections.ToArrayAsync());
+            Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        }
+
+        using (var replayScope = provider.CreateScope())
+        {
+            var dbContext = replayScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync();
+            var handler = new MesOperationTaskStartedIntegrationEventHandlerForProjectExecution(
+                dbContext,
+                new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext),
+                replayScope.ServiceProvider.GetRequiredService<IOperationExecutionProjectionMutationLock>(),
+                replayScope.ServiceProvider.GetRequiredService<TimeProvider>(),
+                new SchedulingExecutionDeviationToleranceOption(15));
+
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await transaction.CommitAsync();
+        }
+
+        using (var assertionScope = provider.CreateScope())
+        {
+            var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Single(await dbContext.OperationExecutionProjections.ToArrayAsync());
+            Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            var invalidation = await dbContext.SchedulePlanInvalidations.SingleAsync();
+            Assert.Equal("plan-deviation", invalidation.PlanId);
+            Assert.Equal(SchedulingPlanInvalidationReasons.OperationStartDelayed, invalidation.ReasonCode);
+            Assert.Equal("WO-001", invalidation.AffectedWorkOrderId);
+            Assert.Equal("OP-001", invalidation.AffectedOperationId);
         }
     }
 
@@ -617,6 +702,29 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
                 "PO-001",
                 "released",
                 ["SKU-002", "SKU-001", "SKU-001"]));
+    }
+
+    private static MesOperationTaskStartedIntegrationEvent CreateOperationStartedEvent()
+    {
+        var actualStartedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 16, 0, TimeSpan.Zero);
+        return new MesOperationTaskStartedIntegrationEvent(
+            "evt-mes-operation-started-postgres-001",
+            MesIntegrationEventTypes.OperationTaskStarted,
+            MesIntegrationEventVersions.V1,
+            actualStartedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "corr-mes-operation-started-postgres-001",
+            "cause-mes-operation-started-postgres-001",
+            "org-001",
+            "env-dev",
+            "system:test",
+            "mes:operation-task-started:WO-001:OP-001",
+            new OperationTaskLifecyclePayload(
+                "WO-001",
+                "OP-001",
+                10,
+                "WC-CNC",
+                actualStartedAtUtc));
     }
 
     private static WorkCalendarChangedIntegrationEvent CreateWorkCalendarChangedEvent()

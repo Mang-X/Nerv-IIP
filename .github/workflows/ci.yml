@@ -2125,7 +2125,14 @@ jobs:
         timeout-minutes: 10
         env:
           NERV_IIP_OUT_DIR: ${{ runner.temp }}/issue-2098-tooling-browser
-        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright test e2e/issue1974-tooling-visual.spec.ts --project=desktop --reporter=list
+        # 声明宽 == 渲染宽只能在真实浏览器里量：jsdom 不实现表格布局，用
+        # getComputedStyle 在单测里量列宽只会假绿（#3734）。所以列宽那条也走本
+        # lane，与工装视觉一起跑，不另开 step——同 lane 的 step 顺序受
+        # ci-impact-plan.Tests.ps1 的相邻有序断言约束，另开 step 会打破它。
+        run: >-
+          pnpm -C frontend --filter @nerv-iip/business-console exec playwright test
+          e2e/issue1974-tooling-visual.spec.ts e2e/issue3734-column-width.spec.ts
+          --project=desktop --reporter=list
 
       - name: Upload Business Console browser diagnostics
         timeout-minutes: 5

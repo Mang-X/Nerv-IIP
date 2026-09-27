@@ -148,7 +148,9 @@ const columns: NvDataTableColumn<ReceiptRow>[] = [
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'unitCost', header: '单位成本', align: 'end', width: 'w-28' },
   { key: 'receiptStatus', header: '入库状态', width: 'w-48' },
-  { key: 'requestedAtUtc', header: '登记时间', width: 'w-44' },
+  // 〈登记时间〉用 CSS 尺寸写法：`w-*` 与尺寸串是 `width` 的两种等价写法，
+  // 票面要求两种都验到，这里给它一份真实的生产用法（#3734）。
+  { key: 'requestedAtUtc', header: '登记时间', width: '176px' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]
 

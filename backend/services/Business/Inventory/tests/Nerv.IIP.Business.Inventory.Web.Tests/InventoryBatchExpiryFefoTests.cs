@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using MediatR;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
@@ -700,7 +701,11 @@ public sealed class InventoryBatchExpiryFefoTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"inventory-batch-expiry-fefo-{Guid.NewGuid():N}")
             .Options;
-        return new ApplicationDbContext(options, new NoopMediator());
+        var db = new ApplicationDbContext(options, new NoopMediator());
+        db.StockLocations.Add(StockLocation.CreateOrUpdate(
+            null, "org-001", "env-dev", "LOC-A-01", "storage", "SITE-01", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class NoopMediator : IMediator

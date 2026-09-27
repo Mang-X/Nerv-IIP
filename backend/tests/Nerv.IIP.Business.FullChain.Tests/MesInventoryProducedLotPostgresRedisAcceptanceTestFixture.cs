@@ -287,6 +287,25 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 SensitiveValues: [redisConnectionString]));
     }
 
+    private static async Task SeedInventoryLocationAsync(string connectionString, ProbeSource source)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO inventory.stock_locations
+                (id, organization_id, environment_id, location_code, location_type,
+                 site_code, status, created_at_utc, updated_at_utc)
+            VALUES
+                (@id, @organization_id, @environment_id, 'receiving', 'bin',
+                 'finished-goods', 'active', now(), now());
+            """;
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("organization_id", source.OrganizationId);
+        command.Parameters.AddWithValue("environment_id", source.EnvironmentId);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task<ProbeSource> SeedReceiptPairAsync(string connectionString, string probeRunId)
     {
         await using var connection = new NpgsqlConnection(connectionString);

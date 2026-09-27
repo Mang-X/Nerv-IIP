@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
@@ -621,6 +622,44 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedul
 
 internal static class SchedulingPlanInvalidationService
 {
+    public static async Task InvalidateExecutionDeviationAsync<TIntegrationEvent>(
+        ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
+        TIntegrationEvent integrationEvent,
+        OperationExecutionProjection projection,
+        SchedulePlanExecutionMilestone milestone,
+        int toleranceMinutes,
+        CancellationToken cancellationToken)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        var actualAtUtc = milestone == SchedulePlanExecutionMilestone.Started
+            ? projection.ActualStartedAtUtc
+            : projection.ActualCompletedAtUtc;
+        if (actualAtUtc is null)
+        {
+            return;
+        }
+
+        var handler = new RecordSchedulePlanInvalidationsCommandHandler(dbContext, timeProvider);
+        await handler.Handle(
+            ToCommand(
+                integrationEvent,
+                milestone == SchedulePlanExecutionMilestone.Started
+                    ? SchedulingPlanInvalidationReasons.OperationStartDelayed
+                    : SchedulingPlanInvalidationReasons.OperationCompletionDelayed,
+                SchedulePlanInvalidationScope.ExactWorkOrderOperation,
+                scopeValue: null,
+                projection.WorkOrderId,
+                affectedSkuCode: null) with
+            {
+                AffectedOperationId = projection.OperationId,
+                ExecutionMilestone = milestone,
+                ActualExecutionAtUtc = actualAtUtc,
+                DeviationToleranceMinutes = toleranceMinutes,
+            },
+            cancellationToken);
+    }
+
     public static Task InvalidateGeneratedPlansByWorkCenterAsync<TIntegrationEvent>(
         ISender sender,
         TIntegrationEvent integrationEvent,

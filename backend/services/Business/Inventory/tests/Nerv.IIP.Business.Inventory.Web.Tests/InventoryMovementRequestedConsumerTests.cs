@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
@@ -1405,7 +1406,13 @@ public sealed class InventoryMovementRequestedConsumerTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"inventory-movement-requested-{Guid.NewGuid():N}")
             .Options;
-        return new ApplicationDbContext(options, new NoopMediator());
+        var db = new ApplicationDbContext(options, new NoopMediator());
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LOC-A-01", "storage", "SITE-01", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LOC-B-02", "storage", "SITE-01", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LOC-TARGET", "storage", "SITE-01", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class CommandExecutingSender(ApplicationDbContext dbContext) : ISender
