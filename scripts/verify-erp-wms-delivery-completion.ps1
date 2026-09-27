@@ -713,14 +713,6 @@ try {
         'X-Causation-Id' = 'acceptance-script'
         'X-Authenticated-Actor' = 'user:man527-acceptance'
     }
-    Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/locations" -Headers $headers -Body @{
-        organizationId = 'org-001'
-        environmentId = 'env-dev'
-        locationCode = 'LOC-A-01'
-        locationType = 'bin'
-        siteCode = $wmsSiteCode
-        status = 'active'
-    } | Out-Null
     $businessAdmission = Invoke-Man527FirstBusinessActionAfterConsumerReady `
         -ComposeFile $composeFile `
         -ManagedProcess $erpProcess `
@@ -739,6 +731,14 @@ try {
     $workPoolFixture = $businessAdmission.businessResult
     Write-Diagnostic "MAN-527 ERP CAP consumer ready: topic='$($erpConsumerReadiness.topic)'; group='$($erpConsumerReadiness.group)'; consumer='$($erpConsumerReadiness.consumer)'; run identity='$($erpConsumerReadiness.capVersion)'."
     Wait-ErpSalesOrder -ErpUrl $erpUrl -Headers $headers | Out-Null
+    Invoke-JsonPost -Uri "$inventoryUrl/api/inventory/v1/locations" -Headers $headers -Body @{
+        organizationId = 'org-001'
+        environmentId = 'env-dev'
+        locationCode = 'LOC-A-01'
+        locationType = 'bin'
+        siteCode = $wmsSiteCode
+        status = 'active'
+    } | Out-Null
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/delivery-orders" -Headers $headers -Body @{
         organizationId = 'org-001'
         environmentId = 'env-dev'
