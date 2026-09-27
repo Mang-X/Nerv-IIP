@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
@@ -19,6 +20,18 @@ public sealed class IamSeedService(
     IamPasswordService passwordService,
     IamTokenService tokenService)
 {
+    private const string ErpFinanceRoleId = "role-erp-finance";
+
+    // #3827 之前财务专员的默认权限；只有仍等于这一版的存量角色才补维修工单只读。
+    private static readonly string[] ErpFinanceDefaultPermissionsBeforeMaintenanceRead =
+    [
+        NervIipPermissionCodes.MasterDataResourcesRead,
+        NervIipPermissionCodes.ErpProcurementRead,
+        NervIipPermissionCodes.ErpSalesRead,
+        NervIipPermissionCodes.ErpFinanceRead,
+        NervIipPermissionCodes.ErpFinanceManage,
+    ];
+
     /// <summary>
     /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，
     /// 不覆盖已存在的行。组织/环境/管理员/角色 id 读 <c>Iam:Seed:*</c>（与产品基线 seed 同源）。
@@ -76,13 +89,34 @@ public sealed class IamSeedService(
         var seedAlreadyApplied = await dbContext.SeedManifests.FindAsync([manifestId], cancellationToken) is not null;
         var principalScopeBackfillApplied = await dbContext.SeedManifests
             .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
+        var financeMaintenanceReadManifestId = new SeedManifestId("iam-erp-finance-maintenance-work-orders-read:v1");
+        var financeMaintenanceReadApplied = await dbContext.SeedManifests
+            .FindAsync([financeMaintenanceReadManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
 
         foreach (var seedRole in NervIipSeedRoles.ErpJobRoles)
         {
             var roleId = new RoleId(seedRole.RoleId);
-            if (await dbContext.Roles.FindAsync([roleId], cancellationToken) is not null)
+            var existingRole = await dbContext.Roles
+                .Include(x => x.Permissions)
+                .SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken);
+            if (existingRole is not null)
             {
+                // 已有环境的财务专员补维修工单只读（#3827）。只补仍是上一版默认权限的角色，
+                // 运营改过的不动；补一次后记 manifest，之后运营再撤掉也不会被补回。
+                if (!financeMaintenanceReadApplied
+                    && seedRole.RoleId == ErpFinanceRoleId
+                    && existingRole.RoleName == seedRole.RoleName
+                    && SetEquals(
+                        existingRole.Permissions.Select(x => x.PermissionCode),
+                        ErpFinanceDefaultPermissionsBeforeMaintenanceRead))
+                {
+                    existingRole.ReplacePermissions([
+                        .. ErpFinanceDefaultPermissionsBeforeMaintenanceRead,
+                        NervIipPermissionCodes.MaintenanceWorkOrdersRead,
+                    ]);
+                }
+
                 continue;
             }
 
@@ -193,6 +227,16 @@ public sealed class IamSeedService(
         if (!seedAlreadyApplied)
         {
             dbContext.SeedManifests.Add(new SeedManifest(manifestId, "iam-default-seed", "v1", "iam", now));
+        }
+
+        if (!financeMaintenanceReadApplied)
+        {
+            dbContext.SeedManifests.Add(new SeedManifest(
+                financeMaintenanceReadManifestId,
+                "iam-erp-finance-maintenance-work-orders-read",
+                "v1",
+                "iam",
+                now));
         }
 
         if (!principalScopeBackfillApplied)

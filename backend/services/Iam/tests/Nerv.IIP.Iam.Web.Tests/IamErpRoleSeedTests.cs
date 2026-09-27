@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Seed;
@@ -60,8 +61,18 @@ public sealed class IamErpRoleSeedTests
                 "business.erp.sales.read",
                 "business.erp.finance.read",
                 "business.erp.finance.manage",
+                "business.maintenance.work-orders.read",
             ]),
         };
+
+    private static readonly string[] FinanceBaselineBeforeMaintenanceRead =
+    [
+        "business.masterdata.resources.read",
+        "business.erp.procurement.read",
+        "business.erp.sales.read",
+        "business.erp.finance.read",
+        "business.erp.finance.manage",
+    ];
 
     [Fact]
     public async Task Default_seed_creates_three_organization_scoped_erp_job_roles()
@@ -148,6 +159,80 @@ public sealed class IamErpRoleSeedTests
         var scope = Assert.Single(preserved.DataScopes);
         Assert.Equal(DataScopeBinding.Site, scope.ScopeType);
         Assert.Equal("SITE-CUSTOM", scope.ScopeCode);
+    }
+
+    // #3827：存量环境里的财务专员是按上一版默认权限建的，重启后要补上维修工单只读。
+    [Fact]
+    public async Task Reseed_adds_maintenance_work_order_read_to_a_finance_role_still_on_the_previous_default()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindToBeforeMaintenanceReadBackfill(dbContext, FinanceBaselineBeforeMaintenanceRead);
+
+        await seed.SeedAsync();
+
+        Assert.Equal(
+            ExpectedRoles["role-erp-finance"].PermissionCodes.Order(StringComparer.Ordinal),
+            await FinancePermissionCodes(dbContext));
+    }
+
+    [Fact]
+    public async Task Reseed_leaves_an_operator_adjusted_finance_role_untouched()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindToBeforeMaintenanceReadBackfill(dbContext, ["business.erp.finance.read"]);
+
+        await seed.SeedAsync();
+
+        Assert.Equal(["business.erp.finance.read"], await FinancePermissionCodes(dbContext));
+    }
+
+    [Fact]
+    public async Task Reseed_does_not_restore_maintenance_read_after_an_operator_revoked_it()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == new RoleId("role-erp-finance"));
+        role.ReplacePermissions(FinanceBaselineBeforeMaintenanceRead);
+        await dbContext.SaveChangesAsync();
+
+        await seed.SeedAsync();
+
+        Assert.Equal(
+            FinanceBaselineBeforeMaintenanceRead.Order(StringComparer.Ordinal),
+            await FinancePermissionCodes(dbContext));
+    }
+
+    private static async Task RewindToBeforeMaintenanceReadBackfill(
+        ApplicationDbContext dbContext,
+        IEnumerable<string> financePermissionCodes)
+    {
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == new RoleId("role-erp-finance"));
+        role.ReplacePermissions(financePermissionCodes);
+        dbContext.SeedManifests.Remove(await dbContext.SeedManifests.SingleAsync(
+            manifest => manifest.Id == new SeedManifestId("iam-erp-finance-maintenance-work-orders-read:v1")));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+    }
+
+    private static async Task<string[]> FinancePermissionCodes(ApplicationDbContext dbContext)
+    {
+        dbContext.ChangeTracker.Clear();
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == new RoleId("role-erp-finance"));
+        return role.Permissions
+            .Select(permission => permission.PermissionCode)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static ApplicationDbContext CreateDbContext()

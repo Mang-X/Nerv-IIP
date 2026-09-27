@@ -1,3 +1,6 @@
+import type { RouteLocationRaw } from 'vue-router'
+import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
+
 export const BARCODE_SCAN_WORKFLOW_OPTIONS = [
   { value: 'production.report', label: '生产报工' },
   { value: 'wms.receiving', label: '仓储收货' },
@@ -20,4 +23,37 @@ export function isBarcodeScanWorkflow(value?: string | null): value is BarcodeSc
 export function barcodeScanWorkflowLabel(value?: string | null) {
   if (!value) return '未标注'
   return BARCODE_SCAN_WORKFLOW_OPTIONS.find((option) => option.value === value)?.label ?? value
+}
+
+/**
+ * 条码业务对象的口径：每类业务对象从哪个单据目录选、点进去到哪。打印批次、扫码补录和各页互链
+ * 共用这张表，同一个业务对象在哪儿点进去都到同一个地方。
+ *
+ * 生产报工记的是工单，不是报工单号：生产标签与扫码按行业惯例挂在生产订单（工单）上——
+ * GS1 EPCIS 生产赋码事件引用的业务单据是生产订单，报工单只是工单下的一次数量过账。
+ * 本系统报工时自动打印的标签批次也按工单登记，追溯页同样以工单为对象。
+ *
+ * 只有工单有能按单号直达的页面；其它类型的目标页不按单号定位，点进去找不到那张单据，所以只显示文本。
+ */
+const SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
+  'work-order': 'mes-work-order',
+  'production.report': 'mes-work-order',
+  'wms.receiving': 'wms-inbound-order',
+  // 质量检验记被检验的那张单据。
+  'quality.inspection': 'quality-inspection',
+}
+
+/** 该类业务对象的单据目录；没有可搜列表的类型返回 `undefined`，由页面退回自由输入。 */
+export function barcodeSourceDocumentKind(type?: string | null): SourceDocumentKind | undefined {
+  return type ? SOURCE_DOCUMENT_KINDS[type] : undefined
+}
+
+/** 业务对象能直达的页面；到不了那张单据的类型返回 `undefined`，页面显示纯文本。 */
+export function barcodeSourceDocumentRoute(
+  type: string | null | undefined,
+  id: string | null | undefined,
+): RouteLocationRaw | undefined {
+  const documentId = id?.trim()
+  if (!documentId || barcodeSourceDocumentKind(type) !== 'mes-work-order') return undefined
+  return `/mes/work-orders/${encodeURIComponent(documentId)}`
 }
