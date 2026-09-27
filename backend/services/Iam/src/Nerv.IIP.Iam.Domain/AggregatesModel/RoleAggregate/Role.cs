@@ -37,6 +37,12 @@ public class Role : Entity<RoleId>, IAggregateRoot
         return roleName.Trim().ToUpperInvariant();
     }
 
+    public void Rename(string roleName)
+    {
+        RoleName = roleName;
+        NormalizedRoleName = NormalizeName(roleName);
+    }
+
     public void ReplacePermissions(IEnumerable<string> permissionCodes)
     {
         var desiredCodes = permissionCodes.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
