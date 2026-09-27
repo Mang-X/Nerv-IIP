@@ -26,12 +26,12 @@ public sealed class IamErpRoleSeedTests
         await CreateSeed(dbContext).SeedAsync();
         var roles = await dbContext.Roles.Include(role => role.Permissions).ToListAsync();
         var granted = Assert.Single(roles, role => role.Permissions.Any(p => p.PermissionCode == permission));
-        Assert.Equal("Platform Administrator", granted.RoleName);
+        Assert.Equal("平台管理员", granted.RoleName);
         Assert.Contains(permission, Nerv.IIP.Iam.Domain.NervIipSeedPermissions.All);
         var catalog = Nerv.IIP.Iam.Web.Application.Permissions.IamPermissionCatalog.List();
         Assert.True(Assert.Single(catalog.Items, item => item.Code == permission).Seeded);
         var memoryRole = Assert.Single(new InMemoryIamStore().Roles, role => role.PermissionCodes.Contains(permission));
-        Assert.Equal("Platform Administrator", memoryRole.RoleName);
+        Assert.Equal("平台管理员", memoryRole.RoleName);
     }
 
     private static readonly IReadOnlyDictionary<string, (string RoleName, string[] PermissionCodes)> ExpectedRoles =
@@ -209,6 +209,63 @@ public sealed class IamErpRoleSeedTests
             await FinancePermissionCodes(dbContext));
     }
 
+    // #3838：存量环境里平台管理员的角色名是英文，重启后改成中文；运营改过名的不动。
+    [Fact]
+    public async Task Reseed_renames_the_platform_administrator_still_on_the_english_default()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator");
+
+        await seed.SeedAsync();
+
+        Assert.Equal("平台管理员", await AdminRoleName(dbContext));
+    }
+
+    // 生产环境只跑启动引导不跑基线 seed，存量英文名也要在引导时改掉。
+    [Fact]
+    public async Task Bootstrap_renames_the_platform_administrator_still_on_the_english_default()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator");
+
+        await seed.BootstrapAsync();
+
+        Assert.Equal("平台管理员", await AdminRoleName(dbContext));
+    }
+
+    [Fact]
+    public async Task Reseed_keeps_an_operator_renamed_platform_administrator()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "超级管理员");
+
+        await seed.SeedAsync();
+
+        Assert.Equal("超级管理员", await AdminRoleName(dbContext));
+    }
+
+    private static async Task RewindAdminRoleName(ApplicationDbContext dbContext, string roleName)
+    {
+        var role = await dbContext.Roles.SingleAsync(candidate => candidate.Id == new RoleId("role-platform-admin"));
+        role.Rename(roleName);
+        dbContext.SeedManifests.Remove(await dbContext.SeedManifests.SingleAsync(
+            manifest => manifest.Id == new SeedManifestId("iam-platform-admin-role-name-zh:v1")));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+    }
+
+    private static async Task<string> AdminRoleName(ApplicationDbContext dbContext)
+    {
+        dbContext.ChangeTracker.Clear();
+        return (await dbContext.Roles.SingleAsync(candidate => candidate.Id == new RoleId("role-platform-admin"))).RoleName;
+    }
+
     private static async Task RewindToBeforeMaintenanceReadBackfill(
         ApplicationDbContext dbContext,
         IEnumerable<string> financePermissionCodes)
@@ -247,6 +304,9 @@ public sealed class IamErpRoleSeedTests
     {
         var services = new ServiceCollection()
             .AddSingleton(dbContext)
+            .AddSingleton(Options.Create(new IamPasswordPolicyOptions()))
+            .AddSingleton<IamPasswordService>()
+            .AddSingleton<IamPasswordPolicy>()
             .BuildServiceProvider();
         return new IamSeedService(
             services,

@@ -22,6 +22,10 @@ public sealed class IamSeedService(
 {
     private const string ErpFinanceRoleId = "role-erp-finance";
 
+    // #3838 之前平台管理员的默认角色名。只用来判断「运营没改过名」，角色本身按角色码查找。
+    private const string LegacyPlatformAdministratorRoleName = "Platform Administrator";
+    private static readonly SeedManifestId AdminRoleNameManifestId = new("iam-platform-admin-role-name-zh:v1");
+
     // #3827 之前财务专员的默认权限；只有仍等于这一版的存量角色才补维修工单只读。
     private static readonly string[] ErpFinanceDefaultPermissionsBeforeMaintenanceRead =
     [
@@ -134,7 +138,6 @@ public sealed class IamSeedService(
             cancellationToken);
         if (!principalScopeBackfillApplied
             && seedAlreadyApplied
-            && role.RoleName == "Platform Administrator"
             && role.DataScopes.Count == 0
             && SetEquals(role.Permissions.Select(x => x.PermissionCode), NervIipSeedPermissions.All))
         {
@@ -280,10 +283,12 @@ public sealed class IamSeedService(
             .SingleOrDefaultAsync(x => x.Id == adminRoleId, cancellationToken);
         if (role is null)
         {
-            role = new Role(adminRoleId, "Platform Administrator", NervIipSeedPermissions.All);
+            role = new Role(adminRoleId, NervIipSeedRoles.PlatformAdministratorRoleName, NervIipSeedPermissions.All);
             role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
             dbContext.Roles.Add(role);
         }
+
+        await RenameLegacyAdministratorRoleAsync(dbContext, role, cancellationToken);
 
         var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
         if (user is null)
@@ -298,6 +303,35 @@ public sealed class IamSeedService(
         }
 
         return (role, user);
+    }
+
+    /// <summary>
+    /// 已有环境里平台管理员的角色名原是英文（#3838），引导与基线 seed 两条路径都在这里改成中文。
+    /// 只改仍是旧默认名的角色，运营改过名的不动；中文名已被运营自建角色占用时也不改（角色名唯一）。改一次后记 manifest。
+    /// </summary>
+    private static async Task RenameLegacyAdministratorRoleAsync(
+        ApplicationDbContext dbContext,
+        Role role,
+        CancellationToken cancellationToken)
+    {
+        if (await dbContext.SeedManifests.FindAsync([AdminRoleNameManifestId], cancellationToken) is not null)
+        {
+            return;
+        }
+
+        var chineseName = Role.NormalizeName(NervIipSeedRoles.PlatformAdministratorRoleName);
+        if (role.RoleName == LegacyPlatformAdministratorRoleName
+            && !await dbContext.Roles.AnyAsync(x => x.NormalizedRoleName == chineseName, cancellationToken))
+        {
+            role.Rename(NervIipSeedRoles.PlatformAdministratorRoleName);
+        }
+
+        dbContext.SeedManifests.Add(new SeedManifest(
+            AdminRoleNameManifestId,
+            "iam-platform-admin-role-name-zh",
+            "v1",
+            "iam",
+            DateTimeOffset.UtcNow));
     }
 
     private User NewAdministrator(

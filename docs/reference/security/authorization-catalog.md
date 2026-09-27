@@ -120,7 +120,7 @@
 ### Barcode / Approval / ERP / Scheduling
 
 - `business.barcodes.templates.manage`
-- `business.barcodes.template-assets.retire`（默认仅 Platform Administrator 的 `All`，无岗位默认）
+- `business.barcodes.template-assets.retire`（默认仅平台管理员的 `All`，无岗位默认）
 - `business.barcodes.print`
 - `business.barcodes.scans.write`
 - `business.approvals.read`
@@ -178,6 +178,10 @@
 - `notifications.delivery.manage`
 
 > 注意：本清单证明的是“当前 IAM seed producer 登记了该 code”，**不证明**某个默认角色拥有它，也不证明某个 endpoint 已强制它。这两件事必须分别回到 seed 与 endpoint/authorization tests 核实。
+
+## 默认平台管理员角色
+
+`role-platform-admin` 的默认名称是「平台管理员」，持有 `NervIipSeedPermissions.All`，scope 为 Organization。存量环境里仍叫旧英文默认名 `Platform Administrator` 的该角色，在启动引导或基线 seed 时改成中文名，改完记 seed manifest `iam-platform-admin-role-name-zh:v1`；运营改过名，或中文名已被运营自建角色占用时不改。
 
 ## 默认 ERP 岗位角色
 
