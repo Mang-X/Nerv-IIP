@@ -485,6 +485,57 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public IReadOnlyList<string> GetMembershipRoleIds(string userId, string organizationId, string environmentId)
+    {
+        lock (_gate)
+        {
+            return FindMembership(userId, organizationId, environmentId)?.RoleIds.Order(StringComparer.Ordinal).ToArray() ?? [];
+        }
+    }
+
+    public IReadOnlyList<string> ReplaceMembershipRoles(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> roleIds)
+    {
+        lock (_gate)
+        {
+            if (_users.All(x => x.UserId != userId))
+            {
+                throw new InvalidOperationException($"User '{userId}' was not found.");
+            }
+
+            var missingRoleId = roleIds.FirstOrDefault(roleId => _roles.All(x => x.RoleId != roleId));
+            if (missingRoleId is not null)
+            {
+                throw new InvalidOperationException($"Role '{missingRoleId}' was not found.");
+            }
+
+            var existing = FindMembership(userId, organizationId, environmentId);
+            if (existing is not null)
+            {
+                _memberships.Remove(existing);
+            }
+
+            if (roleIds.Count == 0)
+            {
+                _membershipDataScopes.Remove(MembershipDataScopeKey(userId, organizationId, environmentId));
+                return [];
+            }
+
+            var desired = roleIds.ToHashSet(StringComparer.Ordinal);
+            _memberships.Add(new MembershipFact(userId, organizationId, environmentId, desired));
+            return desired.Order(StringComparer.Ordinal).ToArray();
+        }
+    }
+
+    private MembershipFact? FindMembership(string userId, string organizationId, string environmentId) =>
+        _memberships.SingleOrDefault(x =>
+            x.UserId == userId
+            && x.OrganizationId == organizationId
+            && x.EnvironmentId == environmentId);
+
     public UserFact UpdateUser(string userId, string loginName, string email, bool enabled, DateTimeOffset? accountExpiresAtUtc)
     {
         lock (_gate)

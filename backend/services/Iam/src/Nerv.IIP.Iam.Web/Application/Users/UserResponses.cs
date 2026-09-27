@@ -12,3 +12,9 @@ public sealed record UserResponse(
     string? DisplayName = null,
     string? EmployeeNo = null,
     string? DepartmentName = null);
+
+public sealed record UserMembershipResponse(
+    string UserId,
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyList<string> RoleIds);

@@ -73,6 +73,70 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         widenScope.EnsureSuccessStatusCode();
     }
 
+    [Fact]
+    public async Task Created_user_can_sign_in_after_being_assigned_a_role_in_the_current_organization_environment()
+    {
+        var admin = await LoginAsync(_client, "admin", "Admin123!");
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", admin.AccessToken);
+        var created = await _client.PostAsJsonAsync(
+            "/api/iam/v1/users",
+            new { loginName = "assigned-operator", email = "assigned-operator@nerv-iip.local", password = "Operator123!" });
+        created.EnsureSuccessStatusCode();
+        var userId = (await created.Content.ReadFromJsonAsync<ResponseDataEnvelope<CreatedUser>>())!.Data!.UserId;
+
+        var operatorLogin = await LoginAsync(_client, "assigned-operator", "Operator123!");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await GetMeAsync(operatorLogin.AccessToken)).StatusCode);
+
+        var assign = await _client.PutAsJsonAsync($"/api/iam/v1/users/{userId}/membership", new { roleIds = new[] { "role-erp-sales" } });
+        assign.EnsureSuccessStatusCode();
+        var membership = (await assign.Content.ReadFromJsonAsync<ResponseDataEnvelope<Membership>>())!.Data!;
+        Assert.Equal("org-001", membership.OrganizationId);
+        Assert.Equal("env-dev", membership.EnvironmentId);
+        Assert.Equal(["role-erp-sales"], membership.RoleIds);
+        _client.DefaultRequestHeaders.Authorization = null;
+
+        var me = await GetMeAsync((await LoginAsync(_client, "assigned-operator", "Operator123!")).AccessToken);
+        me.EnsureSuccessStatusCode();
+        var principal = (await me.Content.ReadFromJsonAsync<ResponseDataEnvelope<Principal>>())!.Data!;
+        Assert.Equal("org-001", principal.OrganizationId);
+        Assert.Equal("env-dev", principal.EnvironmentId);
+        Assert.Equal(["role-erp-sales"], principal.RoleIds);
+        Assert.Equal(
+            NervIipSeedRoles.ErpJobRoles.Single(x => x.RoleId == "role-erp-sales").PermissionCodes.Order(StringComparer.Ordinal),
+            principal.PermissionCodes);
+
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", admin.AccessToken);
+        var remove = await _client.PutAsJsonAsync($"/api/iam/v1/users/{userId}/membership", new { roleIds = Array.Empty<string>() });
+        remove.EnsureSuccessStatusCode();
+        _client.DefaultRequestHeaders.Authorization = null;
+        var removedLogin = await LoginAsync(_client, "assigned-operator", "Operator123!");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await GetMeAsync(removedLogin.AccessToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Platform_administrator_cannot_lose_the_administrator_role_through_membership_assignment()
+    {
+        var admin = await LoginAsync(_client, "admin", "Admin123!");
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", admin.AccessToken);
+
+        var removeMembership = await _client.PutAsJsonAsync("/api/iam/v1/users/user-admin/membership", new { roleIds = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.BadRequest, removeMembership.StatusCode);
+
+        var swapRole = await _client.PutAsJsonAsync("/api/iam/v1/users/user-admin/membership", new { roleIds = new[] { "role-erp-sales" } });
+        Assert.Equal(HttpStatusCode.BadRequest, swapRole.StatusCode);
+
+        var addRole = await _client.PutAsJsonAsync(
+            "/api/iam/v1/users/user-admin/membership",
+            new { roleIds = new[] { "role-platform-admin", "role-erp-sales" } });
+        addRole.EnsureSuccessStatusCode();
+        var restore = await _client.PutAsJsonAsync("/api/iam/v1/users/user-admin/membership", new { roleIds = new[] { "role-platform-admin" } });
+        restore.EnsureSuccessStatusCode();
+
+        var current = await _client.GetFromJsonAsync<ResponseDataEnvelope<Membership>>("/api/iam/v1/users/user-admin/membership");
+        Assert.Equal(["role-platform-admin"], current!.Data!.RoleIds);
+        _client.DefaultRequestHeaders.Authorization = null;
+    }
+
     [IamRealPostgresFact]
     public async Task Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant()
     {
@@ -105,7 +169,7 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         await using (var factory = ProductionFactory("Bootstrap123!"))
         {
             var client = factory.CreateClient();
-            var auth = await LoginAsync(client, "Bootstrap123!");
+            var auth = await LoginAsync(client, "admin", "Bootstrap123!");
             Assert.True(auth.PasswordChangeRequired);
 
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth.AccessToken);
@@ -118,7 +182,7 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         await using (var restarted = ProductionFactory("Rotated123!"))
         {
             var client = restarted.CreateClient();
-            await LoginAsync(client, "Bootstrap123!");
+            await LoginAsync(client, "admin", "Bootstrap123!");
 
             using var scope = restarted.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -151,9 +215,16 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
             });
     }
 
-    private static async Task<AuthResponse> LoginAsync(HttpClient client, string password)
+    private async Task<HttpResponseMessage> GetMeAsync(string accessToken)
     {
-        var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/iam/v1/me");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return await _client.SendAsync(request);
+    }
+
+    private static async Task<AuthResponse> LoginAsync(HttpClient client, string loginName, string password)
+    {
+        var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName, password });
         login.EnsureSuccessStatusCode();
         var envelope = await login.Content.ReadFromJsonAsync<ResponseDataEnvelope<AuthResponse>>();
         Assert.NotNull(envelope?.Data);
@@ -161,6 +232,9 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
     }
 
     private sealed record AuthResponse(string AccessToken, bool PasswordChangeRequired);
+    private sealed record CreatedUser(string UserId);
+    private sealed record Membership(string OrganizationId, string EnvironmentId, IReadOnlyList<string> RoleIds);
+    private sealed record Principal(string OrganizationId, string EnvironmentId, IReadOnlyList<string> RoleIds, IReadOnlyList<string> PermissionCodes);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }
 

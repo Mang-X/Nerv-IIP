@@ -3,10 +3,12 @@ import {
   createConsoleIamUserMutationOptions,
   disableConsoleIamUserMutationOptions,
   enableConsoleIamUserMutationOptions,
+  getConsoleIamUserMembershipQueryOptions,
   listConsoleIamPermissionsQueryOptions,
   listConsoleIamRolesQueryOptions,
   listConsoleIamSessionsQueryOptions,
   listConsoleIamUsersQueryOptions,
+  replaceConsoleIamUserMembershipMutationOptions,
   resetConsoleIamUserPasswordMutationOptions,
   revokeConsoleIamSessionMutationOptions,
   updateConsoleIamRolePermissionsMutationOptions,
@@ -22,6 +24,8 @@ import { toConsoleIamError } from '@/api/iam'
 
 const DEFAULT_PAGE_INDEX = 1
 const DEFAULT_PAGE_SIZE = 20
+// IAM 列表单页上限；角色是少量主数据，分配时一次取全。
+const ROLE_OPTIONS_PAGE_SIZE = 200
 const ignoreBackgroundError = (_error: unknown) => {}
 
 export interface IamListFilters {
@@ -140,6 +144,12 @@ export function useIamUsers() {
       void invalidateIamList(queryCache, 'listConsoleIamUsers').catch(ignoreBackgroundError)
     },
   })
+  const replaceUserMembershipMutation = useMutation({
+    ...replaceConsoleIamUserMembershipMutationOptions(),
+    onSuccess() {
+      void invalidateIamList(queryCache, 'getConsoleIamUserMembership').catch(ignoreBackgroundError)
+    },
+  })
 
   return {
     createUser: createUserMutation.mutateAsync,
@@ -153,6 +163,11 @@ export function useIamUsers() {
     enableUserPending: enableUserMutation.isLoading,
     filters,
     refreshUsers: listQuery.refetch,
+    replaceUserMembership: replaceUserMembershipMutation.mutateAsync,
+    replaceUserMembershipError: computed(() =>
+      toOptionalConsoleIamError(replaceUserMembershipMutation.error.value),
+    ),
+    replaceUserMembershipPending: replaceUserMembershipMutation.isLoading,
     resetUserPassword: resetUserPasswordMutation.mutateAsync,
     resetUserPasswordError: computed(() =>
       toOptionalConsoleIamError(resetUserPasswordMutation.error.value),
@@ -165,6 +180,35 @@ export function useIamUsers() {
     users: computed(() => listItems<ConsoleIamUserResponse>(listQuery.data.value)),
     usersError: computed(() => toOptionalConsoleIamError(listQuery.error.value)),
     usersPending: listQuery.isLoading,
+  }
+}
+
+/** 可分配的全部角色，供新建用户与分配角色时勾选。 */
+export function useIamRoleOptions() {
+  const listQuery = useQuery(() =>
+    listConsoleIamRolesQueryOptions({
+      query: { pageIndex: DEFAULT_PAGE_INDEX, pageSize: ROLE_OPTIONS_PAGE_SIZE },
+    }),
+  )
+
+  return {
+    roleOptions: computed(() => listItems<ConsoleIamRoleResponse>(listQuery.data.value)),
+    roleOptionsError: computed(() => toOptionalConsoleIamError(listQuery.error.value)),
+    roleOptionsPending: listQuery.isLoading,
+  }
+}
+
+/** 用户在当前组织环境里的成员关系；userId 为空时不请求。 */
+export function useIamUserMembership(userId: () => string | undefined) {
+  const membershipQuery = useQuery(() => ({
+    ...getConsoleIamUserMembershipQueryOptions({ path: { userId: userId() ?? '' } }),
+    enabled: Boolean(userId()),
+  }))
+
+  return {
+    membership: computed(() => unwrapEnvelope(membershipQuery.data.value)),
+    membershipError: computed(() => toOptionalConsoleIamError(membershipQuery.error.value)),
+    membershipPending: membershipQuery.isLoading,
   }
 }
 

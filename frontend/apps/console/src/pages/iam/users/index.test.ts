@@ -5,6 +5,7 @@ import { computed, reactive, shallowRef } from 'vue'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
+import UserRolesDialog from '@/components/iam/UserRolesDialog.vue'
 import UsersPage from './index.vue'
 
 const iamState = vi.hoisted(() => ({
@@ -12,7 +13,9 @@ const iamState = vi.hoisted(() => ({
   disableUser: vi.fn(),
   enableUser: vi.fn(),
   filters: { pageIndex: 1, pageSize: 20 } as { pageIndex: number; pageSize: number },
+  membershipRoleIds: [] as string[],
   refreshUsers: vi.fn(),
+  replaceUserMembership: vi.fn(),
   resetUserPassword: vi.fn(),
   totalCount: { value: 1 },
   updateUser: vi.fn(),
@@ -35,7 +38,24 @@ vi.mock('@/composables/usePermissions', () => ({
   useHasPermission: () => computed(() => permissionState.canManage.value),
 }))
 
+const roleOptions = [
+  { roleId: 'role-erp-sales', roleName: '销售', permissionCodes: ['erp.sales.read'] },
+  { roleId: 'role-platform-admin', roleName: '平台管理员', permissionCodes: ['iam.users.manage'] },
+]
+
 vi.mock('@/composables/useIamAdmin', () => ({
+  useIamRoleOptions: () => ({
+    roleOptions: computed(() => roleOptions),
+    roleOptionsError: computed(() => undefined),
+    roleOptionsPending: shallowRef(false),
+  }),
+  useIamUserMembership: (userId: () => string | undefined) => ({
+    membership: computed(() =>
+      userId() ? { userId: userId(), roleIds: iamState.membershipRoleIds } : undefined,
+    ),
+    membershipError: computed(() => undefined),
+    membershipPending: shallowRef(false),
+  }),
   useIamUsers: () => ({
     createUser: iamState.createUser,
     createUserError: computed(() => undefined),
@@ -48,6 +68,9 @@ vi.mock('@/composables/useIamAdmin', () => ({
     enableUserPending: shallowRef(false),
     filters: reactive(iamState.filters),
     refreshUsers: iamState.refreshUsers,
+    replaceUserMembership: iamState.replaceUserMembership,
+    replaceUserMembershipError: computed(() => undefined),
+    replaceUserMembershipPending: shallowRef(false),
     resetUserPassword: iamState.resetUserPassword,
     resetUserPasswordError: computed(() => undefined),
     resetUserPasswordPending: shallowRef(false),
@@ -84,7 +107,9 @@ describe('IAM users page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
-    iamState.createUser.mockResolvedValue(undefined)
+    iamState.createUser.mockResolvedValue({ data: { userId: 'user-created' }, success: true })
+    iamState.replaceUserMembership.mockResolvedValue(undefined)
+    iamState.membershipRoleIds = ['role-platform-admin']
     iamState.disableUser.mockResolvedValue(undefined)
     iamState.enableUser.mockResolvedValue(undefined)
     iamState.refreshUsers.mockResolvedValue(undefined)
@@ -226,6 +251,49 @@ describe('IAM users page', () => {
     expect(wrapper.text()).toContain('需改密')
   })
 
+  it('creates a user and assigns the chosen roles in the current organization environment', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const user = {
+      email: 'operator@nerv-iip.local',
+      loginName: 'operator',
+      password: 'Operator123!',
+    }
+    wrapper.findComponent(UserCreateDialog).vm.$emit('submit', {
+      roleIds: ['role-erp-sales'],
+      user,
+    })
+    await flushPromises()
+
+    expect(iamState.createUser).toHaveBeenCalledWith({ body: user })
+    expect(iamState.replaceUserMembership).toHaveBeenCalledWith({
+      body: { roleIds: ['role-erp-sales'] },
+      path: { userId: 'user-created' },
+    })
+    expect(iamState.createUser.mock.invocationCallOrder[0]).toBeLessThan(
+      iamState.replaceUserMembership.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('assigns roles to an existing user starting from the current membership', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="分配角色 admin"]').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.findComponent(UserRolesDialog)
+    expect(dialog.props('currentRoleIds')).toEqual(['role-platform-admin'])
+    dialog.vm.$emit('submit', ['role-erp-sales', 'role-platform-admin'])
+    await flushPromises()
+
+    expect(iamState.replaceUserMembership).toHaveBeenCalledWith({
+      body: { roleIds: ['role-erp-sales', 'role-platform-admin'] },
+      path: { userId: 'user-admin' },
+    })
+  })
+
   it('refreshes users after resetting a password', async () => {
     const wrapper = mountPage()
     await flushPromises()
@@ -247,7 +315,7 @@ describe('IAM users page', () => {
 describe('IAM users form dialogs', () => {
   it('renders create validation alerts only after submit', async () => {
     const wrapper = mount(UserCreateDialog, {
-      props: { open: true },
+      props: { open: true, roles: roleOptions },
       global: { stubs: { ...dialogStubs } },
     })
 
@@ -257,10 +325,12 @@ describe('IAM users form dialogs', () => {
 
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.findAll('[role="alert"]')).toHaveLength(3)
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(4)
     expect(wrapper.text()).toContain('请输入登录名。')
     expect(wrapper.text()).toContain('请输入邮箱。')
     expect(wrapper.text()).toContain('请输入密码。')
+    expect(wrapper.text()).toContain('请至少选择一个角色。')
+    expect(wrapper.emitted('submit')).toBeUndefined()
   })
 
   it('renders edit validation alerts only after submit', async () => {
@@ -320,9 +390,9 @@ describe('IAM users form dialogs', () => {
     expect(wrapper.text()).toContain('请输入新密码。')
   })
 
-  it('emits account expiry when creating a user', async () => {
+  it('emits account expiry and chosen roles when creating a user', async () => {
     const wrapper = mount(UserCreateDialog, {
-      props: { open: true },
+      props: { open: true, roles: roleOptions },
       global: { stubs: { ...dialogStubs } },
     })
 
@@ -330,14 +400,18 @@ describe('IAM users form dialogs', () => {
     await wrapper.get('#iam-create-email').setValue('new-user@nerv-iip.local')
     await wrapper.get('#iam-create-password').setValue('Password123!')
     await wrapper.get('#iam-create-account-expires').setValue('2026-08-31')
+    await wrapper.get('#iam-create-role-role-erp-sales').trigger('click')
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.emitted('submit')?.[0]).toEqual([
       {
-        accountExpiresAtUtc: '2026-08-31T23:59:59Z',
-        email: 'new-user@nerv-iip.local',
-        loginName: 'new-user',
-        password: 'Password123!',
+        roleIds: ['role-erp-sales'],
+        user: {
+          accountExpiresAtUtc: '2026-08-31T23:59:59Z',
+          email: 'new-user@nerv-iip.local',
+          loginName: 'new-user',
+          password: 'Password123!',
+        },
       },
     ])
   })

@@ -1231,6 +1231,101 @@
         ]
       }
     },
+    "/api/console/v1/iam/users/{userId}/membership": {
+      "get": {
+        "tags": [
+          "Console IAM",
+          "Api"
+        ],
+        "operationId": "getConsoleIamUserMembership",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Console IAM",
+          "Api"
+        ],
+        "operationId": "replaceConsoleIamUserMembership",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "ConsoleReplaceIamUserMembershipRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/console/v1/iam/roles": {
       "get": {
         "tags": [
@@ -3743,6 +3838,60 @@
         "properties": {
           "newPassword": {
             "type": "string"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "roleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "roleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

@@ -127,6 +127,45 @@ public sealed class ResetConsoleIamUserPasswordEndpoint(
 }
 
 [Tags("Console IAM")]
+[HttpGet("/api/console/v1/iam/users/{userId}/membership")]
+[GatewayOperationId("getConsoleIamUserMembership")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class GetConsoleIamUserMembershipEndpoint(
+    IGatewayIamAuthClient iam,
+    IGatewayAuthorizationClient auth,
+    IGatewayIamAdminClient admin)
+    : AuthorizedProxyEndpoint<ConsoleIamUserMembershipResponse>(
+        iam,
+        auth,
+        GatewayPermissions.IamUsersRead)
+{
+    protected override Task<ConsoleIamUserMembershipResponse> ForwardAsync(
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        admin.GetUserMembershipAsync(bearerToken, Route<string>("userId")!, cancellationToken);
+}
+
+[Tags("Console IAM")]
+[HttpPut("/api/console/v1/iam/users/{userId}/membership")]
+[GatewayOperationId("replaceConsoleIamUserMembership")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class ReplaceConsoleIamUserMembershipEndpoint(
+    IGatewayIamAuthClient iam,
+    IGatewayAuthorizationClient auth,
+    IGatewayIamAdminClient admin)
+    : AuthorizedProxyEndpoint<ConsoleReplaceIamUserMembershipRequest, ConsoleIamUserMembershipResponse>(
+        iam,
+        auth,
+        GatewayPermissions.IamUsersManage)
+{
+    protected override Task<ConsoleIamUserMembershipResponse> ForwardAsync(
+        AuthorizedProxyRequestContext context,
+        ConsoleReplaceIamUserMembershipRequest request,
+        CancellationToken cancellationToken) =>
+        admin.ReplaceUserMembershipAsync(context.BearerToken, Route<string>("userId")!, request, cancellationToken);
+}
+
+[Tags("Console IAM")]
 [HttpGet("/api/console/v1/iam/roles")]
 [GatewayOperationId("listConsoleIamRoles")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
