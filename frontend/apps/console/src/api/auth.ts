@@ -24,12 +24,14 @@ export function formatConsoleLockoutMessage(
 
 export const consoleAuthApi = createConsoleAuthApi({
   client: {
+    changeConsolePassword: (options) => apiClient.changeConsolePassword(options),
     getConsolePrincipal: (options) => apiClient.getConsolePrincipal(options),
     loginConsoleUser: (options) => apiClient.loginConsoleUser(options),
     logoutConsoleSession: (options) => apiClient.logoutConsoleSession(options),
     refreshConsoleSession: (options) => apiClient.refreshConsoleSession(options),
   },
   messages: {
+    changePasswordFallback: '修改密码失败，请稍后重试。',
     accountLocked: (lockoutUntilUtc) => formatConsoleLockoutMessage(lockoutUntilUtc),
     invalidCredentialsOrExpiredSession: 'Invalid credentials or expired session.',
     loginFallback: 'Unable to connect to the authentication service.',

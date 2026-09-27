@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { AppShellT } from '@nerv-iip/app-shell'
-import { NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
+import { NvDropdownMenuItem, NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
+import { KeyRoundIcon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -80,6 +81,12 @@ function openSearch() {
     <template #header-actions>
       <NvThemePicker />
       <NvThemeToggle />
+    </template>
+    <template #user-menu-items>
+      <NvDropdownMenuItem @select="router.push('/change-password')">
+        <KeyRoundIcon class="size-4" aria-hidden="true" />
+        修改密码
+      </NvDropdownMenuItem>
     </template>
     <section
       v-if="showBusinessContextEmptyState"

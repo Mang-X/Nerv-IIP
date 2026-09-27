@@ -854,12 +854,28 @@ public sealed class IamPostgresProfileTests
         userLogin.EnsureSuccessStatusCode();
         var userAuth = await ReadResponseDataAsync<LifecycleAuthResponse>(userLogin);
         Assert.True(userAuth.PasswordChangeRequired);
+        var otherLogin = await client.PostAsJsonAsync(
+            "/api/iam/v1/auth/login",
+            new { loginName = "lifecycle-pg-user", password = "InitialPassword123!" });
+        otherLogin.EnsureSuccessStatusCode();
+        var otherAuth = await ReadResponseDataAsync<LifecycleAuthResponse>(otherLogin);
 
         client.DefaultRequestHeaders.Authorization = new("Bearer", userAuth.AccessToken);
         var change = await client.PostAsJsonAsync(
             "/api/iam/v1/auth/change-password",
             new { currentPassword = "InitialPassword123!", newPassword = "ChangedPassword123!" });
         Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var typedUserId = new UserId(user.UserId);
+            var sessions = await db.UserSessions.Where(x => x.UserId == typedUserId).ToListAsync();
+            Assert.Null(sessions.Single(x => x.Id == new UserSessionId(userAuth.SessionId)).RevokedAtUtc);
+            Assert.Equal(
+                "password-changed",
+                sessions.Single(x => x.Id == new UserSessionId(otherAuth.SessionId)).RevokedReason);
+        }
 
         var oldBearerChange = await client.PostAsJsonAsync(
             "/api/iam/v1/auth/change-password",

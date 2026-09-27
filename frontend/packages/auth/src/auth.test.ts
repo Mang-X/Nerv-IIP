@@ -31,6 +31,7 @@ const session = {
 
 const messages = {
   accountLocked: (lockoutUntilUtc?: string) => `Locked until ${lockoutUntilUtc ?? 'later'}.`,
+  changePasswordFallback: 'Change password failed.',
   invalidCredentialsOrExpiredSession: 'Bad credentials.',
   loginFallback: 'Login failed.',
   refreshFallback: 'Refresh failed.',
@@ -43,6 +44,7 @@ const messages = {
 
 function createClient() {
   return {
+    changeConsolePassword: vi.fn(),
     getConsolePrincipal: vi.fn(),
     loginConsoleUser: vi.fn(),
     logoutConsoleSession: vi.fn(),
@@ -148,6 +150,53 @@ describe('console auth api factory', () => {
   })
 })
 
+describe('console change password api', () => {
+  it('sends the current bearer and resolves on success', async () => {
+    const { api, client } = createApi()
+    client.changeConsolePassword.mockResolvedValue({
+      response: new Response(null, { status: 204 }),
+    })
+
+    await api.changeConsolePassword('access-token', {
+      currentPassword: 'Old123!',
+      newPassword: 'New123!',
+    })
+
+    expect(client.changeConsolePassword).toHaveBeenCalledWith({
+      body: { currentPassword: 'Old123!', newPassword: 'New123!' },
+      headers: { Authorization: 'Bearer access-token' },
+    })
+  })
+
+  it.each([
+    ['Current password is invalid.', '当前密码不正确。'],
+    ['Password must be at least 8 characters.', '新密码至少需要 8 个字符。'],
+    ['Password was recently used.', '新密码不能与最近使用过的密码相同。'],
+    ['Some future IAM rule.', 'Some future IAM rule.'],
+  ])('shows the IAM rejection reason %s as %s', async (iamMessage, shown) => {
+    const { api, client } = createApi()
+    client.changeConsolePassword.mockResolvedValue({
+      error: { message: iamMessage, code: 400 },
+      response: new Response(null, { status: 400 }),
+    })
+
+    await expect(
+      api.changeConsolePassword('access-token', { currentPassword: 'x', newPassword: 'y' }),
+    ).rejects.toMatchObject({ message: shown, status: 400 } satisfies Partial<ConsoleAuthError>)
+  })
+
+  it('reports an expired session on 401', async () => {
+    const { api, client } = createApi()
+    client.changeConsolePassword.mockResolvedValue({
+      response: new Response(null, { status: 401 }),
+    })
+
+    await expect(
+      api.changeConsolePassword('access-token', { currentPassword: 'x', newPassword: 'y' }),
+    ).rejects.toMatchObject({ message: 'Bad credentials.', status: 401 })
+  })
+})
+
 describe('auth store factory', () => {
   beforeEach(() => {
     vi.useRealTimers()
@@ -247,6 +296,75 @@ describe('auth store factory', () => {
     expect(localStorage.getItem('nerv-iip.test.auth')).toBeNull()
   })
 
+  it('tracks the password-change flag and keeps the current session after changing password', async () => {
+    const { api, client } = createApi()
+    const useAuthStore = createAuthStore({
+      api,
+      messages,
+      storageKey: 'nerv-iip.test.auth',
+      storeId: 'test-auth',
+    })
+    client.loginConsoleUser.mockResolvedValue({
+      data: { success: true, data: { ...session, passwordChangeRequired: true } },
+    })
+    client.changeConsolePassword.mockResolvedValue({
+      response: new Response(null, { status: 204 }),
+    })
+    client.refreshConsoleSession.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          ...session,
+          accessToken: 'rotated-access-token',
+          refreshToken: 'rotated-refresh-token',
+          passwordChangeRequired: false,
+        },
+      },
+    })
+    const auth = useAuthStore()
+
+    await auth.login('admin', 'Reset123!')
+    expect(auth.passwordChangeRequired).toBe(true)
+
+    await auth.changePassword('Reset123!', 'Changed123!')
+
+    expect(client.changeConsolePassword).toHaveBeenCalledWith({
+      body: { currentPassword: 'Reset123!', newPassword: 'Changed123!' },
+      headers: { Authorization: 'Bearer access-token' },
+    })
+    expect(client.refreshConsoleSession).toHaveBeenCalledWith({
+      body: { refreshToken: 'refresh-token' },
+    })
+    expect(auth.passwordChangeRequired).toBe(false)
+    expect(auth.accessToken).toBe('rotated-access-token')
+    expect(auth.isAuthenticated).toBe(true)
+  })
+
+  it('keeps the session and flag when the password change is rejected', async () => {
+    const { api, client } = createApi()
+    const useAuthStore = createAuthStore({
+      api,
+      messages,
+      storageKey: 'nerv-iip.test.auth',
+      storeId: 'test-auth',
+    })
+    client.loginConsoleUser.mockResolvedValue({
+      data: { success: true, data: { ...session, passwordChangeRequired: true } },
+    })
+    client.changeConsolePassword.mockResolvedValue({
+      error: { message: 'Current password is invalid.' },
+      response: new Response(null, { status: 400 }),
+    })
+    const auth = useAuthStore()
+    await auth.login('admin', 'Reset123!')
+
+    await expect(auth.changePassword('wrong', 'Changed123!')).rejects.toThrow('当前密码不正确。')
+
+    expect(client.refreshConsoleSession).not.toHaveBeenCalled()
+    expect(auth.passwordChangeRequired).toBe(true)
+    expect(auth.isAuthenticated).toBe(true)
+  })
+
   it('offers an explicit bounded logout that reports revoke success, failure, and timeout', async () => {
     const { api, client } = createApi()
     const useAuthStore = createAuthStore({
@@ -323,6 +441,42 @@ describe('auth route helpers', () => {
     await router.push('/login?redirect=//evil.test/x')
 
     expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('confines a user who must change password to the change-password page', async () => {
+    const { api } = createApi()
+    const useAuthStore = createAuthStore({
+      api,
+      messages,
+      storageKey: 'nerv-iip.test.auth',
+      storeId: 'test-auth',
+    })
+    const page = { template: '<div />' }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: page, meta: { requiresAuth: true } },
+        { path: '/iam/users', component: page, meta: { requiresAuth: true } },
+        { path: '/change-password', component: page, meta: { requiresAuth: true } },
+        { path: '/login', component: page, meta: { guestOnly: true } },
+      ],
+    })
+    createAuthGuard({ loginPath: '/login', useAuthStore })(router)
+    const auth = useAuthStore()
+    auth.$patch({ accessToken: 'access-token', principal, passwordChangeRequired: true })
+
+    await router.push('/iam/users')
+    expect(router.currentRoute.value.path).toBe('/change-password')
+
+    await router.push('/login')
+    expect(router.currentRoute.value.path).toBe('/change-password')
+
+    auth.$patch({ passwordChangeRequired: false })
+    await router.push('/iam/users')
+    expect(router.currentRoute.value.path).toBe('/iam/users')
+
+    await router.push('/change-password')
+    expect(router.currentRoute.value.path).toBe('/change-password')
   })
 
   it('clears auth and redirects unauthorized users to the injected login path', () => {

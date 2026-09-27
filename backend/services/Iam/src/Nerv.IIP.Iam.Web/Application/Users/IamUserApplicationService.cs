@@ -34,7 +34,13 @@ public interface IIamUserApplicationService
 
     Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken);
 
-    Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken);
+    /// <summary>自助改密；成功后吊销该用户除 <paramref name="currentSessionId"/> 以外的全部活动会话。</summary>
+    Task ChangePasswordAsync(
+        string userId,
+        string currentSessionId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryIamUserApplicationService(
@@ -124,11 +130,21 @@ public sealed class InMemoryIamUserApplicationService(
         return Task.CompletedTask;
     }
 
-    public Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken)
+    public Task ChangePasswordAsync(
+        string userId,
+        string currentSessionId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken)
     {
         try
         {
-            store.ChangePassword(userId, currentPassword, newPassword, ToStorePolicy(passwordPolicyOptions.Value));
+            store.ChangePassword(
+                userId,
+                currentSessionId,
+                currentPassword,
+                newPassword,
+                ToStorePolicy(passwordPolicyOptions.Value));
         }
         catch (InvalidOperationException ex)
         {
@@ -311,11 +327,13 @@ public sealed class PostgreSqlIamUserApplicationService(
 
     public async Task ChangePasswordAsync(
         string userId,
+        string currentSessionId,
         string currentPassword,
         string newPassword,
         CancellationToken cancellationToken)
     {
-        var user = await repository.GetByIdAsync(new UserId(userId), cancellationToken)
+        var typedUserId = new UserId(userId);
+        var user = await repository.GetByIdAsync(typedUserId, cancellationToken)
             ?? throw new KnownException($"User '{userId}' was not found.");
         if (!passwordService.Verify(user, currentPassword))
         {
@@ -330,6 +348,12 @@ public sealed class PostgreSqlIamUserApplicationService(
             passwordPolicy.GetPasswordExpiresAtUtc(now),
             passwordChangeRequired: false,
             passwordPolicy.Current.PasswordHistoryCount);
+
+        var sessions = await userSessionRepository.ListActiveByUserIdAsync(typedUserId, now, cancellationToken);
+        foreach (var session in sessions.Where(x => x.Id.Id != currentSessionId))
+        {
+            session.Revoke(now, "password-changed");
+        }
     }
 
     private static UserResponse ToResponse(User user)
