@@ -2,6 +2,8 @@ using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
@@ -13,7 +15,9 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 public sealed class MesOperationTaskStartedIntegrationEventHandlerForProjectExecution(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOperationExecutionProjectionMutationLock mutationLock)
+    IOperationExecutionProjectionMutationLock mutationLock,
+    TimeProvider timeProvider,
+    SchedulingExecutionDeviationToleranceOption deviationTolerance)
     : IIntegrationEventHandler<MesOperationTaskStartedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.execution-operation-started";
@@ -28,13 +32,27 @@ public sealed class MesOperationTaskStartedIntegrationEventHandlerForProjectExec
     public Task HandleCapAsync(MesOperationTaskStartedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
-    private Task ProjectAsync(MesOperationTaskStartedIntegrationEvent value, CancellationToken cancellationToken) =>
-        OperationExecutionProjectionConsumerPersistence.ProjectAsync(
+    private Task ProjectAsync(MesOperationTaskStartedIntegrationEvent value, CancellationToken cancellationToken)
+    {
+        Func<OperationExecutionProjection, CancellationToken, Task>? afterApply =
+            deviationTolerance.ToleranceMinutes is int toleranceMinutes
+                ? (projection, ct) => SchedulingPlanInvalidationService.InvalidateExecutionDeviationAsync(
+                    dbContext,
+                    timeProvider,
+                    value,
+                    projection,
+                    SchedulePlanExecutionMilestone.Started,
+                    toleranceMinutes,
+                    ct)
+                : null;
+        return OperationExecutionProjectionConsumerPersistence.ProjectAsync(
             dbContext, mutationLock, ConsumerName, value,
             value.Payload.WorkOrderId, value.Payload.OperationTaskId, value.Payload.OperationSequence,
             value.Payload.WorkCenterId,
             projection => projection.ApplyStarted(value.Payload.ChangedAtUtc, value.EventId),
-            cancellationToken);
+            cancellationToken,
+            afterApply);
+    }
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.MesOperationTaskPausedIntegrationEvent", ConsumerName)]
@@ -97,7 +115,9 @@ public sealed class MesOperationTaskResumedIntegrationEventHandlerForProjectExec
 public sealed class MesOperationTaskCompletedIntegrationEventHandlerForProjectExecution(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOperationExecutionProjectionMutationLock mutationLock)
+    IOperationExecutionProjectionMutationLock mutationLock,
+    TimeProvider timeProvider,
+    SchedulingExecutionDeviationToleranceOption deviationTolerance)
     : IIntegrationEventHandler<MesOperationTaskCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.execution-operation-completed";
@@ -112,13 +132,27 @@ public sealed class MesOperationTaskCompletedIntegrationEventHandlerForProjectEx
     public Task HandleCapAsync(MesOperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
-    private Task ProjectAsync(MesOperationTaskCompletedIntegrationEvent value, CancellationToken cancellationToken) =>
-        OperationExecutionProjectionConsumerPersistence.ProjectAsync(
+    private Task ProjectAsync(MesOperationTaskCompletedIntegrationEvent value, CancellationToken cancellationToken)
+    {
+        Func<OperationExecutionProjection, CancellationToken, Task>? afterApply =
+            deviationTolerance.ToleranceMinutes is int toleranceMinutes
+                ? (projection, ct) => SchedulingPlanInvalidationService.InvalidateExecutionDeviationAsync(
+                    dbContext,
+                    timeProvider,
+                    value,
+                    projection,
+                    SchedulePlanExecutionMilestone.Completed,
+                    toleranceMinutes,
+                    ct)
+                : null;
+        return OperationExecutionProjectionConsumerPersistence.ProjectAsync(
             dbContext, mutationLock, ConsumerName, value,
             value.Payload.WorkOrderId, value.Payload.OperationTaskId, value.Payload.OperationSequence,
             value.Payload.WorkCenterId,
             projection => projection.ApplyCompleted(value.Payload.CompletedAtUtc, value.EventId),
-            cancellationToken);
+            cancellationToken,
+            afterApply);
+    }
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.ProductionReportRecordedIntegrationEvent", ConsumerName)]
@@ -298,7 +332,8 @@ internal static class OperationExecutionProjectionConsumerPersistence
         int? operationSequence,
         string? workCenterId,
         Action<OperationExecutionProjection> apply,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<OperationExecutionProjection, CancellationToken, Task>? afterApply = null)
     {
         await mutationLock.AcquireAsync(
             integrationEvent.OrganizationId,
@@ -340,6 +375,10 @@ internal static class OperationExecutionProjectionConsumerPersistence
         }
 
         apply(projection);
+        if (afterApply is not null)
+        {
+            await afterApply(projection, cancellationToken);
+        }
         await SchedulingProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync(dbContext, cancellationToken);
     }
 }
