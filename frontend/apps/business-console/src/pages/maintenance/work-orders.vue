@@ -23,6 +23,7 @@ import {
 } from '@/composables/useEquipmentPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import { CURRENCY_OPTIONS } from '@/data/currencyReference'
@@ -137,6 +138,9 @@ const { resolvePartner } = useBusinessPartnerNames()
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const currentUserId = computed(() => principal.value?.principalId ?? '')
+const canManageWorkOrders = computed(() =>
+  (principal.value?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
+)
 const workerOptions = computed(() =>
   workers.value
     .map((w) => ({
@@ -312,7 +316,8 @@ const completeCarriedItems = computed(() => {
 })
 
 type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
-const columns: NvDataTableColumn<WorkOrderRow>[] = [
+// 没有可用操作的角色不渲染「操作」列，免得只剩表头、整列空白。
+const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
   {
     key: 'workOrderNo',
     header: '工单号',
@@ -351,8 +356,10 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
     accessor: (r) => technicianLabel(r.assignedTechnicianUserId),
   },
   { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
-]
+  ...(canManageWorkOrders.value
+    ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
+    : []),
+])
 
 /**
  * 人读工单号。以前拿 workOrderId（GUID）末 8 位拼 `WO-XXXXXXXX` 冒充单号——
@@ -597,7 +604,7 @@ function formatDate(value?: string | null) {
 watch(
   () => route.query,
   (query) => {
-    if (queryPrefilled.value) return
+    if (queryPrefilled.value || !canManageWorkOrders.value) return
     const deviceAssetId = typeof query.deviceAssetId === 'string' ? query.deviceAssetId : ''
     const sourceAlarmId = typeof query.sourceAlarmId === 'string' ? query.sourceAlarmId : ''
     if (!deviceAssetId && !sourceAlarmId) return
@@ -626,7 +633,7 @@ watch(
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManageWorkOrders" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建维护工单
         </NvButton>
