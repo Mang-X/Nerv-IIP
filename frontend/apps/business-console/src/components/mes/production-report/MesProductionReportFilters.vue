@@ -79,8 +79,8 @@ function fromDateInput(value: string, dayOffset: number) {
         </NvSelect>
       </NvField>
       <NvField class="min-w-64">
-        <NvFieldLabel>统计窗口</NvFieldLabel>
-        <NvDateRangePicker v-model="windowRange" placeholder="选择统计窗口" />
+        <NvFieldLabel>统计时段</NvFieldLabel>
+        <NvDateRangePicker v-model="windowRange" placeholder="选择统计时段" />
       </NvField>
       <NvField class="min-w-36">
         <NvFieldLabel>业务日</NvFieldLabel>

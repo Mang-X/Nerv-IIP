@@ -104,7 +104,7 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
   <BusinessLayout>
     <NvPageHeader
       title="采集标签"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="`${tagsTotal} 个采集标签`"
     >
       <template #actions>

@@ -122,15 +122,24 @@ const windowRange = computed<DateRange>({
 })
 
 // 无运行样本时后端仍会给出一个窗口兜底值（如 720 小时＝整窗口无故障的名义值）。
-// 那不是实测 MTBF，读数与副行「当前窗口无运行样本」直接打架，所以两处口径统一：
+// 那不是实测 MTBF，读数与副行「统计时段内没有运行记录」直接打架，所以两处口径统一：
 // 没有运行样本就走无样本态，不显示任何小时数（MTTR 已是这个做法）。
 const mtbfHasSamples = computed(() => reliability.value?.mtbfRuntimeHasSamples === true)
 const reliabilityCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'mtbf',
     label: 'MTBF',
-    value: mtbfHasSamples.value ? metricLabel(reliability.value?.mtbfHours, ' 小时') : '无样本',
-    meta: mtbfHasSamples.value ? '按运行样本计算' : '当前窗口无运行样本',
+    // MTBF = 运行时长 ÷ 故障次数：有运行记录但零故障时如实说「无故障」，不与「暂无记录」混用。
+    value: !mtbfHasSamples.value
+      ? '暂无记录'
+      : reliability.value?.mtbfHours == null
+        ? '无故障'
+        : metricLabel(reliability.value.mtbfHours, ' 小时'),
+    meta: !mtbfHasSamples.value
+      ? '统计时段内没有运行记录'
+      : reliability.value?.mtbfHours == null
+        ? '统计时段内没有故障记录'
+        : '运行时长 ÷ 故障次数',
   },
   {
     key: 'mttr',
@@ -232,7 +241,8 @@ function summaryRowKey(row: SummaryRow) {
 
 function technicianLabel(userId?: string | null) {
   if (!userId) return '未指派'
-  return workers.value.find((w) => w.userId === userId)?.displayName ?? userId
+  // 技师账号是系统标识，名录里查不到姓名时显示「—」，不回吐账号。
+  return workers.value.find((w) => w.userId === userId)?.displayName ?? '—'
 }
 function minutesLabel(value?: number | null) {
   if (value === null || value === undefined) return '—'
@@ -243,7 +253,7 @@ function moneyLabel(value?: number | null, currency?: string | null) {
   return `${currency ? `${currency} ` : ''}${Number(value).toFixed(2)}`
 }
 function metricLabel(value?: number | null, suffix = '') {
-  if (value === null || value === undefined) return '无样本'
+  if (value === null || value === undefined) return '暂无记录'
   return `${Number(value).toFixed(1)}${suffix}`
 }
 function shortDateTime(value?: string | null) {
@@ -304,8 +314,8 @@ function refreshAll() {
     <div class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto]">
       <NvCascadePicker v-model="scope" :levels="levels" :aria-busy="scopePending" />
       <NvField>
-        <NvFieldLabel for="rel-window">统计窗口</NvFieldLabel>
-        <NvDateRangePicker id="rel-window" v-model="windowRange" placeholder="选择统计窗口" />
+        <NvFieldLabel for="rel-window">统计时段</NvFieldLabel>
+        <NvDateRangePicker id="rel-window" v-model="windowRange" placeholder="选择统计时段" />
       </NvField>
     </div>
 
@@ -326,7 +336,7 @@ function refreshAll() {
         <NvMetricStrip :cells="reliabilityCells" />
         <NvMetricCard
           variant="breakdown"
-          label="窗口内维护事件"
+          label="统计时段内维护事件"
           :value="maintenanceEventTotal"
           unit=" 次"
           :segments="maintenanceEventSegments"
@@ -371,7 +381,7 @@ function refreshAll() {
           v-else-if="trendChartData.length === 0"
           class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
         >
-          该特性在当前窗口内暂无测量样本。
+          该特性在统计时段内暂无测量记录。
         </div>
         <div v-else class="grid gap-2">
           <p
@@ -379,18 +389,18 @@ function refreshAll() {
             class="text-sm font-medium text-destructive"
             role="status"
           >
-            窗口内 {{ outOfSpecTrendCount }} 次测量超差。
+            统计时段内 {{ outOfSpecTrendCount }} 次测量超差。
           </p>
           <NvLineChart :data="trendChartData" x-key="time" :series="trendSeries" :height="220" />
         </div>
       </section>
 
-      <!-- 按技师聚合的工时与费用 -->
+      <!-- 按技师汇总的工时与费用 -->
       <section class="grid gap-3">
         <div>
-          <h2 class="text-sm font-medium text-foreground">工时与费用（按技师聚合）</h2>
+          <h2 class="text-sm font-medium text-foreground">工时与费用（按技师汇总）</h2>
           <p class="text-sm text-muted-foreground">
-            当前设备窗口内，完工工单按指派技师汇总的工时与成本。
+            统计时段内，该设备完工工单按指派技师汇总的工时与成本。
           </p>
         </div>
         <p v-if="summaryErrorMessage" class="text-sm text-destructive" role="alert">
@@ -404,7 +414,7 @@ function refreshAll() {
           :searchable="false"
           :column-settings="false"
           :pagination="false"
-          empty-message="当前设备窗口内暂无已完工工单的工时/费用数据。"
+          empty-message="统计时段内该设备暂无已完工工单的工时/费用数据。"
         />
       </section>
     </template>

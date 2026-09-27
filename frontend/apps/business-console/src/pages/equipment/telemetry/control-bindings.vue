@@ -213,7 +213,7 @@ function formatDateTime(value?: string | null) {
   <BusinessLayout>
     <NvPageHeader
       title="设备控制通道绑定"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="`${bindingsTotal} 条绑定`"
     >
       <template #actions>

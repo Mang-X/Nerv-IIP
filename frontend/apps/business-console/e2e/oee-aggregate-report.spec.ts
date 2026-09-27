@@ -78,10 +78,12 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   )
   expect(pageErrors).toEqual([])
 
-  await expect(page.getByText('OEE 与 A/P/Q 业务日趋势')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText(/完整窗口共 31 个业务日聚合桶，按\s*1 个站点分别呈现/)).toBeVisible()
-  await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '站点 SITE-DETROIT', exact: true })).toHaveCount(0)
+  await expect(page.getByText('OEE 与可用率、性能率、质量率按天趋势')).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(page.getByText(/所选时段共 31 条日统计，按\s*1 个工厂分别展示/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'SITE-SUZHOU', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'SITE-DETROIT', exact: true })).toHaveCount(0)
   await expect(page.getByText('1 台', { exact: true }).first()).toBeVisible()
   await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('DEV-CNC-01')
   await page.screenshot({
@@ -101,13 +103,14 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   await page.getByPlaceholder('设备资产编号').fill('')
   await organizationTrendResponse
 
-  await expect(page.getByText(/完整窗口共 65 个业务日聚合桶，按\s*2 个站点分别呈现/)).toBeVisible()
-  await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '站点 SITE-DETROIT', exact: true })).toBeVisible()
-  await expect(page.getByText('34 个桶，33 个完整率值点，1 个缺失点保留在核查表。')).toBeVisible()
-  await expect(page.getByText('31 个桶，31 个完整率值点。', { exact: true })).toBeVisible()
-  await expect(page.getByText('1 个桶缺少率值，未画成 0%')).toBeVisible()
-  await expect(page.getByText('横轴使用业务日“月/日”短标签。')).toBeVisible()
+  await expect(page.getByText(/所选时段共 65 条日统计，按\s*2 个工厂分别展示/)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'SITE-SUZHOU', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'SITE-DETROIT', exact: true })).toBeVisible()
+  await expect(
+    page.getByText('34 条日统计，33 条数据完整，1 条缺数、原因见下方明细。'),
+  ).toBeVisible()
+  await expect(page.getByText('31 条日统计，31 条数据完整。', { exact: true })).toBeVisible()
+  await expect(page.getByText(/1 条日统计缺少数据，图中未按 0%/)).toBeVisible()
   await expect(page.getByText('SITE-SUZHOU · OEE', { exact: true })).toHaveCount(3)
   await expect(page.getByText('SITE-DETROIT · OEE', { exact: true })).toHaveCount(1)
   await expect(page.getByText('3/1', { exact: true })).toHaveCount(3)
@@ -139,20 +142,20 @@ test('设备工程师分站点查看业务日趋势并核对同名班次', async
   await page.getByRole('button', { name: '第 3 页', exact: true }).click()
   await expect(page.getByText('缺少或存在冲突的工序标准速率')).toBeVisible()
   await expect(page.getByText('2026-03-26', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('heading', { name: '站点 SITE-SUZHOU', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'SITE-SUZHOU', exact: true })).toBeVisible()
 
   await page.getByRole('combobox', { name: '报表视角' }).click()
-  await page.getByRole('option', { name: '班次横比' }).click()
+  await page.getByRole('option', { name: '按班次对比' }).click()
   await page.keyboard.press('Escape')
   await expect(page.getByPlaceholder('设备资产编号')).toHaveValue('')
   await expect(page.getByText('SHIFT-DAY', { exact: true })).toHaveCount(2)
   await expect(
-    page.getByText('站点 SITE-SUZHOU › 车间 WORKSHOP-MACHINING › 产线 LINE-CNC', {
+    page.getByText('工厂 SITE-SUZHOU › 车间 WORKSHOP-MACHINING › 产线 LINE-CNC', {
       exact: true,
     }),
   ).toBeVisible()
   await expect(
-    page.getByText('站点 SITE-DETROIT › 车间 WORKSHOP-ASSEMBLY › 产线 LINE-FINAL', {
+    page.getByText('工厂 SITE-DETROIT › 车间 WORKSHOP-ASSEMBLY › 产线 LINE-FINAL', {
       exact: true,
     }),
   ).toBeVisible()
