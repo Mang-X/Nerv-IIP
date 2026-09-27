@@ -179,7 +179,8 @@ const controlColumns: NvDataTableColumn<ControlCommandRow>[] = [
     width: 'w-44',
     accessor: (r) => formatDateTime(r.requestedAtUtc),
   },
-  { key: 'requestedBy', header: '操作人', accessor: (r) => r.requestedBy ?? '未知' },
+  // 操作人是登录账号（系统标识），按员工名录显示姓名；查不到姓名显示「—」，不回吐账号。
+  { key: 'requestedBy', header: '操作人', accessor: (r) => resolveUser(r.requestedBy) ?? '—' },
   { key: 'commandType', header: '命令' },
   { key: 'value', header: '值', accessor: (r) => r.value ?? (r.tagKey ? '—' : '参数集') },
   { key: 'approvalStatus', header: '审批状态', width: 'w-28' },
@@ -321,7 +322,7 @@ const runtimeUntilNextCardHint = computed(() => {
   }
   if (runtimeRemainingHasErrorCandidate.value) return '运行小时读取失败，请稍后重试'
   if (runtimeRemainingHasInvalidCandidate.value) return '保养计划的运行小时阈值未维护完整'
-  return '统计时段内没有运行记录'
+  return '自保养计划起算日以来没有运行记录'
 })
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
@@ -365,7 +366,10 @@ const cumulativeRuntimeCardValue = computed(() => {
 const runtimeHoursCardHint = computed(() => {
   if (runtimeHoursPending.value) return '正在读取运行小时'
   if (runtimeHoursError.value) return '运行小时读取失败，请稍后重试'
-  if (!hasRuntimeHoursSamples.value) return '统计时段内没有设备运行记录'
+  if (!hasRuntimeHoursSamples.value)
+    return currentDeviceRuntimePlan.value?.startsOn
+      ? '自保养计划起算日以来没有设备运行记录'
+      : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天没有设备运行记录`
   return currentDeviceRuntimePlan.value
     ? '自运行小时型计划起算日累计'
     : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天累计`
@@ -396,8 +400,19 @@ function rateValue(rate?: number | null) {
 function rateProgress(rate?: number | null) {
   return rate === null || rate === undefined ? 0 : Math.max(0, Math.min(100, rate * 100))
 }
+/** 查询范围的说法：「最近 8 小时」「近 30 天」，与页面实际取数范围一致。 */
+function recentRangeLabel(startUtc: string, endUtc: string) {
+  const hours = Math.round((Date.parse(endUtc) - Date.parse(startUtc)) / 3_600_000)
+  return hours < 48 ? `最近 ${hours} 小时` : `近 ${Math.round(hours / 24)} 天`
+}
+const oeeRangeLabel = computed(() =>
+  recentRangeLabel(oeeFilters.windowStartUtc, oeeFilters.windowEndUtc),
+)
+const reliabilityRangeLabel = computed(() =>
+  recentRangeLabel(reliabilityFilters.windowStartUtc, reliabilityFilters.windowEndUtc),
+)
 function rateFoot(rate?: number | null, explanation?: string) {
-  return rate === null || rate === undefined ? '统计时段内暂无可计算数据' : explanation
+  return rate === null || rate === undefined ? `${oeeRangeLabel.value}暂无可计算数据` : explanation
 }
 const oeeFacets = computed<NvMetricFacet[]>(() => [
   { key: 'availability', label: '可用率', value: rateValue(oee.value?.availabilityRate) },
@@ -417,8 +432,17 @@ const reliabilityCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'mtbf',
     label: 'MTBF',
-    value: metricLabel(reliability.value?.mtbfHours, ' 小时'),
-    meta: reliability.value?.mtbfRuntimeHasSamples ? '按维修记录计算' : '统计时段内没有运行记录',
+    // MTBF = 运行时长 ÷ 故障次数：没有运行记录算不出；有运行记录但零故障时如实说「无故障」。
+    value: !reliability.value?.mtbfRuntimeHasSamples
+      ? '暂无记录'
+      : reliability.value.mtbfHours == null
+        ? '无故障'
+        : metricLabel(reliability.value.mtbfHours, ' 小时'),
+    meta: !reliability.value?.mtbfRuntimeHasSamples
+      ? `${reliabilityRangeLabel.value}没有运行记录`
+      : reliability.value.mtbfHours == null
+        ? `${reliabilityRangeLabel.value}没有故障记录`
+        : '运行时长 ÷ 故障次数',
   },
   {
     key: 'mttr',
@@ -470,12 +494,23 @@ watch(
 )
 
 // 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter, resolveUom } = useMasterDataDisplayNames({
+const { resolveDevice, resolveWorkCenter, resolveUom, resolveUser } = useMasterDataDisplayNames({
   devices: true,
   workCenters: true,
   uoms: true,
+  users: true,
 })
 /** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
+/**
+ * 设备回执码是 OPC UA 状态码（Good… / Uncertain… / Bad…），按标准的三档严重度说成业务话；
+ * 解析不出来的回执码和通用失败码不上屏，显示「—」（执行结果本身已由状态徽标给出）。
+ */
+function deviceReceiptLabel(code?: string | null) {
+  if (code?.startsWith('Good')) return '设备已确认'
+  if (code?.startsWith('Uncertain')) return '设备回执不确定'
+  if (code?.startsWith('Bad')) return '设备拒绝执行'
+  return '—'
+}
 function deviceLabel(code?: string | null, fallback = '无设备') {
   if (!code) return fallback
   return resolveDevice(code) ?? readFaceText(code, fallback)
@@ -641,7 +676,8 @@ function intervalLabel(value?: string | null) {
 }
 function quantityLabel(row: { quantity?: number | null; uomCode?: string | null }) {
   if (row.quantity === null || row.quantity === undefined) return '未记录'
-  return `${row.quantity} ${row.uomCode ?? ''}`.trim()
+  // 单位按主数据名称显示（如「件」），名录里没有时才显示单位编码本身（租户维护的业务编码）。
+  return `${row.quantity} ${resolveUom(row.uomCode) ?? row.uomCode ?? ''}`.trim()
 }
 function recordDowntime() {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: filters.deviceAssetId } })
@@ -814,7 +850,7 @@ function recordDowntime() {
         />
         <NvMetricCard
           variant="alert"
-          label="占用窗口"
+          label="占用时段"
           :value="blockCount"
           :tone="blockCount > 0 ? 'warning' : 'neutral'"
           :status="blockCount > 0 ? { label: '影响排程', tone: 'warning' } : undefined"
@@ -870,7 +906,7 @@ function recordDowntime() {
               >
                 <div class="flex items-center justify-between gap-2">
                   <p class="truncate text-sm font-semibold text-foreground">
-                    {{ alarm.alarmCode ?? '未编号报警' }}
+                    {{ alarm.alarmCode ?? '未设报警代码' }}
                   </p>
                   <NvBadge class="rounded-sm" :variant="severityVariant(alarm.severity)">{{
                     severityLabel(alarm.severity)
@@ -900,7 +936,7 @@ function recordDowntime() {
         </div>
 
         <div class="grid gap-2">
-          <span class="text-sm font-semibold text-foreground">可用性窗口（排程与维修占用）</span>
+          <span class="text-sm font-semibold text-foreground">设备占用时段（排程与维修）</span>
           <NvDataTable
             :columns="columns"
             :rows="availabilityWindows"
@@ -908,7 +944,7 @@ function recordDowntime() {
             :loading="devicePending"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前设备没有可用性窗口。"
+            empty-message="当前设备没有排程或维修占用时段。"
           >
             <template #cell-availabilityStatus="{ row }">
               <NvBadge class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{
@@ -1192,7 +1228,7 @@ function recordDowntime() {
           <NvMetricStrip :cells="reliabilityCells" />
           <NvMetricCard
             variant="breakdown"
-            label="统计时段内维护事件"
+            :label="`${reliabilityRangeLabel}维护事件`"
             :value="maintenanceEventTotal"
             unit=" 次"
             :segments="maintenanceEventSegments"
@@ -1233,7 +1269,9 @@ function recordDowntime() {
                 v-if="!maintenancePending && !currentDeviceWorkOrders.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                统计时段内没有该设备的维修工单。可前往维护工单查看完整记录或新建工单。
+                最近
+                {{ MAINTENANCE_DETAIL_TAKE }}
+                张维修工单中没有该设备的记录。可前往维护工单查看完整记录或新建工单。
               </div>
             </div>
           </div>
@@ -1248,9 +1286,7 @@ function recordDowntime() {
                 :key="row.planId ?? row.planCode"
                 class="grid gap-1 rounded-lg border p-3"
               >
-                <span class="text-sm font-medium text-foreground">{{
-                  row.planCode ?? row.planId ?? '保养计划'
-                }}</span>
+                <span class="text-sm font-medium text-foreground">{{ row.planCode ?? '—' }}</span>
                 <span class="text-xs text-muted-foreground"
                   >周期 {{ intervalLabel(row.interval) }} · 起始
                   {{ row.startsOn ?? '未设置' }}</span
@@ -1310,9 +1346,9 @@ function recordDowntime() {
 
           <div class="rounded-lg border bg-card">
             <div class="border-b px-4 py-3">
-              <h3 class="text-sm font-semibold text-foreground">维护占用窗口</h3>
+              <h3 class="text-sm font-semibold text-foreground">维护占用时段</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                来自维护计划的占用窗口，与上方设备运行可用性分开统计。
+                来自保养计划的占用时段，与上方设备占用时段分开统计。
               </p>
             </div>
             <div class="grid gap-3 p-4">
@@ -1339,7 +1375,7 @@ function recordDowntime() {
                 v-if="!maintenancePending && !maintenanceAvailabilityWindows.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前设备没有可用的维护窗口。
+                当前设备没有维护占用时段。
               </div>
             </div>
           </div>
@@ -1404,14 +1440,13 @@ function recordDowntime() {
               >
               <span
                 v-if="row.deviceReceiptCode || row.failureCode"
-                class="font-mono text-xs"
+                class="text-xs"
                 :class="
                   row.status?.toLowerCase() === 'failed'
                     ? 'text-destructive'
                     : 'text-muted-foreground'
                 "
-                :title="row.deviceReceiptMessage ?? undefined"
-                >{{ row.deviceReceiptCode ?? row.failureCode }}</span
+                >{{ deviceReceiptLabel(row.deviceReceiptCode) }}</span
               >
             </div>
           </template>

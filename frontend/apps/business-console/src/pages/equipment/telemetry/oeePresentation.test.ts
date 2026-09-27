@@ -570,6 +570,31 @@ describe('OEE 对比对象与层级显示主数据名称', () => {
     })
   })
 
+  it('编码缺失时显示「—」，不出现「未解析」一类说法', () => {
+    const report = presentOeeReport({
+      dimension: 'shift',
+      trendBuckets: [],
+      tableBuckets: [
+        bucket({
+          dimension: 'shift',
+          dimensionValue: null,
+          siteCode: null,
+          workshopCode: null,
+          lineCode: null,
+          businessDate: null,
+        }),
+      ],
+      tableTotal: 1,
+      names,
+    })
+
+    expect(report.tableRows[0]).toMatchObject({
+      primaryLabel: '—',
+      hierarchyLabel: '工厂 — › 车间 — › 产线 —',
+      businessDateLabel: '—',
+    })
+  })
+
   it('按天趋势的分组标题用工厂名称；名录里没有的编码原样显示', () => {
     const report = presentOeeReport({
       dimension: 'shift',

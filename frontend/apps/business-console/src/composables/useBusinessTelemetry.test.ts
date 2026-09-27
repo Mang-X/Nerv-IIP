@@ -630,6 +630,8 @@ describe('business telemetry composables', () => {
     expect(describeTelemetryOeeDegradation('historicalTimezoneMissing')).toBe(
       '报工记录缺少工厂时区',
     )
+    // 对照表以外的原因码是系统枚举，不原样上屏。
+    expect(describeTelemetryOeeDegradation('someFutureReasonCode')).toBe('—')
   })
 
   // Hand out deferred runtime-hours reads so overlapping rounds and out-of-order completion can be driven.

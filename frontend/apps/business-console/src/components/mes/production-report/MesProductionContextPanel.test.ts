@@ -61,6 +61,23 @@ describe('MES production report context panel', () => {
     expect(wrapper.text()).not.toContain('WC-CNC-01')
   })
 
+  it('never shows system ids when the work order or task has no readable number', () => {
+    const wrapper = mountPanel({
+      wipRows: [
+        {
+          workOrderId: '01a0e1f2-f2ad-7544-8788-425020c82e15',
+          operationTaskId: '01a0e1f2-f2ad-7544-8788-425020c82e16',
+          workCenterId: '01a0e1f2-f2ad-7544-8788-425020c82e17',
+        },
+      ],
+    })
+
+    expect(wrapper.text()).toContain('未编号工序')
+    expect(wrapper.text()).toContain('未编号工单')
+    expect(wrapper.text()).toContain('未标工作中心')
+    expect(wrapper.text()).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
+  })
+
   it('labels day and shift rows with the business date and master-data names', () => {
     const wrapper = mountPanel({
       oeeBuckets: [

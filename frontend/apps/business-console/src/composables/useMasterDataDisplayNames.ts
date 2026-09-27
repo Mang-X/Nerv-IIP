@@ -20,6 +20,8 @@ export interface MasterDataDisplayNameOptions {
   sites?: boolean
   /** 班次（shift）。 */
   shifts?: boolean
+  /** 员工（worker）：把登录账号 userId 解析成姓名。 */
+  users?: boolean
 }
 
 /**
@@ -57,6 +59,7 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   const lineSource = source(options.lines, 'production-line')
   const siteSource = source(options.sites, 'site')
   const shiftSource = source(options.shifts, 'shift')
+  const userSource = source(options.users, 'worker')
 
   function indexOf(items: { code?: string | null; displayName?: string | null }[] | undefined) {
     const map = new Map<string, string>()
@@ -75,6 +78,13 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   const lineByCode = computed(() => indexOf(lineSource?.resources.value))
   const siteByCode = computed(() => indexOf(siteSource?.resources.value))
   const shiftByCode = computed(() => indexOf(shiftSource?.resources.value))
+  const userById = computed(() => {
+    const map = new Map<string, string>()
+    for (const item of userSource?.resources.value ?? []) {
+      if (item.userId) map.set(item.userId, item.displayName ?? item.code ?? item.userId)
+    }
+    return map
+  })
 
   const resolver = (index: typeof deviceByCode) => (code?: string | null) => {
     if (!code) return undefined
@@ -92,6 +102,8 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     resolveLine: resolver(lineByCode),
     resolveSite: resolver(siteByCode),
     resolveShift: resolver(shiftByCode),
+    /** 员工姓名；账号不在员工名录里（如系统管理员）时返回 undefined，由调用方显示「—」。 */
+    resolveUser: resolver(userById),
     /** 计量单位展示串：「件 (pcs)」，名录缺失时只显编码。 */
     formatUom(code?: string | null, fallback = ''): string {
       if (!code) return fallback

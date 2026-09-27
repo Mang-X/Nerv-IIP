@@ -188,7 +188,7 @@ const columns: NvDataTableColumn<Alarm>[] = [
         ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
         : (r.deviceAssetId ?? '无设备'),
   },
-  { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '无代码' },
+  { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '未设报警代码' },
   { key: 'severity', header: '级别', width: 'w-24' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'lifecycle', header: '处置', width: 'w-64' },

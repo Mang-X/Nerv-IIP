@@ -7,6 +7,7 @@ import { NvBadge } from '@nerv-iip/ui'
 import type { BusinessReadState } from '@/composables/businessReadState'
 import { describeTelemetryOeeDegradation, formatOeeRate } from '@/composables/useBusinessTelemetry'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { readFaceText } from '@/utils/readFace'
 
 defineProps<{
   canReadWip: boolean
@@ -21,12 +22,12 @@ defineProps<{
 }>()
 
 function wipLabel(row: BusinessConsoleMesWipSummaryRow) {
-  return row.operationTaskNo ?? row.operationTaskId ?? '未编号工序'
+  return row.operationTaskNo ?? readFaceText(row.operationTaskId, '未编号工序')
 }
 
 function workCenterLabel(row: BusinessConsoleMesWipSummaryRow) {
-  const code = row.workCenterCode ?? row.workCenterId
-  return row.workCenterName ?? resolveWorkCenter(code) ?? code ?? '未标工作中心'
+  const code = row.workCenterCode ?? readFaceText(row.workCenterId, '')
+  return row.workCenterName ?? resolveWorkCenter(code) ?? (code || '未标工作中心')
 }
 
 const { resolveSite, resolveShift, resolveWorkCenter } = useMasterDataDisplayNames({
@@ -41,13 +42,11 @@ function bucketLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
   const date = bucket.businessDate?.trim()
   switch (bucket.dimension) {
     case 'day':
-      return [date, code && (resolveSite(code) ?? code)].filter(Boolean).join(' · ') || '未归属范围'
+      return [date, code && (resolveSite(code) ?? code)].filter(Boolean).join(' · ') || '—'
     case 'shift':
-      return (
-        [code && (resolveShift(code) ?? code), date].filter(Boolean).join(' · ') || '未归属范围'
-      )
+      return [code && (resolveShift(code) ?? code), date].filter(Boolean).join(' · ') || '—'
     default:
-      return (code && (resolveWorkCenter(code) ?? code)) || '未归属范围'
+      return (code && (resolveWorkCenter(code) ?? code)) || '—'
   }
 }
 
@@ -62,7 +61,7 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
 </script>
 
 <template>
-  <section class="grid gap-4 lg:grid-cols-2" aria-label="生产上下文">
+  <section class="grid gap-4 lg:grid-cols-2" aria-label="生产现场概况">
     <article class="rounded-lg border bg-card p-4 shadow-sm">
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -94,7 +93,7 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
           <div class="min-w-0">
             <p class="truncate text-sm font-medium text-foreground">{{ wipLabel(row) }}</p>
             <p class="truncate text-xs text-muted-foreground">
-              {{ row.workOrderNo ?? row.workOrderId ?? '未编号工单' }}
+              {{ row.workOrderNo ?? readFaceText(row.workOrderId, '未编号工单') }}
             </p>
           </div>
           <span class="shrink-0 text-xs text-muted-foreground">{{ workCenterLabel(row) }}</span>
@@ -112,7 +111,7 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
 
       <p v-if="!canReadOee" class="mt-4 text-sm text-muted-foreground">没有查看设备 OEE 的权限</p>
       <p v-else-if="isSkuDimension" class="mt-4 text-sm text-muted-foreground">
-        按物料统计时不提供设备性能率，请切换到按天、按班次或按工作中心查看。
+        按物料统计时不提供设备性能率，请切换到按业务日、按班次或按工作中心查看。
       </p>
       <p v-else-if="oeePending" class="mt-4 text-sm text-muted-foreground">正在读取设备性能率…</p>
       <p v-else-if="oeeError" class="mt-4 text-sm text-destructive">

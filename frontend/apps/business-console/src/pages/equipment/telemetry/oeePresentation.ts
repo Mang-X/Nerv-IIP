@@ -155,7 +155,7 @@ function presentDayTrendGroups(
     .map(([key, siteBuckets]) => {
       const orderedBuckets = siteBuckets.slice().sort(compareTrendBuckets)
       const siteCode = nullable(orderedBuckets[0]?.siteCode)
-      const siteLabel = displayName(names.site, siteCode, '未解析工厂')
+      const siteLabel = displayName(names.site, siteCode, '—')
       const segments = presentTrendSegments(orderedBuckets)
       return {
         key,
@@ -330,7 +330,7 @@ function presentTableRow(
     hierarchyLabel: hierarchyLabel(bucket, names),
     businessDateLabel:
       bucket.dimension === 'day' || bucket.dimension === 'shift'
-        ? bucket.businessDate?.trim() || '未解析业务日'
+        ? bucket.businessDate?.trim() || '—'
         : '—',
     windowLabel: formatWindow(bucket.bucketStartUtc, bucket.bucketEndUtc),
     oeeRate: bucket.oeeRate ?? null,
@@ -360,15 +360,15 @@ function primaryLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket, names:
   const value = bucket.dimensionValue
   switch (bucket.dimension) {
     case 'day':
-      return bucket.businessDate?.trim() || '未解析业务日'
+      return bucket.businessDate?.trim() || '—'
     case 'shift':
-      return displayName(names.shift, value, '未解析班次')
+      return displayName(names.shift, value, '—')
     case 'workCenter':
-      return displayName(names.workCenter, value, '未解析工作中心')
+      return displayName(names.workCenter, value, '—')
     case 'line':
-      return displayName(names.line, value, '未解析产线')
+      return displayName(names.line, value, '—')
     case 'workshop':
-      return displayName(names.workshop, value, '未解析车间')
+      return displayName(names.workshop, value, '—')
     default:
       return value?.trim() || '—'
   }
@@ -378,7 +378,7 @@ function hierarchyLabel(
   bucket: BusinessConsoleTelemetryOeeAggregateBucket,
   names: OeeDisplayNames,
 ) {
-  const parts = [`工厂 ${displayName(names.site, bucket.siteCode, '未解析')}`]
+  const parts = [`工厂 ${displayName(names.site, bucket.siteCode, '—')}`]
   if (bucket.dimension === 'workshop') return parts.join(' › ')
 
   if (
@@ -386,10 +386,10 @@ function hierarchyLabel(
     bucket.dimension === 'workCenter' ||
     bucket.dimension === 'shift'
   ) {
-    parts.push(`车间 ${displayName(names.workshop, bucket.workshopCode, '未解析')}`)
+    parts.push(`车间 ${displayName(names.workshop, bucket.workshopCode, '—')}`)
   }
   if (bucket.dimension === 'workCenter' || bucket.dimension === 'shift') {
-    parts.push(`产线 ${displayName(names.line, bucket.lineCode, '未解析')}`)
+    parts.push(`产线 ${displayName(names.line, bucket.lineCode, '—')}`)
   }
   return parts.join(' › ')
 }
@@ -449,7 +449,7 @@ function shortBusinessDate(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
 }
 
 function displayBusinessDate(value?: string | null) {
-  return value?.trim() || '未解析业务日'
+  return value?.trim() || '—'
 }
 
 /** 统计时段按使用者本地时间显示（与控制台其它时间列同一口径，见 `@/utils/format`）。 */

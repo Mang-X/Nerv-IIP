@@ -187,7 +187,8 @@ export function describeTelemetryOeeDegradation(reason: string) {
     'theoretical-rate-missing-or-ambiguous': '缺少或存在冲突的工序标准速率',
     'productive-runtime-missing': '统计时段内没有有效的生产运行时长',
   }
-  return labels[reason] ?? reason
+  // 对照表以外的原因码不上屏：原因码是系统枚举，解析不出来显示「—」。
+  return labels[reason] ?? '—'
 }
 
 export function useBusinessTelemetryOeeAggregates(
@@ -307,7 +308,7 @@ export function useBusinessTelemetryOeeTrend(filters: TelemetryOeeAggregateFilte
         const pageBuckets = page.buckets ?? []
         const nextTotalCount = page.totalCount ?? 0
         if (pageBuckets.length === 0 && buckets.length < nextTotalCount) {
-          throw new Error('OEE 趋势查询在完整窗口返回前意外结束。')
+          throw new Error('OEE 趋势数据没有读取完整，请刷新重试。')
         }
         buckets.push(...pageBuckets)
         totalCount = nextTotalCount

@@ -66,6 +66,8 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
           : undefined,
       resolveTeam: () => undefined,
       resolveUom: (code?: string | null) => (code === 'pcs' ? '件' : undefined),
+      // 员工名录里只有 operator-a；user-admin 是系统管理员账号，不在名录里。
+      resolveUser: (userId?: string | null) => (userId === 'operator-a' ? '王建国' : undefined),
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
@@ -130,6 +132,21 @@ const deviceControlState = vi.hoisted(() => ({
       approvalStatus: 'approved',
       correlationId: 'corr-1',
       requestedAtUtc: '2026-07-01T06:00:00Z',
+      deviceReceiptCode: 'BadOutOfRange',
+    },
+    {
+      commandId: 'cmd-2',
+      operationTaskId: 'op-2',
+      deviceAssetId: 'DEV-OIL-01',
+      commandType: 'write-tag',
+      tagKey: 'spindle.speed',
+      value: '90',
+      requestedBy: 'user-admin',
+      status: 'failed',
+      approvalStatus: 'approved',
+      correlationId: 'corr-2',
+      requestedAtUtc: '2026-07-01T07:00:00Z',
+      failureCode: 'opcua.write.rejected',
     },
   ],
 }))
@@ -141,6 +158,7 @@ const runtimeRemainingState = vi.hoisted(() => ({
 
 // Cumulative runtime-hours read; configurable so a no-samples device can be exercised.
 const runtimeHoursState = vi.hoisted(() => ({ total: 720, hasSamples: true }))
+const reliabilityState = vi.hoisted(() => ({ mtbfHours: 128 as number | null, failureCount: 2 }))
 
 const equipmentHealthState = vi.hoisted(() => ({
   deviceAssetId: undefined as Ref<string> | undefined,
@@ -284,7 +302,7 @@ const reviewFixture = vi.hoisted(() => {
       deviceAssetId: 'DEV-OIL-01',
       skuCode: 'BEARING-6205',
       quantity: 2,
-      uomCode: 'EA',
+      uomCode: 'pcs',
     },
   ] satisfies BusinessConsoleMaintenanceSparePartItem[]
 
@@ -521,10 +539,10 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
       windowEndUtc: '2026-07-01T00:00:00Z',
     },
     reliability: computed(() => ({
-      mtbfHours: 128,
+      mtbfHours: reliabilityState.mtbfHours,
       mtbfRuntimeHasSamples: true,
       mttrMinutes: 42,
-      failureCount: 2,
+      failureCount: reliabilityState.failureCount,
       repairCount: 2,
     })),
     reliabilityError: shallowRef(),
@@ -951,6 +969,37 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.text()).toContain('spindle.speed')
     expect(wrapper.find('[data-testid="device-control-sheet"]').exists()).toBe(true)
+  })
+
+  it('states MTBF with its real 30-day range, and says 无故障 when there is runtime but no failure', () => {
+    // 可靠性取数范围是近 30 天（mock 为 06-01 至 07-01），MTBF = 运行时长 ÷ 故障次数。
+    const withFailures = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(withFailures).toContain('运行时长 ÷ 故障次数')
+    expect(withFailures).toContain('近 30 天维护事件')
+
+    reliabilityState.mtbfHours = null
+    reliabilityState.failureCount = 0
+    try {
+      const noFailure = mount(EquipmentDetailPage, { global: { stubs } }).text()
+      expect(noFailure).toContain('MTBF无故障')
+      expect(noFailure).toContain('近 30 天没有故障记录')
+      expect(noFailure).not.toContain('运行时长 ÷ 故障次数')
+    } finally {
+      reliabilityState.mtbfHours = 128
+      reliabilityState.failureCount = 2
+    }
+  })
+
+  it('shows operators by name and device receipts in business words, never raw accounts or codes', () => {
+    const text = mount(EquipmentDetailPage, { global: { stubs } }).text()
+
+    expect(text).toContain('王建国')
+    // 备件数量的单位同样按主数据名称显示。
+    expect(text).toContain('数量 2 件')
+    expect(text).toContain('设备拒绝执行')
+    for (const raw of ['operator-a', 'user-admin', 'BadOutOfRange', 'opcua.write.rejected']) {
+      expect(text).not.toContain(raw)
+    }
   })
 
   it('hides the device control dispatch action without the device-control write permission', () => {
