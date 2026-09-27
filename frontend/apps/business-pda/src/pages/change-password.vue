@@ -66,33 +66,36 @@ async function logout() {
       </p>
 
       <form class="space-y-4" novalidate @submit.prevent="onSubmit">
-        <input
-          v-model="form.currentPassword"
-          name="currentPassword"
-          aria-label="当前密码"
-          type="password"
-          placeholder="当前密码"
-          autocomplete="current-password"
-          class="min-h-touch w-full rounded-lg border border-border bg-card px-4 text-base text-foreground outline-none focus:border-brand"
-        />
-        <input
-          v-model="form.newPassword"
-          name="newPassword"
-          aria-label="新密码"
-          type="password"
-          placeholder="新密码"
-          autocomplete="new-password"
-          class="min-h-touch w-full rounded-lg border border-border bg-card px-4 text-base text-foreground outline-none focus:border-brand"
-        />
-        <input
-          v-model="form.confirmPassword"
-          name="confirmPassword"
-          aria-label="确认新密码"
-          type="password"
-          placeholder="确认新密码"
-          autocomplete="new-password"
-          class="min-h-touch w-full rounded-lg border border-border bg-card px-4 text-base text-foreground outline-none focus:border-brand"
-        />
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium text-foreground">当前密码</span>
+          <input
+            v-model="form.currentPassword"
+            name="currentPassword"
+            type="password"
+            autocomplete="current-password"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-4 text-base text-foreground outline-none focus:border-brand"
+          />
+        </label>
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium text-foreground">新密码</span>
+          <input
+            v-model="form.newPassword"
+            name="newPassword"
+            type="password"
+            autocomplete="new-password"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-4 text-base text-foreground outline-none focus:border-brand"
+          />
+        </label>
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium text-foreground">确认新密码</span>
+          <input
+            v-model="form.confirmPassword"
+            name="confirmPassword"
+            type="password"
+            autocomplete="new-password"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-4 text-base text-foreground outline-none focus:border-brand"
+          />
+        </label>
 
         <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
 
