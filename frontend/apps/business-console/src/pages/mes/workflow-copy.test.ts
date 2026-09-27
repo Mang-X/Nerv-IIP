@@ -248,6 +248,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
         sourceDemandReference: 'MD-V3-01',
         skuId: 'FG-001',
         plannedQuantity: 10,
+        status: 'created',
         readinessStatus: 'Ready',
         plannedStartUtc: '2026-05-25T08:00:00.000Z',
       },
@@ -633,7 +634,7 @@ describe('MES workflow copy', () => {
     const wrapper = mountMesPage(PlansPage)
 
     expect(wrapper.text()).toContain('生产计划')
-    expect(wrapper.text()).toContain('转工单')
+    expect(wrapper.text()).not.toContain('可转工单')
     expect(wrapper.find('#add-plan-id').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('生成')
     expect(wrapper.text()).toContain('MD-V3-01')
