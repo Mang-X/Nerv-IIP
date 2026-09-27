@@ -13,6 +13,13 @@ public enum SchedulePlanInvalidationScope
     GeneratedWorkCenter = 3,
     GeneratedCalendar = 4,
     GeneratedSku = 5,
+    ExactWorkOrderOperation = 6,
+}
+
+public enum SchedulePlanExecutionMilestone
+{
+    Started = 0,
+    Completed = 1,
 }
 
 public sealed record RecordSchedulePlanInvalidationsCommand(
@@ -27,7 +34,11 @@ public sealed record RecordSchedulePlanInvalidationsCommand(
     string? ScopeValue,
     string? AffectedWorkOrderId,
     string? AffectedSkuCode,
-    IReadOnlyCollection<string>? AffectedSkuCodes = null) : ICommand<RecordSchedulePlanInvalidationsResponse>;
+    IReadOnlyCollection<string>? AffectedSkuCodes = null,
+    string? AffectedOperationId = null,
+    SchedulePlanExecutionMilestone? ExecutionMilestone = null,
+    DateTimeOffset? ActualExecutionAtUtc = null,
+    int? DeviationToleranceMinutes = null) : ICommand<RecordSchedulePlanInvalidationsResponse>;
 
 public sealed record RecordSchedulePlanInvalidationsResponse(int MatchedPlanCount, int RecordedInvalidationCount);
 
@@ -51,6 +62,22 @@ public sealed class RecordSchedulePlanInvalidationsCommandValidator
         RuleFor(x => x.AffectedSkuCodes)
             .NotEmpty()
             .When(x => x.Scope == SchedulePlanInvalidationScope.GeneratedSku);
+        RuleFor(x => x.AffectedWorkOrderId)
+            .NotEmpty()
+            .When(x => x.Scope == SchedulePlanInvalidationScope.ExactWorkOrderOperation);
+        RuleFor(x => x.AffectedOperationId)
+            .NotEmpty()
+            .When(x => x.Scope == SchedulePlanInvalidationScope.ExactWorkOrderOperation);
+        RuleFor(x => x.ExecutionMilestone)
+            .NotNull()
+            .When(x => x.Scope == SchedulePlanInvalidationScope.ExactWorkOrderOperation);
+        RuleFor(x => x.ActualExecutionAtUtc)
+            .NotNull()
+            .When(x => x.Scope == SchedulePlanInvalidationScope.ExactWorkOrderOperation);
+        RuleFor(x => x.DeviationToleranceMinutes)
+            .NotNull()
+            .GreaterThanOrEqualTo(0)
+            .When(x => x.Scope == SchedulePlanInvalidationScope.ExactWorkOrderOperation);
     }
 }
 
@@ -84,12 +111,19 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             return new RecordSchedulePlanInvalidationsResponse(0, 0);
         }
 
-        var existingPlanIds = await dbContext.SchedulePlanInvalidations
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+        var existingInvalidations = dbContext.SchedulePlanInvalidations.Where(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId);
+        existingInvalidations = request.Scope == SchedulePlanInvalidationScope.ExactWorkOrderOperation
+            ? existingInvalidations.Where(x =>
+                (x.SourceEventType == request.SourceEventType && x.SourceEventId == request.SourceEventId) ||
+                (x.ReasonCode == request.ReasonCode &&
+                 x.AffectedWorkOrderId == request.AffectedWorkOrderId &&
+                 x.AffectedOperationId == request.AffectedOperationId))
+            : existingInvalidations.Where(x =>
                 x.SourceEventType == request.SourceEventType &&
-                x.SourceEventId == request.SourceEventId)
+                x.SourceEventId == request.SourceEventId);
+        var existingPlanIds = await existingInvalidations
             .Select(x => x.PlanId)
             .ToArrayAsync(cancellationToken);
         var existing = existingPlanIds.ToHashSet(StringComparer.Ordinal);
@@ -175,8 +209,31 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             SchedulePlanInvalidationScope.WorkOrderOrOperation => query.Where(x => x.Assignments.Any(assignment =>
                 assignment.WorkOrderId == normalizedScopeValue ||
                 assignment.OperationId == normalizedScopeValue)),
+            SchedulePlanInvalidationScope.ExactWorkOrderOperation => QueryExecutionDeviationPlans(query, request),
             SchedulePlanInvalidationScope.AllInvalidatablePlans => query,
             _ => throw new ArgumentOutOfRangeException(nameof(request), request.Scope, "Unsupported schedule invalidation scope.")
+        };
+    }
+
+    private static IQueryable<SchedulePlan> QueryExecutionDeviationPlans(
+        IQueryable<SchedulePlan> query,
+        RecordSchedulePlanInvalidationsCommand request)
+    {
+        var affectedWorkOrderId = Normalize(request.AffectedWorkOrderId);
+        var affectedOperationId = Normalize(request.AffectedOperationId);
+        var cutoffUtc = request.ActualExecutionAtUtc!.Value.AddMinutes(-request.DeviationToleranceMinutes!.Value);
+
+        return request.ExecutionMilestone switch
+        {
+            SchedulePlanExecutionMilestone.Started => query.Where(x => x.Assignments.Any(assignment =>
+                assignment.WorkOrderId == affectedWorkOrderId &&
+                assignment.OperationId == affectedOperationId &&
+                assignment.StartUtc < cutoffUtc)),
+            SchedulePlanExecutionMilestone.Completed => query.Where(x => x.Assignments.Any(assignment =>
+                assignment.WorkOrderId == affectedWorkOrderId &&
+                assignment.OperationId == affectedOperationId &&
+                assignment.EndUtc < cutoffUtc)),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.ExecutionMilestone, "Unsupported execution milestone."),
         };
     }
 
@@ -290,7 +347,9 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
     {
         if (request.Scope != SchedulePlanInvalidationScope.WorkOrderOrOperation)
         {
-            return (request.AffectedWorkOrderId, null);
+            return request.Scope == SchedulePlanInvalidationScope.ExactWorkOrderOperation
+                ? (Normalize(request.AffectedWorkOrderId), Normalize(request.AffectedOperationId))
+                : (request.AffectedWorkOrderId, null);
         }
 
         var normalizedSource = Normalize(request.ScopeValue);

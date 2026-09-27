@@ -103,6 +103,8 @@ try
     builder.Services.AddSingleton(new SchedulingEquipmentUnknownModeOption(
         SchedulingEquipmentUnknownModeResolver.Resolve(
             builder.Configuration[SchedulingEquipmentUnknownModeResolver.ConfigurationKey])));
+    builder.Services.AddSingleton(SchedulingExecutionDeviationToleranceResolver.Resolve(
+        builder.Configuration[SchedulingExecutionDeviationToleranceResolver.ConfigurationKey]));
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();

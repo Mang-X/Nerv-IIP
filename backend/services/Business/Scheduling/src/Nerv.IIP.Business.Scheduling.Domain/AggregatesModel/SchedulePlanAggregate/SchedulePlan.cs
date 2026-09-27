@@ -21,6 +21,8 @@ public static class SchedulingPlanInvalidationReasons
     public const string WorkOrderReleased = "workOrderReleased";
     public const string WorkCalendarChanged = "workCalendarChanged";
     public const string ResourceChanged = "resourceChanged";
+    public const string OperationStartDelayed = "operationStartDelayed";
+    public const string OperationCompletionDelayed = "operationCompletionDelayed";
 }
 
 public enum SchedulePlanLifecycleStatus
