@@ -30,9 +30,13 @@ public sealed class IamManagementEndpointAuthorizationTests
     }
 
     [Theory]
-    [InlineData("GET", "/api/iam/v1/roles")]
-    [InlineData("PUT", "/api/iam/v1/users/user-target/membership")]
-    public async Task Postgres_management_endpoints_reject_principals_without_permission_in_current_org_env(string method, string path)
+    [InlineData("GET", "/api/iam/v1/roles", new string[0])]
+    [InlineData("PUT", "/api/iam/v1/users/user-target/membership", new string[0])]
+    [InlineData("PUT", "/api/iam/v1/users/user-target/membership", new[] { "iam.users.read" })]
+    public async Task Postgres_management_endpoints_reject_principals_without_permission_in_current_org_env(
+        string method,
+        string path,
+        string[] grantedPermissions)
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -43,7 +47,7 @@ public sealed class IamManagementEndpointAuthorizationTests
                 {
                     services.RemoveAll<IIamAuthService>();
                     services.RemoveAll<IIamRoleApplicationService>();
-                    services.AddSingleton<IIamAuthService>(new CrossTenantAuthService());
+                    services.AddSingleton<IIamAuthService>(new CrossTenantAuthService(grantedPermissions));
                     services.AddSingleton<IIamRoleApplicationService, EmptyRoleApplicationService>();
                 });
             });
@@ -100,7 +104,7 @@ public sealed class IamManagementEndpointAuthorizationTests
         Assert.DoesNotContain(typeof(IIamRoleApplicationService), parameterTypes);
     }
 
-    private sealed class CrossTenantAuthService : IIamAuthService
+    private sealed class CrossTenantAuthService(IReadOnlyCollection<string> grantedPermissions) : IIamAuthService
     {
         public Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken)
         {
@@ -132,9 +136,8 @@ public sealed class IamManagementEndpointAuthorizationTests
             _ = userId;
             _ = organizationId;
             _ = environmentId;
-            _ = permissionCode;
             _ = cancellationToken;
-            return Task.FromResult(false);
+            return Task.FromResult(grantedPermissions.Contains(permissionCode));
         }
 
         public Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken) =>

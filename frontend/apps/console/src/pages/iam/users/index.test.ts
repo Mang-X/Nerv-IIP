@@ -13,6 +13,8 @@ const iamState = vi.hoisted(() => ({
   disableUser: vi.fn(),
   enableUser: vi.fn(),
   filters: { pageIndex: 1, pageSize: 20 } as { pageIndex: number; pageSize: number },
+  membershipError: undefined as { message: string } | undefined,
+  membershipPending: false,
   membershipRoleIds: [] as string[],
   refreshUsers: vi.fn(),
   replaceUserMembership: vi.fn(),
@@ -53,8 +55,8 @@ vi.mock('@/composables/useIamAdmin', () => ({
     membership: computed(() =>
       userId() ? { userId: userId(), roleIds: iamState.membershipRoleIds } : undefined,
     ),
-    membershipError: computed(() => undefined),
-    membershipPending: shallowRef(false),
+    membershipError: computed(() => iamState.membershipError),
+    membershipPending: shallowRef(iamState.membershipPending),
   }),
   useIamUsers: () => ({
     createUser: iamState.createUser,
@@ -109,6 +111,8 @@ describe('IAM users page', () => {
     document.body.innerHTML = ''
     iamState.createUser.mockResolvedValue({ data: { userId: 'user-created' }, success: true })
     iamState.replaceUserMembership.mockResolvedValue(undefined)
+    iamState.membershipError = undefined
+    iamState.membershipPending = false
     iamState.membershipRoleIds = ['role-platform-admin']
     iamState.disableUser.mockResolvedValue(undefined)
     iamState.enableUser.mockResolvedValue(undefined)
@@ -294,6 +298,33 @@ describe('IAM users page', () => {
     })
   })
 
+  it.each([
+    ['loading', { membershipPending: true }],
+    ['failed to load', { membershipError: { message: 'iam-unavailable' } }],
+  ])(
+    'blocks saving roles while the current membership is %s so the user is not removed by an empty selection',
+    async (_state, overrides) => {
+      Object.assign(iamState, overrides)
+      const wrapper = mountPage()
+      await flushPromises()
+
+      await wrapper.get('button[aria-label="分配角色 admin"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.findComponent(UserRolesDialog).props('disabled')).toBe(true)
+    },
+  )
+
+  it('allows saving roles once the current membership has loaded', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="分配角色 admin"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findComponent(UserRolesDialog).props('disabled')).toBe(false)
+  })
+
   it('refreshes users after resetting a password', async () => {
     const wrapper = mountPage()
     await flushPromises()
@@ -388,6 +419,22 @@ describe('IAM users form dialogs', () => {
 
     expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('请输入新密码。')
+  })
+
+  it('does not create a user until at least one role is chosen', async () => {
+    const wrapper = mount(UserCreateDialog, {
+      props: { open: true, roles: roleOptions },
+      global: { stubs: { ...dialogStubs } },
+    })
+
+    await wrapper.get('#iam-create-login-name').setValue('new-user')
+    await wrapper.get('#iam-create-email').setValue('new-user@nerv-iip.local')
+    await wrapper.get('#iam-create-password').setValue('Password123!')
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('请至少选择一个角色。')
   })
 
   it('emits account expiry and chosen roles when creating a user', async () => {
