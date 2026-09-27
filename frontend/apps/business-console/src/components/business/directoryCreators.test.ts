@@ -64,7 +64,11 @@ interface Recorded {
 
 const mounted: Array<ReturnType<typeof mount>> = []
 
-function harness(directoryType: keyof typeof CREATED, createContext?: Record<string, string>) {
+function harness(
+  directoryType: keyof typeof CREATED,
+  createContext?: Record<string, string>,
+  formSiteCode?: string,
+) {
   const requests: Recorded[] = []
   configureApiClient({
     baseUrl: 'http://gateway.local',
@@ -105,6 +109,7 @@ function harness(directoryType: keyof typeof CREATED, createContext?: Record<str
             directoryType,
             creatable: true,
             createContext,
+            formSiteCode,
             modelValue: model.value,
             'onUpdate:modelValue': (value: string) => (model.value = value),
           })
@@ -184,10 +189,10 @@ describe('已注册的新增弹窗（#3797）', () => {
 
   // #3832 审核 S1：表单里要选的库位还没建时，就地建好并自动选中；建好后可搜目录要刷新。
   // 入口只认库位维护权限：只授予它（不带其它 manage 码）也要出现「新增库位」。
-  // create-context 带上表单已选的工厂（审核 R2-1），库位要建到单据所在的工厂下，不是目录第一个工厂。
+  // 库位的工厂只取 form-site-code（审核 R3-2），库位要建到单据所在的工厂下，不是目录第一个工厂。
   it('库位：在选择器里新建后自动选中、建在表单所选工厂下，并刷新可搜目录', async () => {
     auth.permissionCodes = ['business.inventory.locations.manage']
-    const { model, requests, wrapper } = harness('location', { siteCode: 'PLANT-B' })
+    const { model, requests, wrapper } = harness('location', undefined, 'PLANT-B')
     await flushPromises()
     await openCreateDialog(wrapper, '库位')
 

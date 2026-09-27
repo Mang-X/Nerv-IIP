@@ -542,6 +542,7 @@ function isNonEmpty(value: string) {
                 id="count-task-lot"
                 v-model="taskForm.lotNo"
                 directory-type="batch"
+                :form-site-code="taskForm.siteCode"
                 title="选择批次"
                 placeholder="选择批次"
                 clearable
@@ -554,6 +555,7 @@ function isNonEmpty(value: string) {
                 id="count-task-serial"
                 v-model="taskForm.serialNo"
                 directory-type="serial"
+                :form-site-code="taskForm.siteCode"
                 title="选择序列号"
                 placeholder="选择序列号"
                 clearable

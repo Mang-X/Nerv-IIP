@@ -12,12 +12,17 @@ import {
   type SearchableDirectoryType,
 } from '@/composables/useSearchableDirectoryPicker'
 
-const props = defineProps<{ directoryType: SearchableDirectoryType }>()
+const props = defineProps<{
+  directoryType: SearchableDirectoryType
+  /** 表单已选的工厂：建议只列这个工厂的（按工厂切分的库存目录）。 */
+  formSiteCode?: string
+}>()
 const model = defineModel<string>({ default: '' })
 
 // 输入的文本本身不补成一条建议：建议只列目录里真实存在的编码。
 const { options, search } = useSearchableDirectoryPicker(props.directoryType, {
   selected: () => undefined,
+  siteCode: () => props.formSiteCode?.trim() || undefined,
 })
 watch(model, (value) => (search.value = value), { immediate: true })
 </script>

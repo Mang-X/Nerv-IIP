@@ -695,6 +695,7 @@ function refreshAll() {
                 v-model="line.lotNo"
                 class="w-36"
                 directory-type="batch"
+                :form-site-code="createForm.siteCode"
                 title="选择批次"
                 placeholder="批次"
                 clearable

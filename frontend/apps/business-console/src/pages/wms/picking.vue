@@ -710,6 +710,7 @@ function firstQuery(value: unknown) {
                 directory-type="location"
                 creatable
                 :form-site-code="createSiteCode"
+                site-missing-text="请先选择出库单"
                 title="选择货架库位"
                 placeholder="货架库位"
                 clearable
@@ -724,6 +725,7 @@ function firstQuery(value: unknown) {
                 directory-type="location"
                 creatable
                 :form-site-code="createSiteCode"
+                site-missing-text="请先选择出库单"
                 title="选择集货库位"
                 placeholder="集货/暂存库位"
                 clearable

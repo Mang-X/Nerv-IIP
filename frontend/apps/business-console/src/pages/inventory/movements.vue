@@ -423,6 +423,7 @@ function isNonEmpty(value: string) {
                 id="movement-lot"
                 v-model="form.lotNo"
                 directory-type="batch"
+                :form-site-code="form.siteCode"
                 title="选择批次"
                 placeholder="选择批次"
                 clearable
@@ -435,6 +436,7 @@ function isNonEmpty(value: string) {
                 id="movement-serial"
                 v-model="form.serialNo"
                 directory-type="serial"
+                :form-site-code="form.siteCode"
                 title="选择序列号"
                 placeholder="选择序列号"
                 clearable

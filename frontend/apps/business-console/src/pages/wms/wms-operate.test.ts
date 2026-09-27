@@ -668,7 +668,15 @@ describe('WMS operate actions', () => {
 
   // #3832 审核 R3-2：库位选择器的工厂只从表单工厂来，每页一条轻量断言证明它传进去了。
   it.each([
-    ['出库单', OutboundPage, '新建出库单', '#wms-out-site', '[aria-label="第 1 行拣货库位"]'],
+    [
+      '出库单 · 拣货库位',
+      OutboundPage,
+      '新建出库单',
+      '#wms-out-site',
+      '[aria-label="第 1 行拣货库位"]',
+    ],
+    ['出库单 · 批次', OutboundPage, '新建出库单', '#wms-out-site', '[aria-label="第 1 行批次"]'],
+    ['入库单 · 批次建议', InboundPage, '新建入库单', '#wms-in-site', '[aria-label="第 1 行批次"]'],
     ['WMS 盘点', CountsPage, '新建盘点单', '#cnt-site', '#cnt-location'],
   ])(
     '%s的库位选择器拿到表单工厂',

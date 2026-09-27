@@ -198,9 +198,12 @@ describe('WMS putaway route handoff', () => {
       const wrapper = mountPutaway()
       await flushPromises()
 
-      expect(document.body.querySelector('#wms-putaway-to')!.getAttribute('data-form-site')).toBe(
-        'SITE-OLD',
-      )
+      for (const field of ['#wms-putaway-from', '#wms-putaway-to']) {
+        const picker = document.body.querySelector(field)!
+        expect(picker.getAttribute('data-form-site')).toBe('SITE-OLD')
+        // 上架表单没有工厂字段，工厂从入库单推出：缺工厂时要提示先选入库单。
+        expect(picker.getAttribute('data-site-missing')).toBe('请先选择入库单')
+      }
       wrapper.unmount()
     } finally {
       state.routeQuery = previous
@@ -278,10 +281,10 @@ function wmsStubs() {
     BusinessLayout: { template: '<main><slot /></main>' },
     WmsInventoryContextPanel: true,
     DirectoryPicker: {
-      props: ['modelValue', 'id', 'formSiteCode'],
+      props: ['modelValue', 'id', 'formSiteCode', 'siteMissingText'],
       emits: ['update:modelValue'],
       template:
-        '<input :id="id" :data-form-site="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        '<input :id="id" :data-form-site="formSiteCode" :data-site-missing="siteMissingText" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
     },
     NvEntityPicker: {
       props: ['modelValue', 'options', 'id'],

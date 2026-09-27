@@ -162,10 +162,10 @@ vi.mock('@/composables/useBusinessWms', () => ({
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   DirectoryPicker: {
-    props: ['modelValue', 'id', 'formSiteCode'],
+    props: ['modelValue', 'id', 'formSiteCode', 'siteMissingText'],
     emits: ['update:modelValue'],
     template:
-      '<input :id="id" :data-form-site="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input :id="id" :data-form-site="formSiteCode" :data-site-missing="siteMissingText" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
   NvDataTable: {
@@ -289,7 +289,11 @@ describe('WMS picking route context', () => {
     await wrapper.get('#wms-picking-outbound').setValue('OB-001')
     expect(wrapper.get('#wms-picking-line').attributes('data-options')).toBe('1')
     // 库位选择器的工厂取所选出库单的工厂（#3832）。
-    expect(wrapper.get('#wms-picking-from').attributes('data-form-site')).toBe('S1')
+    for (const field of ['#wms-picking-from', '#wms-picking-to']) {
+      expect(wrapper.get(field).attributes('data-form-site')).toBe('S1')
+      // 拣货表单没有工厂字段，工厂从出库单推出：缺工厂时要提示先选出库单。
+      expect(wrapper.get(field).attributes('data-site-missing')).toBe('请先选择出库单')
+    }
     expect((wrapper.get('#wms-picking-line').element as HTMLInputElement).value).toBe('1')
 
     await wrapper.get('#wms-picking-no').setValue('PICK-OB-001-01')

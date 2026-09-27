@@ -355,7 +355,14 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
   })
 
   function mountLocationPicker(
-    options: { failStatus?: number; holdLaterPages?: Promise<void>; formSiteCode?: string } = {},
+    options: {
+      failStatus?: number
+      holdLaterPages?: Promise<void>
+      formSiteCode?: string
+      /** 表单里的库位选择器（可就地新增）；不开就是筛选区用法。 */
+      creatable?: boolean
+      siteMissingText?: string
+    } = {},
   ) {
     const requests: URL[] = []
     configureApiClient({
@@ -401,8 +408,9 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
           return () =>
             h(DirectoryPicker, {
               directoryType: 'location',
-              creatable: true,
+              creatable: options.creatable ?? false,
               formSiteCode: options.formSiteCode,
+              siteMissingText: options.siteMissingText,
               modelValue: model.value,
               'onUpdate:modelValue': (value: string) => (model.value = value),
             })
@@ -455,7 +463,7 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
   // 403 与其它失败说法不同（审核 R2-2）。对照：取数成功时有新增权限就有入口。
   it('取数成功时给新增入口', async () => {
     state.permissionCodes = ['business.inventory.locations.manage']
-    const { wrapper } = mountLocationPicker()
+    const { wrapper } = mountLocationPicker({ creatable: true, formSiteCode: 'SITE-A' })
     await openPicker(wrapper)
 
     expect(document.body.textContent).toContain('新增库位')
@@ -466,7 +474,11 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
     [502, '库位加载失败，请稍后重试', '无权查看'],
   ])('目录返回 %i 时如实说明、不给新增入口', async (status, shown, notShown) => {
     state.permissionCodes = ['business.inventory.locations.manage']
-    const { wrapper } = mountLocationPicker({ failStatus: status })
+    const { wrapper } = mountLocationPicker({
+      failStatus: status,
+      creatable: true,
+      formSiteCode: 'SITE-A',
+    })
     await openPicker(wrapper)
 
     expect(document.body.textContent).toContain(shown)
@@ -478,7 +490,7 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
   // #3832 审核 R3-2：表单工厂是库位选择器唯一的工厂口径——候选只有这个工厂的库位，新增时预选它。
   it('给定表单工厂时，候选只有该工厂的库位，新增时预选该工厂', async () => {
     state.permissionCodes = ['business.inventory.locations.manage']
-    const { requests, wrapper } = mountLocationPicker({ formSiteCode: 'SITE-B' })
+    const { requests, wrapper } = mountLocationPicker({ creatable: true, formSiteCode: 'SITE-B' })
     await openPicker(wrapper)
 
     expect(requests.at(-1)?.searchParams.get('siteCode')).toBe('SITE-B')
@@ -494,15 +506,31 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
     expect(context).toMatchObject({ siteCode: 'SITE-B' })
   })
 
-  it('表单还没选工厂时提示先选工厂，不取数、不给新增入口', async () => {
+  // 还没选（空串）与调用点漏传（undefined）同样处理：表单里的库位不会静默落到别的工厂（审核 R4-1）。
+  it.each([
+    ['还没选工厂', ''],
+    ['调用点漏传工厂', undefined],
+  ])('%s时提示先选工厂，不取数、不给新增入口', async (_case, formSiteCode) => {
     state.permissionCodes = ['business.inventory.locations.manage']
-    const { requests, wrapper } = mountLocationPicker({ formSiteCode: '' })
+    const { requests, wrapper } = mountLocationPicker({ creatable: true, formSiteCode })
     await openPicker(wrapper)
 
     expect(requests).toHaveLength(0)
     expect(document.body.textContent).toContain('请先选择工厂')
     expect(document.body.textContent).not.toContain('新增库位')
     expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0)
+  })
+
+  it('工厂从单据推出的表单缺工厂时，提示调用方给的文案', async () => {
+    const { wrapper } = mountLocationPicker({
+      creatable: true,
+      formSiteCode: '',
+      siteMissingText: '请先选择入库单',
+    })
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain('请先选择入库单')
+    expect(document.body.textContent).not.toContain('请先选择工厂')
   })
 
   it('输入关键字由服务端在全部库位里找，第 501 个以后也选得到', async () => {

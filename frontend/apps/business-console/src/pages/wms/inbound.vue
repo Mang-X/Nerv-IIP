@@ -706,6 +706,7 @@ function formatDateTime(value?: string | null) {
               <DirectorySuggestInput
                 v-model="line.lotNo"
                 directory-type="batch"
+                :form-site-code="createForm.siteCode"
                 class="w-36"
                 placeholder="批次"
                 :aria-label="`第 ${index + 1} 行批次`"

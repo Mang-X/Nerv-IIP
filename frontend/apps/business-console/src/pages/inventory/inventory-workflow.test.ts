@@ -678,15 +678,49 @@ describe('inventory workflow pages', () => {
   })
 
   // #3832 审核 R3-2：库位选择器的工厂只从表单工厂来（候选收窄与就地新增都用它），每页一条轻量断言。
+  // 批次 / 序列号不可新增，漏传工厂不会在界面上显形，只能靠这里逐字段钉住（审核 R4-1）。
   it.each([
-    ['库存移动', MovementsPage, '#movement-site', '#movement-location'],
-    ['库存盘点', CountsPage, '#count-task-site', '#count-task-location'],
-  ])('%s的库位选择器拿到表单工厂', async (_name, Page, siteSelector, locationSelector) => {
+    ['库存移动 · 库位', MovementsPage, '#movement-site', '#movement-location'],
+    ['库存移动 · 批次', MovementsPage, '#movement-site', '#movement-lot'],
+    ['库存移动 · 序列号', MovementsPage, '#movement-site', '#movement-serial'],
+    ['库存盘点 · 库位', CountsPage, '#count-task-site', '#count-task-location'],
+    ['库存盘点 · 批次', CountsPage, '#count-task-site', '#count-task-lot'],
+    ['库存盘点 · 序列号', CountsPage, '#count-task-site', '#count-task-serial'],
+  ])('%s拿到表单工厂', async (_name, Page, siteSelector, fieldSelector) => {
     const wrapper = mountInventoryPage(Page)
 
     await wrapper.get(siteSelector).setValue('S1')
 
-    expect(wrapper.get(locationSelector).attributes('data-form-site')).toBe('S1')
+    expect(wrapper.get(fieldSelector).attributes('data-form-site')).toBe('S1')
+  })
+
+  it('库存移动 · 调拨入库库位拿到表单工厂', async () => {
+    const wrapper = mount(MovementsPage, {
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          ...uiStubs,
+          // 移动类型要能切到「移库」，入库库位才出现。
+          NvSelect: {
+            props: ['modelValue'],
+            emits: ['update:modelValue'],
+            template:
+              '<select data-select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+          },
+          NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+          NvSelectTrigger: { template: '<slot />' },
+          NvSelectContent: { template: '<slot />' },
+          RouterLink: { template: '<a><slot /></a>' },
+        },
+      },
+    })
+    const movementType = wrapper
+      .findAll('select[data-select]')
+      .find((select) => select.find('option[value="transfer"]').exists())!
+    await movementType.setValue('transfer')
+    await wrapper.get('#movement-site').setValue('S1')
+
+    expect(wrapper.get('#movement-transfer-in-location').attributes('data-form-site')).toBe('S1')
   })
 
   it('uses design-system table components for the stock movement read face', () => {

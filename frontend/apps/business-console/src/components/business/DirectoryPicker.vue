@@ -65,20 +65,24 @@ const props = defineProps<{
   /** 层级字段按已选上级收窄候选（如工位只列所选产线下的）；只对层级类型有效。 */
   parent?: DirectoryParent
   /**
-   * 表单已选的工厂（库位这类按工厂切分的目录）。传了就是「表单模式」，工厂口径只从这里来：
+   * 表单已选的工厂（库位 / 批次 / 序列号这类按工厂切分的库存目录）。表单里的这类字段都要传，
+   * 工厂口径只从这里来：
    * - 候选只列这个工厂的（服务端再与授权工厂取交集）；
-   * - 「新增」弹窗预填这个工厂；
-   * - 还没选工厂（空串）时提示先选工厂，不给候选也不给新增入口——漏传会立刻显形，不会静默落到别的工厂。
-   * 筛选区不传。
+   * - 库位「新增」弹窗预填这个工厂。
+   * 可新增的库位选择器（`creatable`）没有工厂时——无论是还没选（空串）还是调用点漏传——一律按「未选工厂」
+   * 处理：提示先选、不给候选也不给新增入口，不会静默落到别的工厂。批次 / 序列号不可新增，漏传不会显形，
+   * 由页面断言钉住。筛选区不传。
    */
   formSiteCode?: string
+  /** 还没有工厂时的提示；工厂从单据推出的表单（上架、拣货）要提示先选单据，而不是去找工厂字段。 */
+  siteMissingText?: string
 }>()
 const model = defineModel<string>({ default: '' })
 
 const type = props.directoryType
 const noun = DIRECTORY_NOUN[type]
 const formSite = computed(() => props.formSiteCode?.trim())
-const siteMissing = computed(() => props.formSiteCode !== undefined && !formSite.value)
+const siteMissing = computed(() => !!props.creatable && type === 'location' && !formSite.value)
 const source =
   isListType(type) || (props.parent && isHierarchyType(type))
     ? useMasterDataListPicker(type, () => props.parent)
@@ -94,7 +98,7 @@ const search = computed(() => (source.serverSearch ? source.search.value : undef
 const total = computed(() => (source.serverSearch ? source.total.value : undefined))
 const failure = computed(() => (source.serverSearch ? source.failure.value : undefined))
 const emptyText = computed(() => {
-  if (siteMissing.value) return '请先选择工厂'
+  if (siteMissing.value) return props.siteMissingText ?? '请先选择工厂'
   if (failure.value === 'forbidden') return `当前角色无权查看${noun}`
   if (failure.value === 'failed') return `${noun}加载失败，请稍后重试`
   return `没有匹配的${noun}`
@@ -118,9 +122,9 @@ const creator = props.creatable ? directoryCreatorFor(type) : undefined
 const canCreate = computed(
   () => !!creator && (auth.principal?.permissionCodes ?? []).includes(creator.permission),
 )
-// 表单模式下新增弹窗的工厂就是表单工厂（与候选收窄同一个来源）。
+// 新增弹窗的工厂就是表单工厂（与候选收窄同一个来源）；没有表单工厂的类型才用调用方给的上下文。
 const dialogContext = computed<DirectoryCreateContext | undefined>(() =>
-  formSite.value ? { ...props.createContext, siteCode: formSite.value } : props.createContext,
+  formSite.value ? { siteCode: formSite.value } : props.createContext,
 )
 const createOpen = shallowRef(false)
 // 每次点入口递增，作弹窗的 key：每次打开都是全新实例，按当次的 context 预填、表单从空白开始。

@@ -14,7 +14,7 @@ describe('DirectorySuggestInput', () => {
     document.body.innerHTML = ''
   })
 
-  it('键入新批次号：值就是输入的文本，建议按这个关键字去批次目录搜', async () => {
+  it('键入新批次号：值就是输入的文本，建议按这个关键字与表单工厂去批次目录搜', async () => {
     const requests: URL[] = []
     configureApiClient({
       baseUrl: 'http://gateway.local',
@@ -35,6 +35,7 @@ describe('DirectorySuggestInput', () => {
           return () =>
             h(DirectorySuggestInput, {
               directoryType: 'batch',
+              formSiteCode: 'SITE-B',
               modelValue: model.value,
               'onUpdate:modelValue': (value: string) => (model.value = value),
             })
@@ -52,6 +53,8 @@ describe('DirectorySuggestInput', () => {
     const last = requests.at(-1)!
     expect(last.pathname).toBe('/api/business-console/v1/directories/batch')
     expect(last.searchParams.get('keyword')).toBe('LOT-NEW-9')
+    // 建议只列表单工厂的批次（#3832 审核 R4-1）。
+    expect(last.searchParams.get('siteCode')).toBe('SITE-B')
     wrapper.unmount()
   })
 })
