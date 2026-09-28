@@ -12,7 +12,7 @@ import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGua
 import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
-import { wmsStatusTone } from '@/data/businessLabels'
+import { WMS_LINE_OWNER_TYPE_OPTIONS, wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
@@ -135,12 +135,7 @@ const QUALITY_OPTIONS = [
   { label: '冻结', value: 'blocked' },
   { label: '不合格', value: 'rejected' },
 ]
-const OWNER_OPTIONS = [
-  { label: '自有', value: 'owned' },
-  { label: '客户', value: 'customer' },
-  { label: '供应商', value: 'supplier' },
-  { label: '寄售', value: 'consignment' },
-]
+const OWNER_OPTIONS = WMS_LINE_OWNER_TYPE_OPTIONS
 interface OutboundLine {
   skuCode: string
   uomCode: string

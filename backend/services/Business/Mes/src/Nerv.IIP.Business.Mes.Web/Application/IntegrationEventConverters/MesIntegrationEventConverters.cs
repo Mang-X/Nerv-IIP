@@ -118,11 +118,11 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         string? lotNo,
         decimal quantity,
         DateTimeOffset requestedAtUtc,
+        string ownerType,
         decimal? unitCost = null,
         DateOnly? productionDate = null,
         DateOnly? expiryDate = null,
         string? unitCostAuthorityReference = null,
-        string ownerType = "production",
         string? ownerId = null)
     {
         var movementType = quantity < 0 ? InventoryMovementTypes.Outbound : InventoryMovementTypes.Inbound;
@@ -166,6 +166,8 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter(
     IMesFinishedGoodsReceiptLocationResolver locationResolver)
     : IIntegrationEventConverter<FinishedGoodsReceiptRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {
+    internal const string FinishedGoodsOwnerType = "company";
+
     public InventoryMovementRequestedIntegrationEvent Convert(FinishedGoodsReceiptRequestedDomainEvent domainEvent)
     {
         var request = domainEvent.FinishedGoodsReceiptRequest;
@@ -187,10 +189,13 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter(
             request.ProducedLotNo,
             domainEvent.Quantity,
             occurredAtUtc,
-            request.UnitCost,
-            request.ProductionDate,
-            request.ExpiryDate,
-            InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt);
+            // 库存归属只按法律所有权区分（#3930）：自制成品与外购件同属本公司，
+            // 否则 ERP 发货、MES 半成品领用都按 company 取货，永远匹配不到这批成品。
+            ownerType: FinishedGoodsOwnerType,
+            unitCost: request.UnitCost,
+            productionDate: request.ProductionDate,
+            expiryDate: request.ExpiryDate,
+            unitCostAuthorityReference: InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt);
     }
 }
 

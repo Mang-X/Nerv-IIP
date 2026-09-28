@@ -316,7 +316,7 @@ public sealed class InventoryMesCostAuthorityTests
                 "LOT-001",
                 null,
                 "Unrestricted",
-                "production",
+                "company",
                 null,
                 5m,
                 DateTimeOffset.UtcNow,

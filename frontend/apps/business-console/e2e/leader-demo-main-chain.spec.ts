@@ -1913,7 +1913,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           textOf(outboundLine.locationCode) !== finishedGoodsLocationCode ||
           textOf(outboundLine.lotNo) !== producedLotNo ||
           textOf(outboundLine.qualityStatus) !== 'unrestricted' ||
-          textOf(outboundLine.ownerType) !== 'production' ||
+          textOf(outboundLine.ownerType) !== 'company' ||
           textOf(outboundLine.ownerId) !== ''
         ) {
           throw new Error(
@@ -1973,7 +1973,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
               textOf(line.locationCode) === finishedGoodsLocationCode &&
               textOf(line.lotNo) === producedLotNo &&
               textOf(line.qualityStatus) === 'unrestricted' &&
-              textOf(line.ownerType) === 'production' &&
+              textOf(line.ownerType) === 'company' &&
               textOf(line.ownerId) === '' &&
               textOf(line.inventoryPostingStatus) === 'posted' &&
               textOf(line.failureCode) === ''
