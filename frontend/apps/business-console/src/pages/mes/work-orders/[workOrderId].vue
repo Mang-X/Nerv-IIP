@@ -46,6 +46,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { readFaceText } from '@/utils/readFace'
+import { formatDateTime as formatSnapshotCapturedAt } from '@/utils/format'
 import {
   inlineErrorMessage,
   notifyError,
@@ -1171,7 +1172,9 @@ function formatStatus(value?: string | null) {
               ? '用料已备齐，可按工序顺序开工。'
               : materialShortageCount > 0
                 ? '缺料项需先发起领料，物料到线边后确认收料，否则无法开工。'
-                : materialReadiness.blockingReasons?.join('；')
+                : describeMesReadinessReasons(materialReadiness.blockingReasons)
+                    .map((reason) => reason.detail || reason.label)
+                    .join('；')
             : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
         "
       />
@@ -1310,7 +1313,7 @@ function formatStatus(value?: string | null) {
       >
         齐套快照捕获时间：{{
           materialReadiness.snapshotCapturedAtUtc
-            ? formatDateTime(materialReadiness.snapshotCapturedAtUtc)
+            ? formatSnapshotCapturedAt(materialReadiness.snapshotCapturedAtUtc)
             : '未记录'
         }}
       </p>

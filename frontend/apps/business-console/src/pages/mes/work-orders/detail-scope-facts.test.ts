@@ -1,9 +1,11 @@
+import { describeMesReadinessReasons as describeReadinessReasons } from '@nerv-iip/business-core'
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/format'
 import WorkOrderDetailPage from './[workOrderId].vue'
 
 /**
@@ -47,8 +49,7 @@ const detailState = vi.hoisted(() => ({
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
-  describeMesReadinessReasons: (reasons: string[]) =>
-    reasons.map((code) => ({ code, label: code, nextStep: '' })),
+  describeMesReadinessReasons: (reasons: string[]) => describeReadinessReasons(reasons),
   useMesWorkScopeSelection: () => ({
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
@@ -190,7 +191,7 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     const wrapper = mountDetail()
 
     expect(wrapper.get('[data-testid="material-readiness-snapshot"]').text()).toContain(
-      new Date(capturedAtUtc).toLocaleString(),
+      formatDateTime(capturedAtUtc),
     )
     expect(wrapper.get('[data-testid="material-readiness-scope"]').text()).toContain(
       '原料仓补库存不会直接改变下达结论',
@@ -206,7 +207,7 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     detailState.materialReadiness = {
       readinessStatus: 'Blocked',
       snapshotCapturedAtUtc: null,
-      blockingReasons: ['工单缺少齐套需求快照'],
+      blockingReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照'],
       items: [],
     }
     const wrapper = mountDetail()
@@ -216,6 +217,7 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     )
     expect(wrapper.text()).toContain('工单缺少齐套需求快照')
     expect(wrapper.text()).not.toContain('已齐套')
+    expect(wrapper.text()).not.toContain('MATERIAL_REQUIREMENT_SNAPSHOT_MISSING')
     wrapper.unmount()
   })
 
