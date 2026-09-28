@@ -151,20 +151,24 @@ OpenAPI 枚举，域里增删状态而契约没跟上时断言必然红）。它
 MES 列表路径/schema**；两个 Gateway 形成受支持客户发布后，任何状态枚举的收窄仍遵循
 Governance 的一般破坏性变更/主版本规则。
 
-### #3912 的两次范围裁定（消费端迁移登记）
+### #3912 的范围登记（消费端迁移，以及一次被打破的票面约定）
 
-本仓前端的消费端迁移分两次裁定完成，两次的范围都记在这里，使票内可审计（issue 评论是
-过程记录，本节是长期事实）：
+**票面原文是「不得夹带进本 PR」，这一条被打破了**，事实与代价记在这里，使票内可审计
+（issue 评论是过程记录，本节是长期事实）：
 
-1. **值域收窄随契约同批落地**：前端各处状态字面量、筛选下拉、词表键集一律改用上表所列
+1. **本 PR 超出了票面字面范围**：票面要求只改契约生产端（`MesListDisplayOpenApiDocumentProcessor`）
+   及其直接守门，但实际改动**包含前端消费端迁移**（见下条第 2 点）。**代价**：评审需要额外花
+   一轮确认前端那些改动没夹带别的意图 —— 它们与后端收窄不是同一件事，票面也未授权。
+   **这不是本来就在范围内**，是把范围显式扩了并留痕。
+2. **值域收窄随契约同批落地**：前端各处状态字面量、筛选下拉、词表键集一律改用上表所列
    真实值域；`useMesReferenceLabels.ts` 的 `toLowerCase()` 归一化适配层**删除**而非保留 ——
    保留它会让后端哪天改发另一种拼写时的契约漂移被静默吸收。`Open` 是跨聚合重码
    （不良记录=待处理、交接=待接班、停机/产能=未恢复），共享词表只放停机语境的读法，
    其余语境由 `statusOptions` 的 `overrides` 显式覆盖。
-2. **console 与 `business-core` 的入库词表本次不合并**：`console` 的
+3. **console 与 `business-core` 的入库词表本次不合并**：`console` 的
    `RECEIPT_STATUS_LABELS` / `RECEIPT_STATUS_TONES` 与
    `frontend/packages/business-core/src/labels/mesLabels.ts` 保持两份，本次仅登记为已知重复。
-   合并需另票，届时一并决定键集归属。
+   合并需另票，届时一并决定键集归属。**这一条是按协调方指示登记、不合并**，不是被忽略。
 
 守卫现状：后端 `Nerv.IIP.ContractBoundary.Tests/MesListStatusContractTests` 以 MES 域常量
 比对导出 snapshot 的枚举；前端 `useMesReferenceLabels.test.ts` 逐语境钉住
@@ -181,11 +185,16 @@ Governance 的一般破坏性变更/主版本规则。
    既不属本票聚合、也没在白名单写明理由时必然红 —— 只做第 1 层的话，那条值域根本进不来，
    门禁会照绿。
 
-   **那 6 个 string 型 schema 不是可扫可不扫的边角料，判据实际依赖它们**：
-   `AndonCategory` / `AndonStatus` / `AndonQueue` / `ProductionStatisticsDimension` /
-   `ProductionStatisticsResolutionStatus` / `ProductionStatisticsDegradedReason` ——
-   `NonAggregatedDomains` 9 项里有 6 项的值域**只由这 6 个 string schema 承载**。
-   若哪天把扫描面收窄到只扫 object 型 schema，这 6 项豁免会同时变成「无人认领」而误红。
+   **6 个非 object 的 string 型 schema 里，只有 1 个值域的采集真的依赖它**：
+   采集跟随 `$ref`，而这 6 个里有 5 个（`AndonCategory` / `AndonStatus` /
+   `ProductionStatisticsDimension` / `ProductionStatisticsResolutionStatus` /
+   `ProductionStatisticsDegradedReason`）都被 object 型 schema 引用，值域照样被收进来。
+   只有 `AndonQueue` **被 0 个 schema 引用**，它的值域
+   （`all` / `awaitingResponse` / `unclosed`）只由它自己承载。
+   **所以把扫描面收窄到只扫 object 型的真实后果是：该值域不再被采集、其豁免变成多余项，**
+   **而不是「无人认领」** —— 实测收窄后 25/25 仍全绿（未认领的红是「值域在面上、又没有归属」，
+   值域不在面上时第 2 层压根看不见它）。也因此收窄+删掉那条豁免叠加仍全绿：9 项豁免降到 8 项，
+   没有一条断言察觉。这与本节其余段落「新增值域必红」不矛盾 —— 那说的是**在面上**新增。
 3. **声明者穷举**（`Aggregated_status_domains_are_declared_only_by_registered_schemas`）：
    **本票聚合的状态值域只允许由登记的 10 个行 schema 就地声明**（不跟随 `$ref`）。
    NSwag 的 `XxxListResponse` / `XxxResponse` 包装层只经 `items[].$ref` 传递地含有该值域、

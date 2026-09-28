@@ -217,17 +217,19 @@ public sealed class MesListStatusContractTests
     /// <b>豁免表不能谎报</b>：<see cref="NonAggregatedDomains"/> 的任何一条键都不得等于
     /// 任一本票聚合的真实状态值域。
     ///
-    /// <para><b>为什么这条独立于其余断言、且判据必须取域常量</b>：豁免表是「沉默的归属表」——
+    /// <para><b>为什么这条独立于其余断言</b>：豁免表是「沉默的归属表」——
     /// 它把一个值域判成「不归本票管」，而其余断言只问「值域有没有归属」，两者不矛盾。
     /// 于是一条真实的漂移可以这样绕过去：域里给聚合加一个新状态（比如
     /// <c>WorkOrder.AllStatuses</c> 多一个 <c>brandnew</c>）而契约不跟进，
     /// 同时把豁免表的键改成这个新值域，并把该聚合的读面从 <see cref="RowStatusProperties"/> 摘掉 ——
     /// 此时该聚合相关的逐条比对整体消失，守门照绿。这正是本票要防的那类漂移。</para>
     ///
-    /// <para><b>判据取 <see cref="AggregateValueDomains"/>（七个域常量数组本身），不取
-    /// <see cref="StatusDeclarers"/> 的派生值</b>：上面那条绕法第二步正是「掏空派生表」，
-    /// 用派生值判据的话断言会跟着一起失效。这里要判的是「域里真实存在哪些状态」，
-    /// 那是域常量的性质，与任何一张登记表的当前内容无关。</para>
+    /// <para><b>判据取 <see cref="AggregateValueDomains"/>，即「域常量 ∪ 登记派生值」的并集</b>：
+    /// 上面那条绕法第二步是「掏空登记表 + 换豁免键」，只取域常量能挡住它（域常量不随登记表变动）；
+    /// 但只取域常量会在「新增了一个聚合状态源、忘了给它加域常量」时静默放过 —— 那种值域仍
+    /// 由 <see cref="RowStatusProperties"/> 派生值认领，豁免表判绿，而域里真实存在的状态从未
+    /// 进入判据。两侧各防一种失效形态：域常量侧失效形态是「登记表被摘空」，派生值侧失效形态
+    /// 是「域常量漏加」。并集不是冗余，是这两条防线的最小形态。</para>
     ///
     /// <para>新增豁免项时本条一并把关：只有确实不由本票任何聚合定义的值域才允许加进来。</para>
     /// </summary>
@@ -477,14 +479,10 @@ public sealed class MesListStatusContractTests
             .ToArray();
 
     /// <summary>
-    /// 在一个 schema 节点内找出所有枚举值域，<b>跟随 <c>$ref</c> 解析到目标类型</b>。
-    /// 跟随是必须的：判据认值域，藏在 <c>$ref</c> 后面的值域与内联的值域没有区别，
-    /// 不跟随就等于给藏匿留门。已访问集合按 <c>$ref</c> 目标名截断，环状引用不会无限展开。
-    /// </summary>
-    /// <summary>
-    /// 与 <see cref="FindEnumDomains"/> 相同，但<b>不跟随 <c>$ref</c></b>：只返回本 schema
-    /// 就地写出的值域，引用到别处的值域不算「它声明的」。传递携带不算「声明」——
-    /// NSwag 的 <c>XxxListResponse</c> 包装层经 <c>items[].$ref</c> 含有该值域、自身不声明。
+    /// <b>就地枚举值域</b>：只返回本 schema 自己写出的值域，<b>不跟随 <c>$ref</c></b> ——
+    /// 引用到别处的值域不算「它声明的」，传递携带也不算「声明」：NSwag 的
+    /// <c>XxxListResponse</c> 包装层经 <c>items[].$ref</c> 含有该值域、自身不声明。
+    /// 跟随 <c>$ref</c> 的收集口径见 <see cref="FindEnumDomains"/>，两者判的不是同一件事。
     /// </summary>
     private static IEnumerable<string[]> FindLocalEnumDomains(JsonDocument document, JsonElement node)
     {
@@ -525,6 +523,17 @@ public sealed class MesListStatusContractTests
         }
     }
 
+    /// <summary>
+    /// <b>枚举值域收集（跟随 <c>$ref</c>）</b>：除本节点写出的值域外，沿 <c>$ref</c>
+    /// 解析到目标 schema 继续收集。
+    ///
+    /// <para><b>为什么必须跟随</b>：判据认的是值域，藏在 <c>$ref</c> 后面的值域与就地内联的
+    /// 值域没有区别，不跟随等于给「把值域挪进一个被引用的 schema」留门。已访问集合按 <c>$ref</c>
+    /// 目标名截断，环状引用不会无限展开。</para>
+    ///
+    /// <para>与之相对的就地口径见 <see cref="FindLocalEnumDomains"/>：它判的是「谁声明了」，
+    /// 不传递跟随。两者判的不是同一件事，不能互相替代。</para>
+    /// </summary>
     private static IEnumerable<string[]> FindEnumDomains(
         JsonDocument document,
         JsonElement node,
