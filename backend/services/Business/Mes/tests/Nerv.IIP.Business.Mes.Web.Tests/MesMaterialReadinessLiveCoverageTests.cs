@@ -4,7 +4,9 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -61,6 +63,9 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         var capturedAtUtc = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
         dbContext.WorkOrders.Add(WorkOrder.Create(
             "org-001", "env-dev", "WO-ETA-001", "FG-001", "PV-001", 1m, 10, capturedAtUtc));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001", "env-dev", "WO-ETA-001", "OP-10", OperationTaskLifecycleStatus.Queued,
+            10, "WC-001", [], capturedAtUtc, TimeSpan.FromMinutes(45), null, null, "FG-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -101,10 +106,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         Assert.Equal(2m, row.AvailableQuantity);
         Assert.Equal(8m, row.ShortageQuantity);
         Assert.Equal("Blocked", response.ReadinessStatus);
-        Assert.Equal(
-            await MaterialReadinessGuards.GetShortageReasonsAsync(
-                dbContext, "org-001", "env-dev", "WO-ETA-001", null, CancellationToken.None),
-            response.BlockingReasons);
+        Assert.Equal(["MATERIAL_SHORTAGE: 物料 MAT-001 缺口 8"], response.BlockingReasons);
         Assert.Equal(expectedAtUtc, row.ExpectedAvailableAtUtc);
         Assert.Equal(MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate, row.ExpectedAvailabilitySource);
         Assert.Equal(["MAT-ALT-001"], row.SubstituteMaterialIds);
@@ -118,6 +120,62 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         Assert.Equal(capturedAtUtc, frozen.CapturedAtUtc);
         Assert.Equal(["MAT-ALT-001"], frozen.GetSubstituteMaterialIds());
         Assert.False(dbContext.ChangeTracker.HasChanges());
+
+        var releaseError = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+                new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-ETA-001", capturedAtUtc.AddMinutes(1)),
+                CancellationToken.None));
+        Assert.Contains("物料 MAT-001 缺口 8", releaseError.Message, StringComparison.Ordinal);
+    }
+
+    // Contract: DomainInvariant + Regression. Authority: Issue #3906. Different units cannot
+    // offset each other's frozen shortage in either the read surface or the release gate.
+    [Fact]
+    public async Task Query_and_release_keep_shortage_separate_between_units()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var capturedAtUtc = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001", "env-dev", "WO-UOM-GATE", "FG-001", "PV-001", 1m, 10, capturedAtUtc));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001", "env-dev", "WO-UOM-GATE", "OP-10", OperationTaskLifecycleStatus.Queued,
+            10, "WC-001", [], capturedAtUtc, TimeSpan.FromMinutes(45), null, null, "FG-001"));
+        dbContext.MaterialRequirements.AddRange(
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-UOM-GATE", "OP-10", "MAT-001", null,
+                10m, 0m, 0m, "MBOM", "MBOM:PCS", capturedAtUtc, [], "PCS"),
+            MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-UOM-GATE", "OP-10", "MAT-001", null,
+                10m, 20m, 0m, "MBOM", "MBOM:BOX", capturedAtUtc, [], "BOX"));
+        var boxReceipt = MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-UOM-GATE", "WO-UOM-GATE", "OP-10", "MAT-001", "BOX", 10m, capturedAtUtc);
+        boxReceipt.ConfirmAndPostLineSideReceipt(
+            new MaterialTransferLocations(
+                "SITE-01", "WH-01", "SITE-01", "LINE-01",
+                [new MaterialTransferAllocation("SITE-01", "WH-01", null, 10m)]),
+            capturedAtUtc,
+            10m);
+        dbContext.MaterialIssueRequests.Add(boxReceipt);
+        await dbContext.SaveChangesAsync();
+
+        var readiness = await new GetMaterialReadinessQueryHandler(
+            dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
+                new GetMaterialReadinessQuery("org-001", "env-dev", "WO-UOM-GATE"),
+                CancellationToken.None);
+        Assert.Equal("Blocked", readiness.ReadinessStatus);
+        Assert.Equal(10m, Assert.Single(readiness.Items, x => x.UomCode == "PCS").ShortageQuantity);
+        var boxRow = Assert.Single(readiness.Items, x => x.UomCode == "BOX");
+        Assert.Equal(10m, boxRow.ReceivedQuantity);
+        Assert.Equal(0m, boxRow.ShortageQuantity);
+        Assert.Equal([MaterialReadinessGuards.FormatShortageReason("MAT-001", null, 10m)], readiness.BlockingReasons);
+
+        var releaseError = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+                new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-UOM-GATE", capturedAtUtc.AddMinutes(1)),
+                CancellationToken.None));
+        Assert.Contains("物料 MAT-001 缺口 10", releaseError.Message, StringComparison.Ordinal);
     }
 
     [Fact]
