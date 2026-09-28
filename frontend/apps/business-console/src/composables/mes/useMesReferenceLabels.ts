@@ -16,8 +16,9 @@ import type {
  * 取某条 list/query 生成类型里 `status` 的真值域。约束成带 query 的形状，
  * 该路径不带 status 时结果是 `undefined`（即联合里没有这一项）。
  */
-type StatusOf<T extends { query?: unknown }> =
-  T['query'] extends { status?: infer S } ? NonNullable<S> : never
+type StatusOf<T extends { query?: unknown }> = T['query'] extends { status?: infer S }
+  ? NonNullable<S>
+  : never
 
 /**
  * MES 各聚合状态码的字面量联合 = 各聚合生成 query 类型的 `status` 联合之并。
