@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
+using Nerv.IIP.Business.Inventory.Web.Application.Coding;
 using Nerv.IIP.Business.Inventory.Web.Application.Errors;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
@@ -135,6 +136,7 @@ try
             .AddOpenBehavior(typeof(CreateStockCountTaskUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<ICommandLock<CreateStockCountTaskCommand>, CreateStockCountTaskCommandLock>();
+    builder.Services.AddScoped<InventoryCodingService>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = InventoryFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();

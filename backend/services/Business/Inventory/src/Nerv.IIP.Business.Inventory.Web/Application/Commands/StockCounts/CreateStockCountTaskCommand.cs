@@ -1,13 +1,18 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
+using Nerv.IIP.Business.Inventory.Web.Application.Coding;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 
+/// <summary>
+/// 新建盘点任务。<paramref name="CountTaskCode"/> 只由 WMS 盘点下发时传入（沿用 WMS 盘点单号）；
+/// 控制台手工新建不传，按 <see cref="InventoryCodeRules.StockCountTask"/> 由系统生成，此时幂等键必填。
+/// </summary>
 public sealed record CreateStockCountTaskCommand(
     string OrganizationId,
     string EnvironmentId,
-    string CountTaskCode,
+    string? CountTaskCode,
     string SkuCode,
     string UomCode,
     string SiteCode,
@@ -19,7 +24,7 @@ public sealed record CreateStockCountTaskCommand(
     string? OwnerId,
     string? IdempotencyKey = null) : ICommand<CreateStockCountTaskResult>;
 
-public sealed record CreateStockCountTaskResult(StockCountTaskId CountTaskId, long ExpectedLedgerVersion);
+public sealed record CreateStockCountTaskResult(StockCountTaskId CountTaskId, string CountTaskCode, long ExpectedLedgerVersion);
 
 public sealed class CreateStockCountTaskCommandLock : ICommandLock<CreateStockCountTaskCommand>
 {
@@ -48,7 +53,7 @@ public sealed class CreateStockCountTaskCommandValidator : AbstractValidator<Cre
     {
         RuleFor(x => x.OrganizationId).RequiredInventoryCode(100);
         RuleFor(x => x.EnvironmentId).RequiredInventoryCode(100);
-        RuleFor(x => x.CountTaskCode).RequiredInventoryCode(CreateStockCountTaskIdempotency.CountTaskCodeMaxLength);
+        RuleFor(x => x.CountTaskCode).OptionalInventoryCode(CreateStockCountTaskIdempotency.CountTaskCodeMaxLength);
         RuleFor(x => x.SkuCode).RequiredInventoryCode(100);
         RuleFor(x => x.UomCode).RequiredInventoryCode(50);
         RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
@@ -59,12 +64,20 @@ public sealed class CreateStockCountTaskCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.IdempotencyKey).OptionalInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength);
+        RuleFor(x => x.IdempotencyKey)
+            .NotEmpty()
+            .When(x => string.IsNullOrWhiteSpace(x.CountTaskCode))
+            .WithMessage("盘点任务号由系统生成时必须提供幂等键。");
     }
 }
 
-public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateStockCountTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    InventoryCodingService? codingService = null)
     : ICommandHandler<CreateStockCountTaskCommand, CreateStockCountTaskResult>
 {
+    private readonly InventoryCodingService _codingService = codingService ?? new InventoryCodingService();
+
     public async Task<CreateStockCountTaskResult> Handle(CreateStockCountTaskCommand request, CancellationToken cancellationToken)
     {
         var qualityStatus = StockQualityStatus.Normalize(request.QualityStatus);
@@ -78,7 +91,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
         if (existing is not null)
         {
             if (!existing.HasSameCreationScope(
-                    request.CountTaskCode,
+                    string.IsNullOrWhiteSpace(request.CountTaskCode) ? existing.CountTaskCode : request.CountTaskCode,
                     request.SkuCode,
                     request.UomCode,
                     request.SiteCode,
@@ -92,13 +105,32 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
                 throw new KnownException("盘点幂等键与已有盘点范围冲突，请更换幂等键。");
             }
 
-            return new CreateStockCountTaskResult(existing.Id, existing.ExpectedLedgerVersion);
+            return new CreateStockCountTaskResult(existing.Id, existing.CountTaskCode, existing.ExpectedLedgerVersion);
         }
+
+        var countTaskCode = string.IsNullOrWhiteSpace(request.CountTaskCode)
+            ? await _codingService.AllocateAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                InventoryCodeRules.StockCountTask,
+                idempotencyKey,
+                InventoryCodingService.Fingerprint(
+                    request.SkuCode,
+                    request.UomCode,
+                    request.SiteCode,
+                    request.LocationCode,
+                    request.LotNo,
+                    request.SerialNo,
+                    qualityStatus,
+                    ownerType,
+                    request.OwnerId),
+                cancellationToken)
+            : request.CountTaskCode;
 
         var existingCountCode = await dbContext.StockCountTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.CountTaskCode == request.CountTaskCode,
+                && x.CountTaskCode == countTaskCode,
             cancellationToken);
         if (existingCountCode is not null)
         {
@@ -123,7 +155,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
         var task = StockCountTask.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            request.CountTaskCode,
+            countTaskCode,
             idempotencyKey,
             ledger.OrganizationId,
             ledger.EnvironmentId,
@@ -139,7 +171,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
             ledger.LedgerVersion);
         ledger.FreezeForCount(task.CountTaskCode);
         dbContext.StockCountTasks.Add(task);
-        return new CreateStockCountTaskResult(task.Id, task.ExpectedLedgerVersion);
+        return new CreateStockCountTaskResult(task.Id, task.CountTaskCode, task.ExpectedLedgerVersion);
     }
 }
 
@@ -257,7 +289,7 @@ internal static class CreateStockCountTaskIdempotency
     public static string Resolve(CreateStockCountTaskCommand request)
     {
         return string.IsNullOrWhiteSpace(request.IdempotencyKey)
-            ? CountCodePrefix + request.CountTaskCode.Trim()
+            ? CountCodePrefix + request.CountTaskCode!.Trim()
             : request.IdempotencyKey.Trim();
     }
 }

@@ -502,6 +502,11 @@ function mountInventoryPage(component: unknown) {
   })
 }
 
+async function openCreateCountTask(wrapper: ReturnType<typeof mountInventoryPage>) {
+  const button = wrapper.findAll('button').find((b) => b.text().trim() === '创建盘点任务')
+  await button!.trigger('click')
+}
+
 /** 一行「待实盘」的服务端盘点任务（确认差异动作只在 open 态可用）。 */
 function openCountTaskRow(countTaskId: string) {
   return {
@@ -1101,6 +1106,7 @@ describe('inventory workflow pages', () => {
     routeState.query = { skuCode: 'SKU-001', locationCode: 'A-01' }
     inventoryState.createCountTask.mockResolvedValue({ data: { countTaskId: 'COUNT-TASK-NEW' } })
     const wrapper = mountInventoryPage(CountsPage)
+    await openCreateCountTask(wrapper)
     const ownerTypeSelect = wrapper
       .findAllComponents(uiStubs.NvSelect)
       .find((select) => select.find('[aria-label="货主类型"]').exists())!
@@ -1134,6 +1140,33 @@ describe('inventory workflow pages', () => {
     expect(inventoryState.createCountTask).toHaveBeenLastCalledWith(
       expect.objectContaining({ ownerType: 'owned', ownerId: undefined }),
     )
+  })
+
+  it('新建盘点任务不填任务号：提交带幂等键，同一次填写重试沿用同一个键，重新打开才换键', async () => {
+    routeState.query = { skuCode: 'SKU-001', locationCode: 'A-01' }
+    inventoryState.createCountTask
+      .mockRejectedValueOnce(new Error('网络中断'))
+      .mockResolvedValue({ data: { countTaskId: 'task-1', countTaskCode: 'SCT-20260928-000001' } })
+    const wrapper = mountInventoryPage(CountsPage)
+
+    expect(wrapper.find('#count-task-code').exists()).toBe(false)
+    await openCreateCountTask(wrapper)
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await flushPromises()
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await flushPromises()
+
+    const [firstBody] = inventoryState.createCountTask.mock.calls[0]!
+    const [retryBody] = inventoryState.createCountTask.mock.calls[1]!
+    expect(firstBody).not.toHaveProperty('countTaskCode')
+    expect(firstBody.idempotencyKey).toBeTruthy()
+    expect(retryBody.idempotencyKey).toBe(firstBody.idempotencyKey)
+
+    await openCreateCountTask(wrapper)
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await flushPromises()
+    const [nextBody] = inventoryState.createCountTask.mock.calls[2]!
+    expect(nextBody.idempotencyKey).not.toBe(firstBody.idempotencyKey)
   })
 
   it('requires the adjustment action to be opened from a count task row before submitting', async () => {

@@ -37,6 +37,8 @@ public sealed class StandardCodeRulesTests
     [InlineData("manufacturing-bom", "MBOM")]
     [InlineData("routing", "RTG")]
     [InlineData("engineering-change", "ECO")]
+    [InlineData("wms-count-execution", "CNT")]
+    [InlineData("inventory-stock-count-task", "SCT")]
     public void Document_rules_preserve_existing_prefixes(string ruleKey, string prefix)
     {
         var rule = StandardCodeRules.Get(ruleKey);
@@ -90,5 +92,43 @@ public sealed class StandardCodeRulesTests
             .ToArray();
 
         Assert.Empty(duplicates);
+    }
+
+    /// <summary>
+    /// #3918：WMS 盘点把自己按 <c>wms-count-execution</c> 分到的号原样写进库存盘点任务表，
+    /// 库存手工新建的盘点任务按 <c>inventory-stock-count-task</c> 在库存自己的计数器里分号。
+    /// 两个计数器互不相知、同一天都从 1 数起，同序号必然同时出现，而那张表按单号唯一——
+    /// 只有前缀不同才能保证两套号永不相撞。
+    /// </summary>
+    [Fact]
+    public async Task Inventory_count_task_and_wms_count_numbers_never_collide_at_the_same_sequence()
+    {
+        var sameDay = new DateTimeOffset(2026, 9, 28, 1, 0, 0, TimeSpan.Zero);
+        var inventoryCounter = new CodeAllocator(timeProvider: new FrozenTimeProvider(sameDay));
+        var wmsCounter = new CodeAllocator(timeProvider: new FrozenTimeProvider(sameDay));
+
+        var inventoryNumbers = new List<string>();
+        var wmsNumbers = new List<string>();
+        for (var i = 0; i < 3; i++)
+        {
+            inventoryNumbers.Add((await inventoryCounter.AllocateAsync(
+                Request("inventory-stock-count-task"),
+                CancellationToken.None)).Code);
+            wmsNumbers.Add((await wmsCounter.AllocateAsync(
+                Request("wms-count-execution"),
+                CancellationToken.None)).Code);
+        }
+
+        Assert.Equal(["SCT-20260928-000001", "SCT-20260928-000002", "SCT-20260928-000003"], inventoryNumbers);
+        Assert.Equal(["CNT-20260928-000001", "CNT-20260928-000002", "CNT-20260928-000003"], wmsNumbers);
+        Assert.Empty(inventoryNumbers.Intersect(wmsNumbers, StringComparer.Ordinal));
+
+        static CodeAllocationRequest Request(string ruleKey) =>
+            new("org", "env", StandardCodeRules.Get(ruleKey), null, null, null, "payload", ruleKey);
+    }
+
+    private sealed class FrozenTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

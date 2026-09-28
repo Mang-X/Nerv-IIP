@@ -27727,6 +27727,16 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -61667,21 +61677,32 @@
           "expectedLedgerVersion": {
             "type": "integer",
             "format": "int64"
+          },
+          "countTaskCode": {
+            "type": "string"
           }
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStockCountTaskRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "idempotencyKey"
+        ],
         "properties": {
           "organizationId": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "environmentId": {
-            "type": "string"
-          },
-          "countTaskCode": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "skuCode": {
             "type": "string"
@@ -61712,6 +61733,12 @@
           "ownerId": {
             "type": "string",
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },

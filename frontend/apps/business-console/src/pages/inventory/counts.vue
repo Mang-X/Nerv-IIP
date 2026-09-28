@@ -88,8 +88,9 @@ const adjustmentSheetOpen = shallowRef(false)
 const closeSheetOpen = shallowRef(false)
 let adjustmentKeySequence = 0
 
+// 盘点任务号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键，拿回同一个任务号。
+const createTaskIdempotencyKey = shallowRef('')
 const taskForm = reactive({
-  countTaskCode: '',
   skuCode: '',
   // 单位不手填：盘点任务必须落在与库存台账完全一致的维度上，单位跟随所选物料的基本单位。
   uomCode: '',
@@ -248,7 +249,6 @@ async function submitTask() {
   const body: BusinessConsoleCreateStockCountTaskRequest = {
     organizationId: filters.organizationId.trim(),
     environmentId: filters.environmentId.trim(),
-    countTaskCode: taskForm.countTaskCode.trim() || `COUNT-${Date.now()}`,
     skuCode: taskForm.skuCode.trim(),
     uomCode: taskForm.uomCode.trim(),
     siteCode: taskForm.siteCode.trim(),
@@ -258,6 +258,7 @@ async function submitTask() {
     qualityStatus: optionalText(taskForm.qualityStatus),
     ownerType: optionalText(taskForm.ownerType),
     ownerId: optionalText(taskForm.ownerId),
+    idempotencyKey: createTaskIdempotencyKey.value,
   }
   let response
   try {
@@ -267,9 +268,8 @@ async function submitTask() {
     return
   }
   // 列表来自服务端读面：mutation 成功后失效查询即可，新建的任务刷新之后仍然在。
-  const taskId = response?.data?.countTaskId
   taskSheetOpen.value = false
-  notifySuccess(`盘点任务 ${body.countTaskCode || taskId} 已创建`)
+  notifySuccess(`盘点任务 ${response?.data?.countTaskCode ?? ''} 已创建`)
 }
 
 async function submitAdjustment() {
@@ -341,6 +341,15 @@ function canCloseRow(row: CountTaskRow) {
   )
 }
 
+function openTaskSheet() {
+  createTaskIdempotencyKey.value = createTaskKey()
+  taskSheetOpen.value = true
+}
+function createTaskKey() {
+  const c = globalThis.crypto
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  return `count-task-${Date.now()}-${Math.round(Math.random() * 1e9)}`
+}
 function openAdjustment(row: CountTaskRow) {
   const countTaskId = row.countTaskId ?? ''
   adjustmentTarget.value = row
@@ -394,7 +403,7 @@ function isNonEmpty(value: string) {
             >返回工单 {{ contextWorkOrderId }}</RouterLink
           >
         </NvButton>
-        <NvButton size="sm" type="button" @click="taskSheetOpen = true">
+        <NvButton size="sm" type="button" @click="openTaskSheet">
           <ClipboardPlusIcon aria-hidden="true" />
           创建盘点任务
         </NvButton>
@@ -416,7 +425,7 @@ function isNonEmpty(value: string) {
           这里显示盘点任务与差异确认入口；已下发到仓库执行的盘点单在「仓储作业 · 盘点执行」跟进。
         </p>
         <div class="flex gap-2">
-          <NvButton size="sm" type="button" @click="taskSheetOpen = true">
+          <NvButton size="sm" type="button" @click="openTaskSheet">
             <ClipboardPlusIcon aria-hidden="true" />
             创建盘点任务
           </NvButton>

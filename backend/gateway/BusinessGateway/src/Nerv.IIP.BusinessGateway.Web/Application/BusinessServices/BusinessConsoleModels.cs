@@ -1434,10 +1434,10 @@ public sealed record BusinessConsolePostStockMovementResponse(
     string? TransferInMovementId = null,
     decimal? TransferInOnHandQuantity = null);
 
+/// <summary>控制台手工新建盘点任务：任务号由库存按编码规则生成，同一次提交的重试沿用同一个幂等键拿回同一个号（#3918）。</summary>
 public sealed record BusinessConsoleCreateStockCountTaskRequest(
     string OrganizationId,
     string EnvironmentId,
-    string CountTaskCode,
     string SkuCode,
     string UomCode,
     string SiteCode,
@@ -1446,11 +1446,13 @@ public sealed record BusinessConsoleCreateStockCountTaskRequest(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateStockCountTaskResponse(
     string CountTaskId,
-    long ExpectedLedgerVersion);
+    long ExpectedLedgerVersion,
+    string CountTaskCode);
 
 public sealed record BusinessConsoleConfirmStockCountAdjustmentRequest(
     [property: RouteParam] string CountTaskId,

@@ -673,6 +673,13 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     private static readonly DownstreamAuthority WmsCodeKeyColumn =
         Column<CodeIdempotencyKey>(WmsModel, nameof(CodeIdempotencyKey.IdempotencyKey), "Wms");
 
+    /// <summary>
+    /// 库存盘点任务号分配的幂等键落库列（#3918）：网关原样转发，<c>InventoryCodingService</c> 交给
+    /// <c>CodeAllocator</c>，只 Trim 后落 <c>code_idempotency_keys.idempotency_key</c>。
+    /// </summary>
+    private static readonly DownstreamAuthority InventoryCodeKeyColumn =
+        Column<CodeIdempotencyKey>(InventoryModel, nameof(CodeIdempotencyKey.IdempotencyKey), "Inventory");
+
     private static readonly DownstreamAuthority DemandPlanningCodeKeyColumn =
         Column<CodeIdempotencyKey>(
             DemandPlanningModel,
@@ -866,6 +873,10 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // ---- Inventory ----
         [typeof(BusinessConsoleConfirmStockCountAdjustmentRequest)] =
             [Command<ConfirmStockCountAdjustmentCommand>()],
+        // 手工新建盘点任务（#3918）：原始键原样进命令、原样落 stock_count_tasks.idempotency_key，
+        // 并作为任务号分配的幂等键落编码幂等表。
+        [typeof(BusinessConsoleCreateStockCountTaskRequest)] =
+            [Command<CreateStockCountTaskCommand>(), InventoryCodeKeyColumn],
 
         // ---- MasterData：14 个 create 走 CodeAllocator，1 个生命周期开关走审计表 ----
         [typeof(BusinessConsoleCreateProductCategoryRequest)] = [MasterDataCodeKeyColumn],

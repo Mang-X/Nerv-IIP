@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Maintenance.Domain;
+using Nerv.IIP.Business.Inventory.Domain;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.ProductEngineering.Domain;
@@ -18,6 +19,7 @@ using Nerv.IIP.Contracts.Coding;
 using DemandPlanningDbContext = Nerv.IIP.Business.DemandPlanning.Infrastructure.ApplicationDbContext;
 using ErpDbContext = Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext;
 using MaintenanceDbContext = Nerv.IIP.Business.Maintenance.Infrastructure.ApplicationDbContext;
+using InventoryDbContext = Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext;
 using MasterDataDbContext = Nerv.IIP.Business.MasterData.Infrastructure.ApplicationDbContext;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 using ProductEngineeringDbContext = Nerv.IIP.Business.ProductEngineering.Infrastructure.ApplicationDbContext;
@@ -136,12 +138,13 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
     /// 合法新增第 8 个持有本共享实体的服务时**该改的是这一个**，
     /// ⛔ 不要去改那个写着「改前份数」的历史常量。
     /// </summary>
-    private const int GovernedServiceCount = 8;
+    private const int GovernedServiceCount = 9;
 
     private static IEnumerable<(string Service, Func<DbContext> Factory)> GovernedServices()
     {
         yield return ("DemandPlanning", () => new DemandPlanningDbContext(Options<DemandPlanningDbContext>(DemandPlanningFacts.Schema), NoopMediator.Instance));
         yield return ("Erp", () => new ErpDbContext(Options<ErpDbContext>(ErpFacts.Schema), NoopMediator.Instance));
+        yield return ("Inventory", () => new InventoryDbContext(Options<InventoryDbContext>(InventoryFacts.Schema), NoopMediator.Instance));
         yield return ("Maintenance", () => new MaintenanceDbContext(Options<MaintenanceDbContext>(MaintenanceFacts.Schema), NoopMediator.Instance));
         yield return ("MasterData", () => new MasterDataDbContext(Options<MasterDataDbContext>(MasterDataFacts.Schema), NoopMediator.Instance));
         yield return ("Mes", () => new MesDbContext(Options<MesDbContext>(MesFacts.Schema), NoopMediator.Instance));
