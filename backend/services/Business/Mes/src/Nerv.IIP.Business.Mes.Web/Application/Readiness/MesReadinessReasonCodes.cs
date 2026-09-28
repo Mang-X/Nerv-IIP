@@ -195,13 +195,34 @@ public static class MesReadinessReasonCodes
 /// </summary>
 public static class MesReadinessReasonTexts
 {
+    /// <summary><see cref="MesReadinessReasonCodes.WorkOrderNotReleased"/> 给用户看的中文说明。</summary>
+    public const string WorkOrderNotReleasedMessage = "工单尚未下达，请先下达工单后再开工或报工。";
+
     /// <summary>
-    /// <see cref="MesReadinessReasonCodes.WorkOrderNotReleased"/> 的完整 <c>CODE: 中文</c> 原因串。
-    /// 读面原样上屏（前端 <c>describeMesReadinessReason</c> 按码取标签与下一步动作），
-    /// 写操作被拒时经 <c>MaterialReadinessGuards.DescribeForUser</c> 剥掉英文码后再进 KnownException。
+    /// <see cref="MesReadinessReasonCodes.WorkOrderNotReleased"/> 的读面 <c>CODE: 中文</c> 串
+    /// （前端 <c>describeMesReadinessReason</c> 按码取标签与下一步动作）。写操作被拒时只用
+    /// <see cref="WorkOrderNotReleasedMessage"/>，不从这串里剥码。
     /// </summary>
     public const string WorkOrderNotReleasedReason =
-        MesReadinessReasonCodes.WorkOrderNotReleased + ": 工单尚未下达，请先下达工单后再开工或报工。";
+        MesReadinessReasonCodes.WorkOrderNotReleased + ": " + WorkOrderNotReleasedMessage;
+
+    public static readonly MesReadinessReason WorkOrderNotReleased =
+        new(MesReadinessReasonCodes.WorkOrderNotReleased, WorkOrderNotReleasedMessage);
+}
+
+/// <summary>
+/// 阻断原因的结构化形态（#3858）：<see cref="Code"/> 给程序判断，<see cref="Message"/> 是给用户看的中文。
+/// 读面对外仍是 <c>CODE: 中文</c> 串（<see cref="ToWireText"/>，前端按码取标签），
+/// 写操作被拒时只拼 <see cref="Message"/>——不再从串里按字符形态剥码
+/// （设备码是 <c>equipment.maintenanceWindow</c> 这种小写带点的形态，形态猜测会漏）。
+/// </summary>
+public sealed record MesReadinessReason(string Code, string Message)
+{
+    public string ToWireText() => $"{Code}: {Message}";
+
+    /// <summary>写操作被拒时给用户看的一句话：只拼中文说明，不拼码；经网关原样上屏。</summary>
+    public static string DescribeForUser(IEnumerable<MesReadinessReason> reasons) =>
+        string.Join("；", reasons.Select(x => x.Message.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.Ordinal));
 }
 
 public sealed record EquipmentReadinessClassification(

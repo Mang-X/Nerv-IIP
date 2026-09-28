@@ -98,6 +98,9 @@ public sealed class RushWorkOrderCommandTests
                     CancellationToken.None));
 
         Assert.Equal("无法按所选生产版本生成齐套需求，急单未创建。请确认该版本当前有效且制造物料清单已发布。", exception.Message);
+        // 「未创建」要落到库上：抛错发生在提交之前，工单表必须仍为空。
+        dbContext.ChangeTracker.Clear();
+        Assert.Empty(await dbContext.WorkOrders.AsNoTracking().ToListAsync());
     }
 
     private sealed class StubMaterialSnapshotProvider(MesMaterialRequirementSnapshotResult result)

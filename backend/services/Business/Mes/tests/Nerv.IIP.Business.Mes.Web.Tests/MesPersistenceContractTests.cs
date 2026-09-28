@@ -1841,7 +1841,8 @@ public sealed class MesPersistenceContractTests
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-EQUIP-10", "start", now.AddMinutes(35)),
                 CancellationToken.None));
-        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, startException.Message);
+        Assert.Contains("设备存在维修或保养占用，当前工序不能派工或开工。", startException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(EquipmentRuntimeReasonCodes.MaintenanceWindow, startException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1885,7 +1886,8 @@ public sealed class MesPersistenceContractTests
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-EQUIP-RUNTIME-10", "start", now.AddMinutes(15)),
                 CancellationToken.None));
 
-        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, exception.Message);
+        Assert.Contains("设备存在维修或保养占用，当前工序不能派工或开工。", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(EquipmentRuntimeReasonCodes.MaintenanceWindow, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

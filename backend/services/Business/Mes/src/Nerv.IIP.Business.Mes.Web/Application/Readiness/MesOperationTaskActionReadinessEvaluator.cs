@@ -10,8 +10,12 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 public sealed record MesOperationTaskActionReadiness(
     IReadOnlyCollection<string> AllowedActions,
-    IReadOnlyCollection<string> BlockReasons,
-    DateTimeOffset EvaluatedAtUtc);
+    IReadOnlyCollection<MesReadinessReason> Reasons,
+    DateTimeOffset EvaluatedAtUtc)
+{
+    /// <summary>读面契约：<c>CODE: 中文</c> 串，由结构化原因拼出。写操作被拒时用 <see cref="Reasons"/>。</summary>
+    public IReadOnlyCollection<string> BlockReasons => Reasons.Select(x => x.ToWireText()).ToArray();
+}
 
 public sealed class MesOperationTaskActionReadinessEvaluator(
     ApplicationDbContext dbContext)
@@ -167,7 +171,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             return new([], [], evaluatedAtUtc);
         }
 
-        var blockReasons = new List<string>();
+        var blockReasons = new List<MesReadinessReason>();
         var previousOperations = allOperations
             .Where(x =>
                 x.WorkOrderId == task.WorkOrderId &&
@@ -178,13 +182,14 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             .ToArray();
         if (previousOperations.Length > 0)
         {
-            blockReasons.Add(
-                $"{MesReadinessReasonCodes.PreviousOperationIncomplete}: 前序工序尚未完成（{string.Join('、', previousOperations)}）");
+            blockReasons.Add(new(
+                MesReadinessReasonCodes.PreviousOperationIncomplete,
+                $"前序工序尚未完成（{string.Join('、', previousOperations)}）"));
         }
 
         if (!workOrders.TryGetValue(task.WorkOrderId, out var workOrder))
         {
-            blockReasons.Add($"{MesReadinessReasonCodes.WorkOrderNotFound}: 未找到所属生产工单");
+            blockReasons.Add(new(MesReadinessReasonCodes.WorkOrderNotFound, "未找到所属生产工单"));
         }
         else
         {
@@ -203,12 +208,12 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             // 因此它同样拦得住授权跳站——两个开工入口共用这一处判断，不各写一份。
             if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
             {
-                blockReasons.Add(MesReadinessReasonTexts.WorkOrderNotReleasedReason);
+                blockReasons.Add(MesReadinessReasonTexts.WorkOrderNotReleased);
             }
 
             if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
             {
-                blockReasons.Add($"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案");
+                blockReasons.Add(new(MesReadinessReasonCodes.QualityPlanMissing, "工单缺少已发布生产版本或检验方案"));
             }
         }
 
@@ -219,13 +224,13 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             var detail = string.IsNullOrWhiteSpace(hold.DispositionReason)
                 ? "工单存在有效质量保留，无法开工"
                 : $"工单存在有效质量保留，无法开工：{hold.DispositionReason}";
-            blockReasons.Add($"{MesReadinessReasonCodes.QualityHoldActive}: {detail}");
+            blockReasons.Add(new(MesReadinessReasonCodes.QualityHoldActive, detail));
         }
 
         foreach (var unavailable in activeUnavailabilities.Where(x => x.WorkCenterId == task.WorkCenterId))
         {
             var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(unavailable.Reason);
-            blockReasons.Add($"{classification.Code}: {classification.Message}");
+            blockReasons.Add(new(classification.Code, classification.Message));
         }
 
         var workOrderRequirements = requirements
@@ -253,7 +258,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         }
         if (!materialSnapshotProven)
         {
-            blockReasons.Add(MaterialReadinessGuards.MissingRequirementSnapshotReason);
+            blockReasons.Add(MaterialReadinessGuards.MissingRequirementSnapshot);
         }
 
         if (scopedRequirements.Length > 0)
@@ -276,7 +281,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                     receivedQuantity);
                 if (shortage > 0m)
                 {
-                    blockReasons.Add(MaterialReadinessGuards.FormatShortageReason(
+                    blockReasons.Add(MaterialReadinessGuards.ShortageReason(
                         group.Key.MaterialId,
                         group.Key.MaterialLotId,
                         shortage));
@@ -284,7 +289,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             }
         }
 
-        var canonicalReasons = blockReasons.Distinct(StringComparer.Ordinal).ToArray();
+        var canonicalReasons = blockReasons.Distinct().ToArray();
         return new(
             canonicalReasons.Length == 0 ? ["start"] : [],
             canonicalReasons,

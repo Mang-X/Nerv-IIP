@@ -60,7 +60,7 @@ public sealed class MesCreatedWorkOrderAdmissionGuardTests
     }
 
     /// <summary>
-    /// 开工命令拒绝时给出的是**中文**，英文码由 <c>DescribeForUser</c> 剥掉——
+    /// 开工命令拒绝时给出的是**中文**，拒绝文案只拼结构化原因的中文说明——
     /// 该文案经分层透传直接上屏，界面不许出现英文错误码。
     /// </summary>
     [Fact]

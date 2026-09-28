@@ -239,7 +239,7 @@ public sealed class RecordProductionReportCommandHandler(
         if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
         {
             throw new KnownException(
-                MaterialReadinessGuards.DescribeForUser([MesReadinessReasonTexts.WorkOrderNotReleasedReason]));
+                MesReadinessReasonTexts.WorkOrderNotReleasedMessage);
         }
 
         var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(

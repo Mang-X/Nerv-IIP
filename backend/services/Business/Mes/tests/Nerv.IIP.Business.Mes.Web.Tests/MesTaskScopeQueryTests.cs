@@ -293,15 +293,18 @@ public sealed class MesTaskScopeQueryTests
         Assert.Equal("MATERIAL_SHORTAGE: 物料 MAT-BEARING 缺口 7", withoutLot);
         Assert.DoesNotContain("shortage ", withLot, StringComparison.OrdinalIgnoreCase);
 
-        var userFacing = MaterialReadinessGuards.DescribeForUser(
-            [withLot, withoutLot, MaterialReadinessGuards.MissingRequirementSnapshotReason]);
+        var userFacing = MesReadinessReason.DescribeForUser(
+        [
+            MaterialReadinessGuards.ShortageReason("MAT-OIL", "LOT-OIL-A", 2.5m),
+            MaterialReadinessGuards.ShortageReason("MAT-BEARING", null, 7m),
+            MaterialReadinessGuards.MissingRequirementSnapshot,
+        ]);
 
         Assert.DoesNotContain("MATERIAL_SHORTAGE", userFacing, StringComparison.Ordinal);
         Assert.DoesNotContain("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", userFacing, StringComparison.Ordinal);
         Assert.Contains("物料 MAT-OIL，批次 LOT-OIL-A 缺口 2.5", userFacing, StringComparison.Ordinal);
         Assert.Contains("工单缺少齐套需求快照", userFacing, StringComparison.Ordinal);
-        // 中文说明里自带冒号的原因不能被当成码剥掉半句。
-        Assert.Equal("物料齐套未满足：还差 3 件", MaterialReadinessGuards.DescribeForUser(["物料齐套未满足：还差 3 件"]));
+        Assert.Equal("物料 MAT-OIL，批次 LOT-OIL-A 缺口 2.5；物料 MAT-BEARING 缺口 7；工单缺少齐套需求快照，无法确认物料齐套。", userFacing);
     }
 
     [Fact]
