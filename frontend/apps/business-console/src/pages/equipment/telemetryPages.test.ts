@@ -48,7 +48,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveSite: (code?: string | null) => (code === 'SITE-SUZHOU' ? '苏州工厂' : undefined),
       resolveShift: (code?: string | null) => (code === 'SHIFT-DAY' ? '白班' : undefined),
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,

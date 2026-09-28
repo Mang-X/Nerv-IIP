@@ -58,6 +58,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
         readFaceState.catalogResolved
           ? '五轴加工中心'
           : undefined,
+      resolveDeviceCode: () => undefined,
       resolveLocation: () => undefined,
       resolveWorkCenter: (code?: string | null) =>
         code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
@@ -71,7 +72,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -321,12 +321,8 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('@/composables/useBusinessEquipment', () => ({
-  describeEquipmentReason: (code: string) => ({
-    code,
-    label: code || '未知',
-    nextStep: '查看设备详情并处理来源业务单据',
-  }),
+vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/useBusinessEquipment')>()),
   equipmentStatusTone: (state?: string | null) =>
     state === 'faulted' || state === 'down' ? 'danger' : state === 'idle' ? 'neutral' : 'success',
   useBusinessEquipmentAlarms: () => ({

@@ -6,7 +6,10 @@ import type {
   NvMetricStripCell,
 } from '@nerv-iip/ui'
 import {
+  describeAvailabilityStatus,
+  describeAvailabilityWindowReference,
   describeEquipmentReason,
+  equipmentSourceStatus,
   equipmentStatusTone,
   useBusinessEquipmentDevice,
   type EquipmentTone,
@@ -494,13 +497,38 @@ watch(
 )
 
 // 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter, resolveUom, resolveUser } = useMasterDataDisplayNames({
-  devices: true,
-  workCenters: true,
-  uoms: true,
-  users: true,
+const { resolveDevice, resolveDeviceCode, resolveWorkCenter, resolveUom, resolveUser } =
+  useMasterDataDisplayNames({
+    devices: true,
+    workCenters: true,
+    uoms: true,
+    users: true,
+  })
+// 本页这台设备。路由里的设备引用可能是编码，也可能是设备公开 ID（从维保可用窗口进来时），
+// 名称和编码都从主数据按引用解析，不依赖设备有没有运行数据。
+const deviceName = computed(() => resolveDevice(filters.deviceAssetId))
+const deviceCode = computed(
+  () => resolveDeviceCode(filters.deviceAssetId) ?? readFaceText(filters.deviceAssetId, ''),
+)
+const deviceTitle = computed(() => {
+  if (deviceName.value && deviceCode.value && deviceName.value !== deviceCode.value) {
+    return `${deviceName.value}（${deviceCode.value}）`
+  }
+  return deviceName.value || deviceCode.value
 })
-/** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
+// 采集接入状态与可用性窗口同一套后端判据（没有状态快照也没有任何样本才算尚未接入）。
+const sourceStatus = computed(() =>
+  equipmentSourceStatus(currentState.value?.isSourceFresh, availabilityWindows.value),
+)
+const notConnected = computed(() => Boolean(device.value) && sourceStatus.value === 'notConnected')
+const stateText = computed(() =>
+  notConnected.value ? '尚未接入采集' : statusLabel(currentState.value?.currentState),
+)
+const SOURCE_TEXT = { fresh: '采集正常', stale: '采集过期', notConnected: '尚未接入' } as const
+// 未接入是还没配置，不是异常：中性色；采集中断才用警示色。
+const SOURCE_TONE = { fresh: 'success', stale: 'warning', notConnected: 'neutral' } as const
+const sourceText = computed(() => SOURCE_TEXT[sourceStatus.value])
+const sourceTone = computed(() => SOURCE_TONE[sourceStatus.value])
 /**
  * 设备回执码是 OPC UA 状态码（Good… / Uncertain… / Bad…），按标准的三档严重度说成业务话；
  * 解析不出来的回执码和通用失败码不上屏，显示「—」（执行结果本身已由状态徽标给出）。
@@ -511,9 +539,10 @@ function deviceReceiptLabel(code?: string | null) {
   if (code?.startsWith('Bad')) return '设备拒绝执行'
   return '—'
 }
-function deviceLabel(code?: string | null, fallback = '无设备') {
-  if (!code) return fallback
-  return resolveDevice(code) ?? readFaceText(code, fallback)
+/** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
+function deviceLabel(reference?: string | null) {
+  if (!reference) return '—'
+  return resolveDevice(reference) ?? readFaceText(reference)
 }
 function workCenterLabel(code?: string | null, fallback = '未绑定') {
   if (!code) return fallback
@@ -534,7 +563,7 @@ const columns: NvDataTableColumn<Window>[] = [
   {
     key: 'sourceReferenceId',
     header: '关联业务',
-    accessor: (r) => r.sourceReferenceLabel?.trim() || '—',
+    accessor: (r) => describeAvailabilityWindowReference(r, deviceCode.value),
   },
   {
     key: 'substituteDeviceAssetIds',
@@ -582,20 +611,6 @@ function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
   if (severity === 'critical' || severity === 'blocked') return 'danger'
   if (severity === 'warning') return 'warning'
-  return 'neutral'
-}
-function availabilityLabel(value?: string | null) {
-  const labels: Record<string, string> = {
-    available: '可用',
-    unavailable: '不可用',
-    unknown: '未知',
-  }
-  // 词表漏了就说「未知」，绝不把后端英文码回吐到界面上。
-  return value ? (labels[value.toLowerCase()] ?? '未知') : '未知'
-}
-function availabilityVariant(value?: string | null) {
-  if (value === 'available') return 'success'
-  if (value === 'unavailable') return 'danger'
   return 'neutral'
 }
 function metricLabel(value?: number | null, suffix = '') {
@@ -687,9 +702,7 @@ function recordDowntime() {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="
-        filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'
-      "
+      :title="deviceTitle ? `设备详情：${deviceTitle}` : '设备详情'"
       :breadcrumbs="[{ label: '设备监控' }]"
     >
       <template #actions>
@@ -823,7 +836,7 @@ function recordDowntime() {
         <NvMetricCard
           variant="alert"
           label="当前状态"
-          :value="statusLabel(currentState?.currentState)"
+          :value="stateText"
           :tone="
             equipmentStatusTone(currentState?.currentState) === 'danger' ? 'danger' : 'neutral'
           "
@@ -837,8 +850,8 @@ function recordDowntime() {
         <NvMetricCard
           variant="icon"
           label="数据状态"
-          :value="currentState?.isSourceFresh ? '采集正常' : '采集过期'"
-          :tone="currentState?.isSourceFresh ? 'success' : 'warning'"
+          :value="sourceText"
+          :tone="sourceTone"
           :icon="RadioIcon"
         />
         <NvMetricCard
@@ -864,10 +877,10 @@ function recordDowntime() {
             <div class="mt-3 flex items-center justify-between gap-3">
               <div class="min-w-0">
                 <p class="truncate text-lg font-semibold text-foreground">
-                  {{ deviceLabel(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                  {{ deviceName || deviceCode || '—' }}
                 </p>
                 <p class="truncate text-xs text-muted-foreground">
-                  {{ readFaceText(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                  {{ deviceCode || '—' }}
                 </p>
                 <p class="mt-1 text-sm text-muted-foreground">
                   状态时间 {{ formatDateTime(currentState?.stateOccurredAtUtc) }}
@@ -876,15 +889,11 @@ function recordDowntime() {
               <NvBadge
                 class="rounded-sm"
                 :variant="badgeVariant(equipmentStatusTone(currentState?.currentState))"
-                >{{ statusLabel(currentState?.currentState) }}</NvBadge
+                >{{ stateText }}</NvBadge
               >
             </div>
             <div class="mt-3">
-              <NvBadge
-                class="rounded-sm"
-                :variant="currentState?.isSourceFresh ? 'success' : 'warning'"
-                >{{ currentState?.isSourceFresh ? '采集正常' : '采集过期' }}</NvBadge
-              >
+              <NvBadge class="rounded-sm" :variant="sourceTone">{{ sourceText }}</NvBadge>
             </div>
           </div>
 
@@ -947,9 +956,11 @@ function recordDowntime() {
             empty-message="当前设备没有排程或维修占用时段。"
           >
             <template #cell-availabilityStatus="{ row }">
-              <NvBadge class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{
-                availabilityLabel(row.availabilityStatus)
-              }}</NvBadge>
+              <NvBadge
+                class="rounded-sm"
+                :variant="describeAvailabilityStatus(row.availabilityStatus).tone"
+                >{{ describeAvailabilityStatus(row.availabilityStatus).label }}</NvBadge
+              >
             </template>
             <template #cell-reason="{ row }">
               <div class="grid gap-1">
@@ -1363,8 +1374,8 @@ function recordDowntime() {
                   }}</span>
                   <NvBadge
                     class="rounded-sm"
-                    :variant="availabilityVariant(row.availabilityStatus)"
-                    >{{ availabilityLabel(row.availabilityStatus) }}</NvBadge
+                    :variant="describeAvailabilityStatus(row.availabilityStatus).tone"
+                    >{{ describeAvailabilityStatus(row.availabilityStatus).label }}</NvBadge
                   >
                 </div>
                 <span class="text-xs text-muted-foreground"

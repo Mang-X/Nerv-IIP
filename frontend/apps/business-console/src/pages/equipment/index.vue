@@ -2,7 +2,10 @@
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import DeviceQuickViewSheet from '@/components/equipment/DeviceQuickViewSheet.vue'
 import {
+  describeAvailabilityWindowReference,
   describeEquipmentReason,
+  EQUIPMENT_FRESHNESS_DISPLAY,
+  equipmentSourceStatus,
   equipmentStatusTone,
   MAX_DEVICE_ASSET_IDS,
   useBusinessEquipmentOverview,
@@ -13,6 +16,7 @@ import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNam
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { friendlyErrorMessage } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { equipmentStateLabel } from '@nerv-iip/business-core'
 import {
@@ -142,7 +146,7 @@ const stateSegments = computed<NvMetricSegment[]>(() => [
 ])
 
 // 遥测读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+const { resolveDevice, resolveDeviceCode, resolveWorkCenter } = useMasterDataDisplayNames({
   devices: true,
   workCenters: true,
 })
@@ -184,6 +188,12 @@ function stateText(status?: string | null) {
 // 行内速览抽屉：不离开看板即可核对设备状态 / 报警 / 可用性窗口。
 const quickViewDeviceId = ref('')
 const quickViewOpen = ref(false)
+// 是否接入以后端可用性窗口为准，与详情页同一判据。
+function rowFreshness(row: { deviceAssetId?: string | null; isSourceFresh?: boolean | null }) {
+  return EQUIPMENT_FRESHNESS_DISPLAY[
+    equipmentSourceStatus(row.isSourceFresh, activeBlocks.value, row.deviceAssetId)
+  ]
+}
 function openQuickView(deviceAssetId?: string | null) {
   if (!deviceAssetId) return
   quickViewDeviceId.value = deviceAssetId
@@ -355,10 +365,11 @@ function formatDateTime(value?: string | null) {
             >{{ stateText(row.currentState) }}</NvBadge
           >
         </template>
-        <!-- 「过期」是采集口径，现场关心的是"这行数还能不能信"：不新鲜＝没有实时数据。 -->
+        <!-- 「过期」是采集口径，现场关心的是"这行数还能不能信"：不新鲜＝没有实时数据；
+             从没接入采集的设备不是数据中断，照实说、用中性色。 -->
         <template #cell-isSourceFresh="{ row }">
-          <NvBadge class="rounded-sm" :variant="row.isSourceFresh ? 'success' : 'warning'">{{
-            row.isSourceFresh ? '实时' : '暂无实时数据'
+          <NvBadge class="rounded-sm" :variant="rowFreshness(row).tone">{{
+            rowFreshness(row).label
           }}</NvBadge>
         </template>
         <template #cell-activeAlarmCount="{ row }"
@@ -429,9 +440,11 @@ function formatDateTime(value?: string | null) {
                   }}
                 </p>
               </div>
-              <NvBadge class="rounded-sm" variant="danger">{{
-                describeEquipmentReason(block.reasonCode ?? '').label
-              }}</NvBadge>
+              <NvBadge
+                class="rounded-sm"
+                :variant="describeEquipmentReason(block.reasonCode ?? '').tone"
+                >{{ describeEquipmentReason(block.reasonCode ?? '').label }}</NvBadge
+              >
             </div>
             <p class="text-sm leading-6 text-muted-foreground">
               {{ describeEquipmentReason(block.reasonCode ?? '').nextStep }}
@@ -441,7 +454,15 @@ function formatDateTime(value?: string | null) {
                 ><ActivityIcon class="inline size-3" /> {{ formatDateTime(block.startUtc) }}</span
               >
               <span>{{ formatDateTime(block.endUtc) }}</span>
-              <span v-if="block.sourceReferenceId">关联单据 {{ block.sourceReferenceId }}</span>
+              <span
+                >关联业务
+                {{
+                  describeAvailabilityWindowReference(
+                    block,
+                    resolveDeviceCode(block.deviceAssetId) ?? readFaceText(block.deviceAssetId, ''),
+                  )
+                }}</span
+              >
               <span v-if="block.substituteDeviceAssetIds?.length"
                 >替代设备
                 {{ block.substituteDeviceAssetIds.map((id) => deviceLabel(id)).join('、') }}</span

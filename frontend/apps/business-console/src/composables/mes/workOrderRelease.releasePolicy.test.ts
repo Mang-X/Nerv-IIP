@@ -49,6 +49,10 @@ const RELEASE_IMPACT_BY_CODE: Readonly<Record<string, boolean>> = {
   'equipment.maintenanceWindow': true,
   'equipment.inspectionRequired': true,
   'equipment.sourceStale': true,
+  // #3845：设备尚未接入采集，与采集过期同属「拿不到设备当前事实」，按 sourceStale 同档阻断下达——
+  // 放行一张工单到一台运行状态无从确认的设备上，和放行到数据已过期的设备风险相同。
+  // 目前 MES 后端的 MesReadinessReasonCodes 不产出这个码（它来自 IIoT 可用性窗口），此处归类防的是日后接入时静默默认。
+  'equipment.sourceNotConnected': true,
   'equipment.tagMappingMissing': true,
   'equipment.noEligibleSubstitute': true,
   'equipment.sourceUnavailable': true,
