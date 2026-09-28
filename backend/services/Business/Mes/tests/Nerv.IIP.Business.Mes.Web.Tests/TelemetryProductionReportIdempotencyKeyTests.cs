@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.AspNetCore.Validation;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -144,7 +143,7 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
         var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
         var sender = new ValidatingProductionReportSender(dbContext);
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
-            dbContext, deadLetterStore, sender);
+            dbContext, deadLetterStore, sender, MappedResolver());
 
         await handler.HandleAsync(CreateSeedShapedEvent(), CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -177,7 +176,7 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
         await dbContext.SaveChangesAsync();
 
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
-            dbContext, new InMemoryIntegrationEventDeadLetterStore(), new ValidatingProductionReportSender(dbContext));
+            dbContext, new InMemoryIntegrationEventDeadLetterStore(), new ValidatingProductionReportSender(dbContext), MappedResolver());
 
         await handler.HandleAsync(CreateSeedShapedEvent(), CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -344,7 +343,7 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
         await dbContext.SaveChangesAsync();
         var sender = new ValidatingProductionReportSender(dbContext);
         await new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
-            dbContext, new InMemoryIntegrationEventDeadLetterStore(), sender)
+            dbContext, new InMemoryIntegrationEventDeadLetterStore(), sender, MappedResolver())
             .HandleAsync(CreateSeedShapedEvent(), CancellationToken.None);
         return Assert.Single(sender.ObservedIdempotencyKeys);
     }
@@ -388,8 +387,10 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
         operation.Assign(null, DeviceAssetId, null, DateTimeOffset.Parse("2026-07-11T07:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(operation);
-        dbContext.DeviceAssetWorkCenterMappings.Add(DeviceAssetWorkCenterMapping.Create(Organization, Environment, DeviceAssetId, "WC-PACK-01"));
     }
+
+    private static FakeMesDeviceWorkCenterResolver MappedResolver() =>
+        new FakeMesDeviceWorkCenterResolver().Map(Organization, Environment, DeviceAssetId, "WC-PACK-01");
 
     private static ApplicationDbContext CreateDbContext(string databaseName) =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(databaseName).Options, new NoopMediator());

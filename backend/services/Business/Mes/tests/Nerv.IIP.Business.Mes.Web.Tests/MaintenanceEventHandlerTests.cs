@@ -4,6 +4,7 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -73,9 +74,9 @@ public sealed class MaintenanceEventHandlerTests
         var gate = new ClaimRaceGate();
         await using var factory = CreatePipelineFactory(services =>
         {
-            services.RemoveAll<IMesPlanningStore>();
-            services.AddScoped<IMesPlanningStore>(provider => new ClaimRaceGatePlanningStore(
-                new PersistentMesPlanningStore(provider.GetRequiredService<ApplicationDbContext>()),
+            services.RemoveAll<IMesDeviceWorkCenterResolver>();
+            services.AddScoped<IMesDeviceWorkCenterResolver>(_ => new ClaimRaceGateWorkCenterResolver(
+                new FakeMesDeviceWorkCenterResolver().Map("ASSET-CNC-01", "WC-A"),
                 gate));
         });
         using var client = factory.CreateClient();
@@ -335,7 +336,6 @@ public sealed class MaintenanceEventHandlerTests
         using var scope = factory.Services.CreateScope();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
@@ -346,7 +346,6 @@ public sealed class MaintenanceEventHandlerTests
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         await using var dbContext = CreateDbContext();
@@ -364,11 +363,77 @@ public sealed class MaintenanceEventHandlerTests
     }
 
     [Fact]
+    public async Task AssetUnavailableHandler_SkipsWindowWithoutRetryWhenMasterDataHasNoWorkCenterForDevice()
+    {
+        // #3878：主数据查不到这台设备的工作中心时，不得拿设备编号冒充工作中心（旧行为会记到不存在的「ASSET-CNC-01」工作中心）。
+        // 这条停机跳过；claim 照常落库，重投不会再进副作用。
+        var store = new InMemoryMesPlanningStore();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        var resolver = new FakeMesDeviceWorkCenterResolver();
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-unavailable-unmapped-{Guid.CreateVersion7():N}", databaseRoot);
+        var integrationEvent = CreateUnavailableEvent(now);
+
+        for (var delivery = 0; delivery < 2; delivery++)
+        {
+            await using var dbContext = CreateDbContext(options);
+            var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+                CreateUnavailableProcessor(store, dbContext, resolver),
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        Assert.Empty(store.Unavailabilities);
+        Assert.Equal(1, resolver.Calls);
+        await using var assertionDbContext = CreateDbContext(options);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task AssetUnavailableHandler_PropagatesMasterDataOutageWithoutClaimingSoTheMessageIsRetried()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        var resolver = new FakeMesDeviceWorkCenterResolver
+        {
+            Failure = new MesMasterDataUnavailableException("master-data down"),
+        };
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-unavailable-outage-{Guid.CreateVersion7():N}", databaseRoot);
+        var integrationEvent = CreateUnavailableEvent(now);
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+                CreateUnavailableProcessor(store, dbContext, resolver),
+                new InMemoryIntegrationEventDeadLetterStore());
+            await Assert.ThrowsAsync<MesMasterDataUnavailableException>(
+                () => handler.HandleAsync(integrationEvent, CancellationToken.None));
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            Assert.Equal(0, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        }
+
+        resolver.Failure = null;
+        resolver.Map("ASSET-CNC-01", "WC-A");
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+                CreateUnavailableProcessor(store, dbContext, resolver),
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        Assert.Equal("WC-A", Assert.Single(store.Unavailabilities).WorkCenterId);
+    }
+
+    [Fact]
     public async Task AssetUnavailableHandler_SkipsDuplicateEventBeforeRecordingWindow()
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -403,7 +468,6 @@ public sealed class MaintenanceEventHandlerTests
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -441,7 +505,6 @@ public sealed class MaintenanceEventHandlerTests
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -479,7 +542,6 @@ public sealed class MaintenanceEventHandlerTests
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         await using var dbContext = CreateDbContext();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new AssetUnavailableV2IntegrationEventHandlerForReschedule(
@@ -503,7 +565,6 @@ public sealed class MaintenanceEventHandlerTests
     public async Task AssetUnavailableHandler_KeepsRejectingEmptyCausationIdForV1()
     {
         var store = new InMemoryMesPlanningStore();
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         await using var dbContext = CreateDbContext();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
@@ -578,7 +639,6 @@ public sealed class MaintenanceEventHandlerTests
     {
         var store = new InMemoryMesPlanningStore();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddUnavailability(new WorkCenterUnavailability("WC-A", now, null, "breakdown", "ASSET-CNC-01"));
 
         var handler = new AssetRestoredIntegrationEventHandlerForReschedule(
@@ -752,8 +812,12 @@ public sealed class MaintenanceEventHandlerTests
     /// </summary>
     private static IMesAssetUnavailableCanonicalProcessor CreateUnavailableProcessor(
         IMesPlanningStore store,
-        ApplicationDbContext dbContext) =>
-        new MesAssetUnavailableCanonicalProcessor(new DirectCommandSender(dbContext, store));
+        ApplicationDbContext dbContext,
+        IMesDeviceWorkCenterResolver? workCenterResolver = null) =>
+        new MesAssetUnavailableCanonicalProcessor(new DirectCommandSender(
+            dbContext,
+            store,
+            workCenterResolver ?? new FakeMesDeviceWorkCenterResolver().Map("ASSET-CNC-01", "WC-A")));
 
     private static ApplicationDbContext CreateDbContext(DbContextOptions<ApplicationDbContext> options)
     {
@@ -815,13 +879,17 @@ public sealed class MaintenanceEventHandlerTests
 
     private sealed class DirectCommandSender(
         ApplicationDbContext dbContext,
-        IMesPlanningStore store) : ISender
+        IMesPlanningStore store,
+        IMesDeviceWorkCenterResolver workCenterResolver) : ISender
     {
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             var command = Assert.IsType<ProcessAssetUnavailableCommand>(request);
             var handler = new ProcessAssetUnavailableCommandHandler(
-                new PostgreSqlMesAssetUnavailableInboxClaimCoordinator(dbContext), store);
+                new PostgreSqlMesAssetUnavailableInboxClaimCoordinator(dbContext),
+                store,
+                workCenterResolver,
+                NullLogger<ProcessAssetUnavailableCommandHandler>.Instance);
             var result = await handler.Handle(command, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return (TResponse)(object)result;
@@ -861,28 +929,13 @@ public sealed class MaintenanceEventHandlerTests
         }
     }
 
-    private sealed class ClaimRaceGatePlanningStore(IMesPlanningStore inner, ClaimRaceGate gate) : IMesPlanningStore
+    private sealed class ClaimRaceGateWorkCenterResolver(IMesDeviceWorkCenterResolver inner, ClaimRaceGate gate)
+        : IMesDeviceWorkCenterResolver
     {
-        public void AddWorkOrder(PlannedWorkOrder workOrder) => inner.AddWorkOrder(workOrder);
-        public void AddOperationTask(PlannedOperationTask operationTask) => inner.AddOperationTask(operationTask);
-        public void AddUnavailability(WorkCenterUnavailability unavailability) => inner.AddUnavailability(unavailability);
-        public void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId) => inner.MapDeviceAssetToWorkCenter(deviceAssetId, workCenterId);
-        public Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default) => inner.GetWorkOrdersAsync(cancellationToken);
-        public Task<bool> WorkOrderExistsAsync(string organizationId, string environmentId, string workOrderId, CancellationToken cancellationToken = default) => inner.WorkOrderExistsAsync(organizationId, environmentId, workOrderId, cancellationToken);
-        public Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default) => inner.GetOperationTasksAsync(cancellationToken);
-        public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(cancellationToken);
-        public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(organizationId, environmentId, cancellationToken);
-        public Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(deviceAssetId, restoredAtUtc, cancellationToken);
-        public Task CloseUnavailabilityAsync(string organizationId, string environmentId, string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(organizationId, environmentId, deviceAssetId, restoredAtUtc, cancellationToken);
-        public async Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default)
+        public async Task<string?> ResolveAsync(string organizationId, string environmentId, string deviceAssetId, CancellationToken cancellationToken)
         {
             await gate.EnterSideEffectsAsync(cancellationToken);
-            return await inner.ResolveWorkCenterIdAsync(deviceAssetId, cancellationToken);
-        }
-        public async Task<string> ResolveWorkCenterIdAsync(string organizationId, string environmentId, string deviceAssetId, CancellationToken cancellationToken = default)
-        {
-            await gate.EnterSideEffectsAsync(cancellationToken);
-            return await inner.ResolveWorkCenterIdAsync(organizationId, environmentId, deviceAssetId, cancellationToken);
+            return await inner.ResolveAsync(organizationId, environmentId, deviceAssetId, cancellationToken);
         }
     }
 }

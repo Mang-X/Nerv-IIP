@@ -226,6 +226,15 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 3. migration 已应用但新版本健康检查失败时，保留现有 schema，不手工重建该表、不回灌历史排程结果：读该表的应用代码（查询读面、种子与一致性校验）在同一版本内已一并删除，重建空表不会让任何功能回来。
 4. 旧版本 MES 服务不能在本 migration 之后继续运行：它的 `DbSet` 与种子仍指向已删除的表。升级窗口内先停旧版本再应用 migration。
 
+### 6.9 BusinessMES 设备工作中心映射删表 migration
+
+`20260928085507_DropMesDeviceAssetWorkCenterMappings` 删除 `mes.device_asset_work_center_mappings` 表及其唯一索引 `ix_asset_wc_mapping_scope_asset`。设备归属哪个工作中心由 BusinessMasterData 拥有（`docs/architecture/business/equipment-status-event-flow.md`）；自 #3878 起，MES 在消费遥测计数和停机事件时直接查询主数据设备台账，不再保存本地映射。该表在产品内没有维护入口，唯一的写入方是已在同一版本删除的演示种子。执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 这是**破坏性删表**：`Up` 会一次删掉该表的全部行和全部列。发布前必须完成第 6 节的备份或平台快照。有保留需要时，先按批准流程导出，不要依赖 migration。
+2. **`Down` 不是回滚授权，也不是数据恢复手段**：它只会重建一张结构等价的空表，原有映射行不会回来。发布失败时，先停止新版本服务，优先前滚补救；确需还原数据时，走第 6 节的批准恢复点。
+3. 旧版本 MES 服务不能在本 migration 之后继续运行：旧版的遥测计数消费者和停机消费者仍会查询这张已删除的表。升级窗口内先停旧版本，再应用 migration。
+4. **不需要回填**：表内只有演示种子写入的数据，其中 8 台设备的工作中心还与主数据不一致。新版本按主数据的当前值解析，已登记的设备在升级后立即生效。升级前已挂在「设备未绑定工作中心」的遥测候选不会自动重算，按需在「报工记录 › 遥测报工待确认」里人工确认或忽略。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed，以及下文非 Development 下随 IAM 启动执行的平台引导。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

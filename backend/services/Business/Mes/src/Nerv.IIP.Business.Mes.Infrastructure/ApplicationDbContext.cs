@@ -72,8 +72,6 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ChangeoverRecord> ChangeoverRecords => Set<ChangeoverRecord>();
 
-    public DbSet<DeviceAssetWorkCenterMapping> DeviceAssetWorkCenterMappings => Set<DeviceAssetWorkCenterMapping>();
-
     public DbSet<FinishedGoodsReceiptRequest> FinishedGoodsReceiptRequests => Set<FinishedGoodsReceiptRequest>();
 
     public DbSet<ShiftHandover> ShiftHandovers => Set<ShiftHandover>();

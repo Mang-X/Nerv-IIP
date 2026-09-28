@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -15,7 +16,8 @@ namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ISender sender)
+    ISender sender,
+    IMesDeviceWorkCenterResolver workCenterResolver)
     : IIntegrationEventHandler<TelemetryProductionCountDeltaIntegrationEvent>, ICapSubscribe
 {
     public const string TopicName = nameof(TelemetryProductionCountDeltaIntegrationEvent);
@@ -57,7 +59,13 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
         }
 
         var payload = integrationEvent.Payload;
-        var workCenterId = await ResolveWorkCenterIdAsync(integrationEvent, cancellationToken);
+        // 设备归属的工作中心由 MasterData 拥有（#3878），这里直接查询。主数据不可用时 resolver 抛出：
+        // 收件箱记录只在变更跟踪器里、尚未落库，整条消息交给消息系统重试，不会挂起候选也不会报两次工。
+        var workCenterId = await workCenterResolver.ResolveAsync(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            payload.DeviceAssetId,
+            cancellationToken);
         var operation = workCenterId is null
             ? null
             : await ResolveCurrentOperationAsync(integrationEvent, workCenterId, cancellationToken);
@@ -158,17 +166,6 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
         }
 
         return PayloadValidationResult.Valid;
-    }
-
-    private async Task<string?> ResolveWorkCenterIdAsync(TelemetryProductionCountDeltaIntegrationEvent integrationEvent, CancellationToken cancellationToken)
-    {
-        return await dbContext.DeviceAssetWorkCenterMappings
-            .Where(x => (x.OrganizationId == null || x.OrganizationId == integrationEvent.OrganizationId) &&
-                        (x.EnvironmentId == null || x.EnvironmentId == integrationEvent.EnvironmentId) &&
-                        x.DeviceAssetId == integrationEvent.Payload.DeviceAssetId)
-            .OrderByDescending(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId)
-            .Select(x => x.WorkCenterId)
-            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<OperationTask?> ResolveCurrentOperationAsync(

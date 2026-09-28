@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
@@ -335,6 +336,12 @@ public sealed class MesCapSubscriptionTests
                 {
                     configuration.AddInMemoryCollection(settings);
                 });
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMesDeviceWorkCenterResolver>();
+                    services.AddSingleton<IMesDeviceWorkCenterResolver>(
+                        new FakeMesDeviceWorkCenterResolver().Map("ASSET-CNC-01", "WC-A"));
+                });
             });
     }
 
@@ -368,7 +375,6 @@ public sealed class MesCapSubscriptionTests
         using var scope = factory.Services.CreateScope();
         var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
