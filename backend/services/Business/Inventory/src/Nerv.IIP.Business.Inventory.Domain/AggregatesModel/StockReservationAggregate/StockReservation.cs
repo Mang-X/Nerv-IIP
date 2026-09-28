@@ -7,6 +7,8 @@ public partial record StockReservationId : IGuidStronglyTypedId;
 
 public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoot
 {
+    public const string PickedStatus = "picked";
+
     private StockReservation()
     {
     }
@@ -86,19 +88,44 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         return new StockReservation(ledger, sourceService, sourceDocumentId, sourceDocumentLineId, idempotencyKey, quantity, expiresAtUtc);
     }
 
-    public void Release(decimal quantity)
+    /// <summary>
+    /// 释放是幂等的：只释放仍 open 的那部分，预留已被核销、释放或过期时什么也不做并返回 0。
+    /// 调用方（WMS 过账失败回执、短拣余量、取消）无法也不该先判断预留还剩多少——
+    /// 预留不再 open 时抛异常只会让失败回执永远处理不完（#3836）。
+    /// </summary>
+    public decimal Release(decimal quantity)
     {
-        var releaseQuantity = Positive(quantity, nameof(quantity));
-        if (releaseQuantity > OpenQuantity)
+        var releaseQuantity = Math.Min(Positive(quantity, nameof(quantity)), OpenQuantity);
+        if (releaseQuantity == 0m)
         {
-            throw new InventoryDomainException(
-                InventoryDomainFailureReason.ReservationAllocationRejected,
-                "Cannot release more than the open committed quantity.");
+            return 0m;
         }
 
         ReleasedQuantity += releaseQuantity;
         OpenQuantity -= releaseQuantity;
-        Status = OpenQuantity == 0 ? "released" : "partially-released";
+        Status = OpenQuantity == 0 ? "released" : RemainingOpenStatus("partially-released");
+        UpdatedAtUtc = DateTime.UtcNow;
+        return releaseQuantity;
+    }
+
+    /// <summary>
+    /// 拣货完成：货已从库位拣出、等待出库过账，预留从此保持到过账核销或显式释放，不再因超时过期（#3836）。
+    /// </summary>
+    public void MarkPicked()
+    {
+        if (Status == PickedStatus)
+        {
+            return;
+        }
+
+        if (OpenQuantity <= 0m)
+        {
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Only an open reservation can be marked as picked.");
+        }
+
+        Status = PickedStatus;
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
@@ -114,7 +141,7 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
 
         AllocatedQuantity += allocateQuantity;
         OpenQuantity -= allocateQuantity;
-        Status = OpenQuantity == 0 ? "allocated" : "partially-allocated";
+        Status = OpenQuantity == 0 ? "allocated" : RemainingOpenStatus("partially-allocated");
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
@@ -183,6 +210,10 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
             && ExpiryDate == other.ExpiryDate
             && ReservedQuantity == other.ReservedQuantity;
     }
+
+    /// <summary>已拣货物部分释放或部分核销后，剩余部分仍是已拣状态，继续不过期。</summary>
+    private string RemainingOpenStatus(string partialStatus) =>
+        Status == PickedStatus ? PickedStatus : partialStatus;
 
     private static decimal Positive(decimal value, string parameterName)
     {
