@@ -3106,7 +3106,8 @@ public sealed record BusinessConsolePlanningSuggestionItem(
     BusinessConsoleNetRequirementExplanation? NetRequirementExplanation = null,
     string? DownstreamService = null,
     string? DownstreamDocumentType = null,
-    string? DownstreamDocumentId = null);
+    string? DownstreamDocumentId = null,
+    string? SupersededByRunId = null);
 
 public sealed record BusinessConsoleNetRequirementExplanation(
     decimal GrossDemandQuantity,

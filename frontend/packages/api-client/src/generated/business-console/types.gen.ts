@@ -3804,6 +3804,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     downstreamService?: string | null;
     downstreamDocumentType?: string | null;
     downstreamDocumentId?: string | null;
+    supersededByRunId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNetRequirementExplanation = {
