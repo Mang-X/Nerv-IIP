@@ -52,7 +52,7 @@ test.beforeEach(async ({ page }) => {
 test('① 1440px 下指标卡等宽不溢出，第四格的文字完整可见（#3735）', async ({ page }) => {
   await page.goto('/mes', { waitUntil: 'domcontentloaded' })
 
-  // 驾驶舱上有两条指标条：上面「我的范围 · …」四格，下面「全厂…」四格。
+  // 驾驶舱上有两条指标条：上面「我负责的 · …」四格，下面「全厂…」四格。
   // 票面说的就是四卡那一条，两条都量——共享组件改坏了任一条都要看得见。
   const strips = page.locator('[data-slot="nv-metric-strip"]')
   await expect(strips.first()).toBeVisible({ timeout: 15_000 })
@@ -115,7 +115,7 @@ test('③ 生产日报筛选器横排，数据表头落在首屏内（#3735）',
   expect(headTop, `数据表头在 ${headTop.toFixed(0)}px，落在 900px 首屏之外`).toBeLessThan(900)
 })
 
-test('③ 业务日改用 NvDatePicker，不再是原生 date 输入（#3735）', async ({ page }) => {
+test('③ 业务日可清除，且始终是本地化日期而不是美式 mm/dd/yyyy（#3735）', async ({ page }) => {
   await page.goto('/mes/reports', { waitUntil: 'domcontentloaded' })
   const field = page
     .locator('[data-slot="nv-field"]')
@@ -123,12 +123,23 @@ test('③ 业务日改用 NvDatePicker，不再是原生 date 输入（#3735）'
     .first()
   await expect(field).toBeVisible({ timeout: 15_000 })
 
-  // 页面里不该再有原生日期框——那正是票面说的「未样式化 + 美式 mm/dd/yyyy」。
-  expect(await field.locator('input[type="date"]').count()).toBe(0)
-  // 换成了日历触发器（NvDatePicker 的 NvButton 带日历图标）。
-  expect(await field.locator('button').count()).toBeGreaterThan(0)
-  // 未选择时显示占位文案，而不是 mm/dd/yyyy。
+  // 断言行为而不是组件形状：票面要的是「不出现未样式化的 `mm/dd/yyyy`」，
+  // 任何本地化日期控件都该过。选一个非今天的日子，屏幕上是 `YYYY-MM-DD`。
+  const trigger = field.locator('button').first()
+  await trigger.click()
+  const day = page.locator('[role="dialog"] button', { hasText: /^15$/ }).first()
+  await day.click()
+  await expect(field).toHaveText(/202\d-\d{2}-\d{2}/)
+  // 美式顺序一旦漏回来这里会红：`15/09/2026` 不匹配上面的模式。
+  expect(await field.innerText()).not.toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/)
+
+  // 被它替掉的原生 `<input type="date">` 自带清除按钮，日历触发器没有——不补
+  // 清除路径，选完就只能刷页才能回到「全部业务日」（#3735 阻断项）。
+  const clear = field.getByRole('button', { name: /清除/ })
+  await expect(clear).toBeVisible()
+  await clear.click()
   await expect(field).toContainText('选择业务日')
+  expect(await field.getByRole('button', { name: /清除/ }).count()).toBe(0)
 })
 
 test('④ 工序列不再逐道重复渲染完整工单号（#3735）', async ({ page }) => {

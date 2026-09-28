@@ -41,6 +41,24 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 <NvDatePicker v-model="planDate" disabled />
 ```
 
+## 可清除与宽度
+
+宽度完全由调用方的 `class` 给：组件不自带任何 `w-*`，所以外层字段壳声明的宽度和触发器渲染出来的宽度必然一致，不会互相覆盖。窄屏占满、到断点收成固定宽度是本组件的通行写法（与筛选条里的搜索框、下拉框同一套）。
+
+`clearable` 打开后，触发按钮上出现清除叉，日历浮层底部也多一个「清除」。清除回传**空字符串**（不是 `null`），所以「选一次再退回全部」不需要刷新页面。
+
+<Demo>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <div style="max-width: 200px">
+      <NvDatePicker v-model="planDate" placeholder="选择日期" clearable class="w-full sm:w-44" />
+    </div>
+  </div>
+</Demo>
+
+```vue
+<NvDatePicker v-model="planDate" placeholder="选择日期" clearable class="w-full sm:w-44" />
+```
+
 ## 日期范围 DateRangePicker
 
 `NvDateRangePicker` 选择起止区间：首次点击定起点，再次点击定终点（自动排序），悬停可实时预览跨度。模型是 `{ start, end }` 字符串对象。
@@ -68,14 +86,15 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 
 ### NvDatePicker
 
-| 属性               | 说明                            | 类型             | 默认       |
-| ------------------ | ------------------------------- | ---------------- | ---------- |
-| `v-model`          | 绑定日期（`YYYY-MM-DD` 字符串） | `string \| null` | `null`     |
-| `id`               | 触发按钮 ID，用于关联字段标签   | `string`         | —          |
-| `placeholder`      | 未选中占位文本                  | `string`         | `选择日期` |
-| `disabled`         | 是否禁用                        | `boolean`        | `false`    |
-| `aria-invalid`     | 字段是否处于校验失败状态        | `boolean`        | `false`    |
-| `aria-describedby` | 关联字段错误说明元素的 ID       | `string`         | —          |
+| 属性               | 说明                             | 类型             | 默认       |
+| ------------------ | -------------------------------- | ---------------- | ---------- |
+| `v-model`          | 绑定日期（`YYYY-MM-DD` 字符串）  | `string \| null` | `null`     |
+| `id`               | 触发按钮 ID，用于关联字段标签    | `string`         | —          |
+| `placeholder`      | 未选中占位文本                   | `string`         | `选择日期` |
+| `disabled`         | 是否禁用                         | `boolean`        | `false`    |
+| `clearable`        | 是否允许清除已选日期（回传空串） | `boolean`        | `false`    |
+| `aria-invalid`     | 字段是否处于校验失败状态         | `boolean`        | `false`    |
+| `aria-describedby` | 关联字段错误说明元素的 ID        | `string`         | —          |
 
 ### NvDateRangePicker
 

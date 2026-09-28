@@ -88,12 +88,18 @@ function fromDateInput(value: string, dayOffset: number) {
         <NvFieldLabel>统计时段</NvFieldLabel>
         <NvDateRangePicker v-model="windowRange" placeholder="选择统计时段" />
       </NvField>
-      <NvField class="w-full sm:w-36">
+      <!-- 业务日比同排的 40/44 宽一档：触发器上要给清除叉让位（`pr-12`），144px
+           装不下 `YYYY-MM-DD` 加叉。NvDatePicker 的宽度只由 class 给，与 NvField
+           垂直变体自带的 `*:w-full` 落在同一条 twMerge 通道上，两处写法一致时
+           不存在谁覆盖谁的问题。 -->
+      <NvField class="w-full sm:w-44">
         <NvFieldLabel>业务日</NvFieldLabel>
         <NvDatePicker
           :model-value="filters.businessDate || null"
           placeholder="选择业务日"
           aria-label="业务日"
+          clearable
+          class="w-full sm:w-36"
           @update:model-value="emit('update', { businessDate: $event })"
         />
       </NvField>
