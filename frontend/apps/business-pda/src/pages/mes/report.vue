@@ -48,6 +48,7 @@ import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 import { useTelemetryCandidateTarget } from '@/composables/mes/useTelemetryCandidateTarget'
+import { useDeviceAssetNames } from '@/composables/useBusinessDeviceDirectory'
 import TelemetryCandidateTarget from './components/TelemetryCandidateTarget.vue'
 import {
   formatOperationDateTime,
@@ -164,6 +165,15 @@ const activeTelemetryCandidate = computed(() =>
   ),
 )
 const telemetryTarget = useTelemetryCandidateTarget(activeTelemetryCandidate, reportContext)
+// 候选读面只回设备标识，卡片标题的「名称（编码）」回主数据查；查不到就显示占位，不露标识。
+const telemetryDeviceNames = useDeviceAssetNames(
+  computed(() => telemetryQueue.candidates.value.map((candidate) => candidate.deviceAssetId ?? '')),
+)
+function telemetryDeviceLabel(deviceAssetId?: string) {
+  return telemetryDeviceNames.resolveDeviceName(deviceAssetId) ?? '—'
+}
+// 遥测候选区里的输入框（工序搜索、忽略原因）获焦时，扫码框让出焦点（同 equipment/inspect.vue）。
+const telemetryEditing = ref(false)
 const telemetryDismissReason = ref('')
 const scanGate = useMesScanGate()
 const scanPending = scanGate.pending
@@ -371,10 +381,13 @@ watch(canCompleteSelectedTask, (canComplete) => {
   if (!canComplete) completesOperation.value = false
 })
 
-// ScanBar 仅在选工单步活跃；录数量/结果时不抢焦点
+// ScanBar 仅在选工单步活跃；录数量/结果、操作遥测候选时不抢焦点
 const scanActive = computed(
   () =>
-    currentStep.value === 'selectWorkOrder' && result.value === null && selectedTask.value === null,
+    currentStep.value === 'selectWorkOrder' &&
+    result.value === null &&
+    selectedTask.value === null &&
+    !telemetryEditing.value,
 )
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core。
@@ -617,6 +630,8 @@ async function onScanAccepted(value: MesScanAccepted) {
       <section
         v-if="telemetryQueue.candidates.value.length"
         class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3"
+        @focusin="telemetryEditing = true"
+        @focusout="telemetryEditing = false"
       >
         <div class="flex items-center justify-between">
           <h2 class="font-semibold">遥测待确认</h2>
@@ -630,11 +645,12 @@ async function onScanAccepted(value: MesScanAccepted) {
           <NvMobileButton
             variant="text"
             block
-            class="h-auto justify-start p-0 text-left"
+            class="h-auto min-w-0 flex-col items-start justify-start gap-0.5 p-0 text-left whitespace-normal"
             @click="toggleTelemetryCandidate(candidate.candidateId)"
           >
-            <span class="block font-medium"
-              >设备 {{ candidate.deviceAssetId }} · {{ candidate.goodQuantity }} 件 ·
+            <span class="block min-w-0 font-medium break-words"
+              >设备 {{ telemetryDeviceLabel(candidate.deviceAssetId) }} ·
+              {{ candidate.goodQuantity }} 件 ·
               {{ formatOperationDateTime(candidate.bucketStartUtc) }}</span
             ><span class="block text-xs text-muted-foreground">{{
               telemetryCandidateStateLabel(candidate)

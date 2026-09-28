@@ -1411,7 +1411,7 @@ describe('PDA MES production reporting page', () => {
     expect(recordReport).not.toHaveBeenCalled()
   })
 
-  it('遥测待确认候选显示设备编码与中文状态，不显示原始状态码', async () => {
+  it('遥测待确认候选显示设备名称（编码）与中文状态，不露设备标识和原始状态码', async () => {
     telemetryCandidatesRef.value = [
       {
         candidateId: 'cand-1',
@@ -1431,9 +1431,12 @@ describe('PDA MES production reporting page', () => {
     const wrapper = mount(ReportPage)
     await flushPromises()
     const text = wrapper.text()
-    expect(text).toContain('设备 DEV-CNC-01 · 12 件')
+    expect(text).toContain('设备 数控车床一号（EQ00001） · 12 件')
     expect(text).toContain('设备存在未处理报警')
-    expect(text).toMatch(/设备 DEV-CNC-02 · 8 件[^设]*待确认/)
+    // 主数据查不到名称时用占位，不把设备标识露给用户。
+    expect(text).toMatch(/设备 — · 8 件[^设]*待确认/)
+    expect(text).not.toContain('DEV-CNC-01')
+    expect(text).not.toContain('DEV-CNC-02')
     expect(text).not.toContain('active-alarm')
     expect(text).not.toContain('pending-confirmation')
   })
@@ -1455,6 +1458,22 @@ describe('PDA MES production reporting page', () => {
     { operationTaskId: 'OP-1', workOrderId: 'WO-2026-0001', operationSequence: 10 },
     { operationTaskId: 'OP-3', workOrderId: 'WO-2026-0002', operationSequence: 10 },
   ]
+
+  it('遥测候选区的输入框获焦时扫码框让出焦点，失焦后恢复扫码', async () => {
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-focus',
+      deviceAssetId: 'DEV-CNC-01',
+    })
+    const listScanner = () => wrapper.getComponent({ name: 'MesScanPrevalidation' })
+    expect(listScanner().props('active')).toBe(true)
+
+    const search = wrapper.get('input[placeholder="按工单号搜索执行中的工序"]')
+    await search.trigger('focusin')
+    expect(listScanner().props('active')).toBe(false)
+
+    await search.trigger('focusout')
+    expect(listScanner().props('active')).toBe(true)
+  })
 
   it('遥测候选已关联工单工序时直接带出，确认转正不需要输入任何编号', async () => {
     telemetryTargetTasksRef.value = deviceTasks
