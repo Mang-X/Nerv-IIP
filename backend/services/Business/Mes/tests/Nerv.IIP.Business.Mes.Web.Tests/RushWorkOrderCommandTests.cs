@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using NetCorePal.Extensions.Primitives;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -8,11 +9,111 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class RushWorkOrderCommandTests
 {
+    // Contract: Regression. Authority: Issue #3858 — 急单缺生产版本时在建单这一步给业务提示，
+    // 不再落一张下达不了的工单（以前要到下达时才撞上带英文码的放行拒绝）。
+    [Fact]
+    public async Task Rush_work_order_without_production_version_is_rejected_at_creation()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var now = DateTimeOffset.Parse("2026-09-28T08:00:00Z");
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CreateRushWorkOrderCommandHandler(store).Handle(
+                new CreateRushWorkOrderCommand(
+                    "org-001", "env-dev", null, "SKU-R", null, 1m,
+                    now.AddHours(4), "WC-A", null, 10, TimeSpan.FromHours(1), now,
+                    "rush-no-version"),
+                CancellationToken.None));
+
+        Assert.Equal("急单必须选择生产版本：请先为该物料选择当前有效的生产版本。", exception.Message);
+        Assert.Empty(store.WorkOrders);
+    }
+
+    // Contract: Regression. Authority: Issue #3858 — 急单建单时按生产版本冻结齐套需求；
+    // 否则齐套读面报「齐套快照缺失」、前端预检永远拦住下达。下达门禁这里不给快照来源，
+    // 只能读建单时冻结的那份。
+    [Fact]
+    public async Task Rush_work_order_freezes_material_requirements_at_creation_so_it_can_be_released()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-09-28T08:00:00Z");
+        var snapshots = new StubMaterialSnapshotProvider(MesMaterialRequirementSnapshotResult.Captured(
+            "product-engineering-http:PV-R:MBOM-R:A",
+            [new MesMaterialRequirementSnapshotLine(
+                null, "MAT-R", null, 5m, "PCS", 10m, 0m, "MBOM-R:A:MAT-R", [])]));
+
+        var response = await new CreateRushWorkOrderCommandHandler(
+            new PersistentMesPlanningStore(dbContext), new MesCodingService(), dbContext, snapshots)
+            .Handle(
+                new CreateRushWorkOrderCommand(
+                    "org-001", "env-dev", null, "SKU-R", "PV-R", 5m,
+                    now.AddHours(4), "WC-A", null, 10, TimeSpan.FromHours(1), now,
+                    "rush-freeze-snapshot"),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        Assert.Equal("PV-R", snapshots.LastRequest!.ProductionVersionId);
+        var readiness = await new GetMaterialReadinessQueryHandler(
+            dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
+                new GetMaterialReadinessQuery("org-001", "env-dev", response.WorkOrderId),
+                CancellationToken.None);
+        Assert.Equal("Ready", readiness.ReadinessStatus);
+        Assert.Equal(now, readiness.SnapshotCapturedAtUtc);
+
+        var released = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", response.WorkOrderId, now.AddMinutes(5)),
+            CancellationToken.None);
+        Assert.Equal(response.WorkOrderId, released.ReferenceId);
+    }
+
+    [Fact]
+    public async Task Rush_work_order_is_not_created_when_material_requirements_cannot_be_frozen()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-09-28T08:00:00Z");
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CreateRushWorkOrderCommandHandler(
+                new PersistentMesPlanningStore(dbContext),
+                new MesCodingService(),
+                dbContext,
+                new StubMaterialSnapshotProvider(
+                    MesMaterialRequirementSnapshotResult.Missing("product-engineering:production-version:PV-OLD")))
+                .Handle(
+                    new CreateRushWorkOrderCommand(
+                        "org-001", "env-dev", null, "SKU-R", "PV-OLD", 5m,
+                        now.AddHours(4), "WC-A", null, 10, TimeSpan.FromHours(1), now,
+                        "rush-snapshot-missing"),
+                    CancellationToken.None));
+
+        Assert.Equal("无法按所选生产版本生成齐套需求，急单未创建。请确认该版本当前有效且制造物料清单已发布。", exception.Message);
+    }
+
+    private sealed class StubMaterialSnapshotProvider(MesMaterialRequirementSnapshotResult result)
+        : IMesMaterialRequirementSnapshotProvider
+    {
+        public MesMaterialRequirementSnapshotRequest? LastRequest { get; private set; }
+
+        public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
+            MesMaterialRequirementSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(result);
+        }
+    }
+
     [Fact]
     public async Task Rush_idempotent_replay_uses_scope_and_work_order_predicate_query()
     {

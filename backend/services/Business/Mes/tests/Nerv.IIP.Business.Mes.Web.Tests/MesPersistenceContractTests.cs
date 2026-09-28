@@ -1828,7 +1828,7 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-QUALITY-001", now.AddMinutes(30)),
                 CancellationToken.None));
-        Assert.Contains("QUALITY_PLAN_MISSING", qualityException.Message);
+        Assert.Equal(ReleaseWorkOrderCommandHandler.ReleaseProductionVersionMissingMessage, qualityException.Message);
 
         var releaseEquipmentException = await Assert.ThrowsAsync<KnownException>(() =>
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(

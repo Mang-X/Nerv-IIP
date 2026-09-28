@@ -8,11 +8,13 @@ public interface IBusinessMesWorkOrderTransformationClient
     Task<BusinessMesWorkOrderTransformationResult> SplitAsync(
         string internalBearerToken,
         BusinessConsoleMesSplitWorkOrderRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessMesWorkOrderTransformationResult> MergeAsync(
         string internalBearerToken,
         BusinessConsoleMesMergeWorkOrdersRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessMesWorkOrderTransformationReadback> GetReadbackAsync(
@@ -27,6 +29,7 @@ public sealed class HttpBusinessMesWorkOrderTransformationClient(HttpClient http
     public async Task<BusinessMesWorkOrderTransformationResult> SplitAsync(
         string internalBearerToken,
         BusinessConsoleMesSplitWorkOrderRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamTransformationResult>(
@@ -39,13 +42,15 @@ public sealed class HttpBusinessMesWorkOrderTransformationClient(HttpClient http
                 request.Targets.Select(x => new TargetWireRequest(x.WorkOrderId, x.Quantity)).ToArray(),
                 request.Reason,
                 request.IdempotencyKey),
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message => AddActor(message, actor));
         return MapResult(response, "split");
     }
 
     public async Task<BusinessMesWorkOrderTransformationResult> MergeAsync(
         string internalBearerToken,
         BusinessConsoleMesMergeWorkOrdersRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<DownstreamTransformationResult>(
@@ -59,7 +64,8 @@ public sealed class HttpBusinessMesWorkOrderTransformationClient(HttpClient http
                 request.TargetWorkOrderId,
                 request.Reason,
                 request.IdempotencyKey),
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message => AddActor(message, actor));
         return MapResult(response, "merge");
     }
 
@@ -78,6 +84,10 @@ public sealed class HttpBusinessMesWorkOrderTransformationClient(HttpClient http
             cancellationToken);
         return MapReadback(response, transformationId);
     }
+
+    // MES 拆分/合并端点按内部服务令牌要求转发的操作人身份，缺了就拒（#3858）。
+    private static void AddActor(HttpRequestMessage message, string actor) =>
+        message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor);
 
     private static BusinessMesWorkOrderTransformationResult MapResult(
         DownstreamTransformationResult response,

@@ -55,6 +55,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 "token",
                 "WO-20260731-001",
                 new BusinessConsoleMesWorkOrderReasonRequest("WO-20260731-001", "org", "env", "订单取消", null),
+                "user:planner",
                 CancellationToken.None));
 
     [Fact]
@@ -285,6 +286,25 @@ public sealed class BusinessMesAcceptedReceiptClientTests
         Assert.Equal("idem-hold", headers["X-Idempotency-Key"]);
         Assert.True(response.Accepted);
         Assert.Equal("QH-000045", response.DownstreamDocumentId);
+    }
+
+    /// <summary>
+    /// #3858：MES 取消端点在内部服务令牌下要求 <c>X-Authenticated-Actor</c>，网关漏转发时取消整单被拒。
+    /// </summary>
+    [Fact]
+    public async Task Cancel_work_order_forwards_the_authenticated_actor_header()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var client = ClientReturning(AcceptedJson("WO-20260731-001"), headers);
+
+        await client.CancelWorkOrderAsync(
+            "token",
+            "WO-20260731-001",
+            new BusinessConsoleMesWorkOrderReasonRequest("WO-20260731-001", "org", "env", "订单取消", null),
+            "user:planner",
+            CancellationToken.None);
+
+        Assert.Equal("user:planner", headers["X-Authenticated-Actor"]);
     }
 
     [Fact]

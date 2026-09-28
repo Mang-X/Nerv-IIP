@@ -77,6 +77,7 @@ public interface IBusinessMesClient
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesWorkOrderReasonRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> CloseWorkOrderAsync(
@@ -529,13 +530,17 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesWorkOrderReasonRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAcceptedAsync(
             internalBearerToken,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/cancel",
             request,
             MesWorkOrderDocumentType,
-            cancellationToken);
+            cancellationToken,
+            // MES 取消端点按内部服务令牌要求转发的操作人身份，缺了就拒（#3858）。
+            configureRequest: message =>
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
 
     public Task<BusinessConsoleAcceptedResponse> CloseWorkOrderAsync(
         string internalBearerToken,

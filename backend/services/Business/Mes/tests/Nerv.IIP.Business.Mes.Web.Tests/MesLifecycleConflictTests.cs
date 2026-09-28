@@ -196,7 +196,8 @@ public sealed class MesLifecycleConflictTests
                     Utc("2026-07-27T08:00:00Z")),
                 CancellationToken.None));
 
-        Assert.Contains("QUALITY_PLAN_MISSING", exception.Message, StringComparison.Ordinal);
+        // #3858：这句原样上屏，只说业务话，不带英文码。
+        Assert.Equal(ReleaseWorkOrderCommandHandler.ReleaseProductionVersionMissingMessage, exception.Message);
         Assert.IsNotType<MesLifecycleConflictException>(exception);
     }
 

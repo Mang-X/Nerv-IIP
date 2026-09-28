@@ -56,6 +56,9 @@ public sealed class ReleaseWorkOrderCommandHandler(
     IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
     : ICommandHandler<ReleaseWorkOrderCommand, MesAcceptedResponse>
 {
+    internal const string ReleaseProductionVersionMissingMessage =
+        "工单没有生产版本，无法下达。请取消该工单，按已发布的生产版本重新建单。";
+
     public async Task<MesAcceptedResponse> Handle(ReleaseWorkOrderCommand request, CancellationToken cancellationToken)
     {
         var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -78,7 +81,8 @@ public sealed class ReleaseWorkOrderCommandHandler(
 
         if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
         {
-            throw new KnownException("QUALITY_PLAN_MISSING: 工单缺少已发布生产版本，无法放行。");
+            // 这句经网关原样上屏，不带英文码（#3858）；读面仍以 QUALITY_PLAN_MISSING 码给出同一阻断原因。
+            throw new KnownException(ReleaseProductionVersionMissingMessage);
         }
 
         var operationSnapshots = await dbContext.OperationTasks
