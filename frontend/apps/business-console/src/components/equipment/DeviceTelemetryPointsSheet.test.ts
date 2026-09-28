@@ -44,6 +44,16 @@ const stubs = {
   NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvAlertDialog: {
+    props: ['open'],
+    template: '<div v-if="open" data-testid="disable-alert"><slot /></div>',
+  },
+  NvAlertDialogContent: { template: '<div><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h3><slot /></h3>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
   NvCheckbox: {
     props: ['modelValue', 'id'],
     emits: ['update:modelValue'],
@@ -228,16 +238,41 @@ describe('DeviceTelemetryPointsSheet', () => {
     expect(state.savePoint).not.toHaveBeenCalled()
   })
 
-  it('disables a point only after the user confirms', async () => {
+  it('disables a point only after the user confirms in an alert dialog', async () => {
     const wrapper = mountSheet()
+    expect(wrapper.find('[data-testid="disable-alert"]').exists()).toBe(false)
     await wrapper.findAll('li')[0]!.findAll('button')[1]!.trigger('click')
 
-    expect(wrapper.text()).toContain('停用点位：成品计数')
+    const alert = wrapper.get('[data-testid="disable-alert"]')
+    expect(alert.text()).toContain('确认停用采集点位「成品计数」？')
     expect(state.disablePoint).not.toHaveBeenCalled()
     await buttonByText(wrapper, '确认停用').trigger('click')
     await flushPromises()
 
     expect(state.disablePoint).toHaveBeenCalledWith('parts_count')
+    expect(wrapper.find('[data-testid="disable-alert"]').exists()).toBe(false)
     expect(wrapper.findAll('li')).toHaveLength(3)
+  })
+
+  it('keeps the confirmation open when disabling fails', async () => {
+    state.disablePoint.mockImplementationOnce(() => Promise.reject(new Error('boom')))
+    const wrapper = mountSheet()
+    await wrapper.findAll('li')[0]!.findAll('button')[1]!.trigger('click')
+
+    await buttonByText(wrapper, '确认停用').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="disable-alert"]').exists()).toBe(true)
+  })
+
+  it('shows field errors through NvFieldError inside their fields', async () => {
+    const wrapper = mountSheet()
+    await buttonByText(wrapper, '新建点位').trigger('click')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const errors = wrapper.findAll('[data-slot="nv-field-error"]')
+    expect(errors.map((e) => e.text())).toEqual(['请填写点位编码', '请选择数据类型', '请选择单位'])
+    expect(wrapper.findAll('p[role="alert"]')).toHaveLength(0)
   })
 })

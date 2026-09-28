@@ -391,6 +391,57 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.False(Assert.Single(await ListTagItemsAsync(client, "DEV-TAG-01", includeDisabled: true)).GetProperty("isEnabled").GetBoolean());
     }
 
+    [Fact]
+    public async Task Tag_upsert_of_an_existing_code_applies_the_new_control_configuration()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using (var first = await client.PostAsJsonAsync("/api/business/v1/iiot/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-TAG-04",
+            tagKey = "spindle.speed",
+            valueType = "number",
+            unitCode = "rpm",
+            samplingPolicy = "sample-10s",
+        }))
+        {
+            Assert.True(first.IsSuccessStatusCode, await first.Content.ReadAsStringAsync());
+        }
+
+        Assert.False(Assert.Single(await ListTagItemsAsync(client, "DEV-TAG-04", includeDisabled: false)).GetProperty("isWritable").GetBoolean());
+
+        // 第二次是编辑已有编码：走 upsert 的「更新已有点位」分支，可写配置必须按这次请求落库。
+        using (var second = await client.PostAsJsonAsync("/api/business/v1/iiot/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-TAG-04",
+            tagKey = "SPINDLE.SPEED",
+            displayName = "主轴转速",
+            valueType = "number",
+            unitCode = "rpm",
+            samplingPolicy = "sample-10s",
+            isWritable = true,
+            controlMinValue = 500m,
+            controlMaxValue = 2500m,
+            controlAllowedValues = new[] { "1500", "2000" },
+        }))
+        {
+            Assert.True(second.IsSuccessStatusCode, await second.Content.ReadAsStringAsync());
+        }
+
+        var item = Assert.Single(await ListTagItemsAsync(client, "DEV-TAG-04", includeDisabled: false));
+        Assert.Equal("主轴转速", item.GetProperty("displayName").GetString());
+        Assert.True(item.GetProperty("isWritable").GetBoolean());
+        Assert.Equal(500m, item.GetProperty("controlMinValue").GetDecimal());
+        Assert.Equal(2500m, item.GetProperty("controlMaxValue").GetDecimal());
+        Assert.Equal(["1500", "2000"], item.GetProperty("controlAllowedValues").EnumerateArray().Select(x => x.GetString()!).ToArray());
+    }
+
     [Theory]
     [InlineData("decimal")]
     [InlineData("counter")]

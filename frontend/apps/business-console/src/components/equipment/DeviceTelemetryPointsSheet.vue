@@ -13,11 +13,19 @@ import {
 import { useBusinessTelemetryPoints } from '@/composables/useBusinessTelemetryPoints'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
+  NvAlertDialog,
+  NvAlertDialogCancel,
+  NvAlertDialogContent,
+  NvAlertDialogDescription,
+  NvAlertDialogFooter,
+  NvAlertDialogHeader,
+  NvAlertDialogTitle,
   NvBadge,
   NvButton,
   NvCheckbox,
   NvField,
   NvFieldDescription,
+  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -57,10 +65,11 @@ const {
   disablePointPending,
 } = useBusinessTelemetryPoints(toRef(props, 'deviceAssetId'))
 
-type Phase = 'list' | 'form' | 'disable'
+type Phase = 'list' | 'form'
 const phase = ref<Phase>('list')
 const editing = ref<BusinessConsoleTelemetryTagItem | null>(null)
 const disableTarget = ref<BusinessConsoleTelemetryTagItem | null>(null)
+const disableOpen = ref(false)
 const showErrors = ref(false)
 
 const TAG_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -219,7 +228,7 @@ function openEdit(point: BusinessConsoleTelemetryTagItem) {
 
 function openDisable(point: BusinessConsoleTelemetryTagItem) {
   disableTarget.value = point
-  phase.value = 'disable'
+  disableOpen.value = true
 }
 
 async function submit() {
@@ -255,7 +264,8 @@ async function confirmDisable() {
   try {
     await disablePoint(target.tagKey)
     notifySuccess(`采集点位已停用：${pointTitle(target)}`)
-    backToList()
+    disableOpen.value = false
+    disableTarget.value = null
   } catch (error) {
     notifyOperationFailure('停用采集点位失败', error, '停用采集点位失败，请稍后重试。')
   }
@@ -343,9 +353,7 @@ async function confirmDisable() {
               placeholder="如：成品计数、主轴转速"
               :invalid="!!displayNameError"
             />
-            <p v-if="displayNameError" class="text-xs text-destructive" role="alert">
-              {{ displayNameError }}
-            </p>
+            <NvFieldError v-if="displayNameError" :errors="[displayNameError]" />
           </NvField>
 
           <NvField>
@@ -364,9 +372,7 @@ async function confirmDisable() {
               />
               <NvFieldDescription>保存后不能修改。</NvFieldDescription>
             </template>
-            <p v-if="tagKeyError" class="text-xs text-destructive" role="alert">
-              {{ tagKeyError }}
-            </p>
+            <NvFieldError v-if="tagKeyError" :errors="[tagKeyError]" />
           </NvField>
 
           <NvField>
@@ -390,9 +396,7 @@ async function confirmDisable() {
             <NvFieldDescription v-if="isCounting">
               计数点位按两次采样的差值报工；「待人工确认」会在 PDA 上生成待确认的遥测记录。
             </NvFieldDescription>
-            <p v-if="valueTypeError" class="text-xs text-destructive" role="alert">
-              {{ valueTypeError }}
-            </p>
+            <NvFieldError v-if="valueTypeError" :errors="[valueTypeError]" />
           </NvField>
 
           <div class="grid gap-3 sm:grid-cols-2">
@@ -414,9 +418,7 @@ async function confirmDisable() {
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
-              <p v-if="unitError" class="text-xs text-destructive" role="alert">
-                {{ unitError }}
-              </p>
+              <NvFieldError v-if="unitError" :errors="[unitError]" />
             </NvField>
             <NvField>
               <NvFieldLabel for="point-sampling">
@@ -436,9 +438,7 @@ async function confirmDisable() {
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
-              <p v-if="samplingError" class="text-xs text-destructive" role="alert">
-                {{ samplingError }}
-              </p>
+              <NvFieldError v-if="samplingError" :errors="[samplingError]" />
             </NvField>
           </div>
 
@@ -471,10 +471,8 @@ async function confirmDisable() {
                 placeholder="不限"
                 :invalid="!!rangeError"
               />
+              <NvFieldError v-if="rangeError" :errors="[rangeError]" />
             </NvField>
-            <p v-if="rangeError" class="text-xs text-destructive sm:col-span-2" role="alert">
-              {{ rangeError }}
-            </p>
           </div>
         </NvFieldGroup>
 
@@ -485,27 +483,32 @@ async function confirmDisable() {
           </NvButton>
         </div>
       </form>
-
-      <!-- 停用确认 -->
-      <div v-else-if="phase === 'disable' && disableTarget" class="grid gap-4 p-4">
-        <h3 class="text-sm font-semibold text-foreground">
-          停用点位：{{ pointTitle(disableTarget) }}
-        </h3>
-        <p class="text-sm text-muted-foreground">
-          停用后，这个点位不再计数，也不会出现在报警规则、历史趋势和设备控制的点位选择里；已采集的历史数据保留。停用不能撤回，同一个编码也不能再用。
-        </p>
-        <div class="flex justify-end gap-2">
-          <NvButton type="button" variant="outline" @click="backToList">取消</NvButton>
-          <NvButton
-            type="button"
-            variant="destructive"
-            :disabled="disablePointPending"
-            @click="confirmDisable"
-          >
-            确认停用
-          </NvButton>
-        </div>
-      </div>
     </NvSheetContent>
   </NvSheet>
+
+  <!-- 停用不可撤回：用完整的 NvAlertDialog 确认。确认按钮用普通 NvButton 而非 NvAlertDialogAction，
+       后者点击即无条件关框，失败时就留不住确认框（confirm-destroy 规则 3）。 -->
+  <NvAlertDialog v-model:open="disableOpen">
+    <NvAlertDialogContent>
+      <NvAlertDialogHeader>
+        <NvAlertDialogTitle>
+          确认停用采集点位「{{ disableTarget ? pointTitle(disableTarget) : '' }}」？
+        </NvAlertDialogTitle>
+        <NvAlertDialogDescription>
+          停用后，这个点位不再计数，也不会出现在报警规则、历史趋势和设备控制的点位选择里；已采集的历史数据保留。停用不能撤回，同一个编码也不能再用。
+        </NvAlertDialogDescription>
+      </NvAlertDialogHeader>
+      <NvAlertDialogFooter>
+        <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+        <NvButton
+          type="button"
+          variant="destructive"
+          :disabled="disablePointPending"
+          @click="confirmDisable"
+        >
+          确认停用
+        </NvButton>
+      </NvAlertDialogFooter>
+    </NvAlertDialogContent>
+  </NvAlertDialog>
 </template>
