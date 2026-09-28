@@ -47,6 +47,8 @@ const detailState = vi.hoisted(() => ({
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
+  describeMesReadinessReasons: (reasons: string[]) =>
+    reasons.map((code) => ({ code, label: code, nextStep: '' })),
   useMesWorkScopeSelection: () => ({
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
@@ -168,6 +170,53 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     expect(wrapper.text()).not.toContain('已齐套')
     expect(wrapper.text()).not.toContain('用料已备齐')
     expect(wrapper.text()).toContain('结论未取得')
+  })
+
+  it('缺料时展示冻结快照的真实捕获时间和领料、线边收料路径', () => {
+    const capturedAtUtc = '2026-09-22T08:15:00Z'
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [], blockingReasons: [] }
+    detailState.materialReadiness = {
+      readinessStatus: 'Blocked',
+      snapshotCapturedAtUtc: capturedAtUtc,
+      items: [
+        {
+          materialId: 'PK-BOX-01',
+          requiredQuantity: 5.05,
+          availableQuantity: 0,
+          shortageQuantity: 5.05,
+        },
+      ],
+    }
+    const wrapper = mountDetail()
+
+    expect(wrapper.get('[data-testid="material-readiness-snapshot"]').text()).toContain(
+      new Date(capturedAtUtc).toLocaleString(),
+    )
+    expect(wrapper.get('[data-testid="material-readiness-scope"]').text()).toContain(
+      '原料仓补库存不会直接改变下达结论',
+    )
+    expect(wrapper.text()).toContain('发起领料')
+    expect(wrapper.text()).toContain('确认收料')
+    expect(wrapper.text()).not.toContain('已齐套')
+    wrapper.unmount()
+  })
+
+  it('快照时间未记录时不补造钟点', () => {
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [], blockingReasons: [] }
+    detailState.materialReadiness = {
+      readinessStatus: 'Blocked',
+      snapshotCapturedAtUtc: null,
+      blockingReasons: ['工单缺少齐套需求快照'],
+      items: [],
+    }
+    const wrapper = mountDetail()
+
+    expect(wrapper.get('[data-testid="material-readiness-snapshot"]').text()).toBe(
+      '齐套快照捕获时间：未记录',
+    )
+    expect(wrapper.text()).toContain('工单缺少齐套需求快照')
+    expect(wrapper.text()).not.toContain('已齐套')
+    wrapper.unmount()
   })
 
   it('详情与齐套读面都取到且确实无阻塞时才渲染安全结论', () => {
