@@ -418,7 +418,6 @@ public sealed class WmsAssignedResourceCompletionTests
         long? ExpectedVersion = null) =>
         new(
             outbound.Id,
-            "PACK-001",
             true,
             $"complete-{outbound.OutboundOrderNo}",
             OrganizationId,

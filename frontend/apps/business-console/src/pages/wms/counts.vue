@@ -7,6 +7,7 @@ import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
@@ -65,7 +66,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, UsersRoundIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 
 definePage({
@@ -92,6 +93,15 @@ const auth = useAuthStore()
 const canManageCounts = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.inventoryCountsManage),
 )
+const canManagePools = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.wmsWorkPoolsManage),
+)
+const assignOpen = shallowRef(false)
+const assignTarget = shallowRef<CountRow>()
+function openAssign(row: CountRow) {
+  assignTarget.value = row
+  assignOpen.value = true
+}
 const {
   scopeKey,
   scopeOptions,
@@ -159,8 +169,9 @@ const varianceCardNote = computed(() => {
 })
 
 const createOpen = shallowRef(false)
+// 盘点单号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
-  countNo: '',
   skuCode: '',
   // 单位跟随物料主档带出，不预填假单位：写死通用单位会让后端单位换算直接失败。
   uomCode: '',
@@ -277,7 +288,7 @@ function varianceLabel(value?: number | null) {
 
 function openCreate() {
   if (!canManageCounts.value) return
-  createForm.countNo = ''
+  createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.skuCode = ''
   createForm.uomCode = ''
   createForm.siteCode = ''
@@ -289,13 +300,12 @@ function openCreate() {
 async function submitCreate() {
   if (!canManageCounts.value) return
   if (
-    !createForm.countNo.trim() ||
     !createForm.skuCode.trim() ||
     !createForm.uomCode.trim() ||
     !createForm.siteCode.trim() ||
     !createForm.locationCode.trim()
   ) {
-    createError.value = '请填写盘点单号、物料、工厂与库位；单位在选定物料后自动带出。'
+    createError.value = '请填写物料、工厂与库位；单位在选定物料后自动带出。'
     return
   }
   const expected =
@@ -307,17 +317,17 @@ async function submitCreate() {
   const body: BusinessConsoleCreateWmsCountExecutionRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
-    countNo: createForm.countNo.trim(),
     skuCode: createForm.skuCode.trim(),
     uomCode: createForm.uomCode.trim(),
     siteCode: createForm.siteCode.trim(),
     locationCode: createForm.locationCode.trim(),
     expectedQuantity: expected,
+    idempotencyKey: createIdempotencyKey.value,
   }
   try {
     await createCountExecution(body)
     createOpen.value = false
-    notifySuccess('盘点单已创建')
+    notifySuccess('盘点单已创建，单号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建盘点单失败', error, '创建盘点单失败，请稍后重试。')
   }
@@ -575,6 +585,14 @@ function refreshAll() {
       /></template>
       <template #cell-actions="{ row }">
         <NvRowActions v-if="canManageCounts" :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
+          <NvDropdownMenuItem
+            v-if="canManagePools"
+            :disabled="!isOpen(row)"
+            @click="openAssign(row)"
+          >
+            <UsersRoundIcon aria-hidden="true" />
+            分配作业池
+          </NvDropdownMenuItem>
           <NvDropdownMenuItem :disabled="!isOpen(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成盘点
@@ -582,6 +600,18 @@ function refreshAll() {
         </NvRowActions>
       </template>
     </NvDataTable>
+
+    <WmsAssignWorkPoolDialog
+      v-if="canManagePools"
+      v-model:open="assignOpen"
+      target="count"
+      :resource-id="assignTarget?.countExecutionId"
+      :resource-label="`盘点单 ${assignTarget?.countNo ?? ''}`"
+      :site-code="assignTarget?.siteCode"
+      :version="assignTarget?.version"
+      :current-pool-code="assignTarget?.assignedPoolCode"
+      @assigned="refreshCountExecutions"
+    />
 
     <NvDialog v-if="canManageCounts" v-model:open="createOpen">
       <NvDialogContent>
@@ -592,15 +622,6 @@ function refreshAll() {
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="cnt-no">盘点单号</NvFieldLabel>
-              <NvInput
-                id="cnt-no"
-                v-model="createForm.countNo"
-                autocomplete="off"
-                placeholder="如 CNT-2026-0003"
-              />
-            </NvField>
             <NvField>
               <NvFieldLabel for="cnt-sku">物料</NvFieldLabel>
               <DirectoryPicker

@@ -9,17 +9,12 @@ import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGua
 import { useWmsOutbound } from '@/composables/useBusinessWms'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { PDA_OUTBOUND_ORDER_STATUS_OPTIONS } from '@/data/wmsReference'
-import {
-  outboundOrderStatusLabel,
-  outboundReviewFlow,
-  statusActionGate,
-} from '@nerv-iip/business-core'
+import { outboundOrderStatusLabel, statusActionGate } from '@nerv-iip/business-core'
 import {
   NvAppShellMobile,
   NvBottomSheet,
   NvListRow,
   NvMobileButton,
-  NvMobileInput,
   NvMobileResult,
   NvMobileSwitch,
   NvMobileToast,
@@ -100,34 +95,18 @@ const completed = ref(false)
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复出库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
 const intent = useIdempotentWriteIntent<{
-  packReviewNo: string
   passed: boolean
   idempotencyKey: string
 }>(makeIdempotencyKey)
 const intentLocked = intent.locked
 usePendingWriteLeaveGuard(intentLocked)
 
-// 复核录入：复核单号 + 通过/不通过开关。
-const packReviewNo = ref('')
+// 复核录入：只有通过/不通过开关；复核单号由系统按编码规则生成，现场不填不扫。
 const passed = ref(true)
-// 复核单号需有非空白内容才算有效（纯空格 "   " 不可提交）。
-const validPackReviewNo = computed(() => packReviewNo.value.trim().length > 0)
-watch([packReviewNo, passed], () => {
+watch(passed, () => {
   intent.inputChanged()
   submitError.value = ''
 })
-
-// outboundReviewFlow 驱动进度：selectOrder→enterReviewNo→complete。
-const flowCtx = computed(() => ({
-  orderId: selectedOrderId.value || undefined,
-  packReviewNo: packReviewNo.value.trim() || undefined,
-  completed: completed.value,
-}))
-const flowStep = computed(() => outboundReviewFlow.currentStep(flowCtx.value).id)
-// 当前步骤暴露给抽屉做进度提示（enterReviewNo→complete）。
-const reviewStepHint = computed(() =>
-  flowStep.value === 'complete' ? '复核单号已填，待提交' : '请填写复核单号',
-)
 
 // 抽屉或结果展示时停止扫码焦点抢夺，避免破坏浮层 focus-trap。
 const scanActive = computed(() => !sheetOpen.value && !completed.value)
@@ -148,11 +127,6 @@ function onScan(value: string) {
   filters.keyword = value
 }
 
-function onReviewNoScan(value: string) {
-  if (intentLocked.value) return
-  packReviewNo.value = value.trim()
-}
-
 function canComplete(status?: string) {
   return statusActionGate({
     domain: 'wms-outbound',
@@ -170,7 +144,6 @@ function selectOrder(
   if (!canComplete(status)) return
   selectedOrderId.value = outboundOrderId
   selectedOrderNo.value = outboundOrderNo ?? ''
-  packReviewNo.value = ''
   passed.value = true
   // 新操作开始：换一把新幂等键。
   intent.start()
@@ -194,12 +167,11 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function confirmComplete() {
-  // 防重：pending 中或复核单号无有效内容直接早退（按钮也已禁用，UI 守双道）。
-  if (completePending.value || !validPackReviewNo.value) return
+  // 防重：pending 中直接早退（按钮也已禁用，UI 守双道）。
+  if (completePending.value) return
   submitError.value = ''
   try {
     const payload = intent.payload((idempotencyKey) => ({
-      packReviewNo: packReviewNo.value.trim(),
       passed: passed.value,
       idempotencyKey,
     }))
@@ -225,7 +197,6 @@ function resetFlow() {
   completed.value = false
   selectedOrderId.value = ''
   selectedOrderNo.value = ''
-  packReviewNo.value = ''
   passed.value = true
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
   intent.reset()
@@ -335,35 +306,12 @@ function goHome() {
         <p v-if="selectedOrderNo" class="text-sm text-muted-foreground">
           出库单 {{ selectedOrderNo }}
         </p>
-        <p class="text-xs text-muted-foreground">{{ reviewStepHint }}</p>
-
-        <NvScanBar
-          placeholder="扫描复核单号"
-          :active="sheetOpen && !completed && !intentLocked"
-          @scan="onReviewNoScan"
-        />
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-foreground">复核单号</span>
-          <NvMobileInput
-            v-model="packReviewNo"
-            data-testid="pack-review-no"
-            type="text"
-            :disabled="intentLocked"
-            inputmode="text"
-            placeholder="扫描优先，也可手动补录"
-          />
-        </label>
-
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm font-medium text-foreground">复核结果</p>
             <p class="text-xs text-muted-foreground">{{ passed ? '通过' : '不通过' }}</p>
           </div>
-          <NvMobileSwitch
-            v-model:checked="passed"
-            data-testid="toggle-passed"
-            :disabled="intentLocked"
-          />
+          <NvMobileSwitch v-model="passed" data-testid="toggle-passed" :disabled="intentLocked" />
         </div>
 
         <p v-if="submitError" class="text-sm text-destructive">{{ submitError }}</p>
@@ -374,7 +322,7 @@ function goHome() {
             size="lg"
             variant="primary"
             data-testid="confirm-complete"
-            :disabled="completePending || !validPackReviewNo"
+            :disabled="completePending"
             @click="confirmComplete"
           >
             {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}

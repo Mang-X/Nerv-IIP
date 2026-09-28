@@ -615,7 +615,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
 
   async function completeOutboundOrder(
     outboundOrderId: string,
-    payload: { packReviewNo: string; passed: boolean },
+    payload: { passed: boolean },
     idempotencyKey = createWmsIdempotencyKey(),
     options: WmsCompletionAttemptOptions = { attempt: 'initial' },
   ) {
@@ -684,7 +684,6 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
                 environmentId: filters.environmentId,
               },
               body: {
-                packReviewNo: stablePayload.packReviewNo,
                 passed: stablePayload.passed,
                 idempotencyKey: pending.idempotencyKey,
                 scopeKind: stablePayload.scopeKind,

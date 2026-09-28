@@ -41,6 +41,13 @@ public static class StandardCodeRules
         Document("manufacturing-bom", "制造 BOM", "MBOM"),
         Document("routing", "工艺路线", "RTG"),
         Document("engineering-change", "工程变更", "ECO"),
+        Document("wms-inbound-order", "入库单", "IB"),
+        Document("wms-outbound-order", "出库单", "OB"),
+        Document("wms-putaway-task", "上架任务", "PUT"),
+        Document("wms-picking-task", "拣货任务", "PICK"),
+        Document("wms-pack-review", "出库复核单", "PKR"),
+        Document("wms-count-execution", "仓库盘点单", "CNT"),
+        Document("wms-wcs-task", "设备任务", "WCS"),
         Material(),
         SimpleResource("standard-operation", "标准工序", "OP", 4, separator: "-"),
         SimpleResource("quality-reason", "质量原因", "QR", 4, separator: "-"),
@@ -62,6 +69,7 @@ public static class StandardCodeRules
         SimpleResource("team", "班组", "TEAM", 4, separator: "-"),
         SimpleResource("worker", "员工", "EMP", 4, separator: "-"),
         SimpleResource("work-calendar", "工作日历", "CAL", 4, separator: "-"),
+        SimpleResource("wms-work-pool", "仓库作业池", "WP", 4, separator: "-"),
     ];
 
     private static readonly IReadOnlyDictionary<string, CodeRuleDefinition> RuleByKey =

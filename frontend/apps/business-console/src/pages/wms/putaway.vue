@@ -8,7 +8,11 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/useBusinessWms'
+import {
+  createWmsIdempotencyKey,
+  useWmsInboundOrders,
+  useWmsPutawayTasks,
+} from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
@@ -170,9 +174,10 @@ const statusFilter = computed({
 // 上架任务挂在收货入库单下（完工入库 → 上架增量）。创建需绑定入库单与单行任务。
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
+// 上架任务号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
   inboundOrderId: '',
-  taskNo: '',
   lineNo: '',
   fromLocationCode: '',
   toLocationCode: '',
@@ -206,7 +211,7 @@ function openCreate() {
   if (!canManageReceipts.value) return
 
   createForm.inboundOrderId = inboundOrderId.value
-  createForm.taskNo = ''
+  createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.lineNo = ''
   createForm.fromLocationCode = ''
   createForm.toLocationCode = ''
@@ -229,12 +234,11 @@ async function submitCreate() {
 
   if (
     !createForm.inboundOrderId.trim() ||
-    !createForm.taskNo.trim() ||
     !createForm.lineNo.trim() ||
     !createForm.fromLocationCode.trim() ||
     !createForm.toLocationCode.trim()
   ) {
-    createError.value = '请填写入库单、任务号、入库单行与起讫库位。'
+    createError.value = '请填写入库单、入库单行与起讫库位。'
     return
   }
   if (!(Number(createForm.quantity) > 0)) {
@@ -243,14 +247,14 @@ async function submitCreate() {
   }
   try {
     await createPutaway(createForm.inboundOrderId.trim(), {
-      taskNo: createForm.taskNo.trim(),
       lineNo: createForm.lineNo.trim(),
       fromLocationCode: createForm.fromLocationCode.trim(),
       toLocationCode: createForm.toLocationCode.trim(),
       quantity: Number(createForm.quantity),
+      idempotencyKey: createIdempotencyKey.value,
     })
     createOpen.value = false
-    notifySuccess('上架任务已创建')
+    notifySuccess('上架任务已创建，任务号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建上架任务失败', error, '创建上架任务失败，请稍后重试。')
   }
@@ -508,10 +512,6 @@ function firstQuery(value: unknown) {
                 clearable
                 aria-label="入库单"
               />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="wms-putaway-no">任务号</NvFieldLabel>
-              <NvInput id="wms-putaway-no" v-model="createForm.taskNo" autocomplete="off" />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-putaway-line">入库单行</NvFieldLabel>

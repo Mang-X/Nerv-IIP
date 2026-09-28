@@ -8,6 +8,7 @@ import {
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
@@ -26,6 +27,8 @@ import {
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   inlineErrorMessage,
   notifyError,
@@ -158,8 +161,9 @@ function emptyLine(): OutboundLine {
 }
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
+// 出库单号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键，不会重复建单。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
-  outboundOrderNo: '',
   sourceDocumentType: '',
   sourceDocumentId: '',
   siteCode: '',
@@ -173,7 +177,7 @@ watchEffect(() => {
 })
 
 function openCreate() {
-  createForm.outboundOrderNo = ''
+  createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.sourceDocumentType = ''
   createForm.sourceDocumentId = ''
   createForm.siteCode = ''
@@ -195,12 +199,11 @@ function removeLine(index: number) {
 }
 async function submitCreate() {
   if (
-    !createForm.outboundOrderNo.trim() ||
     !createForm.sourceDocumentType.trim() ||
     !createForm.sourceDocumentId.trim() ||
     !createForm.siteCode.trim()
   ) {
-    createError.value = '请填写出库单号、来源类型、来源单据与工厂。'
+    createError.value = '请填写来源类型、来源单据与工厂。'
     return
   }
   const filled = createForm.lines.filter(
@@ -234,17 +237,29 @@ async function submitCreate() {
     await createOutbound({
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
-      outboundOrderNo: createForm.outboundOrderNo.trim(),
       sourceDocumentType: createForm.sourceDocumentType.trim(),
       sourceDocumentId: createForm.sourceDocumentId.trim(),
       siteCode: createForm.siteCode.trim(),
       lines,
+      idempotencyKey: createIdempotencyKey.value,
     })
     createOpen.value = false
-    notifySuccess('出库单已创建')
+    notifySuccess('出库单已创建，单号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建出库单失败', error, '创建出库单失败，请稍后重试。')
   }
+}
+
+// 分配作业池由仓库主管（作业池维护权限）操作；出库单进池后池内成员才能拣货、复核。
+const auth = useAuthStore()
+const canManagePools = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.wmsWorkPoolsManage),
+)
+const assignOpen = shallowRef(false)
+const assignTarget = shallowRef<OutboundRow>()
+function openAssign(row: OutboundRow) {
+  assignTarget.value = row
+  assignOpen.value = true
 }
 
 const reviewOpen = shallowRef(false)
@@ -253,11 +268,11 @@ const reviewIntentKey = shallowRef('')
 const reviewIntentAttempted = shallowRef(false)
 const reviewIntentLocked = shallowRef(false)
 usePendingWriteLeaveGuard(reviewIntentLocked)
-const reviewFrozenPayload = shallowRef<{ packReviewNo: string; passed: boolean }>()
-const form = reactive({ packReviewNo: '', passed: true })
+const reviewFrozenPayload = shallowRef<{ passed: boolean }>()
+const form = reactive({ passed: true })
 const formError = shallowRef('')
 watch(
-  () => `${form.packReviewNo}\u0000${form.passed}`,
+  () => form.passed,
   () => {
     if (!reviewIntentAttempted.value || reviewIntentLocked.value) return
     reviewIntentKey.value = createWmsIdempotencyKey()
@@ -280,7 +295,6 @@ function openReview(row: OutboundRow) {
   reviewIntentAttempted.value = false
   reviewIntentLocked.value = false
   reviewFrozenPayload.value = undefined
-  form.packReviewNo = ''
   form.passed = true
   formError.value = ''
   reviewOpen.value = true
@@ -292,15 +306,8 @@ function onReviewOpenChange(open: boolean) {
 async function submitReview() {
   const id = pendingOrder.value?.outboundOrderId
   if (!id) return
-  if (!form.packReviewNo.trim()) {
-    formError.value = '请输入复核单号。'
-    return
-  }
   try {
-    const payload = reviewFrozenPayload.value ?? {
-      packReviewNo: form.packReviewNo.trim(),
-      passed: form.passed,
-    }
+    const payload = reviewFrozenPayload.value ?? { passed: form.passed }
     reviewFrozenPayload.value = payload
     await completeOutbound(id, payload, reviewIntentKey.value, {
       attempt: reviewIntentAttempted.value ? 'retry' : 'initial',
@@ -320,7 +327,6 @@ async function submitReview() {
         reset: () => {
           reviewOpen.value = false
           pendingOrder.value = undefined
-          form.packReviewNo = ''
           reviewIntentKey.value = ''
           reviewIntentAttempted.value = false
           reviewIntentLocked.value = false
@@ -538,18 +544,43 @@ function refreshAll() {
           :tone="wmsStatusTone(row.status)"
       /></template>
       <template #cell-actions="{ row }">
-        <NvButton
-          size="sm"
-          type="button"
-          variant="outline"
-          :aria-label="`完成复核 ${row.outboundOrderNo ?? ''}`"
-          :disabled="!canComplete(row) || !row.outboundOrderId"
-          @click="openReview(row)"
-        >
-          完成复核
-        </NvButton>
+        <div class="flex justify-end gap-2">
+          <NvButton
+            v-if="canManagePools"
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`分配作业池 ${row.outboundOrderNo ?? ''}`"
+            :disabled="!canComplete(row) || !row.outboundOrderId"
+            @click="openAssign(row)"
+          >
+            {{ row.assignedPoolCode ? `作业池 ${row.assignedPoolCode}` : '分配作业池' }}
+          </NvButton>
+          <NvButton
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`完成复核 ${row.outboundOrderNo ?? ''}`"
+            :disabled="!canComplete(row) || !row.outboundOrderId"
+            @click="openReview(row)"
+          >
+            完成复核
+          </NvButton>
+        </div>
       </template>
     </NvDataTable>
+
+    <WmsAssignWorkPoolDialog
+      v-if="canManagePools"
+      v-model:open="assignOpen"
+      target="outbound"
+      :resource-id="assignTarget?.outboundOrderId"
+      :resource-label="`出库单 ${assignTarget?.outboundOrderNo ?? ''}`"
+      :site-code="assignTarget?.siteCode"
+      :version="assignTarget?.version"
+      :current-pool-code="assignTarget?.assignedPoolCode"
+      @assigned="refreshOutboundOrders"
+    />
 
     <NvDialog :open="reviewOpen" @update:open="onReviewOpenChange">
       <NvDialogContent>
@@ -563,17 +594,6 @@ function refreshAll() {
         <form class="grid gap-4" @submit.prevent="submitReview">
           <CarriedContextSummary label="复核对象" :items="reviewContextItems" />
           <NvFieldGroup>
-            <NvField>
-              <NvFieldLabel for="wms-pack-review-no">复核单号</NvFieldLabel>
-              <NvInput
-                id="wms-pack-review-no"
-                v-model="form.packReviewNo"
-                :disabled="reviewIntentLocked"
-                :aria-invalid="Boolean(formError)"
-                autocomplete="off"
-              />
-              <NvFieldError v-if="formError" :errors="[formError]" />
-            </NvField>
             <NvField
               orientation="horizontal"
               class="items-center justify-between rounded-lg border p-3"
@@ -585,6 +605,7 @@ function refreshAll() {
                 :disabled="reviewIntentLocked"
               />
             </NvField>
+            <NvFieldError v-if="formError" :errors="[formError]" />
           </NvFieldGroup>
           <NvDialogFooter>
             <NvDialogClose as-child>
@@ -609,10 +630,6 @@ function refreshAll() {
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="wms-out-no">出库单号</NvFieldLabel>
-              <NvInput id="wms-out-no" v-model="createForm.outboundOrderNo" autocomplete="off" />
-            </NvField>
             <NvField>
               <NvFieldLabel for="wms-out-site">工厂</NvFieldLabel>
               <NvEntityPicker

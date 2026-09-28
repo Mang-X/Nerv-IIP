@@ -76,7 +76,7 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     const calls: Array<{ path: string; body: Record<string, unknown> }> = []
     const input = {
       outboundOrderId: 'outbound-1',
-      taskNo: 'PICK-WALK-001',
+      intentKey: 'PICK-WALK-001',
       lineNo: '10',
       fromLocationCode: 'loc-fg-01',
       toLocationCode: 'loc-fg-01',
@@ -101,7 +101,7 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
       {
         path: '/api/business-console/v1/wms/outbound-orders/outbound-1/picking-tasks',
         body: {
-          taskNo: input.taskNo,
+          idempotencyKey: input.intentKey,
           lineNo: '10',
           fromLocationCode: 'loc-fg-01',
           toLocationCode: 'loc-fg-01',

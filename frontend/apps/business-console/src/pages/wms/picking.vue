@@ -7,7 +7,11 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
+import {
+  createWmsIdempotencyKey,
+  useWmsOutboundOrders,
+  useWmsPickingTasks,
+} from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
@@ -176,9 +180,10 @@ watch(
 // 拣货任务挂在出库单下（领料齐套 → 出库拣货扣减）。创建需绑定出库单与单行任务。
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
+// 拣货任务号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
   outboundOrderId: '',
-  taskNo: '',
   lineNo: '',
   fromLocationCode: '',
   toLocationCode: '',
@@ -211,7 +216,7 @@ watch(outboundLineOptions, (options) => {
 
 function openCreate() {
   createForm.outboundOrderId = ''
-  createForm.taskNo = ''
+  createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.lineNo = ''
   createForm.fromLocationCode = ''
   createForm.toLocationCode = ''
@@ -222,12 +227,11 @@ function openCreate() {
 async function submitCreate() {
   if (
     !createForm.outboundOrderId.trim() ||
-    !createForm.taskNo.trim() ||
     !createForm.lineNo.trim() ||
     !createForm.fromLocationCode.trim() ||
     !createForm.toLocationCode.trim()
   ) {
-    createError.value = '请填写出库单、任务号、出库单行与起讫库位。'
+    createError.value = '请填写出库单、出库单行与起讫库位。'
     return
   }
   if (createForm.quantity !== '' && !(Number(createForm.quantity) > 0)) {
@@ -236,14 +240,14 @@ async function submitCreate() {
   }
   try {
     await createPicking(createForm.outboundOrderId.trim(), {
-      taskNo: createForm.taskNo.trim(),
       lineNo: createForm.lineNo.trim(),
       fromLocationCode: createForm.fromLocationCode.trim(),
       toLocationCode: createForm.toLocationCode.trim(),
       quantity: createForm.quantity === '' ? undefined : Number(createForm.quantity),
+      idempotencyKey: createIdempotencyKey.value,
     })
     createOpen.value = false
-    notifySuccess('拣货任务已创建')
+    notifySuccess('拣货任务已创建，任务号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建拣货任务失败', error, '创建拣货任务失败，请稍后重试。')
   }
@@ -682,10 +686,6 @@ function firstQuery(value: unknown) {
                 clearable
                 aria-label="出库单"
               />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="wms-picking-no">任务号</NvFieldLabel>
-              <NvInput id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-picking-line">出库单行</NvFieldLabel>

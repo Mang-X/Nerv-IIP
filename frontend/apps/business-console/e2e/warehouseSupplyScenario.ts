@@ -86,7 +86,6 @@ export async function runWarehouseSupply(
         const stagingLocation = storageLocation === 'loc-raw-01' ? 'loc-wip-01' : 'loc-raw-01'
         const quantity = order.quantity
         const suffix = order.purchaseOrderNo.replace('PO-', '')
-        const inboundOrderNo = `IB-${suffix}`
         const lotNo = `LOT-${suffix}`
         const inventoryQuery = {
           siteCode: 'SITE-001',
@@ -105,7 +104,7 @@ export async function runWarehouseSupply(
           query(`${wms}/inbound-orders`),
           {
             ...scope,
-            inboundOrderNo,
+            idempotencyKey: `${suffix}-inbound`,
             sourceDocumentType: 'purchase-receipt',
             sourceDocumentId: order.purchaseReceiptNo,
             siteCode: 'SITE-001',
@@ -138,13 +137,19 @@ export async function runWarehouseSupply(
         const inboundRead = async () => {
           const result = await workerCall<{ items: Inbound[] }>(
             'GET',
-            query(`${wms}/inbound-orders`, { ...workScope, keyword: inboundOrderNo, take: 100 }),
+            query(`${wms}/inbound-orders`, {
+              ...workScope,
+              inboundOrderId: inbound.inboundOrderId,
+              take: 100,
+            }),
           )
           const rows = result.items.filter((row) => row.inboundOrderId === inbound.inboundOrderId)
           expect(rows).toHaveLength(1)
           return rows[0]
         }
         const assigned = await inboundRead()
+        // 入库单号由系统按编码规则生成（#3848），从读面取回，不在造数里手编。
+        const inboundOrderNo = assigned.inboundOrderNo!
         expect(assigned).toMatchObject({
           siteCode: 'SITE-001',
           assignedOperatorUserId: auth.principal!.principalId,
@@ -154,7 +159,7 @@ export async function runWarehouseSupply(
           'POST',
           query(`${wms}/inbound-orders/${inbound.inboundOrderId}/putaway-tasks`),
           {
-            taskNo: `PT-${suffix}`,
+            idempotencyKey: `${suffix}-putaway`,
             lineNo: '10',
             fromLocationCode: stagingLocation,
             toLocationCode: storageLocation,
@@ -165,7 +170,7 @@ export async function runWarehouseSupply(
         const taskRead = async () => {
           const result = await workerCall<{ items: Task[] }>(
             'GET',
-            query(`${wms}/putaway-tasks`, { ...workScope, keyword: `PT-${suffix}`, take: 100 }),
+            query(`${wms}/putaway-tasks`, { ...workScope, take: 100 }),
           )
           const rows = result.items.filter((row) => row.warehouseTaskId === task.warehouseTaskId)
           expect(rows).toHaveLength(1)

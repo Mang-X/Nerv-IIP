@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
@@ -81,6 +82,7 @@ try
     builder.Services.AddScoped<WmsWorkPoolMembershipSeedService>();
     builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
     builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
+    builder.Services.AddScoped<WmsCodingService>();
     builder.Services.AddNervIipCommandLocking(
         builder.Configuration,
         builder.Environment,

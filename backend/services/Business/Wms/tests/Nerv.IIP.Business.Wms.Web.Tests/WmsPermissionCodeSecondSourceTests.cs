@@ -74,6 +74,8 @@ public sealed class WmsPermissionCodeSecondSourceTests
             ["listWmsOperationalCandidates"] = "business.wms.receipts.read", // GET /api/business/v1/wms/operational-candidates
             ["provisionWmsWorkPool"] = "business.wms.work-pools.manage", // POST /api/business/v1/wms/work-pools
             ["addWmsWorkPoolMember"] = "business.wms.work-pools.manage", // POST /api/business/v1/wms/work-pools/{poolCode}/members
+            ["listWmsWorkPools"] = "business.wms.work-pools.manage", // GET /api/business/v1/wms/work-pools
+            ["removeWmsWorkPoolMember"] = "business.wms.work-pools.manage", // POST /api/business/v1/wms/work-pools/{poolCode}/members/{principalId}/remove
             ["getWmsReceiptWorkScopes"] = "business.wms.receipts.read", // GET /api/business/v1/wms/work-scopes/receipts
             ["getWmsShipmentWorkScopes"] = "business.wms.shipments.read", // GET /api/business/v1/wms/work-scopes/shipments
             ["getWmsCountWorkScopes"] = "business.wms.counts.read", // GET /api/business/v1/wms/work-scopes/counts

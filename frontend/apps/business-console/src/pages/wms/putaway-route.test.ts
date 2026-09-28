@@ -94,6 +94,7 @@ vi.mock('@/composables/useWmsWorkScope', async () => {
 vi.mock('@/composables/useBusinessWms', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
+    createWmsIdempotencyKey: () => 'putaway-intent-key',
     useWmsPutawayTasks: () => ({
       filters: reactive({
         organizationId: 'org-001',
@@ -162,7 +163,6 @@ describe('WMS putaway route handoff', () => {
     expect(carried?.textContent).toContain('IB-1')
     expect(document.body.querySelector('#wms-putaway-inbound')).toBeNull()
 
-    await setInput('#wms-putaway-no', 'PUT-IB-1-01')
     await setInput('#wms-putaway-line', '1')
     await setInput('#wms-putaway-from', 'QA-STAGE-01')
     await setInput('#wms-putaway-to', 'RACK-A-01')
@@ -173,11 +173,11 @@ describe('WMS putaway route handoff', () => {
     await flushPromises()
 
     expect(state.createPutaway).toHaveBeenCalledWith('ib-1', {
-      taskNo: 'PUT-IB-1-01',
       lineNo: '1',
       fromLocationCode: 'QA-STAGE-01',
       toLocationCode: 'RACK-A-01',
       quantity: 5,
+      idempotencyKey: expect.any(String),
     })
 
     wrapper.unmount()
@@ -222,7 +222,6 @@ describe('WMS putaway route handoff', () => {
     const wrapper = mountPutaway()
     await flushPromises()
 
-    await setInput('#wms-putaway-no', 'PUT-IB-1-01')
     await setInput('#wms-putaway-line', '1')
     await setInput('#wms-putaway-from', 'QA-STAGE-01')
     await setInput('#wms-putaway-to', 'RACK-A-01')
@@ -242,7 +241,7 @@ describe('WMS putaway route handoff', () => {
     await flushPromises()
 
     expect(document.body.querySelector('[data-slot="carried-context"]')).toBeNull()
-    expect(document.body.querySelector('#wms-putaway-no')).toBeNull()
+    expect(document.body.querySelector('#wms-putaway-line')).toBeNull()
     expect(wrapper.text()).not.toContain('新建上架任务')
     wrapper.unmount()
   })

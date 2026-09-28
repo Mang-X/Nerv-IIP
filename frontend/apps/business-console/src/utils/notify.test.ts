@@ -423,6 +423,17 @@ describe('WMS 拒绝原因代码（#1397 / 台账 #81）', () => {
     expect(message).not.toContain('请检查填写项')
   })
 
+  it('入库侧的拒绝按入库单点名，不再说成出库单（#3849）', () => {
+    const named = friendlyErrorMessage({ message: 'missing-work-pool-assignment' }, '兜底', {
+      inboundOrderNo: 'IB-20260928-000001',
+    })
+    expect(named).toContain('入库单 IB-20260928-000001')
+    expect(named).not.toContain('出库单')
+    expect(friendlyErrorMessage({ message: 'missing-work-pool-assignment' })).not.toContain(
+      '出库单',
+    )
+  })
+
   it('原因代码必须排在通用 422/403 分支之前，否则又退化成泛化文案', () => {
     expect(friendlyErrorMessage({ message: 'outbound-pack-review-not-passed' })).toContain(
       '复核通过',

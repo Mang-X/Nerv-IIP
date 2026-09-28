@@ -570,8 +570,8 @@ describe('business WMS composables', () => {
       idField: 'outboundOrderId',
       id: 'outbound-1',
       operation: (result: ReturnType<typeof useWmsOutboundOrders>, id: string, key: string) =>
-        result.completeOutbound(id, { packReviewNo: 'PR-001', passed: true }, key),
-      expectedBusinessBody: { packReviewNo: 'PR-001', passed: true },
+        result.completeOutbound(id, { passed: true }, key),
+      expectedBusinessBody: { passed: true },
     },
   ])('$kind completion freezes the catalog scope and authoritative version', async (testCase) => {
     useBusinessContextStore().patchContext({

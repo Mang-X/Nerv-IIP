@@ -2,6 +2,26 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessWmsClient
 {
+    Task<BusinessConsoleWmsWorkPoolListResponse> ListWorkPoolsAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsWorkPoolResult> ProvisionWorkPoolAsync(
+        string internalBearerToken,
+        BusinessWmsProvisionWorkPoolRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsWorkPoolMemberResult> AddWorkPoolMemberAsync(
+        string internalBearerToken,
+        BusinessWmsAddWorkPoolMemberRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsWorkPoolMemberRemovalResult> RemoveWorkPoolMemberAsync(
+        string internalBearerToken,
+        BusinessWmsRemoveWorkPoolMemberRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleWmsWorkScopeCatalog> GetReceiptWorkScopesAsync(
         string internalBearerToken,
         BusinessWmsWorkScopeCatalogRequest request,
@@ -244,6 +264,55 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     protected override bool IsRegisteredLegacySemanticCode(string? code) =>
         base.IsRegisteredLegacySemanticCode(code) ||
         code is not null && RegisteredLegacySemanticCodes.Contains(code);
+
+    public Task<BusinessConsoleWmsWorkPoolListResponse> ListWorkPoolsAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsWorkPoolListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/wms/work-pools?" +
+            AppendAuthorizedSites(
+                Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId)),
+                request.AuthorizedSiteCodes),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsWorkPoolResult> ProvisionWorkPoolAsync(
+        string internalBearerToken,
+        BusinessWmsProvisionWorkPoolRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsWorkPoolResult>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/wms/work-pools",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsWorkPoolMemberResult> AddWorkPoolMemberAsync(
+        string internalBearerToken,
+        BusinessWmsAddWorkPoolMemberRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsWorkPoolMemberResult>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/wms/work-pools/{Uri.EscapeDataString(request.PoolCode)}/members",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsWorkPoolMemberRemovalResult> RemoveWorkPoolMemberAsync(
+        string internalBearerToken,
+        BusinessWmsRemoveWorkPoolMemberRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsWorkPoolMemberRemovalResult>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/wms/work-pools/{Uri.EscapeDataString(request.PoolCode)}/members/{Uri.EscapeDataString(request.PrincipalId)}/remove",
+            request,
+            cancellationToken);
 
     public Task<BusinessConsoleWmsWorkScopeCatalog> GetReceiptWorkScopesAsync(
         string internalBearerToken,

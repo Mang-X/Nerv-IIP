@@ -3,7 +3,8 @@ type JsonRecord = Record<string, unknown>
 export async function executeWalkthroughPicking(
   input: {
     outboundOrderId: string
-    taskNo: string
+    /** 拣货任务号由系统生成（#3848）；这里只给本次创建的幂等键。 */
+    intentKey: string
     lineNo: string
     fromLocationCode: string
     toLocationCode: string
@@ -17,7 +18,7 @@ export async function executeWalkthroughPicking(
   const created = await post(
     `/api/business-console/v1/wms/outbound-orders/${encodeURIComponent(input.outboundOrderId)}/picking-tasks`,
     {
-      taskNo: input.taskNo,
+      idempotencyKey: input.intentKey,
       lineNo: input.lineNo,
       fromLocationCode: input.fromLocationCode,
       toLocationCode: input.toLocationCode,
@@ -30,12 +31,12 @@ export async function executeWalkthroughPicking(
   const scope = { scopeKind: input.scopeKind, scopeId: input.scopeId }
   const started = await post(`${taskPath}/start`, {
     ...scope,
-    idempotencyKey: `issue1912-${input.taskNo}-start`,
+    idempotencyKey: `issue1912-${input.intentKey}-start`,
     expectedVersion: task.version,
   })
   return post(`${taskPath}/complete`, {
     ...scope,
-    idempotencyKey: `issue1912-${input.taskNo}-complete`,
+    idempotencyKey: `issue1912-${input.intentKey}-complete`,
     expectedVersion: started.version,
     executedQuantity: input.quantity,
   })

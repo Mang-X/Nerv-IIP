@@ -1521,7 +1521,6 @@ public sealed class CompleteBusinessConsoleWmsOutboundOrderEndpoint(
                 scope.ScopeKind,
                 scope.ScopeId,
                 request.ExpectedVersion,
-                request.PackReviewNo,
                 request.Passed,
                 request.IdempotencyKey),
             cancellationToken);
@@ -1940,7 +1939,7 @@ public sealed class BusinessConsoleCreateWmsInboundOrderRequestValidator
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.InboundOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SourceDocumentType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
@@ -1956,7 +1955,7 @@ public sealed class BusinessConsoleCreateWmsPutawayTaskRequestValidator
         RuleFor(x => x.InboundOrderId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.TaskNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.LineNo).NotEmpty().MaximumLength(50);
         RuleFor(x => x.FromLocationCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ToLocationCode).NotEmpty().MaximumLength(100);
@@ -2022,7 +2021,7 @@ public sealed class BusinessConsoleCreateWmsOutboundOrderRequestValidator
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.OutboundOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SourceDocumentType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
@@ -2038,7 +2037,7 @@ public sealed class BusinessConsoleCreateWmsPickingTaskRequestValidator
         RuleFor(x => x.OutboundOrderId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.TaskNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.LineNo).NotEmpty().MaximumLength(50);
         RuleFor(x => x.FromLocationCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ToLocationCode).NotEmpty().MaximumLength(100);
@@ -2067,7 +2066,6 @@ public sealed class BusinessConsoleCompleteWmsOutboundOrderRequestValidator
         RuleFor(x => x.OutboundOrderId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.PackReviewNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         RuleFor(x => x.ScopeKind)
@@ -2089,7 +2087,7 @@ public sealed class BusinessConsoleCreateWmsCountExecutionRequestValidator
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.CountNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
@@ -2245,7 +2243,7 @@ public sealed class BusinessConsoleDispatchWmsWcsTaskRequestValidator
         // 网关只取「> 0」这一段，不把相等判定前移（#3336）。
         RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         RuleFor(x => x.AdapterType).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ExternalTaskId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExternalTaskId).MaximumLength(150);
         RuleFor(x => x.DeviceId).MaximumLength(150);
     }
 }

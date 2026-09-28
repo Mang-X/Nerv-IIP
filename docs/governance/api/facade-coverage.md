@@ -41,8 +41,8 @@
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 49 | 36 | 12 | 1 |
 | Scheduling | 21 | 19 | 1 | 1 |
-| Wms | 55 | 43 | 7 | 5 |
-| **Total** | **515** | **436** | **47** | **32** |
+| Wms | 57 | 47 | 5 | 5 |
+| **Total** | **517** | **440** | **45** | **32** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
