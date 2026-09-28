@@ -121,21 +121,32 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
             await db.SaveChangesAsync();
         }
 
+        // #3900：我方收货单号由 ERP 编码规则生成、随响应返回；direct 必须带收货库位，
+        // wms 不带库位也能收货（库位由 WMS 入库执行给出）。
+        var receiptNos = new Dictionary<string, string>();
         foreach (var route in new[] { "direct", "wms" })
         {
+            var line = new Dictionary<string, object?>
+            {
+                ["purchaseOrderLineNo"] = "1", ["receivedQuantity"] = 10m, ["qualityStatus"] = "unrestricted", ["lotNo"] = "LOT-ROUTE",
+            };
+            if (route == "direct") line["locationCode"] = "RAW-01";
             var payload = new Dictionary<string, object?>
             {
                 ["organizationId"] = Organization, ["environmentId"] = EnvironmentId,
-                ["purchaseReceiptNo"] = $"RCV-{route}", ["purchaseOrderNo"] = $"PO-{route}",
+                ["purchaseOrderNo"] = $"PO-{route}",
                 ["idempotencyKey"] = $"receipt-{route}",
-                ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted", lotNo = "LOT-ROUTE" } },
+                ["lines"] = new[] { line },
             };
             if (route == "wms") payload["inventoryPostingRoute"] = route;
             using var first = await gatewayClient.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
             var firstData = await SuccessfulData(first);
             using var replay = await gatewayClient.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-receipts", payload);
             Assert.Equal(firstData.GetRawText(), (await SuccessfulData(replay)).GetRawText());
-            using var source = await erpClient.GetAsync($"/api/business/v1/erp/purchase-receipts/RCV-{route}/source-document?organizationId={Organization}&environmentId={EnvironmentId}");
+            var receiptNo = firstData.GetProperty("purchaseReceiptNo").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(receiptNo));
+            receiptNos[route] = receiptNo!;
+            using var source = await erpClient.GetAsync($"/api/business/v1/erp/purchase-receipts/{receiptNo}/source-document?organizationId={Organization}&environmentId={EnvironmentId}");
             var sourceData = await SuccessfulData(source);
             Assert.Equal(route, sourceData.GetProperty("inventoryPostingRoute").GetString());
             Assert.Equal("CNY", sourceData.GetProperty("currencyCode").GetString());
@@ -145,7 +156,8 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
         }
 
         var directMovement = Assert.Single(events.Published.OfType<InventoryMovementRequestedIntegrationEvent>());
-        Assert.Equal("RCV-direct", directMovement.Payload.SourceDocumentId);
+        Assert.Equal(receiptNos["direct"], directMovement.Payload.SourceDocumentId);
+        Assert.Equal("RAW-01", directMovement.Payload.LocationCode);
         Assert.Equal(10m, directMovement.Payload.Quantity);
         Assert.Equal(2m, directMovement.Payload.UnitCost);
 
@@ -194,11 +206,11 @@ public sealed class PurchaseReceiptPostingRoutePostgresAcceptanceTests
 
         foreach (var (suffix, source, org, env, allowed) in new[]
         {
-            ("direct", "RCV-direct", Organization, EnvironmentId, false),
+            ("direct", receiptNos["direct"], Organization, EnvironmentId, false),
             ("missing", "RCV-missing", Organization, EnvironmentId, false),
-            ("org", "RCV-wms", "org-other", EnvironmentId, false),
-            ("env", "RCV-wms", Organization, "env-other", false),
-            ("wms", "RCV-wms", Organization, EnvironmentId, true),
+            ("org", receiptNos["wms"], "org-other", EnvironmentId, false),
+            ("env", receiptNos["wms"], Organization, "env-other", false),
+            ("wms", receiptNos["wms"], Organization, EnvironmentId, true),
         })
         {
             using var created = await wmsClient.PostAsJsonAsync("/api/business/v1/wms/inbound-orders", new

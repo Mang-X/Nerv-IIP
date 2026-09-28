@@ -188,7 +188,7 @@ async function submit() {
   showErrors.value = true
   if (!canSubmit.value) return
   try {
-    await receipts.recordPurchaseReceipt({
+    const recorded = await receipts.recordPurchaseReceipt({
       purchaseOrderNo: row.purchaseOrderNo,
       lines: [
         {
@@ -200,7 +200,13 @@ async function submit() {
       ],
     })
     open.value = false
-    notifySuccess(`${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货`)
+    // 我方收货单号由编码规则生成（#3900），收货后回显给用户。
+    const receiptNo = recorded?.purchaseReceiptNo
+    notifySuccess(
+      receiptNo
+        ? `${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货，收货单号 ${receiptNo}`
+        : `${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货`,
+    )
   } catch (error) {
     notifyOperationFailure(
       '确认收货失败',

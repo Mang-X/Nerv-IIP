@@ -453,7 +453,7 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
 
   return {
     ...purchaseOrders,
-    recordPurchaseReceipt: (payload: {
+    recordPurchaseReceipt: async (payload: {
       purchaseOrderNo: string
       // qualityStatus 是 ERP 收货命令的必填业务决策点（#1345），缺失会被后端 400 拒绝。
       // locationCode 是直接过账的收货库位（#3900），ERP 缺库位即拒绝，不再回落到工厂编码。
@@ -464,8 +464,8 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
         qualityStatus: string
         locationCode: string
       }[]
-    }) =>
-      recordMutation.mutateAsync({
+    }) => {
+      const envelope = await recordMutation.mutateAsync({
         body: {
           organizationId: purchaseOrders.organizationId.value,
           environmentId: purchaseOrders.environmentId.value,
@@ -473,7 +473,9 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
           lines: payload.lines,
           idempotencyKey: makeIdempotencyKey(),
         },
-      }),
+      })
+      return envelope?.data ?? null
+    },
     recordPurchaseReceiptPending: recordMutation.isLoading,
     recordPurchaseReceiptError: recordMutation.error,
   }

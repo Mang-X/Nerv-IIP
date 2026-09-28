@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Erp;
 
 namespace Nerv.IIP.Business.Erp.Domain.Tests;
 
@@ -418,6 +419,29 @@ public sealed class ErpProcurementAggregateTests
             [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted")]));
 
         Assert.Equal(0m, orderLine.ReceivedQuantity);
+    }
+
+    [Fact]
+    public void Wms_purchase_receipt_accepts_line_without_location_because_wms_supplies_it()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
+
+        var receipt = PurchaseReceipt.Record(
+            order,
+            "RCV-001",
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted")],
+            inventoryPostingRoute: PurchaseReceiptInventoryPostingRoute.Wms);
+
+        Assert.Equal(string.Empty, Assert.Single(receipt.Lines).LocationCode);
+        Assert.Equal(1m, Assert.Single(order.Lines).ReceivedQuantity);
     }
 
     [Fact]

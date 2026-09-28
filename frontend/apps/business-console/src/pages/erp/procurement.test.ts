@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   receiptsTotal: 7,
   convertPurchaseRequisition: vi.fn(),
   recordPurchaseReceipt: vi.fn(),
+  notifySuccess: vi.fn(),
   supplierPartners: [] as Array<Record<string, unknown>>,
 }))
 
@@ -127,6 +128,11 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     uomsError: shallowRef(undefined),
     refreshUoms: vi.fn(),
   }),
+}))
+
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifySuccess: state.notifySuccess,
 }))
 
 vi.mock('@/composables/usePagedList', () => ({
@@ -412,7 +418,10 @@ describe('ERP procurement receipt page', () => {
   }
 
   it('submits the receipt with the selected quality status and receiving location, defaulting to pending inspection', async () => {
-    state.recordPurchaseReceipt.mockResolvedValue({})
+    state.recordPurchaseReceipt.mockResolvedValue({
+      purchaseReceiptId: 'receipt-id-1',
+      purchaseReceiptNo: 'PR-20260928-000001',
+    })
     const wrapper = mount(ReceiptsPage, {
       global: { stubs: { ...globalStubs, ...receiptLocationStub } },
     })
@@ -455,6 +464,10 @@ describe('ERP procurement receipt page', () => {
         },
       ],
     })
+    // 我方收货单号由编码规则生成，收货成功后回显给用户。
+    expect(state.notifySuccess).toHaveBeenCalledWith(
+      'PO-002 第 10 行已收货，收货单号 PR-20260928-000001',
+    )
 
     await receiveButton!.trigger('click')
     await wrapper.get('select').setValue('unrestricted')
