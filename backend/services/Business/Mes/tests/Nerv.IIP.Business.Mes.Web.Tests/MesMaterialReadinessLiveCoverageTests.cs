@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.ServiceAuth;
@@ -15,8 +16,44 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesMaterialReadinessLiveCoverageTests
 {
+    // Contract: DomainInvariant + Regression. Authority: Issue #3906: an absent complete
+    // capture blocks both the read surface and the release gate; a proven empty capture is ready.
+    [Theory]
+    [InlineData(false, "Blocked")]
+    [InlineData(true, "Ready")]
+    public async Task Query_requires_a_complete_capture_before_reporting_no_material_shortage(
+        bool noRequirementsCapture,
+        string expectedStatus)
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var capturedAtUtc = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-EMPTY-001", "FG-001", "PV-001", 1m, 10, capturedAtUtc);
+        if (noRequirementsCapture)
+        {
+            workOrder.RecordMaterialRequirementSnapshot(
+                WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+                capturedAtUtc);
+        }
+        dbContext.WorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new GetMaterialReadinessQueryHandler(
+            dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
+                new GetMaterialReadinessQuery("org-001", "env-dev", "WO-EMPTY-001"),
+                CancellationToken.None);
+
+        Assert.Equal(expectedStatus, response.ReadinessStatus);
+        Assert.Empty(response.Items);
+        Assert.Equal(
+            noRequirementsCapture ? [] : [MaterialReadinessGuards.MissingRequirementSnapshotReason],
+            response.BlockingReasons);
+    }
+
     [Fact]
-    public async Task Query_uses_live_inventory_and_erp_eta_without_rewriting_frozen_requirement()
+    public async Task Query_keeps_frozen_shortage_after_inventory_is_restocked_without_receipt()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -33,7 +70,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
             null,
             requiredQuantity: 10m,
             uomCode: "PCS",
-            availableQuantity: 9m,
+            availableQuantity: 2m,
             stagedQuantity: 0m,
             sourceSystem: "product-engineering-http:PV-001:MBOM-001:A",
             sourceSnapshotId: "MBOM-001:A:MAT-001",
@@ -50,7 +87,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
                 "MAT-001",
                 null,
                 "PCS",
-                2m,
+                9m,
                 expectedAtUtc,
                 MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate)]));
 
@@ -63,6 +100,11 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         Assert.Equal("PCS", row.UomCode);
         Assert.Equal(2m, row.AvailableQuantity);
         Assert.Equal(8m, row.ShortageQuantity);
+        Assert.Equal("Blocked", response.ReadinessStatus);
+        Assert.Equal(
+            await MaterialReadinessGuards.GetShortageReasonsAsync(
+                dbContext, "org-001", "env-dev", "WO-ETA-001", null, CancellationToken.None),
+            response.BlockingReasons);
         Assert.Equal(expectedAtUtc, row.ExpectedAvailableAtUtc);
         Assert.Equal(MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate, row.ExpectedAvailabilitySource);
         Assert.Equal(["MAT-ALT-001"], row.SubstituteMaterialIds);
@@ -70,7 +112,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         var frozen = await dbContext.MaterialRequirements.AsNoTracking().SingleAsync();
         Assert.Equal(10m, frozen.RequiredQuantity);
         Assert.Equal("PCS", frozen.UomCode);
-        Assert.Equal(9m, frozen.AvailableQuantity);
+        Assert.Equal(2m, frozen.AvailableQuantity);
         Assert.Equal("product-engineering-http:PV-001:MBOM-001:A", frozen.SourceSystem);
         Assert.Equal("MBOM-001:A:MAT-001", frozen.SourceSnapshotId);
         Assert.Equal(capturedAtUtc, frozen.CapturedAtUtc);
@@ -79,7 +121,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
     }
 
     [Fact]
-    public async Task Query_keeps_shortage_and_never_uses_wms_prepared_time_when_live_sources_are_unavailable()
+    public async Task Query_keeps_frozen_availability_when_live_sources_are_unavailable()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -113,11 +155,11 @@ public sealed class MesMaterialReadinessLiveCoverageTests
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-ETA-002"),
             CancellationToken.None);
 
-        Assert.Equal("Blocked", response.ReadinessStatus);
+        Assert.Equal("Ready", response.ReadinessStatus);
         var row = Assert.Single(response.Items);
-        Assert.Equal(0m, row.AvailableQuantity);
-        Assert.Equal(10m, row.ShortageQuantity);
-        Assert.Equal(MesMaterialShortageStages.AwaitingDelivery, row.ShortageStage);
+        Assert.Equal(10m, row.AvailableQuantity);
+        Assert.Equal(0m, row.ShortageQuantity);
+        Assert.Equal(MesMaterialShortageStages.None, row.ShortageStage);
         Assert.Null(row.ExpectedAvailableAtUtc);
         Assert.Null(row.ExpectedAvailabilitySource);
     }
