@@ -23,6 +23,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Scheduling\Nerv.IIP.Contracts.Scheduling.csproj" />
+    <!-- #3912：MES 列表状态枚举必须等于 MES 域聚合的真实值域。这条引用只存在于测试里，
+         用来让「域新增一个状态而 Gateway 契约没跟上」必然红；生产代码不得引用下游 Domain。 -->
+    <ProjectReference Include="..\..\..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Domain\Nerv.IIP.Business.Mes.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.EquipmentRuntime\Nerv.IIP.Contracts.EquipmentRuntime.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Mes\Nerv.IIP.Contracts.Mes.csproj" />
