@@ -945,15 +945,21 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         SendAsync<BusinessConsoleMesTelemetryCandidateRow>(internalBearerToken, HttpMethod.Get,
             $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}?organizationId={Uri.EscapeDataString(organizationId)}&environmentId={Uri.EscapeDataString(environmentId)}", null, cancellationToken);
 
-    public Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleRecordProductionReportResponse>(internalBearerToken, HttpMethod.Post,
+    public async Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken)
+    {
+        // #3844：候选号只走路由——MES HTTP 端点没注册强类型标识的 JSON 转换器，请求体里的字符串候选号会整单 400。
+        // 应答与直接报工同形（报工单号是 { id } 对象），按同一份下游形状读，再映射成控制台契约。
+        var response = await SendAsync<DownstreamRecordProductionReportResponse>(internalBearerToken, HttpMethod.Post,
             $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}/promote",
-            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.WorkOrderId, request.OperationTaskId, Actor = actor }, cancellationToken);
+            new { request.OrganizationId, request.EnvironmentId, request.WorkOrderId, request.OperationTaskId, Actor = actor }, cancellationToken);
+        var report = RequireProductionReport(response.ProductionReportId, response.ReportNo, response.SerialNumbers);
+        return new BusinessConsoleRecordProductionReportResponse(report.ProductionReportId, report.ReportNo, report.SerialNumbers);
+    }
 
     public Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidateDismissRequest request, string actor, CancellationToken cancellationToken) =>
         SendAcceptedAsync(internalBearerToken,
             $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}/dismiss",
-            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.Reason, Actor = actor },
+            new { request.OrganizationId, request.EnvironmentId, request.Reason, Actor = actor },
             MesTelemetryCandidateDocumentType, cancellationToken);
 
     public Task<BusinessConsoleRecordProductionReportResponse> RecordProductionReportAsync(
@@ -1001,28 +1007,19 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 reportIntentFingerprint),
             cancellationToken);
 
-        if (response.ProductionReportId is null ||
-            response.ProductionReportId.Id == Guid.Empty ||
-            string.IsNullOrWhiteSpace(response.ReportNo) ||
-            response.SerialNumbers is null)
-        {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
-                HttpStatusCode.BadGateway,
-                "downstream-invalid-response");
-        }
-
+        var report = RequireProductionReport(response.ProductionReportId, response.ReportNo, response.SerialNumbers);
         return new BusinessConsoleRecordProductionReportResponse(
-            response.ProductionReportId.Id.ToString(),
-            response.ReportNo,
-            response.SerialNumbers,
+            report.ProductionReportId,
+            report.ReportNo,
+            report.SerialNumbers,
             string.IsNullOrWhiteSpace(request.IdempotencyKey)
                 ? null
                 : BusinessConsoleOperationReceipts.Accepted(
                     "mes.production-report.record",
                     "mes",
                     "production-report",
-                    response.ProductionReportId.Id.ToString(),
-                    $"/api/business-console/v1/mes/production-reports/{Uri.EscapeDataString(response.ReportNo)}?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}",
+                    report.ProductionReportId,
+                    $"/api/business-console/v1/mes/production-reports/{Uri.EscapeDataString(report.ReportNo)}?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}",
                     request.IdempotencyKey));
     }
 
@@ -1051,21 +1048,34 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             return null;
         }
 
-        if (response.ProductionReportId is null ||
-            response.ProductionReportId.Id == Guid.Empty ||
-            string.IsNullOrWhiteSpace(response.ReportNo) ||
-            response.SerialNumbers is null)
+        var report = RequireProductionReport(response.ProductionReportId, response.ReportNo, response.SerialNumbers);
+        return new BusinessMesProductionReportIntentReceipt(
+            response.ReportIntentFingerprint,
+            report.ProductionReportId,
+            report.ReportNo,
+            report.SerialNumbers);
+    }
+
+    /// <summary>
+    /// MES 报工类应答（直接报工 / 遥测转正 / 按幂等键回查）共用的下游校验：报工单号是 <c>{ id }</c> 对象，
+    /// 标识、单号、序列号任一缺失都按下游应答无效处理。
+    /// </summary>
+    private static (string ProductionReportId, string ReportNo, IReadOnlyCollection<string> SerialNumbers) RequireProductionReport(
+        DownstreamProductionReportId? productionReportId,
+        string? reportNo,
+        IReadOnlyCollection<string>? serialNumbers)
+    {
+        if (productionReportId is null ||
+            productionReportId.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(reportNo) ||
+            serialNumbers is null)
         {
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.BadGateway,
                 "downstream-invalid-response");
         }
 
-        return new BusinessMesProductionReportIntentReceipt(
-            response.ReportIntentFingerprint,
-            response.ProductionReportId.Id.ToString(),
-            response.ReportNo,
-            response.SerialNumbers);
+        return (productionReportId.Id.ToString(), reportNo, serialNumbers);
     }
 
     public Task<BusinessConsoleAcceptedResponse> RecordDefectAsync(
