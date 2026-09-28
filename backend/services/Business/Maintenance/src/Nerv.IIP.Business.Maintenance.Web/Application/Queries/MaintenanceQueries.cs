@@ -53,7 +53,9 @@ public sealed record MaintenanceWorkOrderListItem(
     string? SourceReferenceId = null,
     string? AssignedTeamId = null,
     int Version = 0,
-    DateTimeOffset? ExpectedRestoreAtUtc = null);
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+
+    string WorkOrderNo = "");
 
 public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceWorkOrdersQuery, PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>
@@ -90,6 +92,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
             .Where(x => assignedTeamIds.Count == 0 || (x.AssignedTeamId != null && assignedTeamIds.Contains(x.AssignedTeamId)))
             .Where(x => request.WorkOrderId == null || (workOrderId != null && x.Id == workOrderId))
             .Where(x => keyword == null
+                || x.WorkOrderNo.ToLower().Contains(keyword)
                 || x.DeviceAssetId.ToLower().Contains(keyword)
                 || (x.SourceAlarmId != null && x.SourceAlarmId.ToLower().Contains(keyword))
                 || (x.SourceReferenceId != null && x.SourceReferenceId.ToLower().Contains(keyword))
@@ -116,7 +119,8 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 x.SourceReferenceId,
                 x.AssignedTeamId,
                 x.Version,
-                x.ExpectedRestoreAtUtc))
+                x.ExpectedRestoreAtUtc,
+                x.WorkOrderNo))
             .Skip(page.Skip)
             .Take(page.Take)
             .ToArrayAsync(cancellationToken);
@@ -219,7 +223,8 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
                     x.SourceReferenceId,
                     x.AssignedTeamId,
                     x.Version,
-                    x.ExpectedRestoreAtUtc),
+                    x.ExpectedRestoreAtUtc,
+                    x.WorkOrderNo),
                 x.CompletionResult != null
                     && x.DowntimeReasonCode != null
                     && x.DowntimeMinutes != null
@@ -561,7 +566,8 @@ public sealed record MaintenanceSparePartListItem(
     decimal Quantity,
     string? UomCode,
     string? SiteCode = null,
-    string? LocationCode = null);
+    string? LocationCode = null,
+    string WorkOrderNo = "");
 
 public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceSparePartsQuery, PagedMaintenanceListResponse<MaintenanceSparePartListItem>>
@@ -593,7 +599,8 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
                 x.sparePart.Quantity,
                 x.sparePart.UomCode,
                 x.sparePart.SiteCode,
-                x.sparePart.LocationCode))
+                x.sparePart.LocationCode,
+                x.workOrder.WorkOrderNo))
             .ToArrayAsync(cancellationToken);
         return new PagedMaintenanceListResponse<MaintenanceSparePartListItem>(items, skip, take, total);
     }
@@ -1159,6 +1166,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 x.SourcePlanCode,
                 x.SourceReferenceId,
                 x.SourceType,
+                x.WorkOrderNo,
             })
             .Where(x => x.ReleasedAtUtc == null || x.ReleasedAtUtc > contract.WindowStartUtc)
             .OrderBy(x => x.AssetUnavailableFromUtc)
@@ -1170,7 +1178,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 x.ReleasedAtUtc,
                 x.SourcePlanCode,
                 x.SourceReferenceId,
-                x.SourceType))
+                x.SourceType,
+                x.WorkOrderNo))
             .ToArrayAsync(cancellationToken);
 
         var plans = await dbContext.MaintenancePlans
@@ -1193,7 +1202,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
             .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
-            .Select(x => new MaintenanceInspectionWorkOrderProjection(x.Id, x.DeviceAssetId, x.SourcePlanCode, x.SourceReferenceId, x.SourceType, x.SourceAlarmId))
+            .Select(x => new MaintenanceInspectionWorkOrderProjection(x.Id, x.DeviceAssetId, x.SourcePlanCode, x.SourceReferenceId, x.SourceType, x.SourceAlarmId, x.WorkOrderNo))
             .ToArrayAsync(cancellationToken);
         var inspectionPlanIds = inspectionPlans.Select(x => x.PlanId).ToArray();
         var inspectionWorkOrderIds = inspectionWorkOrders.Select(x => x.WorkOrderId).ToArray();
@@ -1225,11 +1234,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 workOrder.SourceAlarmId is null ? EquipmentRuntimeSourceType.Downtime : EquipmentRuntimeSourceType.Alarm,
                 workOrder.SourceAlarmId ?? workOrder.WorkOrderId.ToString(),
                 contract,
-                sourceReferenceLabel: WorkOrderReferenceLabel(
-                    workOrder.SourceType,
-                    workOrder.SourceAlarmId,
-                    workOrder.SourceReferenceId,
-                    workOrder.SourcePlanCode),
+                // 维修工单的人读标识就是它的正式单号（#3852）。
+                sourceReferenceLabel: WorkOrderReferenceLabel(workOrder.WorkOrderNo),
                 prediction: prediction);
         }
 
@@ -1371,40 +1377,15 @@ internal static class MaintenanceAvailabilityWindowCalculator
         var workOrder = workOrders.FirstOrDefault(x => x.WorkOrderId == inspection.WorkOrderId);
         return workOrder is null
             ? null
-            : WorkOrderReferenceLabel(
-                workOrder.SourceType,
-                workOrder.SourceAlarmId,
-                workOrder.SourceReferenceId,
-                workOrder.SourcePlanCode);
+            : WorkOrderReferenceLabel(workOrder.WorkOrderNo);
     }
 
     /// <summary>
-    /// 维修工单在可用窗口「关联业务」列的人读标识。<c>SourceReferenceId</c> 不能直接当标签：
-    /// 维修工单号（MWO-2026-####）只在开单时显式传入才落在它上面（见 WorldHistorySeedService）；
-    /// 没传时，报警来源回落成 SourceAlarmId（<c>WH-DEV-…:0000</c> 这类合成键），点检来源写的是点检 GUID。
-    /// 所以：有工单号用工单号；计划来源的计划编码也是人读的；其余一律 null，由界面显示「—」。
+    /// 维修工单在可用窗口「关联业务」列的人读标识：正式单号（#3852，编码规则分配）。
+    /// 以前只能从 SourceReferenceId 里挑能看的值（报警合成键、点检 GUID 都不是单号），现在每张工单都有单号。
     /// </summary>
-    private static string? WorkOrderReferenceLabel(
-        string? sourceType,
-        string? sourceAlarmId,
-        string? sourceReferenceId,
-        string? sourcePlanCode)
-    {
-        if (string.Equals(sourceType, MaintenanceWorkOrderSourceTypes.Inspection, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        // 早期数据可能没有 SourceType：引用等于报警键、或本身是 GUID，同样不是工单号。
-        if (sourceReferenceId is not null
-            && (string.Equals(sourceReferenceId, sourceAlarmId, StringComparison.Ordinal)
-                || Guid.TryParse(sourceReferenceId, out _)))
-        {
-            return null;
-        }
-
-        return sourceReferenceId ?? sourcePlanCode;
-    }
+    private static string? WorkOrderReferenceLabel(string workOrderNo) =>
+        string.IsNullOrWhiteSpace(workOrderNo) ? null : workOrderNo;
 
     private static string GetInspectionReferenceKey(MaintenanceInspectionAvailabilityProjection inspection)
     {
@@ -1437,7 +1418,8 @@ internal sealed record MaintenanceWorkOrderAvailabilityProjection(
     DateTimeOffset? ReleasedAtUtc,
     string? SourcePlanCode = null,
     string? SourceReferenceId = null,
-    string? SourceType = null);
+    string? SourceType = null,
+    string WorkOrderNo = "");
 
 internal sealed record MaintenancePlanAvailabilityProjection(MaintenancePlanId PlanId, string DeviceAssetId, string PlanCode, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 
@@ -1449,7 +1431,8 @@ internal sealed record MaintenanceInspectionWorkOrderProjection(
     string? SourcePlanCode = null,
     string? SourceReferenceId = null,
     string? SourceType = null,
-    string? SourceAlarmId = null);
+    string? SourceAlarmId = null,
+    string WorkOrderNo = "");
 
 internal sealed record MaintenanceInspectionAvailabilityProjection(
     MaintenanceInspectionId InspectionId,

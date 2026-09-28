@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928113631_AddMaintenanceWorkOrderNo")]
+    partial class AddMaintenanceWorkOrderNo
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -447,11 +450,6 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("estimated_labor_minutes")
                         .HasComment("Estimated technician labor minutes.");
-
-                    b.Property<DateTimeOffset?>("ExpectedRestoreAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expected_restore_at_utc")
-                        .HasComment("Optional UTC expected asset restoration time; a prediction, not an actual restoration fact.");
 
                     b.Property<decimal?>("ExternalServiceCostAmount")
                         .HasPrecision(18, 6)

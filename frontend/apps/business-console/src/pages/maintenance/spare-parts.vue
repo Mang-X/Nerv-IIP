@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceSpareParts } from '@/composables/useBusinessMaintenance'
 import {
+  maintenanceWorkOrderNoLabel,
   useDeviceSiteLookup,
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
@@ -137,8 +138,12 @@ const columns: NvDataTableColumn<SparePartRow>[] = [
     header: '设备',
     accessor: (r) => deviceText(r.deviceAssetId),
   },
-  // 读面只给 workOrderId（GUID），没有人读工单号——GUID 不上屏，先如实留白（后端缺口）。
-  { key: 'workOrderId', header: '维修工单', accessor: () => '—' },
+  // 维修工单显示正式单号（#3852）。
+  {
+    key: 'workOrderId',
+    header: '维修工单',
+    accessor: (r) => (r.workOrderId ? maintenanceWorkOrderNoLabel(r.workOrderNo) : '未关联'),
+  },
   { key: 'quantity', header: '需求数量', align: 'end', accessor: (r) => quantityLabel(r) },
   {
     key: 'locationCode',
@@ -268,14 +273,14 @@ async function submitCreate() {
       :column-settings="false"
       empty-message="暂无备件需求。维修工单需要更换物料时在此登记需求。"
     >
-      <!-- 读面没有人读工单号，只有 GUID；GUID 不上屏，用「打开工单」承载跳转。 -->
+      <!-- 维修工单列显示正式单号，点击打开工单。 -->
       <template #cell-workOrderId="{ row }">
         <RouterLink
           v-if="row.workOrderId"
           :to="{ path: '/maintenance/work-orders', query: { workOrderId: row.workOrderId } }"
           class="text-brand underline-offset-4 hover:underline"
         >
-          打开工单
+          {{ maintenanceWorkOrderNoLabel(row.workOrderNo) }}
         </RouterLink>
         <span v-else class="text-muted-foreground">未关联</span>
       </template>

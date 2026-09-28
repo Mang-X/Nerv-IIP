@@ -461,6 +461,60 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
             codes.Order(StringComparer.Ordinal));
     }
 
+    /// <summary>
+    /// #3852：维修工单号迁移给存量工单补号——演示数据已有的 MWO- 单号原样沿用，其余按开单日补
+    /// MWO-yyyyMMdd-NNNNNN，并把当日计数器推到已用的最大序号，之后分配的新号不会与补出的号相撞。
+    /// </summary>
+    [MaintenanceAssetUnavailableV2PostgresFact]
+    public async Task Work_order_number_migration_backfills_existing_rows_and_advances_the_counter()
+    {
+        await ResetMaintenanceSchemaAsync();
+        await using var factory = CreateFactory();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        AssertUsesGovernedDatabase(db);
+        var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+        await migrator.MigrateAsync("20260928075938_AddSparePartIssueLocation");
+
+        var today = DateTimeOffset.UtcNow;
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO maintenance.maintenance_work_orders
+                (id, organization_id, environment_id, device_asset_id, priority, opened_by, status,
+                 opened_at_utc, alarm_cleared, asset_unavailable, version, source_type, source_reference_id)
+            VALUES
+                ('01a0e700-0000-7000-8000-000000000001', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {0}, false, false, 0, 'alarm', 'MWO-2026-0042'),
+                ('01a0e700-0000-7000-8000-000000000002', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {1}, false, false, 0, 'manual', NULL),
+                ('01a0e700-0000-7000-8000-000000000003', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {2}, false, false, 0, 'plan', 'PM-0001:date:20260901'),
+                ('01a0e700-0000-7000-8000-000000000004', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {3}, false, false, 0, 'manual', NULL);
+            """,
+            today.AddMinutes(-30),
+            today.AddMinutes(-20),
+            today.AddMinutes(-10),
+            new DateTimeOffset(2026, 9, 1, 8, 0, 0, TimeSpan.Zero));
+
+        await migrator.MigrateAsync();
+
+        var numbers = await db.MaintenanceWorkOrders.AsNoTracking()
+            .OrderBy(x => x.Id)
+            .Select(x => x.WorkOrderNo)
+            .ToListAsync();
+        var day = today.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(
+            ["MWO-2026-0042", $"MWO-{day}-000001", $"MWO-{day}-000002", "MWO-20260901-000001"],
+            numbers);
+
+        // 计数器已推到当日已用的最大序号：新分配的单号从 000003 开始，不与补出的号相撞。
+        var coding = scope.ServiceProvider.GetRequiredService<Nerv.IIP.Business.Maintenance.Web.Application.Commands.MaintenanceCodingService>();
+        var next = await Nerv.IIP.Business.Maintenance.Web.Application.Commands.MaintenanceWorkOrderNumbers.AllocateAsync(
+            coding, "org-001", "env-dev", intentKey: null, CancellationToken.None);
+        Assert.Equal($"MWO-{day}-000003", next);
+    }
+
     private sealed class CapturingLoggerProvider : ILoggerProvider
     {
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> messages = new();

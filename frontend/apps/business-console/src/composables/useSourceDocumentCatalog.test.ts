@@ -82,13 +82,14 @@ describe('source document catalog', () => {
     })
   })
 
-  it('submits the maintenance work-order id while showing its readable number', () => {
+  it('submits and shows the maintenance work order formal number (#3852)', () => {
     colada.data = {
       success: true,
       data: {
         items: [
           {
             workOrderId: '0199a1b2-0000-7000-8000-00000000abcd',
+            workOrderNo: 'MWO-20260928-000001',
             deviceAssetId: 'CNC-01',
             status: 'in_progress',
           },
@@ -106,8 +107,8 @@ describe('source document catalog', () => {
     })
     expect(catalog.options.value).toEqual([
       {
-        value: '0199a1b2-0000-7000-8000-00000000abcd',
-        label: 'WO-0000ABCD',
+        value: 'MWO-20260928-000001',
+        label: 'MWO-20260928-000001',
         hint: 'CNC-01 · 执行中',
       },
     ])
@@ -121,8 +122,14 @@ describe('source document catalog', () => {
           {
             id: 'rec-1',
             sourceType: 'maintenance',
-            sourceDocumentId: '0199a1b2-0000-7000-8000-00000000abcd',
+            sourceDocumentId: 'MWO-20260928-000001',
             skuCode: 'SP-01',
+          },
+          {
+            id: 'rec-0',
+            sourceType: 'maintenance',
+            sourceDocumentId: '0199a1b2-0000-7000-8000-00000000abcd',
+            skuCode: 'SP-00',
           },
           { id: 'rec-2', sourceType: 'final', sourceDocumentId: 'WO-0007', skuCode: 'FG-01' },
           { id: 'rec-3', sourceType: 'final', sourceDocumentId: 'WO-0007', skuCode: 'FG-01' },
@@ -133,9 +140,10 @@ describe('source document catalog', () => {
 
     const catalog = useSourceDocumentCatalog('quality-inspection', '')
 
-    // 同一张被检单据的多条检验记录只列一次；维修工单 ID 不直接上屏。
+    // 同一张被检单据的多条检验记录只列一次；维修工单显示正式单号，早期只存了工单 ID 的记录 GUID 不上屏。
     expect(catalog.options.value.map(({ value, label }) => ({ value, label }))).toEqual([
-      { value: '0199a1b2-0000-7000-8000-00000000abcd', label: 'WO-0000ABCD' },
+      { value: 'MWO-20260928-000001', label: 'MWO-20260928-000001' },
+      { value: '0199a1b2-0000-7000-8000-00000000abcd', label: '维修工单' },
       { value: 'WO-0007', label: 'WO-0007' },
     ])
   })

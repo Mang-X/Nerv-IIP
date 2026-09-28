@@ -755,7 +755,7 @@
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.NetRequirementIdentityPersistenceTests.Migration_keeps_legacy_identity_unknown_and_preserves_explanation_and_sources_on_postgres",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.NetRequirementIdentityPersistenceTests.Netting_identity_survives_split_independent_stages_accept_reject_and_supersession_on_postgres"
       ],
-      "expectedRuntimeTestCount": 8
+      "expectedRuntimeTestCount": 9
     },
     {
       "id": "demandplanning-postgres-redis",
@@ -1348,9 +1348,10 @@
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_outbox_failure_rolls_back_the_work_order_and_the_already_published_v1_companion",
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted",
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Baseline_downtime_reason_seed_waits_for_migrations_and_fills_the_catalog_on_the_next_start",
-        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Nullable_ETR_migration_preserves_legacy_work_orders_and_round_trips_predictions_on_postgres"
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Nullable_ETR_migration_preserves_legacy_work_orders_and_round_trips_predictions_on_postgres",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Work_order_number_migration_backfills_existing_rows_and_advances_the_counter"
       ],
-      "expectedRuntimeTestCount": 8
+      "expectedRuntimeTestCount": 9
     },
     {
       "id": "quality-postgres",

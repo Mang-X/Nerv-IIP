@@ -12,7 +12,7 @@ public sealed class MaintenanceLifecycleCommandTests
     public async Task Assignment_and_lifecycle_actions_persist_actor_technician_reason_and_authoritative_version()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-001", "high", "reporter-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "high", "reporter-001");
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
         await db.SaveChangesAsync();
@@ -57,7 +57,7 @@ public sealed class MaintenanceLifecycleCommandTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-001");
         db.MaintenanceWorkOrders.Add(workOrder);
         await db.SaveChangesAsync();
         var handler = new TransitionMaintenanceWorkOrderCommandHandler(db);
@@ -84,7 +84,7 @@ public sealed class MaintenanceLifecycleCommandTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-a");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-a");
         workOrder.Assign("tech-a", "team-a");
         workOrder.Accept("tech-a");
         db.MaintenanceWorkOrders.Add(workOrder);
@@ -155,7 +155,7 @@ public sealed class MaintenanceLifecycleCommandTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
-            "org-001", "env-dev", "DEV-001", "alarm-001", "critical", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "alarm-001", "critical", assignedTechnicianUserId: "tech-001");
         workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "alarm-raised");
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
@@ -225,7 +225,7 @@ public sealed class MaintenanceLifecycleCommandTests
     private static MaintenanceWorkOrder StartedWorkOrder(string deviceAssetId, string technicianUserId, string spareSku)
     {
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", deviceAssetId, "high", "reporter-001", assignedTechnicianUserId: technicianUserId);
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", deviceAssetId, "high", "reporter-001", assignedTechnicianUserId: technicianUserId);
         workOrder.AddSparePartLine(new SparePartLineDraft(spareSku, 1m, "EA"));
         workOrder.Accept(technicianUserId);
         workOrder.StartWork();

@@ -252,14 +252,14 @@ describe('ERP finance voucher and cost pages', () => {
     expect(wrapper.get('#erp-cc-source').attributes('data-catalog')).toBe('work-order-cost')
     await typeSelect().setValue('maintenance')
     expect(wrapper.get('#erp-cc-source').attributes('data-catalog')).toBe('maintenance-work-order')
-    // 选择器回传维修工单 ID，提交的是人读单号（列表显示与按单号搜索都用它）。
-    await wrapper.get('#erp-cc-source').setValue('01a0dd47-daef-71c0-8dde-c3851a8f5077')
+    // 选择器回传维修工单正式单号（#3852），原样提交（列表显示与按单号搜索都用它）。
+    await wrapper.get('#erp-cc-source').setValue('MWO-20260928-000001')
     await wrapper.get('#erp-cc-amount').setValue('860')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(state.createCostCandidate).toHaveBeenLastCalledWith({
       sourceType: 'maintenance',
-      sourceDocumentNo: 'WO-1A8F5077',
+      sourceDocumentNo: 'MWO-20260928-000001',
       amount: 860,
       currencyCode: 'CNY',
     })

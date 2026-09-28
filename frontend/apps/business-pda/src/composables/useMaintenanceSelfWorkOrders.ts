@@ -130,6 +130,7 @@ function isWorkOrderListItem(
     !Array.isArray(value) &&
     isCanonicalGuid((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderId) &&
     isNullableString((value as BusinessConsoleMaintenanceWorkOrderItem).sourceReferenceId) &&
+    isNullableString((value as BusinessConsoleMaintenanceWorkOrderItem).workOrderNo) &&
     isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).deviceAssetId) &&
     isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).priority) &&
     isNonBlankString((value as BusinessConsoleMaintenanceWorkOrderItem).status) &&
@@ -202,6 +203,7 @@ function isAuthoritativeMaintenanceWorkOrderDetail(
     isCanonicalGuid(value.workOrderId) &&
     normalizeCanonicalGuid(value.workOrderId) === normalizeCanonicalGuid(requestedWorkOrderId) &&
     isNullableString(value.sourceReferenceId) &&
+    isNullableString(value.workOrderNo) &&
     isNonBlankString(value.deviceAssetId) &&
     isNonBlankString(value.priority) &&
     isNonBlankString(value.status) &&
