@@ -51,6 +51,33 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
     }
 
     [Fact]
+    public async Task Device_control_command_rejects_write_to_a_disabled_tag_before_creating_ops_task()
+    {
+        await using var factory = new DeviceControlHttpTestFactory();
+        await factory.SeedWritableTagAsync("DEV-CNC-01", "spindle.speed", "number", minValue: 0m, maxValue: 100m, disabled: true);
+        await factory.SeedBindingAsync("DEV-CNC-01");
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/iiot/device-control-commands", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-CNC-01",
+            commandType = "write-tag",
+            tagKey = "spindle.speed",
+            value = "50",
+            requestedBy = "user:operator-001",
+            reason = "speed adjustment",
+            idempotencyKey = "idem-device-control-disabled-tag-001",
+            correlationId = "corr-device-control-disabled-tag-001",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.OpsClient.CreatedRequests);
+    }
+
+    [Fact]
     public async Task Device_control_command_rejects_write_when_device_has_no_control_channel_binding()
     {
         await using var factory = new DeviceControlHttpTestFactory();
@@ -310,12 +337,17 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
 
         public RecordingDeviceControlOpsClient OpsClient { get; } = new();
 
-        public async Task SeedWritableTagAsync(string deviceAssetId, string tagKey, string valueType, decimal minValue, decimal maxValue)
+        public async Task SeedWritableTagAsync(string deviceAssetId, string tagKey, string valueType, decimal minValue, decimal maxValue, bool disabled = false)
         {
             using var scope = Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var tag = TelemetryTag.Create("org-001", "env-dev", deviceAssetId, tagKey, valueType, "rpm", "sample-10s");
             tag.ConfigureControl(isWritable: true, minValue, maxValue, allowedValues: []);
+            if (disabled)
+            {
+                tag.Disable(DateTimeOffset.Parse("2026-07-07T00:00:00Z"));
+            }
+
             dbContext.TelemetryTags.Add(tag);
             await dbContext.SaveChangesAsync();
         }

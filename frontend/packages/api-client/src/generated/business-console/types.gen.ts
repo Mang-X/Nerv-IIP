@@ -899,10 +899,50 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     controlMinValue?: number | null;
     controlMaxValue?: number | null;
     controlAllowedValues?: Array<string> | null;
+    displayName?: string | null;
+    isEnabled?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagListRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryTagResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagResponse = {
+    telemetryTagId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagRequest = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    tagKey: string;
+    valueType: string;
+    unitCode: string;
+    samplingPolicy: string;
+    displayName?: string | null;
+    isWritable?: boolean;
+    controlMinValue?: number | null;
+    controlMaxValue?: number | null;
+    controlAllowedValues?: Array<string> | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDisableTelemetryTagResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagResponse = {
+    telemetryTagId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagRequest = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    tagKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagCurrentValueResponse = NetCorePalExtensionsDtoResponseData & {
@@ -11075,6 +11115,7 @@ export type ListBusinessConsoleTelemetryTagsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        includeDisabled?: boolean;
     };
     url: '/api/business-console/v1/telemetry/tags';
 };
@@ -11104,6 +11145,72 @@ export type ListBusinessConsoleTelemetryTagsResponses = {
 };
 
 export type ListBusinessConsoleTelemetryTagsResponse = ListBusinessConsoleTelemetryTagsResponses[keyof ListBusinessConsoleTelemetryTagsResponses];
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/tags';
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagError = CreateOrUpdateBusinessConsoleTelemetryTagErrors[keyof CreateOrUpdateBusinessConsoleTelemetryTagErrors];
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryTagResponse;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagResponse = CreateOrUpdateBusinessConsoleTelemetryTagResponses[keyof CreateOrUpdateBusinessConsoleTelemetryTagResponses];
+
+export type DisableBusinessConsoleTelemetryTagData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/tags/disable';
+};
+
+export type DisableBusinessConsoleTelemetryTagErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DisableBusinessConsoleTelemetryTagError = DisableBusinessConsoleTelemetryTagErrors[keyof DisableBusinessConsoleTelemetryTagErrors];
+
+export type DisableBusinessConsoleTelemetryTagResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDisableTelemetryTagResponse;
+};
+
+export type DisableBusinessConsoleTelemetryTagResponse = DisableBusinessConsoleTelemetryTagResponses[keyof DisableBusinessConsoleTelemetryTagResponses];
 
 export type GetBusinessConsoleTelemetryTagCurrentValueData = {
     body?: never;

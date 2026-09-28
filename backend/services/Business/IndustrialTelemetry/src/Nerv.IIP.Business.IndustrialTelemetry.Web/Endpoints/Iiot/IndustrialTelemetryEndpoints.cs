@@ -70,9 +70,12 @@ public sealed record CreateTelemetryTagRequest(
     bool IsWritable = false,
     decimal? ControlMinValue = null,
     decimal? ControlMaxValue = null,
-    IReadOnlyCollection<string>? ControlAllowedValues = null);
+    IReadOnlyCollection<string>? ControlAllowedValues = null,
+    string? DisplayName = null);
 public sealed record CreateTelemetryTagResponse(TelemetryTagId TelemetryTagId);
-public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100);
+public sealed record DisableTelemetryTagRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey);
+public sealed record DisableTelemetryTagResponse(TelemetryTagId TelemetryTagId);
+public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100, bool IncludeDisabled = false);
 public sealed record GetTelemetryTagCurrentValueRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey);
 public sealed record ReportConnectorTagManifestRequest(
     string OrganizationId,
@@ -221,8 +224,19 @@ public sealed class CreateTelemetryTagEndpoint(ISender sender) : IndustrialTelem
 
     public override async Task HandleAsync(CreateTelemetryTagRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateTelemetryTagCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.ValueType, req.UnitCode, req.SamplingPolicy, req.IsWritable, req.ControlMinValue, req.ControlMaxValue, req.ControlAllowedValues), ct);
+        var id = await sender.Send(new CreateTelemetryTagCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.ValueType, req.UnitCode, req.SamplingPolicy, req.IsWritable, req.ControlMinValue, req.ControlMaxValue, req.ControlAllowedValues, req.DisplayName), ct);
         await Send.OkAsync(new CreateTelemetryTagResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class DisableTelemetryTagEndpoint(ISender sender) : IndustrialTelemetryEndpoint<DisableTelemetryTagRequest, ResponseData<DisableTelemetryTagResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<DisableTelemetryTagEndpoint>());
+
+    public override async Task HandleAsync(DisableTelemetryTagRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new DisableTelemetryTagCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey), ct);
+        await Send.OkAsync(new DisableTelemetryTagResponse(id).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -346,7 +360,7 @@ public sealed class ListTelemetryTagsEndpoint(ISender sender) : IndustrialTeleme
 
     public override async Task HandleAsync(ListTelemetryTagsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId!, req.EnvironmentId!, req.DeviceAssetId, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListTelemetryTagsQuery(req.OrganizationId!, req.EnvironmentId!, req.DeviceAssetId, req.Skip, req.Take, req.IncludeDisabled), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -734,6 +748,7 @@ public static class IndustrialTelemetryEndpointContracts
         new(typeof(ReportConnectorTagManifestEndpoint), "POST", "/api/business/v1/iiot/connector-tag-manifests", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "reportBusinessIiotConnectorTagManifest"),
         new(typeof(GetConnectorTagCoverageEndpoint), "GET", "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotConnectorTagCoverage"),
         new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),
+        new(typeof(DisableTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags/disable", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "disableBusinessIiotTelemetryTag"),
         new(typeof(ListTelemetryTagsEndpoint), "GET", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryTags"),
         new(typeof(GetTelemetryTagCurrentValueEndpoint), "GET", "/api/business/v1/iiot/tags/current-value", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotTelemetryTagCurrentValue"),
         new(typeof(CreateDeviceControlCommandEndpoint), "POST", "/api/business/v1/iiot/device-control-commands", IndustrialTelemetryPermissionCodes.DeviceControlWrite, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotDeviceControlCommand"),

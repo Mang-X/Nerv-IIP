@@ -10109,6 +10109,90 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Telemetry_tag_http_client_uses_the_real_industrial_telemetry_wire_shapes()
+    {
+        var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/business/v1/iiot/tags" when request.Method == HttpMethod.Get => JsonResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                data = new
+                {
+                    items = new object[]
+                    {
+                        new
+                        {
+                            telemetryTagId = "0190f5a0-0000-7000-8000-000000000001",
+                            organizationId = "org-001",
+                            environmentId = "env-dev",
+                            deviceAssetId = "EQ00001",
+                            tagKey = "parts_count",
+                            valueType = "production-count-draft",
+                            unitCode = "pcs",
+                            samplingPolicy = "sample-60s",
+                            isWritable = false,
+                            controlMinValue = (decimal?)null,
+                            controlMaxValue = (decimal?)null,
+                            controlAllowedValues = Array.Empty<string>(),
+                            displayName = "成品计数",
+                            isEnabled = false,
+                        },
+                    },
+                    total = 1,
+                },
+            }),
+            _ => JsonResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                data = new { telemetryTagId = "0190f5a0-0000-7000-8000-000000000001" },
+            }),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://industrial-telemetry.local") };
+        var client = new HttpBusinessIndustrialTelemetryClient(httpClient);
+
+        var list = await client.ListTagsAsync(
+            "internal-token-001",
+            new BusinessConsoleTelemetryTagListRequest("org-001", "env-dev", "EQ00001", IncludeDisabled: true),
+            CancellationToken.None);
+        var saved = await client.CreateOrUpdateTagAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateOrUpdateTelemetryTagRequest(
+                "org-001", "env-dev", "EQ00001", "parts_count", "production-count-draft", "pcs", "sample-60s",
+                DisplayName: "成品计数", IsWritable: true, ControlMinValue: 1m, ControlMaxValue: 5m, ControlAllowedValues: ["1"]),
+            CancellationToken.None);
+        var disabled = await client.DisableTagAsync(
+            "internal-token-001",
+            new BusinessConsoleDisableTelemetryTagRequest("org-001", "env-dev", "EQ00001", "parts_count"),
+            CancellationToken.None);
+
+        Assert.Equal("includeDisabled=true", handler.Requests[0].RequestUri!.Query.TrimStart('?').Split('&').Last());
+        var item = Assert.Single(list.Items);
+        Assert.Equal("成品计数", item.DisplayName);
+        Assert.False(item.IsEnabled);
+        Assert.Equal(HttpMethod.Post, handler.Requests[1].Method);
+        Assert.Equal("/api/business/v1/iiot/tags", handler.Requests[1].RequestUri!.AbsolutePath);
+        using (var body = JsonDocument.Parse(handler.RequestBodies[1]!))
+        {
+            Assert.Equal("成品计数", body.RootElement.GetProperty("displayName").GetString());
+            Assert.True(body.RootElement.GetProperty("isWritable").GetBoolean());
+            Assert.Equal(1m, body.RootElement.GetProperty("controlMinValue").GetDecimal());
+            Assert.Equal(5m, body.RootElement.GetProperty("controlMaxValue").GetDecimal());
+            Assert.Equal("1", Assert.Single(body.RootElement.GetProperty("controlAllowedValues").EnumerateArray()).GetString());
+        }
+
+        Assert.Equal("0190f5a0-0000-7000-8000-000000000001", saved.TelemetryTagId);
+        Assert.Equal("/api/business/v1/iiot/tags/disable", handler.Requests[2].RequestUri!.AbsolutePath);
+        using (var body = JsonDocument.Parse(handler.RequestBodies[2]!))
+        {
+            Assert.Equal("EQ00001", body.RootElement.GetProperty("deviceAssetId").GetString());
+            Assert.Equal("parts_count", body.RootElement.GetProperty("tagKey").GetString());
+        }
+
+        Assert.Equal("0190f5a0-0000-7000-8000-000000000001", disabled.TelemetryTagId);
+        Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter));
+    }
+
+    [Fact]
     public async Task Equipment_health_http_client_forwards_canonical_scope_and_preserves_nullable_evidence()
     {
         var handler = new RecordingHandler(_ => EquipmentHealthJsonResponse(
@@ -20655,6 +20739,18 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             ],
             1));
     }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryTagResponse> CreateOrUpdateTagAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryTagRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryTagResponse("tag-001"));
+
+    public Task<BusinessConsoleDisableTelemetryTagResponse> DisableTagAsync(
+        string internalBearerToken,
+        BusinessConsoleDisableTelemetryTagRequest request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(new BusinessConsoleDisableTelemetryTagResponse("tag-001"));
 
     public Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> CreateOrUpdateDeviceControlBindingAsync(
         string internalBearerToken,

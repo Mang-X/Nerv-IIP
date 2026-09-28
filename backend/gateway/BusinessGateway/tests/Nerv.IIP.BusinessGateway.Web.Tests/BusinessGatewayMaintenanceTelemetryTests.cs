@@ -2855,6 +2855,92 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Telemetry_tag_maintenance_uses_tags_manage_permission_scoped_to_the_device_and_forwards_payloads()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var saveResponse = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "EQ00001",
+            tagKey = "parts_count",
+            displayName = "成品计数",
+            valueType = "production-count-draft",
+            unitCode = "pcs",
+            samplingPolicy = "sample-60s",
+            isWritable = true,
+            controlMinValue = 0m,
+            controlMaxValue = 9999m,
+            controlAllowedValues = new[] { "0" },
+        });
+        Assert.Equal(HttpStatusCode.OK, saveResponse.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.IiotTagsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("EQ00001", auth.LastRequirement.ResourceId);
+        var saved = telemetry.LastCreateOrUpdateTagRequest!;
+        Assert.Equal("成品计数", saved.DisplayName);
+        Assert.Equal("production-count-draft", saved.ValueType);
+        Assert.True(saved.IsWritable);
+        Assert.Equal(0m, saved.ControlMinValue);
+        Assert.Equal(9999m, saved.ControlMaxValue);
+        Assert.Equal(["0"], saved.ControlAllowedValues!);
+        Assert.Equal("internal-test-token", telemetry.LastInternalToken);
+
+        var disableResponse = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/tags/disable", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "EQ00002",
+            tagKey = "parts_count",
+        });
+        Assert.Equal(HttpStatusCode.OK, disableResponse.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.IiotTagsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("EQ00002", auth.LastRequirement.ResourceId);
+        Assert.Equal(new BusinessConsoleDisableTelemetryTagRequest("org-001", "env-dev", "EQ00002", "parts_count"), telemetry.LastDisableTagRequest);
+    }
+
+    [Theory]
+    [InlineData("decimal")]
+    [InlineData("counter")]
+    public async Task Telemetry_tag_save_rejects_value_types_outside_the_closed_set_before_forwarding(string valueType)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "EQ00001",
+            tagKey = "parts_count",
+            valueType,
+            unitCode = "pcs",
+            samplingPolicy = "sample-60s",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(telemetry.LastCreateOrUpdateTagRequest);
+    }
+
+    [Fact]
     public async Task Equipment_alarm_lifecycle_actions_use_alarm_write_permission_and_forward_payloads()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -3687,6 +3773,10 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
 
     public BusinessConsoleTelemetryTagListRequest? LastTagListRequest { get; private set; }
 
+    public BusinessConsoleCreateOrUpdateTelemetryTagRequest? LastCreateOrUpdateTagRequest { get; private set; }
+
+    public BusinessConsoleDisableTelemetryTagRequest? LastDisableTagRequest { get; private set; }
+
     public BusinessConsoleTelemetryAlarmRuleListRequest? LastAlarmRuleListRequest { get; private set; }
 
     public BusinessConsoleTelemetryAlarmListRequest? LastAlarmListRequest { get; private set; }
@@ -3742,6 +3832,26 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         [
             new BusinessConsoleTelemetryTagItem("tag-001", "org-001", "env-dev", "DEV-PRESS-01", "temperature", "decimal", "C", "1m"),
         ], 42));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryTagResponse> CreateOrUpdateTagAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryTagRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateOrUpdateTagRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryTagResponse("tag-001"));
+    }
+
+    public Task<BusinessConsoleDisableTelemetryTagResponse> DisableTagAsync(
+        string internalBearerToken,
+        BusinessConsoleDisableTelemetryTagRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDisableTagRequest = request;
+        return Task.FromResult(new BusinessConsoleDisableTelemetryTagResponse("tag-001"));
     }
 
     public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(

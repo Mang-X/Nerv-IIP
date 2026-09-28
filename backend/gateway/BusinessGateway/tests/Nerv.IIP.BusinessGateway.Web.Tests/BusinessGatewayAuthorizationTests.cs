@@ -823,6 +823,23 @@ public sealed class BusinessGatewayAuthorizationTests
             idempotencyKey = "idem-devctl-001",
             correlationId = "corr-devctl-001",
         },
+        "/api/business-console/v1/telemetry/tags" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            tagKey = "parts_count",
+            valueType = "production-count-draft",
+            unitCode = "pcs",
+            samplingPolicy = "sample-60s",
+        },
+        "/api/business-console/v1/telemetry/tags/disable" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            tagKey = "parts_count",
+        },
         "/api/business-console/v1/telemetry/device-control-bindings" => new
         {
             organizationId = "org-001",
@@ -1401,6 +1418,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/samples", BusinessGatewayPermissions.IiotTelemetryWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarms", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarm-rules", "business.iiot.alarm-rules.manage");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/tags", BusinessGatewayPermissions.IiotTagsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/tags/disable", BusinessGatewayPermissions.IiotTagsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-commands", BusinessGatewayPermissions.IiotDeviceControlWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/device-control-bindings", BusinessGatewayPermissions.IiotDeviceControlRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-bindings", BusinessGatewayPermissions.IiotDeviceControlManage);

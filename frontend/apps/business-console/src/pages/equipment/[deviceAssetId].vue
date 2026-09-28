@@ -35,6 +35,7 @@ import {
 } from '@/composables/useBusinessDeviceControl'
 import { usePagedList } from '@/composables/usePagedList'
 import DeviceControlSheet from '@/components/equipment/DeviceControlSheet.vue'
+import DeviceTelemetryPointsSheet from '@/components/equipment/DeviceTelemetryPointsSheet.vue'
 import EquipmentHealthCard from '@/components/equipment/EquipmentHealthCard.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -67,6 +68,7 @@ import {
   CalendarRangeIcon,
   ClipboardCheckIcon,
   GaugeIcon,
+  HashIcon,
   LineChartIcon,
   PackageSearchIcon,
   RadioIcon,
@@ -161,6 +163,9 @@ const canCreateMaintenanceWorkOrder = computed(() =>
   permissionCodes.value.includes(P.maintenanceWorkOrdersManage),
 )
 const controlSheetOpen = ref(false)
+// 采集点位（#3870）：就地维护这台设备的采集点位，读者能看，有点位管理权限才能改。
+const canManageTelemetryPoints = computed(() => permissionCodes.value.includes(P.iiotTagsManage))
+const pointsSheetOpen = ref(false)
 const deviceAssetIdRef = computed(() => filters.deviceAssetId)
 const { health, healthError, healthPending, refreshHealth } =
   useBusinessEquipmentHealth(deviceAssetIdRef)
@@ -705,6 +710,16 @@ function recordDowntime() {
         >
           <SlidersHorizontalIcon aria-hidden="true" />
           设备控制
+        </NvButton>
+        <NvButton
+          v-if="filters.deviceAssetId"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="pointsSheetOpen = true"
+        >
+          <HashIcon aria-hidden="true" />
+          采集点位
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
@@ -1459,6 +1474,13 @@ function recordDowntime() {
         v-if="filters.deviceAssetId"
         v-model:open="controlSheetOpen"
         :device-asset-id="filters.deviceAssetId"
+      />
+      <DeviceTelemetryPointsSheet
+        v-if="filters.deviceAssetId"
+        v-model:open="pointsSheetOpen"
+        :device-asset-id="filters.deviceAssetId"
+        :device-title="deviceTitle || '设备'"
+        :can-manage="canManageTelemetryPoints"
       />
     </template>
   </BusinessLayout>
