@@ -582,8 +582,16 @@ describe('DirectoryPicker 登录账号（#3924）', () => {
                 sourceService: 'iam',
                 context: { loginName: 'zhangsan' },
               },
+              // 没有显示名的账号：名称回落为登录名，不能重复印一行，也不能露出账号 ID。
+              {
+                id: 'user-019b',
+                displayName: 'lisi.wh',
+                code: 'lisi.wh',
+                sourceService: 'iam',
+                context: { loginName: 'lisi.wh' },
+              },
             ],
-            total: 1,
+            total: 2,
           },
         })
       }) as typeof fetch,
@@ -617,6 +625,11 @@ describe('DirectoryPicker 登录账号（#3924）', () => {
     )
     expect(option).toBeDefined()
     expect(option!.textContent).toContain('zhangsan')
+    const bare = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes('lisi.wh'),
+    )
+    expect(bare!.textContent!.split('lisi.wh').length - 1).toBe(1)
+    expect(bare!.textContent).not.toContain('user-019b')
     // 内部账号 ID 不进界面。
     expect(option!.textContent).not.toContain('user-019a')
     option!.click()
@@ -625,7 +638,6 @@ describe('DirectoryPicker 登录账号（#3924）', () => {
     expect(model.value).toBe('user-019a')
     const trigger = wrapper.get('button[aria-haspopup]')
     expect(trigger.text()).toContain('张三')
-    expect(trigger.text()).toContain('zhangsan')
     expect(trigger.text()).not.toContain('user-019a')
   })
 })

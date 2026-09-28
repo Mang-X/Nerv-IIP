@@ -59,6 +59,7 @@ const operatorOptions = computed<EntityPickerOption[]>(() =>
       const name = worker?.displayName || '未命名人员'
       return [
         {
+          // 值是人员身份（关联了登录账号时就是账号 ID），不能进界面：工号已在名称里，关掉编码行。
           value: member.principalId,
           label: worker?.employeeNo ? `${name}（${worker.employeeNo}）` : name,
         },
@@ -140,6 +141,7 @@ async function submit() {
               placeholder="不指定则池内成员均可领取"
               empty-text="该作业池还没有成员"
               clearable
+              :show-code="false"
               aria-label="作业人员"
             />
           </NvField>

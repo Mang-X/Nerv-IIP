@@ -35,10 +35,10 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 const pickerStub = {
-  props: ['modelValue', 'options', 'id'],
+  props: ['modelValue', 'options', 'id', 'showCode'],
   emits: ['update:modelValue'],
   template:
-    '<input :id="id" :data-options="(options ?? []).map((o) => o.value).join(\',\')" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    '<input :id="id" :data-options="(options ?? []).map((o) => o.value).join(\',\')" :data-show-code="String(showCode ?? true)" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 }
 
 function mountDialog() {
@@ -118,6 +118,8 @@ describe('WmsAssignWorkPoolDialog（#3849）', () => {
 
     const operator = document.body.querySelector<HTMLInputElement>('#wms-assign-operator')!
     expect(operator.dataset.options).toBe('user-emp-049')
+    // 选项值是人员身份（可能是登录账号 ID），不能当编码印在候选里（#3924）。
+    expect(operator.dataset.showCode).toBe('false')
     operator.value = 'user-emp-049'
     operator.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()

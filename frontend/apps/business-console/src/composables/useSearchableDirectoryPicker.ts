@@ -29,7 +29,8 @@ export interface SearchableDirectoryPickerOptions {
   enabled?: MaybeRefOrGetter<boolean>
   /**
    * 选项 `value` 取目录项的哪个字段，默认 `code`（人读编码）。
-   * 登录账号目录要回传账号 ID（`id`）——登录名只用于显示，放进选项的 `code`。
+   * 登录账号目录要回传账号 ID（`id`）——登录名只用于显示，放进选项的 `hint`；
+   * 此时调用方必须关掉编码行，否则选择器会把 `value`（内部 ID）当编码显示出来。
    */
   valueKey?: 'code' | 'id'
 }
@@ -99,11 +100,9 @@ export function useSearchableDirectoryPicker(
         const code = item.code?.trim()
         if (!id || seen.has(id)) continue
         seen.add(id)
-        rows.push({
-          value: id,
-          label: item.displayName?.trim() || code || id,
-          ...(code ? { code } : {}),
-        })
+        const label = item.displayName?.trim() || code || id
+        // 值是内部 ID，不能进界面：登录名放进 hint（与名称相同就不重复），调用方关掉编码行。
+        rows.push({ value: id, label, ...(code && code !== label ? { hint: code } : {}) })
         continue
       }
       const value = item.code?.trim()

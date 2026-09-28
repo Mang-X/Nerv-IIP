@@ -119,7 +119,9 @@ if (source.serverSearch) {
   watch(model, () => updateSearch(''))
 }
 // 库位目录的名称就是编码，批次 / 序列号目录的名称是「编码 · 物料」，再印一行编码是重复。
-const showCode = type !== 'location' && type !== 'batch' && type !== 'serial'
+// 登录账号的值是内部账号 ID，不能当编码显示；登录名走候选的 hint。
+const showCode =
+  type !== 'location' && type !== 'batch' && type !== 'serial' && type !== 'login-account'
 
 const auth = useAuthStore()
 const creator = props.creatable ? directoryCreatorFor(type) : undefined
