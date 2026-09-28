@@ -13,7 +13,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  NvInput,
 } from '@nerv-iip/ui'
 import { reactive, watch } from 'vue'
 
@@ -110,7 +110,7 @@ function toUtcEndOfDay(value: string) {
         <FieldGroup>
           <Field>
             <FieldLabel for="iam-create-login-name">登录名</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(errors.loginName)"
@@ -121,7 +121,7 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-email">邮箱</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-email"
               v-model="form.email"
               :aria-invalid="Boolean(errors.email)"
@@ -133,7 +133,7 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-password">密码</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-password"
               v-model="form.password"
               :aria-invalid="Boolean(errors.password)"
@@ -145,7 +145,11 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-account-expires">账号有效期</FieldLabel>
-            <Input id="iam-create-account-expires" v-model="form.accountExpiresDate" type="date" />
+            <NvInput
+              id="iam-create-account-expires"
+              v-model="form.accountExpiresDate"
+              type="date"
+            />
           </Field>
 
           <Field>

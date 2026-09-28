@@ -2,7 +2,7 @@
 import type { ConsoleIamUserResponse, ConsoleUpdateIamUserRequest } from '@nerv-iip/api-client'
 import {
   Button,
-  Checkbox,
+  NvCheckbox,
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
@@ -13,7 +13,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  NvInput,
 } from '@nerv-iip/ui'
 import { reactive, watch } from 'vue'
 
@@ -101,7 +101,7 @@ watch(open, (isOpen) => {
         <FieldGroup>
           <Field>
             <FieldLabel for="iam-edit-login-name">登录名</FieldLabel>
-            <Input
+            <NvInput
               id="iam-edit-login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(errors.loginName)"
@@ -112,7 +112,7 @@ watch(open, (isOpen) => {
 
           <Field>
             <FieldLabel for="iam-edit-email">邮箱</FieldLabel>
-            <Input
+            <NvInput
               id="iam-edit-email"
               v-model="form.email"
               :aria-invalid="Boolean(errors.email)"
@@ -129,12 +129,12 @@ watch(open, (isOpen) => {
             <div class="grid gap-1">
               <FieldLabel for="iam-edit-enabled">启用</FieldLabel>
             </div>
-            <Checkbox id="iam-edit-enabled" v-model="form.enabled" />
+            <NvCheckbox id="iam-edit-enabled" v-model="form.enabled" />
           </Field>
 
           <Field>
             <FieldLabel for="iam-edit-account-expires">账号有效期</FieldLabel>
-            <Input id="iam-edit-account-expires" v-model="form.accountExpiresDate" type="date" />
+            <NvInput id="iam-edit-account-expires" v-model="form.accountExpiresDate" type="date" />
           </Field>
         </FieldGroup>
 

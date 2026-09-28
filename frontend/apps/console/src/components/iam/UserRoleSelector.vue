@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ConsoleIamRoleResponse } from '@nerv-iip/api-client'
-import { Checkbox } from '@nerv-iip/ui'
+import { NvCheckbox } from '@nerv-iip/ui'
 
 defineProps<{
   idPrefix: string
@@ -34,7 +34,7 @@ function setSelected(roleId: string, checked: boolean | 'indeterminate') {
       :key="role.roleId"
       class="flex items-start gap-3 rounded-md p-2 hover:bg-muted/50"
     >
-      <Checkbox
+      <NvCheckbox
         :id="`${idPrefix}-${role.roleId}`"
         :model-value="selectedRoleIds.includes(role.roleId ?? '')"
         class="mt-0.5"

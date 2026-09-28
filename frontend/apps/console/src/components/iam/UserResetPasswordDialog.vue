@@ -15,7 +15,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  NvInput,
 } from '@nerv-iip/ui'
 import { reactive, watch } from 'vue'
 
@@ -80,7 +80,7 @@ watch(open, (isOpen) => {
         <FieldGroup>
           <Field>
             <FieldLabel for="iam-reset-password">新密码</FieldLabel>
-            <Input
+            <NvInput
               id="iam-reset-password"
               v-model="form.newPassword"
               :aria-invalid="Boolean(errors.newPassword)"

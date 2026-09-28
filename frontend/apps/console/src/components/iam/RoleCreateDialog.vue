@@ -13,7 +13,7 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  NvInput,
 } from '@nerv-iip/ui'
 import { reactive, shallowRef, watch } from 'vue'
 
@@ -86,7 +86,7 @@ watch(open, (isOpen) => {
         <FieldGroup>
           <Field>
             <FieldLabel for="iam-create-role-name">角色名称</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-role-name"
               v-model="roleName"
               :aria-invalid="Boolean(errors.roleName)"
