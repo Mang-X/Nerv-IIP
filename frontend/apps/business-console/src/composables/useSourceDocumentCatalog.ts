@@ -6,7 +6,7 @@
  * 列表端点，所以这里不补后端聚合端点，而是「先选类型，再按该类型的列表搜单号」。
  *
  * 口径：`value` 是下游真正比对的那个值，逐类核对过，和过去手填时的值一致——
- * 大多是人读单号；维修工单只有系统 ID，显示时换成人读单号。
+ * 都是人读单号；维修工单也用它的正式单号（#3852）。
  * 没有可搜列表端点的类型（采购收货、销售退货、库存调拨、库存移动等）不在这里，页面退回自由输入。
  */
 import {
@@ -24,7 +24,10 @@ import { refDebounced } from '@vueuse/core'
 import { computed, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext } from './businessContextBinding'
-import { maintenanceWorkOrderNo, maintenanceWorkOrderOption } from './useEquipmentPickerCatalog'
+import {
+  maintenanceWorkOrderDocumentOption,
+  maintenanceWorkOrderNoLabel,
+} from './useEquipmentPickerCatalog'
 import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from './useWmsWorkScope'
 
 /** 一次取回的候选条数；更多的靠搜索收窄，匹配总数如实交给选择器提示。 */
@@ -134,7 +137,7 @@ const SPECS = {
           ),
   }),
   // 质量检验：条码侧记的是「被检验的那张单据」（检验记录的来源单据），与检验页互链同口径。
-  // 维修检验的来源单据是维修工单 ID，显示时换成人读单号。检验记录列表的关键字按物料编码过滤。
+  // 维修检验的来源单据是维修工单正式单号（#3852）；早期记录存的是工单 ID，GUID 不上屏。检验记录列表的关键字按物料编码过滤。
   'quality-inspection': defineSpec({
     noun: '检验对象',
     searchPlaceholder: '按物料编码搜索…',
@@ -144,19 +147,19 @@ const SPECS = {
       documentOption(
         row.sourceDocumentId,
         row.sourceType === 'maintenance'
-          ? maintenanceWorkOrderNo(row.sourceDocumentId)
+          ? maintenanceWorkOrderNoLabel(row.sourceDocumentId)
           : row.sourceDocumentId,
         row.sourceType && qualitySourceTypeLabel(row.sourceType),
         row.skuCode,
       ),
   }),
-  // 维修工单只有系统 ID：提交 ID，显示人读单号（与维护页的工单选择器同一个映射）。
+  // 维修工单以正式单号作来源单据（#3852）：提交与显示都是单号，跨域引用存下去就能上屏、能反查。
   'maintenance-work-order': defineSpec({
     noun: '维修工单',
     searchPlaceholder: '搜索工单号…',
     serverSearch: false,
     queryOptions: (query) => listBusinessConsoleMaintenanceWorkOrdersQueryOptions({ query }),
-    toOption: maintenanceWorkOrderOption,
+    toOption: maintenanceWorkOrderDocumentOption,
   }),
 }
 

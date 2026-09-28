@@ -196,8 +196,8 @@ public sealed class MaintenanceEndpointContractTests
     {
         await using var dbContext = CreateDbContext();
         dbContext.MaintenanceWorkOrders.AddRange(
-            MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEVICE-SHARED", "ALARM-ORG-001", "critical"),
-            MaintenanceWorkOrder.OpenFromAlarm("org-002", "env-dev", "DEVICE-SHARED", "ALARM-ORG-002", "critical"));
+            MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEVICE-SHARED", "ALARM-ORG-001", "critical"),
+            MaintenanceWorkOrder.OpenFromAlarm("org-002", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEVICE-SHARED", "ALARM-ORG-002", "critical"));
         await dbContext.SaveChangesAsync();
         var sender = new QueryHandlerWorkOrderListSender(new ListMaintenanceWorkOrdersQueryHandler(dbContext));
         await using var factory = CreateWorkOrderListKestrelFactory(sender);
@@ -328,7 +328,7 @@ public sealed class MaintenanceEndpointContractTests
     {
         await using var dbContext = CreateDbContext();
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-REPLAY-PROBE", "high", "reporter-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-REPLAY-PROBE", "high", "reporter-001");
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 
@@ -484,8 +484,8 @@ public sealed class MaintenanceEndpointContractTests
     public async Task Maintenance_work_order_and_plan_lists_return_skip_take_and_total()
     {
         await using var dbContext = CreateDbContext();
-        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-001", "normal", "operator-001"));
-        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-002", "high", "operator-001"));
+        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "normal", "operator-001"));
+        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-002", "high", "operator-001"));
         dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-001", "PM-001", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
         dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-002", "PM-002", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
         await dbContext.SaveChangesAsync();
@@ -681,7 +681,7 @@ public sealed class MaintenanceEndpointContractTests
     {
         await using var dbContext = CreateDbContext();
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-MEASURE", "P7D", new DateOnly(2026, 6, 1), "maintenance");
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-02", "normal", "operator-001");
         dbContext.MaintenancePlans.Add(plan);
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
@@ -747,7 +747,7 @@ public sealed class MaintenanceEndpointContractTests
     public async Task Failed_maintenance_inspection_for_work_order_opens_traceable_inspection_work_order()
     {
         await using var dbContext = CreateDbContext();
-        var sourceWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001");
+        var sourceWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-02", "normal", "operator-001");
         dbContext.MaintenanceWorkOrders.Add(sourceWorkOrder);
         await dbContext.SaveChangesAsync();
         var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
@@ -862,7 +862,7 @@ public sealed class MaintenanceEndpointContractTests
         var duplicateWithWorkOrder = MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "inspector-001", "ng", inspectedAtUtc);
         dbContext.MaintenancePlans.Add(plan);
         dbContext.MaintenanceInspections.AddRange(first, duplicateWithWorkOrder);
-        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenFromInspection("org-001", "env-dev", "DEV-CNC-01", duplicateWithWorkOrder.Id, duplicateWithWorkOrder.Result));
+        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenFromInspection("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", duplicateWithWorkOrder.Id, duplicateWithWorkOrder.Result));
         await dbContext.SaveChangesAsync();
         var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
 
@@ -887,7 +887,7 @@ public sealed class MaintenanceEndpointContractTests
         var duplicateWithCrossTenantWorkOrder = MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "inspector-001", "ng", inspectedAtUtc);
         dbContext.MaintenancePlans.Add(plan);
         dbContext.MaintenanceInspections.AddRange(first, duplicateWithCrossTenantWorkOrder);
-        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenFromInspection("org-002", "env-dev", "DEV-CNC-99", duplicateWithCrossTenantWorkOrder.Id, duplicateWithCrossTenantWorkOrder.Result));
+        dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenFromInspection("org-002", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-99", duplicateWithCrossTenantWorkOrder.Id, duplicateWithCrossTenantWorkOrder.Result));
         await dbContext.SaveChangesAsync();
         var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
 
@@ -906,7 +906,7 @@ public sealed class MaintenanceEndpointContractTests
     public async Task Maintenance_spare_part_create_and_list_use_work_order_scope()
     {
         await using var dbContext = CreateDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "operator-001");
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 
@@ -935,7 +935,7 @@ public sealed class MaintenanceEndpointContractTests
     public async Task Maintenance_spare_part_create_rejects_completed_work_order_with_known_exception()
     {
         await using var dbContext = CreateDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "operator-001");
         workOrder.Complete("restored", "mechanical", 15, []);
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
@@ -954,7 +954,7 @@ public sealed class MaintenanceEndpointContractTests
         await using var dbContext = CreateDbContext();
         var queryStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
         var queryEnd = queryStart.AddHours(4);
-        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         workOrder.MarkAssetUnavailable(queryStart.AddMinutes(15), "spindle alarm");
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-001", "P7D", DateOnly.FromDateTime(queryStart.UtcDateTime), "maintenance", queryStart.AddHours(1), queryStart.AddHours(2));
         dbContext.MaintenanceWorkOrders.Add(workOrder);
@@ -989,7 +989,7 @@ public sealed class MaintenanceEndpointContractTests
         await using var dbContext = CreateDbContext();
         var queryStart = DateTimeOffset.UtcNow.AddMinutes(-30);
         var queryEnd = DateTimeOffset.UtcNow.AddMinutes(30);
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "manual downtime");
         workOrder.Complete("restored", "mechanical", 45, []);
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT", "P7D", DateOnly.FromDateTime(queryStart.UtcDateTime), "maintenance");
@@ -1401,7 +1401,7 @@ public sealed class MaintenanceEndpointContractTests
     public async Task Complete_work_order_requires_existing_downtime_reason_and_keeps_reason_classification()
     {
         await using var dbContext = CreateDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         dbContext.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure"));
         await dbContext.SaveChangesAsync();
@@ -1432,7 +1432,7 @@ public sealed class MaintenanceEndpointContractTests
     public async Task Complete_work_order_can_require_actual_labor_minutes_by_configuration()
     {
         await using var dbContext = CreateDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 90);
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001", "worker-001", 90);
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         dbContext.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure"));
         await dbContext.SaveChangesAsync();
@@ -1496,7 +1496,7 @@ public sealed class MaintenanceEndpointContractTests
         Assert.False(await dbContext.DowntimeReasons.AnyAsync(x => x.ReasonCode == "adjustment"));
 
         var referenced = DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure");
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         dbContext.DowntimeReasons.Add(referenced);
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
@@ -1521,9 +1521,9 @@ public sealed class MaintenanceEndpointContractTests
         await using var dbContext = CreateDbContext();
         var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
         var windowEnd = windowStart.AddHours(24);
-        var completed = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var completed = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         completed.Complete("fixed", "equipment-failure", 120, []);
-        var open = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-002", "critical");
+        var open = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-002", "critical");
         dbContext.MaintenanceWorkOrders.AddRange(completed, open);
         dbContext.Entry(completed).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(2);
         dbContext.Entry(completed).Property(x => x.CompletedAtUtc).CurrentValue = windowStart.AddHours(4);
@@ -1551,12 +1551,12 @@ public sealed class MaintenanceEndpointContractTests
         await using var dbContext = CreateDbContext();
         var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
         var windowEnd = windowStart.AddDays(1);
-        var first = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 90);
-        var second = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 30);
-        var otherTechnician = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-002", 45);
-        var otherCurrency = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 15);
-        var open = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 60);
-        var otherDevice = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001", "worker-001", 45);
+        var first = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001", "worker-001", 90);
+        var second = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001", "worker-001", 30);
+        var otherTechnician = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001", "worker-002", 45);
+        var otherCurrency = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001", "worker-001", 15);
+        var open = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001", "worker-001", 60);
+        var otherDevice = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-02", "normal", "operator-001", "worker-001", 45);
         first.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 75, sparePartCostAmount: 120m, externalServiceCostAmount: 30m, costCurrencyCode: "CNY", actualTechnicianUserId: "worker-actual");
         second.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 20, sparePartCostAmount: 10m, externalServiceCostAmount: 5m, costCurrencyCode: "CNY");
         otherTechnician.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 25, sparePartCostAmount: 20m, externalServiceCostAmount: 0m, costCurrencyCode: "CNY");
@@ -1599,7 +1599,7 @@ public sealed class MaintenanceEndpointContractTests
         await using var dbContext = CreateDbContext();
         var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
         var windowEnd = windowStart.AddHours(24);
-        var alarmFault = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var alarmFault = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         dbContext.MaintenanceWorkOrders.Add(alarmFault);
         dbContext.Entry(alarmFault).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(1);
         await dbContext.SaveChangesAsync();
@@ -1610,6 +1610,7 @@ public sealed class MaintenanceEndpointContractTests
         var inspectionFault = MaintenanceWorkOrder.OpenFromInspection(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             new MaintenanceInspectionId(Guid.CreateVersion7()),
             "bearing vibration failed");
@@ -1635,7 +1636,7 @@ public sealed class MaintenanceEndpointContractTests
     {
         await using var dbContext = CreateDbContext();
         var openedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         dbContext.Entry(workOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc;
         await dbContext.SaveChangesAsync();
@@ -1651,9 +1652,9 @@ public sealed class MaintenanceEndpointContractTests
         await using var dbContext = CreateDbContext();
         var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
         var windowEnd = windowStart.AddHours(24);
-        var completed = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var completed = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         completed.Complete("fixed", "equipment-failure", 120, []);
-        var open = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-002", "critical");
+        var open = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-002", "critical");
         dbContext.MaintenanceWorkOrders.AddRange(completed, open);
         dbContext.Entry(completed).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(2);
         dbContext.Entry(completed).Property(x => x.CompletedAtUtc).CurrentValue = windowStart.AddHours(4);

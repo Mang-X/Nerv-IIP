@@ -111,9 +111,13 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
     }
 }
 
-public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateMaintenanceWorkOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    MaintenanceCodingService? codingService = null)
     : ICommandHandler<CreateMaintenanceWorkOrderCommand, MaintenanceWorkOrderCommandResult>
 {
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
     private const string CreateRuleKey = MaintenanceWorkOrderCreateIntents.CreateRuleKey;
 
     public async Task<MaintenanceWorkOrderCommandResult> Handle(
@@ -163,10 +167,17 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
             }
         }
 
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            request.OrganizationId,
+            request.EnvironmentId,
+            MaintenanceWorkOrderNumbers.CreateIntent(request.SourceAlarmId, idempotencyKey),
+            cancellationToken);
         var workOrder = string.IsNullOrWhiteSpace(request.SourceAlarmId)
             ? MaintenanceWorkOrder.OpenManual(
                 request.OrganizationId,
                 request.EnvironmentId,
+                workOrderNo,
                 request.DeviceAssetId,
                 request.Priority,
                 request.OpenedBy,
@@ -175,6 +186,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
             : MaintenanceWorkOrder.OpenFromAlarm(
                 request.OrganizationId,
                 request.EnvironmentId,
+                workOrderNo,
                 request.DeviceAssetId,
                 request.SourceAlarmId,
                 request.Priority,
@@ -348,9 +360,13 @@ public sealed class CreateMaintenanceWorkOrderV2CommandValidator : AbstractValid
 /// UoW 没有任何待写入变更，工单与双发 outbox 一起不落盘。原因码全程使用请求原值——查询谓词、幂等指纹、聚合事实与事件 payload
 /// 都不 trim、不改大小写。
 /// </summary>
-public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateMaintenanceWorkOrderV2CommandHandler(
+    ApplicationDbContext dbContext,
+    MaintenanceCodingService? codingService = null)
     : ICommandHandler<CreateMaintenanceWorkOrderV2Command, MaintenanceWorkOrderCommandResult>
 {
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
     public const string ReasonCodeNotFoundErrorCode = "maintenance-asset-unavailable-reason-code-not-found";
 
     public async Task<MaintenanceWorkOrderCommandResult> Handle(
@@ -415,10 +431,17 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
             }
         }
 
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            request.OrganizationId,
+            request.EnvironmentId,
+            MaintenanceWorkOrderNumbers.CreateIntent(request.SourceAlarmId, idempotencyKey),
+            cancellationToken);
         var workOrder = string.IsNullOrWhiteSpace(request.SourceAlarmId)
             ? MaintenanceWorkOrder.OpenManual(
                 request.OrganizationId,
                 request.EnvironmentId,
+                workOrderNo,
                 request.DeviceAssetId,
                 request.Priority,
                 request.OpenedBy,
@@ -427,6 +450,7 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
             : MaintenanceWorkOrder.OpenFromAlarm(
                 request.OrganizationId,
                 request.EnvironmentId,
+                workOrderNo,
                 request.DeviceAssetId,
                 request.SourceAlarmId,
                 request.Priority,
@@ -929,9 +953,12 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandValidator : AbstractV
 public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
     ApplicationDbContext dbContext,
     IAssetRuntimeHoursProvider? runtimeHoursProvider = null,
-    ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler>? logger = null)
+    ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler>? logger = null,
+    MaintenanceCodingService? codingService = null)
     : ICommandHandler<GenerateDueMaintenanceWorkOrdersCommand, GenerateDueMaintenanceWorkOrdersResult>
 {
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
     private readonly ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler> logger = logger ?? NullLogger<GenerateDueMaintenanceWorkOrdersCommandHandler>.Instance;
 
     public async Task<GenerateDueMaintenanceWorkOrdersResult> Handle(GenerateDueMaintenanceWorkOrdersCommand request, CancellationToken cancellationToken)
@@ -957,7 +984,7 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
             foreach (var dueDate in plan.ConsumeDueDates(request.BusinessDate))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                AddPlanWorkOrder(plan, request.OpenedBy, $"date:{dueDate:yyyyMMdd}", workOrderIds);
+                await AddPlanWorkOrderAsync(plan, request.OpenedBy, $"date:{dueDate:yyyyMMdd}", workOrderIds, cancellationToken);
             }
 
             if (plan.RuntimeHourInterval is null)
@@ -997,18 +1024,30 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
             var runtimeThresholds = plan.ConsumeRuntimeDue(runtime.RuntimeHours).ToArray();
             for (var i = 0; i < runtimeThresholds.Length; i++)
             {
-                AddPlanWorkOrder(plan, request.OpenedBy, $"runtime:{runtimeThresholds[i]:0.######}:{i + 1}", workOrderIds);
+                await AddPlanWorkOrderAsync(plan, request.OpenedBy, $"runtime:{runtimeThresholds[i]:0.######}:{i + 1}", workOrderIds, cancellationToken);
             }
         }
 
         return new GenerateDueMaintenanceWorkOrdersResult(workOrderIds.Count, workOrderIds);
     }
 
-    private void AddPlanWorkOrder(MaintenancePlan plan, string openedBy, string dueSuffix, List<MaintenanceWorkOrderId> workOrderIds)
+    private async Task AddPlanWorkOrderAsync(
+        MaintenancePlan plan,
+        string openedBy,
+        string dueSuffix,
+        List<MaintenanceWorkOrderId> workOrderIds,
+        CancellationToken cancellationToken)
     {
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            plan.OrganizationId,
+            plan.EnvironmentId,
+            $"plan:{plan.PlanCode}:{dueSuffix}",
+            cancellationToken);
         var workOrder = MaintenanceWorkOrder.OpenFromPlan(
             plan.OrganizationId,
             plan.EnvironmentId,
+            workOrderNo,
             plan.DeviceAssetId,
             plan.PlanCode,
             openedBy,
@@ -1273,9 +1312,13 @@ public sealed class RecordMaintenanceInspectionCommandValidator : AbstractValida
     }
 }
 
-public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordMaintenanceInspectionCommandHandler(
+    ApplicationDbContext dbContext,
+    MaintenanceCodingService? codingService = null)
     : ICommandHandler<RecordMaintenanceInspectionCommand, MaintenanceInspectionId>
 {
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
     public async Task<MaintenanceInspectionId> Handle(RecordMaintenanceInspectionCommand request, CancellationToken cancellationToken)
     {
         var inspectedAtUtc = request.InspectedAtUtc.ToUniversalTime();
@@ -1416,9 +1459,16 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
         }
 
         var deviceAssetId = await ResolveInspectionDeviceAssetIdAsync(inspection, cancellationToken);
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            inspection.OrganizationId,
+            inspection.EnvironmentId,
+            $"inspection:{inspection.Id}",
+            cancellationToken);
         var workOrder = MaintenanceWorkOrder.OpenFromInspection(
             inspection.OrganizationId,
             inspection.EnvironmentId,
+            workOrderNo,
             deviceAssetId,
             inspection.Id,
             inspection.Result);

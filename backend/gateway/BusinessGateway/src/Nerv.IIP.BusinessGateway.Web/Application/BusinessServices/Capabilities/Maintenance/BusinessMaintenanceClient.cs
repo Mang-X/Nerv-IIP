@@ -444,7 +444,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 ActualTechnicianUserId: workOrder.ActualTechnicianUserId,
                 SourceReferenceId: workOrder.SourceReferenceId,
                 AssignedTeamId: workOrder.AssignedTeamId,
-                Version: workOrder.Version)).ToArray(),
+                Version: workOrder.Version,
+                WorkOrderNo: workOrder.WorkOrderNo)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -724,7 +725,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             ActualTechnicianUserId: workOrder.ActualTechnicianUserId,
             SourceReferenceId: workOrder.SourceReferenceId,
             AssignedTeamId: workOrder.AssignedTeamId,
-            Version: workOrder.Version);
+            Version: workOrder.Version,
+            WorkOrderNo: workOrder.WorkOrderNo);
 
     public async Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
@@ -902,7 +904,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 sparePart.Quantity,
                 sparePart.UomCode,
                 sparePart.SiteCode,
-                sparePart.LocationCode)).ToArray(),
+                sparePart.LocationCode,
+                sparePart.WorkOrderNo)).ToArray(),
             spareParts.Skip,
             spareParts.Take,
             spareParts.Total);
@@ -1084,7 +1087,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? ActualTechnicianUserId = null,
         string? SourceReferenceId = null,
         string? AssignedTeamId = null,
-        int Version = 0);
+        int Version = 0,
+        string? WorkOrderNo = null);
 
     private sealed record DownstreamMaintenanceWorkOrderDetail(
         DownstreamMaintenanceWorkOrderListItem WorkOrder,
@@ -1178,7 +1182,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         decimal Quantity,
         string? UomCode,
         string? SiteCode = null,
-        string? LocationCode = null);
+        string? LocationCode = null,
+        string? WorkOrderNo = null);
 
     private sealed record DownstreamCreateMaintenanceWorkOrderResponse(
         JsonElement WorkOrderId,

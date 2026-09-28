@@ -71,6 +71,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     private MaintenanceWorkOrder(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string priority,
         string? sourceAlarmId,
@@ -87,6 +88,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         Id = new MaintenanceWorkOrderId(Guid.CreateVersion7());
         OrganizationId = MaintenanceText.Required(organizationId, nameof(organizationId));
         EnvironmentId = MaintenanceText.Required(environmentId, nameof(environmentId));
+        WorkOrderNo = MaintenanceText.Required(workOrderNo, nameof(workOrderNo));
         DeviceAssetId = MaintenanceText.Required(deviceAssetId, nameof(deviceAssetId));
         Priority = MaintenanceText.Required(priority, nameof(priority)).ToLowerInvariant();
         SourceAlarmId = MaintenanceText.Optional(sourceAlarmId);
@@ -106,6 +108,12 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
 
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// 维修工单的正式单据编号（#3852）：由编码规则 <c>maintenance-work-order</c> 分配（MWO-yyyyMMdd-NNNNNN），
+    /// 组织 + 环境内唯一，是界面、成本候选、质检与库存流水引用的人读单号；工单身份仍是 <see cref="Entity{TKey}.Id"/>。
+    /// </summary>
+    public string WorkOrderNo { get; private set; } = string.Empty;
     public string DeviceAssetId { get; private set; } = string.Empty;
     public string Priority { get; private set; } = string.Empty;
     public string? SourceAlarmId { get; private set; }
@@ -146,6 +154,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenManual(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string priority,
         string openedBy,
@@ -155,6 +164,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             priority,
             null,
@@ -168,6 +178,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenFromPlan(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string planCode,
         string openedBy,
@@ -177,6 +188,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             "planned",
             null,
@@ -189,6 +201,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenFromAlarm(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string sourceAlarmId,
         string priority,
@@ -204,6 +217,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             priority,
             normalizedAlarmId,
@@ -220,6 +234,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenFromInspection(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         MaintenanceInspectionId inspectionId,
         string result,
@@ -229,6 +244,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             "high",
             null,

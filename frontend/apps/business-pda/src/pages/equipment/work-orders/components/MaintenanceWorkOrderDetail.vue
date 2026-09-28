@@ -75,7 +75,7 @@ function teamName(teamId: string | null | undefined) {
             id="maintenance-summary-title"
             class="truncate text-base font-semibold text-foreground"
           >
-            {{ maintenanceWorkOrderTitle(workOrder.sourceReferenceId) }}
+            {{ maintenanceWorkOrderTitle(workOrder.workOrderNo) }}
           </h2>
         </div>
         <NvMobileTag :variant="terminal ? 'default' : 'brand'">

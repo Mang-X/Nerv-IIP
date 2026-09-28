@@ -131,9 +131,9 @@ public sealed class MaintenanceListQueryCompositionTests
     public async Task Public_list_endpoints_apply_composed_defaults_bounds_and_keywords()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var firstWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-01", "high", "reporter");
-        var secondWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-PUMP-02", "high", "reporter");
-        var otherWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEVICE-OTHER", "high", "reporter");
+        var firstWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEVICE-PUMP-01", "high", "reporter");
+        var secondWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEVICE-PUMP-02", "high", "reporter");
+        var otherWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEVICE-OTHER", "high", "reporter");
         db.MaintenanceWorkOrders.AddRange(firstWorkOrder, secondWorkOrder, otherWorkOrder);
         var openedAtUtc = new DateTimeOffset(2026, 8, 31, 0, 0, 0, TimeSpan.Zero);
         db.Entry(firstWorkOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc.AddMinutes(2);
@@ -226,7 +226,7 @@ public sealed class MaintenanceListQueryCompositionTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         db.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEVICE-PUMP", "high", "reporter"));
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEVICE-PUMP", "high", "reporter"));
         db.MaintenancePlans.Add(MaintenancePlan.Create(
             "org-001", "env-dev", "DEVICE-PUMP", "PM-PUMP", "P7D", new DateOnly(2026, 8, 1), "maintenance"));
         db.DowntimeReasons.Add(DowntimeReason.Create(

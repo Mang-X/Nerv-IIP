@@ -4,7 +4,6 @@ import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import { useErpCostCandidates, useErpFinanceSummary } from '@/composables/useBusinessErp'
-import { maintenanceWorkOrderNo } from '@/composables/useEquipmentPickerCatalog'
 import {
   useErpPayableSourceCatalog,
   useErpReceivableSourceCatalog,
@@ -203,10 +202,8 @@ async function submit() {
   try {
     await costs.createCostCandidate({
       sourceType: form.sourceType,
-      sourceDocumentNo:
-        form.sourceType === 'maintenance'
-          ? maintenanceWorkOrderNo(form.sourceDocumentNo)
-          : form.sourceDocumentNo.trim(),
+      // 维修工单的来源单据就是正式单号（#3852），与其它来源一样原样提交。
+      sourceDocumentNo: form.sourceDocumentNo.trim(),
       amount: Number(form.amount),
       currencyCode: 'CNY',
     })

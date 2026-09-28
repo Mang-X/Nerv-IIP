@@ -32,11 +32,11 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
 
         await using var dbContext = CreateDbContext();
 
-        // 维修工单：工单号按本服务约定落在 SourceReferenceId 上（MWO-2026-####），
-        // 与 L1 背景历史引擎的写法一致（报警升级开单并显式带工单号）。
+        // 维修工单：标签就是它的正式单号（#3852，编码规则分配），与来源引用无关。
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
             "org-001",
             "env-dev",
+            "MWO-20260928-000042",
             "DEV-CNC-01",
             sourceAlarmId: "WH-DEV-CNC-01-spindle-temperature:0001",
             priority: "high",
@@ -80,7 +80,7 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
 
         // 由报警升级而来的工单，窗口原因码是 ActiveAlarm；标签仍应是工单号而不是 GUID。
         var alarmWindow = Assert.Single(response.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm);
-        Assert.Equal("MWO-2026-0042", alarmWindow.SourceReferenceLabel);
+        Assert.Equal("MWO-20260928-000042", alarmWindow.SourceReferenceLabel);
 
         var maintenanceWindow = Assert.Single(
             response.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.MaintenanceWindow);
@@ -95,71 +95,34 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
     }
 
     /// <summary>
-    /// 工单号缺失时回落到保养计划编码，绝不回落到 SourceAlarmId —— 后者是
-    /// <c>WH-DEV-ASM-12-press-force:0000</c> 这类合成键，不是给人看的编号。
+    /// 每张维修工单都有正式单号（#3852）：计划、报警、点检三路来源的工单，窗口标签都是单号，
+    /// 不再回落到计划编码、报警合成键或点检 GUID。
     /// </summary>
     [Fact]
-    public async Task Work_order_label_falls_back_to_plan_code_and_never_to_the_synthetic_alarm_key()
+    public async Task Plan_alarm_and_inspection_work_orders_all_label_their_windows_with_the_formal_number()
     {
         var queryStart = DateTimeOffset.UtcNow;
         var queryEnd = queryStart.AddHours(4);
 
         await using var dbContext = CreateDbContext();
 
-        // OpenFromPlan 在未显式给工单号时，把 SourceReferenceId 兜底成计划编码 —— 正是「工单号缺失」
-        // 这一路。断言标签落在计划编码上，且绝不是那条带冒号的合成报警键。
-        var workOrder = MaintenanceWorkOrder.OpenFromPlan(
-            "org-001",
-            "env-dev",
-            "DEV-CNC-01",
-            planCode: "PM-INSP-WEEKLY-02",
-            openedBy: "maintenance");
-        workOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "planned downtime");
-
-        dbContext.MaintenanceWorkOrders.Add(workOrder);
-        await dbContext.SaveChangesAsync();
-
-        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
-            new QueryMaintenanceAvailabilityWindowsQuery(
-                new EquipmentRuntimeAvailabilityRequest("org-001", "env-dev", queryStart, queryEnd, ["DEV-CNC-01"], null)),
-            CancellationToken.None);
-
-        var window = Assert.Single(response.Items);
-        Assert.Equal("PM-INSP-WEEKLY-02", window.SourceReferenceLabel);
-        Assert.DoesNotContain(":", window.SourceReferenceLabel!, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// 没显式带工单号的报警工单与点检工单：SourceReferenceId 分别是报警合成键和点检 GUID，
-    /// 都不是给人看的编号，标签必须是 null（界面显示「—」），不能把原值当标签发出去。
-    /// </summary>
-    [Fact]
-    public async Task Alarm_and_inspection_work_orders_without_a_number_expose_no_label()
-    {
-        var queryStart = DateTimeOffset.UtcNow;
-        var queryEnd = queryStart.AddHours(4);
-
-        await using var dbContext = CreateDbContext();
-
+        var planWorkOrder = MaintenanceWorkOrder.OpenFromPlan(
+            "org-001", "env-dev", "MWO-20260928-000001", "DEV-PLAN-01", planCode: "PM-INSP-WEEKLY-02", openedBy: "maintenance");
+        planWorkOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "planned downtime");
         var alarmWorkOrder = MaintenanceWorkOrder.OpenFromAlarm(
-            "org-001",
-            "env-dev",
-            "DEV-ALARM-01",
-            sourceAlarmId: "WH-DEV-ASM-12-press-force:0000",
-            priority: "high");
+            "org-001", "env-dev", "MWO-20260928-000002", "DEV-ALARM-01",
+            sourceAlarmId: "WH-DEV-ASM-12-press-force:0000", priority: "high");
         alarmWorkOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "alarm downtime");
-
         var inspectionPlan = MaintenancePlan.Create(
             "org-001", "env-dev", "DEV-INSP-01", "PM-INSP-DAILY-09", "P1D",
             DateOnly.FromDateTime(queryStart.UtcDateTime), "maintenance");
         var inspection = MaintenanceInspection.RecordForPlan(
             "org-001", "env-dev", inspectionPlan.Id, "inspector-001", "passed", queryStart.AddMinutes(-30));
         var inspectionWorkOrder = MaintenanceWorkOrder.OpenFromInspection(
-            "org-001", "env-dev", "DEV-INSP-01", inspection.Id, "failed");
+            "org-001", "env-dev", "MWO-20260928-000003", "DEV-INSP-01", inspection.Id, "failed");
         inspectionWorkOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "inspection failed");
 
-        dbContext.MaintenanceWorkOrders.Add(alarmWorkOrder);
-        dbContext.MaintenanceWorkOrders.Add(inspectionWorkOrder);
+        dbContext.MaintenanceWorkOrders.AddRange(planWorkOrder, alarmWorkOrder, inspectionWorkOrder);
         dbContext.MaintenancePlans.Add(inspectionPlan);
         dbContext.MaintenanceInspections.Add(inspection);
         await dbContext.SaveChangesAsync();
@@ -167,11 +130,12 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
         var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
             new QueryMaintenanceAvailabilityWindowsQuery(
                 new EquipmentRuntimeAvailabilityRequest(
-                    "org-001", "env-dev", queryStart, queryEnd, ["DEV-ALARM-01", "DEV-INSP-01"], null)),
+                    "org-001", "env-dev", queryStart, queryEnd, ["DEV-PLAN-01", "DEV-ALARM-01", "DEV-INSP-01"], null)),
             CancellationToken.None);
 
-        Assert.Null(Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-ALARM-01").SourceReferenceLabel);
-        Assert.Null(Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-INSP-01").SourceReferenceLabel);
+        Assert.Equal("MWO-20260928-000001", Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-PLAN-01").SourceReferenceLabel);
+        Assert.Equal("MWO-20260928-000002", Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-ALARM-01").SourceReferenceLabel);
+        Assert.Equal("MWO-20260928-000003", Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-INSP-01").SourceReferenceLabel);
     }
 
     private static ApplicationDbContext CreateDbContext() =>

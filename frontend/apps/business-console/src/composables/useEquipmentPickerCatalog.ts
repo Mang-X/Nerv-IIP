@@ -273,19 +273,41 @@ export function useConnectorInstanceCatalog() {
   }
 }
 
-/** 维修工单的人读单号：工单身份是 GUID，列表页统一取末段大写成 `WO-xxxxxxxx`。 */
-export function maintenanceWorkOrderNo(workOrderId?: string | null) {
-  const id = (workOrderId ?? '').trim()
-  return id ? `WO-${id.slice(-8).toUpperCase()}` : ''
+const GUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 维修工单的人读单号（#3852）：后端按编码规则分配的正式单号（MWO-yyyyMMdd-NNNNNN）。
+ * 早期记录里只存了工单 ID（GUID）的引用，GUID 不上屏，统一显示「维修工单」。
+ */
+export function maintenanceWorkOrderNoLabel(workOrderNo?: string | null) {
+  const value = (workOrderNo ?? '').trim()
+  return value && !GUID_SHAPED.test(value) ? value : '维修工单'
 }
 
-/** 维修工单选项：提交工单 ID，显示人读单号，提示设备与状态（凡是选维修工单的地方共用）。 */
+/** 维修工单选项：提交工单 ID（维护内部按 ID 关联），显示正式单号，提示设备与状态。 */
 export function maintenanceWorkOrderOption(
-  row: Pick<BusinessConsoleMaintenanceWorkOrderItem, 'workOrderId' | 'deviceAssetId' | 'status'>,
+  row: Pick<
+    BusinessConsoleMaintenanceWorkOrderItem,
+    'workOrderId' | 'workOrderNo' | 'deviceAssetId' | 'status'
+  >,
 ): EntityPickerOption | undefined {
   return toOption(
     row.workOrderId,
-    maintenanceWorkOrderNo(row.workOrderId),
+    maintenanceWorkOrderNoLabel(row.workOrderNo),
+    joinHint(row.deviceAssetId, maintenanceWorkOrderStatusLabel(row.status)),
+  )[0]
+}
+
+/**
+ * 维修工单作为「来源单据」时的选项（成本候选、质量检验）：跨域引用存的是正式单号，
+ * 所以 `value` 也是单号——存下去的值本身就能上屏、能按单号反查。
+ */
+export function maintenanceWorkOrderDocumentOption(
+  row: Pick<BusinessConsoleMaintenanceWorkOrderItem, 'workOrderNo' | 'deviceAssetId' | 'status'>,
+): EntityPickerOption | undefined {
+  return toOption(
+    row.workOrderNo,
+    row.workOrderNo,
     joinHint(row.deviceAssetId, maintenanceWorkOrderStatusLabel(row.status)),
   )[0]
 }

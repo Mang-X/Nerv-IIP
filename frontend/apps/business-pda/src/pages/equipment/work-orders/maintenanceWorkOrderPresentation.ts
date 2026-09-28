@@ -12,9 +12,10 @@ function normalize(value?: string | null) {
 
 const GUID_REFERENCE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function maintenanceWorkOrderTitle(sourceReferenceId: unknown) {
-  if (typeof sourceReferenceId !== 'string') return '维修工单'
-  const reference = sourceReferenceId.trim()
+/** 工单标题取正式单号（#3852，编码规则分配）；缺失或不是可读单号时显示「维修工单」。 */
+export function maintenanceWorkOrderTitle(workOrderNo: unknown) {
+  if (typeof workOrderNo !== 'string') return '维修工单'
+  const reference = workOrderNo.trim()
   if (!reference || GUID_REFERENCE.test(reference) || reference.includes(':')) return '维修工单'
   return reference
 }
