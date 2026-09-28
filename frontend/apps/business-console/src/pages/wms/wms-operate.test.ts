@@ -1,3 +1,4 @@
+import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -723,6 +724,10 @@ describe('WMS operate actions', () => {
       sourceDocumentId: 'PO-1',
     })
     expect(body.lines).toHaveLength(1)
+    // 新行默认质量状态是「可用」对应的 WMS 免检码（#3923），不是库存侧别名 available。
+    expect(body.lines[0].qualityStatus).toBe(
+      WMS_RECEIVING_QUALITY_OPTIONS.find((option) => option.label === '可用')!.value,
+    )
     // 后端契约要求的行字段必须全部下发。
     expect(body.lines[0]).toMatchObject({
       lineNo: '1',

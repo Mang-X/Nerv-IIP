@@ -148,6 +148,9 @@ usePendingWriteLeaveGuard(completeIntentLocked)
 // 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
 // 码值口径与回归锁见 WMS_RECEIVING_QUALITY_OPTIONS（#3923）。
 const QUALITY_OPTIONS = WMS_RECEIVING_QUALITY_OPTIONS
+const DEFAULT_RECEIVING_QUALITY_STATUS = WMS_RECEIVING_QUALITY_OPTIONS.find(
+  (option) => option.label === '可用',
+)!.value
 const OWNER_OPTIONS = [
   { label: '自有', value: 'owned' },
   { label: '客户', value: 'customer' },
@@ -170,7 +173,8 @@ function emptyLine(): InboundLine {
     receivedQuantity: '',
     stagingLocationCode: '',
     lotNo: '',
-    qualityStatus: 'unrestricted',
+    // 新行默认「可用」，码值只从选项表取，不在这里另写一份（#3923）。
+    qualityStatus: DEFAULT_RECEIVING_QUALITY_STATUS,
     ownerType: 'owned',
   }
 }

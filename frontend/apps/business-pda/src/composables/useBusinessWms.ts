@@ -743,9 +743,7 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
       // 页面提供 passed/idempotencyKey（幂等键跨重试复用）；复核单号由系统生成；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
       const suppliedKey = input.idempotencyKey
-      const payload = {
-        ...(input.passed === undefined ? {} : { passed: input.passed }),
-      }
+      const payload = input.passed === undefined ? {} : { passed: input.passed }
       const intentScope = {
         principalId: scope.principalId.value,
         organizationId: scope.organizationId.value,

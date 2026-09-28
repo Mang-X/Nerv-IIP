@@ -7,7 +7,6 @@ import {
   completeBusinessConsoleWmsInboundOrder,
   completeBusinessConsoleWmsOutboundOrder,
   listBusinessConsoleWmsCountExecutions,
-  listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrders,
   listBusinessConsoleWmsReceivingQualityGates,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
