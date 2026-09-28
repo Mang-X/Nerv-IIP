@@ -573,6 +573,7 @@ function riskTone(severity?: string | null): StatusTone {
                       :loading="productionVersionsPending"
                       aria-label="受影响版本"
                       clearable
+                      :show-code="false"
                     />
                     <NvInput
                       v-else

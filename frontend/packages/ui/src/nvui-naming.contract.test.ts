@@ -23,6 +23,8 @@ const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 //  §1.1(2) PC 素名规则 [R1–R5 是 screen/touch/mobile 专用，PC 不适用]; see Appendix A 收口后新增块.)
 // (NvEntityPicker / NvCascadePicker added post-freeze — blocks 层实体选择弹窗 / 级联选择器，
 //  named per ADR 0020 §1.1(2) PC 素名规则; see Appendix A 收口后新增块.)
+// (NvSidebarTrigger / NvSidebarRail added post-freeze — 原版 SidebarTrigger / SidebarRail 的中文读屏名重建件
+//  (#3875), named per ADR 0020 §1.1(2) PC 素名规则; see Appendix A 收口后新增块.)
 // (NvGroupPanel added post-freeze — blocks 层可折叠分组面板（按业务父级切分长列表），
 //  named per ADR 0020 §1.1(2) PC 素名规则; see Appendix A 收口后新增块.)
 const NV_ALL = [
@@ -194,7 +196,9 @@ const NV_ALL = [
   'NvSheetTrigger',
   'NvSidebarBrand',
   'NvSidebarDot',
+  'NvSidebarRail',
   'NvSidebarSub',
+  'NvSidebarTrigger',
   'NvSidebarUser',
   'NvSlider',
   'NvSparkline',

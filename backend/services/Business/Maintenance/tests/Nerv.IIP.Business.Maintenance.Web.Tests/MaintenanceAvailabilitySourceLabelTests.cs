@@ -129,6 +129,51 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
         Assert.DoesNotContain(":", window.SourceReferenceLabel!, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 没显式带工单号的报警工单与点检工单：SourceReferenceId 分别是报警合成键和点检 GUID，
+    /// 都不是给人看的编号，标签必须是 null（界面显示「—」），不能把原值当标签发出去。
+    /// </summary>
+    [Fact]
+    public async Task Alarm_and_inspection_work_orders_without_a_number_expose_no_label()
+    {
+        var queryStart = DateTimeOffset.UtcNow;
+        var queryEnd = queryStart.AddHours(4);
+
+        await using var dbContext = CreateDbContext();
+
+        var alarmWorkOrder = MaintenanceWorkOrder.OpenFromAlarm(
+            "org-001",
+            "env-dev",
+            "DEV-ALARM-01",
+            sourceAlarmId: "WH-DEV-ASM-12-press-force:0000",
+            priority: "high");
+        alarmWorkOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "alarm downtime");
+
+        var inspectionPlan = MaintenancePlan.Create(
+            "org-001", "env-dev", "DEV-INSP-01", "PM-INSP-DAILY-09", "P1D",
+            DateOnly.FromDateTime(queryStart.UtcDateTime), "maintenance");
+        var inspection = MaintenanceInspection.RecordForPlan(
+            "org-001", "env-dev", inspectionPlan.Id, "inspector-001", "passed", queryStart.AddMinutes(-30));
+        var inspectionWorkOrder = MaintenanceWorkOrder.OpenFromInspection(
+            "org-001", "env-dev", "DEV-INSP-01", inspection.Id, "failed");
+        inspectionWorkOrder.MarkAssetUnavailable(queryStart.AddHours(-1), "inspection failed");
+
+        dbContext.MaintenanceWorkOrders.Add(alarmWorkOrder);
+        dbContext.MaintenanceWorkOrders.Add(inspectionWorkOrder);
+        dbContext.MaintenancePlans.Add(inspectionPlan);
+        dbContext.MaintenanceInspections.Add(inspection);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+            new QueryMaintenanceAvailabilityWindowsQuery(
+                new EquipmentRuntimeAvailabilityRequest(
+                    "org-001", "env-dev", queryStart, queryEnd, ["DEV-ALARM-01", "DEV-INSP-01"], null)),
+            CancellationToken.None);
+
+        Assert.Null(Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-ALARM-01").SourceReferenceLabel);
+        Assert.Null(Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-INSP-01").SourceReferenceLabel);
+    }
+
     private static ApplicationDbContext CreateDbContext() =>
         MaintenanceEndpointContractTests.CreateTestDbContext();
 }

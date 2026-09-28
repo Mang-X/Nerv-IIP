@@ -83,7 +83,7 @@ public interface IRoleRepository : IRepository<Role, RoleId>
 }
 
 public sealed class DuplicateRoleNameException(string roleName)
-    : Exception($"Role name '{roleName}' is already used.")
+    : Exception($"角色名称「{roleName}」已被使用。")
 {
     public string RoleName { get; } = roleName;
 }

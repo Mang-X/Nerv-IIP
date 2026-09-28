@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ConsoleIamPermissionResponse } from '@nerv-iip/api-client'
 import PermissionCodeBadge from '@/components/iam/PermissionCodeBadge.vue'
-import { Checkbox, Field, FieldGroup, FieldLabel, Input } from '@nerv-iip/ui'
+import { NvCheckbox, Field, FieldGroup, FieldLabel, NvInput } from '@nerv-iip/ui'
 import { computed, shallowRef } from 'vue'
 
 const props = defineProps<{
@@ -74,7 +74,7 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
   <FieldGroup class="gap-4">
     <Field>
       <FieldLabel for="iam-permission-search">搜索权限</FieldLabel>
-      <Input
+      <NvInput
         id="iam-permission-search"
         v-model="search"
         placeholder="搜索权限码、域或描述"
@@ -114,7 +114,7 @@ function setSelected(code: string, checked: boolean | 'indeterminate') {
             :key="permission.code"
             class="flex items-start gap-3 rounded-md p-2 hover:bg-muted/50"
           >
-            <Checkbox
+            <NvCheckbox
               :id="`iam-permission-${permission.code}`"
               :model-value="isSelected(permission.code ?? '')"
               class="mt-0.5"

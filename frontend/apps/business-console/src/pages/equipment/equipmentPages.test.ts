@@ -395,7 +395,10 @@ vi.mock('@/stores/auth', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessDeviceControl', () => ({
+vi.mock('@/composables/useBusinessDeviceControl', async (importOriginal) => ({
+  deviceReceiptLabel: (
+    await importOriginal<typeof import('@/composables/useBusinessDeviceControl')>()
+  ).deviceReceiptLabel,
   deviceControlApprovalLabel: (value?: string | null) => value ?? '未知',
   deviceControlCommandTypeLabel: (value?: string | null) =>
     value === 'write-tag' ? '写值' : (value ?? '未知命令'),

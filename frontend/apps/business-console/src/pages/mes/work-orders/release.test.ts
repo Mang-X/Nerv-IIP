@@ -55,6 +55,8 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 vi.mock('@/composables/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
+    productionVersionLabel: (id?: string | null) =>
+      id === 'PV-1' ? '齿轮箱壳体 · 生效 2026-07-01' : '—',
     productionVersionOptions: () => [],
     productionVersionsPending: ref(false),
   }),
@@ -287,6 +289,9 @@ describe('work-order list — release entry', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('确认下达工单')
     expect(wrapper.text()).toContain('WO-20260825-002')
+    // 生产版本说「物料 · 生效日」，不把版本主键印在确认框里。
+    expect(wrapper.text()).toContain('齿轮箱壳体 · 生效 2026-07-01')
+    expect(wrapper.text()).not.toContain('PV-1')
 
     await wrapper.get('input[type="checkbox"]').setValue(true)
     const submit = button(wrapper, '确认下达')

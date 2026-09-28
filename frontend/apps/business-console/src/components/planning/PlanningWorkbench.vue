@@ -19,6 +19,7 @@ import {
   isMesWorkOrderDownstream,
   normalizeReferenceToken,
 } from '@/composables/useFulfillmentTimeline'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -198,6 +199,11 @@ watch([demandTypeFilter, demandKeyword], () => {
 const { skus } = useBusinessSkus()
 const { resources: sites } = useBusinessMasterDataResources('site')
 const { resources: units } = useBusinessMasterDataResources('unit-of-measure')
+// MPS 的评审人 / 发布人记的是登录账号 ID，按员工名录换成姓名；名录里没有（如系统管理员）就显示「—」。
+const { resolveUser } = useMasterDataDisplayNames({ users: true })
+function actorName(userId: string) {
+  return resolveUser(userId) ?? '—'
+}
 
 const skuNameByCode = computed(() => {
   const map = new Map<string, string>()
@@ -1328,9 +1334,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         /></template>
         <template #cell-reviewRelease="{ row }">
           <div class="flex min-w-0 flex-col gap-0.5 text-sm">
-            <span>{{ row.reviewedBy ? `评审 ${row.reviewedBy}` : '未评审' }}</span>
+            <span>{{ row.reviewedBy ? `评审 ${actorName(row.reviewedBy)}` : '未评审' }}</span>
             <span class="text-muted-foreground">{{
-              row.releasedBy ? `发布 ${row.releasedBy}` : '未发布'
+              row.releasedBy ? `发布 ${actorName(row.releasedBy)}` : '未发布'
             }}</span>
           </div>
         </template>

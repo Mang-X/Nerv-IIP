@@ -38,13 +38,14 @@ export function isTerminalDeviceControlStatus(status: string | null | undefined)
   return status ? TERMINAL_STATUSES.has(status.trim().toLowerCase()) : false
 }
 
+// 以下码值说法：词表外的码（含缺值）一律显示「—」，不把英文码原样送上屏。
 export function deviceControlCommandTypeLabel(value?: string | null): string {
   const labels: Record<string, string> = {
     'write-tag': '写值',
     'start-stop': '启停',
     'parameter-set': '参数下发',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知命令'
+  return (value && labels[value.toLowerCase()]) || '—'
 }
 
 export function deviceControlStatusLabel(value?: string | null): string {
@@ -57,7 +58,7 @@ export function deviceControlStatusLabel(value?: string | null): string {
     rejected: '已驳回',
     abandoned: '已放弃',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  return (value && labels[value.toLowerCase()]) || '—'
 }
 
 export function deviceControlStatusTone(
@@ -78,7 +79,18 @@ export function deviceControlApprovalLabel(value?: string | null): string {
     rejected: '已驳回',
     'not-required': '无需审批',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  return (value && labels[value.toLowerCase()]) || '—'
+}
+
+/**
+ * 设备回执码是 OPC UA 状态码（Good… / Uncertain… / Bad…），按标准的三档严重度说成业务话；
+ * 解析不出来的回执码和通用失败码不上屏，显示「—」（执行结果本身已由状态徽标给出）。
+ */
+export function deviceReceiptLabel(code?: string | null): string {
+  if (code?.startsWith('Good')) return '设备已确认'
+  if (code?.startsWith('Uncertain')) return '设备回执不确定'
+  if (code?.startsWith('Bad')) return '设备拒绝执行'
+  return '—'
 }
 
 // 写操作幂等键：避免同一次下发在网络抖动/重试时重复建单。浏览器原生 UUID，测试环境亦可用。

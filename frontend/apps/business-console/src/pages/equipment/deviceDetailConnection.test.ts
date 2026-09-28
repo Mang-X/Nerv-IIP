@@ -63,6 +63,7 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
   deviceControlCommandTypeLabel: () => '',
   deviceControlStatusLabel: () => '',
   deviceControlStatusTone: () => 'neutral',
+  deviceReceiptLabel: () => '—',
   useBusinessDeviceControlCommands: () => ({
     commands: computed(() => []),
     commandsError: shallowRef(),

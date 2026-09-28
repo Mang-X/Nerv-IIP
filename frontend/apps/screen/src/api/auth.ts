@@ -17,6 +17,7 @@ export const consoleAuthApi = createConsoleAuthApi({
     changePasswordFallback: '修改密码失败，请稍后重试。',
     invalidCredentialsOrExpiredSession: '账号密码错误或会话已过期。',
     loginFallback: '无法连接认证服务。',
+    noMembership: '账号还没有分配到任何组织或角色，请联系管理员。',
     principalFallback: '无法加载当前登录用户。',
     refreshFallback: '无法刷新会话。',
   },

@@ -169,12 +169,9 @@ describe('IAM roles page', () => {
     await createButton!.trigger('click')
     await flushPromises()
 
-    expect(
-      document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className,
-    ).toContain('overflow-y-auto')
-    expect(
-      document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className,
-    ).toContain('max-h-')
+    const createDialog = dialogTitled('新建角色')
+    expect(createDialog.className).toContain('overflow-y-auto')
+    expect(createDialog.className).toContain('max-h-')
     expect(
       document.body.querySelector('[data-testid="role-permission-editor-scroll"]')?.className,
     ).toContain('overflow-y-auto')
@@ -182,11 +179,20 @@ describe('IAM roles page', () => {
     await wrapper.get('button[aria-label="编辑权限 Platform Administrator"]').trigger('click')
     await flushPromises()
 
-    expect(
-      document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className,
-    ).toContain('overflow-y-auto')
-    expect(
-      document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className,
-    ).toContain('max-h-')
+    // 新建弹框此时仍挂在 body 上，按标题取编辑弹框本身，别拿到新建弹框。
+    const editDialog = dialogTitled('编辑角色权限')
+    expect(editDialog.className).toContain('overflow-y-auto')
+    expect(editDialog.className).toContain('max-h-')
   })
 })
+
+function dialogTitled(title: string): HTMLElement {
+  const dialog = [
+    ...document.body.querySelectorAll<HTMLElement>('[data-slot="nv-dialog-content"]'),
+  ].find(
+    (element) =>
+      element.querySelector('[data-slot="nv-dialog-title"]')?.textContent?.trim() === title,
+  )
+  if (!dialog) throw new Error(`没有找到标题为「${title}」的弹框`)
+  return dialog
+}

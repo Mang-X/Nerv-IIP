@@ -3,17 +3,17 @@ import type { ConsoleCreateIamUserRequest, ConsoleIamRoleResponse } from '@nerv-
 import UserRoleSelector from '@/components/iam/UserRoleSelector.vue'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  NvInput,
 } from '@nerv-iip/ui'
 import { reactive, watch } from 'vue'
 
@@ -97,23 +97,24 @@ function toUtcEndOfDay(value: string) {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>新建用户</DialogTitle>
-        <DialogDescription>
+  <NvDialog v-model:open="open">
+    <NvDialogContent>
+      <NvDialogHeader>
+        <NvDialogTitle>新建用户</NvDialogTitle>
+        <NvDialogDescription>
           创建一个控制台用户并加入当前组织环境，填写登录名、邮箱、初始密码与角色。
-        </DialogDescription>
-      </DialogHeader>
+        </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
           <Field>
             <FieldLabel for="iam-create-login-name">登录名</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(errors.loginName)"
+              :invalid="Boolean(errors.loginName)"
               autocomplete="username"
             />
             <FieldError v-if="errors.loginName" :errors="[errors.loginName]" />
@@ -121,10 +122,11 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-email">邮箱</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-email"
               v-model="form.email"
               :aria-invalid="Boolean(errors.email)"
+              :invalid="Boolean(errors.email)"
               autocomplete="email"
               type="email"
             />
@@ -133,10 +135,11 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-password">密码</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-password"
               v-model="form.password"
               :aria-invalid="Boolean(errors.password)"
+              :invalid="Boolean(errors.password)"
               autocomplete="new-password"
               type="password"
             />
@@ -145,7 +148,11 @@ function toUtcEndOfDay(value: string) {
 
           <Field>
             <FieldLabel for="iam-create-account-expires">账号有效期</FieldLabel>
-            <Input id="iam-create-account-expires" v-model="form.accountExpiresDate" type="date" />
+            <NvInput
+              id="iam-create-account-expires"
+              v-model="form.accountExpiresDate"
+              type="date"
+            />
           </Field>
 
           <Field>
@@ -160,10 +167,10 @@ function toUtcEndOfDay(value: string) {
           </Field>
         </FieldGroup>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit"> 新建用户 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

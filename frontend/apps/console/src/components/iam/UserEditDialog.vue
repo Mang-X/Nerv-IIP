@@ -2,18 +2,18 @@
 import type { ConsoleIamUserResponse, ConsoleUpdateIamUserRequest } from '@nerv-iip/api-client'
 import {
   Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvCheckbox,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  NvInput,
 } from '@nerv-iip/ui'
 import { reactive, watch } from 'vue'
 
@@ -90,21 +90,22 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>编辑用户</DialogTitle>
-        <DialogDescription> 更新用户的登录名、邮箱与启用状态。 </DialogDescription>
-      </DialogHeader>
+  <NvDialog v-model:open="open">
+    <NvDialogContent>
+      <NvDialogHeader>
+        <NvDialogTitle>编辑用户</NvDialogTitle>
+        <NvDialogDescription> 更新用户的登录名、邮箱与启用状态。 </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
           <Field>
             <FieldLabel for="iam-edit-login-name">登录名</FieldLabel>
-            <Input
+            <NvInput
               id="iam-edit-login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(errors.loginName)"
+              :invalid="Boolean(errors.loginName)"
               autocomplete="username"
             />
             <FieldError v-if="errors.loginName" :errors="[errors.loginName]" />
@@ -112,10 +113,11 @@ watch(open, (isOpen) => {
 
           <Field>
             <FieldLabel for="iam-edit-email">邮箱</FieldLabel>
-            <Input
+            <NvInput
               id="iam-edit-email"
               v-model="form.email"
               :aria-invalid="Boolean(errors.email)"
+              :invalid="Boolean(errors.email)"
               autocomplete="email"
               type="email"
             />
@@ -129,19 +131,19 @@ watch(open, (isOpen) => {
             <div class="grid gap-1">
               <FieldLabel for="iam-edit-enabled">启用</FieldLabel>
             </div>
-            <Checkbox id="iam-edit-enabled" v-model="form.enabled" />
+            <NvCheckbox id="iam-edit-enabled" v-model="form.enabled" />
           </Field>
 
           <Field>
             <FieldLabel for="iam-edit-account-expires">账号有效期</FieldLabel>
-            <Input id="iam-edit-account-expires" v-model="form.accountExpiresDate" type="date" />
+            <NvInput id="iam-edit-account-expires" v-model="form.accountExpiresDate" type="date" />
           </Field>
         </FieldGroup>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit"> 保存修改 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

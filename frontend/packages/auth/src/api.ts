@@ -26,6 +26,8 @@ export interface ConsoleAuthApiMessages {
   changePasswordFallback: string
   invalidCredentialsOrExpiredSession: string
   loginFallback: string
+  /** 密码正确，但账号没有分配到任何组织或角色（IAM 只在密码校验通过后才给出这个区分）。 */
+  noMembership: string
   principalFallback: string
   remainingAttempts?: (count: number) => string
   refreshFallback: string
@@ -148,16 +150,18 @@ function assertData<T>(
     ? Number.parseInt(remainingAttemptsHeader, 10)
     : undefined
   const message =
-    failureCode === 'iam-account-locked' && messages.accountLocked
-      ? messages.accountLocked(lockoutUntilUtc)
-      : failureCode === 'iam-invalid-credentials' &&
-          remainingAttempts &&
-          remainingAttempts > 0 &&
-          messages.remainingAttempts
-        ? messages.remainingAttempts(remainingAttempts)
-        : status === 401
-          ? messages.invalidCredentialsOrExpiredSession
-          : fallback
+    failureCode === 'iam-no-membership'
+      ? messages.noMembership
+      : failureCode === 'iam-account-locked' && messages.accountLocked
+        ? messages.accountLocked(lockoutUntilUtc)
+        : failureCode === 'iam-invalid-credentials' &&
+            remainingAttempts &&
+            remainingAttempts > 0 &&
+            messages.remainingAttempts
+          ? messages.remainingAttempts(remainingAttempts)
+          : status === 401
+            ? messages.invalidCredentialsOrExpiredSession
+            : fallback
   throw new ConsoleAuthError(message, status, failureCode, lockoutUntilUtc, remainingAttempts)
 }
 
@@ -184,6 +188,14 @@ function describePasswordChangeRejection(message: string | undefined): string | 
     return undefined
   }
 
+  return describeIamPasswordRejection(message) ?? message
+}
+
+/**
+ * IAM 口令策略的英文拒绝文案译成中文；不认识的返回 undefined，由调用方决定兜底。
+ * 控制台管理员新建用户、重置密码时撞口令策略，也走这张表。
+ */
+export function describeIamPasswordRejection(message: string): string | undefined {
   for (const [pattern, describe] of PASSWORD_CHANGE_REJECTIONS) {
     const match = message.match(pattern)
     if (match) {
@@ -191,7 +203,7 @@ function describePasswordChangeRejection(message: string | undefined): string | 
     }
   }
 
-  return message
+  return undefined
 }
 
 function readErrorMessage(error: unknown): string | undefined {

@@ -27,6 +27,7 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
   deviceControlCommandTypeLabel: (v?: string | null) => v ?? '未知',
   deviceControlStatusLabel: (v?: string | null) => v ?? '未知',
   deviceControlStatusTone: () => 'neutral',
+  deviceReceiptLabel: (code?: string | null) => (code?.startsWith('Bad') ? '设备拒绝执行' : '—'),
   isTerminalDeviceControlStatus: (v?: string | null) => (v ? TERMINAL.has(v.toLowerCase()) : false),
   useBusinessDeviceControlCommands: () => ({
     dispatchCommand: state.dispatch,
@@ -71,6 +72,16 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     currentValueError: computed(() => cvState.error),
     currentValuePending: computed(() => cvState.pending),
     refreshCurrentValue: cvState.refresh,
+  }),
+}))
+
+vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+  useMasterDataDisplayNames: () => ({
+    resolveDevice: (reference?: string | null) =>
+      reference === 'DEV-CNC-01' ? '数控车床 1 号' : undefined,
+    resolveDeviceCode: (reference?: string | null) =>
+      reference === 'DEV-CNC-01' ? 'DEV-CNC-01' : undefined,
+    formatUom: (code?: string | null) => (code === 'rpm' ? '转/分 (rpm)' : (code ?? '')),
   }),
 }))
 
@@ -131,10 +142,11 @@ describe('DeviceControlSheet', () => {
     const wrapper = mountSheet()
     await selectTag(wrapper)
 
-    expect(wrapper.text()).toContain('值域：0 ~ 100 rpm')
+    expect(wrapper.text()).toContain('设备控制 · 数控车床 1 号（DEV-CNC-01）')
+    expect(wrapper.text()).toContain('值域：0 ~ 100 转/分 (rpm)')
     expect(wrapper.text()).toContain('当前值')
     expect(wrapper.text()).toContain('55')
-    expect(wrapper.text()).not.toContain('无采样')
+    expect(wrapper.text()).not.toContain('暂无读数')
   })
 
   it('distinguishes current-value loading, read failure and no-sample states', async () => {
@@ -149,7 +161,7 @@ describe('DeviceControlSheet', () => {
     await selectTag(wrapper)
     // A read failure must not be reported as a business "no sample"; it offers a retry.
     expect(wrapper.text()).toContain('读取失败，点击重试')
-    expect(wrapper.text()).not.toContain('无采样')
+    expect(wrapper.text()).not.toContain('暂无读数')
     await wrapper
       .findAll('button')
       .find((b) => b.text().includes('读取失败'))!
@@ -160,7 +172,7 @@ describe('DeviceControlSheet', () => {
     cvState.current = { hasSample: false, value: null }
     wrapper = mountSheet()
     await selectTag(wrapper)
-    expect(wrapper.text()).toContain('无采样')
+    expect(wrapper.text()).toContain('暂无读数')
   })
 
   it('blocks submit and shows an error for an out-of-range value', async () => {
@@ -198,7 +210,7 @@ describe('DeviceControlSheet', () => {
     expect(state.startTracking).toHaveBeenCalledWith('cmd-1')
   })
 
-  it('renders the device receipt code from the attempt output on failure', async () => {
+  it('says the device receipt in business words and keeps raw codes off screen', async () => {
     state.tracked = {
       commandType: 'write-tag',
       status: 'failed',
@@ -225,10 +237,10 @@ describe('DeviceControlSheet', () => {
       .trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('设备回执码')
-    expect(wrapper.text()).toContain('BadOutOfRange')
-    expect(wrapper.text()).toContain('value exceeds node range')
-    // The generic connector code is shown as secondary, not as the primary receipt.
-    expect(wrapper.text()).toContain('opcua.write.rejected')
+    expect(wrapper.text()).toContain('设备回执')
+    expect(wrapper.text()).toContain('设备拒绝执行')
+    expect(wrapper.text()).not.toContain('BadOutOfRange')
+    expect(wrapper.text()).not.toContain('value exceeds node range')
+    expect(wrapper.text()).not.toContain('opcua.write.rejected')
   })
 })

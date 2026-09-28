@@ -36,5 +36,7 @@ describe('@nerv-iip/ui FE-2 block library exports', () => {
       tone: 'warning',
     })
     expect(ui.resolveStatus('').tone).toBe('neutral')
+    // ERP 采购订单的 PascalCase 状态码（#3875 走查时屏上直接印出了 PendingApproval）。
+    expect(ui.resolveStatus('PendingApproval').label).toBe('待审批')
   })
 })
