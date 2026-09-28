@@ -257,7 +257,6 @@ public sealed class BusinessConsoleRecordErpPurchaseReceiptRequestValidator
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.PurchaseReceiptNo).MaximumLength(100);
         RuleFor(x => x.PurchaseOrderNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
         RuleFor(x => x.Lines).NotEmpty();
@@ -277,6 +276,8 @@ public sealed class BusinessConsoleErpPurchaseReceiptLineValidator
             .MaximumLength(50)
             .Must(ErpReceiptQualityStatuses.IsSupported)
             .WithMessage("质检状态只能是 unrestricted（合格）、quality（待检）、blocked（冻结）之一或其已知别名。");
+        // #3900：直接过账必须带库位由 ERP 领域不变量把关，网关只收长度。
+        RuleFor(x => x.LocationCode).MaximumLength(100);
     }
 }
 

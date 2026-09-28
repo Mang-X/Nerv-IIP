@@ -51,6 +51,11 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         foreach (var draft in drafts)
         {
             PurchaseReceiptLine.ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
+            // #3900：直接过账由 ERP 发起库存入库，库位必须是用户选定的真实库位；不再拿工厂编码冒充库位。
+            if (inventoryPostingRoute == PurchaseReceiptInventoryPostingRoute.Direct && string.IsNullOrWhiteSpace(draft.LocationCode))
+            {
+                throw new ArgumentException("直接过账的收货行必须指定收货库位。", nameof(lineDrafts));
+            }
         }
 
         var affectedSkuCodes = new List<string>();
@@ -62,7 +67,7 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
             {
                 affectedSkuCodes.Add(orderLine.SkuCode);
             }
-            var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
+            var line = PurchaseReceiptLine.Create(draft, orderLine);
             lines.Add(line);
         }
 
@@ -137,7 +142,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
         LotNo = draft.LotNo;
     }
 
-    private PurchaseReceiptLine(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine, string siteCode)
+    private PurchaseReceiptLine(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine)
     {
         PurchaseOrderLineNo = ErpText.Required(draft.PurchaseOrderLineNo, nameof(draft.PurchaseOrderLineNo));
         ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
@@ -145,7 +150,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
         SkuCode = orderLine.SkuCode;
         UnitPrice = orderLine.UnitPrice;
         UomCode = orderLine.UomCode;
-        LocationCode = string.IsNullOrWhiteSpace(draft.LocationCode) ? siteCode : draft.LocationCode.Trim();
+        LocationCode = draft.LocationCode?.Trim() ?? string.Empty;
         LotNo = string.IsNullOrWhiteSpace(draft.LotNo) ? null : draft.LotNo.Trim();
     }
 
@@ -171,8 +176,8 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
         return new PurchaseReceiptLine(draft);
     }
 
-    public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine, string siteCode)
+    public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine)
     {
-        return new PurchaseReceiptLine(draft, orderLine, siteCode);
+        return new PurchaseReceiptLine(draft, orderLine);
     }
 }

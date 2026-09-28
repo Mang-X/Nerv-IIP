@@ -120,7 +120,7 @@ public sealed record RecordPurchaseReceiptRequest(
     decimal ExchangeRate = 1m,
     PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct);
 
-public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId);
+public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId, string PurchaseReceiptNo);
 
 public sealed record RecordSupplierInvoiceRequest(
     string OrganizationId,
@@ -397,8 +397,8 @@ public sealed class RecordPurchaseReceiptEndpoint(ISender sender, IErpIntegratio
     {
         using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
             "record-purchase-receipt", req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.IdempotencyKey));
-        var id = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines, req.IdempotencyKey, req.ExchangeRate, req.InventoryPostingRoute), ct);
-        await Send.OkAsync(new RecordPurchaseReceiptResponse(id).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines, req.IdempotencyKey, req.ExchangeRate, req.InventoryPostingRoute), ct);
+        await Send.OkAsync(new RecordPurchaseReceiptResponse(result.PurchaseReceiptId, result.PurchaseReceiptNo).AsResponseData(), cancellation: ct);
     }
 }
 

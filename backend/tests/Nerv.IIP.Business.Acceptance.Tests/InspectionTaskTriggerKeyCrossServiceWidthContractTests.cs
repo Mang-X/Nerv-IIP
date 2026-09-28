@@ -135,7 +135,7 @@ public sealed class InspectionTaskTriggerKeyCrossServiceWidthContractTests
         var receipt = PurchaseReceipt.Record(
             order,
             purchaseReceiptNo,
-            [new PurchaseReceiptLineDraft(purchaseOrderLineNo, 10m, "accepted")]);
+            [new PurchaseReceiptLineDraft(purchaseOrderLineNo, 10m, "accepted", "RAW-A-01")]);
         var integrationEvent = new PurchaseReceiptRecordedIntegrationEventConverter()
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
 

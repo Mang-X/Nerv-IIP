@@ -69,7 +69,7 @@ public sealed class JournalVoucherSourceValueTests
             [new PurchaseOrderLineDraft("L1", "SKU-RM-001", "EA", 10m, 10m, PostingDate)]);
         purchaseOrder.MarkApprovalRequested("chain-0001");
         purchaseOrder.ReleaseAfterApproval("chain-0001");
-        var receipt = PurchaseReceipt.Record(purchaseOrder, "RCV-0001", [new PurchaseReceiptLineDraft("L1", 10m, "accepted")]);
+        var receipt = PurchaseReceipt.Record(purchaseOrder, "RCV-0001", [new PurchaseReceiptLineDraft("L1", 10m, "accepted", "RAW-A-01")]);
         var invoice = SupplierInvoice.Match(
             purchaseOrder,
             receipt,

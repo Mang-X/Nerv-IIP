@@ -498,7 +498,7 @@ public sealed class ErpBusinessGapClosureTests
                 "env-dev",
                 "RCV-001",
                 "PO-001",
-                [new PurchaseReceiptCommandLine("LINE-001", 1m, "accepted")]),
+                [new PurchaseReceiptCommandLine("LINE-001", 1m, "accepted", "RAW-A-01")]),
             CancellationToken.None));
 
         await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
@@ -513,7 +513,7 @@ public sealed class ErpBusinessGapClosureTests
                 "env-dev",
                 "RCV-001",
                 "PO-001",
-                [new PurchaseReceiptCommandLine("LINE-001", 1m, "accepted")]),
+                [new PurchaseReceiptCommandLine("LINE-001", 1m, "accepted", "RAW-A-01")]),
             CancellationToken.None);
     }
 

@@ -56,7 +56,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
             await using (var write = provider.CreateAsyncScope())
             {
                 var db = write.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                receiptId = await Handler(write.ServiceProvider).Handle(command, CancellationToken.None);
+                receiptId = (await Handler(write.ServiceProvider).Handle(command, CancellationToken.None)).PurchaseReceiptId;
                 var receipt = db.PurchaseReceipts.Local.Single();
                 var movements = receipt.GetDomainEvents().OfType<PurchaseReceiptInventoryMovementRequestedDomainEvent>().ToArray();
                 Assert.Equal(inventoryCount, movements.Length);
@@ -94,7 +94,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
                 Assert.Equal(1m, source.ExchangeRate);
                 Assert.Equal(12.5m, Assert.Single(source.Lines).UnitPrice);
                 Assert.Equal(12.5m, Assert.Single(source.Lines).EstimatedUnitCost);
-                Assert.Equal(receiptId, await Handler(read.ServiceProvider).Handle(command, CancellationToken.None));
+                Assert.Equal(receiptId, (await Handler(read.ServiceProvider).Handle(command, CancellationToken.None)).PurchaseReceiptId);
                 Assert.Empty(db.PurchaseReceipts.Local.Single().GetDomainEvents());
                 await db.SaveChangesAsync();
                 var otherRoute = route == PurchaseReceiptInventoryPostingRoute.Direct
@@ -184,7 +184,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         Assert.Equal(2m, Assert.Single(source.Lines).ReceivedQuantity);
         Assert.Null(Assert.Single(source.Lines).UnitPrice);
         Assert.Null(Assert.Single(source.Lines).EstimatedUnitCost);
-        Assert.Equal(receipt.Id, await Handler(read.ServiceProvider).Handle(command, CancellationToken.None));
+        Assert.Equal(receipt.Id, (await Handler(read.ServiceProvider).Handle(command, CancellationToken.None)).PurchaseReceiptId);
         Assert.Empty(receipt.GetDomainEvents());
         var conflict = await Assert.ThrowsAsync<KnownException>(() => Handler(read.ServiceProvider).Handle(
             command with { InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Wms }, CancellationToken.None));
@@ -203,7 +203,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
 
     private static RecordPurchaseReceiptCommand Command(string suffix) => new(
         "org-route", "env-route", $"RCV-{suffix}", $"PO-{suffix}",
-        [new PurchaseReceiptCommandLine("10", 2m, "unrestricted")], $"receipt-{suffix}");
+        [new PurchaseReceiptCommandLine("10", 2m, "unrestricted", "RAW-A-01")], $"receipt-{suffix}");
 
     private static RecordPurchaseReceiptCommandHandler Handler(IServiceProvider services) => new(
         services.GetRequiredService<ApplicationDbContext>(), services.GetRequiredService<ErpCodingService>());
