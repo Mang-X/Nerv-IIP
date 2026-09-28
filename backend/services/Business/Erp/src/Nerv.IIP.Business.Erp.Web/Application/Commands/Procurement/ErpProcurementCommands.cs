@@ -822,7 +822,10 @@ public sealed record RecordPurchaseReceiptCommand(
     IReadOnlyCollection<PurchaseReceiptCommandLine> Lines,
     string? IdempotencyKey = null,
     decimal ExchangeRate = 1m,
-    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct) : ICommand<PurchaseReceiptId>;
+    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct) : ICommand<RecordPurchaseReceiptResult>;
+
+// #3900：我方收货单号由编码规则生成，调用方只能从这里读到它。
+public sealed record RecordPurchaseReceiptResult(PurchaseReceiptId PurchaseReceiptId, string PurchaseReceiptNo);
 
 public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<RecordPurchaseReceiptCommand>
 {
@@ -849,11 +852,11 @@ public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<Re
 }
 
 public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
-    : ICommandHandler<RecordPurchaseReceiptCommand, PurchaseReceiptId>
+    : ICommandHandler<RecordPurchaseReceiptCommand, RecordPurchaseReceiptResult>
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
-    public async Task<PurchaseReceiptId> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken)
+    public async Task<RecordPurchaseReceiptResult> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken)
     {
         // Direct 保留旧指纹，使升级前的幂等键仍可重放；WMS 显式绑定不同路径。
         var fingerprint = ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}"));
@@ -870,11 +873,12 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.PurchaseReceipts.SingleAsync(x =>
+            var replayed = await dbContext.PurchaseReceipts.SingleAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.PurchaseReceiptNo == allocation.Code,
-                cancellationToken)).Id;
+                cancellationToken);
+            return new RecordPurchaseReceiptResult(replayed.Id, replayed.PurchaseReceiptNo);
         }
 
         var order = await dbContext.PurchaseOrders
@@ -898,11 +902,11 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
-            throw new KnownException("采购收货数据无效，请检查收货数量、质量状态和批次。", exception);
+            throw new KnownException("采购收货数据无效，请检查收货数量、质量状态、收货库位和批次。", exception);
         }
 
         dbContext.PurchaseReceipts.Add(receipt);
-        return receipt.Id;
+        return new RecordPurchaseReceiptResult(receipt.Id, receipt.PurchaseReceiptNo);
     }
 }
 

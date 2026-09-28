@@ -300,10 +300,15 @@ export async function runProcurement(options: ProcurementOptions) {
       const receiptRequest = {
         ...scope,
         inventoryPostingRoute: options.inventoryPostingRoute,
-        purchaseReceiptNo: `PR-${issue.replace('NERV-', 'N')}-${scenario}-${index + 1}`,
         purchaseOrderNo,
         lines: [
-          { purchaseOrderLineNo: '10', receivedQuantity: quantity, qualityStatus: 'unrestricted' },
+          {
+            purchaseOrderLineNo: '10',
+            receivedQuantity: quantity,
+            qualityStatus: 'unrestricted',
+            // 直接过账必须带已登记的收货库位（#3900）；基线种子在 SITE-001 下登记了 loc-raw-01。
+            locationCode: 'loc-raw-01',
+          },
         ],
         idempotencyKey: `${issue.toLowerCase().replace('nerv-', 'n')}-${scenario}-receipt-${index + 1}`,
       } satisfies RecordReceiptRequest
@@ -313,12 +318,15 @@ export async function runProcurement(options: ProcurementOptions) {
         receiptRequest,
       )
       expect(receipt.purchaseReceiptId).toMatch(/\S/)
+      const purchaseReceiptNo = receipt.purchaseReceiptNo ?? ''
+      expect(purchaseReceiptNo).toMatch(/\S/)
       const receiptReplay = await call<RecordReceiptResponse>(
         'POST',
         `${procurement}/purchase-receipts`,
         receiptRequest,
       )
       expect(receiptReplay.purchaseReceiptId).toBe(receipt.purchaseReceiptId)
+      expect(receiptReplay.purchaseReceiptNo).toBe(purchaseReceiptNo)
       const readback = (
         await list<PurchaseOrder>(`${procurement}/purchase-orders`, { keyword: purchaseOrderNo })
       ).filter((row) => row.purchaseOrderNo === purchaseOrderNo)
@@ -338,7 +346,7 @@ export async function runProcurement(options: ProcurementOptions) {
         quantity,
         quotationNo: quote.quotationNo,
         purchaseOrderNo,
-        purchaseReceiptNo: receiptRequest.purchaseReceiptNo,
+        purchaseReceiptNo,
         purchaseReceiptId: receipt.purchaseReceiptId,
         approvalChainId: approval!.chainId,
         readback: readback[0],

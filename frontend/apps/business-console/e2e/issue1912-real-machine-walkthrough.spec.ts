@@ -59,7 +59,8 @@ const SALES_QUOTATION_NO = 'QUO-WALK-001'
 const PURCHASE_ORDER_NO = 'PO-WALK-001'
 const PURCHASE_ORDER_APPROVAL_TEMPLATE_CODE = 'purchase-order-release'
 const PURCHASE_ORDER_APPROVAL_TEMPLATE_VERSION = 1
-const PURCHASE_RECEIPT_NO = 'PR-WALK-001'
+// 我方收货单号由 ERP 编码规则生成（#3900），收货后从响应读回。
+let purchaseReceiptNo = ''
 const SALES_ORDER_NO = 'SO-WALK-001'
 const DELIVERY_ORDER_NO = 'DO-WALK-001'
 const INBOUND_ORDER_NO = 'IN-WALK-001'
@@ -524,16 +525,16 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     const receiptRequest = {
       organizationId,
       environmentId,
-      purchaseReceiptNo: PURCHASE_RECEIPT_NO,
       purchaseOrderNo: PURCHASE_ORDER_NO,
       lines: [
         {
           purchaseOrderLineNo: textOf(quoteLine.lineNo || '10'),
           receivedQuantity: materialQuantity,
           qualityStatus: 'unrestricted',
+          locationCode: INBOUND_LOCATION,
         },
       ],
-      idempotencyKey: `issue1912-${PURCHASE_RECEIPT_NO}`,
+      idempotencyKey: `issue1912-receipt-${PURCHASE_ORDER_NO}`,
     }
     const receipt = await call(
       'POST',
@@ -541,6 +542,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       receiptRequest,
     )
     setup.push({ request: receipt.summary, response: receipt.publicPayload })
+    purchaseReceiptNo = textOf(asRecord(dataOf(receipt.payload)).purchaseReceiptNo)
+    expect(purchaseReceiptNo).toMatch(/\S/)
     const receiptOrder = await pollRows(
       '/api/business-console/v1/erp/procurement/purchase-orders',
       {
@@ -572,8 +575,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     record({
       node: 'purchase-order-receipt',
       sourceObject: PURCHASE_ORDER_NO,
-      downstreamObject: PURCHASE_RECEIPT_NO,
-      stableKey: `${PURCHASE_ORDER_NO} -> ${PURCHASE_RECEIPT_NO}`,
+      downstreamObject: purchaseReceiptNo,
+      stableKey: `${PURCHASE_ORDER_NO} -> ${purchaseReceiptNo}`,
       automationMode: 'manual',
       request: receipt.summary,
       responseOrLog: {
@@ -933,9 +936,9 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     })
     record({
       node: 'receipt-inbound-inventory',
-      sourceObject: PURCHASE_RECEIPT_NO,
+      sourceObject: purchaseReceiptNo,
       downstreamObject: INBOUND_ORDER_NO,
-      stableKey: `${PURCHASE_RECEIPT_NO} -> ${INBOUND_ORDER_NO} -> ${textOf(inventory.data.movementId ?? inventory.data.ledgerVersion)}`,
+      stableKey: `${purchaseReceiptNo} -> ${INBOUND_ORDER_NO} -> ${textOf(inventory.data.movementId ?? inventory.data.ledgerVersion)}`,
       automationMode: 'mixed',
       request: inbound.summary,
       responseOrLog: {
@@ -1675,7 +1678,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
             supplierQuotationNo: SUPPLIER_QUOTATION_NO,
             salesQuotationNo: SALES_QUOTATION_NO,
             purchaseOrderNo: PURCHASE_ORDER_NO,
-            purchaseReceiptNo: PURCHASE_RECEIPT_NO,
+            purchaseReceiptNo,
             salesOrderNo: SALES_ORDER_NO,
             deliveryOrderNo: DELIVERY_ORDER_NO,
             runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',

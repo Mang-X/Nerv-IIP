@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Erp;
 
 namespace Nerv.IIP.Business.Erp.Domain.Tests;
 
@@ -364,7 +365,7 @@ public sealed class ErpProcurementAggregateTests
         var receipt = PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 10.4m, "accepted", FinalDelivery: true)]);
+            [new PurchaseReceiptLineDraft("LINE-001", 10.4m, "accepted", "RAW-A-01", FinalDelivery: true)]);
 
         Assert.Equal(PurchaseReceiptStatus.Recorded, receipt.Status);
         var line = Assert.Single(order.Lines);
@@ -391,11 +392,56 @@ public sealed class ErpProcurementAggregateTests
         var exception = Assert.Throws<ArgumentException>(() => PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 1m, "passed")]));
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "passed", "RAW-A-01")]));
 
         Assert.Equal(PurchaseOrderStatus.Released, order.Status);
         Assert.Equal(0m, orderLine.ReceivedQuantity);
         Assert.Equal(nameof(PurchaseReceiptLineDraft.QualityStatus), exception.ParamName);
+    }
+
+    [Fact]
+    public void Direct_purchase_receipt_rejects_line_without_location_instead_of_posting_to_site_code()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
+        var orderLine = Assert.Single(order.Lines);
+
+        Assert.Throws<ArgumentException>(() => PurchaseReceipt.Record(
+            order,
+            "RCV-001",
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted")]));
+
+        Assert.Equal(0m, orderLine.ReceivedQuantity);
+    }
+
+    [Fact]
+    public void Wms_purchase_receipt_accepts_line_without_location_because_wms_supplies_it()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
+
+        var receipt = PurchaseReceipt.Record(
+            order,
+            "RCV-001",
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted")],
+            inventoryPostingRoute: PurchaseReceiptInventoryPostingRoute.Wms);
+
+        Assert.Equal(string.Empty, Assert.Single(receipt.Lines).LocationCode);
+        Assert.Equal(1m, Assert.Single(order.Lines).ReceivedQuantity);
     }
 
     [Fact]
@@ -414,7 +460,7 @@ public sealed class ErpProcurementAggregateTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 10.6m, "accepted")]));
+            [new PurchaseReceiptLineDraft("LINE-001", 10.6m, "accepted", "RAW-A-01")]));
     }
 
     [Fact]
@@ -433,7 +479,7 @@ public sealed class ErpProcurementAggregateTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 9.4m, "accepted", FinalDelivery: true)]));
+            [new PurchaseReceiptLineDraft("LINE-001", 9.4m, "accepted", "RAW-A-01", FinalDelivery: true)]));
     }
 
     [Fact]
@@ -452,7 +498,7 @@ public sealed class ErpProcurementAggregateTests
         var receipt = PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 9.5m, "accepted", FinalDelivery: true)]);
+            [new PurchaseReceiptLineDraft("LINE-001", 9.5m, "accepted", "RAW-A-01", FinalDelivery: true)]);
 
         Assert.Equal(PurchaseReceiptStatus.Recorded, receipt.Status);
         Assert.Equal(PurchaseOrderStatus.Closed, order.Status);
@@ -474,7 +520,7 @@ public sealed class ErpProcurementAggregateTests
         Assert.Throws<InvalidOperationException>(() => PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted")]));
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted", "RAW-A-01")]));
 
         order.MarkApprovalRequested("approval-chain-001");
         order.ReleaseAfterApproval("approval-chain-001");
@@ -484,7 +530,7 @@ public sealed class ErpProcurementAggregateTests
         var receipt = PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted")]);
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "accepted", "RAW-A-01")]);
         Assert.Equal(PurchaseReceiptStatus.Recorded, receipt.Status);
     }
 
@@ -522,7 +568,7 @@ public sealed class ErpProcurementAggregateTests
         var receipt = PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 4m, "accepted")]);
+            [new PurchaseReceiptLineDraft("LINE-001", 4m, "accepted", "RAW-A-01")]);
 
         Assert.Equal(PurchaseReceiptStatus.Recorded, receipt.Status);
         Assert.Equal(4m, order.Lines.Single().ReceivedQuantity);
@@ -555,8 +601,8 @@ public sealed class ErpProcurementAggregateTests
             order,
             "RCV-DEDUPE-001",
             [
-                new PurchaseReceiptLineDraft("LINE-001", 2m, "accepted"),
-                new PurchaseReceiptLineDraft("LINE-002", 1m, "accepted"),
+                new PurchaseReceiptLineDraft("LINE-001", 2m, "accepted", "RAW-A-01"),
+                new PurchaseReceiptLineDraft("LINE-002", 1m, "accepted", "RAW-A-01"),
             ]);
 
         var etaChanged = Assert.Single(receipt.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
@@ -583,7 +629,7 @@ public sealed class ErpProcurementAggregateTests
         var receipt = PurchaseReceipt.Record(
             order,
             "RCV-OVER-RECEIPT",
-            [new PurchaseReceiptLineDraft("LINE-001", 0.5m, "accepted")]);
+            [new PurchaseReceiptLineDraft("LINE-001", 0.5m, "accepted", "RAW-A-01")]);
 
         Assert.Empty(receipt.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
     }

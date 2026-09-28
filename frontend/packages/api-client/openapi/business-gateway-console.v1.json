@@ -62501,6 +62501,9 @@
         "properties": {
           "purchaseReceiptId": {
             "type": "string"
+          },
+          "purchaseReceiptNo": {
+            "type": "string"
           }
         }
       },
@@ -62525,12 +62528,6 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": false
-          },
-          "purchaseReceiptNo": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": true
           },
           "purchaseOrderNo": {
             "type": "string",
@@ -62582,6 +62579,12 @@
             "maxLength": 50,
             "minLength": 0,
             "nullable": false
+          },
+          "locationCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },

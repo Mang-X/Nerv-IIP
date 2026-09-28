@@ -7818,7 +7818,6 @@ public sealed class BusinessGatewayProxyTests
             new BusinessConsoleRecordErpPurchaseReceiptRequest(
                 "org-001",
                 "env-dev",
-                PurchaseReceiptNo: null,
                 "PO-2026-0001",
                 [new BusinessConsoleErpPurchaseReceiptLine("1", 10m, "quality")],
                 IdempotencyKey: "idem-receipt-001"));
@@ -7881,7 +7880,6 @@ public sealed class BusinessGatewayProxyTests
     {
         ["organizationId"] = "org-001",
         ["environmentId"] = "env-dev",
-        ["purchaseReceiptNo"] = "RCV-route",
         ["purchaseOrderNo"] = "PO-route",
         ["lines"] = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "unrestricted" } },
     };
@@ -7906,7 +7904,6 @@ public sealed class BusinessGatewayProxyTests
             new BusinessConsoleRecordErpPurchaseReceiptRequest(
                 "org-001",
                 "env-dev",
-                PurchaseReceiptNo: null,
                 "PO-2026-0001",
                 [new BusinessConsoleErpPurchaseReceiptLine("1", 10m, "not-a-status")],
                 IdempotencyKey: "idem-receipt-002"));
@@ -19233,7 +19230,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
     {
         LastInternalToken = internalBearerToken;
         LastRecordPurchaseReceiptRequest = request;
-        return Task.FromResult(new BusinessConsoleRecordErpPurchaseReceiptResponse("receipt-001"));
+        return Task.FromResult(new BusinessConsoleRecordErpPurchaseReceiptResponse("receipt-001", "RCV-001"));
     }
 
     public Task<BusinessConsoleErpSalesOrderListResponse> ListSalesOrdersAsync(

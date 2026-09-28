@@ -7499,12 +7499,12 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordErpPurchas
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptResponse = {
     purchaseReceiptId?: string;
+    purchaseReceiptNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest = {
     organizationId: string;
     environmentId: string;
-    purchaseReceiptNo?: string | null;
     purchaseOrderNo: string;
     lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine>;
     idempotencyKey?: string | null;
@@ -7515,6 +7515,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     purchaseOrderLineNo: string;
     receivedQuantity?: number;
     qualityStatus: string;
+    locationCode?: string | null;
 };
 
 export type NervIipContractsErpPurchaseReceiptInventoryPostingRoute = 'direct' | 'wms';
