@@ -62,7 +62,7 @@ public sealed class MaintenancePublicHttpLifecycleAcceptanceTests
                 reasonCode = "equipment-failure",
                 description = "Equipment failure",
                 reasonCategory = "breakdown",
-                lossCategory = "equipment",
+                lossCategory = "availability",
             }));
 
         var downstreamCapture = new DownstreamCapture();

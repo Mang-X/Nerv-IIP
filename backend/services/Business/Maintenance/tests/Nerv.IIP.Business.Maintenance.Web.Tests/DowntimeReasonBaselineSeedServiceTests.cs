@@ -28,11 +28,29 @@ public sealed class DowntimeReasonBaselineSeedServiceTests
             .Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev")
             .ToListAsync();
         Assert.Equal(ExpectedCodes.Order(StringComparer.Ordinal), reasons.Select(x => x.ReasonCode).Order(StringComparer.Ordinal));
-        // 分类与损失类别都落在受控码表里（控制台按码显示中文），计划停机不计入 OEE 损失。
-        Assert.All(reasons, x => Assert.Contains(x.ReasonCategory, new[] { "breakdown", "setup", "minor-stop", "process", "quality", "material", "labor", "external", "planned" }));
-        Assert.All(reasons, x => Assert.Contains(x.LossCategory, new[] { "availability", "performance", "planned" }));
-        Assert.Equal("planned", reasons.Single(x => x.ReasonCode == "DT-PM").LossCategory);
-        Assert.Equal("performance", reasons.Single(x => x.ReasonCode == "DT-MINOR").LossCategory);
+        // 逐条钉住分类与损失类别（TPM 六大损失 / OEE 口径）：设备故障、换型、工艺、质量、缺料、缺人、公用工程
+        // 中断计可用率损失；小停机 / 空转计性能损失；计划保养与无生产计划是计划停机，不计入损失。
+        var expected = new Dictionary<string, (string Category, string Loss)>
+        {
+            ["DT-MECH"] = ("breakdown", "availability"),
+            ["DT-ELEC"] = ("breakdown", "availability"),
+            ["DT-TOOL"] = ("breakdown", "availability"),
+            ["DT-SETUP"] = ("setup", "availability"),
+            ["DT-MINOR"] = ("minor-stop", "performance"),
+            ["DT-PROC"] = ("process", "availability"),
+            ["DT-QUALITY"] = ("quality", "availability"),
+            ["DT-MATERIAL"] = ("material", "availability"),
+            ["DT-LABOR"] = ("labor", "availability"),
+            ["DT-UTILITY"] = ("external", "availability"),
+            ["DT-PM"] = ("planned", "planned"),
+            ["DT-NOPLAN"] = ("planned", "planned"),
+        };
+        Assert.All(reasons, x => Assert.Equal(expected[x.ReasonCode], (x.ReasonCategory, x.LossCategory)));
+        Assert.All(reasons, x =>
+        {
+            Assert.Contains(x.ReasonCategory, DowntimeReasonVocabulary.ReasonCategories.All);
+            Assert.Contains(x.LossCategory, DowntimeReasonVocabulary.LossCategories.All);
+        });
     }
 
     [Fact]

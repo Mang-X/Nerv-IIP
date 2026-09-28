@@ -2696,33 +2696,38 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("internal-test-token", maintenance.LastInternalToken);
     }
 
-    [Theory]
-    [InlineData("mystery", "availability")]
-    [InlineData("breakdown", "equipment-failure")]
-    public async Task Maintenance_downtime_reason_create_rejects_uncontrolled_categories(string reasonCategory, string lossCategory)
+    /// <summary>
+    /// #3855 审核阻断 6：编码已存在时 Maintenance 返回 409 + 稳定码，网关原样保留状态与码，
+    /// 控制台据此提示「编码已存在」，不误报新建成功。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_downtime_reason_duplicate_code_conflict_keeps_409_and_the_stable_code()
     {
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        var maintenance = new RecordingMaintenanceFacadeClient();
-        await using var lease = LeaseHost(auth, services =>
+        using var httpClient = new HttpClient(new StaticJsonHandler(
+            HttpStatusCode.Conflict,
+            """{"success":false,"message":"downtime-reason-code-already-exists"}"""))
         {
-            services.RemoveAll<IBusinessMaintenanceClient>();
-            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
-        });
-        var client = lease.CreateClient();
-        BusinessGatewayTestHost.Authenticated(client);
+            BaseAddress = new Uri("http://maintenance.local"),
+        };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
 
-        var response = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/downtime-reasons", new
-        {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            reasonCode = "DT-HYD",
-            description = "液压系统故障",
-            reasonCategory,
-            lossCategory,
-        });
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateDowntimeReasonAsync(
+            "internal-token",
+            new BusinessConsoleCreateMaintenanceDowntimeReasonRequest(
+                "org-001", "env-dev", "DT-MECH", "液压系统故障", "breakdown", "availability"),
+            CancellationToken.None));
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Null(maintenance.LastCreateDowntimeReasonRequest);
+        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
+        Assert.Equal("downtime-reason-code-already-exists", exception.Message);
+    }
+
+    private sealed class StaticJsonHandler(HttpStatusCode statusCode, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+            });
     }
 
     [Fact]

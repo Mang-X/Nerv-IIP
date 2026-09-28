@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 using Nerv.IIP.Contracts.Maintenance;
 using Npgsql;
 
@@ -272,6 +273,36 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         Assert.Equal("maintenance", Get(v1, "sourceService").GetString());
         Assert.Equal("not-a-catalog-code", Get(Get(v1, "payload"), "reason").GetString());
         Assert.DoesNotContain(rows, x => x.Topic == V2DevelopmentTopic);
+    }
+
+    /// <summary>
+    /// #3855：停机原因产品基线 seed 默认开启，但只在库结构迁移到当前版本之后执行。宿主在迁移前启动时跳过
+    /// （不能在缺表的库上写数据把启动打崩），迁移完成后的下一次启动补齐 12 条。
+    /// </summary>
+    [MaintenanceAssetUnavailableV2PostgresFact]
+    public async Task Baseline_downtime_reason_seed_waits_for_migrations_and_fills_the_catalog_on_the_next_start()
+    {
+        await ResetMaintenanceSchemaAsync();
+        await using (var beforeMigration = CreateFactory())
+        {
+            using var scope = beforeMigration.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
+            Assert.NotEmpty(await db.Database.GetPendingMigrationsAsync());
+            await db.Database.MigrateAsync();
+            Assert.False(await db.DowntimeReasons.AnyAsync());
+        }
+
+        await using var afterMigration = CreateFactory();
+        using var afterScope = afterMigration.Services.CreateScope();
+        var migrated = afterScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codes = await migrated.DowntimeReasons.AsNoTracking()
+            .Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev")
+            .Select(x => x.ReasonCode)
+            .ToListAsync();
+        Assert.Equal(
+            DowntimeReasonBaselineSeedService.Reasons.Select(x => x.Code).Order(StringComparer.Ordinal),
+            codes.Order(StringComparer.Ordinal));
     }
 
     private static WebApplicationFactory<Program> CreateFactory(Action<IServiceCollection>? configureServices = null)

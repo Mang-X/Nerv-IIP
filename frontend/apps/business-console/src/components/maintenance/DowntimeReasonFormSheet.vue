@@ -58,9 +58,13 @@ const form = reactive({
 
 const showErrors = ref(false)
 const codeMissing = computed(() => !editingCode && !form.reasonCode.trim())
+// 编码即身份：服务端是唯一权威（409 `downtime-reason-code-already-exists`）。`existingCodes` 只是
+// 当前页已读到的目录，用来提前拦下明显的重复；它可能是按检索词过滤后的子集，查不到不代表不存在。
+const serverRejectedCode = ref('')
 const codeDuplicated = computed(() => {
   const code = form.reasonCode.trim()
-  return !editingCode && !!code && (props.existingCodes ?? []).includes(code)
+  if (editingCode || !code) return false
+  return (props.existingCodes ?? []).includes(code) || serverRejectedCode.value === code
 })
 const descriptionMissing = computed(() => !form.description.trim())
 const errors = computed(() => {
@@ -103,8 +107,19 @@ async function submit() {
     emit('saved', reasonCode)
     open.value = false
   } catch (error) {
+    if (!editingCode && isDuplicateCodeError(error)) {
+      // 编码已被占用：留在抽屉里提示换编码，不关闭、不回传，调用方也就不会误选另一条原因。
+      serverRejectedCode.value = reasonCode
+      return
+    }
     notifyOperationFailure('保存停机原因失败', error, '保存停机原因失败，请稍后重试。')
   }
+}
+
+const DUPLICATE_CODE = 'downtime-reason-code-already-exists'
+function isDuplicateCodeError(error: unknown) {
+  const candidate = error as { message?: unknown; error?: { message?: unknown } } | undefined
+  return candidate?.message === DUPLICATE_CODE || candidate?.error?.message === DUPLICATE_CODE
 }
 </script>
 

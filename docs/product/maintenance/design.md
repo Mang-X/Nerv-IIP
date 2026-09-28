@@ -15,7 +15,8 @@
 
 - `/maintenance/plans` 保养计划:列表(触发模式 / 保养周期 / 下次到期)+ 新建/编辑计划 + 生成到期工单。
 - `/maintenance/work-orders`、`/inspections`、`/spare-parts`、`/reliability`、`/availability`:维护闭环各正式页面。`/reliability` 与 `/availability` 顶部用车间→产线→设备级联范围选择(共用 `useEquipmentScopeSelection`,主数据目录驱动):可靠性指标按单台设备计算,未下钻时默认显示范围设备总览引导下钻;可用窗口接口天然吃设备编号集合,未下钻时直接以范围内设备全集(上限 50 台,超出如实提示截断)做真实范围聚合。
-- `/maintenance/downtime-reasons` 停机原因(#3855):停机原因目录的维护页,列表 + 侧滑抽屉新建/编辑 + 确认删除。新环境由 Maintenance 产品基线预置 12 条标准原因(见 §6),租户可增改删;被维修工单引用过的原因不能删除。
+- `/maintenance/downtime-reasons` 停机原因(#3855):停机原因目录的维护页,列表 + 侧滑抽屉新建/编辑 + 确认删除。新环境由 Maintenance 产品基线预置 12 条标准原因(见 §6),租户可增改删;被维修工单引用过的原因不能删除;新建时编码已存在会被拒绝(提示换编码,不覆盖、不误选原有原因)。
+  - 归属判断:停机原因是 **Maintenance 的码表**,不是主数据字典。理由:①ADR 0029 已把 `downtime-reason` 定为 Maintenance 单一权威,MES 停机、PDA 报修只经可搜索目录读取;②两条完工路径与 v2 建单都按这份目录硬校验原因码,校验与数据同在一个服务才不会跨服务漂移;③每条原因带 OEE 损失类别,属于设备效率口径,由维保域维护。分类与损失类别的受控码也归 Maintenance(`DowntimeReasonVocabulary`),由它的写命令校验;控制台只按码显示中文。
 - `/equipment/{deviceAssetId}` 设备详情「维护与可靠性上下文」:按当前设备收敛的工单/计划/点检/备件/可用窗口 + **运行小时指标卡**(累计运行小时、距下次保养还需 X 小时)。
 
 设备监控 → 维护保养侧栏新增「停机原因」一项(#3855),需 `business.maintenance.downtime-reasons.read`。

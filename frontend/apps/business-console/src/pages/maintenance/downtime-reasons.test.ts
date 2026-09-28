@@ -151,6 +151,29 @@ describe('停机原因维护页（#3855）', () => {
     })
   })
 
+  it('当前页没列出但服务端判定编码已存在：留在抽屉里提示，不报新建成功（#3855）', async () => {
+    state.createReason.mockRejectedValueOnce({
+      success: false,
+      message: 'downtime-reason-code-already-exists',
+      code: 409,
+    })
+    const wrapper = mount(DowntimeReasonsPage, { global: { stubs } })
+    await flushPromises()
+    await button(wrapper, '新建停机原因').trigger('click')
+    await flushPromises()
+
+    await setValue(wrapper, '#dtr-code', 'DT-OTHER-PAGE')
+    await setValue(wrapper, '#dtr-description', '液压系统故障')
+    await setValue(wrapper, '#dtr-category', 'breakdown')
+    await setValue(wrapper, '#dtr-loss', 'availability')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.createReason).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('该原因编码已存在')
+    expect(wrapper.find('#dtr-code').exists()).toBe(true)
+  })
+
   it('编辑时原因编码只读，按原编码提交修改', async () => {
     const wrapper = mount(DowntimeReasonsPage, { global: { stubs } })
     await flushPromises()

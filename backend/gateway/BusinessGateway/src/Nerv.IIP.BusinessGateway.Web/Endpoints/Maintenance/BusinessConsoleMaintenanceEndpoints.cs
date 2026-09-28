@@ -1273,6 +1273,7 @@ public sealed class CreateBusinessConsoleMaintenanceSparePartEndpoint(
 [Tags("Business Console Maintenance")]
 [HttpPost("/api/business-console/v1/maintenance/downtime-reasons")]
 [BusinessGatewayOperationId("createBusinessConsoleMaintenanceDowntimeReason")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class CreateBusinessConsoleMaintenanceDowntimeReasonEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
@@ -1357,12 +1358,8 @@ public sealed class BusinessConsoleCreateMaintenanceDowntimeReasonRequestValidat
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
-        RuleFor(x => x.ReasonCategory)
-            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.ReasonCategories.Contains)
-            .WithMessage("reasonCategory is not a supported downtime reason category");
-        RuleFor(x => x.LossCategory)
-            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.LossCategories.Contains)
-            .WithMessage("lossCategory is not a supported OEE loss category");
+        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -1374,12 +1371,8 @@ public sealed class BusinessConsoleUpdateMaintenanceDowntimeReasonRequestValidat
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
-        RuleFor(x => x.ReasonCategory)
-            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.ReasonCategories.Contains)
-            .WithMessage("reasonCategory is not a supported downtime reason category");
-        RuleFor(x => x.LossCategory)
-            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.LossCategories.Contains)
-            .WithMessage("lossCategory is not a supported OEE loss category");
+        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
     }
 }
 

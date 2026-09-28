@@ -153,6 +153,16 @@ public interface IBusinessMaintenanceClient
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMaintenanceClient
 {
+    // Maintenance 在 409 信封 message 位外发的稳定码（除共享的 idempotency-conflict / lifecycle-conflict 外）。
+    private static readonly HashSet<string> RegisteredLegacySemanticCodes = new(StringComparer.Ordinal)
+    {
+        "downtime-reason-code-already-exists",
+    };
+
+    protected override bool IsRegisteredLegacySemanticCode(string? code) =>
+        base.IsRegisteredLegacySemanticCode(code) ||
+        code is not null && RegisteredLegacySemanticCodes.Contains(code);
+
     private static readonly JsonSerializerOptions LifecycleJsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
@@ -328,7 +338,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             HttpMethod.Post,
             $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}/complete",
             new DownstreamCompleteMaintenanceWorkOrderRequest(
-                new DownstreamMaintenanceWorkOrderId(workOrderId),
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.Result,
@@ -483,7 +492,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             workOrderId,
             "/assignment",
             new DownstreamAssignMaintenanceWorkOrderRequest(
-                new DownstreamMaintenanceWorkOrderId(workOrderId),
                 request.OrganizationId,
                 request.EnvironmentId,
                 actorPrincipalId,
@@ -557,7 +565,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             workOrderId,
             "/actions",
             new DownstreamTransitionMaintenanceWorkOrderRequest(
-                new DownstreamMaintenanceWorkOrderId(workOrderId),
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.Action,
@@ -664,9 +671,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string workOrderId,
         JsonElement downstreamWorkOrderId)
     {
-        // Maintenance 的详情读面把强类型 ID 序列化成字符串（真栈实测），测试夹具用的是 {"id": ...} 对象形；
-        // 两种形态都按同一口径解析，与列表 / 完工回执共用 FormatMaintenanceWorkOrderId。以前只认对象形，
-        // 真栈上每次详情预读都判成下游非法响应（502），控制台「完成工单」因此一律失败。
+        // 详情读面的强类型 ID：Maintenance 独立进程（真栈）序列化成 GUID 字符串，与网关同进程托管（FullChain）时
+        // 是 {"id": ...} 对象形。两种都按同一口径解析，与列表 / 完工回执共用 FormatMaintenanceWorkOrderId；
+        // 以前只认对象形，真栈上每次详情预读都判成下游非法响应（502）。
         if (!Guid.TryParse(workOrderId, out var requestedId)
             || requestedId == Guid.Empty
             || !Guid.TryParse(FormatMaintenanceWorkOrderId(downstreamWorkOrderId), out var responseId)
@@ -1097,7 +1104,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DateTimeOffset OccurredAtUtc);
 
     private sealed record DownstreamAssignMaintenanceWorkOrderRequest(
-        DownstreamMaintenanceWorkOrderId WorkOrderId,
         string OrganizationId,
         string EnvironmentId,
         string ActorPrincipalId,
@@ -1122,7 +1128,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DownstreamMaintenanceWorkOrderActionResponse? Receipt);
 
     private sealed record DownstreamTransitionMaintenanceWorkOrderRequest(
-        DownstreamMaintenanceWorkOrderId WorkOrderId,
         string OrganizationId,
         string EnvironmentId,
         BusinessConsoleMaintenanceWorkOrderAction Action,
@@ -1181,7 +1186,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DateTimeOffset ChangedAtUtc);
 
     private sealed record DownstreamCompleteMaintenanceWorkOrderRequest(
-        DownstreamMaintenanceWorkOrderId WorkOrderId,
         string OrganizationId,
         string EnvironmentId,
         string Result,
@@ -1195,25 +1199,10 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? ActualTechnicianUserId = null,
         string? IdempotencyKey = null);
 
-    /// <summary>
-    /// 维修工单 ID 的下游线上形态：Maintenance 用 NetCorePal 的强类型 ID 转换器，线上是 GUID 字符串，
-    /// 收到 <c>{"id": ...}</c> 对象形会在模型绑定阶段直接 400（真栈实测，#3902 验收时发现）。
-    /// 写出一律用字符串；读入两种形态都接受。
-    /// </summary>
-    [JsonConverter(typeof(DownstreamMaintenanceWorkOrderIdJsonConverter))]
-    private sealed record DownstreamMaintenanceWorkOrderId(string Id);
-
-    private sealed class DownstreamMaintenanceWorkOrderIdJsonConverter : JsonConverter<DownstreamMaintenanceWorkOrderId>
-    {
-        public override DownstreamMaintenanceWorkOrderId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        {
-            using var document = JsonDocument.ParseValue(ref reader);
-            return new DownstreamMaintenanceWorkOrderId(FormatMaintenanceWorkOrderId(document.RootElement));
-        }
-
-        public override void Write(Utf8JsonWriter writer, DownstreamMaintenanceWorkOrderId value, JsonSerializerOptions options) =>
-            writer.WriteStringValue(value.Id);
-    }
+    // 写请求体不带 workOrderId：工单 ID 只放在路由里，由 Maintenance 从路由绑定（#3902 审核阻断 1）。
+    // 强类型 ID 在请求体里的线上形态取决于 Maintenance 的 FastEndpoints 序列化配置——独立进程里是
+    // NetCorePal 转换器的字符串形，与网关同进程托管（FullChain）时 FastEndpoints 的全局序列化配置被
+    // 后启动的网关覆盖，变成对象形。路由里的 ID 与这套配置无关，两边都能绑定。
 
     private sealed record DownstreamCompleteMaintenanceWorkOrderResponse(
         JsonElement WorkOrderId,

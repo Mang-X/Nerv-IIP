@@ -35,6 +35,9 @@ export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   // 不是可交给操作工的可行动文案。字段级中文文案是另一票。
   'request-payload-invalid': '提交的内容有误，请检查后重新提交；仍失败请联系管理员。',
   'lifecycle-conflict': '状态已被其他操作更新',
+  // #3855：新增停机原因时编码已存在（Maintenance 409）。控制台就地新增据此提示，不误报新建成功。
+  'downtime-reason-code-already-exists':
+    '停机原因编码已存在，请换一个编码，或到停机原因页编辑原有原因。',
   // #3155：以下四条此前**没有任何一侧登记**，后端一直在发、前端一直不认，所以直接裸码上屏。
   // 它们现在与上面各条一样受跨语言契约约束：后端注册表里的每个码必须在本表登记，由
   // `scripts/verify-stable-code-frontend-vocabulary.ps1` 在 CI 强制（方向是后端 ⊆ 本表）。

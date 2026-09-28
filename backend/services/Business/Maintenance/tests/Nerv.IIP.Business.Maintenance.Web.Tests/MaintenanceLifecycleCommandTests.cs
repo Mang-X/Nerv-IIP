@@ -117,6 +117,39 @@ public sealed class MaintenanceLifecycleCommandTests
         Assert.Empty(clear.SparePartLines);
     }
 
+    /// <summary>
+    /// #3902：生命周期完工（/actions）也把每条备件的领出工厂与库位写进备件行；
+    /// 丢了它们出库请求就无从扣减（转换器会在源头拒绝）。
+    /// </summary>
+    [Fact]
+    public async Task Lifecycle_complete_persists_the_issue_site_and_location_on_each_spare_part_line()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
+        var workOrder = StartedWorkOrder("DEV-001", "tech-001", "SPARE-OLD");
+        db.MaintenanceWorkOrders.Add(workOrder);
+        await db.SaveChangesAsync();
+
+        await new TransitionMaintenanceWorkOrderCommandHandler(db).Handle(
+            Complete(
+                workOrder,
+                "tech-001",
+                "complete-with-locations",
+                [
+                    new MaintenanceSparePartInput("SPARE-001", 1m, "pcs", "SITE-001", "loc-spare-01"),
+                    new MaintenanceSparePartInput("SPARE-002", 2m, "pcs", "SITE-002", "loc-spare-02"),
+                ]),
+            CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var lines = await db.SparePartLines.AsNoTracking().OrderBy(x => x.SkuCode).ToListAsync();
+        Assert.Collection(
+            lines,
+            line => Assert.Equal(("SPARE-001", "SITE-001", "loc-spare-01"), (line.SkuCode, line.SiteCode, line.LocationCode)),
+            line => Assert.Equal(("SPARE-002", "SITE-002", "loc-spare-02"), (line.SkuCode, line.SiteCode, line.LocationCode)));
+    }
+
     [Fact]
     public async Task Alarm_work_order_walks_through_pause_waiting_completion_verification_and_close_with_audit_history()
     {

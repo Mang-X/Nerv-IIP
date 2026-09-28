@@ -873,7 +873,9 @@ public sealed class CreateMaintenanceSparePartEndpoint(ISender sender)
 public sealed class CreateDowntimeReasonEndpoint(ISender sender)
     : MaintenanceEndpoint<CreateDowntimeReasonRequest, ResponseData<CreateDowntimeReasonResponse>>
 {
-    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CreateDowntimeReasonEndpoint>());
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<CreateDowntimeReasonEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(CreateDowntimeReasonRequest req, CancellationToken ct)
     {

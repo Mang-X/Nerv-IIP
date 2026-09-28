@@ -388,8 +388,9 @@ public sealed record BusinessConsoleAssetReliabilityResponse(
 
 /// <summary>
 /// 停机原因目录维护（#3855）。目录由 Maintenance 独占（ADR 0029），读仍走可搜索目录
-/// <c>downtime-reason</c>；这里只补控制台写入口。分类与损失类别只收 <see cref="BusinessConsoleMaintenanceDowntimeReasonCategories"/>
-/// 里的受控码，界面按码显示中文。
+/// <c>downtime-reason</c>；这里只补控制台写入口。分类与损失类别的受控码归 Maintenance
+/// （<c>DowntimeReasonVocabulary</c>），由 Maintenance 的写命令校验，网关不另存一份。
+/// 编码已存在时 Maintenance 返回 409 稳定码 <c>downtime-reason-code-already-exists</c>，原样透传。
 /// </summary>
 public sealed record BusinessConsoleCreateMaintenanceDowntimeReasonRequest(
     string OrganizationId,
@@ -411,17 +412,3 @@ public sealed record BusinessConsoleDeleteMaintenanceDowntimeReasonRequest(
     string EnvironmentId);
 
 public sealed record BusinessConsoleMaintenanceDowntimeReasonMutationResponse(string ReasonCode);
-
-/// <summary>停机原因分类与 OEE 损失类别的受控码（与 Maintenance 产品基线 seed 同一套）。</summary>
-public static class BusinessConsoleMaintenanceDowntimeReasonCategories
-{
-    public static readonly IReadOnlySet<string> ReasonCategories = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "breakdown", "setup", "minor-stop", "process", "quality", "material", "labor", "external", "planned", "unclassified",
-    };
-
-    public static readonly IReadOnlySet<string> LossCategories = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "availability", "performance", "quality", "planned", "unclassified",
-    };
-}

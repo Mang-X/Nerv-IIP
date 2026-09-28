@@ -1,6 +1,7 @@
 /**
  * 停机原因目录的受控码（#3855）：分类按 TPM 六大损失 / 国内 OEE 实践，损失类别按 OEE 三率。
- * 码值与 Maintenance 产品基线种子、网关写入口校验同一套；界面只显示中文，不回吐码值。
+ * 码表归 Maintenance（`DowntimeReasonVocabulary`，写命令按它校验）；这里只是展示用的中文映射，
+ * 码值须与之一致。界面只显示中文，不回吐码值。
  */
 export const DOWNTIME_REASON_CATEGORY_OPTIONS = [
   { value: 'breakdown', label: '设备故障' },

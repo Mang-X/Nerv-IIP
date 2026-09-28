@@ -1464,8 +1464,13 @@ public sealed class CreateDowntimeReasonCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
-        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
+        // 分类与损失类别只收 Maintenance 词表里的受控码（#3855）；界面按码显示中文，自由文本会变成「其他」。
+        RuleFor(x => x.ReasonCategory)
+            .Must(DowntimeReasonVocabulary.ReasonCategories.All.Contains)
+            .WithMessage("Downtime reason category is not a supported code.");
+        RuleFor(x => x.LossCategory)
+            .Must(DowntimeReasonVocabulary.LossCategories.All.Contains)
+            .WithMessage("Downtime loss category is not a supported code.");
     }
 }
 
@@ -1482,7 +1487,9 @@ public sealed class CreateDowntimeReasonCommandHandler(ApplicationDbContext dbCo
             cancellationToken);
         if (existing is not null)
         {
-            return existing.Id;
+            // 编码即身份：已存在就明确拒绝（409），不悄悄把原记录当成「新建成功」返回——
+            // 控制台就地新增会据此提示「编码已存在」，而不是误选另一条原因（#3855 审核阻断 6）。
+            throw new MaintenanceDowntimeReasonCodeConflictException();
         }
 
         var reason = DowntimeReason.Create(request.OrganizationId, request.EnvironmentId, normalizedReasonCode, request.Description, request.ReasonCategory, request.LossCategory);
@@ -1507,8 +1514,13 @@ public sealed class UpdateDowntimeReasonCommandValidator : AbstractValidator<Upd
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
-        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
+        // 分类与损失类别只收 Maintenance 词表里的受控码（#3855）；界面按码显示中文，自由文本会变成「其他」。
+        RuleFor(x => x.ReasonCategory)
+            .Must(DowntimeReasonVocabulary.ReasonCategories.All.Contains)
+            .WithMessage("Downtime reason category is not a supported code.");
+        RuleFor(x => x.LossCategory)
+            .Must(DowntimeReasonVocabulary.LossCategories.All.Contains)
+            .WithMessage("Downtime loss category is not a supported code.");
     }
 }
 
