@@ -80,7 +80,8 @@ public sealed record ListInventoryDirectoryRequest(
     string? SkuCode = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = OffsetPage.DefaultTake);
+    int Take = OffsetPage.DefaultTake,
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null);
 
 public sealed record PostStockMovementRequest(
     string OrganizationId,
@@ -369,7 +370,8 @@ public sealed class ListInventoryDirectoryEndpoint(ISender sender)
             req.SkuCode,
             req.Keyword,
             req.Skip,
-            req.Take), ct);
+            req.Take,
+            req.AuthorizedSiteCodes), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

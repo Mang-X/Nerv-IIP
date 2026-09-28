@@ -118,25 +118,6 @@ vi.mock('@/composables/useInventoryScope', async () => {
   }
 })
 
-// 库位/批次目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'STAGE-01', label: 'STAGE-01' },
-        { value: 'RACK-A-01', label: 'RACK-A-01' },
-      ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: shallowRef(false),
-    }),
-  }
-})
-
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
@@ -166,6 +147,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
       {
         inboundOrderId: 'ib-1',
         inboundOrderNo: 'IB-1',
+        siteCode: 'SITE-001',
         status: 'open',
         createdAtUtc: '2026-06-01T00:00:00Z',
         qualityGateStatus: wms.qualityGateStatus,
@@ -276,10 +258,10 @@ vi.mock('@/composables/useBusinessWms', () => ({
  * 所以把选择器桩成输入位（透传 id 与 aria-label），让下面的 setInput 仍然表达「选中了某个候选」。
  */
 const onlySelectStub = {
-  props: ['modelValue', 'options', 'id'],
+  props: ['modelValue', 'options', 'id', 'formSiteCode'],
   emits: ['update:modelValue'],
   template:
-    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    '<input :id="id" :data-form-site="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 }
 
 const layoutStub = {
@@ -287,6 +269,7 @@ const layoutStub = {
   NvEntityPicker: onlySelectStub,
   NvSearchSelect: onlySelectStub,
   DirectoryPicker: onlySelectStub,
+  DirectorySuggestInput: onlySelectStub,
 }
 
 describe('WMS operate actions', () => {
@@ -682,6 +665,38 @@ describe('WMS operate actions', () => {
     )
   })
 
+  // #3832 审核 R3-2：库位选择器的工厂只从表单工厂来，每页一条轻量断言证明它传进去了。
+  it.each([
+    [
+      '出库单 · 拣货库位',
+      OutboundPage,
+      '新建出库单',
+      '#wms-out-site',
+      '[aria-label="第 1 行拣货库位"]',
+    ],
+    ['出库单 · 批次', OutboundPage, '新建出库单', '#wms-out-site', '[aria-label="第 1 行批次"]'],
+    ['入库单 · 批次建议', InboundPage, '新建入库单', '#wms-in-site', '[aria-label="第 1 行批次"]'],
+    ['WMS 盘点', CountsPage, '新建盘点单', '#cnt-site', '#cnt-location'],
+  ])(
+    '%s的库位选择器拿到表单工厂',
+    async (_name, Page, createLabel, siteSelector, locationSelector) => {
+      const wrapper = mount(Page, { global: { stubs: layoutStub } })
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes(createLabel))!
+        .trigger('click')
+      await flushPromises()
+
+      setInput(siteSelector, 'S1')
+      await flushPromises()
+
+      expect(document.body.querySelector(locationSelector)!.getAttribute('data-form-site')).toBe(
+        'S1',
+      )
+    },
+  )
+
   it('creates an inbound order with a line item', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
@@ -701,6 +716,10 @@ describe('WMS operate actions', () => {
     setInput('[aria-label="第 1 行收货数量"]', '5')
     setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
     await flushPromises()
+    // 暂存库位按表单工厂收窄候选、就地新增预填它（#3832）。
+    expect(
+      document.body.querySelector('[aria-label="第 1 行暂存库位"]')!.getAttribute('data-form-site'),
+    ).toBe('S1')
 
     document.body
       .querySelector('form')!
@@ -925,6 +944,8 @@ describe('WMS operate actions', () => {
     expect(wrapper.get('a[aria-label="受限上架 IB-1"]').attributes('data-to')).toContain(
       '/wms/putaway',
     )
+    // 入库单的工厂一并带进上架页（#3832 审核 R3-1）。
+    expect(wrapper.get('a[aria-label="受限上架 IB-1"]').attributes('data-to')).toContain('SITE-001')
   })
 
   it('keeps putaway disabled when the inbound response has not released the order', async () => {

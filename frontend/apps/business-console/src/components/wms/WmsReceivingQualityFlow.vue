@@ -13,6 +13,8 @@ import { useSkuNames } from '@/composables/useSkuNames'
 const props = defineProps<{
   inboundOrderId?: string
   inboundOrderNo: string
+  /** 入库单所在的工厂：带进上架页，上架的库位候选与就地新增都按它来。 */
+  siteCode?: string
   gates: BusinessConsoleWmsReceivingQualityGateItem[]
   supplierReturns: BusinessConsoleWmsSupplierReturnItem[]
   qualityGateStatus?: string
@@ -156,6 +158,7 @@ const putawayRoute = computed(() => ({
   query: {
     inboundOrderNo: props.inboundOrderNo,
     inboundOrderId: props.inboundOrderId,
+    siteCode: props.siteCode,
     create: '1',
   },
 }))
