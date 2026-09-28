@@ -138,7 +138,7 @@ public sealed class MesListStatusContractTests
     /// 用<b>值域</b>划界，两个问题同时消失：改名无效，包装层与 <c>items[]</c> 引用也无处藏身。</para>
     /// </summary>
     private static readonly Dictionary<string, string> NonAggregatedDomains =
-        Exempt(
+        BuildExemptTable(
             Exempt(["equipment", "materialShortage", "process", "quality"],
                 "安灯类别（AndonCategory），不是聚合状态值域。"),
             Exempt(["claimed", "closed", "open"],
@@ -166,7 +166,7 @@ public sealed class MesListStatusContractTests
     private static KeyValuePair<string, string> Exempt(string[] domain, string reason) =>
         new(Normalize(domain), reason);
 
-    private static Dictionary<string, string> Exempt(params KeyValuePair<string, string>[] entries) =>
+    private static Dictionary<string, string> BuildExemptTable(params KeyValuePair<string, string>[] entries) =>
         entries.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
 
     [Theory]
@@ -280,8 +280,9 @@ public sealed class MesListStatusContractTests
         Assert.True(
             unowned.Length == 0,
             "以下枚举值域既不等于本票 7 个 MES 读面聚合的域值域、也没在 NonAggregatedDomains 里写明理由 —— "
-                + "无法判断它该归谁。确属本票聚合状态则补登记到 StatusDeclarers（并确认对应 schema 的"
-                + "属性已进 RowStatusProperties）；确属其他读面则在 NonAggregatedDomains 加一条并写明理由。"
+                + "无法判断它该归谁。确属本票聚合状态则把该 schema 的状态属性补登记到 "
+                + "RowStatusProperties（StatusDeclarers 由那张表派生，不要直接改）；"
+                + "确属其他读面则在 NonAggregatedDomains 加一条并写明理由。"
                 + "未认领的值域：\n"
                 + string.Join("\n", unowned.Select(domain => "  - " + domain)));
     }
@@ -327,8 +328,9 @@ public sealed class MesListStatusContractTests
 
         Assert.True(
             strays.Count == 0,
-            "以下 schema 就地声明了本票聚合的状态值域，但不在 StatusDeclarers 登记的 10 个行 schema 里。"
-                + "若它确实是同一聚合的列表行，请补登记到 StatusDeclarers 与 RowStatusProperties；"
+            "以下 schema 就地声明了本票聚合的状态值域，但不在 RowStatusProperties 登记的行 schema 里。"
+                + "若它确实是同一聚合的列表行，请把它连同对应属性补登记到 RowStatusProperties"
+                + "（StatusDeclarers 由那张表派生，不要直接改）；"
                 + "若是别处复用同一值域，请在 NonAggregatedDomains 写明理由。游离项：\n"
                 + string.Join("\n", strays.Select(stray => "  - " + stray)));
     }
@@ -439,8 +441,24 @@ public sealed class MesListStatusContractTests
     private const char DomainSeparator = '\u001F';
 
     /// <summary>把值域排好序后拼成登记表的键形式：顺序不是契约的一部分，值域才是。</summary>
-    private static string Normalize(IEnumerable<string> domain) =>
-        string.Join(DomainSeparator, domain.Order(StringComparer.Ordinal));
+    /// <remarks>
+    /// 拼接是安全的，代价全押在「状态码里不会出现 <see cref="DomainSeparator"/>」上。
+    /// 这个前提不该靠人记：值里真出现分隔符时在这里直接失败，而不是让两个不同值域静默撞成
+    /// 一个键 —— 撞键在豁免表自证里表现为「豁免凭空消失」，很难归因。
+    /// </remarks>
+    private static string Normalize(IEnumerable<string> domain)
+    {
+        var values = domain.Order(StringComparer.Ordinal).ToArray();
+        var colliding = values
+            .Where(value => value.Contains(DomainSeparator, StringComparison.Ordinal))
+            .ToArray();
+        Assert.True(
+            colliding.Length == 0,
+            "状态值里出现了键分隔符 U+001F，会让不同值域静默撞成同一个键：\n"
+                + string.Join("\n", colliding.Select(value => "  - " + value)));
+
+        return string.Join(DomainSeparator, values);
+    }
 
     /// <summary>面上所有 <c>BusinessConsoleMes*</c> schema 的短名（剥掉命名空间前缀）。</summary>
     private static string[] MesSchemaNames(JsonDocument document) => document.RootElement
