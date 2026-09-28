@@ -1,9 +1,11 @@
+import { describeMesReadinessReasons as describeReadinessReasons } from '@nerv-iip/business-core'
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/format'
 import WorkOrderDetailPage from './[workOrderId].vue'
 
 /**
@@ -47,6 +49,7 @@ const detailState = vi.hoisted(() => ({
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
+  describeMesReadinessReasons: (reasons: string[]) => describeReadinessReasons(reasons),
   useMesWorkScopeSelection: () => ({
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
@@ -168,6 +171,54 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     expect(wrapper.text()).not.toContain('已齐套')
     expect(wrapper.text()).not.toContain('用料已备齐')
     expect(wrapper.text()).toContain('结论未取得')
+  })
+
+  it('缺料时展示冻结快照的真实捕获时间和领料、线边收料路径', () => {
+    const capturedAtUtc = '2026-09-22T08:15:00Z'
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [], blockingReasons: [] }
+    detailState.materialReadiness = {
+      readinessStatus: 'Blocked',
+      snapshotCapturedAtUtc: capturedAtUtc,
+      items: [
+        {
+          materialId: 'PK-BOX-01',
+          requiredQuantity: 5.05,
+          availableQuantity: 0,
+          shortageQuantity: 5.05,
+        },
+      ],
+    }
+    const wrapper = mountDetail()
+
+    expect(wrapper.get('[data-testid="material-readiness-snapshot"]').text()).toContain(
+      formatDateTime(capturedAtUtc),
+    )
+    expect(wrapper.get('[data-testid="material-readiness-scope"]').text()).toContain(
+      '原料仓补库存不会直接改变下达结论',
+    )
+    expect(wrapper.text()).toContain('发起领料')
+    expect(wrapper.text()).toContain('确认收料')
+    expect(wrapper.text()).not.toContain('已齐套')
+    wrapper.unmount()
+  })
+
+  it('快照时间未记录时不补造钟点', () => {
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [], blockingReasons: [] }
+    detailState.materialReadiness = {
+      readinessStatus: 'Blocked',
+      snapshotCapturedAtUtc: null,
+      blockingReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照'],
+      items: [],
+    }
+    const wrapper = mountDetail()
+
+    expect(wrapper.get('[data-testid="material-readiness-snapshot"]').text()).toBe(
+      '齐套快照捕获时间：未记录',
+    )
+    expect(wrapper.text()).toContain('工单缺少齐套需求快照')
+    expect(wrapper.text()).not.toContain('已齐套')
+    expect(wrapper.text()).not.toContain('MATERIAL_REQUIREMENT_SNAPSHOT_MISSING')
+    wrapper.unmount()
   })
 
   it('详情与齐套读面都取到且确实无阻塞时才渲染安全结论', () => {

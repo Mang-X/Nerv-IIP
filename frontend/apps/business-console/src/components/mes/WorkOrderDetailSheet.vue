@@ -55,6 +55,7 @@ import {
   UserCheckIcon,
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
 import { RouterLink } from 'vue-router'
 
 /**
@@ -418,11 +419,34 @@ function formatQuantity(value?: number | null) {
           <section class="grid gap-2">
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-sm font-semibold text-foreground">用料齐套</h3>
-              <span v-if="materialShortages.length" class="text-xs text-warning">
-                {{ materialShortages.length }} 项缺料
+              <span
+                v-if="materialReadiness"
+                class="text-xs"
+                :class="
+                  materialReadiness.readinessStatus === 'Ready' ? 'text-success' : 'text-warning'
+                "
+              >
+                {{
+                  materialReadiness.readinessStatus === 'Ready'
+                    ? '已齐套'
+                    : materialShortages.length
+                      ? `${materialShortages.length} 项缺料`
+                      : '阻塞'
+                }}
               </span>
             </div>
             <!-- 口径自解释：齐套 ≠ MRP 的全厂库存口径，必须写在表格旁边（#1291）。 -->
+            <p
+              v-if="materialReadiness"
+              class="text-xs text-muted-foreground"
+              data-testid="material-readiness-snapshot"
+            >
+              齐套快照捕获时间：{{
+                materialReadiness.snapshotCapturedAtUtc
+                  ? formatDateTime(materialReadiness.snapshotCapturedAtUtc)
+                  : '未记录'
+              }}
+            </p>
             <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
               {{ MATERIAL_READINESS_SCOPE_NOTE }}
             </p>
