@@ -43,9 +43,7 @@ const { workers } = useBusinessWorkers({ pageSize: 500 })
 const sitePools = computed(() => pools.value.filter((pool) => pool.siteCode === props.siteCode))
 const poolOptions = computed<EntityPickerOption[]>(() =>
   sitePools.value.flatMap((pool) =>
-    pool.poolCode
-      ? [{ value: pool.poolCode, label: pool.displayName || pool.poolCode, hint: pool.poolCode }]
-      : [],
+    pool.poolCode ? [{ value: pool.poolCode, label: pool.displayName || pool.poolCode }] : [],
   ),
 )
 const poolCode = shallowRef('')
@@ -69,21 +67,19 @@ const operatorOptions = computed<EntityPickerOption[]>(() =>
   ),
 )
 
-watch(
-  open,
-  (isOpen) => {
-    if (!isOpen) return
-    intentKey.value = newIdempotencyKey()
-    poolCode.value = props.currentPoolCode ?? ''
-    operatorId.value = ''
-    formError.value = ''
-  },
-  { immediate: true },
-)
+// 打开时重置表单；本工厂只有一个作业池时直接选中（池目录晚到也补选）。
+// 合成一个监听器：拆成两个时，同一轮里 open 与 siteCode 一起变化，谁先执行不确定，重置会盖掉默认选中。
 watch(
   [open, poolOptions],
-  ([isOpen, options]) => {
-    if (isOpen && !poolCode.value && options.length === 1) poolCode.value = options[0]!.value
+  ([isOpen, options], previous) => {
+    if (!isOpen) return
+    if (!previous?.[0]) {
+      intentKey.value = newIdempotencyKey()
+      poolCode.value = props.currentPoolCode ?? ''
+      operatorId.value = ''
+      formError.value = ''
+    }
+    if (!poolCode.value && options.length === 1) poolCode.value = options[0]!.value
   },
   { immediate: true },
 )

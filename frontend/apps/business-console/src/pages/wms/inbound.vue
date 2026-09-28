@@ -395,7 +395,8 @@ const columns: NvDataTableColumn<InboundRow>[] = [
   // `min-width` 不参与列宽计算（#3734）。
   { key: 'quality', header: '质检门禁', width: 'w-[22rem]' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
+  // 分配作业池与完成动作并排（#3849）：按钮数决定列宽，列宽不够会压到相邻列上。
+  { key: 'actions', header: '操作', align: 'end', width: 'w-[20rem]' },
 ]
 
 function rowKey(row: InboundRow) {

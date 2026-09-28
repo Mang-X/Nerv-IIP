@@ -92,6 +92,26 @@ describe('WmsAssignWorkPoolDialog（#3849）', () => {
     wrapper.unmount()
   })
 
+  it('从关闭态打开（行与开关同一轮变化）时仍默认选中本工厂唯一的作业池', async () => {
+    const wrapper = mount(WmsAssignWorkPoolDialog, {
+      attachTo: document.body,
+      props: { open: false, target: 'inbound', resourceLabel: '入库单' },
+      global: { stubs: { NvEntityPicker: pickerStub, RouterLink: true } },
+    })
+    await flushPromises()
+    await wrapper.setProps({
+      open: true,
+      resourceId: 'ib-1',
+      resourceLabel: '入库单 IB-20260928-000001',
+      siteCode: 'SITE-001',
+      version: 3,
+    })
+    await flushPromises()
+
+    expect(document.body.querySelector<HTMLInputElement>('#wms-assign-pool')!.value).toBe('WP-0001')
+    wrapper.unmount()
+  })
+
   it('指定作业人员时只能从所选池的成员里挑，并随分配一起下发', async () => {
     const wrapper = mountDialog()
     await flushPromises()
