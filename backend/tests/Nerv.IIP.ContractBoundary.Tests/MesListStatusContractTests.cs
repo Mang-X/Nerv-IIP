@@ -31,14 +31,9 @@ namespace Nerv.IIP.ContractBoundary.Tests;
 /// 「是否已恢复」在读面派生，因此值域取聚合上的两个常量
 /// <see cref="WorkCenterUnavailability.OpenStatus"/> / <see cref="WorkCenterUnavailability.RecoveredStatus"/>。</para>
 ///
-/// <para><b>守门判据的根基：值域归属，不是属性命名（#3912 守门六轮演化的结论）</b>。
-/// 前五轮依次用过「属性名以 <c>Status</c> 结尾」「(schema, 属性) 登记表」「跟随 <c>$ref</c>」
-/// 「不跟随 <c>$ref</c> + (schema, 属性) 登记表」，每一轮都被找到了新旁路：
-/// 改名 <c>state</c>/<c>phase</c> 即绕过 <c>$ref</c> 形态、把枚举藏进 <c>*ResponseDataOf*</c>
-/// 包装层即绕过、<c>items[]</c> 元素 <c>$ref</c> 到白名单枚举即绕过。
-/// 共同点是<b>都在认「这个位置像不像状态」</b>，而位置是可以随便改的。
-/// 现在判据只认一件事：<b>这个枚举的值域等于本票哪个聚合的域值域</b>。
-/// 值域是聚合的客观事实，改名、换包装层、换引用形态都改不动它。</para>
+/// <para><b>判据只认「值域归属」</b>：这个枚举的值域等于本票哪个聚合的域值域。
+/// 名字、位置、包装层、引用形态都判无效 —— 改名 <c>state</c>/<c>phase</c> 改不动值域。
+/// 判据的演化史见 <c>docs/reference/api/contracts-and-codegen.md</c>。</para>
 ///
 /// <para>登记表之外的漂移由 <see cref="Every_mes_enum_value_domain_has_an_owner"/> 和
 /// <see cref="Aggregated_status_domains_are_declared_only_by_registered_schemas"/> 兜底：
@@ -96,21 +91,38 @@ public sealed class MesListStatusContractTests
         "NervIIPBusinessGatewayWebApplicationBusinessServices";
 
     /// <summary>
-    /// <b>本票聚合的值域集合</b>，从 <see cref="RowStatusProperties"/> 派生，<b>不另抄一份</b>。
-    ///
-    /// <para>早先这里有一张手抄的 <c>StatusDeclarers</c>（schema 短名 → 属性名 + 值域）。它是
-    /// <see cref="RowStatusProperties"/> 的第二份拷贝，两份可以各改各的：只从
-    /// <c>StatusDeclarers</c> 摘掉一项而 <c>RowStatusProperties</c> 不动，两条反向穷举的
-    /// 「归属集合」就少了一个值域 —— 而这个值域同时还在 <c>NonAggregatedDomains</c> 里
-    /// （工序任务与停机/产能各被多个读面共用），于是唯一一处约束消失、守门照绿。
-    /// 派生而非拷贝，这条旁路就不存在了：两张断言的归属集合与逐条比对的集合是同一个。</para>
-    ///
-    /// <para>这张派生表回答的是「哪个 schema 就地声明了本票状态」，实测每个值域恰好一个声明者
-    /// （<c>*ListResponse</c> 包装层只经 <c>items[].$ref</c> 传递含有、不就地声明）。</para>
+    /// 登记了本票状态的行 schema 短名，从 <see cref="RowStatusProperties"/> 派生。
+    /// 登记的<b>唯一来源</b>是那张表；这里不另抄值域，归属由 <see cref="AggregateValueDomains"/> 提供。
     /// </summary>
-    private static readonly Dictionary<string, string[]> StatusDeclarers = RowStatusProperties
-        .Select(row => ((string)row[0], (string[])row[2]))
-        .ToDictionary(entry => entry.Item1, entry => entry.Item2, StringComparer.Ordinal);
+    private static readonly HashSet<string> StatusDeclarers = RowStatusProperties
+        .Select(row => (string)row[0])
+        .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// <b>本票聚合的状态值域集合</b>，<b>域常量与登记派生值取并集</b>。
+    ///
+    /// <para>两侧都必要，缺任一侧都留旁路：</para>
+    /// <list type="bullet">
+    /// <item><b>域常量一侧</b>防「掏空登记表」：豁免键改成某聚合的新值域、再把该读面从
+    /// <see cref="RowStatusProperties"/> 摘掉时，派生值会跟着少一个，域常量不会。</item>
+    /// <item><b>登记派生一侧</b>防「新增聚合状态源时忘了加域常量」：只登记进
+    /// <see cref="RowStatusProperties"/> 而没加域常量时，该值域仍被认领、豁免表照旧判绿 ——
+    /// 只取域常量会静默放过这一种。</item>
+    /// </list>
+    ///
+    /// <para>并集是这条防线的最小形态，不是替换。</para>
+    /// </summary>
+    private static IEnumerable<string[]> AggregateValueDomains =>
+        [
+            WorkOrderStatuses,
+            OperationTaskStatuses,
+            MaterialIssueRequestStatuses,
+            FinishedGoodsReceiptRequestStatuses,
+            DefectRecordStatuses,
+            ShiftHandoverStatuses,
+            WorkCenterUnavailabilityStatuses,
+            .. RowStatusProperties.Select(row => (string[])row[2]),
+        ];
 
     /// <summary>
     /// 本票聚合之外的值域显式登记表：值域 → 为什么不归本票管。
@@ -126,28 +138,36 @@ public sealed class MesListStatusContractTests
     /// 用<b>值域</b>划界，两个问题同时消失：改名无效，包装层与 <c>items[]</c> 引用也无处藏身。</para>
     /// </summary>
     private static readonly Dictionary<string, string> NonAggregatedDomains =
-        new(StringComparer.Ordinal)
-        {
-            ["equipment materialShortage process quality"] =
-                "安灯类别（AndonCategory），不是聚合状态值域。",
-            ["claimed closed open"] =
-                "安灯呼叫状态（AndonCallStatus，AndonCall.cs 的域枚举），不是本票 7 个读面聚合的状态。",
-            ["all awaitingResponse unclosed"] =
-                "安灯队列过滤值（AndonQueue），是筛选面取值不是状态值域。",
-            ["day shift sku workCenter"] =
-                "生产统计维度（ProductionStatisticsDimension），是统计口径不是状态。",
-            ["degraded resolved"] =
-                "生产统计快照解析状态（ResolutionStatus），不是聚合生命周期状态。",
-            ["historicalDimensionLegacyUnresolved historicalDimensionSnapshotDegraded "
-                + "historicalLocalTimeAmbiguous historicalLocalTimeInvalid "
-                + "historicalReportOutsideShiftWindow historicalShiftDefinitionInvalid "
-                + "historicalShiftDefinitionMissing historicalTimezoneInvalid "
-                + "historicalTimezoneMissing nonPositiveTotalOutput workCenterMissing"] =
-                "生产统计降级原因（DegradedReason），是原因码不是状态值域。",
-            ["GET"] = "工序动作回执里的 HTTP 方法字面量。",
-            ["confirmed"] = "工序动作回执的确认位字面量。",
-            ["accepted"] = "工单转序回执的受理位字面量。",
-        };
+        Exempt(
+            Exempt(["equipment", "materialShortage", "process", "quality"],
+                "安灯类别（AndonCategory），不是聚合状态值域。"),
+            Exempt(["claimed", "closed", "open"],
+                "安灯呼叫状态（AndonCallStatus，AndonCall.cs 的域枚举），不是本票 7 个读面聚合的状态。"),
+            Exempt(["all", "awaitingResponse", "unclosed"],
+                "安灯队列过滤值（AndonQueue），是筛选面取值不是状态值域。"),
+            Exempt(["day", "shift", "sku", "workCenter"],
+                "生产统计维度（ProductionStatisticsDimension），是统计口径不是状态。"),
+            Exempt(["degraded", "resolved"],
+                "生产统计快照解析状态（ResolutionStatus），不是聚合生命周期状态。"),
+            Exempt(
+                [
+                    "historicalDimensionLegacyUnresolved", "historicalDimensionSnapshotDegraded",
+                    "historicalLocalTimeAmbiguous", "historicalLocalTimeInvalid",
+                    "historicalReportOutsideShiftWindow", "historicalShiftDefinitionInvalid",
+                    "historicalShiftDefinitionMissing", "historicalTimezoneInvalid",
+                    "historicalTimezoneMissing", "nonPositiveTotalOutput", "workCenterMissing",
+                ],
+                "生产统计降级原因（DegradedReason），是原因码不是状态值域。"),
+            Exempt(["GET"], "工序动作回执里的 HTTP 方法字面量。"),
+            Exempt(["confirmed"], "工序动作回执的确认位字面量。"),
+            Exempt(["accepted"], "工单转序回执的受理位字面量。"));
+
+    /// <summary>一条豁免：值域按 <see cref="Normalize"/> 归一后作键，值域以数组写明、不手拼分隔符。</summary>
+    private static KeyValuePair<string, string> Exempt(string[] domain, string reason) =>
+        new(Normalize(domain), reason);
+
+    private static Dictionary<string, string> Exempt(params KeyValuePair<string, string>[] entries) =>
+        entries.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
 
     [Theory]
     [MemberData(nameof(RowStatusProperties))]
@@ -232,20 +252,6 @@ public sealed class MesListStatusContractTests
     }
 
     /// <summary>
-    /// 本票 7 个 MES 读面聚合的真实状态值域，<b>直接取自域常量</b>，不经任何登记表派生。
-    /// </summary>
-    private static IEnumerable<string[]> AggregateValueDomains =>
-    [
-        WorkOrderStatuses,
-        OperationTaskStatuses,
-        MaterialIssueRequestStatuses,
-        FinishedGoodsReceiptRequestStatuses,
-        DefectRecordStatuses,
-        ShiftHandoverStatuses,
-        WorkCenterUnavailabilityStatuses,
-    ];
-
-    /// <summary>
     /// <b>值域归属穷举</b>：<c>BusinessConsoleMes*</c> 面上每个枚举值域都必须说得出属于谁 ——
     /// 要么等于本票某个聚合的域值域，要么在 <see cref="NonAggregatedDomains"/> 里写明不属于本票的理由。
     ///
@@ -259,9 +265,8 @@ public sealed class MesListStatusContractTests
     public void Every_mes_enum_value_domain_has_an_owner()
     {
         using var document = LoadSnapshot();
-        var owned = StatusDeclarers
-            .Values
-            .Select(declarer => Normalize(declarer))
+        var owned = AggregateValueDomains
+            .Select(Normalize)
             .Concat(NonAggregatedDomains.Keys)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -297,15 +302,14 @@ public sealed class MesListStatusContractTests
     public void Aggregated_status_domains_are_declared_only_by_registered_schemas()
     {
         using var document = LoadSnapshot();
-        var aggregatedDomains = StatusDeclarers
-            .Values
-            .Select(declarer => Normalize(declarer))
+        var aggregatedDomains = AggregateValueDomains
+            .Select(Normalize)
             .ToHashSet(StringComparer.Ordinal);
 
         var strays = new List<string>();
         foreach (var schemaName in MesSchemaNames(document))
         {
-            if (StatusDeclarers.ContainsKey(schemaName))
+            if (StatusDeclarers.Contains(schemaName))
             {
                 continue;
             }
@@ -425,9 +429,16 @@ public sealed class MesListStatusContractTests
             values.EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal));
     }
 
+    /// <summary>
+    /// 值域键的字段分隔符。用 ASCII 单元分隔符 <c>U+001F</c>：状态码里不会出现它，
+    /// 而空格可能出现 —— 若某个聚合的状态码带空格，<c>["a b","c"]</c> 与 <c>["a","b c"]</c>
+    /// 会撞成同一个键，而豁免表自证断言依赖这个约定。
+    /// </summary>
+    private const char DomainSeparator = '\u001F';
+
     /// <summary>把值域排好序后拼成登记表的键形式：顺序不是契约的一部分，值域才是。</summary>
     private static string Normalize(IEnumerable<string> domain) =>
-        string.Join(' ', domain.Order(StringComparer.Ordinal));
+        string.Join(DomainSeparator, domain.Order(StringComparer.Ordinal));
 
     /// <summary>面上所有 <c>BusinessConsoleMes*</c> schema 的短名（剥掉命名空间前缀）。</summary>
     private static string[] MesSchemaNames(JsonDocument document) => document.RootElement
@@ -467,18 +478,13 @@ public sealed class MesListStatusContractTests
 
     /// <summary>
     /// 在一个 schema 节点内找出所有枚举值域，<b>跟随 <c>$ref</c> 解析到目标类型</b>。
-    ///
-    /// <para>跟随的理由（与被否决的旧方案不同）：旧方案把「属性路径」当判据，跟随只是为了拿路径；
-    /// 现在判据是值域本身，<c>$ref</c> 背后的值域和内联的值域在判据上没有区别，所以必须跟随 ——
-    /// 否则把状态藏到 <c>$ref</c> 后面就等于逃出判定面。隐藏位置因此只剩「换名字」一种，
-    /// 而换名字在值域判据下无效。</para>
-    ///
-    /// <para><c>enum</c> 键下不再往里递归，否则同一条值域会被记两次；
-    /// <c>required</c> 是字段名数组不是值域；<c>x-enumNames</c> 是 NSwag 的显示名扩展不是值域。</para>
+    /// 跟随是必须的：判据认值域，藏在 <c>$ref</c> 后面的值域与内联的值域没有区别，
+    /// 不跟随就等于给藏匿留门。已访问集合按 <c>$ref</c> 目标名截断，环状引用不会无限展开。
     /// </summary>
     /// <summary>
     /// 与 <see cref="FindEnumDomains"/> 相同，但<b>不跟随 <c>$ref</c></b>：只返回本 schema
-    /// 就地写出的值域，引用到别处的值域不算「它声明的」。
+    /// 就地写出的值域，引用到别处的值域不算「它声明的」。传递携带不算「声明」——
+    /// NSwag 的 <c>XxxListResponse</c> 包装层经 <c>items[].$ref</c> 含有该值域、自身不声明。
     /// </summary>
     private static IEnumerable<string[]> FindLocalEnumDomains(JsonDocument document, JsonElement node)
     {

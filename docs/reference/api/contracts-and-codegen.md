@@ -175,22 +175,28 @@ Governance 的一般破坏性变更/主版本规则。
 1. **逐条值域比对**（21 条）：10 个行 schema 的 `status` / `receiptStatus` 与 11 条列表
    `status` 查询参数，各与对应聚合的域常量比。
 2. **值域归属穷举**（`Every_mes_enum_value_domain_has_an_owner`）：扫出 `BusinessConsoleMes*`
-   下所有 **object 型 schema**（实测 134 个里 128 个：响应包装、请求体、详情、联合体都在内 ——
-   扫得比「行 schema」宽是好事，宽到覆盖将来新增的任何一种）的所有枚举值域，**跟随 `$ref` 解析到
-   实际值域**（藏在包装层、藏在 `items[]` 元素上、经几层间接引用都算同一处），逐个问
-   「说得出属于谁吗」。新增一个枚举值域而既不属本票聚合、也没在白名单写明理由时必然红 —— 只做第 1 层
-   的话，那条值域根本进不来，门禁会照绿。
+   前缀下的**全部 134 个 schema**（响应包装、请求体、详情、联合体、以及 6 个非 object 的
+   string 型枚举 schema 都在内），**跟随 `$ref` 解析到实际值域**（藏在包装层、藏在 `items[]`
+   元素上、经几层间接引用都算同一处），逐个问「说得出属于谁吗」。新增一个枚举值域而
+   既不属本票聚合、也没在白名单写明理由时必然红 —— 只做第 1 层的话，那条值域根本进不来，
+   门禁会照绿。
+
+   **那 6 个 string 型 schema 不是可扫可不扫的边角料，判据实际依赖它们**：
+   `AndonCategory` / `AndonStatus` / `AndonQueue` / `ProductionStatisticsDimension` /
+   `ProductionStatisticsResolutionStatus` / `ProductionStatisticsDegradedReason` ——
+   `NonAggregatedDomains` 9 项里有 6 项的值域**只由这 6 个 string schema 承载**。
+   若哪天把扫描面收窄到只扫 object 型 schema，这 6 项豁免会同时变成「无人认领」而误红。
 3. **声明者穷举**（`Aggregated_status_domains_are_declared_only_by_registered_schemas`）：
    **本票聚合的状态值域只允许由登记的 10 个行 schema 就地声明**（不跟随 `$ref`）。
    NSwag 的 `XxxListResponse` / `XxxResponse` 包装层只经 `items[].$ref` 传递地含有该值域、
    自身不声明，所以不判「携带」只判「声明」—— 判携带等于要求把 10 个生成物包装层也登记一遍。
 4. **豁免表自证**（`Every_exempt_value_domain_is_genuinely_non_aggregated`）：
    `NonAggregatedDomains` 的任何一条键都不得等于本票任一聚合的真实状态值域。
-   前四层都只问「值域有没有归属」，豁免表把值域判成「不归本票管」时不与之矛盾 ——
+   前三层都只问「值域有没有归属」，豁免表把值域判成「不归本票管」时不与之矛盾 ——
    于是一条真实漂移可以「给域加新状态 + 契约不跟进 + 豁免键改成新值域 + 把该读面从
    `RowStatusProperties` 摘掉」四步绕过，让该聚合的逐条比对整体消失。
-   **本条判据取七个域常量数组本身，不取 `StatusDeclarers` 派生值** ——
-   上面那条绕法的第二步正是掏空派生表，用派生值判据的话断言会跟着一起失效。
+   **本条判据取「域常量 ∪ 登记派生值」的并集**：只取域常量能防上面那条（掏空登记表），
+   只取派生值则在「新增聚合状态源时忘了加域常量」时静默放过 —— 两侧各防一种，缺任一侧都留旁路。
 5. **路径侧反向穷举**（`Every_mes_list_status_query_is_registered`）：扫出
    `/api/business-console/v1/mes/**` 下所有带 `status` 查询参数的 GET 路径，逐个问
    「登记了吗」，与第 2、3 层对称。
@@ -211,21 +217,18 @@ Governance 的一般破坏性变更/主版本规则。
 ### 覆盖边界与已实测的放行项（不要把「注入全红」读成无边界）
 
 改动 snapshot 的 7 条注入实测全部转红（含前几轮曾放行的三种），基线 25/25 绿。
-但有一类形态**经实测仍为绿**，如实登记在此，不要在别处复述成「一律转红」：
+下表两类形态**经实测为绿**。登记时**写机制而不是只写颜色** —— 两者是绿的机制相同
+（都在扫描面之外），但含义完全不同：不是「扫到了但放行」，而是「扫不到」。
 
-| 形态 | 实测 | 是否有意 | 理由 |
-| --- | --- | --- | --- |
-| 状态 enum 藏进 `*ResponseDataOf*` 包装层（`NetCorePalExtensions…` 前缀） | 绿 | **有意（范围取舍）** | 扫描前缀是 `BusinessConsoleMes`，该层不在面上。实测本票 7 个聚合的值域在 MES 前缀外**就地声明数为 0**（若计入经 `$ref` 的传递携带则非 0：WorkOrder 1、OperationTask 5、MaterialIssue 2、FinishedGoods 1、DefectRecord 1、WorkCenterUnavailability 2、ShiftHandover 0 —— 判据只判声明不判携带，故不构成漏网）。把包装层纳入判定面只会让 10 个 NSwag 生成物误红。 |
+| 形态 | 实测 | 机制 |
+| --- | --- | --- |
+| 状态 enum 藏进 `*ResponseDataOf*` 包装层（`NetCorePalExtensions…` 前缀） | 绿 | 第 2、3 层的扫描面是 `CollectEnumValueDomains` / `MesSchemaNames`，两者**只按 `MesSchemaPrefix` 过滤**、无 object 类型筛选。该层前缀是 `NetCorePalExtensions…`，不在面上 —— 判据**扫不到它**。**有意（范围取舍）**：实测本票 7 个聚合的值域在 MES 前缀外**就地声明数为 0**（若计入经 `$ref` 的传递携带则非 0：WorkOrder 1、OperationTask 5、MaterialIssue 2、FinishedGoods 1、DefectRecord 1、WorkCenterUnavailability 2、ShiftHandover 0 —— 判据只判声明不判携带，故不构成漏网）。把包装层纳入判定面只会让 10 个 NSwag 生成物误红。 |
+| 在 MES 前缀外新增一个与本票无关的只读 schema、其值域无人认领 | 绿 | 同一机制：值域无人认领本该由第 2 层判红，但该 schema 在 `MesSchemaPrefix` 之外，**两层都扫不到**，所以红不起来。**这不是「值域有人认领所以绿」** —— 把同一形态放进 MES 前缀内，值域未认领即如期转红。 |
 
-**将来若某个包装层就地内联了本票状态值域，需重评本条范围取舍** ——
+**本票边界就是 `BusinessConsoleMes` 前缀**（两条放行项的共同机制）。
+**将来若某个包装层就地内联了本票状态值域，需重评本条边界** ——
 判据只认值域不认传递，则「包装层含该值域」在定义上不可能独立于行 schema 存在；
 但「独立声明」是可以发生的，那时本票边界就该重新划。
-
-另有一类形态**经实测为红**，登记在此避免下次再被当成放行项：
-「在 MES 前缀外新增一个与本票无关的只读 schema、其值域无人认领」实测**红** ——
-第 2 层扫的是 `BusinessConsoleMes*` 面上（134 个 schema 里 128 个 object 型）的全部值域，
-新增只读 schema 若在面内且值域未认领即转红；登记新读面时同步加一条
-`NonAggregatedDomains` 即可。
 
 白名单只剩两张，粒度都落在**值域**上（不是位置），新增值域却忘了登记时断言会红并列出未认领项：
 
