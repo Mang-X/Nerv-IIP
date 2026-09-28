@@ -41,9 +41,9 @@ namespace Nerv.IIP.ContractBoundary.Tests;
 /// 值域是聚合的客观事实，改名、换包装层、换引用形态都改不动它。</para>
 ///
 /// <para>登记表之外的漂移由 <see cref="Every_mes_enum_value_domain_has_an_owner"/> 和
-/// <see cref="Aggregated_status_domains_appear_only_on_registered_schemas"/> 兜底：
+/// <see cref="Aggregated_status_domains_are_declared_only_by_registered_schemas"/> 兜底：
 /// 面上每个枚举值域都必须说得出属于谁（要么等于本票聚合域值域，要么在
-/// <see cref="NonAggregatedDomains"/> 里写明理由），而本票的值域只允许出现在登记的行 schema 上。</para>
+/// <see cref="NonAggregatedDomains"/> 里写明理由），而本票的值域只允许由登记的行 schema 就地声明。</para>
 /// </summary>
 public sealed class MesListStatusContractTests
 {
@@ -66,7 +66,8 @@ public sealed class MesListStatusContractTests
 
     /// <summary>
     /// 行属性上的状态：schema 短名 + 属性名 + 该聚合的真实值域。
-    /// 键（schema 短名）同时也是 <see cref="AggregatedStatusDomains"/> 的键。
+    /// 这张表是本票状态登记的<b>唯一来源</b>：逐条比对用它，两条反向穷举的归属集合
+    /// 由它派生（<see cref="StatusDeclarers"/>），不再另抄一份。
     /// </summary>
     public static IEnumerable<object[]> RowStatusProperties =>
     [
@@ -95,30 +96,21 @@ public sealed class MesListStatusContractTests
         "NervIIPBusinessGatewayWebApplicationBusinessServices";
 
     /// <summary>
-    /// 本票 7 个 MES 读面聚合的状态值域，按<b>声明该枚举的 schema</b> 登记。
+    /// <b>本票聚合的值域集合</b>，从 <see cref="RowStatusProperties"/> 派生，<b>不另抄一份</b>。
     ///
-    /// <para>实测（<c>BusinessConsoleMes*</c> 面上 134 个 schema）：本票的每个值域都<b>内联声明</b>在
-    /// 恰好一个 schema 上，从不藏在 <c>$ref</c> 后面；<c>*ListResponse</c> 包装层只通过
-    /// <c>items[].$ref</c> 指向行 schema，自身不声明任何状态枚举。所以「值域 → 声明者」是
-    /// 一一对应的，登记表按声明者登记即可，不必按名字猜哪个是状态。</para>
+    /// <para>早先这里有一张手抄的 <c>StatusDeclarers</c>（schema 短名 → 属性名 + 值域）。它是
+    /// <see cref="RowStatusProperties"/> 的第二份拷贝，两份可以各改各的：只从
+    /// <c>StatusDeclarers</c> 摘掉一项而 <c>RowStatusProperties</c> 不动，两条反向穷举的
+    /// 「归属集合」就少了一个值域 —— 而这个值域同时还在 <c>NonAggregatedDomains</c> 里
+    /// （工序任务与停机/产能各被多个读面共用），于是唯一一处约束消失、守门照绿。
+    /// 派生而非拷贝，这条旁路就不存在了：两张断言的归属集合与逐条比对的集合是同一个。</para>
     ///
-    /// <para>这张表是<b>事实的映射</b>，不是判据本身。判据是值域归属；这张表负责回答
-    /// 「等于这个值域的那个 schema 叫什么、它的哪个属性带这个值域」。</para>
+    /// <para>这张派生表回答的是「哪个 schema 就地声明了本票状态」，实测每个值域恰好一个声明者
+    /// （<c>*ListResponse</c> 包装层只经 <c>items[].$ref</c> 传递含有、不就地声明）。</para>
     /// </summary>
-    private static readonly Dictionary<string, (string PropertyName, string[] Domain)> StatusDeclarers =
-        new(StringComparer.Ordinal)
-        {
-            ["BusinessConsoleMesWorkOrderItem"] = ("status", WorkOrderStatuses),
-            ["BusinessConsoleMesOperationTaskItem"] = ("status", OperationTaskStatuses),
-            ["BusinessConsoleMesMaterialIssueRequestRow"] = ("status", MaterialIssueRequestStatuses),
-            ["BusinessConsoleMesDispatchTaskRow"] = ("status", OperationTaskStatuses),
-            ["BusinessConsoleMesOperationTaskRow"] = ("status", OperationTaskStatuses),
-            ["BusinessConsoleMesWipSummaryRow"] = ("status", OperationTaskStatuses),
-            ["BusinessConsoleMesRelatedQualityItemRow"] = ("status", DefectRecordStatuses),
-            ["BusinessConsoleMesReceiptRequestRow"] = ("receiptStatus", FinishedGoodsReceiptRequestStatuses),
-            ["BusinessConsoleMesDowntimeEventRow"] = ("status", WorkCenterUnavailabilityStatuses),
-            ["BusinessConsoleMesCapacityImpactRow"] = ("status", WorkCenterUnavailabilityStatuses),
-        };
+    private static readonly Dictionary<string, string[]> StatusDeclarers = RowStatusProperties
+        .Select(row => ((string)row[0], (string[])row[2]))
+        .ToDictionary(entry => entry.Item1, entry => entry.Item2, StringComparer.Ordinal);
 
     /// <summary>
     /// 本票聚合之外的值域显式登记表：值域 → 为什么不归本票管。
@@ -217,7 +209,7 @@ public sealed class MesListStatusContractTests
         using var document = LoadSnapshot();
         var owned = StatusDeclarers
             .Values
-            .Select(declarer => Normalize(declarer.Domain))
+            .Select(declarer => Normalize(declarer))
             .Concat(NonAggregatedDomains.Keys)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -255,7 +247,7 @@ public sealed class MesListStatusContractTests
         using var document = LoadSnapshot();
         var aggregatedDomains = StatusDeclarers
             .Values
-            .Select(declarer => Normalize(declarer.Domain))
+            .Select(declarer => Normalize(declarer))
             .ToHashSet(StringComparer.Ordinal);
 
         var strays = new List<string>();
