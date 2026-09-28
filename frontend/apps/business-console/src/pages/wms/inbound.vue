@@ -145,8 +145,10 @@ const completeIntentLocked = shallowRef(false)
 usePendingWriteLeaveGuard(completeIntentLocked)
 
 // 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
+// 码值按 WMS 收货口径下发（#3923）：「可用」即合格来料，用库存标准码 `unrestricted`，
+// 在 WMS 免检清单里，收货后直接可上架；`available` 只是库存侧别名，不在免检清单，会被误判成待检。
 const QUALITY_OPTIONS = [
-  { label: '可用', value: 'available' },
+  { label: '可用', value: 'unrestricted' },
   { label: '待检', value: 'inspection' },
   { label: '冻结', value: 'blocked' },
   { label: '不合格', value: 'rejected' },
@@ -173,7 +175,7 @@ function emptyLine(): InboundLine {
     receivedQuantity: '',
     stagingLocationCode: '',
     lotNo: '',
-    qualityStatus: 'available',
+    qualityStatus: 'unrestricted',
     ownerType: 'owned',
   }
 }

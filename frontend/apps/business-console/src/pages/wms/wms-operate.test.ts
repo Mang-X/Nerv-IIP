@@ -730,7 +730,7 @@ describe('WMS operate actions', () => {
       uomCode: 'pcs',
       receivedQuantity: 5,
       stagingLocationCode: 'A-01',
-      qualityStatus: 'available',
+      qualityStatus: 'unrestricted',
       ownerType: 'owned',
     })
   })
