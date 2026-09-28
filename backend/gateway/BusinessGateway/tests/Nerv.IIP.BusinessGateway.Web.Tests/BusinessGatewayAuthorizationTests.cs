@@ -1203,6 +1203,23 @@ public sealed class BusinessGatewayAuthorizationTests
             quantity = 1,
             uomCode = "EA",
         },
+        "/api/business-console/v1/maintenance/downtime-reasons" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "DT-HYD",
+            description = "液压系统故障",
+            reasonCategory = "breakdown",
+            lossCategory = "availability",
+        },
+        "/api/business-console/v1/maintenance/downtime-reasons/DT-HYD" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            description = "液压系统故障",
+            reasonCategory = "breakdown",
+            lossCategory = "availability",
+        },
         "/api/business-console/v1/master-data/teams/T-001/members/user-001" => new
         {
             organizationId = "org-001",
@@ -1407,6 +1424,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/reliability/summary?deviceAssetId=DEV-OIL-01&technicianUserId=worker-001&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/downtime-reasons", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/maintenance/downtime-reasons/DT-HYD", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
+        routes.Add(HttpMethod.Delete, "/api/business-console/v1/maintenance/downtime-reasons/DT-HYD", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/availability-windows?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementRead);

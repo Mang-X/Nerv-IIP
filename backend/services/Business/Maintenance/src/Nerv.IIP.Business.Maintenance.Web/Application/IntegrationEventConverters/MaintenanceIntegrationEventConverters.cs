@@ -114,6 +114,17 @@ public sealed class MaintenanceSparePartIssuedIntegrationEventConverter
                 "the inventory movement cannot be requested without the spare part's unit.");
         }
 
+        // 领出工厂与库位来自领用时选定的已登记库位（#3902）。以前写死 maintenance / maintenance-spares，
+        // Inventory 拒收未登记库位后每一笔都会失败；缺失同样是源头数据缺陷，照单位的做法在这里显形。
+        var siteCode = line.SiteCode?.Trim();
+        var locationCode = line.LocationCode?.Trim();
+        if (string.IsNullOrEmpty(siteCode) || string.IsNullOrEmpty(locationCode))
+        {
+            throw new InvalidOperationException(
+                $"Maintenance spare part line '{line.Id}' on work order '{workOrder.Id}' has no issue site/location; " +
+                "the inventory movement cannot be requested without a registered stock location.");
+        }
+
         // The key is derived from the work order + line only, so retries of the same issue stay idempotent
         // on the consumer side regardless of when the unit was filled in.
         var idempotencyKey = $"maintenance:{workOrder.OrganizationId}:{workOrder.EnvironmentId}:{workOrder.Id}:{line.Id}";
@@ -131,20 +142,21 @@ public sealed class MaintenanceSparePartIssuedIntegrationEventConverter
             idempotencyKey,
             new InventoryMovementRequestedPayload(
                 InventoryMovementTypes.Outbound,
-                // 载荷来源服务面（#1370 ③ 批次 D 销账）；下方第 9 位 SiteCode 与第 13 位 OwnerType
-                // 的 "maintenance" 是同值不同义的站点码/归属方类型，各自域内取值，不改。
+                // 载荷来源服务面（#1370 ③ 批次 D 销账）。
                 InventoryMovementSourceServices.Maintenance,
                 workOrder.Id.ToString(),
                 line.Id.ToString(),
                 idempotencyKey,
                 line.SkuCode,
                 uomCode,
-                "maintenance",
-                "maintenance-spares",
+                siteCode,
+                locationCode,
                 null,
                 null,
                 "available",
-                "maintenance",
+                // 备件是企业自有库存（采购收货按 company 入账）；维保是消耗方而非归属方。
+                // 写成 maintenance 会去找一条不存在的维保归属台账，出库必然因负库存被拒（#3902）。
+                "company",
                 null,
                 -Math.Abs(line.Quantity),
                 occurredAtUtc));

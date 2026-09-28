@@ -2104,24 +2104,39 @@
       "method": "POST",
       "route": "/api/business/v1/maintenance/downtime-reasons",
       "operationId": "createMaintenanceDowntimeReason",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMaintenanceDowntimeReason"
+      ]
     },
     {
       "service": "Maintenance",
       "method": "DELETE",
       "route": "/api/business/v1/maintenance/downtime-reasons/{reasonCode}",
       "operationId": "deleteMaintenanceDowntimeReason",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "deleteBusinessConsoleMaintenanceDowntimeReason"
+      ]
     },
     {
       "service": "Maintenance",
       "method": "PUT",
       "route": "/api/business/v1/maintenance/downtime-reasons/{reasonCode}",
       "operationId": "updateMaintenanceDowntimeReason",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleMaintenanceDowntimeReason"
+      ]
     },
     {
       "service": "Maintenance",

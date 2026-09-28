@@ -17,6 +17,12 @@ public static class MaintenanceStableWireCodes
     public const string StoredCompletionReceiptIsInvalid = "stored-maintenance-completion-receipt-is-invalid";
 }
 
+/// <summary>新增停机原因时编码已存在（#3855）：409，稳定码 <see cref="SafeCode"/>。</summary>
+public sealed class MaintenanceDowntimeReasonCodeConflictException : Exception
+{
+    public const string SafeCode = "downtime-reason-code-already-exists";
+}
+
 public sealed class MaintenanceIdempotencyConflictException : Exception
 {
     public const string SafeCode = "idempotency-conflict";
@@ -43,6 +49,13 @@ public sealed class MaintenanceLifecycleConflictMiddleware(
         try
         {
             await next(context);
+        }
+        catch (MaintenanceDowntimeReasonCodeConflictException)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+            await context.Response.WriteAsJsonAsync(
+                new MaintenanceLifecycleConflictResponse(false, MaintenanceDowntimeReasonCodeConflictException.SafeCode),
+                context.RequestAborted);
         }
         catch (MaintenanceIdempotencyConflictException)
         {

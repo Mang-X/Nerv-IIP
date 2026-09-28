@@ -47,6 +47,7 @@ describe('business console maintenance navigation', () => {
 
     expect(resolveDomainId('/maintenance/inspections')).toBe('equipment')
     expect(resolveDomainId('/maintenance/spare-parts')).toBe('equipment')
+    expect(resolveDomainId('/maintenance/downtime-reasons')).toBe('equipment')
     expect(resolveDomainId('/maintenance/reliability')).toBe('equipment')
     expect(resolveDomainId('/maintenance/availability')).toBe('equipment')
     expect(maintenancePaths).toEqual([
@@ -54,6 +55,7 @@ describe('business console maintenance navigation', () => {
       '/maintenance/plans',
       '/maintenance/inspections',
       '/maintenance/spare-parts',
+      '/maintenance/downtime-reasons',
       '/maintenance/reliability',
       '/maintenance/availability',
     ])

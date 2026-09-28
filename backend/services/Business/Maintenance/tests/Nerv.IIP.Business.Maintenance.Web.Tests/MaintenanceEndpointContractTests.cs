@@ -911,7 +911,7 @@ public sealed class MaintenanceEndpointContractTests
         await dbContext.SaveChangesAsync();
 
         var sparePartId = await new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
-            new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "pcs"),
+            new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "pcs", "SITE-001", "loc-spare-01"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -927,6 +927,8 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(2m, item.Quantity);
         Assert.Equal("pcs", item.UomCode);
         Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
+        Assert.Equal("SITE-001", item.SiteCode);
+        Assert.Equal("loc-spare-01", item.LocationCode);
     }
 
     [Fact]

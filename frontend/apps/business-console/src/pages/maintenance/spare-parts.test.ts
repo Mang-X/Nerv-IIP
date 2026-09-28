@@ -34,8 +34,19 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => {
       uomsPending: shallowRef(false),
     }),
     useMaintenanceDocumentCatalog: () => ({
-      workOrderOptions: computed(() => [{ value: 'wo-1', label: 'WO-00000001' }]),
+      workOrderOptions: computed(() => [
+        { value: 'wo-1', label: 'WO-00000001' },
+        { value: 'wo-2', label: 'WO-00000002' },
+      ]),
       workOrdersPending: shallowRef(false),
+      // wo-1 的设备登记在 SITE-001；wo-2 的设备没有所属工厂。
+      workOrderDeviceId: (id?: string | null) =>
+        id === 'wo-1' ? 'DEV-CNC-01' : id === 'wo-2' ? 'DEV-NO-SITE' : '',
+    }),
+    useDeviceSiteLookup: () => ({
+      deviceSiteCode: (device?: string | null) => (device === 'DEV-CNC-01' ? 'SITE-001' : ''),
+      siteLabel: (code: string) => (code === 'SITE-001' ? '一号工厂' : code),
+      devicesPending: shallowRef(false),
     }),
   }
 })
@@ -52,10 +63,10 @@ vi.mock('@/composables/useSkuNames', () => ({
 }))
 
 const idInputStub = {
-  props: ['modelValue', 'id'],
+  props: ['modelValue', 'id', 'formSiteCode'],
   emits: ['update:modelValue'],
   template:
-    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    '<input :id="id" :data-form-site-code="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 }
 
 const stubs = {
@@ -120,10 +131,63 @@ describe('备件需求新建', () => {
     await flushPromises()
     expect((wrapper.get('#sp-uom').element as HTMLInputElement).value).toBe('kg')
 
+    await type(wrapper, '#sp-location', 'loc-spare-01')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(state.createSparePart).toHaveBeenCalledWith(
       expect.objectContaining({ skuCode: 'SKU-NEW', uomCode: 'kg' }),
     )
+  })
+
+  it('备件从工单设备所在工厂的库位领出：工厂随工单带出，库位只在该工厂里选（#3902）', async () => {
+    state.createSparePart.mockClear()
+    const wrapper = mount(SparePartsPage, { global: { stubs } })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建备件需求'))!
+      .trigger('click')
+
+    await type(wrapper, '#sp-work-order', 'wo-1')
+    expect((wrapper.get('#sp-site').element as HTMLInputElement).value).toBe('一号工厂')
+    expect(wrapper.get('#sp-location').attributes('data-form-site-code')).toBe('SITE-001')
+    await type(wrapper, '#sp-sku', 'BRG-6205')
+
+    // 没选库位不能提交。
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.createSparePart).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请选择领出库位。')
+
+    await type(wrapper, '#sp-location', 'loc-spare-01')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.createSparePart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workOrderId: 'wo-1',
+        siteCode: 'SITE-001',
+        locationCode: 'loc-spare-01',
+      }),
+    )
+  })
+
+  it('工单设备没有所属工厂时如实提示，不猜工厂也不提交（#3902）', async () => {
+    state.createSparePart.mockClear()
+    const wrapper = mount(SparePartsPage, { global: { stubs } })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建备件需求'))!
+      .trigger('click')
+
+    await type(wrapper, '#sp-work-order', 'wo-2')
+    expect((wrapper.get('#sp-site').element as HTMLInputElement).value).toBe('设备未登记所属工厂')
+    await type(wrapper, '#sp-sku', 'BRG-6205')
+    await type(wrapper, '#sp-location', 'loc-spare-01')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.createSparePart).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('该工单的设备未登记所属工厂')
   })
 })

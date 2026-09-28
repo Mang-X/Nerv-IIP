@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceSpareParts } from '@/composables/useBusinessMaintenance'
 import {
+  useDeviceSiteLookup,
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
   useMaintenanceDocumentCatalog,
@@ -77,11 +78,21 @@ const createForm = reactive({
   skuCode: '',
   quantity: '1',
   uomCode: '',
+  locationCode: '',
 })
 const createError = shallowRef('')
 
 // 工单 / 物料 / 单位都从既有读面选，不手输编码。
-const { workOrderOptions, workOrdersPending } = useMaintenanceDocumentCatalog()
+const { workOrderOptions, workOrdersPending, workOrderDeviceId } = useMaintenanceDocumentCatalog()
+// 备件从工单设备所在工厂的已登记库位领出（#3902）：工厂由工单推出，只读；库位在该工厂里选。
+const { deviceSiteCode, siteLabel } = useDeviceSiteLookup()
+const createSiteCode = computed(() =>
+  deviceSiteCode(workOrderDeviceId(createForm.workOrderId.trim())),
+)
+// 换了工单，工厂可能跟着变，原先选的库位就不再属于它。
+watch(createSiteCode, () => {
+  createForm.locationCode = ''
+})
 const { baseUomBySku } = useEquipmentSkuCatalog()
 const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 // 备件领用单位默认跟随物料的基本单位，避免手选错单位对不上库存台账。
@@ -129,6 +140,12 @@ const columns: NvDataTableColumn<SparePartRow>[] = [
   // 读面只给 workOrderId（GUID），没有人读工单号——GUID 不上屏，先如实留白（后端缺口）。
   { key: 'workOrderId', header: '维修工单', accessor: () => '—' },
   { key: 'quantity', header: '需求数量', align: 'end', accessor: (r) => quantityLabel(r) },
+  {
+    key: 'locationCode',
+    header: '领出库位',
+    // 早期登记的备件行没有领出库位，如实显示未记录。
+    accessor: (r) => (r.locationCode ? r.locationCode : '未记录'),
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
@@ -145,6 +162,7 @@ function openCreate() {
   createForm.skuCode = ''
   createForm.quantity = '1'
   createForm.uomCode = ''
+  createForm.locationCode = ''
   createError.value = ''
   createOpen.value = true
 }
@@ -159,6 +177,16 @@ async function submitCreate() {
     return
   }
 
+  if (!createSiteCode.value) {
+    createError.value =
+      '该工单的设备未登记所属工厂，无法确定备件从哪里领出，请先在设备台账维护所属工厂。'
+    return
+  }
+  if (!createForm.locationCode.trim()) {
+    createError.value = '请选择领出库位。'
+    return
+  }
+
   const body: BusinessConsoleCreateMaintenanceSparePartRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
@@ -166,6 +194,8 @@ async function submitCreate() {
     skuCode: createForm.skuCode.trim(),
     quantity,
     uomCode: createForm.uomCode.trim() || undefined,
+    siteCode: createSiteCode.value,
+    locationCode: createForm.locationCode.trim(),
   }
 
   try {
@@ -341,6 +371,38 @@ async function submitCreate() {
                 :loading="uomsPending"
                 clearable
                 aria-label="单位"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="sp-site">领出工厂</NvFieldLabel>
+              <NvInput
+                id="sp-site"
+                :model-value="
+                  createSiteCode
+                    ? siteLabel(createSiteCode)
+                    : createForm.workOrderId
+                      ? '设备未登记所属工厂'
+                      : '选择工单后带出'
+                "
+                readonly
+                aria-readonly="true"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="sp-location">领出库位</NvFieldLabel>
+              <DirectoryPicker
+                id="sp-location"
+                v-model="createForm.locationCode"
+                directory-type="location"
+                creatable
+                :form-site-code="createSiteCode"
+                :site-missing-text="
+                  createForm.workOrderId
+                    ? '设备未登记所属工厂，请先在设备台账维护所属工厂'
+                    : '请先选择维修工单'
+                "
+                placeholder="选择领出库位"
+                aria-label="领出库位"
               />
             </NvField>
           </NvFieldGroup>

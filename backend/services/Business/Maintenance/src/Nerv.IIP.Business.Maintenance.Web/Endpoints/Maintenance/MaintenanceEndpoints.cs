@@ -470,7 +470,9 @@ public sealed record CreateMaintenanceSparePartRequest(
     MaintenanceWorkOrderId WorkOrderId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed record CreateMaintenanceSparePartResponse(SparePartLineId SparePartLineId);
 
@@ -863,7 +865,7 @@ public sealed class CreateMaintenanceSparePartEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenanceSparePartRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenanceSparePartCommand(req.OrganizationId, req.EnvironmentId, req.WorkOrderId, req.SkuCode, req.Quantity, req.UomCode), ct);
+        var id = await sender.Send(new CreateMaintenanceSparePartCommand(req.OrganizationId, req.EnvironmentId, req.WorkOrderId, req.SkuCode, req.Quantity, req.UomCode, req.SiteCode, req.LocationCode), ct);
         await Send.OkAsync(new CreateMaintenanceSparePartResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -871,7 +873,9 @@ public sealed class CreateMaintenanceSparePartEndpoint(ISender sender)
 public sealed class CreateDowntimeReasonEndpoint(ISender sender)
     : MaintenanceEndpoint<CreateDowntimeReasonRequest, ResponseData<CreateDowntimeReasonResponse>>
 {
-    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CreateDowntimeReasonEndpoint>());
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<CreateDowntimeReasonEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(CreateDowntimeReasonRequest req, CancellationToken ct)
     {

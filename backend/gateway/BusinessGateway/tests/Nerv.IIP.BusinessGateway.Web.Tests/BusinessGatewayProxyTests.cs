@@ -10534,6 +10534,8 @@ public sealed class BusinessGatewayProxyTests
         AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/maintenance/work-orders/019f0000-0000-7000-8000-000000000111/complete");
         Assert.Contains("\"actualTechnicianUserId\":\"worker-actual\"", handler.RequestBodies[1]);
         Assert.Contains("\"idempotencyKey\":\"complete-intent-001\"", handler.RequestBodies[1]);
+        // 工单 ID 只放在路由里，请求体不带（#3902 审核阻断 1）。
+        Assert.DoesNotContain("\"workOrderId\"", handler.RequestBodies[1]);
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
         AssertRequest(handler.Requests[3], HttpMethod.Put, "/api/business/v1/maintenance/plans/plan-001");
         Assert.Contains("\"runtimeHourInterval\":500", handler.RequestBodies[3]);

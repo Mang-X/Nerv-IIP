@@ -84,10 +84,13 @@ public sealed record BusinessConsoleMaintenanceWorkOrderActionResponse(
     DateTimeOffset ChangedAtUtc,
     BusinessConsoleOperationReceipt OperationReceipt);
 
+/// <summary>备件领用行：<c>SiteCode</c>/<c>LocationCode</c> 为领出工厂与已登记库位（#3902），维保服务端必填。</summary>
 public sealed record BusinessConsoleMaintenanceSparePartInput(
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string OrganizationId,
@@ -293,7 +296,9 @@ public sealed record BusinessConsoleMaintenanceSparePartItem(
     string DeviceAssetId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
     string OrganizationId,
@@ -301,7 +306,9 @@ public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
     string WorkOrderId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed record BusinessConsoleCreateMaintenanceSparePartResponse(string SparePartLineId);
 
@@ -378,3 +385,30 @@ public sealed record BusinessConsoleAssetReliabilityResponse(
     decimal? MttrMinutes,
     string MtbfRuntimeSource,
     bool MtbfRuntimeHasSamples);
+
+/// <summary>
+/// 停机原因目录维护（#3855）。目录由 Maintenance 独占（ADR 0029），读仍走可搜索目录
+/// <c>downtime-reason</c>；这里只补控制台写入口。分类与损失类别的受控码归 Maintenance
+/// （<c>DowntimeReasonVocabulary</c>），由 Maintenance 的写命令校验，网关不另存一份。
+/// 编码已存在时 Maintenance 返回 409 稳定码 <c>downtime-reason-code-already-exists</c>，原样透传。
+/// </summary>
+public sealed record BusinessConsoleCreateMaintenanceDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record BusinessConsoleUpdateMaintenanceDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record BusinessConsoleDeleteMaintenanceDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleMaintenanceDowntimeReasonMutationResponse(string ReasonCode);

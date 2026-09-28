@@ -311,6 +311,31 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         Assert.Equal(0, response.Version);
     }
 
+    /// <summary>
+    /// 真栈实测：Maintenance 详情读面把强类型 ID 序列化成字符串。只认对象形时每次详情预读都 502，
+    /// 控制台「完成工单」一律失败（#3902 真栈验收时发现）；字符串形与对象形同一口径校验。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Maintenance_detail_accepts_the_matching_string_work_order_id_emitted_by_maintenance(bool enveloped)
+    {
+        var workOrderId = Guid.CreateVersion7().ToString();
+        using var httpClient = Client(MaintenanceDetailBody($$"""
+            "{{workOrderId}}"
+            """), enveloped);
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        var response = await client.GetWorkOrderAsync(
+            "internal-token",
+            workOrderId,
+            new BusinessConsoleMaintenanceContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(workOrderId, response.WorkOrderId);
+        Assert.Equal("Open", response.Status);
+    }
+
     [Theory]
     [InlineData(false, "malformed")]
     [InlineData(true, "malformed")]
@@ -318,6 +343,8 @@ public sealed class BusinessGatewayIdempotencySafetyTests
     [InlineData(true, "blank")]
     [InlineData(false, "mismatch")]
     [InlineData(true, "mismatch")]
+    [InlineData(false, "string-mismatch")]
+    [InlineData(true, "string-blank")]
     public async Task Maintenance_detail_rejects_malformed_blank_or_mismatched_strong_work_order_id(
         bool enveloped,
         string scenario)
@@ -328,6 +355,10 @@ public sealed class BusinessGatewayIdempotencySafetyTests
             "malformed" => $$"""{"value":"{{workOrderId}}"}""",
             "blank" => """{"id":""}""",
             "mismatch" => $$"""{"id":"{{Guid.CreateVersion7()}}"}""",
+            "string-mismatch" => $$"""
+                "{{Guid.CreateVersion7()}}"
+                """,
+            "string-blank" => "\"\"",
             _ => throw new InvalidOperationException($"Unknown scenario: {scenario}"),
         };
         using var httpClient = Client(MaintenanceDetailBody(downstreamId), enveloped);

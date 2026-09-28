@@ -116,6 +116,7 @@ try
         MaintenanceFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
+    builder.Services.AddScoped<DowntimeReasonBaselineSeedService>();
     builder.Services.AddScoped<MaintenanceSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
@@ -145,6 +146,32 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 停机原因产品基线 seed（#3855）：默认开启、只补缺，显式 false 可关闭；目标租户读 IAM 引导种子的
+    // 同一组键（与 Inventory 产品基线同一姿势）。Testing 宿主默认不跑：它没有真实数据库，需要的用例显式打开。
+    var baselineSeedEnabled = builder.Configuration.GetValue("Maintenance:Seed:Enabled", !isTesting);
+    if (baselineSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        // 基线 seed 只在库结构已迁移到当前版本后执行：Development 由上面的 AutoMigrate 先迁移；
+        // 非 Development 由发布流程的独立迁移器先迁移。库里还有未应用的迁移时（迁移器尚未跑、或测试宿主
+        // 在迁移前启动）跳过并记录，不在未就绪的库上写数据，下次启动再补。
+        var pendingMigrations = (await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .Database.GetPendingMigrationsAsync()).Count();
+        if (pendingMigrations > 0)
+        {
+            app.Logger.LogWarning(
+                "Maintenance product seed skipped: {PendingMigrations} migrations are not applied yet; it runs on the next start after migration.",
+                pendingMigrations);
+        }
+        else
+        {
+            var written = await scope.ServiceProvider.GetRequiredService<DowntimeReasonBaselineSeedService>().SeedAsync(
+                builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+                builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
+            app.Logger.LogInformation("Maintenance product seed completed: {DowntimeReasons} missing downtime reasons added.", written);
+        }
     }
 
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");

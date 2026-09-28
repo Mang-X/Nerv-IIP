@@ -13,6 +13,26 @@ public interface IBusinessMaintenanceClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException("Maintenance reason directory client is not configured.");
 
+    Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> CreateDowntimeReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Maintenance downtime reason client is not configured.");
+
+    Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> UpdateDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Maintenance downtime reason client is not configured.");
+
+    Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> DeleteDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Maintenance downtime reason client is not configured.");
+
     Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
@@ -133,6 +153,16 @@ public interface IBusinessMaintenanceClient
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessMaintenanceClient
 {
+    // Maintenance 在 409 信封 message 位外发的稳定码（除共享的 idempotency-conflict / lifecycle-conflict 外）。
+    private static readonly HashSet<string> RegisteredLegacySemanticCodes = new(StringComparer.Ordinal)
+    {
+        "downtime-reason-code-already-exists",
+    };
+
+    protected override bool IsRegisteredLegacySemanticCode(string? code) =>
+        base.IsRegisteredLegacySemanticCode(code) ||
+        code is not null && RegisteredLegacySemanticCodes.Contains(code);
+
     private static readonly JsonSerializerOptions LifecycleJsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
@@ -173,6 +203,60 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             response.Skip,
             response.Take,
             response.Total);
+    }
+
+    public async Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> CreateDowntimeReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<JsonElement>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/downtime-reasons",
+            request,
+            cancellationToken);
+        return new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(request.ReasonCode.Trim());
+    }
+
+    public async Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> UpdateDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<JsonElement>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/maintenance/downtime-reasons/{Uri.EscapeDataString(reasonCode)}",
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                ReasonCode = reasonCode,
+                request.Description,
+                request.ReasonCategory,
+                request.LossCategory,
+            },
+            cancellationToken);
+        return new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode);
+    }
+
+    public async Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> DeleteDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<JsonElement>(
+            internalBearerToken,
+            HttpMethod.Delete,
+            $"/api/business/v1/maintenance/downtime-reasons/{Uri.EscapeDataString(reasonCode)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode);
     }
 
     public async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
@@ -254,7 +338,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             HttpMethod.Post,
             $"/api/business/v1/maintenance/work-orders/{Uri.EscapeDataString(workOrderId)}/complete",
             new DownstreamCompleteMaintenanceWorkOrderRequest(
-                new DownstreamMaintenanceWorkOrderId(workOrderId),
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.Result,
@@ -409,7 +492,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             workOrderId,
             "/assignment",
             new DownstreamAssignMaintenanceWorkOrderRequest(
-                new DownstreamMaintenanceWorkOrderId(workOrderId),
                 request.OrganizationId,
                 request.EnvironmentId,
                 actorPrincipalId,
@@ -483,7 +565,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             workOrderId,
             "/actions",
             new DownstreamTransitionMaintenanceWorkOrderRequest(
-                new DownstreamMaintenanceWorkOrderId(workOrderId),
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.Action,
@@ -590,12 +671,12 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string workOrderId,
         JsonElement downstreamWorkOrderId)
     {
+        // 详情读面的强类型 ID：Maintenance 独立进程（真栈）序列化成 GUID 字符串，与网关同进程托管（FullChain）时
+        // 是 {"id": ...} 对象形。两种都按同一口径解析，与列表 / 完工回执共用 FormatMaintenanceWorkOrderId；
+        // 以前只认对象形，真栈上每次详情预读都判成下游非法响应（502）。
         if (!Guid.TryParse(workOrderId, out var requestedId)
             || requestedId == Guid.Empty
-            || downstreamWorkOrderId.ValueKind != JsonValueKind.Object
-            || !downstreamWorkOrderId.TryGetProperty("id", out var id)
-            || id.ValueKind != JsonValueKind.String
-            || !Guid.TryParse(id.GetString(), out var responseId)
+            || !Guid.TryParse(FormatMaintenanceWorkOrderId(downstreamWorkOrderId), out var responseId)
             || responseId == Guid.Empty
             || responseId != requestedId)
         {
@@ -819,7 +900,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 sparePart.DeviceAssetId,
                 sparePart.SkuCode,
                 sparePart.Quantity,
-                sparePart.UomCode)).ToArray(),
+                sparePart.UomCode,
+                sparePart.SiteCode,
+                sparePart.LocationCode)).ToArray(),
             spareParts.Skip,
             spareParts.Take,
             spareParts.Total);
@@ -1021,7 +1104,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DateTimeOffset OccurredAtUtc);
 
     private sealed record DownstreamAssignMaintenanceWorkOrderRequest(
-        DownstreamMaintenanceWorkOrderId WorkOrderId,
         string OrganizationId,
         string EnvironmentId,
         string ActorPrincipalId,
@@ -1046,7 +1128,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DownstreamMaintenanceWorkOrderActionResponse? Receipt);
 
     private sealed record DownstreamTransitionMaintenanceWorkOrderRequest(
-        DownstreamMaintenanceWorkOrderId WorkOrderId,
         string OrganizationId,
         string EnvironmentId,
         BusinessConsoleMaintenanceWorkOrderAction Action,
@@ -1095,7 +1176,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string DeviceAssetId,
         string SkuCode,
         decimal Quantity,
-        string? UomCode);
+        string? UomCode,
+        string? SiteCode = null,
+        string? LocationCode = null);
 
     private sealed record DownstreamCreateMaintenanceWorkOrderResponse(
         JsonElement WorkOrderId,
@@ -1103,7 +1186,6 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DateTimeOffset ChangedAtUtc);
 
     private sealed record DownstreamCompleteMaintenanceWorkOrderRequest(
-        DownstreamMaintenanceWorkOrderId WorkOrderId,
         string OrganizationId,
         string EnvironmentId,
         string Result,
@@ -1117,7 +1199,10 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? ActualTechnicianUserId = null,
         string? IdempotencyKey = null);
 
-    private sealed record DownstreamMaintenanceWorkOrderId(string Id);
+    // 写请求体不带 workOrderId：工单 ID 只放在路由里，由 Maintenance 从路由绑定（#3902 审核阻断 1）。
+    // 强类型 ID 在请求体里的线上形态取决于 Maintenance 的 FastEndpoints 序列化配置——独立进程里是
+    // NetCorePal 转换器的字符串形，与网关同进程托管（FullChain）时 FastEndpoints 的全局序列化配置被
+    // 后启动的网关覆盖，变成对象形。路由里的 ID 与这套配置无关，两边都能绑定。
 
     private sealed record DownstreamCompleteMaintenanceWorkOrderResponse(
         JsonElement WorkOrderId,

@@ -210,17 +210,8 @@ internal static class VocabularyDriftExemptions
         // #1370 ③ 批次 D 逐处复核结论（InventoryMovementRequestedPayload 按位置参数逐一确认）：
         // 第 2 位 SourceService 是真违例 —— 已给 InventoryMovementSourceServices 补 Maintenance = "maintenance"
         // （纯加法；Inventory 消费端对 payload.SourceService 只透传、无白名单校验，无消费端联动）并改常量引用；
-        // 余下两处永久豁免，各自裁决如下：
-        //   · 第 9 位 SiteCode —— 维修备件出库的站点码，属 MasterData 站点码值域，非库存流水来源服务；
-        //   · 第 13 位 OwnerType —— 库存归属方类型（自有/客供/供应商寄售同一枚举面），非库存流水来源服务。
-        // 二者与 SourceService 只是恰好同值，各自独立演化，不可互相引用。
-        // 注：白名单按（值 × 文件）二元组建索引，同值同文件只能有一条条目，
-        // 故两处裁决逐条写在同一条目的裁决文本里（下方 Adjudication 已逐处列明），不能拆成两条同键条目。
-        ..Group(
-            "maintenance",
-            "同值不同义（逐处）：SiteCode（第 9 位参数，维修备件站点码）与 OwnerType（第 13 位参数，库存归属方类型），"
-            + "均非库存流水来源服务；同文件的 SourceService 真违例已于 #1370 ③ 批次 D 改引 InventoryMovementSourceServices.Maintenance。",
-            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventConverters/MaintenanceIntegrationEventConverters.cs"),
+        // 余下两处（第 9 位 SiteCode 占位 "maintenance"、第 13 位 OwnerType "maintenance"）已于 #3902 消失：
+        // 站点与库位改取备件行上的领用值，归属类型改为企业自有 company，原豁免条目随之删除。
         ..Group("maintenance", "同值不同义：保养计划 owner 标识，非事件信封来源。",
             $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Seed/MaintenanceSeedService.cs"),
         ..Group("maintenance", "同值不同义：MasterData device-status 字典码（保养），非事件信封来源。",

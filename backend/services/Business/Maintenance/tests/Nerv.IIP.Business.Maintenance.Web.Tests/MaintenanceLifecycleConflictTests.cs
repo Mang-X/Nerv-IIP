@@ -256,6 +256,30 @@ public sealed class MaintenanceLifecycleConflictTests
     }
 
     [Fact]
+    public async Task Create_downtime_reason_http_endpoint_returns_409_with_the_stable_duplicate_code()
+    {
+        await using var factory = CreateFactory(new MaintenanceDowntimeReasonCodeConflictException());
+        using var client = CreateAuthorizedClient(factory);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/maintenance/downtime-reasons",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                reasonCode = "DT-MECH",
+                description = "液压系统故障",
+                reasonCategory = "breakdown",
+                lossCategory = "availability",
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"\"message\":\"{MaintenanceDowntimeReasonCodeConflictException.SafeCode}\"", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Complete_http_endpoint_keeps_known_errors_as_400()
     {
         await using var factory = CreateFactory(new KnownException("missing-downtime-reason"));
