@@ -194,6 +194,58 @@ public sealed class MesListStatusContractTests
     }
 
     /// <summary>
+    /// <b>豁免表不能谎报</b>：<see cref="NonAggregatedDomains"/> 的任何一条键都不得等于
+    /// 任一本票聚合的真实状态值域。
+    ///
+    /// <para><b>为什么这条独立于其余断言、且判据必须取域常量</b>：豁免表是「沉默的归属表」——
+    /// 它把一个值域判成「不归本票管」，而其余断言只问「值域有没有归属」，两者不矛盾。
+    /// 于是一条真实的漂移可以这样绕过去：域里给聚合加一个新状态（比如
+    /// <c>WorkOrder.AllStatuses</c> 多一个 <c>brandnew</c>）而契约不跟进，
+    /// 同时把豁免表的键改成这个新值域，并把该聚合的读面从 <see cref="RowStatusProperties"/> 摘掉 ——
+    /// 此时该聚合相关的逐条比对整体消失，守门照绿。这正是本票要防的那类漂移。</para>
+    ///
+    /// <para><b>判据取 <see cref="AggregateValueDomains"/>（七个域常量数组本身），不取
+    /// <see cref="StatusDeclarers"/> 的派生值</b>：上面那条绕法第二步正是「掏空派生表」，
+    /// 用派生值判据的话断言会跟着一起失效。这里要判的是「域里真实存在哪些状态」，
+    /// 那是域常量的性质，与任何一张登记表的当前内容无关。</para>
+    ///
+    /// <para>新增豁免项时本条一并把关：只有确实不由本票任何聚合定义的值域才允许加进来。</para>
+    /// </summary>
+    [Fact]
+    public void Every_exempt_value_domain_is_genuinely_non_aggregated()
+    {
+        var aggregated = AggregateValueDomains
+            .Select(Normalize)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var lying = NonAggregatedDomains.Keys
+            .Where(domain => aggregated.Contains(domain))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.True(
+            lying.Length == 0,
+            "NonAggregatedDomains 里有键等于本票聚合的真实状态值域 —— 豁免表谎报了归属，"
+                + "等于把该聚合的状态整体移出守门范围。本仓只允许加「值域确实不由本票任何聚合的"
+                + "域常量定义」的项。违规项：\n"
+                + string.Join("\n", lying.Select(domain => "  - " + domain)));
+    }
+
+    /// <summary>
+    /// 本票 7 个 MES 读面聚合的真实状态值域，<b>直接取自域常量</b>，不经任何登记表派生。
+    /// </summary>
+    private static IEnumerable<string[]> AggregateValueDomains =>
+    [
+        WorkOrderStatuses,
+        OperationTaskStatuses,
+        MaterialIssueRequestStatuses,
+        FinishedGoodsReceiptRequestStatuses,
+        DefectRecordStatuses,
+        ShiftHandoverStatuses,
+        WorkCenterUnavailabilityStatuses,
+    ];
+
+    /// <summary>
     /// <b>值域归属穷举</b>：<c>BusinessConsoleMes*</c> 面上每个枚举值域都必须说得出属于谁 ——
     /// 要么等于本票某个聚合的域值域，要么在 <see cref="NonAggregatedDomains"/> 里写明不属于本票的理由。
     ///
