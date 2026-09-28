@@ -1151,6 +1151,48 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("EXT-001", wms.LastCompleteWcsRequest!.ExternalTaskId);
     }
 
+    [Theory]
+    [InlineData("GET", "/api/business-console/v1/wms/work-pools?organizationId=org-001&environmentId=env-dev", "list-work-pools")]
+    [InlineData("POST", "/api/business-console/v1/wms/work-pools?organizationId=org-001&environmentId=env-dev", "provision-work-pool")]
+    [InlineData("POST", "/api/business-console/v1/wms/work-pools/WP-0001/members?organizationId=org-001&environmentId=env-dev", "add-work-pool-member")]
+    [InlineData("POST", "/api/business-console/v1/wms/work-pools/WP-0001/members/EMP-0001/remove?organizationId=org-001&environmentId=env-dev", "remove-work-pool-member")]
+    public async Task Wms_work_pool_facades_require_the_work_pool_manage_permission(
+        string method,
+        string path,
+        string expectedCall)
+    {
+        var body = new { displayName = "收货组", siteCode = "S1", idempotencyKey = "pool-intent-001", principalId = "EMP-0001" };
+
+        async Task<(HttpStatusCode Status, RecordingWmsClient Wms, FakeBusinessGatewayAuthorizationClient Auth)> CallAsync(string grantedPermission)
+        {
+            var wms = new RecordingWmsClient();
+            var auth = OrganizationScopeAuth(grantedPermission);
+            await using var lease = LeaseHost(auth, services =>
+            {
+                services.RemoveAll<IBusinessWmsClient>();
+                services.AddSingleton<IBusinessWmsClient>(wms);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+            var client = lease.CreateClient();
+            BusinessGatewayTestHost.Authenticated(client);
+            var response = method == "GET"
+                ? await client.GetAsync(path)
+                : await client.PostAsJsonAsync(path, body);
+            return (response.StatusCode, wms, auth);
+        }
+
+        var granted = await CallAsync(BusinessGatewayPermissions.WmsWorkPoolsManage);
+        var denied = await CallAsync(BusinessGatewayPermissions.WmsReceiptsManage);
+
+        Assert.Equal(HttpStatusCode.OK, granted.Status);
+        Assert.Equal([expectedCall], granted.Wms.Calls);
+        Assert.All(granted.Auth.Requirements, requirement =>
+            Assert.Equal(BusinessGatewayPermissions.WmsWorkPoolsManage, requirement.PermissionCode));
+        Assert.Equal(HttpStatusCode.Forbidden, denied.Status);
+        Assert.Empty(denied.Wms.Calls);
+    }
+
     [Fact]
     public async Task Wms_work_pool_creation_forwards_trusted_principal_and_sites_and_never_a_client_pool_code()
     {

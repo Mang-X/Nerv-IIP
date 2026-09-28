@@ -18,6 +18,8 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -1142,6 +1144,82 @@ public sealed class WmsInventoryBoundaryTests
                 .OrderBy(x => x.SourceDocumentLineId)
                 .Select(x => x.IdempotencyKey)
                 .ToArrayAsync());
+    }
+
+    /// <summary>
+    /// ADR 0031 的前提「同一条命令重试时任务号不变」：远程预留已成功、本地没落库（换 scope 重试），
+    /// 同一个幂等键必须拿回同一个系统生成的拣货号，预留键因此不变，库存侧只会有一份预留。
+    /// </summary>
+    [Fact]
+    public async Task Picking_retry_in_a_new_scope_with_the_same_idempotency_key_keeps_the_task_number_and_one_reservation()
+    {
+        await using var provider = CreateSharedDatabaseProvider();
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedDb.OutboundOrders.Add(OutboundOrder.Create(
+                "org-001",
+                "env-dev",
+                "OUT-RETRY-001",
+                "sales-delivery",
+                "SO-001",
+                "SITE-01",
+                [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", null, null, "qualified", "company", "owner-001")]));
+            await seedDb.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+        var coding = new WmsCodingService(provider.GetRequiredService<IServiceScopeFactory>());
+        async Task<string> AttemptAsync(bool commit)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var outboundId = (await db.OutboundOrders.SingleAsync()).Id;
+            var taskId = await new CreatePickingTaskCommandHandler(db, inventory, coding).Handle(
+                new CreatePickingTaskCommand(outboundId, null, "LINE-001", "LOC-A-01", "PACK-01", 4m, "console-pick-intent-001"),
+                CancellationToken.None);
+            if (commit)
+            {
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+
+            return db.WarehouseTasks.Local.Single(x => x.Id == taskId).TaskNo;
+        }
+
+        var firstTaskNo = await AttemptAsync(commit: false);
+        var retriedTaskNo = await AttemptAsync(commit: true);
+
+        Assert.Equal(firstTaskNo, retriedTaskNo);
+        Assert.Matches(@"^PICK-\d{8}-\d{6}$", retriedTaskNo);
+        Assert.Single(inventory.FefoRequests.Select(x => x.IdempotencyKey).Distinct());
+    }
+
+    [Fact]
+    public async Task Count_retry_in_a_new_scope_with_the_same_idempotency_key_keeps_the_count_number_and_one_freeze()
+    {
+        await using var provider = CreateSharedDatabaseProvider();
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+        var coding = new WmsCodingService(provider.GetRequiredService<IServiceScopeFactory>());
+        var command = new CreateCountExecutionCommand("org-001", "env-dev", null, "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 4m, "console-count-intent-001");
+        async Task<string> AttemptAsync(bool commit)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var countId = await new CreateCountExecutionCommandHandler(db, inventory, coding).Handle(command, CancellationToken.None);
+            if (commit)
+            {
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+
+            return db.CountExecutions.Local.Single(x => x.Id == countId).CountNo;
+        }
+
+        var firstCountNo = await AttemptAsync(commit: false);
+        var retriedCountNo = await AttemptAsync(commit: true);
+
+        Assert.Equal(firstCountNo, retriedCountNo);
+        Assert.Matches(@"^CNT-\d{8}-\d{6}$", retriedCountNo);
+        Assert.Single(inventory.CountTaskRequests.Select(x => x.IdempotencyKey).Distinct());
     }
 
     [Fact]
@@ -2548,6 +2626,16 @@ public sealed class WmsInventoryBoundaryTests
 
         Assert.Equal(CountExecutionStatus.Open, count.Status);
         Assert.Empty(dbContext.InventoryMovementRequests.Local);
+    }
+
+    /// <summary>每个 scope 各拿一个 DbContext，但共用同一个内存库：模拟「换请求重试」。</summary>
+    private static ServiceProvider CreateSharedDatabaseProvider()
+    {
+        var databaseName = $"wms-boundary-shared-{Guid.NewGuid():N}";
+        var services = new ServiceCollection();
+        services.AddScoped<MediatR.IMediator, NoopMediator>();
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        return services.BuildServiceProvider();
     }
 
     private static ApplicationDbContext CreateContext()

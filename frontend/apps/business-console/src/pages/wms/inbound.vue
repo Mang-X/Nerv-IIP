@@ -7,6 +7,7 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
+import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import {
   isIndeterminateLifecycleWriteError,
@@ -145,14 +146,8 @@ const completeIntentLocked = shallowRef(false)
 usePendingWriteLeaveGuard(completeIntentLocked)
 
 // 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
-// 码值按 WMS 收货口径下发（#3923）：「可用」即合格来料，用库存标准码 `unrestricted`，
-// 在 WMS 免检清单里，收货后直接可上架；`available` 只是库存侧别名，不在免检清单，会被误判成待检。
-const QUALITY_OPTIONS = [
-  { label: '可用', value: 'unrestricted' },
-  { label: '待检', value: 'inspection' },
-  { label: '冻结', value: 'blocked' },
-  { label: '不合格', value: 'rejected' },
-]
+// 码值口径与回归锁见 WMS_RECEIVING_QUALITY_OPTIONS（#3923）。
+const QUALITY_OPTIONS = WMS_RECEIVING_QUALITY_OPTIONS
 const OWNER_OPTIONS = [
   { label: '自有', value: 'owned' },
   { label: '客户', value: 'customer' },

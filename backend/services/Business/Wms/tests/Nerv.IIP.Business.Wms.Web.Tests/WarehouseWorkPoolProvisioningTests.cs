@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
@@ -203,8 +204,14 @@ public sealed class WarehouseWorkPoolProvisioningTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var timeProvider = new StaticTimeProvider(Now);
 
-        var pool = await new ProvisionWarehouseWorkPoolCommandHandler(dbContext).Handle(
+        var coding = new WmsCodingService();
+        var pool = await new ProvisionWarehouseWorkPoolCommandHandler(dbContext, coding).Handle(
             ProvisionCommand() with { PoolCode = null },
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        // 另一工厂的池：调用方只有 SITE-001 授权时不能出现在列表里。
+        await new ProvisionWarehouseWorkPoolCommandHandler(dbContext, coding).Handle(
+            ProvisionCommand() with { PoolCode = null, SiteCode = "SITE-002", AuthorizedSiteCodes = ["SITE-002"] },
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new AddWarehouseWorkPoolMemberCommandHandler(dbContext, timeProvider)
@@ -226,6 +233,10 @@ public sealed class WarehouseWorkPoolProvisioningTests
         Assert.Equal("user-emp-049", Assert.Single(Assert.Single(listed.Items).Members).PrincipalId);
         Assert.Equal(1, removal.RemovedCount);
         Assert.Empty(Assert.Single(listedAfterRemoval.Items).Members);
+        // 移出是停用成员资格、保留历史，不删行。
+        var history = Assert.Single(dbContext.WarehouseWorkPoolMemberships);
+        Assert.False(history.Active);
+        Assert.Equal(Now, history.DeactivatedAtUtc);
         var denied = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
             new WarehouseWorkScopeAuthorizer(dbContext, timeProvider).AuthorizeAssignmentAsync(
                 new WarehouseAssignmentAuthorizationRequest(

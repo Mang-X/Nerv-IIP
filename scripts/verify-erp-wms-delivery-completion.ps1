@@ -892,7 +892,6 @@ try {
         -SiteCode $wmsSiteCode
     $completionBody = @{
         outboundOrderId = $outboundOrderId
-        packReviewNo = "PACK-$deliveryOrderNo"
         passed = $true
         idempotencyKey = "man527-complete-$deliveryOrderNo"
         organizationId = 'org-001'
