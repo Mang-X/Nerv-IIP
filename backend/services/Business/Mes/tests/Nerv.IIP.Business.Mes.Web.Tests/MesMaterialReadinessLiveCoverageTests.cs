@@ -49,6 +49,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
 
         Assert.Equal(expectedStatus, response.ReadinessStatus);
         Assert.Empty(response.Items);
+        Assert.Equal(noRequirementsCapture ? capturedAtUtc : null, response.SnapshotCapturedAtUtc);
         Assert.Equal(
             noRequirementsCapture ? [] : [MaterialReadinessGuards.MissingRequirementSnapshotReason],
             response.BlockingReasons);
@@ -106,6 +107,7 @@ public sealed class MesMaterialReadinessLiveCoverageTests
         Assert.Equal(2m, row.AvailableQuantity);
         Assert.Equal(8m, row.ShortageQuantity);
         Assert.Equal("Blocked", response.ReadinessStatus);
+        Assert.Equal(capturedAtUtc, response.SnapshotCapturedAtUtc);
         Assert.Equal(["MATERIAL_SHORTAGE: 物料 MAT-001 缺口 8"], response.BlockingReasons);
         Assert.Equal(expectedAtUtc, row.ExpectedAvailableAtUtc);
         Assert.Equal(MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate, row.ExpectedAvailabilitySource);

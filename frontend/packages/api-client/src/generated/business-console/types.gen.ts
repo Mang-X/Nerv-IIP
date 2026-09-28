@@ -4242,6 +4242,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     blockingReasons?: Array<string>;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow>;
     readinessScope?: string | null;
+    snapshotCapturedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow = {

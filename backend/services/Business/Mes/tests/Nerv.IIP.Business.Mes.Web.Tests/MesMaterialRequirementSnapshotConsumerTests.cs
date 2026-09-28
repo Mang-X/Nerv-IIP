@@ -192,6 +192,34 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
         Assert.Equal(5m, row.RequiredQuantity);
         Assert.Equal(0m, row.ShortageQuantity);
         Assert.Equal("Ready", row.Status);
+        Assert.Equal(Latest, response.SnapshotCapturedAtUtc);
+    }
+
+    // Contract: DomainInvariant + Regression. Authority: Issue #3907: the response reports
+    // the capture used by the release gate, not a later receipt or the work-order creation time.
+    [Fact]
+    public async Task Material_readiness_time_changes_only_when_a_new_complete_capture_is_selected()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(CreateReleasedWorkOrder());
+        dbContext.MaterialRequirements.Add(Requirement("OP-10", "MAT-A", null, 5m, Earlier));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance);
+        var query = new GetMaterialReadinessQuery(OrganizationId, EnvironmentId, WorkOrderId);
+        var before = await handler.Handle(query, CancellationToken.None);
+        Assert.Equal(Earlier, before.SnapshotCapturedAtUtc);
+
+        dbContext.MaterialIssueRequests.Add(ReceivedIssue("OP-10", "MAT-A", 5m));
+        await dbContext.SaveChangesAsync();
+        var afterReceipt = await handler.Handle(query, CancellationToken.None);
+        Assert.Equal(Earlier, afterReceipt.SnapshotCapturedAtUtc);
+
+        dbContext.MaterialRequirements.Add(Requirement("OP-10", "MAT-B", null, 7m, Latest));
+        await dbContext.SaveChangesAsync();
+        var afterCapture = await handler.Handle(query, CancellationToken.None);
+        Assert.Equal(Latest, afterCapture.SnapshotCapturedAtUtc);
+        Assert.Equal("MAT-B", Assert.Single(afterCapture.Items).MaterialId);
     }
 
     [Fact]

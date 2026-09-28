@@ -1740,7 +1740,8 @@ public sealed record MesMaterialReadinessResponse(
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<MesMaterialReadinessRow> Items,
-    string ReadinessScope = MesMaterialReadinessScopes.LineSideAndStaged);
+    string ReadinessScope = MesMaterialReadinessScopes.LineSideAndStaged,
+    DateTimeOffset? SnapshotCapturedAtUtc = null);
 
 /// <summary>
 /// 齐套核算口径。齐套只认「线边可用 + 已备料 + 已收料」,不含原料仓等其他库存;
@@ -1797,12 +1798,13 @@ public sealed class GetMaterialReadinessQueryHandler(
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+        var snapshot = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrderAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
-            [request.WorkOrderId],
+            request.WorkOrderId,
             cancellationToken);
+        var requirements = snapshot.Requirements;
 
         if (requirements.Length == 0)
         {
@@ -1811,7 +1813,9 @@ public sealed class GetMaterialReadinessQueryHandler(
                 workOrder.MaterialRequirementSnapshotEvaluatedAtUtc is not null &&
                 workOrder.MaterialRequirementSnapshotProductionVersionId == workOrder.ProductionVersionId;
             return noRequirementsProven
-                ? new MesMaterialReadinessResponse(request.WorkOrderId, "Ready", [], [])
+                ? new MesMaterialReadinessResponse(
+                    request.WorkOrderId, "Ready", [], [],
+                    SnapshotCapturedAtUtc: workOrder.MaterialRequirementSnapshotEvaluatedAtUtc)
                 : new MesMaterialReadinessResponse(
                     request.WorkOrderId,
                     "Blocked",
@@ -1926,7 +1930,9 @@ public sealed class GetMaterialReadinessQueryHandler(
             .Select(x => MaterialReadinessGuards.FormatShortageReason(x.MaterialId, x.MaterialLotId, x.ShortageQuantity))
             .ToArray();
         var status = blockingReasons.Length > 0 ? "Blocked" : "Ready";
-        return new MesMaterialReadinessResponse(request.WorkOrderId, status, blockingReasons, rows);
+        return new MesMaterialReadinessResponse(
+            request.WorkOrderId, status, blockingReasons, rows,
+            SnapshotCapturedAtUtc: snapshot.CaptureIdentity);
     }
 }
 

@@ -46,6 +46,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { readFaceText } from '@/utils/readFace'
+import { formatDateTime as formatSnapshotCapturedAt } from '@/utils/format'
 import {
   inlineErrorMessage,
   notifyError,
@@ -323,8 +324,8 @@ const materialShortageCount = computed(
   () => materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0).length,
 )
 const materialTone = computed<NvMetricTone>(() => {
-  if (materialShortageCount.value > 0) return 'danger'
-  return materialRows.value.length ? 'success' : 'neutral'
+  if (materialReadiness.value?.readinessStatus === 'Blocked') return 'danger'
+  return materialReadiness.value?.readinessStatus === 'Ready' ? 'success' : 'neutral'
 })
 
 type TaskRow = (typeof operationTasks)['value'][number]
@@ -1157,16 +1158,23 @@ function formatStatus(value?: string | null) {
         :tone="materialTone"
         :status="
           materialReadiness
-            ? materialShortageCount > 0
-              ? { label: `${materialShortageCount} 项缺料`, tone: 'danger' }
-              : { label: '已齐套', tone: 'success' }
+            ? materialReadiness.readinessStatus === 'Ready'
+              ? { label: '已齐套', tone: 'success' }
+              : {
+                  label: materialShortageCount > 0 ? `${materialShortageCount} 项缺料` : '阻塞',
+                  tone: 'danger',
+                }
             : { label: '结论未取得', tone: 'neutral' }
         "
         :foot-start="
           materialReadiness
-            ? materialShortageCount > 0
-              ? '缺料项需先由仓库补发，否则无法开工。'
-              : '用料已备齐，可按工序顺序开工。'
+            ? materialReadiness.readinessStatus === 'Ready'
+              ? '用料已备齐，可按工序顺序开工。'
+              : materialShortageCount > 0
+                ? '缺料项需先发起领料，物料到线边后确认收料，否则无法开工。'
+                : describeMesReadinessReasons(materialReadiness.blockingReasons)
+                    .map((reason) => reason.detail || reason.label)
+                    .join('；')
             : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
         "
       />
@@ -1298,6 +1306,17 @@ function formatStatus(value?: string | null) {
         </NvButton>
       </div>
       <!-- 口径自解释：齐套只认线边/备料范围，与 MRP 的全厂库存口径本来就不同（#1291）。 -->
+      <p
+        v-if="materialReadiness"
+        class="text-xs text-muted-foreground"
+        data-testid="material-readiness-snapshot"
+      >
+        齐套快照捕获时间：{{
+          materialReadiness.snapshotCapturedAtUtc
+            ? formatSnapshotCapturedAt(materialReadiness.snapshotCapturedAtUtc)
+            : '未记录'
+        }}
+      </p>
       <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
         {{ MATERIAL_READINESS_SCOPE_NOTE }}
       </p>

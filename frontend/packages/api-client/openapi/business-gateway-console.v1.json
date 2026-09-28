@@ -49610,6 +49610,11 @@
           "readinessScope": {
             "type": "string",
             "nullable": true
+          },
+          "snapshotCapturedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
