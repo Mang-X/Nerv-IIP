@@ -2233,11 +2233,11 @@ internal static class MaterialReadinessGuards
                 x.EnvironmentId == environmentId &&
                 x.WorkOrderId == workOrderId &&
                 (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId))
-            .Select(x => new { x.MaterialId, x.MaterialLotId, x.ReceivedQuantity })
+            .Select(x => new { x.MaterialId, x.MaterialLotId, x.UomCode, x.ReceivedQuantity })
             .ToArrayAsync(cancellationToken);
 
         return requirements
-            .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId, x.UomCode })
             .Select(x =>
             {
                 var required = x.Sum(y => y.RequiredQuantity);
@@ -2246,6 +2246,7 @@ internal static class MaterialReadinessGuards
                 var receivedQuantity = received
                     .Where(y =>
                         string.Equals(y.MaterialId, x.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(y.UomCode, x.Key.UomCode, StringComparison.OrdinalIgnoreCase) &&
                         (x.Key.MaterialLotId is null ||
                             string.Equals(y.MaterialLotId, x.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)))
                     .Sum(y => y.ReceivedQuantity);
