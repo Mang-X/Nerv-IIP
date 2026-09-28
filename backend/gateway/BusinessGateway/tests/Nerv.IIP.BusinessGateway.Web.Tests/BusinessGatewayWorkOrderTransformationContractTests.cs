@@ -75,7 +75,7 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
             "按客户批次拆分",
             "split-001");
 
-        var result = await client.SplitAsync("internal-token", request, CancellationToken.None);
+        var result = await client.SplitAsync("internal-token", request, "user:planner-001", CancellationToken.None);
         var readback = await client.GetReadbackAsync(
             "internal-token",
             new BusinessConsoleMesWorkOrderTransformationReadbackRequest(
@@ -91,6 +91,8 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
         Assert.Contains("\"organizationId\":\"org-001\"", handler.Bodies[0], StringComparison.Ordinal);
         Assert.Contains("\"targets\":[{\"workOrderId\":\"WO-CHILD-001\",\"quantity\":4}", handler.Bodies[0], StringComparison.Ordinal);
         Assert.Equal("split-001", handler.Requests[0].Headers.GetValues("Idempotency-Key").Single());
+        // #3858：MES 拆分端点在内部服务令牌下要求转发操作人身份。
+        Assert.Equal("user:planner-001", handler.Requests[0].Headers.GetValues("X-Authenticated-Actor").Single());
         Assert.Equal("split-001", readback.IdempotencyKey);
         Assert.Equal("PCS", readback.Lines.Single().UomCode);
     }
@@ -120,10 +122,12 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
                     "WO-TARGET-001",
                     "按客户批次合并",
                     "merge-001"),
+                "user:planner-001",
                 CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
         Assert.Equal("idempotency-conflict", exception.Message);
+        Assert.Equal("user:planner-001", handler.Requests[0].Headers.GetValues("X-Authenticated-Actor").Single());
     }
 
     [Fact]
@@ -154,6 +158,7 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
                     [new BusinessConsoleMesWorkOrderTransformationTargetRequest("WO-CHILD-001", 4m)],
                     "按客户批次拆分",
                     "split-001"),
+                "user:planner-001",
                 CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
@@ -188,6 +193,7 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
                     [new BusinessConsoleMesWorkOrderTransformationTargetRequest("WO-CHILD-001", 4m)],
                     "按客户批次拆分",
                     "split-001"),
+                "user:planner-001",
                 CancellationToken.None));
 
         Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
@@ -291,6 +297,7 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
         Assert.Equal(BusinessGatewayPermissions.MesWorkOrdersManage, auth.LastRequirement!.PermissionCode);
         Assert.Equal("local-internal-service-token", transformation.LastInternalToken);
         Assert.Equal("WO-PARENT-001", transformation.LastSplitRequest!.WorkOrderId);
+        Assert.Equal("user:user-admin", transformation.LastActor);
     }
 
     [Fact]
@@ -337,6 +344,7 @@ public sealed class BusinessGatewayWorkOrderTransformationContractTests
         Assert.Equal(2, mes.WorkOrderListCallCount);
         Assert.Equal(1, transformation.MergeCallCount);
         Assert.Equal("WO-TARGET-001", transformation.LastMergeRequest!.TargetWorkOrderId);
+        Assert.Equal("user:user-admin", transformation.LastActor);
         Assert.Equal("local-internal-service-token", transformation.LastInternalToken);
     }
 
@@ -461,12 +469,16 @@ internal sealed class RecordingTransformationClient : IBusinessMesWorkOrderTrans
 
     public BusinessConsoleMesMergeWorkOrdersRequest? LastMergeRequest { get; private set; }
 
+    public string? LastActor { get; private set; }
+
     public Task<BusinessMesWorkOrderTransformationResult> SplitAsync(
         string internalBearerToken,
         BusinessConsoleMesSplitWorkOrderRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         SplitCallCount++;
+        LastActor = actor;
         LastInternalToken = internalBearerToken;
         LastSplitRequest = request;
         if (SplitFailure is not null)
@@ -485,9 +497,11 @@ internal sealed class RecordingTransformationClient : IBusinessMesWorkOrderTrans
     public Task<BusinessMesWorkOrderTransformationResult> MergeAsync(
         string internalBearerToken,
         BusinessConsoleMesMergeWorkOrdersRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         MergeCallCount++;
+        LastActor = actor;
         LastInternalToken = internalBearerToken;
         LastMergeRequest = request;
         return Task.FromResult(new BusinessMesWorkOrderTransformationResult(

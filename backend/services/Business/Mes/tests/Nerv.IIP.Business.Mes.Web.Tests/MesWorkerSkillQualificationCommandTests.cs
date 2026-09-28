@@ -3,11 +3,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -235,6 +238,98 @@ public sealed class MesWorkerSkillQualificationCommandTests
             (await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-20")).Status);
         Assert.Empty(await dbContext.OperationTaskStartAuthorizations.ToArrayAsync());
     }
+
+    // #3858：自领、开工、授权跳站被设备或质量阻断时，拒绝文案经网关原样上屏，只给中文说明。
+    // 设备码是 equipment.maintenanceWindow 这种小写带点的形态，按字符形态剥码会漏，所以逐字断言。
+    [Fact]
+    public async Task Claim_blocked_by_quality_hold_is_rejected_in_chinese_only()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSingleTask(dbContext, assignedUserId: null, requiredSkillCode: null);
+        dbContext.QualityHoldContexts.Add(QualityHoldContext.Capture(
+            "org-001", "env-dev", "WO-001", "OP-10", "Quality", "DOC-1", "INSPECTION-1", null,
+            "rejected", "quality.InspectionRejected", "首件不合格", Now.AddMinutes(-5)));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ClaimDispatchTaskCommandHandler(dbContext, ExactQualificationGate.Instance).Handle(
+                new ClaimDispatchTaskCommand(
+                    "org-001", "env-dev", "OP-10", "worker-001", "操作员甲", null,
+                    "SHIFT-A", Now, "user:worker-001", "claim-quality-hold-001"),
+                CancellationToken.None));
+
+        Assert.Equal("工单存在有效质量保留，无法放行或开工：首件不合格", exception.Message);
+    }
+
+    [Fact]
+    public async Task Claim_blocked_by_equipment_is_rejected_in_chinese_only()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSingleTask(dbContext, assignedUserId: null, requiredSkillCode: null);
+        AddMaintenanceWindow(dbContext, "WC-10");
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ClaimDispatchTaskCommandHandler(dbContext, ExactQualificationGate.Instance).Handle(
+                new ClaimDispatchTaskCommand(
+                    "org-001", "env-dev", "OP-10", "worker-001", "操作员甲", null,
+                    "SHIFT-A", Now, "user:worker-001", "claim-equipment-001"),
+                CancellationToken.None));
+
+        Assert.Equal("工作中心 WC-10：设备存在维修或保养占用，当前工序不能派工或开工。", exception.Message);
+    }
+
+    [Fact]
+    public async Task Start_blocked_by_equipment_is_rejected_in_chinese_only()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSingleTask(dbContext, assignedUserId: "worker-001", requiredSkillCode: null);
+        AddMaintenanceWindow(dbContext, "WC-10");
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
+                new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "start", Now),
+                CancellationToken.None));
+
+        Assert.Equal("设备存在维修或保养占用，当前工序不能派工或开工。", exception.Message);
+    }
+
+    [Fact]
+    public async Task Authorized_start_blocked_by_equipment_is_rejected_in_chinese_only()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedAuthorizedStartTask(dbContext);
+        AddMaintenanceWindow(dbContext, "WC-20");
+        await dbContext.SaveChangesAsync();
+        var handler = new AuthorizeAndStartOperationTaskCommandHandler(
+            dbContext,
+            ApprovedStartClient.Instance,
+            new FakeTimeProvider(Now),
+            ExactQualificationGate.Instance);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AuthorizeAndStartOperationTaskCommand(
+                "org-001", "env-dev", "OP-20", "设备故障，授权跳站", "approval-001",
+                "correlation-001", "authorize-equipment-001"),
+            CancellationToken.None));
+
+        // 前序未完成这一条由授权跳站按结构化的码剔除，只剩设备阻断的中文说明。
+        Assert.Equal("设备存在维修或保养占用，当前工序不能派工或开工。", exception.Message);
+    }
+
+    private static void AddMaintenanceWindow(ApplicationDbContext dbContext, string workCenterId) =>
+        dbContext.WorkCenterUnavailabilities.Add(WorkCenterUnavailability.Open(
+            "org-001", "env-dev", $"DT-{workCenterId}", workCenterId,
+            Now.AddHours(-1), null, EquipmentRuntimeReasonCodes.MaintenanceWindow, $"ASSET-{workCenterId}"));
 
     private static void SeedSingleTask(
         ApplicationDbContext dbContext,

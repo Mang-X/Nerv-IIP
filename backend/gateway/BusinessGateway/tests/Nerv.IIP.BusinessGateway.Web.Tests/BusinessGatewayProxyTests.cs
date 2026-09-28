@@ -5955,6 +5955,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", mes.LastCancelWorkOrderRequest.OrganizationId);
         Assert.Equal("env-dev", mes.LastCancelWorkOrderRequest.EnvironmentId);
         Assert.Equal("order-scrapped", mes.LastCancelWorkOrderRequest.Reason);
+        // #3858：MES 取消端点要求转发操作人身份，身份只能取自网关已认证主体。
+        Assert.Equal("user:user-admin", mes.LastCancelWorkOrderActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
     }
@@ -21012,6 +21014,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesWorkOrderReasonRequest? LastCancelWorkOrderRequest { get; private set; }
 
+    public string? LastCancelWorkOrderActor { get; private set; }
+
     public int CloseWorkOrderCallCount { get; private set; }
 
     public BusinessConsoleMesCloseWorkOrderRequest? LastCloseWorkOrderRequest { get; private set; }
@@ -21227,11 +21231,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleMesWorkOrderReasonRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         CancelWorkOrderCallCount++;
         LastCancelWorkOrderRequest = request;
+        LastCancelWorkOrderActor = actor;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 

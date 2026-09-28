@@ -654,7 +654,12 @@ public sealed class CancelBusinessConsoleMesWorkOrderEndpoint(
         string internalBearerToken,
         BusinessConsoleMesWorkOrderReasonRequest request,
         CancellationToken cancellationToken) =>
-        mes.CancelWorkOrderAsync(internalBearerToken, request.WorkOrderId, request, cancellationToken);
+        mes.CancelWorkOrderAsync(
+            internalBearerToken,
+            request.WorkOrderId,
+            request,
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
 }
 
 [Tags("Business Console MES")]

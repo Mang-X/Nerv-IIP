@@ -96,6 +96,10 @@ function textOf(value: unknown): string {
   return String(value)
 }
 
+function dateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10)
+}
+
 function safeText(value: unknown): string {
   return textOf(value)
     .replace(/authorization/gi, '<redacted-header>')
@@ -421,6 +425,122 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
         complianceTags: [],
         idempotencyKey: `sku-${finishedSku}`,
       })
+      // #3858 新增的造数一律不传编号，由服务端按编码规则分配，下游读返回值。
+      const materialSkuItem = asRecord(
+        await create('/api/business-console/v1/master-data/skus', {
+          organizationId,
+          environmentId,
+          name: 'MAN-520 quality branch raw material',
+          baseUomCode: uomCode,
+          category: 'electronic',
+          materialType: 'raw-material',
+          batchTrackingPolicy: 'none',
+          serialTrackingPolicy: 'none',
+          shelfLifePolicyCode: 'none',
+          storageConditionCode: 'ambient',
+          defaultBarcodeRuleCode: 'code128',
+          qualityRequired: false,
+          complianceTags: [],
+          idempotencyKey: `sku-material-${suffix}`,
+        }),
+      )
+      const materialSku = textOf(materialSkuItem.code).trim()
+
+      // #3858：急单与计划转工单同口径，建单必须带已发布的生产版本（建单时按它冻结齐套需求），
+      // 所以先按公开 API 发布 EBOM → MBOM → 工艺路线，再建生产版本。
+      const standardOperation = asRecord(
+        await create('/api/business-console/v1/engineering/standard-operations', {
+          organizationId,
+          environmentId,
+          operationName: 'MAN-520 quality branch operation',
+          defaultWorkCenterCode: workCenterCode,
+          standardSetupMinutes: 0,
+          standardRunMinutes: 30,
+          controlKey: 'internal',
+          requiresReporting: true,
+          requiresQualityInspection: true,
+          isOutsourced: false,
+          idempotencyKey: `op-${suffix}`,
+        }),
+      )
+      const operationCode = textOf(standardOperation.operationCode).trim()
+      const engineeringBom = asRecord(
+        await create('/api/business-console/v1/engineering/engineering-boms/release', {
+          organizationId,
+          environmentId,
+          revision: 'A',
+          parentItemCode: finishedSku,
+          effectiveDate: dateOnly(now),
+          lines: [{ componentCode: materialSku, quantity: 1, unitOfMeasureCode: uomCode }],
+          idempotencyKey: `ebom-${suffix}`,
+        }),
+      )
+      const engineeringBomCode = textOf(engineeringBom.id).trim()
+      if (!materialSku || !operationCode || !engineeringBomCode) {
+        throw new Error(
+          'MasterData/ProductEngineering did not return the allocated material, operation or EBOM code.',
+        )
+      }
+      const mbom = asRecord(
+        await create('/api/business-console/v1/engineering/manufacturing-boms/release', {
+          organizationId,
+          environmentId,
+          revision: 'A',
+          skuCode: finishedSku,
+          engineeringBomCode,
+          engineeringBomRevision: 'A',
+          effectiveDate: dateOnly(now),
+          materialLines: [
+            { skuCode: materialSku, quantity: 1, unitOfMeasureCode: uomCode, scrapRate: 0 },
+          ],
+          recipeLines: [],
+          idempotencyKey: `mbom-${suffix}`,
+        }),
+      )
+      const routing = asRecord(
+        await create('/api/business-console/v1/engineering/routings/release', {
+          organizationId,
+          environmentId,
+          revision: 'A',
+          skuCode: finishedSku,
+          effectiveDate: dateOnly(now),
+          operations: [
+            {
+              sequence: 10,
+              workCenterCode,
+              operationCode,
+              operationName: 'MAN-520 quality branch operation',
+              standardMinutes: 30,
+            },
+          ],
+          idempotencyKey: `routing-${suffix}`,
+        }),
+      )
+      const mbomVersionId = textOf(mbom.versionId).trim()
+      const routingVersionId = textOf(routing.versionId).trim()
+      if (!mbomVersionId || !routingVersionId) {
+        throw new Error('ProductEngineering release responses did not expose data.versionId.')
+      }
+      const productionVersion = asRecord(
+        await create('/api/business-console/v1/engineering/production-versions', {
+          organizationId,
+          environmentId,
+          skuCode: finishedSku,
+          mbomVersionId,
+          routingVersionId,
+          validFrom: dateOnly(now),
+          lotSizeMin: 1,
+          lotSizeMax: 1_000,
+          priority: 1,
+          isDefault: true,
+        }),
+      )
+      const productionVersionId = textOf(
+        productionVersion.productionVersionId ?? productionVersion,
+      ).trim()
+      if (!productionVersionId) {
+        throw new Error('ProductEngineering did not return the run-scoped production version id.')
+      }
 
       const inspectionPlan = asRecord(
         await create('/api/business-console/v1/quality/inspection-plans', {
@@ -489,7 +609,7 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
           environmentId,
           workOrderId: null,
           skuId: finishedSku,
-          productionVersionId: null,
+          productionVersionId,
           quantity: inspectedQuantity,
           dueUtc: new Date(now.getTime() + 8 * 3_600_000).toISOString(),
           workCenterId: workCenterCode,

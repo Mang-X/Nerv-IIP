@@ -56,6 +56,9 @@ public sealed class ReleaseWorkOrderCommandHandler(
     IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
     : ICommandHandler<ReleaseWorkOrderCommand, MesAcceptedResponse>
 {
+    internal const string ReleaseProductionVersionMissingMessage =
+        "工单没有生产版本，无法下达。请取消该工单，按已发布的生产版本重新建单。";
+
     public async Task<MesAcceptedResponse> Handle(ReleaseWorkOrderCommand request, CancellationToken cancellationToken)
     {
         var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -78,7 +81,8 @@ public sealed class ReleaseWorkOrderCommandHandler(
 
         if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
         {
-            throw new KnownException("QUALITY_PLAN_MISSING: 工单缺少已发布生产版本，无法放行。");
+            // 这句经网关原样上屏，不带英文码（#3858）；读面仍以 QUALITY_PLAN_MISSING 码给出同一阻断原因。
+            throw new KnownException(ReleaseProductionVersionMissingMessage);
         }
 
         var operationSnapshots = await dbContext.OperationTasks
@@ -104,7 +108,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
             cancellationToken);
         if (equipmentIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(equipmentIssues));
         }
 
         var qualityIssues = await ReadinessReasonCodes.GetQualityBlockingIssuesAsync(
@@ -116,7 +120,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
             cancellationToken);
         if (qualityIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(qualityIssues));
         }
 
         var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
@@ -136,7 +140,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
                 cancellationToken);
             if (shortages.Count > 0)
             {
-                throw new KnownException($"物料齐套未满足：{MaterialReadinessGuards.DescribeForUser(shortages)}");
+                throw new KnownException($"物料齐套未满足：{MesReadinessReason.DescribeForUser(shortages)}");
             }
         }
 
@@ -849,7 +853,7 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                 cancellationToken);
             if (materialCapture.IsMissing)
             {
-                throw new KnownException(MaterialReadinessGuards.MissingRequirementSnapshotReason);
+                throw new KnownException(MaterialReadinessGuards.MissingRequirementSnapshotMessage);
             }
         }
 
@@ -1353,7 +1357,7 @@ public sealed class AssignDispatchTaskCommandHandler(
             cancellationToken);
         if (qualityIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(qualityIssues));
         }
 
         var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
@@ -1366,7 +1370,7 @@ public sealed class AssignDispatchTaskCommandHandler(
             cancellationToken);
         if (equipmentIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(equipmentIssues));
         }
 
         await workerSkillQualificationGate.EnsureQualifiedAsync(
@@ -1467,7 +1471,7 @@ public sealed class ClaimDispatchTaskCommandHandler(
             task.OperationTaskIdValue, cancellationToken);
         if (qualityIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(qualityIssues));
         }
 
         var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
@@ -1475,7 +1479,7 @@ public sealed class ClaimDispatchTaskCommandHandler(
             task.WorkOrderId, request.AssignedAtUtc, cancellationToken);
         if (equipmentIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(equipmentIssues));
         }
 
         await workerSkillQualificationGate.EnsureQualifiedAsync(
@@ -1605,7 +1609,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                     cancellationToken);
             if (!readiness.AllowedActions.Contains("start", StringComparer.Ordinal))
             {
-                throw new KnownException(MaterialReadinessGuards.DescribeForUser(readiness.BlockReasons));
+                throw new KnownException(MesReadinessReason.DescribeForUser(readiness.Reasons));
             }
 
             await workerSkillQualificationGate.EnsureQualifiedAsync(
@@ -1893,12 +1897,12 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
             task,
             authorizedAtUtc,
             cancellationToken);
-        var nonPreviousBlockReasons = readiness.BlockReasons
-            .Where(x => !x.StartsWith("PREVIOUS_OPERATION_INCOMPLETE:", StringComparison.Ordinal))
+        var nonPreviousBlockReasons = readiness.Reasons
+            .Where(x => x.Code != MesReadinessReasonCodes.PreviousOperationIncomplete)
             .ToArray();
         if (nonPreviousBlockReasons.Length > 0)
         {
-            throw new KnownException(MaterialReadinessGuards.DescribeForUser(nonPreviousBlockReasons));
+            throw new KnownException(MesReadinessReason.DescribeForUser(nonPreviousBlockReasons));
         }
 
         await workerSkillQualificationGate.EnsureQualifiedAsync(
@@ -1989,9 +1993,13 @@ public sealed class AuthorizeAndStartOperationTaskCommandHandler(
 
 internal static class MaterialReadinessGuards
 {
+    internal const string MissingRequirementSnapshotMessage = "工单缺少齐套需求快照，无法确认物料齐套。";
+
     internal const string MissingRequirementSnapshotReason =
-        MesReadinessReasonCodes.MaterialRequirementSnapshotMissing +
-        ": 工单缺少齐套需求快照，无法确认物料齐套。";
+        MesReadinessReasonCodes.MaterialRequirementSnapshotMissing + ": " + MissingRequirementSnapshotMessage;
+
+    internal static readonly MesReadinessReason MissingRequirementSnapshot =
+        new(MesReadinessReasonCodes.MaterialRequirementSnapshotMissing, MissingRequirementSnapshotMessage);
 
     internal sealed record AutomaticRebindEdge(
         string WorkOrderId,
@@ -2080,35 +2088,13 @@ internal static class MaterialReadinessGuards
     /// 服务边界不共享库、前端更不可能引用后端代码，所以**共享的是断言不是代码**：
     /// 本处与 Scheduling 侧各有一条逐字一致的格式用例互相钉住，改措辞两边一起红。
     /// </summary>
-    public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage)
+    public static string FormatShortageReason(string materialId, string? materialLotId, decimal shortage) =>
+        ShortageReason(materialId, materialLotId, shortage).ToWireText();
+
+    public static MesReadinessReason ShortageReason(string materialId, string? materialLotId, decimal shortage)
     {
         var lot = string.IsNullOrWhiteSpace(materialLotId) ? string.Empty : $"，批次 {materialLotId}";
-        return $"{MesReadinessReasonCodes.MaterialShortage}: 物料 {materialId}{lot} 缺口 {shortage:0.######}";
-    }
-
-    /// <summary>
-    /// 把阻塞原因串成**给用户看的一句话**：读面保留 <c>CODE: 中文</c>（前端按码取标签与下一步动作），
-    /// 但写操作被拒时的 <see cref="KnownException"/> 文案要去掉英文码——它经分层透传直接上屏，
-    /// 反馈规范禁止界面出现英文错误码（`frontend/DESIGN/patterns/feedback-and-notifications.md`）。
-    /// </summary>
-    public static string DescribeForUser(IEnumerable<string> reasons)
-    {
-        return string.Join("；", reasons.Select(StripReasonCode).Where(x => x.Length > 0));
-    }
-
-    private static string StripReasonCode(string reason)
-    {
-        var separator = reason.IndexOf(':', StringComparison.Ordinal);
-        if (separator <= 0)
-        {
-            return reason.Trim();
-        }
-
-        var code = reason[..separator];
-        // 只剥「全大写下划线」形态的码，别把中文说明里的冒号误当分隔符。
-        return code.All(x => char.IsAsciiLetterUpper(x) || char.IsAsciiDigit(x) || x == '_')
-            ? reason[(separator + 1)..].Trim()
-            : reason.Trim();
+        return new(MesReadinessReasonCodes.MaterialShortage, $"物料 {materialId}{lot} 缺口 {shortage:0.######}");
     }
 
     public static async Task<MaterialRequirementCaptureOutcome> EnsureRequirementSnapshotsAsync(
@@ -2198,7 +2184,7 @@ internal static class MaterialReadinessGuards
         return MaterialRequirementCaptureOutcome.Captured(capturedAtUtc);
     }
 
-    public static async Task<IReadOnlyCollection<string>> GetShortageReasonsAsync(
+    public static async Task<IReadOnlyCollection<MesReadinessReason>> GetShortageReasonsAsync(
         ApplicationDbContext dbContext,
         string organizationId,
         string environmentId,
@@ -2215,7 +2201,7 @@ internal static class MaterialReadinessGuards
 
         if (requirements.Length == 0)
         {
-            return [MissingRequirementSnapshotReason];
+            return [MissingRequirementSnapshot];
         }
 
         requirements = requirements
@@ -2254,7 +2240,7 @@ internal static class MaterialReadinessGuards
                 return (x.Key.MaterialId, MaterialLotId: (string?)x.Key.MaterialLotId, Shortage: shortage);
             })
             .Where(x => x.Shortage > 0)
-            .Select(x => FormatShortageReason(x.MaterialId, x.MaterialLotId, x.Shortage))
+            .Select(x => ShortageReason(x.MaterialId, x.MaterialLotId, x.Shortage))
             .ToArray();
     }
 
@@ -2289,6 +2275,13 @@ internal sealed record ReadinessBlockingIssue(
 
 internal static class ReadinessReasonCodes
 {
+    /// <summary>
+    /// 写操作被设备/质量阻断时给用户看的一句话（#3858）：只拼各阻断项的中文说明，不拼英文码——
+    /// 这句经网关原样上屏。码值仍由读面按 <c>CODE: 中文</c> 给前端取标签与下一步。
+    /// </summary>
+    public static string DescribeForUser(IEnumerable<ReadinessBlockingIssue> issues) =>
+        MesReadinessReason.DescribeForUser(issues.Select(x => new MesReadinessReason(x.Code, x.Message)));
+
     public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetQualityBlockingIssuesAsync(
         ApplicationDbContext dbContext,
         string organizationId,
@@ -2405,7 +2398,7 @@ internal static class ReadinessReasonCodes
                     classification.SourceSystem,
                     "DowntimeEvent",
                     x.DowntimeEventNo,
-                    $"设备或工作中心存在维护/报警/停机冲突，WorkCenterId = {x.WorkCenterId}");
+                    $"工作中心 {x.WorkCenterId}：{classification.Message}");
             })
             .ToArray();
     }

@@ -255,7 +255,7 @@ public sealed class CreatedWorkOrderReleaseBackfillTests
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand(Organization, Environment, "WO-DOWNTIME", Now),
                 CancellationToken.None));
-        Assert.Contains(EquipmentRuntimeReasonCodes.Downtime, rejection.Message, StringComparison.Ordinal);
+        Assert.Equal("工作中心 WC-010：MES 停机记录显示设备或工作中心当前不可用。", rejection.Message);
         Assert.Equal(
             WorkOrder.CreatedStatus,
             dbContext.WorkOrders.Single(x => x.WorkOrderIdValue == "WO-DOWNTIME").Status);
