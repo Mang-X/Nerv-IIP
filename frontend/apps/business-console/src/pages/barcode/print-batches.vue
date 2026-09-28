@@ -46,6 +46,7 @@ import { EyeIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
+  barcodeTypeLabel,
   barcodeSourceDocumentKind,
   barcodeSourceDocumentRoute,
   isBarcodeScanWorkflow,
@@ -144,12 +145,6 @@ const valueVariables = computed(() =>
 
 // 条码规则：只列启用、且允许当前业务对象类型的规则。
 const { rules, rulesPending } = useBarcodeRules({ status: 'active', take: 200 })
-const BARCODE_TYPE_LABELS: Record<string, string> = {
-  code128: 'Code 128',
-  'gs1-128': 'GS1-128',
-  datamatrix: 'Data Matrix',
-  qr: 'QR Code',
-}
 const ruleOptions = computed(() =>
   rules.value
     .filter(
@@ -162,9 +157,7 @@ const ruleOptions = computed(() =>
     .map((rule) => ({
       value: rule.barcodeRuleId as string,
       label: rule.ruleCode || '未命名规则',
-      hint: rule.barcodeType
-        ? (BARCODE_TYPE_LABELS[rule.barcodeType] ?? rule.barcodeType)
-        : undefined,
+      hint: barcodeTypeLabel(rule.barcodeType),
     })),
 )
 const selectedRule = computed(() =>

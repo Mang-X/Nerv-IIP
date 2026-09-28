@@ -920,6 +920,71 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('补全标签取值')
   })
 
+  it('blocks a label value longer than the template allows', async () => {
+    barcode.extraRules = [COUNT_RULE]
+    const wrapper = mountPrintBatches()
+    await openCreateDialog(wrapper)
+    await setInput(wrapper, '#barcode-print-template', 'tpl-2')
+    await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
+    await setInput(wrapper, '#barcode-print-source-id', 'COUNT-001')
+    await setInput(wrapper, '#barcode-print-value-palletGrade', 'A')
+    // 模板里「成品编码」最大长度 40。
+    await setInput(wrapper, '#barcode-print-value-skuCode', 'S'.repeat(41))
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.createPrintBatch).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('不超过 40 个字')
+
+    await setInput(wrapper, '#barcode-print-value-skuCode', 'S'.repeat(40))
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(barcode.createPrintBatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows every supported barcode type in Chinese on rules and the rule picker', async () => {
+    const gs1Matrix = {
+      ...COUNT_RULE,
+      barcodeRuleId: 'rule-gs1-dm',
+      ruleCode: 'GS1-DM',
+      barcodeType: 'gs1-datamatrix',
+    }
+    barcode.extraRules = [gs1Matrix]
+    const rules = mount(RulesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    const ruleRow = rules.findAll('tr').find((row) => row.text().includes('GS1-DM'))!
+    expect(ruleRow.text()).toContain('GS1 Data Matrix')
+    expect(ruleRow.text()).not.toContain('gs1-datamatrix')
+
+    const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
+    const wrapper = mount(PrintBatchesPage, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...stubsWithRealPicker,
+          RouterLink: routerLinkStub,
+        },
+      },
+    })
+    await openCreateDialog(wrapper)
+    await wrapper.find('#barcode-print-source-type').setValue('inventory.count')
+    await flushPromises()
+    await wrapper.find('#barcode-print-rule').trigger('click')
+    await flushPromises()
+    const option = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (element) => element.textContent?.includes('GS1-DM'),
+    )
+    expect(option?.textContent).toContain('GS1 Data Matrix')
+    expect(option?.textContent).not.toContain('gs1-datamatrix')
+    wrapper.unmount()
+  })
+
   it('offers only active rules that allow the chosen source type', async () => {
     barcode.extraRules = [
       COUNT_RULE,
