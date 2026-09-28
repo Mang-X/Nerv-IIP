@@ -89,7 +89,7 @@
 | 路径 / schema 组 | 聚合 | 值域 |
 | --- | --- | --- |
 | `/mes/work-orders`、`/mes/production-plans`、`BusinessConsoleMesWorkOrderItem` | `WorkOrder` | 10（小写） |
-| `/mes/operation-tasks`、`/mes/dispatch-tasks`、`/mes/wip`、3 个工序相关 schema | `OperationTask` | 6（PascalCase） |
+| `/mes/operation-tasks`、`/mes/dispatch-tasks`、`/mes/wip`，4 个 schema（`OperationTaskItem` / `DispatchTaskRow` / `OperationTaskRow` / `WipSummaryRow`） | `OperationTask` | 6（PascalCase） |
 | `/mes/material-issue-requests`、`BusinessConsoleMesMaterialIssueRequestRow` | `MaterialIssueRequest` | 7（PascalCase） |
 | `/mes/finished-goods-receipt-requests`、`BusinessConsoleMesReceiptRequestRow.receiptStatus` | `FinishedGoodsReceiptRequest` | 5（PascalCase） |
 | `/mes/related-quality-items`、`BusinessConsoleMesRelatedQualityItemRow` | `DefectRecord` | 5（PascalCase） |
@@ -104,9 +104,18 @@
 描述能力，而是在描述漂移。
 
 特别地，`/mes/downtime-events` 与 `/mes/capacity-impacts` 从 29 值收到 2 值（`Open` /
-`Recovered`）**是取消无效过滤能力，不是修正拼写** —— 但被取消的 27 个码在这两条路径上
-本就永远匹配不到任何行（它们不属于 `WorkCenterUnavailability` 的值域），因此没有可观测的
-功能损失。
+`Recovered`）的准确性质是**两件事叠加**：
+
+- **取消 27 个本就不生效的码**。读面 `MesProductionQueries` / `MesWorkbenchQueries` 的过滤是
+  `request.Status.Trim().ToLowerInvariant()` 之后 switch，只认 `open` / `recovered`，
+  其余一律 `Where(_ => false)`。被收窄掉的那 27 个码本就在这条 switch 的 `_` 分支里，
+  传进去只会得到空结果集 —— 取消它们不损失任何能返回行的过滤能力。
+- **对仍生效的两个码改拼写**。`open` / `recovered` 在收窄前本来就在 29 值枚举内且**真能过滤到行**，
+  收窄后契约写 PascalCase。这不是「取消」而是「改拼写」，但因为读面比较前先 lower，
+  `Open` 与 `open` 行为等价（都归一化成 `open`），故运行时无差异。
+
+所以结论是「无可观测功能损失」，但理由不是「取消的码本就不生效」这一句 —— 生效的那两个
+是被改拼写而非被取消。
 
 **替代面**：无。这不是新增能力或重命名，是把契约校正回生产者的事实。
 

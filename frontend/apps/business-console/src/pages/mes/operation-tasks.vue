@@ -12,7 +12,10 @@ import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/l
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
-import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  type MesStatusValue,
+  mesOperationTaskStatusOptions,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import {
@@ -257,15 +260,16 @@ function resetFilters() {
 }
 
 // 「排程已失效」快捷项：一键把状态筛选切到失效任务，再点一次取消。
-// 两侧都取选项表里的值，不再手抄码：工序状态运行时是 PascalCase
-// （`OperationTaskLifecycleStatus`），手写小写会让这一格恒不激活、且给
-// NvSelect 一个不在选项里的值。`MesListFilters.status` 是 string，typecheck 抓不到。
-const invalidatedStatus = mesOperationTaskStatusOptions.find(
-  (option) => option.label === '排程已失效',
-)?.value
+//
+// 取值写法与 index.vue 的四格计数统一为**字面量**（不做 label 反查）：字面量在
+// `statusFilter` 被声明为 MesStatusValue 时会被类型检查挡住，而按中文 label 反查
+// 做不到这点 —— 改个文案就静默返回 undefined，筛选恒不激活。同理不按数组下标取：
+// 选项表增删一项就会串位。工序状态的运行时拼写是 PascalCase（#3912），
+// 而 `MesListFilters.status` 是 string，所以这里必须自己保证拼写。
+const invalidatedStatus: MesStatusValue = 'ScheduleInvalidated'
 const invalidatedFilterActive = computed(() => statusFilter.value === invalidatedStatus)
 function toggleInvalidatedFilter() {
-  statusFilter.value = invalidatedFilterActive.value ? 'all' : (invalidatedStatus ?? 'all')
+  statusFilter.value = invalidatedFilterActive.value ? 'all' : invalidatedStatus
 }
 
 function openWorkOrder(workOrderId?: string | null) {

@@ -64,16 +64,26 @@ describe('MES 状态词表不吸收契约漂移', () => {
   })
 
   it('生产渲染路径对两种拼写只认真实值域那一侧', () => {
-    // 这条比上面任何一条都强：只要有人把归一化加回 statusLabel，两种拼写就都会命中，
-    // 断言立刻红。它直接钉住「不得有大小写兼容层」这个不变量本身，而不是钉住某几个码。
     // 走 statusLabel（页面真正调用的那个），不是任何测试专用的查表入口。
+    // 逐个聚合各钉一对：一个真实值命中标签 + 它的另一种拼写落空。这样无论把归一化
+    // 加成「先原样、再 lower」（PascalCase 域死、工单域活）还是「先原样、再首字母大写」
+    // （工单域活、PascalCase 域死），两条里总有一条会红 —— 早先只钉工单那一对，
+    // 归一化恰好只对工单生效时整条断言会一起放过。
+    // 查不到时回吐原值（不是空串），所以负例断言的是「原样返回」。
     expect(statusLabel('Queued')).toBe('待开工')
     expect(statusLabel('queued')).toBe('queued')
     expect(statusLabel('InProgress')).toBe('执行中')
     expect(statusLabel('inProgress')).toBe('inProgress')
-    // 工单是真小写，PascalCase 变体同样必须查不到（查不到时回吐原值）。
+    expect(statusLabel('ScheduleInvalidated')).toBe('排程已失效')
+    expect(statusLabel('scheduleInvalidated')).toBe('scheduleInvalidated')
+    // 工单是真小写，PascalCase 变体同样必须查不到。
     expect(statusLabel('created')).toBe('已创建')
     expect(statusLabel('Created')).toBe('Created')
+    // 领料单与完工入库是另外两个 PascalCase 域，各钉一对。
+    expect(statusLabel('PartiallyReceived')).toBe('部分接收')
+    expect(statusLabel('partiallyReceived')).toBe('partiallyReceived')
+    expect(statusLabel('InventoryPostingFailed')).toBe('入库失败')
+    expect(statusLabel('inventoryPostingFailed')).toBe('inventoryPostingFailed')
   })
 
   it('工序筛选项是 PascalCase 的真实值域，不含小写变体', () => {

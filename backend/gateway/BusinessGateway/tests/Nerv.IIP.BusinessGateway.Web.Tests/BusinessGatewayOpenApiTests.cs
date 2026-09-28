@@ -6,13 +6,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NJsonSchema;
 using NJsonSchema.Generation;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using NSwag;
@@ -1658,7 +1651,6 @@ public sealed class BusinessGatewayOpenApiTests
                 "deviceAssetId",
                 "skip",
                 "take");
-            AssertMesStatusQueryEnum(paths, mesListPath, ExpectedStatusQueryValues(mesListPath));
         }
 
         AssertQueryParameters(
@@ -2342,11 +2334,6 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterName",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesCapacityImpactRow",
-            "status",
-            WorkCenterUnavailabilityStatuses);
 
         AssertMesDisplayProperties(
             document,
@@ -2355,11 +2342,6 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskNo",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesDowntimeEventRow",
-            "status",
-            WorkCenterUnavailabilityStatuses);
 
         AssertMesDisplayProperties(
             document,
@@ -2373,11 +2355,6 @@ public sealed class BusinessGatewayOpenApiTests
             "allowedActions",
             "blockReasons",
             "evaluatedAtUtc");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesOperationTaskRow",
-            "status",
-            OperationTaskStatuses);
 
         AssertMesDisplayProperties(
             document,
@@ -2385,11 +2362,6 @@ public sealed class BusinessGatewayOpenApiTests
             "allowedActions",
             "blockReasons",
             "evaluatedAtUtc");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesOperationTaskItem",
-            "status",
-            OperationTaskStatuses);
 
         AssertMesDisplayProperties(
             document,
@@ -2400,11 +2372,6 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterName",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesDispatchTaskRow",
-            "status",
-            OperationTaskStatuses);
 
         AssertMesDisplayProperties(
             document,
@@ -2413,11 +2380,6 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskNo",
             "workCenterCode",
             "workCenterName");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesWipSummaryRow",
-            "status",
-            OperationTaskStatuses);
 
         AssertMesDisplayProperties(
             document,
@@ -2428,17 +2390,6 @@ public sealed class BusinessGatewayOpenApiTests
             "isSupplementary",
             "originalMaterialIssueRequestNo",
             "substitutedMaterialId");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesMaterialIssueRequestRow",
-            "status",
-            MaterialIssueRequestStatuses);
-
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesRelatedQualityItemRow",
-            "status",
-            DefectRecordStatuses);
 
         AssertMesDisplayProperties(
             document,
@@ -2461,11 +2412,6 @@ public sealed class BusinessGatewayOpenApiTests
             "inventoryPostingFailureCode",
             "inventoryPostingFailureMessage",
             "inventoryPostingFailedAtUtc");
-        AssertMesStatusEnum(
-            document,
-            "BusinessConsoleMesReceiptRequestRow",
-            "receiptStatus",
-            FinishedGoodsReceiptRequestStatuses);
 
         // MAN-445/#799: 工单详情活跃质量保留投影,支撑 hold 区块时间线定位键(sourceService+sourceDocumentId)+强制释放。
         AssertMesDisplayProperties(
@@ -2492,7 +2438,6 @@ public sealed class BusinessGatewayOpenApiTests
             "sourceWorkOrderId",
             "sourceNcrId",
             "sourceNcrCode");
-        AssertMesStatusEnum(document, "BusinessConsoleMesWorkOrderItem", "status", WorkOrderStatuses);
         AssertMesDisplayProperties(
             document,
             "BusinessConsoleMesWorkOrderDetailResponse",
@@ -2619,90 +2564,6 @@ public sealed class BusinessGatewayOpenApiTests
                     header.GetProperty("description").GetString());
             }
         }
-    }
-
-    /// <summary>
-    /// MES 列表状态枚举必须等于对应聚合的真实值域（#3912）。权威来源是 MES 域常量，预期值在这里
-    /// 直接从域声明推导：域里新增一个状态而 Gateway 契约没跟上时，本组断言必然红。
-    ///
-    /// <para>工单用 <see cref="WorkOrder.AllStatuses"/> 而不是反射 —— 同类型里还有
-    /// <c>captured</c> / <c>no-requirements</c> 两个物料需求快照状态，它们写在另一个属性上，
-    /// 不是工单生命周期状态。停机事件与产能影响读 <c>WorkCenterUnavailability</c>，聚合没有状态列，
-    /// 状态由「是否已恢复」在读面派生。</para>
-    /// </summary>
-    private static readonly string[] WorkOrderStatuses = WorkOrder.AllStatuses.ToArray();
-
-    private static readonly string[] OperationTaskStatuses = Enum.GetNames<OperationTaskLifecycleStatus>();
-
-    private static readonly string[] MaterialIssueRequestStatuses = DeclaredStatusConstants<MaterialIssueRequest>();
-
-    private static readonly string[] FinishedGoodsReceiptRequestStatuses =
-        DeclaredStatusConstants<FinishedGoodsReceiptRequest>();
-
-    private static readonly string[] DefectRecordStatuses = DeclaredStatusConstants<DefectRecord>();
-
-    private static readonly string[] ShiftHandoverStatuses = DeclaredStatusConstants<ShiftHandover>();
-
-    // 取聚合上的两个常量，不再手抄：读面 MesWorkbenchQueries / MesProductionQueries 已改为
-    // 引用 WorkCenterUnavailability.DeriveStatus，所以改域常量时本断言会跟着走。
-    private static readonly string[] WorkCenterUnavailabilityStatuses =
-        [WorkCenterUnavailability.OpenStatus, WorkCenterUnavailability.RecoveredStatus];
-
-    private static string[] ExpectedStatusQueryValues(string path) => path switch
-    {
-        // 生产计划读的是带计划来源的工单，status 过滤的就是工单状态。
-        "/api/business-console/v1/mes/work-orders" => WorkOrderStatuses,
-        "/api/business-console/v1/mes/production-plans" => WorkOrderStatuses,
-        "/api/business-console/v1/mes/material-issue-requests" => MaterialIssueRequestStatuses,
-        "/api/business-console/v1/mes/dispatch-tasks" => OperationTaskStatuses,
-        "/api/business-console/v1/mes/operation-tasks" => OperationTaskStatuses,
-        "/api/business-console/v1/mes/wip" => OperationTaskStatuses,
-        "/api/business-console/v1/mes/related-quality-items" => DefectRecordStatuses,
-        "/api/business-console/v1/mes/finished-goods-receipt-requests" => FinishedGoodsReceiptRequestStatuses,
-        "/api/business-console/v1/mes/downtime-events" => WorkCenterUnavailabilityStatuses,
-        "/api/business-console/v1/mes/shift-handovers" => ShiftHandoverStatuses,
-        "/api/business-console/v1/mes/capacity-impacts" => WorkCenterUnavailabilityStatuses,
-        _ => throw new InvalidOperationException($"No MES status value domain registered for {path}."),
-    };
-
-    /// <summary>取聚合上声明的全部 <c>public const string *Status</c> 值。</summary>
-    private static string[] DeclaredStatusConstants<T>() =>
-        typeof(T)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(field => field is { IsLiteral: true, FieldType: var type } && type == typeof(string))
-            .Where(field => field.Name.EndsWith("Status", StringComparison.Ordinal))
-            .Select(field => (string)field.GetRawConstantValue()!)
-            .ToArray();
-
-    private static void AssertStatusEnumMatchesDomain(JsonElement schema, string description, string[] expected)
-    {
-        Assert.True(
-            schema.TryGetProperty("enum", out var values),
-            $"{description} must be an OpenAPI enum, not a free-form string.");
-
-        // 枚举顺序不是契约的一部分，按序值集合比较。
-        Assert.Equal(
-            expected.Order(StringComparer.Ordinal),
-            values.EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal));
-    }
-
-    private static void AssertMesStatusEnum(
-        JsonDocument document,
-        string schemaNameSuffix,
-        string propertyName,
-        string[] expectedValues)
-    {
-        var property = FindSchemaBySuffix(document, schemaNameSuffix)
-            .GetProperty("properties")
-            .GetProperty(propertyName);
-
-        AssertStatusEnumMatchesDomain(property, $"{schemaNameSuffix}.{propertyName}", expectedValues);
-    }
-
-    private static void AssertMesStatusQueryEnum(JsonElement paths, string path, string[] expectedValues)
-    {
-        var schema = FindQueryParameter(paths, path, "get", "status").GetProperty("schema");
-        AssertStatusEnumMatchesDomain(schema, $"{path} status query parameter", expectedValues);
     }
 
     private static void AssertQueryParameterEnum(

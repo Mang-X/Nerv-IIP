@@ -46,10 +46,6 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
 
     public const string RecoveredStatus = "Recovered";
 
-    /// <summary>按恢复时刻派生读面状态码；与读面投影共用同一实现。</summary>
-    public static string DeriveStatus(DateTimeOffset? toUtc) =>
-        toUtc is null ? OpenStatus : RecoveredStatus;
-
     public string WorkCenterId { get; private set; } = string.Empty;
     public string DowntimeEventNo { get; private set; } = string.Empty;
     public string? OrganizationId { get; private set; }

@@ -78,13 +78,17 @@ const statusLabels: Record<MesStatusValue, string> = {
   PartiallyPosted: '部分入库',
   Posted: '已入库',
   InventoryPostingFailed: '入库失败',
-  // DefectRecord（PascalCase）
-  Open: '待处理',
+  // DefectRecord（PascalCase）。`Open` 是跨聚合重码：不良记录=待处理、交接=待接班、
+  // 停机/产能=未恢复。共享表取停机语境的读法（与 base 一致），其余语境在
+  // statusOptions 的 overrides 里显式覆盖 —— 漏覆盖就会印错词，所以那三个调用点
+  // 各有断言钉住（见 useMesReferenceLabels.test.ts）。
+  Open: '未恢复',
   ReworkPending: '返工待处理',
   ScrapAccepted: '报废已受理',
   ReturnAccepted: '退回已受理',
   DispositionAccepted: '处置已受理',
-  // ShiftHandover（PascalCase）
+  // ShiftHandover（PascalCase）。`Accepted` 同样是重码：交接=已接班，不良记录
+  // 三个 *Accepted=已受理。停机/产能的值域里没有它，故此处取交接读法。
   Accepted: '已接班',
   // WorkCenterUnavailability 读面派生（PascalCase）
   Recovered: '已恢复',
@@ -135,13 +139,11 @@ export const mesMaterialIssueStatusOptions = statusOptions([
   'Received',
 ])
 
-export const mesQualityStatusOptions = statusOptions([
-  'Open',
-  'ReworkPending',
-  'ScrapAccepted',
-  'ReturnAccepted',
-  'DispositionAccepted',
-])
+export const mesQualityStatusOptions = statusOptions(
+  ['Open', 'ReworkPending', 'ScrapAccepted', 'ReturnAccepted', 'DispositionAccepted'],
+  // 不良记录语境的 `Open` 是「待处理」，不是停机的「未恢复」。
+  { Open: '待处理' },
+)
 
 export const mesReceiptStatusOptions = statusOptions([
   'Requested',
@@ -184,7 +186,10 @@ export const mesDowntimeStatusOptions = statusOptions(['Open', 'Recovered'])
 
 export const mesCapacityStatusOptions = mesDowntimeStatusOptions
 
-export const mesHandoverStatusOptions = statusOptions(['Open', 'Accepted'])
+export const mesHandoverStatusOptions = statusOptions(['Open', 'Accepted'], {
+  // 交接语境的 `Open` 是「待接班」。
+  Open: '待接班',
+})
 
 /**
  * 词表漏词只在开发期告警一次，生产构建里整段被摇树掉。

@@ -609,7 +609,7 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.DowntimeEventNo,
                 x.WorkCenterId,
                 x.DeviceAssetId,
-                WorkCenterUnavailability.DeriveStatus(x.ToUtc),
+                x.ToUtc == null ? WorkCenterUnavailability.OpenStatus : WorkCenterUnavailability.RecoveredStatus,
                 x.FromUtc,
                 x.ToUtc,
                 x.Reason,
