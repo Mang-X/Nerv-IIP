@@ -28,11 +28,13 @@ export interface MasterDataDisplayNameOptions {
  * 主数据显示名解析（按需加载名录，只付用到的那几次请求）。
  *
  * 背景：设备 / 库存 / WMS / 维保多数读面只回 `deviceAssetId`、`locationCode`、`uomCode`，
- * 界面上只有编码没有名称。名称在主数据里且是中文，这里在前端按编码 join 出来。
+ * 界面上只有编码没有名称。名称在主数据里且是中文，这里在前端按编码 join 出来；
+ * 设备引用既可能是设备编码也可能是设备公开 ID，两种都能解析。
  * 读面补上 *Name 字段后应优先用之，本兜底可随之移除。
  *
  * 用法：`const { resolveDevice } = useMasterDataDisplayNames({ devices: true })`
- * 然后 `r.deviceAssetName ?? resolveDevice(r.deviceAssetId) ?? r.deviceAssetId`。
+ * 然后 `r.deviceAssetName ?? resolveDevice(r.deviceAssetId) ?? readFaceText(r.deviceAssetId)`
+ * （`readFaceText` 挡住公开 ID，不把原始 ID 送上屏）。
  */
 /**
  * 名录取数上限，与 `useErpPickerCatalog` / `useEquipmentPickerCatalog` 的 CATALOG_TAKE 一致。
@@ -69,7 +71,17 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     return map
   }
 
-  const deviceByCode = computed(() => indexOf(deviceSource?.resources.value))
+  // 设备引用在全平台可以是设备编码，也可以是设备公开 ID（GUID），两种都要解析到同一台设备。
+  const deviceByReference = computed(() => {
+    const map = new Map<string, { code: string; displayName: string }>()
+    for (const item of deviceSource?.resources.value ?? []) {
+      if (!item.code) continue
+      const device = { code: item.code, displayName: item.displayName ?? item.code }
+      map.set(item.code, device)
+      if (item.deviceAssetId) map.set(item.deviceAssetId, device)
+    }
+    return map
+  })
   const locationByCode = computed(() => indexOf(locationSource?.resources.value))
   const workCenterByCode = computed(() => indexOf(workCenterSource?.resources.value))
   const teamByCode = computed(() => indexOf(teamSource?.resources.value))
@@ -86,14 +98,18 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
     return map
   })
 
-  const resolver = (index: typeof deviceByCode) => (code?: string | null) => {
+  const resolver = (index: typeof locationByCode) => (code?: string | null) => {
     if (!code) return undefined
     return index.value.get(code)
   }
 
   return {
-    /** 设备名；查不到返回 undefined（不编造名字）。 */
-    resolveDevice: resolver(deviceByCode),
+    /** 设备名（按设备编码或设备公开 ID）；查不到返回 undefined（不编造名字）。 */
+    resolveDevice: (reference?: string | null) =>
+      reference ? deviceByReference.value.get(reference)?.displayName : undefined,
+    /** 设备编码（按设备编码或设备公开 ID）；查不到返回 undefined。 */
+    resolveDeviceCode: (reference?: string | null) =>
+      reference ? deviceByReference.value.get(reference)?.code : undefined,
     resolveLocation: resolver(locationByCode),
     resolveWorkCenter: resolver(workCenterByCode),
     resolveTeam: resolver(teamByCode),
@@ -110,7 +126,6 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
       const name = uomByCode.value.get(code)
       return name && name !== code ? `${name} (${code})` : code
     },
-    deviceByCode,
     locationByCode,
     workCenterByCode,
     teamByCode,

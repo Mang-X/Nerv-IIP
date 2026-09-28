@@ -145,6 +145,7 @@ const REASON_LABELS: Record<string, string> = {
   'equipment.maintenanceWindow': '维修保养占用',
   'equipment.inspectionRequired': '点检未通过',
   'equipment.sourceStale': '采集数据过期',
+  'equipment.sourceNotConnected': '尚未接入采集',
   'equipment.tagMappingMissing': '采集点未配置',
   'equipment.noEligibleSubstitute': '无可替代设备',
 }

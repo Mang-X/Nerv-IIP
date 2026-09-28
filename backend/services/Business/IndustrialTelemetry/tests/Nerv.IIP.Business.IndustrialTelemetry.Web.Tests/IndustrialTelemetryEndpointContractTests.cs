@@ -184,6 +184,73 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Runtime_availability_reports_device_without_any_state_as_not_connected_not_stale()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.GetFromJsonAsync<ResponseData<EquipmentRuntimeAvailabilityResponse>>(
+            "/api/business/v1/iiot/devices/EQ00001/runtime-availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&freshnessMaxAgeMinutes=15",
+            EquipmentRuntimeJson.Options);
+
+        Assert.NotNull(response?.Data);
+        var window = Assert.Single(response.Data.Items);
+        Assert.Equal(EquipmentRuntimeReasonCodes.SourceNotConnected, window.ReasonCode);
+        Assert.Equal(EquipmentRuntimeAvailabilityStatus.Unknown, window.AvailabilityStatus);
+    }
+
+    // Modbus / MQTT / OPC UA 连接器上报的样本不带设备状态，不会写状态快照：
+    // 只有样本、没有快照的设备已经接入了采集，按样本新鲜度判，不能说成「尚未接入」。
+    [Theory]
+    [InlineData(5, null)]
+    [InlineData(90, EquipmentRuntimeReasonCodes.SourceStale)]
+    public async Task Runtime_availability_judges_device_with_samples_but_no_state_by_sample_freshness(
+        int sampleAgeMinutes,
+        string? expectedReasonCode)
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var windowStartUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var bucketEndUtc = windowStartUtc.AddMinutes(-sampleAgeMinutes);
+
+        using var sample = await client.PostAsJsonAsync("/api/business/v1/iiot/samples", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "EQ00003",
+            tagKey = "spindle.temperature",
+            bucketStartUtc = bucketEndUtc.AddMinutes(-1),
+            bucketEndUtc,
+            sampleCount = 1,
+            minValue = 42m,
+            maxValue = 42m,
+            averageValue = 42m,
+            sourceSequence = $"modbus-{sampleAgeMinutes}",
+            sourceSystem = "PLC-A",
+            sourceConnector = "modbus-cell-01",
+        });
+        Assert.True(sample.IsSuccessStatusCode, await sample.Content.ReadAsStringAsync());
+
+        var response = await client.GetFromJsonAsync<ResponseData<EquipmentRuntimeAvailabilityResponse>>(
+            "/api/business/v1/iiot/devices/EQ00003/runtime-availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&freshnessMaxAgeMinutes=15",
+            EquipmentRuntimeJson.Options);
+
+        Assert.NotNull(response?.Data);
+        Assert.DoesNotContain(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.SourceNotConnected);
+        if (expectedReasonCode is null)
+        {
+            Assert.Empty(response.Data.Items);
+        }
+        else
+        {
+            var window = Assert.Single(response.Data.Items);
+            Assert.Equal(expectedReasonCode, window.ReasonCode);
+        }
+    }
+
+    [Fact]
     public async Task Runtime_availability_reflects_running_to_faulted_state_change_as_device_state_unavailable()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();

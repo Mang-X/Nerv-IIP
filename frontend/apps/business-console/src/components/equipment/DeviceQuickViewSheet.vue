@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import {
+  describeAvailabilityStatus,
   describeEquipmentReason,
+  EQUIPMENT_FRESHNESS_DISPLAY,
+  equipmentSourceStatus,
   useBusinessEquipmentDevice,
 } from '@/composables/useBusinessEquipment'
 import { friendlyErrorMessage } from '@/utils/notify'
@@ -41,6 +44,13 @@ const stateText = computed(() => {
   // 设备没上报状态不是"未知状态"，而是当前没有实时数据可读——照实说。
   return state ? equipmentStateLabel(state) : '暂无实时数据'
 })
+// 是否接入以后端可用性窗口为准，与详情页、看板同一判据。
+const freshness = computed(
+  () =>
+    EQUIPMENT_FRESHNESS_DISPLAY[
+      equipmentSourceStatus(currentState.value?.isSourceFresh, availabilityWindows.value)
+    ],
+)
 const errorMessage = computed(() =>
   deviceError.value
     ? friendlyErrorMessage(deviceError.value, '设备信息加载失败，请稍后重试。')
@@ -87,11 +97,8 @@ function formatDateTime(value?: string | null) {
             <h3 class="text-xs font-medium text-muted-foreground">当前状态</h3>
             <div class="flex flex-wrap items-center gap-2">
               <NvBadge class="rounded-sm" variant="neutral">{{ stateText }}</NvBadge>
-              <NvBadge
-                class="rounded-sm"
-                :variant="currentState?.isSourceFresh ? 'success' : 'warning'"
-              >
-                {{ currentState?.isSourceFresh ? '实时' : '暂无实时数据' }}
+              <NvBadge class="rounded-sm" :variant="freshness.tone">
+                {{ freshness.label }}
               </NvBadge>
             </div>
             <p class="text-xs text-muted-foreground">
@@ -147,15 +154,9 @@ function formatDateTime(value?: string | null) {
                   }}</span>
                   <NvBadge
                     class="rounded-sm"
-                    :variant="
-                      window.availabilityStatus?.toLowerCase() === 'unavailable'
-                        ? 'danger'
-                        : 'success'
-                    "
+                    :variant="describeAvailabilityStatus(window.availabilityStatus).tone"
                   >
-                    {{
-                      window.availabilityStatus?.toLowerCase() === 'unavailable' ? '不可用' : '可用'
-                    }}
+                    {{ describeAvailabilityStatus(window.availabilityStatus).label }}
                   </NvBadge>
                 </div>
                 <p class="text-xs text-muted-foreground">

@@ -102,6 +102,12 @@ export const MES_READINESS_REASON_DISPLAYS: Readonly<
     label: '设备状态已过期',
     nextStep: '恢复设备状态采集并等待最新状态',
   },
+  'equipment.sourceNotConnected': {
+    code: 'equipment.sourceNotConnected',
+    category: '设备',
+    label: '设备尚未接入采集',
+    nextStep: '为设备配置采集连接后重新检查',
+  },
   'equipment.tagMappingMissing': {
     code: 'equipment.tagMappingMissing',
     category: '设备',
