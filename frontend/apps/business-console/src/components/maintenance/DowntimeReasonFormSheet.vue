@@ -124,8 +124,13 @@ async function submit() {
           :items="[{ label: '原因编码', value: editingCode }]"
         />
         <NvFieldGroup class="grid gap-3">
-          <NvField v-if="!editingCode">
-            <NvFieldLabel for="dtr-code">原因编码 *</NvFieldLabel>
+          <NvField
+            v-if="!editingCode"
+            :data-invalid="showErrors && (codeMissing || codeDuplicated)"
+          >
+            <NvFieldLabel for="dtr-code"
+              >原因编码 <span class="text-destructive">*</span></NvFieldLabel
+            >
             <NvInput
               id="dtr-code"
               v-model="form.reasonCode"
@@ -135,8 +140,10 @@ async function submit() {
             />
             <NvFieldDescription>编码保存后不可修改，建议用大写字母与短横线。</NvFieldDescription>
           </NvField>
-          <NvField>
-            <NvFieldLabel for="dtr-description">原因名称 *</NvFieldLabel>
+          <NvField :data-invalid="showErrors && descriptionMissing">
+            <NvFieldLabel for="dtr-description"
+              >原因名称 <span class="text-destructive">*</span></NvFieldLabel
+            >
             <NvInput
               id="dtr-description"
               v-model="form.description"
@@ -146,7 +153,9 @@ async function submit() {
             />
           </NvField>
           <NvField>
-            <NvFieldLabel for="dtr-category">停机分类 *</NvFieldLabel>
+            <NvFieldLabel for="dtr-category"
+              >停机分类 <span class="text-destructive">*</span></NvFieldLabel
+            >
             <NvSearchSelect
               id="dtr-category"
               v-model="form.reasonCategory"
@@ -156,7 +165,9 @@ async function submit() {
             />
           </NvField>
           <NvField>
-            <NvFieldLabel for="dtr-loss">损失类别 *</NvFieldLabel>
+            <NvFieldLabel for="dtr-loss"
+              >损失类别 <span class="text-destructive">*</span></NvFieldLabel
+            >
             <NvSearchSelect
               id="dtr-loss"
               v-model="form.lossCategory"

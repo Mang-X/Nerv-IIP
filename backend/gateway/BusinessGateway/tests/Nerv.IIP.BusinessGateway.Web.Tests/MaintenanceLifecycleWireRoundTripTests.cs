@@ -50,13 +50,15 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
             handler.Requests.Select(x => x.GetProperty("action").GetRawText()));
         Assert.All(handler.Requests, request =>
         {
-            Assert.Equal(workOrderId, request.GetProperty("workOrderId").GetProperty("id").GetString());
+            // Maintenance 的强类型 ID 线上是字符串，对象形会在下游模型绑定时 400（#3902 真栈实测）。
+            Assert.Equal(JsonValueKind.String, request.GetProperty("workOrderId").ValueKind);
+            Assert.Equal(workOrderId, request.GetProperty("workOrderId").GetString());
             Assert.Equal("tech-001", request.GetProperty("actorPrincipalId").GetString());
         });
     }
 
     [Fact]
-    public async Task Gateway_client_writes_assignment_work_order_id_as_the_strong_id_wire_contract()
+    public async Task Gateway_client_writes_assignment_work_order_id_as_the_string_wire_contract()
     {
         var workOrderId = Guid.CreateVersion7().ToString();
         var handler = new RecordingAssignmentWireHandler(workOrderId);
@@ -73,7 +75,8 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
             CancellationToken.None);
 
         Assert.Equal("Open", response.Status);
-        Assert.Equal(workOrderId, handler.AssignmentRequest.GetProperty("workOrderId").GetProperty("id").GetString());
+        Assert.Equal(JsonValueKind.String, handler.AssignmentRequest.GetProperty("workOrderId").ValueKind);
+        Assert.Equal(workOrderId, handler.AssignmentRequest.GetProperty("workOrderId").GetString());
     }
 
     [Fact]

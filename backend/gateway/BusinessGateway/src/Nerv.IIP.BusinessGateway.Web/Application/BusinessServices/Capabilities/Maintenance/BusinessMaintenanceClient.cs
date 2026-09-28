@@ -664,12 +664,12 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string workOrderId,
         JsonElement downstreamWorkOrderId)
     {
+        // Maintenance 的详情读面把强类型 ID 序列化成字符串（真栈实测），测试夹具用的是 {"id": ...} 对象形；
+        // 两种形态都按同一口径解析，与列表 / 完工回执共用 FormatMaintenanceWorkOrderId。以前只认对象形，
+        // 真栈上每次详情预读都判成下游非法响应（502），控制台「完成工单」因此一律失败。
         if (!Guid.TryParse(workOrderId, out var requestedId)
             || requestedId == Guid.Empty
-            || downstreamWorkOrderId.ValueKind != JsonValueKind.Object
-            || !downstreamWorkOrderId.TryGetProperty("id", out var id)
-            || id.ValueKind != JsonValueKind.String
-            || !Guid.TryParse(id.GetString(), out var responseId)
+            || !Guid.TryParse(FormatMaintenanceWorkOrderId(downstreamWorkOrderId), out var responseId)
             || responseId == Guid.Empty
             || responseId != requestedId)
         {
@@ -1195,7 +1195,25 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? ActualTechnicianUserId = null,
         string? IdempotencyKey = null);
 
+    /// <summary>
+    /// 维修工单 ID 的下游线上形态：Maintenance 用 NetCorePal 的强类型 ID 转换器，线上是 GUID 字符串，
+    /// 收到 <c>{"id": ...}</c> 对象形会在模型绑定阶段直接 400（真栈实测，#3902 验收时发现）。
+    /// 写出一律用字符串；读入两种形态都接受。
+    /// </summary>
+    [JsonConverter(typeof(DownstreamMaintenanceWorkOrderIdJsonConverter))]
     private sealed record DownstreamMaintenanceWorkOrderId(string Id);
+
+    private sealed class DownstreamMaintenanceWorkOrderIdJsonConverter : JsonConverter<DownstreamMaintenanceWorkOrderId>
+    {
+        public override DownstreamMaintenanceWorkOrderId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            using var document = JsonDocument.ParseValue(ref reader);
+            return new DownstreamMaintenanceWorkOrderId(FormatMaintenanceWorkOrderId(document.RootElement));
+        }
+
+        public override void Write(Utf8JsonWriter writer, DownstreamMaintenanceWorkOrderId value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value.Id);
+    }
 
     private sealed record DownstreamCompleteMaintenanceWorkOrderResponse(
         JsonElement WorkOrderId,
