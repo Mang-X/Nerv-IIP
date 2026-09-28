@@ -28,6 +28,71 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 public sealed class ErpSalesOrderDemandConsumerTests
 {
     [Fact]
+    public async Task Delivery_exceeding_order_quantity_is_rejected_without_negative_demand()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var handler = new SalesOrderDeliveryRegisteredIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var invalid = Delivered(2, 5m, 6m);
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            SalesOrderDeliveryRegisteredIntegrationEventHandlerForProjectDemandSource.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Fully_delivered_snapshot_before_release_does_not_create_stale_demand()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var deliveredHandler = new SalesOrderDeliveryRegisteredIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var releasedHandler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var delivered = Delivered(2, 5m, 5m);
+
+        await deliveredHandler.HandleAsync(delivered, CancellationToken.None);
+        await releasedHandler.HandleAsync(Released(1, 5m, "10"), CancellationToken.None);
+
+        Assert.Empty(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Equal(2, Assert.Single(await dbContext.SalesOrderDemandProjections.AsNoTracking().ToArrayAsync()).OrderVersion);
+    }
+
+    [Fact]
+    public async Task Delivery_snapshot_keeps_only_undelivered_demand_and_replay_does_not_deduct_twice()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var releasedHandler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+        var deliveredHandler = new SalesOrderDeliveryRegisteredIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+
+        await releasedHandler.HandleAsync(Released(1, 5m, "10"), CancellationToken.None);
+        var delivered = Delivered(2, 5m, 2m);
+        await deliveredHandler.HandleAsync(delivered, CancellationToken.None);
+        await deliveredHandler.HandleAsync(delivered with { EventId = "evt-delivered-replayed" }, CancellationToken.None);
+
+        var demand = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Equal(3m, demand.Quantity);
+        Assert.Equal(2, demand.SourceVersion);
+        Assert.Equal(2, Assert.Single(await dbContext.SalesOrderDemandProjections.AsNoTracking().ToArrayAsync()).OrderVersion);
+
+        await deliveredHandler.HandleAsync(Delivered(3, 5m, 5m), CancellationToken.None);
+
+        demand = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Equal(0m, demand.Quantity);
+        Assert.Equal(3, demand.SourceVersion);
+        Assert.Equal("fulfilled", demand.SourceStatus);
+    }
+
+    [Fact]
     public async Task Concrete_event_fact_rejects_mismatched_payload_status_to_dead_letter()
     {
         await using var provider = CreateProvider();
@@ -893,6 +958,24 @@ public sealed class ErpSalesOrderDemandConsumerTests
             "system:erp",
             $"erp:sales-order:org-001:env-dev:SO-DEMO-001:v{version}:released",
             Payload(version, "released", quantity, lineNo));
+
+    private static SalesOrderDeliveryRegisteredIntegrationEvent Delivered(int version, decimal quantity, decimal deliveredQuantity) =>
+        new(
+            $"evt-delivered-{version}",
+            ErpIntegrationEventTypes.SalesOrderDeliveryRegistered,
+            ErpIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 7, 18, 15, version, 0, TimeSpan.Zero),
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-so-demo-001",
+            "DO-DEMO-001",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            $"erp:sales-order:org-001:env-dev:SO-DEMO-001:v{version}:delivery-registered",
+            Payload(version, "released", quantity, "10") with
+            {
+                Lines = [new SalesOrderLineSnapshot("10", "SKU-FG-A", quantity, "EA", new DateOnly(2026, 8, 15), false, deliveredQuantity)],
+            });
 
     private static SalesOrderChangedIntegrationEvent Changed(int version, decimal quantity, string lineNo) =>
         new(

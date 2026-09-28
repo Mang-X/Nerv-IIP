@@ -140,6 +140,8 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
                 {
                     order.ReleaseDelivery(line.SalesOrderLineNo, line.Quantity);
                 }
+
+                order.RecordDeliveryCancellation();
             }
         }
     }

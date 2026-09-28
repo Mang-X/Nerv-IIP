@@ -41,6 +41,9 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         Assert.Equal("cancelled", persisted.Status);
         Assert.Equal("customer-requested-cancel", persisted.CancellationReason);
         Assert.NotNull(persisted.CancelledAtUtc);
+        var order = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(x => x.SalesOrderNo == "SO-CANCEL-001", CancellationToken.None);
+        Assert.Equal(3, order.Version);
+        Assert.Equal(0m, Assert.Single(order.Lines).DeliveredQuantity);
         Assert.Single(dbContext.ProcessedIntegrationEvents);
         Assert.Empty(dbContext.AccountReceivables);
         Assert.Empty(dbContext.JournalVouchers);
