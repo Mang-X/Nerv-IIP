@@ -542,9 +542,25 @@ internal static class InboundOrderQualityAggregate
         return InboundQualityGateStatuses.NotRequired;
     }
 
-    // 整单可上架：至少一行且无任何一行待检/不合格（其余为合格/有条件放行/免检）。
-    public static bool ReleasedForPutaway(bool hasAnyLine, bool hasRejected, bool hasPending)
-        => hasAnyLine && !hasRejected && !hasPending;
+    // 整单可上架：至少一行且无任何一行待检/不合格（其余为合格/有条件放行/免检），
+    // 并且单据状态还允许建上架任务——与 InboundOrder.EnsureCanCreatePutawayTask 对齐（#3927）：
+    // 已完成的单只剩质检放行（合格/有条件放行）的行可以补建上架；过账失败、已取消一律不行。
+    public static bool ReleasedForPutaway(
+        InboundOrderStatus status,
+        bool hasAnyLine,
+        bool hasRejected,
+        bool hasPending,
+        bool hasConditional,
+        bool hasPassed)
+    {
+        if (!hasAnyLine || hasRejected || hasPending) return false;
+        return status switch
+        {
+            InboundOrderStatus.Open or InboundOrderStatus.PendingQualityCheck => true,
+            InboundOrderStatus.Completed => hasConditional || hasPassed,
+            _ => false,
+        };
+    }
 }
 
 public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext)
@@ -621,7 +637,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             {
                 x.Id,
                 x.InboundOrderNo,
-                Status = x.Status.ToString(),
+                StatusValue = x.Status,
                 x.CreatedAtUtc,
                 x.SiteCode,
                 x.AssignedOperatorUserId,
@@ -638,10 +654,16 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             .Select(x => new InboundOrderListItem(
                 x.Id,
                 x.InboundOrderNo,
-                x.Status,
+                x.StatusValue.ToString(),
                 x.CreatedAtUtc,
                 InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
-                InboundOrderQualityAggregate.ReleasedForPutaway(x.HasAnyLine, x.HasRejected, x.HasPending),
+                InboundOrderQualityAggregate.ReleasedForPutaway(
+                    x.StatusValue,
+                    x.HasAnyLine,
+                    x.HasRejected,
+                    x.HasPending,
+                    x.HasConditional,
+                    x.HasPassed),
                 x.SiteCode,
                 x.AssignedOperatorUserId,
                 x.AssignedPoolCode,

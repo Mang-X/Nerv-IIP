@@ -2,7 +2,8 @@ import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
-import { NvAlertDialog, NvDialog } from '@nerv-iip/ui'
+import { NvAlertDialog, NvDialog, toast } from '@nerv-iip/ui'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 
 import { LifecycleStateChangedError } from '@/composables/lifecycleAction'
 import CountsPage from './counts.vue'
@@ -74,6 +75,7 @@ const wms = vi.hoisted(() => ({
   supplierReturns: [] as unknown[],
   qualityGateStatus: undefined as string | undefined,
   isReleasedForPutaway: true,
+  inboundStatus: 'open',
   permissionCodes: [
     'business.wms.receipts.read',
     'business.wms.receipts.manage',
@@ -91,7 +93,7 @@ const routeGuardState = vi.hoisted(() => ({
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
 vi.mock('vue-router', () => ({
@@ -152,7 +154,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
         inboundOrderId: 'ib-1',
         inboundOrderNo: 'IB-1',
         siteCode: 'SITE-001',
-        status: 'open',
+        status: wms.inboundStatus,
         createdAtUtc: '2026-06-01T00:00:00Z',
         qualityGateStatus: wms.qualityGateStatus,
         isReleasedForPutaway: wms.isReleasedForPutaway,
@@ -326,6 +328,7 @@ describe('WMS operate actions', () => {
     wms.supplierReturns = []
     wms.qualityGateStatus = undefined
     wms.isReleasedForPutaway = true
+    wms.inboundStatus = 'open'
     wms.permissionCodes = [
       'business.wms.receipts.read',
       'business.wms.receipts.manage',
@@ -501,6 +504,31 @@ describe('WMS operate actions', () => {
       'wms-intent-1',
       expect.objectContaining({ attempt: 'initial' }),
     )
+  })
+
+  it('closes the outbound review as submitted while inventory posting is still running', async () => {
+    // #3926：复核已落库、过账异步未完，过去报「提交出库复核失败：操作结果尚未确认」。
+    wms.completeOutbound.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.outbound-order.complete'),
+    )
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
+    await flushPromises()
+    wms.refreshOutboundOrders.mockClear()
+
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    const reviewDialog = wrapper.findAllComponents(NvDialog).find((dialog) => dialog.props('open'))
+    expect(reviewDialog).toBeUndefined()
+    expect(document.body.textContent).not.toContain('提交出库复核失败')
+    expect(toast.warning).toHaveBeenCalledWith(
+      '出库复核已提交，库存正在过账。请稍后刷新查看过账结果。',
+    )
+    expect(wms.refreshOutboundOrders).toHaveBeenCalled()
   })
 
   it('marks only the second same-key outbound submission as a retry', async () => {
@@ -955,6 +983,29 @@ describe('WMS operate actions', () => {
 
     expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('WMS 尚未返回整单上架放行权限')
+  })
+
+  it('offers no putaway entry once a not-released inbound order is completed', async () => {
+    // #3927：已完成的免检单曾留着可点的「上架」，点进去建任务被后端拒。
+    wms.inboundStatus = 'Completed'
+    wms.isReleasedForPutaway = false
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'not-required',
+        qualityStatus: 'available',
+        stagingLocationCode: 'STAGE-01',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="上架 IB-1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('入库单已完成，不再提供上架入口。')
+    expect(wrapper.text()).not.toContain('可进入上架')
   })
 
   it('keeps putaway disabled for a read-only WMS principal', async () => {

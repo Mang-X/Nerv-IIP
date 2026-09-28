@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { computed, nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +7,7 @@ import AvailabilityPage from './availability.vue'
 import CountsPage from './counts.vue'
 import LotsPage from './lots.vue'
 import MovementsPage from './movements.vue'
+import { useBusinessContextStore } from '@/stores/businessContext'
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 
@@ -721,6 +722,41 @@ describe('inventory workflow pages', () => {
     await wrapper.get('#movement-site').setValue('S1')
 
     expect(wrapper.get('#movement-transfer-in-location').attributes('data-form-site')).toBe('S1')
+  })
+
+  it('库存移动 · 幂等键只用网关白名单字符，重试沿用、过账成功后换新', async () => {
+    // #3922：过去用「|」把表单字段拼成键、中文来源单号原样进键，一提交就被网关 400 拒掉。
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    routeState.query = {
+      sourceDocumentId: '期初入库-一号仓',
+      skuCode: 'SKU-001',
+      siteCode: 'S1',
+      locationCode: 'A-01',
+    }
+    inventoryState.postMovement
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+    const wrapper = mount(MovementsPage, {
+      global: {
+        plugins: [pinia],
+        stubs: { ...uiStubs, RouterLink: { template: '<a><slot /></a>' } },
+      },
+    })
+    await flushPromises()
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+    }
+
+    const keys = inventoryState.postMovement.mock.calls.map(([body]) => body.idempotencyKey)
+    expect(keys).toHaveLength(3)
+    for (const key of keys) expect(key).toMatch(/^[A-Za-z0-9._:/-]+$/)
+    expect(keys[1]).toBe(keys[0])
+    expect(keys[2]).not.toBe(keys[1])
   })
 
   it('uses design-system table components for the stock movement read face', () => {

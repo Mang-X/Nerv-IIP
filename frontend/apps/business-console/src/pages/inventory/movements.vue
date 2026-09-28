@@ -11,6 +11,7 @@ import {
   inventoryMovementTypeLabel,
 } from '@/data/inventoryReference'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
+import { makeIdempotencyKey } from '@/composables/useBusinessMes'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
@@ -73,7 +74,10 @@ const form = reactive({
   sourceService: 'business-console',
   sourceDocumentId: '',
   sourceDocumentLineId: '',
-  idempotencyKey: '',
+  // 一次填写一把键：网络重试沿用同一把（后端按键去重），过账成功后才换新键。
+  // 键只用网关白名单字符（字母数字与 . _ : / -）；过去把表单字段用「|」拼成键，
+  // 中文来源单号也原样进键，一提交就被网关 400 拒掉（#3922）。
+  idempotencyKey: makeIdempotencyKey('movement'),
   skuCode: '',
   // 单位跟随物料主档带出（onSkuChange），不预填假单位：写死通用单位会让后端单位换算直接失败。
   uomCode: '',
@@ -119,20 +123,6 @@ watch(
   { immediate: true },
 )
 
-const stableSubmissionKey = computed(() =>
-  [
-    form.movementType,
-    form.sourceDocumentId,
-    form.sourceDocumentLineId,
-    form.skuCode,
-    form.siteCode,
-    form.locationCode,
-    form.transferInLocationCode,
-    form.quantity,
-  ]
-    .map((part) => String(part || '').trim() || 'none')
-    .join('|'),
-)
 const canSubmit = computed(
   () =>
     isNonEmpty(businessContext.organizationId) &&
@@ -208,7 +198,7 @@ async function submitMovement() {
     sourceService: form.sourceService.trim() || 'business-console',
     sourceDocumentId: form.sourceDocumentId.trim(),
     sourceDocumentLineId: optionalText(form.sourceDocumentLineId),
-    idempotencyKey: optionalText(form.idempotencyKey) ?? `movement-${stableSubmissionKey.value}`,
+    idempotencyKey: form.idempotencyKey,
     skuCode: form.skuCode.trim(),
     uomCode: form.uomCode.trim(),
     siteCode: form.siteCode.trim(),
@@ -230,6 +220,7 @@ async function submitMovement() {
     return
   }
   // 列表来自服务端读面：过账成功后失效查询即可，新过账的流水刷新之后仍然在。
+  form.idempotencyKey = makeIdempotencyKey('movement')
   movementSheetOpen.value = false
   notifySuccess(`来源单据 ${body.sourceDocumentId} 的库存移动已受理`)
 }

@@ -620,12 +620,16 @@ describe('PDA WMS composables', () => {
         expect(coladaState.lastMutationVars.get(mutationId)).toMatchObject({
           body: expectedBody,
         })
-        expect(confirmBusinessConsoleOperation).toHaveBeenCalledWith(receipt, {
-          expectedOperationType: operationType,
-          expectedIdempotencyKey: 'KEY-OLD',
-          expectedResourceId: resourceId,
-          readbackScope: { scopeKind: 'self', scopeId: 'emp049' },
-        })
+        // 出库复核另带更长的回读预算（#3926），这里只核意图键与回读范围。
+        expect(confirmBusinessConsoleOperation).toHaveBeenCalledWith(
+          receipt,
+          expect.objectContaining({
+            expectedOperationType: operationType,
+            expectedIdempotencyKey: 'KEY-OLD',
+            expectedResourceId: resourceId,
+            readbackScope: { scopeKind: 'self', scopeId: 'emp049' },
+          }),
+        )
         expect(peekPendingBusinessIntent(intentScope)?.idempotencyKey).toBe('KEY-OLD')
       } finally {
         clearPendingBusinessIntent(intentScope)

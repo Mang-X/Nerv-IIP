@@ -64,12 +64,26 @@ export class BusinessOperationUnconfirmedError extends Error {
   }
 }
 
+/**
+ * 写操作已被权威方接受、后续异步环节还在进行（不是失败，也不是结果不明）。
+ * 文案按操作说清「在等什么」，界面据此给中间态，而不是报「提交失败」。
+ */
+const PENDING_OPERATION_MESSAGES: Record<string, string> = {
+  'quality.ncr.rework': '返工请求已受理，系统工单仍在创建中。请刷新查看最新状态。',
+  'wms.outbound-order.complete': '出库复核已提交，库存正在过账。请稍后刷新查看过账结果。',
+}
+
 export class BusinessOperationPendingError extends BusinessOperationUnconfirmedError {
   readonly pending = true
   readonly indeterminate = true
 
   constructor(operationType?: string, readbackPath?: string) {
-    super('返工请求已受理，系统工单仍在创建中。请刷新查看最新状态。', operationType, readbackPath)
+    super(
+      (operationType && PENDING_OPERATION_MESSAGES[operationType]) ??
+        '操作已受理，后续处理仍在进行。请稍后刷新查看最新状态。',
+      operationType,
+      readbackPath,
+    )
     this.name = 'BusinessOperationPendingError'
   }
 }
@@ -271,6 +285,10 @@ export function verifyBusinessConsoleOperationReadback(
     }
     if (item && (postingStatus === 'failed' || status === 'inventorypostingfailed')) {
       return confirmedFailure(item, '库存过账失败，请刷新后按最新状态处理')
+    }
+    // 复核已落库、库存过账是异步事件：刚提交时读到「过账中」是正常的中间态（#3926）。
+    if (item && (postingStatus === 'pending' || status === 'inventorypostingpending')) {
+      return { state: 'pending' }
     }
     return { state: 'indeterminate' }
   }

@@ -13,6 +13,8 @@ import { useSkuNames } from '@/composables/useSkuNames'
 const props = defineProps<{
   inboundOrderId?: string
   inboundOrderNo: string
+  /** 入库单状态码：已完成/已取消/过账失败且未放行时，不再给上架入口。 */
+  inboundOrderStatus?: string | null
   /** 入库单所在的工厂：带进上架页，上架的库位候选与就地新增都按它来。 */
   siteCode?: string
   gates: BusinessConsoleWmsReceivingQualityGateItem[]
@@ -123,9 +125,8 @@ const summary = computed(() => {
       label: orderCategory.value === 'not-required' ? '免检' : '合格',
       value: 'released',
       description:
-        orderCategory.value === 'not-required'
-          ? '已跳过待检，可进入上架。'
-          : '检验已通过，可进入上架。',
+        (orderCategory.value === 'not-required' ? '已跳过待检' : '检验已通过') +
+        (putawayClosedReason.value ? '。' : '，可进入上架。'),
     }
   }
   return {
@@ -142,6 +143,19 @@ const putawayDisabled = computed(
     props.isReleasedForPutaway !== true ||
     (summary.value.value !== 'released' && summary.value.value !== 'conditional-release'),
 )
+/**
+ * 单据已经走完（或走不下去）又没有质检放行行时，上架入口整个收起，只说明原因（#3927）：
+ * 过去这里留着可点的「上架」，点进去建任务被领域守卫拒掉。放行口径以 WMS 返回的
+ * isReleasedForPutaway 为准——已完成但质检放行的行仍可补建上架，这时入口照常给。
+ */
+const putawayClosedReason = computed(() => {
+  if (props.isReleasedForPutaway === true) return ''
+  const status = normalize(props.inboundOrderStatus)
+  if (status === 'completed') return '入库单已完成，不再提供上架入口。'
+  if (status === 'cancelled') return '入库单已取消，不再提供上架入口。'
+  if (status === 'inventorypostingfailed') return '库存过账失败，重试过账前不提供上架入口。'
+  return ''
+})
 const putawayLabel = computed(() =>
   orderCategory.value === 'conditional-release' ? '受限上架' : '上架',
 )
@@ -315,8 +329,11 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
+      <span v-if="putawayClosedReason" class="text-xs text-muted-foreground">
+        {{ putawayClosedReason }}
+      </span>
       <NvButton
-        v-if="putawayDisabled"
+        v-else-if="putawayDisabled"
         size="sm"
         type="button"
         variant="outline"
@@ -330,7 +347,10 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
           {{ putawayLabel }}
         </RouterLink>
       </NvButton>
-      <span v-if="putawayDisabled && putawayPermissionExplanation" class="text-xs text-warning">
+      <span
+        v-if="!putawayClosedReason && putawayDisabled && putawayPermissionExplanation"
+        class="text-xs text-warning"
+      >
         {{ putawayPermissionExplanation }}
       </span>
       <NvButton

@@ -215,14 +215,28 @@ public sealed class CreatePutawayTaskCommandHandler(
             return existingTask.Id;
         }
 
-        var task = inbound.CreatePutawayTask(
-            taskNo,
-            request.LineNo,
-            request.FromLocationCode,
-            request.ToLocationCode,
-            request.Quantity,
-            inbound.AssignedOperatorUserId,
-            inbound.AssignedPoolCode);
+        WarehouseTask task;
+        try
+        {
+            task = inbound.CreatePutawayTask(
+                taskNo,
+                request.LineNo,
+                request.FromLocationCode,
+                request.ToLocationCode,
+                request.Quantity,
+                inbound.AssignedOperatorUserId,
+                inbound.AssignedPoolCode);
+        }
+        // 领域守卫的原因是英文，不上屏；给中文业务原因，不再落成 500（#3927）。
+        catch (InvalidOperationException exception) when (inbound.Status == InboundOrderStatus.Completed)
+        {
+            throw new KnownException("入库单已完成，只有质检放行的行还能补建上架任务。", exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException("当前入库行暂不能上架，请刷新后按最新状态处理。", exception);
+        }
+
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
