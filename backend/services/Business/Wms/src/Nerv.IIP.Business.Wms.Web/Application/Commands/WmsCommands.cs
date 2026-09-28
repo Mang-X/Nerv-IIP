@@ -2437,7 +2437,7 @@ public sealed record DispatchWcsTaskCommand(
     long ExpectedVersion,
     string AdapterType,
     string ExternalTaskId,
-    string PayloadJson,
+    string? PayloadJson,
     string? DeviceId = null) : ICommand<WcsTaskId>;
 
 public sealed class DispatchWcsTaskCommandHandler(
@@ -2488,11 +2488,34 @@ public sealed class DispatchWcsTaskCommandHandler(
                 ? adapterType
                 : WmsText.Required(request.DeviceId, nameof(request.DeviceId));
             _ = WmsText.Required(request.ExternalTaskId, nameof(request.ExternalTaskId));
-            _ = WmsText.Required(request.PayloadJson, nameof(request.PayloadJson));
         }
         catch (ArgumentException exception)
         {
             throw new WmsUnprocessableException(exception.Message);
+        }
+
+        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(
+            x => x.WarehouseTaskId == request.WarehouseTaskId,
+            cancellationToken);
+        // 不带派发内容 = 人工「重新下发原报文」：沿用已存报文与原设备。首次派发没有可沿用的报文，必须显式给出。
+        var resendOriginal = string.IsNullOrWhiteSpace(request.PayloadJson);
+        var payloadJson = resendOriginal
+            ? existing?.PayloadJson
+                ?? throw new WmsUnprocessableException("payloadJson is required for the first dispatch.")
+            : request.PayloadJson!;
+        if (resendOriginal)
+        {
+            // 只有失败的任务才需要重新下发；否则设备侧什么也收不到，却会被当成「已下发」。
+            if (existing!.Status != WcsTaskStatus.Failed)
+            {
+                throw new WmsLifecycleConflictException(
+                    "dispatch-wcs-task",
+                    $"redispatch-requires-failed-task-{existing.Status.ToString().ToLowerInvariant()}",
+                    WmsUnprocessableReasonCodes.WcsRedispatchRequiresFailedTask);
+            }
+
+            // 熔断按设备记账（失败时记在任务的 DeviceId 上），重派必须按同一台设备查。
+            deviceId = existing.DeviceId;
         }
 
         var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
@@ -2505,19 +2528,18 @@ public sealed class DispatchWcsTaskCommandHandler(
         {
             throw new WmsLifecycleConflictException(
                 "dispatch-wcs-task",
-                circuit.RejectionReason!);
+                circuit.RejectionReason!,
+                WmsUnprocessableReasonCodes.WcsDeviceCircuitOpen);
         }
 
-        var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(
-            x => x.WarehouseTaskId == request.WarehouseTaskId,
-            cancellationToken);
         if (existing is not null)
         {
             var claimReference = existing.Id.Id.ToString("D");
-            if (existing.MatchesDispatch(
+            // 「重新下发原报文」（此处必为失败任务）是明确的重试意图，不能被当成原请求的幂等重放吞掉。
+            if (!resendOriginal && existing.MatchesDispatch(
                     adapterType,
                     request.ExternalTaskId,
-                    request.PayloadJson,
+                    payloadJson,
                     deviceId))
             {
                 warehouseTask.ValidateWcsExecution(claimReference);
@@ -2529,9 +2551,27 @@ public sealed class DispatchWcsTaskCommandHandler(
                 warehouseTask.ValidateWcsExecution(
                     claimReference,
                     request.ExpectedVersion);
+                var retriedAtUtc = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+                // 这两条是操作员最常撞上的重派拒绝，带上稳定原因码，控制台才能说清是「次数用完」还是「还没到时间」。
+                if (existing.IsTerminalFailure)
+                {
+                    throw new WmsLifecycleConflictException(
+                        "dispatch-wcs-task",
+                        "retry-limit-reached",
+                        WmsUnprocessableReasonCodes.WcsRetryLimitReached);
+                }
+
+                if (existing.NextRetryAtUtc is { } nextRetryAtUtc && retriedAtUtc < nextRetryAtUtc)
+                {
+                    throw new WmsLifecycleConflictException(
+                        "dispatch-wcs-task",
+                        $"retry-not-due-until-{nextRetryAtUtc:O}",
+                        WmsUnprocessableReasonCodes.WcsRetryNotDue);
+                }
+
                 try
                 {
-                    existing.Retry(request.ExternalTaskId, request.PayloadJson, (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
+                    existing.Retry(request.ExternalTaskId, payloadJson, retriedAtUtc);
                 }
                 catch (InvalidOperationException exception)
                 {
@@ -2557,7 +2597,7 @@ public sealed class DispatchWcsTaskCommandHandler(
                 request.WarehouseTaskId,
                 adapterType,
                 request.ExternalTaskId,
-                request.PayloadJson,
+                payloadJson,
                 deviceId);
         }
         catch (ArgumentException exception)
@@ -2651,6 +2691,14 @@ public sealed class CompleteWcsTaskCommandHandler(
             ?? throw new KnownException($"未找到仓库任务，任务 ID = {task.WarehouseTaskId}");
         var claimReference = task.Id.Id.ToString("D");
         var previouslyExecutedQuantity = warehouseTask.ExecutedQuantity;
+        // 越界先于一切状态变更与远程调用：越界时不落进度、也不远程标记已拣。
+        if (executedQuantity < warehouseTask.ExecutedQuantity || executedQuantity > warehouseTask.PlannedQuantity)
+        {
+            throw new WmsUnprocessableException(
+                $"WCS completion quantity {executedQuantity} is outside [{warehouseTask.ExecutedQuantity}, {warehouseTask.PlannedQuantity}]",
+                WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange);
+        }
+
         try
         {
             warehouseTask.ValidateWcsExecution(claimReference);

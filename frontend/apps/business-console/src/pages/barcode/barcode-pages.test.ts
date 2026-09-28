@@ -114,6 +114,26 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
           variableSchemaJson: '{"fields":["skuCode","lotNo","expiryDate"]}',
           status: 'active',
         },
+        {
+          templateId: 'tpl-2',
+          templateCode: 'PALLET',
+          templateName: '托盘标签',
+          templateFileId: 'file-label-pallet',
+          variableSchemaJson: JSON.stringify({
+            version: 1,
+            variables: [
+              { name: 'palletGrade', type: 'string' },
+              {
+                name: 'skuCode',
+                label: '成品编码',
+                type: 'string',
+                required: false,
+                maxLength: 40,
+              },
+            ],
+          }),
+          status: 'active',
+        },
       ]),
       templatesError: shallowRef(undefined),
       templatesPending: shallowRef(false),
@@ -453,15 +473,18 @@ describe('barcode pages', () => {
     )
   })
 
-  it('renders and saves a label template with field schema text', async () => {
+  it('assembles the variable list from data item rows without showing variable names', async () => {
     const wrapper = mount(TemplatesPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('标签模板')
     expect(wrapper.text()).toContain('SKU_BOX')
     expect(wrapper.text()).toContain('物料编码、批次号、有效期')
+    // 目录外且没有显示名称的数据项只显示「其他数据项」，变量名不上屏。
+    expect(wrapper.text()).toContain('其他数据项、成品编码')
+    expect(wrapper.text()).not.toContain('palletGrade')
+    expect(wrapper.text()).not.toContain('skuCode')
 
     await wrapper
       .findAll('button')
@@ -471,7 +494,15 @@ describe('barcode pages', () => {
     await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
     await setInput(wrapper, '#barcode-template-name', '托盘标签')
     await setInput(wrapper, '#barcode-template-file', 'file-pallet')
-    await setInput(wrapper, '#barcode-template-schema', '{"fields":["sscc","lotNo"]}')
+    await wrapper.find('#barcode-template-item-0').setValue('skuCode')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('添加数据项'))!
+      .trigger('click')
+    await flushPromises()
+    await wrapper.find('#barcode-template-item-1').setValue('lotNo')
+    await setInput(wrapper, '#barcode-template-label-1', '来料批次')
+    await setInput(wrapper, '#barcode-template-max-1', '30')
     await flushPromises()
 
     await wrapper.find('form').trigger('submit')
@@ -480,15 +511,72 @@ describe('barcode pages', () => {
     expect(barcode.saveTemplate).toHaveBeenCalledWith(
       expect.objectContaining({
         templateCode: 'PALLET_LABEL',
-        templateName: '托盘标签',
         templateFileId: 'file-pallet',
-        variableSchemaJson: '{"fields":["sscc","lotNo"]}',
-        status: 'active',
+        variableSchemaJson: JSON.stringify({
+          version: 1,
+          variables: [
+            { name: 'skuCode', label: '物料编码', type: 'string', required: true, maxLength: 200 },
+            { name: 'lotNo', label: '来料批次', type: 'string', required: true, maxLength: 30 },
+          ],
+        }),
       }),
     )
   })
 
-  it('prefills an existing label template for update', async () => {
+  it('does not submit a template until every data item row is chosen', async () => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建模板'))!
+      .trigger('click')
+    await flushPromises()
+    await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
+    await setInput(wrapper, '#barcode-template-name', '托盘标签')
+    await setInput(wrapper, '#barcode-template-file', 'file-pallet')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.saveTemplate).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('第 1 行：请选择数据项。')
+  })
+
+  it.each([
+    ['duplicate data item', 'skuCode', '200', '第 2 行：数据项与前面重复。'],
+    ['non-positive max length', 'lotNo', '0', '第 2 行：最大长度需为正整数。'],
+  ])('does not submit a template with a %s', async (_case, secondItem, maxLength, message) => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建模板'))!
+      .trigger('click')
+    await flushPromises()
+    await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
+    await setInput(wrapper, '#barcode-template-name', '托盘标签')
+    await setInput(wrapper, '#barcode-template-file', 'file-pallet')
+    await wrapper.find('#barcode-template-item-0').setValue('skuCode')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('添加数据项'))!
+      .trigger('click')
+    await flushPromises()
+    await wrapper.find('#barcode-template-item-1').setValue(secondItem)
+    await setInput(wrapper, '#barcode-template-max-1', maxLength)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.saveTemplate).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain(message)
+  })
+
+  it('rewrites a legacy field list into the variable list the printer accepts on update', async () => {
     const wrapper = mount(TemplatesPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
     })
@@ -500,15 +588,9 @@ describe('barcode pages', () => {
       .trigger('click')
     await flushPromises()
 
-    // 模板编码由所选行带出，只读展示（不再是 readonly 输入框）。
     const carried = wrapper.find('[data-slot="carried-context"]')
-    expect(carried.exists()).toBe(true)
     expect(carried.text()).toContain('SKU_BOX')
     expect(wrapper.find('#barcode-template-code').exists()).toBe(false)
-    expect((wrapper.find('#barcode-template-file').element as HTMLInputElement).value).toBe(
-      'file-label-box',
-    )
-
     await setInput(wrapper, '#barcode-template-name', '外箱标签 V2')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -518,6 +600,46 @@ describe('barcode pages', () => {
         templateCode: 'SKU_BOX',
         templateName: '外箱标签 V2',
         templateFileId: 'file-label-box',
+        variableSchemaJson: JSON.stringify({
+          version: 1,
+          variables: [
+            { name: 'skuCode', label: '物料编码', type: 'string', required: true, maxLength: 200 },
+            { name: 'lotNo', label: '批次号', type: 'string', required: true, maxLength: 200 },
+            { name: 'expiryDate', label: '有效期', type: 'string', required: true, maxLength: 200 },
+          ],
+        }),
+      }),
+    )
+  })
+
+  it('keeps an unlisted data item and its settings when a template is edited', async () => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .filter((b) => b.text().includes('编辑'))[1]!
+      .trigger('click')
+    await flushPromises()
+    const firstItem = wrapper.find('#barcode-template-item-0')
+    expect(firstItem.text()).toContain('其他数据项')
+    expect(firstItem.text()).not.toContain('palletGrade')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.saveTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateCode: 'PALLET',
+        variableSchemaJson: JSON.stringify({
+          version: 1,
+          variables: [
+            { name: 'palletGrade', type: 'string', required: true, maxLength: 200 },
+            { name: 'skuCode', label: '成品编码', type: 'string', required: false, maxLength: 40 },
+          ],
+        }),
       }),
     )
   })

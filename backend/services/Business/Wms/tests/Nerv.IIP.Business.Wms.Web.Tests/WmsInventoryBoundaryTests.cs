@@ -2217,6 +2217,26 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Empty(inventory.PickedRequests);
     }
 
+    /// <summary>
+    /// #3842：WCS 回执的累计数量越界（超过计划数量）时，以稳定原因码拒绝，且不远程标记已拣。
+    /// </summary>
+    [Fact]
+    public async Task Out_of_range_wcs_completion_quantity_is_refused_without_marking_the_reservation_picked()
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(dbContext, "PICK-OVER", new FakeWmsInventoryReservationClient("res-over"));
+
+        var exception = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            new CompleteWcsTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-PICK-OVER", """{"actualQuantity":5}"""),
+                CancellationToken.None));
+
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange, exception.ReasonCode);
+        Assert.Empty(inventory.PickedRequests);
+        Assert.NotEqual(WarehouseTaskStatus.Completed, pickingTask.Status);
+        Assert.Equal(0m, pickingTask.ExecutedQuantity);
+    }
+
     private static async Task<(WarehouseTask PickingTask, FakeWmsInventoryReservationClient Inventory)> CreateWcsDispatchedPickingTaskAsync(
         ApplicationDbContext dbContext,
         string suffix,

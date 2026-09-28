@@ -455,7 +455,7 @@ public sealed record DispatchWcsTaskRequest(
     long ExpectedVersion,
     string AdapterType,
     string ExternalTaskId,
-    string PayloadJson,
+    string? PayloadJson,
     string? DeviceId = null);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
 public sealed record CompleteWcsTaskRequest(string OrganizationId, string EnvironmentId, string ExternalTaskId, string CompletionPayloadJson);
