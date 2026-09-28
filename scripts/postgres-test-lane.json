@@ -74,6 +74,22 @@
       ]
     },
     {
+      "id": "masterdata-worker-login-account-postgres",
+      "service": "MasterData",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.MasterData.Web.Tests.WorkerLoginAccountUniquenessPostgresTests",
+      "databasePrefix": "nerv_masterdata_worker_account",
+      "diagnosticSchemas": [
+        "business_masterdata"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.MasterData.Web.Tests.WorkerLoginAccountUniquenessPostgresTests.Second_worker_with_same_login_account_is_rejected_as_known_exception_on_postgres"
+      ]
+    },
+    {
       "id": "scheduling-postgres-profile",
       "service": "Scheduling",
       "tier": "core",
@@ -748,6 +764,22 @@
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant"
+      ]
+    },
+    {
+      "id": "iam-member-account-directory-postgres",
+      "service": "Iam",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests",
+      "databasePrefix": "nerv_iam_member_accounts",
+      "diagnosticSchemas": [
+        "iam"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres"
       ]
     }
   ],

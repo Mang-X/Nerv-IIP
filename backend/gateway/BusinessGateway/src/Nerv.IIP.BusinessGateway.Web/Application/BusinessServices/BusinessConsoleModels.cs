@@ -462,13 +462,18 @@ public sealed record BusinessConsoleWorkerDirectoryRequest(
     string? EmploymentStatus = null,
     int PageIndex = 1,
     int PageSize = 20,
-    bool IncludeDisabled = false);
+    bool IncludeDisabled = false,
+    // 员工名册页要求带出关联账号的登录名（#3924）。只在网关处理，不下传 MasterData；
+    // 即便请求了，也只有持有 masterdata.resources.manage 且组织级授权的主体才会拿到。
+    bool IncludeLoginNames = false);
 
 public sealed record BusinessConsoleWorkerDirectoryResponse(
     int PageIndex,
     int PageSize,
     int TotalCount,
-    IReadOnlyList<BusinessConsoleWorkerDirectoryItem> Items);
+    IReadOnlyList<BusinessConsoleWorkerDirectoryItem> Items,
+    // 本次响应的 loginName 是否可信地反映了关联状态：为假时 loginName 一律为空，界面不能据此判「未关联」。
+    bool LoginNamesVisible = false);
 
 public sealed record BusinessConsoleWorkerTeamItem(
     string TeamCode,
@@ -494,8 +499,8 @@ public sealed record BusinessConsoleWorkerDirectoryItem(
     IReadOnlyCollection<BusinessConsoleWorkerTeamItem> Teams,
     IReadOnlyCollection<BusinessConsoleWorkerSkillItem> Skills,
     string SnapshotVersion,
-    // 关联的登录账号登录名（#3924）：只在员工名册读面由网关按 IAM 成员账号补出；
-    // 为空表示未关联可用账号（从未关联，或账号已不在本组织/环境）。
+    // 关联的登录账号登录名（#3924）：只在员工名册读面、且响应 LoginNamesVisible 为真时由网关按 IAM 成员账号补出；
+    // 此时为空表示未关联可用账号（从未关联，或账号已不在本组织/环境）。
     string? LoginName = null);
 
 public sealed record BusinessConsoleCreateWorkerRequest(

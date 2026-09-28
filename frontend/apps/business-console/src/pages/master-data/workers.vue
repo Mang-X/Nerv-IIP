@@ -56,6 +56,7 @@ const {
   enable,
   enablePending,
   filters,
+  loginNamesVisible,
   refresh,
   update,
   updatePending,
@@ -162,7 +163,8 @@ function openCreate() {
 function openEdit(row: BusinessConsoleWorkerDirectoryItem) {
   if (!row.employeeNo) return
   editingCode.value = row.employeeNo
-  editingLoginName.value = row.loginName?.trim() || null
+  // 看不到登录名（非员工维护权）时显示「—」，不能说成「未关联」。
+  editingLoginName.value = row.loginName?.trim() || (loginNamesVisible.value ? '未关联' : '—')
   showErrors.value = false
   Object.assign(form, {
     name: row.displayName ?? '',
@@ -355,7 +357,7 @@ async function confirmRestore() {
               </NvField>
               <NvField v-else>
                 <NvFieldLabel>关联登录账号</NvFieldLabel>
-                <NvInput :model-value="editingLoginName ?? '未关联'" readonly disabled />
+                <NvInput :model-value="editingLoginName ?? '—'" readonly disabled />
                 <NvFieldDescription>
                   登录账号只能在新增员工时关联。未关联账号的员工需要停用后重新新增并选择账号。
                 </NvFieldDescription>
@@ -440,7 +442,9 @@ async function confirmRestore() {
       </template>
       <template #cell-loginName="{ row }">
         <span v-if="row.loginName">{{ row.loginName }}</span>
-        <span v-else class="text-muted-foreground">未关联</span>
+        <!-- 当前主体看不到登录名（非员工维护权）时是「—」，不能误报成「未关联」。 -->
+        <span v-else-if="loginNamesVisible" class="text-muted-foreground">未关联</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-teams="{ row }">
         <div v-if="row.teams?.length" class="flex flex-wrap gap-1">

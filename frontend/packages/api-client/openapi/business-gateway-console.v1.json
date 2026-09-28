@@ -23510,6 +23510,15 @@
               "default": false,
               "nullable": false
             }
+          },
+          {
+            "name": "includeLoginNames",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "nullable": false
+            }
           }
         ],
         "responses": {
@@ -56292,6 +56301,9 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem"
             }
+          },
+          "loginNamesVisible": {
+            "type": "boolean"
           }
         }
       },

@@ -161,53 +161,73 @@ public sealed class BusinessConsoleWorkerLoginAccountTests
         Assert.Null(masterData.LastCreateWorkerRequest!.UserId);
     }
 
+    private const string RosterUrl =
+        "/api/business-console/v1/master-data/workers?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=20&includeDisabled=true&includeLoginNames=true";
+
+    // 登录名的可见范围按最小权限裁定（#3924 审核阻断 2）：只有员工维护权 + 组织级授权才看得到。
     [Fact]
-    public async Task Worker_directory_attaches_login_names_of_member_accounts_and_leaves_unlinked_workers_empty()
+    public async Task Worker_roster_shows_login_names_to_organization_wide_managers()
     {
         var iamHandler = new RecordingJsonHandler(MemberAccountsPayload(1, 2, 1, ("user-019a", "zhangsan", "张三", false)));
-        var masterData = new RecordingMasterDataClient
-        {
-            ListWorkersHandler = (request, _) => Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
-                request.PageIndex,
-                request.PageSize,
-                2,
-                [
-                    Worker("user-019a", "EMP-0001", "张三"),
-                    Worker("EMP-0002", "EMP-0002", "李四"),
-                ])),
-        };
-        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), iamHandler, masterData);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [ManageGrant()]);
+        await using var lease = LeaseHost(auth, iamHandler, RosterMasterData());
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await client.GetAsync(
-            "/api/business-console/v1/master-data/workers?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=20&includeDisabled=true");
+        var response = await client.GetAsync(RosterUrl);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // 名册读权限照旧；是否可见登录名再按员工维护权单独核一次，并要回 scope grants。
+        Assert.Contains(auth.Requirements, r => r.PermissionCode == BusinessGatewayPermissions.MasterDataResourcesRead);
+        Assert.Contains(auth.Requirements, r =>
+            r.PermissionCode == BusinessGatewayPermissions.MasterDataResourcesManage && r.IncludePrincipalContext);
         var request = Assert.Single(iamHandler.Requests);
         Assert.Contains("userIds=user-019a", request.Query, StringComparison.Ordinal);
         Assert.Contains("userIds=EMP-0002", request.Query, StringComparison.Ordinal);
         // 名册要如实显示已停用账号的登录名。
         Assert.Contains("includeDisabled=true", request.Query, StringComparison.Ordinal);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var items = document.RootElement.GetProperty("data").GetProperty("items");
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("loginNamesVisible").GetBoolean());
+        var items = data.GetProperty("items");
         Assert.Equal("zhangsan", items[0].GetProperty("loginName").GetString());
         Assert.Equal(JsonValueKind.Null, items[1].GetProperty("loginName").ValueKind);
     }
 
+    [Theory]
+    [InlineData("read-only")]
+    [InlineData("manage-restricted-scope")]
+    public async Task Worker_roster_hides_login_names_without_organization_wide_manage(string principal)
+    {
+        var iamHandler = new RecordingJsonHandler(MemberAccountsPayload(1, 2, 1, ("user-019a", "zhangsan", "张三", true)));
+        var auth = principal == "read-only"
+            ? FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MasterDataResourcesRead)
+            : FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+            [
+                Grant("workshop", "WS-A", BusinessGatewayPermissions.MasterDataResourcesManage),
+            ]);
+        await using var lease = LeaseHost(auth, iamHandler, RosterMasterData());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(RosterUrl);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(iamHandler.Requests);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.False(data.GetProperty("loginNamesVisible").GetBoolean());
+        Assert.All(data.GetProperty("items").EnumerateArray(), item =>
+            Assert.Equal(JsonValueKind.Null, item.GetProperty("loginName").ValueKind));
+    }
+
+    // 各处员工选择器与 PDA 首页共用这个读接口：不显式请求就不多一跳 IAM、也不做员工维护权核验。
     [Fact]
-    public async Task Worker_directory_with_no_rows_does_not_call_iam()
+    public async Task Worker_directory_without_login_name_request_never_calls_iam()
     {
         var iamHandler = new RecordingJsonHandler(MemberAccountsPayload(1, 1, 0));
-        var masterData = new RecordingMasterDataClient
-        {
-            ListWorkersHandler = (request, _) => Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
-                request.PageIndex,
-                request.PageSize,
-                0,
-                [])),
-        };
-        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), iamHandler, masterData);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [ManageGrant()]);
+        await using var lease = LeaseHost(auth, iamHandler, RosterMasterData());
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
@@ -216,7 +236,43 @@ public sealed class BusinessConsoleWorkerLoginAccountTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Empty(iamHandler.Requests);
+        Assert.DoesNotContain(auth.Requirements, r => r.PermissionCode == BusinessGatewayPermissions.MasterDataResourcesManage);
     }
+
+    // IAM 读失败不拖垮名册：照常返回员工，但不标记登录名可见（界面显示「—」，不误报「未关联」）。
+    [Fact]
+    public async Task Worker_roster_degrades_when_iam_is_unavailable()
+    {
+        var iamHandler = new RecordingJsonHandler("{}", HttpStatusCode.ServiceUnavailable);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [ManageGrant()]);
+        await using var lease = LeaseHost(auth, iamHandler, RosterMasterData());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(RosterUrl);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotEmpty(iamHandler.Requests);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.False(data.GetProperty("loginNamesVisible").GetBoolean());
+        Assert.Equal(2, data.GetProperty("items").GetArrayLength());
+    }
+
+    private static RecordingMasterDataClient RosterMasterData() => new()
+    {
+        ListWorkersHandler = (request, _) => Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
+            request.PageIndex,
+            request.PageSize,
+            2,
+            [
+                Worker("user-019a", "EMP-0001", "张三"),
+                Worker("EMP-0002", "EMP-0002", "李四"),
+            ])),
+    };
+
+    private static AuthorizationScopeGrant ManageGrant() =>
+        Grant("organization", "org-001", BusinessGatewayPermissions.MasterDataResourcesManage, organizationWide: true);
 
     private static object CreateWorkerBody(string? userId) => new
     {
@@ -287,7 +343,7 @@ public sealed class BusinessConsoleWorkerLoginAccountTests
 
     private sealed record RecordedRequest(string Path, string Query, string? BearerToken);
 
-    private sealed class RecordingJsonHandler(string payload) : HttpMessageHandler
+    private sealed class RecordingJsonHandler(string payload, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
     {
         private readonly List<RecordedRequest> requests = [];
 
@@ -299,7 +355,7 @@ public sealed class BusinessConsoleWorkerLoginAccountTests
                 request.RequestUri!.AbsolutePath,
                 Uri.UnescapeDataString(request.RequestUri.Query),
                 request.Headers.Authorization?.Parameter));
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult(new HttpResponseMessage(status)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json"),
             });

@@ -57,9 +57,10 @@ public static class BusinessConsoleSearchableDirectoryPolicy
             ["scrap-reason"] = Define("scrap-reason", "quality", BusinessGatewayPermissions.QualityInspectionRecordsRead),
             ["downtime-reason"] = Define("downtime-reason", "maintenance", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
             ["maintenance-reason"] = Define("maintenance-reason", "maintenance", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
-            // 员工「关联登录账号」候选（#3924）：本组织/环境里已启用的成员账号。只有能维护员工档案的人
-            // （masterdata.resources.manage）才需要看到账号登录名，且账号目录是组织级事实、不按车间/班组切分，
-            // 因此只对持有组织级授权的主体开放（见 ResolveAuthorizedScope）。
+            // 员工「关联登录账号」候选（#3924）：本组织/环境里已启用的成员账号。登录名只对能维护员工档案的人
+            // （masterdata.resources.manage）可见，且账号目录是组织级事实、不按车间/班组切分，
+            // 因此只对持有组织级授权的主体开放（见 ResolveAuthorizedScope）。员工名册补登录名走同一道门
+            // （BusinessConsoleWorkerLoginAccounts.CanSeeLoginNamesAsync），只读员工的主体拿到的 loginName 恒为空。
             ["login-account"] = Define("login-account", "iam", BusinessGatewayPermissions.MasterDataResourcesManage),
         };
 

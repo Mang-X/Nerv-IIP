@@ -5817,6 +5817,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     pageSize?: number;
     totalCount?: number;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem>;
+    loginNamesVisible?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem = {
@@ -19227,6 +19228,7 @@ export type ListBusinessConsoleWorkersData = {
         pageIndex?: number;
         pageSize?: number;
         includeDisabled?: boolean;
+        includeLoginNames?: boolean;
     };
     url: '/api/business-console/v1/master-data/workers';
 };

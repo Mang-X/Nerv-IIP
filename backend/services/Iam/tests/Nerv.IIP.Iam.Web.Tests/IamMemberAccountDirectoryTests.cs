@@ -41,9 +41,13 @@ public sealed class IamMemberAccountDirectoryTests : IClassFixture<WebApplicatio
         Assert.False(withDisabled.Items.Single(x => x.UserId == disabledMember).Enabled);
         Assert.DoesNotContain(withDisabled.Items, x => x.UserId == outsider);
 
-        var otherEnvironment = await ListAsync("organizationId=org-001&environmentId=env-other&keyword=member-acct&includeDisabled=true&pageIndex=1&pageSize=50");
-        Assert.Empty(otherEnvironment.Items);
-        Assert.Equal(0, otherEnvironment.TotalCount);
+        // 同一组织、不同环境，以及同一环境 ID、不同组织：都不得看到 org-001/env-dev 的成员。
+        foreach (var otherScope in new[] { "organizationId=org-001&environmentId=env-other", "organizationId=org-other&environmentId=env-dev" })
+        {
+            var other = await ListAsync($"{otherScope}&keyword=member-acct&includeDisabled=true&pageIndex=1&pageSize=50");
+            Assert.Empty(other.Items);
+            Assert.Equal(0, other.TotalCount);
+        }
     }
 
     [Fact]

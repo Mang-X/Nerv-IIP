@@ -639,31 +639,11 @@ public sealed class BusinessGatewayProxyTests
                     code = 0,
                 }),
             });
-        // 名册会按 IAM 成员账号补登录名（#3924）；这里只关心 MasterData 那一跳，IAM 回一个匹配账号。
-        var iamHandler = new RecordingHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = JsonContent.Create(new
-                {
-                    data = new
-                    {
-                        pageIndex = 1,
-                        pageSize = 1,
-                        totalCount = 1,
-                        items = new[] { new { userId = "user-op-001", loginName = "chenzhiqiang", displayName = (string?)null, enabled = true } },
-                    },
-                    success = true,
-                    message = string.Empty,
-                    code = 0,
-                }),
-            });
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth, services =>
         {
             services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
                 new NamedPrimaryHandlerFilter("IBusinessMasterDataClient", handler));
-            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
-                new NamedPrimaryHandlerFilter("IBusinessIamAccountDirectoryClient", iamHandler));
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -691,10 +671,6 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("生产部", worker.GetProperty("departmentName").GetString());
         Assert.Equal("active", worker.GetProperty("employmentStatus").GetString());
         Assert.Equal("CNC 精加工班组", worker.GetProperty("teams")[0].GetProperty("teamName").GetString());
-        Assert.Equal("chenzhiqiang", worker.GetProperty("loginName").GetString());
-        var iamRequest = Assert.Single(iamHandler.Requests);
-        Assert.Equal("/internal/iam/v1/member-accounts", iamRequest.RequestUri!.AbsolutePath);
-        Assert.Equal("internal-test-token", iamRequest.Headers.Authorization!.Parameter);
     }
 
     [Fact]

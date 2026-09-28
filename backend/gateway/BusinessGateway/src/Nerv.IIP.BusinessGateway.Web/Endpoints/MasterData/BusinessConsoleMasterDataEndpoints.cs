@@ -1196,6 +1196,19 @@ public sealed class ListBusinessConsoleWorkersEndpoint(
         CancellationToken cancellationToken)
     {
         var workers = await masterData.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        // 登录名只给员工名册页（显式请求）且有员工维护权 + 组织级授权的主体；其余调用方（各处员工选择器、PDA 首页）
+        // 不多一跳 IAM，也拿不到登录名。
+        if (!request.IncludeLoginNames
+            || !await BusinessConsoleWorkerLoginAccounts.CanSeeLoginNamesAsync(
+                AuthorizationClient,
+                bearerToken,
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken))
+        {
+            return workers;
+        }
+
         return await BusinessConsoleWorkerLoginAccounts.AttachLoginNamesAsync(
             iamAccounts,
             tokenProvider.BearerToken,

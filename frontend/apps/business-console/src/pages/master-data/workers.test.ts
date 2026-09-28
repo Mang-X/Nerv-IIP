@@ -12,6 +12,7 @@ const stub = vi.hoisted(() => ({
   refresh: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  loginNamesVisible: true,
   // 与 types.gen.ts 的 BusinessConsoleWorkerDirectoryItem 字段一一对应。
   workers: [
     {
@@ -70,6 +71,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     workersError: shallowRef(undefined),
     workersPending: shallowRef(false),
     workersTotal: computed(() => stub.workers.length),
+    loginNamesVisible: computed(() => stub.loginNamesVisible),
     refresh: stub.refresh,
     create: stub.create,
     createPending: shallowRef(false),
@@ -164,6 +166,26 @@ describe('master-data workers page', () => {
     expect(text).toContain('登录账号')
     expect(text).toContain('chenzhiqiang')
     expect(text).toContain('未关联')
+  })
+
+  it('当前主体看不到登录名时显示「—」，不误报「未关联」', async () => {
+    const saved = stub.workers[0]!.loginName
+    stub.loginNamesVisible = false
+    stub.workers[0]!.loginName = null
+    try {
+      const wrapper = mount(WorkersPage, {
+        global: { stubs: { ...layoutStub, ...dialogStubs, ...directoryPickerStub } },
+      })
+      await flushPromises()
+
+      const text = wrapper.text()
+      expect(text).toContain('登录账号')
+      expect(text).not.toContain('未关联')
+      expect(text).toContain('—')
+    } finally {
+      stub.loginNamesVisible = true
+      stub.workers[0]!.loginName = saved
+    }
   })
 
   it('blocks creation without a name and never calls the facade', async () => {

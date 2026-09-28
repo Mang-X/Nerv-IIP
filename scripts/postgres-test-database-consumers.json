@@ -134,6 +134,18 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/WorkerLoginAccountUniquenessPostgresTests.cs",
+      "sourceSha256": "0a598216b3fa94a1a301073e5dd58fa7347692ffddb2065e3bb1a398c2c775e6",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The MasterData worker login-account uniqueness proof uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
       "sourceSha256": "31730e88d1836c0204d7c7bfc834650ba2f3669240a93c50fd24d722a35a03f0",
       "factoryCallCount": 1,
@@ -266,6 +278,18 @@
           "strategy": "best-effort-dispose",
           "factoryCallCount": 3,
           "reason": "Ordinary WMS migration tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamMemberAccountDirectoryPostgresTests.cs",
+      "sourceSha256": "6d01e7b6d6b256ecdfd69b4241a02acdbd5b62d531e52c6a6bba990aa6ed0acf",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The IAM member-account directory proof uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
         }
       ]
     },
