@@ -44,8 +44,8 @@ export {
 export type { DirectoryOption, DirectoryOptionSource } from './masterdata/directoryOptions'
 export { defineStepFlow } from './sop/defineStepFlow'
 export type { StepFlow, StepFlowStep, StepFlowContext } from './sop/defineStepFlow'
-export { countExecutionFlow, inboundReceiveFlow, outboundReviewFlow } from './sop/wmsFlows'
-export type { CountExecCtx, InboundReceiveCtx, OutboundReviewCtx } from './sop/wmsFlows'
+export { countExecutionFlow, inboundReceiveFlow } from './sop/wmsFlows'
+export type { CountExecCtx, InboundReceiveCtx } from './sop/wmsFlows'
 export {
   countExecutionStatusLabel,
   inboundOrderStatusLabel,

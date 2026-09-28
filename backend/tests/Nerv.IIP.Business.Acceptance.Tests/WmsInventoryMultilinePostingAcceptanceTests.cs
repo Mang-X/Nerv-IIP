@@ -142,7 +142,6 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
         await new CompleteOutboundOrderCommandHandler(wmsDb).Handle(
             new CompleteOutboundOrderCommand(
                 outbound.Id,
-                "PACK-001",
                 true,
                 "idem-out-multi-001",
                 OrganizationId: outbound.OrganizationId,

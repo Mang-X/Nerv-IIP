@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
@@ -34,11 +35,14 @@ public sealed record ProvisionWarehouseWorkPoolCommand(
     string EnvironmentId,
     string ActorPrincipalId,
     IReadOnlyCollection<string> AuthorizedSiteCodes,
-    string PoolCode,
+    string? PoolCode,
     string DisplayName,
-    string SiteCode) : ICommand<WarehouseWorkPoolProvisionResult>;
+    string SiteCode,
+    string? IdempotencyKey = null) : ICommand<WarehouseWorkPoolProvisionResult>;
 
-public sealed class ProvisionWarehouseWorkPoolCommandHandler(ApplicationDbContext dbContext)
+public sealed class ProvisionWarehouseWorkPoolCommandHandler(
+    ApplicationDbContext dbContext,
+    WmsCodingService? codingService = null)
     : ICommandHandler<ProvisionWarehouseWorkPoolCommand, WarehouseWorkPoolProvisionResult>
 {
     public async Task<WarehouseWorkPoolProvisionResult> Handle(
@@ -51,9 +55,6 @@ public sealed class ProvisionWarehouseWorkPoolCommandHandler(ApplicationDbContex
         var environmentId = WarehouseWorkPoolProvisioningText.Required(
             request.EnvironmentId,
             nameof(request.EnvironmentId));
-        var poolCode = WarehouseWorkPoolProvisioningText.Required(
-            request.PoolCode,
-            nameof(request.PoolCode));
         var displayName = WarehouseWorkPoolProvisioningText.Required(
             request.DisplayName,
             nameof(request.DisplayName));
@@ -61,6 +62,14 @@ public sealed class ProvisionWarehouseWorkPoolCommandHandler(ApplicationDbContex
             request.SiteCode,
             nameof(request.SiteCode));
         WarehouseWorkPoolProvisioningText.EnsureSiteAuthorized(request.AuthorizedSiteCodes, siteCode);
+        var poolCode = await (codingService ?? new WmsCodingService()).AllocateAsync(
+            organizationId,
+            environmentId,
+            WmsCodeRules.WorkPool,
+            request.PoolCode,
+            request.IdempotencyKey,
+            WmsCodingService.Fingerprint(displayName, siteCode),
+            cancellationToken);
 
         var existing = await dbContext.WarehouseWorkPools.SingleOrDefaultAsync(
             pool => pool.OrganizationId == organizationId
@@ -193,6 +202,49 @@ public sealed class AddWarehouseWorkPoolMemberCommandHandler(
             membership.EffectiveFromUtc,
             membership.EffectiveToUtc,
             Created: true);
+    }
+}
+
+/// <summary>把成员移出作业池：停用其当前与未来的有效成员资格，历史保留。</summary>
+public sealed record RemoveWarehouseWorkPoolMemberCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string PoolCode,
+    string PrincipalId) : ICommand<WarehouseWorkPoolMemberRemovalResult>;
+
+public sealed record WarehouseWorkPoolMemberRemovalResult(string PoolCode, string PrincipalId, int RemovedCount);
+
+public sealed class RemoveWarehouseWorkPoolMemberCommandHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider timeProvider)
+    : ICommandHandler<RemoveWarehouseWorkPoolMemberCommand, WarehouseWorkPoolMemberRemovalResult>
+{
+    public async Task<WarehouseWorkPoolMemberRemovalResult> Handle(RemoveWarehouseWorkPoolMemberCommand request, CancellationToken cancellationToken)
+    {
+        var pool = await dbContext.WarehouseWorkPools.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.OrganizationId == request.OrganizationId
+                && candidate.EnvironmentId == request.EnvironmentId
+                && candidate.PoolCode == request.PoolCode,
+            cancellationToken)
+            ?? throw WmsAuthorizationException.Forbidden("inactive-or-unknown-work-pool");
+        WarehouseWorkPoolProvisioningText.EnsureSiteAuthorized(request.AuthorizedSiteCodes, pool.SiteCode);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var memberships = await dbContext.WarehouseWorkPoolMemberships
+            .Where(membership => membership.OrganizationId == request.OrganizationId
+                && membership.EnvironmentId == request.EnvironmentId
+                && membership.PoolCode == request.PoolCode
+                && membership.PrincipalId == request.PrincipalId
+                && membership.Active)
+            .ToListAsync(cancellationToken);
+        foreach (var membership in memberships)
+        {
+            membership.Deactivate(membership.EffectiveFromUtc > now ? membership.EffectiveFromUtc : now);
+        }
+
+        return new WarehouseWorkPoolMemberRemovalResult(request.PoolCode, request.PrincipalId, memberships.Count);
     }
 }
 

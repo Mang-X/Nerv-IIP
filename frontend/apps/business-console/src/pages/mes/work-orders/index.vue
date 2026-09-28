@@ -165,9 +165,8 @@ watch(workCenterFilter, (value) => {
 })
 
 const statusOptions = mesWorkOrderStatusOptions
+// 组织与环境不进表单：它们由壳层异步绑定到 filters，整页直开时表单初始化那一刻还是空串（#3858）。
 const rushForm = reactive({
-  organizationId: filters.organizationId,
-  environmentId: filters.environmentId,
   skuId: '',
   productionVersionId: '',
   quantity: '1',
@@ -443,9 +442,10 @@ const visibleWorkOrders = computed(() => workOrders.value)
 
 const canCreateRush = computed(
   () =>
-    isNonEmpty(rushForm.organizationId) &&
-    isNonEmpty(rushForm.environmentId) &&
+    isNonEmpty(filters.organizationId) &&
+    isNonEmpty(filters.environmentId) &&
     isNonEmpty(rushForm.skuId) &&
+    isNonEmpty(rushForm.productionVersionId) &&
     toOptionalNumber(rushForm.quantity) !== undefined &&
     isNonEmpty(rushForm.dueUtc) &&
     isNonEmpty(rushForm.workCenterId) &&
@@ -593,10 +593,10 @@ function openReportFromSheet(operationTaskId: string) {
 async function submitRushWorkOrder() {
   if (!canCreateRush.value) return
   const body: BusinessConsoleCreateRushWorkOrderRequest = {
-    organizationId: rushForm.organizationId.trim(),
-    environmentId: rushForm.environmentId.trim(),
+    organizationId: filters.organizationId.trim(),
+    environmentId: filters.environmentId.trim(),
     skuId: rushForm.skuId.trim(),
-    productionVersionId: optionalText(rushForm.productionVersionId),
+    productionVersionId: rushForm.productionVersionId.trim(),
     quantity: toOptionalNumber(rushForm.quantity),
     dueUtc: toIsoFromLocalInput(rushForm.dueUtc),
     workCenterId: rushForm.workCenterId.trim(),
@@ -1008,7 +1008,7 @@ function isNonEmpty(value: string) {
         <NvDialogHeader>
           <NvDialogTitle>创建急单</NvDialogTitle>
           <NvDialogDescription class="sr-only"
-            >临时插单，填写物料、数量、交期与工作中心后提交。</NvDialogDescription
+            >临时插单，填写物料、生产版本、数量、交期与工作中心后提交。</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitRushWorkOrder">
@@ -1026,13 +1026,15 @@ function isNonEmpty(value: string) {
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="rush-version">生产版本</NvFieldLabel>
+              <NvFieldLabel for="rush-version"
+                >生产版本 <span class="text-destructive">*</span></NvFieldLabel
+              >
               <NvEntityPicker
                 id="rush-version"
                 v-model="rushForm.productionVersionId"
                 :options="rushVersionOptions"
                 title="选择生产版本"
-                :placeholder="rushForm.skuId ? '可留空，按生效日自动解析' : '先选物料'"
+                :placeholder="rushForm.skuId ? '选择当前有效的生产版本' : '先选物料'"
                 :disabled="!rushForm.skuId"
                 empty-text="该物料暂无生产版本，请先在工程数据维护"
                 :loading="productionVersionsPending"

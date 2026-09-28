@@ -4,7 +4,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 /// 缺料原因串在 **Scheduling 服务内**的唯一措辞与唯一剥码入口。
 ///
 /// 形态 <c>CODE: 中文事实</c> 是**跨服务约定**（MES 侧的对应实现是
-/// <c>MaterialReadinessGuards.FormatShortageReason</c> / <c>DescribeForUser</c>，
+/// <c>MaterialReadinessGuards.FormatShortageReason</c> / <c>MesReadinessReason</c>，
 /// 前端的解析实现是 <c>useBusinessMes.ts</c> 的 <c>describeMesReadinessReason</c>）。
 /// 三处**各自独立实现**——服务边界不共享库，前端更不可能引用后端代码，这是有意的重复；
 /// 别再写第四份：本服务内新增缺料串一律走这里，并由

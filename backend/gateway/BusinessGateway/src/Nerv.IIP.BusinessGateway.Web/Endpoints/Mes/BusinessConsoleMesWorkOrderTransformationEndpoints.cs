@@ -53,6 +53,7 @@ public sealed class SplitBusinessConsoleMesWorkOrderEndpoint(
         var result = await transformationClient.SplitAsync(
             tokenProvider.BearerToken,
             request,
+            RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
         return BusinessConsoleMesWorkOrderTransformationEndpointMapping.ToMutationResponse(
             result,
@@ -117,6 +118,7 @@ public sealed class MergeBusinessConsoleMesWorkOrdersEndpoint(
         var result = await transformationClient.MergeAsync(
             tokenProvider.BearerToken,
             request,
+            RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
         return BusinessConsoleMesWorkOrderTransformationEndpointMapping.ToMutationResponse(
             result,

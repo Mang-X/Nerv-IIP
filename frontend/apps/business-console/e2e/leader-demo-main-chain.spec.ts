@@ -248,8 +248,9 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const workCenterCostRateReason = `MAN-595 governed main-chain rate ${suffix}`
   const rawMaterialLotNo = `RMLOT-M524-${suffix}`
   const purchaseOrderNo = `PO-M524-${suffix}`
-  const inboundOrderNo = `IN-M524-${suffix}`
-  const putawayTaskNo = `PUT-M524-${suffix}`
+  // 入库单号、上架任务号由系统按编码规则生成（#3848）；造数只给幂等键，重放拿回同一张单。
+  const inboundIdempotencyKey = `IN-M524-${suffix}`
+  const putawayIdempotencyKey = `PUT-M524-${suffix}`
   const operationCode = `OP-M524-${suffix}`
   const engineeringBomCode = `EB-M524-${suffix}`
   const manufacturingBomCode = `MB-M524-${suffix}`
@@ -517,7 +518,6 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     }
 
     let prerequisitesReady = true
-    let productionVersionId = ''
     let rawMaterialSupplyEvidence: JsonRecord | null = null
     try {
       await create('/api/business-console/v1/master-data/units-of-measure', {
@@ -866,21 +866,18 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           'Routing release response did not expose data.versionId.',
         )
       }
-      const productionVersion = asRecord(
-        await create('/api/business-console/v1/engineering/production-versions', {
-          organizationId,
-          environmentId,
-          skuCode: finishedSku,
-          mbomVersionId,
-          routingVersionId,
-          validFrom: dateOnly(now),
-          lotSizeMin: 1,
-          lotSizeMax: 1_000,
-          priority: 1,
-          isDefault: true,
-        }),
-      )
-      productionVersionId = textOf(productionVersion.productionVersionId ?? productionVersion)
+      await create('/api/business-console/v1/engineering/production-versions', {
+        organizationId,
+        environmentId,
+        skuCode: finishedSku,
+        mbomVersionId,
+        routingVersionId,
+        validFrom: dateOnly(now),
+        lotSizeMin: 1,
+        lotSizeMax: 1_000,
+        priority: 1,
+        isDefault: true,
+      })
 
       // 采购下达审批走 Approval 产品基线种子的 purchase-order-release（documentType=purchase-order，
       // 审批人 user-admin，即本用例登录的 admin principal）。这里绝不能再 POST /approval/templates：
@@ -953,7 +950,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       const wmsInboundRequest = {
         organizationId,
         environmentId,
-        inboundOrderNo,
+        idempotencyKey: inboundIdempotencyKey,
         sourceDocumentType: 'purchase-order',
         sourceDocumentId: purchaseOrderNo,
         siteCode: materialSiteCode,
@@ -983,7 +980,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         { organizationId, environmentId },
       )
       const putawayRequest = {
-        taskNo: putawayTaskNo,
+        idempotencyKey: putawayIdempotencyKey,
         lineNo: '1',
         fromLocationCode: 'RECEIVING',
         toLocationCode: 'LINE-SIDE',
@@ -1954,7 +1951,6 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             { organizationId, environmentId },
           ),
           {
-            packReviewNo: `PACK-${suffix}`,
             passed: true,
             idempotencyKey: `complete-outbound-${suffix}`,
           },

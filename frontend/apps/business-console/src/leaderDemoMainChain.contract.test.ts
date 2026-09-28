@@ -510,7 +510,6 @@ describe('leader demo main-chain public prerequisites', () => {
       completionFlow,
       '/wms/outbound-orders/${encodeURIComponent(wmsOutboundId)}/complete`',
     )
-    expect(completionFlow).toContain('packReviewNo: `PACK-${suffix}`')
     expect(completionFlow).toContain('idempotencyKey: `complete-outbound-${suffix}`')
     expect(completionFlow).toContain('{ organizationId, environmentId, keyword: deliveryOrderNo')
     expect(completionFlow).toContain(

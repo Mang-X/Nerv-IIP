@@ -14,6 +14,8 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAgg
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseAssignmentReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
@@ -59,11 +61,12 @@ public sealed record WmsOutboundLineInput(
 public sealed record CreateInboundOrderCommand(
     string OrganizationId,
     string EnvironmentId,
-    string InboundOrderNo,
+    string? InboundOrderNo,
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<WmsInboundLineInput> Lines) : ICommand<InboundOrderId>;
+    IReadOnlyCollection<WmsInboundLineInput> Lines,
+    string? IdempotencyKey = null) : ICommand<InboundOrderId>;
 
 public sealed class CreateInboundOrderCommandValidator : AbstractValidator<CreateInboundOrderCommand>
 {
@@ -71,7 +74,8 @@ public sealed class CreateInboundOrderCommandValidator : AbstractValidator<Creat
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.InboundOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.InboundOrderNo).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(CodeIdempotencyKey.IdempotencyKeyMaxLength);
         RuleFor(x => x.SourceDocumentType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
@@ -79,15 +83,31 @@ public sealed class CreateInboundOrderCommandValidator : AbstractValidator<Creat
     }
 }
 
-public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateInboundOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    WmsCodingService? codingService = null)
     : ICommandHandler<CreateInboundOrderCommand, InboundOrderId>
 {
+    private readonly WmsCodingService _codingService = codingService ?? new WmsCodingService();
+
     public async Task<InboundOrderId> Handle(CreateInboundOrderCommand request, CancellationToken cancellationToken)
     {
+        var inboundOrderNo = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            WmsCodeRules.InboundOrder,
+            request.InboundOrderNo,
+            request.IdempotencyKey,
+            WmsCodingService.Fingerprint(
+                request.SourceDocumentType,
+                request.SourceDocumentId,
+                request.SiteCode,
+                request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.ReceivedQuantity}")),
+            cancellationToken);
         var proposedOrder = InboundOrder.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            request.InboundOrderNo,
+            inboundOrderNo,
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
@@ -97,13 +117,13 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             .SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.InboundOrderNo == request.InboundOrderNo,
+                && x.InboundOrderNo == inboundOrderNo,
             cancellationToken);
         if (existingOrder is not null)
         {
             if (!HasSameInboundFacts(existingOrder, proposedOrder))
             {
-                throw new KnownException($"入库单已存在但入库事实不一致：'{request.InboundOrderNo}'");
+                throw new KnownException($"入库单已存在但入库事实不一致：'{inboundOrderNo}'");
             }
 
             return existingOrder.Id;
@@ -142,23 +162,41 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
 
 public sealed record CreatePutawayTaskCommand(
     InboundOrderId InboundOrderId,
-    string TaskNo,
+    string? TaskNo,
     string LineNo,
     string FromLocationCode,
     string ToLocationCode,
-    decimal Quantity) : ICommand<WarehouseTaskId>;
+    decimal Quantity,
+    string? IdempotencyKey = null) : ICommand<WarehouseTaskId>;
 
-public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreatePutawayTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    WmsCodingService? codingService = null)
     : ICommandHandler<CreatePutawayTaskCommand, WarehouseTaskId>
 {
+    private readonly WmsCodingService _codingService = codingService ?? new WmsCodingService();
+
     public async Task<WarehouseTaskId> Handle(CreatePutawayTaskCommand request, CancellationToken cancellationToken)
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"未找到入库单，入库单 ID = {request.InboundOrderId}");
+        var taskNo = await _codingService.AllocateAsync(
+            inbound.OrganizationId,
+            inbound.EnvironmentId,
+            WmsCodeRules.PutawayTask,
+            request.TaskNo,
+            request.IdempotencyKey,
+            WmsCodingService.Fingerprint(
+                request.InboundOrderId,
+                request.LineNo,
+                request.FromLocationCode,
+                request.ToLocationCode,
+                request.Quantity),
+            cancellationToken);
         var existingTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == inbound.OrganizationId
                 && x.EnvironmentId == inbound.EnvironmentId
-                && x.TaskNo == request.TaskNo,
+                && x.TaskNo == taskNo,
             cancellationToken);
         if (existingTask is not null)
         {
@@ -171,14 +209,14 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
                 || existingTask.AssignedOperatorUserId != inbound.AssignedOperatorUserId
                 || existingTask.AssignedPoolCode != inbound.AssignedPoolCode)
             {
-                throw new KnownException($"仓库任务已存在但上架事实不一致：'{request.TaskNo}'");
+                throw new KnownException($"仓库任务已存在但上架事实不一致：'{taskNo}'");
             }
 
             return existingTask.Id;
         }
 
         var task = inbound.CreatePutawayTask(
-            request.TaskNo,
+            taskNo,
             request.LineNo,
             request.FromLocationCode,
             request.ToLocationCode,
@@ -552,21 +590,38 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
 public sealed record CreateOutboundOrderCommand(
     string OrganizationId,
     string EnvironmentId,
-    string OutboundOrderNo,
+    string? OutboundOrderNo,
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<WmsOutboundLineInput> Lines) : ICommand<OutboundOrderId>;
+    IReadOnlyCollection<WmsOutboundLineInput> Lines,
+    string? IdempotencyKey = null) : ICommand<OutboundOrderId>;
 
-public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateOutboundOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    WmsCodingService? codingService = null)
     : ICommandHandler<CreateOutboundOrderCommand, OutboundOrderId>
 {
+    private readonly WmsCodingService _codingService = codingService ?? new WmsCodingService();
+
     public async Task<OutboundOrderId> Handle(CreateOutboundOrderCommand request, CancellationToken cancellationToken)
     {
+        var outboundOrderNo = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            WmsCodeRules.OutboundOrder,
+            request.OutboundOrderNo,
+            request.IdempotencyKey,
+            WmsCodingService.Fingerprint(
+                request.SourceDocumentType,
+                request.SourceDocumentId,
+                request.SiteCode,
+                request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.RequestedQuantity}")),
+            cancellationToken);
         var existingOrder = await dbContext.OutboundOrders.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.OutboundOrderNo == request.OutboundOrderNo,
+                && x.OutboundOrderNo == outboundOrderNo,
             cancellationToken);
         if (existingOrder is not null)
         {
@@ -576,7 +631,7 @@ public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbCon
         var order = OutboundOrder.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            request.OutboundOrderNo,
+            outboundOrderNo,
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
@@ -589,23 +644,52 @@ public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbCon
 
 public sealed record CreatePickingTaskCommand(
     OutboundOrderId OutboundOrderId,
-    string TaskNo,
+    string? TaskNo,
     string LineNo,
     string FromLocationCode,
     string ToLocationCode,
-    decimal Quantity) : ICommand<WarehouseTaskId>;
+    decimal Quantity,
+    string? IdempotencyKey = null) : ICommand<WarehouseTaskId>;
 
 public sealed class CreatePickingTaskCommandHandler(
     ApplicationDbContext dbContext,
-    IWmsInventoryReservationClient? inventoryReservationClient = null)
+    IWmsInventoryReservationClient? inventoryReservationClient = null,
+    WmsCodingService? codingService = null)
     : ICommandHandler<CreatePickingTaskCommand, WarehouseTaskId>
 {
+    private readonly WmsCodingService _codingService = codingService ?? new WmsCodingService();
+
     public async Task<WarehouseTaskId> Handle(CreatePickingTaskCommand request, CancellationToken cancellationToken)
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var line = outbound.Lines.SingleOrDefault(x => x.LineNo == request.LineNo)
             ?? throw new KnownException($"未找到出库行，行号 = {request.LineNo}");
+        var taskNo = await _codingService.AllocateAsync(
+            outbound.OrganizationId,
+            outbound.EnvironmentId,
+            WmsCodeRules.PickingTask,
+            request.TaskNo,
+            request.IdempotencyKey,
+            WmsCodingService.Fingerprint(
+                request.OutboundOrderId,
+                request.LineNo,
+                request.FromLocationCode,
+                request.ToLocationCode,
+                request.Quantity),
+            cancellationToken);
+        var replayedTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == outbound.OrganizationId
+                && x.EnvironmentId == outbound.EnvironmentId
+                && x.TaskNo == taskNo
+                && x.TaskType == WarehouseTaskType.Picking
+                && x.SourceOrderNo == outbound.OutboundOrderNo,
+            cancellationToken);
+        if (replayedTask is not null)
+        {
+            return replayedTask.Id;
+        }
+
         try
         {
             outbound.EnsureCanCreatePickingTask(line.LineNo, request.Quantity);
@@ -618,11 +702,11 @@ public sealed class CreatePickingTaskCommandHandler(
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
         // line-level idempotency key lets command retries recover the same reservation.
         var reservation = line.InventoryReservationId is null && inventoryReservationClient is not null
-            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, request.TaskNo, request.FromLocationCode, request.Quantity, cancellationToken)
+            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, taskNo, request.FromLocationCode, request.Quantity, cancellationToken)
             : null;
         var inventoryReservationId = line.InventoryReservationId ?? reservation?.ReservationId;
         var task = outbound.CreatePickingTask(
-            request.TaskNo,
+            taskNo,
             request.LineNo,
             request.FromLocationCode,
             request.ToLocationCode,
@@ -1467,7 +1551,6 @@ public sealed class WarehouseTaskActionPersistenceConflictMiddleware(
 
 public sealed record CompleteOutboundOrderCommand(
     OutboundOrderId OutboundOrderId,
-    string PackReviewNo,
     bool Passed,
     string IdempotencyKey,
     string? OrganizationId = null,
@@ -1482,7 +1565,6 @@ public sealed class CompleteOutboundOrderCommandValidator : AbstractValidator<Co
 {
     public CompleteOutboundOrderCommandValidator()
     {
-        RuleFor(x => x.PackReviewNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
@@ -1543,15 +1625,18 @@ public sealed class CompleteOutboundOrderCommandHandler
     private readonly ApplicationDbContext dbContext;
     private readonly WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer;
     private readonly IWmsInventoryReservationClient? inventoryReservationClient;
+    private readonly WmsCodingService codingService;
 
     public CompleteOutboundOrderCommandHandler(
         ApplicationDbContext dbContext,
         WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer,
-        IWmsInventoryReservationClient? inventoryReservationClient = null)
+        IWmsInventoryReservationClient? inventoryReservationClient = null,
+        WmsCodingService? codingService = null)
     {
         this.dbContext = dbContext;
         this.executionAuthorizer = executionAuthorizer;
         this.inventoryReservationClient = inventoryReservationClient;
+        this.codingService = codingService ?? new WmsCodingService();
     }
 
     public CompleteOutboundOrderCommandHandler(
@@ -1576,8 +1661,7 @@ public sealed class CompleteOutboundOrderCommandHandler
             cancellationToken);
         if (outbound.Status is OutboundOrderStatus.Completed or OutboundOrderStatus.InventoryPostingPending)
         {
-            if (!string.Equals(outbound.PackReviewNo, request.PackReviewNo.Trim(), StringComparison.Ordinal) ||
-                outbound.PackReviewPassed != request.Passed)
+            if (outbound.PackReviewPassed != request.Passed)
             {
                 throw new WmsIdempotencyConflictException();
             }
@@ -1625,11 +1709,19 @@ public sealed class CompleteOutboundOrderCommandHandler
 
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
         EnsureInventoryClientAvailableForShortPickRelease(outbound, executedQuantitiesByLine);
+        var packReviewNo = await codingService.AllocateAsync(
+            outbound.OrganizationId,
+            outbound.EnvironmentId,
+            WmsCodeRules.PackReview,
+            requestedCode: null,
+            idempotencyKey: null,
+            WmsCodingService.Fingerprint(outbound.OutboundOrderNo),
+            cancellationToken);
         IReadOnlyCollection<InventoryMovementRequest> movementRequests;
         try
         {
             movementRequests = outbound.CompletePackReview(
-                request.PackReviewNo,
+                packReviewNo,
                 request.Passed,
                 baseIdempotencyKey,
                 request.ExpectedVersion,
@@ -1978,24 +2070,51 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
 public sealed record CreateCountExecutionCommand(
     string OrganizationId,
     string EnvironmentId,
-    string CountNo,
+    string? CountNo,
     string SkuCode,
     string UomCode,
     string SiteCode,
     string LocationCode,
-    decimal ExpectedQuantity) : ICommand<CountExecutionId>;
+    decimal ExpectedQuantity,
+    string? IdempotencyKey = null) : ICommand<CountExecutionId>;
 
 public sealed class CreateCountExecutionCommandHandler(
     ApplicationDbContext dbContext,
-    IWmsInventoryReservationClient? inventoryReservationClient = null)
+    IWmsInventoryReservationClient? inventoryReservationClient = null,
+    WmsCodingService? codingService = null)
     : ICommandHandler<CreateCountExecutionCommand, CountExecutionId>
 {
+    private readonly WmsCodingService _codingService = codingService ?? new WmsCodingService();
+
     public async Task<CountExecutionId> Handle(CreateCountExecutionCommand request, CancellationToken cancellationToken)
     {
+        var countNo = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            WmsCodeRules.CountExecution,
+            request.CountNo,
+            request.IdempotencyKey,
+            WmsCodingService.Fingerprint(
+                request.SkuCode,
+                request.UomCode,
+                request.SiteCode,
+                request.LocationCode,
+                request.ExpectedQuantity),
+            cancellationToken);
+        var replayed = await dbContext.CountExecutions.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.CountNo == countNo,
+            cancellationToken);
+        if (replayed is not null)
+        {
+            return replayed.Id;
+        }
+
         var count = CountExecution.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            request.CountNo,
+            countNo,
             request.SkuCode,
             request.UomCode,
             request.SiteCode,
@@ -2436,14 +2555,15 @@ public sealed record DispatchWcsTaskCommand(
     IReadOnlyCollection<string> AuthorizedSiteCodes,
     long ExpectedVersion,
     string AdapterType,
-    string ExternalTaskId,
+    string? ExternalTaskId,
     string? PayloadJson,
     string? DeviceId = null) : ICommand<WcsTaskId>;
 
 public sealed class DispatchWcsTaskCommandHandler(
     ApplicationDbContext dbContext,
     WarehouseWorkScopeAuthorizer authorizer,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    WmsCodingService? codingService = null)
     : ICommandHandler<DispatchWcsTaskCommand, WcsTaskId>
 {
     public async Task<WcsTaskId> Handle(DispatchWcsTaskCommand request, CancellationToken cancellationToken)
@@ -2487,7 +2607,6 @@ public sealed class DispatchWcsTaskCommandHandler(
             deviceId = string.IsNullOrWhiteSpace(request.DeviceId)
                 ? adapterType
                 : WmsText.Required(request.DeviceId, nameof(request.DeviceId));
-            _ = WmsText.Required(request.ExternalTaskId, nameof(request.ExternalTaskId));
         }
         catch (ArgumentException exception)
         {
@@ -2497,6 +2616,10 @@ public sealed class DispatchWcsTaskCommandHandler(
         var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(
             x => x.WarehouseTaskId == request.WarehouseTaskId,
             cancellationToken);
+        // 外部任务号由系统生成：不传时沿用已有设备任务的号，首次下发再按编码规则分配。
+        var externalTaskId = string.IsNullOrWhiteSpace(request.ExternalTaskId)
+            ? existing?.ExternalTaskId
+            : request.ExternalTaskId.Trim();
         // 不带派发内容 = 人工「重新下发原报文」：沿用已存报文与原设备。首次派发没有可沿用的报文，必须显式给出。
         var resendOriginal = string.IsNullOrWhiteSpace(request.PayloadJson);
         var payloadJson = resendOriginal
@@ -2538,7 +2661,7 @@ public sealed class DispatchWcsTaskCommandHandler(
             // 「重新下发原报文」（此处必为失败任务）是明确的重试意图，不能被当成原请求的幂等重放吞掉。
             if (!resendOriginal && existing.MatchesDispatch(
                     adapterType,
-                    request.ExternalTaskId,
+                    externalTaskId!,
                     payloadJson,
                     deviceId))
             {
@@ -2571,7 +2694,7 @@ public sealed class DispatchWcsTaskCommandHandler(
 
                 try
                 {
-                    existing.Retry(request.ExternalTaskId, payloadJson, retriedAtUtc);
+                    existing.Retry(externalTaskId!, payloadJson, retriedAtUtc);
                 }
                 catch (InvalidOperationException exception)
                 {
@@ -2588,6 +2711,14 @@ public sealed class DispatchWcsTaskCommandHandler(
                 $"warehouse-task-already-has-{existing.Status.ToString().ToLowerInvariant()}-wcs-task");
         }
 
+        externalTaskId ??= await (codingService ?? new WmsCodingService()).AllocateAsync(
+            warehouseTask.OrganizationId,
+            warehouseTask.EnvironmentId,
+            WmsCodeRules.WcsTask,
+            requestedCode: null,
+            idempotencyKey: null,
+            WmsCodingService.Fingerprint(request.WarehouseTaskId),
+            cancellationToken);
         WcsTask task;
         try
         {
@@ -2596,7 +2727,7 @@ public sealed class DispatchWcsTaskCommandHandler(
                 warehouseTask.EnvironmentId,
                 request.WarehouseTaskId,
                 adapterType,
-                request.ExternalTaskId,
+                externalTaskId,
                 payloadJson,
                 deviceId);
         }

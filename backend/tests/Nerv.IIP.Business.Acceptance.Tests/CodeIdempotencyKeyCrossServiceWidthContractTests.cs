@@ -11,6 +11,7 @@ using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.ProductEngineering.Domain;
 using Nerv.IIP.Business.Quality.Domain;
+using Nerv.IIP.Business.Wms.Domain;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.Coding;
@@ -21,6 +22,7 @@ using MasterDataDbContext = Nerv.IIP.Business.MasterData.Infrastructure.Applicat
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 using ProductEngineeringDbContext = Nerv.IIP.Business.ProductEngineering.Infrastructure.ApplicationDbContext;
 using QualityDbContext = Nerv.IIP.Business.Quality.Infrastructure.ApplicationDbContext;
+using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
@@ -52,7 +54,7 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <para><b>受管服务集合是枚举出来的，不是手写白名单。</b>
 /// <see cref="DiscoverContextTypesOwningTheSharedEntity"/> 从本测试程序集出发**沿引用拓扑**传递加载所有
 /// <c>Nerv.IIP.*</c> 程序集，枚举其中全部非抽象 <see cref="DbContext"/> 子类，取出声明了
-/// <c>DbSet&lt;CodeIdempotencyKey&gt;</c> 的那些，再与下面显式构造的 7 个对撞。
+/// <c>DbSet&lt;CodeIdempotencyKey&gt;</c> 的那些，再与下面显式构造的受管服务对撞。
 /// 第 8 个服务开始持有这个实体时，<see cref="Governed_service_set_is_closed_over_the_reference_topology"/>
 /// 会红并点名，而不是静默把它漏掉（本仓「白名单选取会静默漏掉后来者」判例）。</para>
 ///
@@ -134,7 +136,7 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
     /// 合法新增第 8 个持有本共享实体的服务时**该改的是这一个**，
     /// ⛔ 不要去改那个写着「改前份数」的历史常量。
     /// </summary>
-    private const int GovernedServiceCount = 7;
+    private const int GovernedServiceCount = 8;
 
     private static IEnumerable<(string Service, Func<DbContext> Factory)> GovernedServices()
     {
@@ -145,6 +147,7 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
         yield return ("Mes", () => new MesDbContext(Options<MesDbContext>(MesFacts.Schema), NoopMediator.Instance));
         yield return ("ProductEngineering", () => new ProductEngineeringDbContext(Options<ProductEngineeringDbContext>(ProductEngineeringFacts.Schema), NoopMediator.Instance));
         yield return ("Quality", () => new QualityDbContext(Options<QualityDbContext>(QualityFacts.Schema), NoopMediator.Instance));
+        yield return ("Wms", () => new WmsDbContext(Options<WmsDbContext>(WmsFacts.Schema), NoopMediator.Instance));
     }
 
     /// <summary>
@@ -191,7 +194,7 @@ public sealed class CodeIdempotencyKeyCrossServiceWidthContractTests
     /// <summary>
     /// 受管集合必须**闭合于引用拓扑**：沿本测试程序集的引用图枚举出来的、持有
     /// <c>DbSet&lt;CodeIdempotencyKey&gt;</c> 的 <see cref="DbContext"/> 集合，
-    /// 必须与 <see cref="GovernedServices"/> 显式列出的那 7 个逐个相等。
+    /// 必须与 <see cref="GovernedServices"/> 显式列出的那些逐个相等。
     /// 多一个（新服务开始用共享编码实体）或少一个（某服务撤掉 DbSet）都红。
     /// </summary>
     [Fact]

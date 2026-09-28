@@ -5602,16 +5602,36 @@
       "method": "POST",
       "route": "/api/business/v1/wms/work-pools",
       "operationId": "provisionWmsWorkPool",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; the WMS work-pool administration console page is not scoped yet. Added by #1910 so field work-pool fixtures no longer depend on the LeaderDemo world-history seed."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["createBusinessConsoleWmsWorkPool"]
     },
     {
       "service": "Wms",
       "method": "POST",
       "route": "/api/business/v1/wms/work-pools/{poolCode}/members",
       "operationId": "addWmsWorkPoolMember",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; work-pool membership administration follows the same unscoped console page as provisionWmsWorkPool (#1910)."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["addBusinessConsoleWmsWorkPoolMember"]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/work-pools",
+      "operationId": "listWmsWorkPools",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleWmsWorkPools"]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/work-pools/{poolCode}/members/{principalId}/remove",
+      "operationId": "removeWmsWorkPoolMember",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["removeBusinessConsoleWmsWorkPoolMember"]
     },
     {
       "service": "DemandPlanning",

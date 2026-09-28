@@ -744,6 +744,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/wms/counts' },
           requiredPermissions: [P.wmsCountsRead],
         },
+        {
+          title: '作业池',
+          icon: UsersRoundIcon,
+          to: { path: '/wms/work-pools' },
+          requiredPermissions: [P.wmsWorkPoolsManage],
+        },
       ],
     },
   ],

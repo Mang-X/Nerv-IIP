@@ -5,8 +5,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -88,6 +90,9 @@ public sealed class RushWorkOrderHttpPostgresTests
                     services.AddSingleton(recorder);
                     services.AddSingleton<INotificationHandler<WorkOrderCreatedDomainEvent>>(
                         serviceProvider => serviceProvider.GetRequiredService<WorkOrderCreatedRecorder>());
+                    // 急单建单时冻结齐套需求（#3858）；本用例不起 ProductEngineering，改用无需求快照。
+                    services.RemoveAll<IMesMaterialRequirementSnapshotProvider>();
+                    services.AddSingleton<IMesMaterialRequirementSnapshotProvider>(NoRequirementSnapshotProvider.Instance);
                 });
             });
     }

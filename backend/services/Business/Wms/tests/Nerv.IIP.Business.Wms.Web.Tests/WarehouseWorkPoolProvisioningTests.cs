@@ -3,6 +3,8 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -192,6 +194,61 @@ public sealed class WarehouseWorkPoolProvisioningTests
 
         Assert.Equal("inactive-or-unknown-work-pool", failure.Reason);
         Assert.Empty(dbContext.WarehouseWorkPoolMemberships);
+    }
+
+    [Fact]
+    public async Task Pool_code_comes_from_the_coding_rule_and_removing_a_member_revokes_assignment()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var timeProvider = new StaticTimeProvider(Now);
+
+        var coding = new WmsCodingService();
+        var pool = await new ProvisionWarehouseWorkPoolCommandHandler(dbContext, coding).Handle(
+            ProvisionCommand() with { PoolCode = null },
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        // 另一工厂的池：调用方只有 SITE-001 授权时不能出现在列表里。
+        await new ProvisionWarehouseWorkPoolCommandHandler(dbContext, coding).Handle(
+            ProvisionCommand() with { PoolCode = null, SiteCode = "SITE-002", AuthorizedSiteCodes = ["SITE-002"] },
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new AddWarehouseWorkPoolMemberCommandHandler(dbContext, timeProvider)
+            .Handle(MemberCommand() with { PoolCode = pool.PoolCode }, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var listed = await new ListWarehouseWorkPoolsQueryHandler(dbContext, timeProvider).Handle(
+            new ListWarehouseWorkPoolsQuery("org-001", "env-dev", ["SITE-001"]),
+            CancellationToken.None);
+
+        var removal = await new RemoveWarehouseWorkPoolMemberCommandHandler(dbContext, timeProvider).Handle(
+            new RemoveWarehouseWorkPoolMemberCommand("org-001", "env-dev", "user-emp-048", ["SITE-001"], pool.PoolCode, "user-emp-049"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var listedAfterRemoval = await new ListWarehouseWorkPoolsQueryHandler(dbContext, timeProvider).Handle(
+            new ListWarehouseWorkPoolsQuery("org-001", "env-dev", ["SITE-001"]),
+            CancellationToken.None);
+
+        Assert.Equal("WP-0001", pool.PoolCode);
+        Assert.Equal("user-emp-049", Assert.Single(Assert.Single(listed.Items).Members).PrincipalId);
+        Assert.Equal(1, removal.RemovedCount);
+        Assert.Empty(Assert.Single(listedAfterRemoval.Items).Members);
+        // 移出是停用成员资格、保留历史，不删行。
+        var history = Assert.Single(dbContext.WarehouseWorkPoolMemberships);
+        Assert.False(history.Active);
+        Assert.Equal(Now, history.DeactivatedAtUtc);
+        var denied = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            new WarehouseWorkScopeAuthorizer(dbContext, timeProvider).AuthorizeAssignmentAsync(
+                new WarehouseAssignmentAuthorizationRequest(
+                    "org-001",
+                    "env-dev",
+                    "user-emp-048",
+                    ["SITE-001"],
+                    "SITE-001",
+                    pool.PoolCode,
+                    "user-emp-049"),
+                CancellationToken.None));
+        Assert.Equal("target-operator-not-effective-pool-member", denied.Reason);
     }
 
     private static ProvisionWarehouseWorkPoolCommand ProvisionCommand() =>

@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
@@ -30,25 +31,29 @@ public sealed class CreateRushWorkOrderCommandHandler
     private readonly MesCodingService _codingService;
     private readonly ApplicationDbContext? dbContext;
     private readonly IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator;
+    private readonly IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider;
 
     public CreateRushWorkOrderCommandHandler(
         IMesPlanningStore store,
         MesCodingService codingService,
         ApplicationDbContext dbContext,
-        IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator)
-        : this(store, codingService, dbContext, skuAvailabilityScopeCoordinator, isTestConstruction: false)
+        IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator,
+        IMesMaterialRequirementSnapshotProvider materialSnapshotProvider)
+        : this(store, codingService, dbContext, skuAvailabilityScopeCoordinator, materialSnapshotProvider, isTestConstruction: false)
     {
     }
 
     internal CreateRushWorkOrderCommandHandler(
         IMesPlanningStore store,
         MesCodingService? codingService = null,
-        ApplicationDbContext? dbContext = null)
+        ApplicationDbContext? dbContext = null,
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
         : this(
             store,
             codingService ?? new MesCodingService(),
             dbContext,
             dbContext is null ? null : new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
+            materialSnapshotProvider,
             isTestConstruction: true)
     {
     }
@@ -58,6 +63,7 @@ public sealed class CreateRushWorkOrderCommandHandler
         MesCodingService codingService,
         ApplicationDbContext? dbContext,
         IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator,
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider,
         bool isTestConstruction)
     {
         _ = isTestConstruction;
@@ -65,10 +71,19 @@ public sealed class CreateRushWorkOrderCommandHandler
         _codingService = codingService;
         this.dbContext = dbContext;
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
+        this.materialSnapshotProvider = materialSnapshotProvider;
     }
+
 
     public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
     {
+        // 急单与计划转工单同样要按生产版本出物料清单、冻结齐套需求；缺了版本，下达时既没有
+        // 齐套快照也过不了放行门禁（#3858）。在建单这一步就说清楚，别让用户到下达时才撞墙。
+        if (string.IsNullOrWhiteSpace(request.ProductionVersionId))
+        {
+            throw new KnownException("急单必须选择生产版本：请先为该物料选择当前有效的生产版本。");
+        }
+
         var allocation = await _codingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -152,6 +167,25 @@ public sealed class CreateRushWorkOrderCommandHandler
             null,
             request.OrganizationId,
             request.EnvironmentId));
+
+        if (dbContext is not null && materialSnapshotProvider is not null)
+        {
+            // 与计划转工单同一处实现：建单时按生产版本冻结齐套需求，下达门禁与齐套读面都读这份快照（#3858）。
+            var workOrder = dbContext.WorkOrders.Local.Single(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == workOrderId);
+            var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
+                dbContext,
+                materialSnapshotProvider,
+                workOrder,
+                request.RequestedAtUtc,
+                cancellationToken);
+            if (materialCapture.IsMissing)
+            {
+                throw new KnownException("无法按所选生产版本生成齐套需求，急单未创建。请确认该版本当前有效且制造物料清单已发布。");
+            }
+        }
 
         return new CreateRushWorkOrderResponse(workOrderId);
     }

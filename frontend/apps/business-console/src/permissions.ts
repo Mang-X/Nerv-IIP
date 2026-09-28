@@ -52,6 +52,7 @@ export const BUSINESS_PERMISSION_CODES = {
   wmsShipmentsRead: 'business.wms.shipments.read',
   wmsCountsRead: 'business.wms.counts.read',
   wmsAutomationManage: 'business.wms.automation.manage',
+  wmsWorkPoolsManage: 'business.wms.work-pools.manage',
   erpProcurementRead: 'business.erp.procurement.read',
   erpSalesRead: 'business.erp.sales.read',
   erpFinanceRead: 'business.erp.finance.read',
@@ -137,6 +138,7 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
     P.wmsShipmentsRead,
     P.wmsCountsRead,
     P.wmsAutomationManage,
+    P.wmsWorkPoolsManage,
   ],
   erp: [P.erpProcurementRead, P.erpSalesRead, P.erpFinanceRead],
   equipment: [

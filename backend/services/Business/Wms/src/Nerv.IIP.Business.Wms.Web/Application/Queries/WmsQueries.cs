@@ -1807,3 +1807,60 @@ internal static class WmsListQueryFilters
     }
 
 }
+
+public sealed record WarehouseWorkPoolMemberItem(string PrincipalId, DateTime EffectiveFromUtc, DateTime? EffectiveToUtc);
+
+public sealed record WarehouseWorkPoolItem(
+    string PoolCode,
+    string DisplayName,
+    string SiteCode,
+    IReadOnlyCollection<WarehouseWorkPoolMemberItem> Members);
+
+public sealed record ListWarehouseWorkPoolsResponse(IReadOnlyCollection<WarehouseWorkPoolItem> Items);
+
+/// <summary>主管维护与分配用：列出调用方授权站点内的有效作业池及当前有效成员。</summary>
+public sealed record ListWarehouseWorkPoolsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes) : IQuery<ListWarehouseWorkPoolsResponse>;
+
+public sealed class ListWarehouseWorkPoolsQueryHandler(ApplicationDbContext dbContext, TimeProvider timeProvider)
+    : IQueryHandler<ListWarehouseWorkPoolsQuery, ListWarehouseWorkPoolsResponse>
+{
+    public async Task<ListWarehouseWorkPoolsResponse> Handle(
+        ListWarehouseWorkPoolsQuery request,
+        CancellationToken cancellationToken)
+    {
+        var siteCodes = request.AuthorizedSiteCodes.ToArray();
+        var pools = await dbContext.WarehouseWorkPools.AsNoTracking()
+            .Where(pool => pool.OrganizationId == request.OrganizationId
+                && pool.EnvironmentId == request.EnvironmentId
+                && pool.Active
+                && siteCodes.Contains(pool.SiteCode))
+            .OrderBy(pool => pool.PoolCode)
+            .ToListAsync(cancellationToken);
+        var poolCodes = pools.Select(pool => pool.PoolCode).ToArray();
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var members = await dbContext.WarehouseWorkPoolMemberships.AsNoTracking()
+            .Where(membership => membership.OrganizationId == request.OrganizationId
+                && membership.EnvironmentId == request.EnvironmentId
+                && membership.Active
+                && poolCodes.Contains(membership.PoolCode)
+                && (membership.EffectiveToUtc == null || now < membership.EffectiveToUtc))
+            .OrderBy(membership => membership.EffectiveFromUtc)
+            .ToListAsync(cancellationToken);
+        var membersByPool = members.ToLookup(membership => membership.PoolCode, StringComparer.Ordinal);
+        return new ListWarehouseWorkPoolsResponse(pools
+            .Select(pool => new WarehouseWorkPoolItem(
+                pool.PoolCode,
+                pool.DisplayName,
+                pool.SiteCode,
+                membersByPool[pool.PoolCode]
+                    .Select(membership => new WarehouseWorkPoolMemberItem(
+                        membership.PrincipalId,
+                        membership.EffectiveFromUtc,
+                        membership.EffectiveToUtc))
+                    .ToArray()))
+            .ToArray());
+    }
+}
