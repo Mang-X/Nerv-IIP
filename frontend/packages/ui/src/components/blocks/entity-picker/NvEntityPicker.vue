@@ -70,6 +70,8 @@ const props = withDefaults(
      * **目录条数超过一页时必须打开**：只拉前 N 条再本地过滤，等于「第 N+1 条起永远选不到」，
      * 新建的条目会凭空消失。打开后本组件不再本地过滤，`options` 就是当前搜索结果；
      * 调用方负责去抖并把搜索词发给服务端，并把匹配总数传进 `totalCount`。
+     * 列表滚到底部而匹配总数多于已列出的条数时发出 `load-more`，调用方加载下一页追加进 `options`；
+     * 条数上百时列表只渲染可视区附近的行（虚拟化），几千条也能顺滑滚动。
      */
     serverSearch?: boolean
     /** 服务端搜索时目录的匹配总数；多于当前结果时，下拉底部提示「输入关键字继续筛选」。 */
@@ -104,6 +106,8 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   (e: 'update:search', value: string): void
   (e: 'create'): void
+  /** 服务端搜索时列表滚到底部、还有没加载的匹配项：调用方加载下一页追加进 `options`。 */
+  (e: 'load-more'): void
 }>()
 
 const open = ref(false)
@@ -250,6 +254,7 @@ function clear() {
           @pick="pick"
           @update:search="emit('update:search', $event)"
           @create="create"
+          @load-more="emit('load-more')"
         />
       </PopoverContent>
     </PopoverPortal>
@@ -278,6 +283,7 @@ function clear() {
         @pick="pick"
         @update:search="emit('update:search', $event)"
         @create="create"
+        @load-more="emit('load-more')"
       />
     </NvDialogContent>
   </component>

@@ -84,25 +84,6 @@ vi.mock('@/composables/usePagedList', async () => {
   }
 })
 
-// 库位目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'A-01', label: 'A-01' },
-        { value: 'STAGE-01', label: 'STAGE-01' },
-      ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: shallowRef(false),
-    }),
-  }
-})
-
 vi.mock('@/composables/useWmsWorkScope', () => ({
   bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
     filters.scopeKind = 'self'
@@ -180,6 +161,12 @@ vi.mock('@/composables/useBusinessWms', () => ({
 
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
+  DirectoryPicker: {
+    props: ['modelValue', 'id', 'formSiteCode', 'siteMissingText'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :data-form-site="formSiteCode" :data-site-missing="siteMissingText" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
   NvDataTable: {
     props: ['rows', 'columns'],
@@ -301,6 +288,12 @@ describe('WMS picking route context', () => {
     expect(wrapper.get('#wms-picking-line').attributes('data-options')).toBe('')
     await wrapper.get('#wms-picking-outbound').setValue('OB-001')
     expect(wrapper.get('#wms-picking-line').attributes('data-options')).toBe('1')
+    // 库位选择器的工厂取所选出库单的工厂（#3832）。
+    for (const field of ['#wms-picking-from', '#wms-picking-to']) {
+      expect(wrapper.get(field).attributes('data-form-site')).toBe('S1')
+      // 拣货表单没有工厂字段，工厂从出库单推出：缺工厂时要提示先选出库单。
+      expect(wrapper.get(field).attributes('data-site-missing')).toBe('请先选择出库单')
+    }
     expect((wrapper.get('#wms-picking-line').element as HTMLInputElement).value).toBe('1')
 
     await wrapper.get('#wms-picking-no').setValue('PICK-OB-001-01')

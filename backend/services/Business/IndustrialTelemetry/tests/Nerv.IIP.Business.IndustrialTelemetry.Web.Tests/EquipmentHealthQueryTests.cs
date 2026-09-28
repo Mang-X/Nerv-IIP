@@ -134,7 +134,7 @@ public sealed class EquipmentHealthQueryTests
             evaluation => evaluation.RuleCode == EquipmentHealthScoringPolicy.RuntimeHoursRuleCode);
         Assert.Equal("risk", runtime.Status);
         Assert.Equal("21", runtime.CurrentValue);
-        Assert.Equal("设备 DEV-A 运行状态", runtime.SourceFactLabel);
+        Assert.Equal("设备运行状态", runtime.SourceFactLabel);
         Assert.Equal(Now.AddHours(-3), runtime.SourceFactOccurredAtUtc);
 
         var sustained = Assert.Single(
@@ -155,7 +155,7 @@ public sealed class EquipmentHealthQueryTests
         Assert.Equal("fresh", response.DataFreshness.Status);
         Assert.Equal(30, response.DataFreshness.AgeSeconds);
         Assert.Equal(Now.AddSeconds(-30), response.DataFreshness.LatestFactAtUtc);
-        Assert.Equal("规则 PRESSURE_LOW · 标签 pressure", response.DataFreshness.SourceFactLabel);
+        Assert.Equal("报警规则 PRESSURE_LOW（采集点 pressure）", response.DataFreshness.SourceFactLabel);
         Assert.DoesNotContain(
             response.RuleEvaluations,
             evaluation => evaluation.Evidence.Contains("DISABLED_HIGH", StringComparison.Ordinal)
@@ -335,7 +335,7 @@ public sealed class EquipmentHealthQueryTests
             evaluation => evaluation.RuleCode == EquipmentHealthScoringPolicy.ThresholdProximityRuleCode);
         Assert.Equal("risk", thresholdEvaluation.Status);
         Assert.Contains(expectedDirection, thresholdEvaluation.Evidence, StringComparison.Ordinal);
-        Assert.Equal("规则 DIRECTIONAL · 标签 value", thresholdEvaluation.SourceFactLabel);
+        Assert.Equal("报警规则 DIRECTIONAL（采集点 value）", thresholdEvaluation.SourceFactLabel);
     }
 
     [Theory]

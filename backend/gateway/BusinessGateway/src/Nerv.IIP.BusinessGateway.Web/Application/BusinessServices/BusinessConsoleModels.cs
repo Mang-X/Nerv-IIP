@@ -82,7 +82,9 @@ public sealed record BusinessConsoleSearchableDirectoryRequest(
     [property: QueryParam] string? SkuCode = null,
     [property: QueryParam] int PageIndex = 1,
     [property: QueryParam] int PageSize = 20,
-    [property: QueryParam] string RankingMode = "default");
+    [property: QueryParam] string RankingMode = "default",
+    // 表单已选的工厂：库存目录（库位 / 批次 / 序列号）按它收窄候选，并与授权工厂取交集；其它目录不接受。
+    [property: QueryParam] string? SiteCode = null);
 
 public sealed record BusinessConsoleSearchableDirectoryItem(
     string Id,
@@ -144,7 +146,9 @@ public sealed record BusinessConsoleInventoryDirectoryRequest(
     string? SiteCode = null,
     string? SkuCode = null,
     int Skip = 0,
-    int Take = 20);
+    int Take = 20,
+    // 调用方授权可见的工厂集合；null 表示组织级授权、不按工厂收窄。
+    IReadOnlyCollection<string>? AuthorizedSiteCodes = null);
 
 public sealed record BusinessConsoleInventoryDirectoryItem(
     string Id,

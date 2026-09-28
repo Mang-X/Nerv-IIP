@@ -82,8 +82,13 @@ export function operationTaskRowSubtitle(task: BusinessConsoleMesOperationTaskRo
   return parts.join(' · ')
 }
 
+/** 返工工单且返工来源完整：只有这种才对操作工标「返工」。 */
+export function isAuthorizedRework(item: MesWorkOrderAuthority) {
+  return isReworkWorkOrder(item) && hasCompleteReworkAuthority(item)
+}
+
 export function withReworkLabel(label: string, item: MesWorkOrderAuthority) {
-  return isReworkWorkOrder(item) && hasCompleteReworkAuthority(item) ? `返工 · ${label}` : label
+  return isAuthorizedRework(item) ? `返工 · ${label}` : label
 }
 
 export function reworkSourceLabel(item: MesWorkOrderAuthority) {

@@ -124,15 +124,17 @@ public sealed class HttpBusinessInventoryClient(
         SendAsync<BusinessConsoleInventoryDirectoryResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/inventory/v1/directory?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("directoryType", request.DirectoryType),
-                ("keyword", request.Keyword),
-                ("siteCode", request.SiteCode),
-                ("skuCode", request.SkuCode),
-                ("skip", request.Skip),
-                ("take", request.Take)),
+            "/api/inventory/v1/directory?" + JoinQuery(
+                Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("directoryType", request.DirectoryType),
+                    ("keyword", request.Keyword),
+                    ("siteCode", request.SiteCode),
+                    ("skuCode", request.SkuCode),
+                    ("skip", request.Skip),
+                    ("take", request.Take)),
+                RepeatedQuery("authorizedSiteCodes", request.AuthorizedSiteCodes)),
             null,
             cancellationToken,
             failClosedOnFailureEnvelope: true);
