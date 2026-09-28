@@ -106,8 +106,10 @@ function clear() {
             cn(
               'w-full justify-between font-normal',
               !modelValue && 'text-muted-foreground',
-              // 有清除叉时给右侧让位，否则 `YYYY-MM-DD` 会钻到叉底下。
-              clearable && modelValue && !disabled && 'pr-12',
+              // 有清除叉时给右侧让位，否则 `YYYY-MM-DD` 会钻到叉底下。叉 20px 宽
+              // 停在 right-8（32px）上，叉左沿落在 32+8=40px 处，收边到 48px 才
+              // 不压字——`pr-12` 实测还差 3px。
+              clearable && modelValue && !disabled && 'pr-14',
             )
           "
         >

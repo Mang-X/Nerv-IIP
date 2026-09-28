@@ -86,20 +86,25 @@ function fromDateInput(value: string, dayOffset: number) {
       </NvField>
       <NvField class="w-full sm:w-64">
         <NvFieldLabel>统计时段</NvFieldLabel>
-        <NvDateRangePicker v-model="windowRange" placeholder="选择统计时段" />
+        <NvDateRangePicker
+          v-model="windowRange"
+          placeholder="选择统计时段"
+          class="w-full sm:w-64"
+        />
       </NvField>
-      <!-- 业务日比同排的 40/44 宽一档：触发器上要给清除叉让位（`pr-12`），144px
-           装不下 `YYYY-MM-DD` 加叉。NvDatePicker 的宽度只由 class 给，与 NvField
-           垂直变体自带的 `*:w-full` 落在同一条 twMerge 通道上，两处写法一致时
-           不存在谁覆盖谁的问题。 -->
-      <NvField class="w-full sm:w-44">
+      <!-- 业务日比同排的 36/44 宽一档：触发器上要给清除叉让位（`pr-12`），
+           `YYYY-MM-DD` 加日历图标加叉在 144px 里放不下（实测 2026-09-15 只剩
+           56px 可见、需要 91px，被 `truncate` 截断还压着叉）。
+           壳与控件必须**同一个**断点值：控件宽度只由它自己的 `class` 给（组件
+           不再自带任何 `w-*`），壳给宽而控件给窄，两处不等就是这条。 -->
+      <NvField class="w-full sm:w-48">
         <NvFieldLabel>业务日</NvFieldLabel>
         <NvDatePicker
           :model-value="filters.businessDate || null"
           placeholder="选择业务日"
           aria-label="业务日"
           clearable
-          class="w-full sm:w-36"
+          class="w-full sm:w-48"
           @update:model-value="emit('update', { businessDate: $event })"
         />
       </NvField>

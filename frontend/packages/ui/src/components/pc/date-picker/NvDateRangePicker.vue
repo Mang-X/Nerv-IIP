@@ -126,17 +126,13 @@ const label = computed(() =>
         variant="outline"
         :disabled="disabled"
         :class="
-          cn(
-            'w-full justify-between font-normal sm:w-64',
-            !(start && end) && 'text-muted-foreground',
-            props.class,
-          )
+          cn('w-full justify-between font-normal', !(start && end) && 'text-muted-foreground')
         "
       >
         <template #leading
-          ><CalendarIcon class="size-4 text-muted-foreground" aria-hidden="true"
+          ><CalendarIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true"
         /></template>
-        {{ label }}
+        <span class="truncate tabular-nums">{{ label }}</span>
       </NvButton>
     </PopoverTrigger>
     <PopoverContent class="w-auto p-3" align="start">

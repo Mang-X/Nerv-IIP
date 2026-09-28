@@ -252,7 +252,11 @@ function refreshReport() {
         </NvField>
         <NvField class="min-w-64">
           <NvFieldLabel>统计时段（最多 31 天）</NvFieldLabel>
-          <NvDateRangePicker v-model="windowRange" placeholder="选择统计时段" />
+          <NvDateRangePicker
+            v-model="windowRange"
+            placeholder="选择统计时段"
+            class="w-full sm:w-64"
+          />
         </NvField>
       </template>
     </NvToolbar>
