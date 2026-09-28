@@ -32070,7 +32070,8 @@
                 "defect-code",
                 "scrap-reason",
                 "downtime-reason",
-                "maintenance-reason"
+                "maintenance-reason",
+                "login-account"
               ]
             }
           },
@@ -56343,6 +56344,10 @@
           },
           "snapshotVersion": {
             "type": "string"
+          },
+          "loginName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

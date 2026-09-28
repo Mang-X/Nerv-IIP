@@ -554,3 +554,78 @@ describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832�
     expect(model.value).toBe(code(1001))
   })
 })
+
+// #3924：登录账号目录回传账号 ID（员工据此与登录人对应），登录名只作显示，不能把登录名当值提交。
+describe('DirectoryPicker 登录账号（#3924）', () => {
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    configureApiClient()
+    document.body.innerHTML = ''
+  })
+
+  it('选中后回传账号 ID，候选显示姓名与登录名', async () => {
+    const requests: URL[] = []
+    configureApiClient({
+      baseUrl: 'http://gateway.local',
+      fetch: (async (request: Request) => {
+        const url = new URL(request.url)
+        requests.push(url)
+        return Response.json({
+          success: true,
+          data: {
+            directoryType: 'login-account',
+            items: [
+              {
+                id: 'user-019a',
+                displayName: '张三',
+                code: 'zhangsan',
+                sourceService: 'iam',
+                context: { loginName: 'zhangsan' },
+              },
+            ],
+            total: 1,
+          },
+        })
+      }) as typeof fetch,
+    })
+    const pinia = createPinia()
+    const model = ref('')
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          useBusinessContextStore().patchContext({
+            organizationId: 'org-a',
+            environmentId: 'env-a',
+          })
+          return () =>
+            h(DirectoryPicker, {
+              directoryType: 'login-account',
+              modelValue: model.value,
+              'onUpdate:modelValue': (value: string) => (model.value = value),
+            })
+        },
+      }),
+      { global: { plugins: [pinia, PiniaColada] }, attachTo: document.body },
+    )
+    mounted.push(wrapper)
+    await flushPromises()
+    await openPicker(wrapper)
+
+    expect(requests.at(-1)?.pathname).toBe('/api/business-console/v1/directories/login-account')
+    const option = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes('张三'),
+    )
+    expect(option).toBeDefined()
+    expect(option!.textContent).toContain('zhangsan')
+    // 内部账号 ID 不进界面。
+    expect(option!.textContent).not.toContain('user-019a')
+    option!.click()
+    await flushPromises()
+
+    expect(model.value).toBe('user-019a')
+    const trigger = wrapper.get('button[aria-haspopup]')
+    expect(trigger.text()).toContain('张三')
+    expect(trigger.text()).toContain('zhangsan')
+    expect(trigger.text()).not.toContain('user-019a')
+  })
+})

@@ -21,6 +21,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
     IBusinessInventoryClient inventory,
     IBusinessQualityClient quality,
     IBusinessMaintenanceClient maintenance,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : Endpoint<BusinessConsoleSearchableDirectoryRequest, ResponseData<BusinessConsoleSearchableDirectoryResponse>>
 {
@@ -147,6 +148,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
             "master-data" => await QueryMasterDataAsync(request, scope.Kind, scope.Id, pageOffset, cancellationToken),
             "quality" => await QueryQualityAsync(request, pageOffset, cancellationToken),
             "maintenance" => await QueryMaintenanceAsync(request, pageOffset, cancellationToken),
+            "iam" => await QueryLoginAccountsAsync(request, pageOffset, cancellationToken),
             _ => throw new InvalidOperationException("Unknown directory owner."),
         };
     }
@@ -347,6 +349,58 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
             "maintenance",
             authorityDirectoryType: "downtime-reason",
             rankingMode: request.RankingMode);
+    }
+
+    /// <summary>
+    /// 员工「关联登录账号」候选：本组织/环境里已启用的成员账号（#3924）。值是账号 ID，展示登录名与显示名，
+    /// 不回传邮箱等联系方式。
+    /// </summary>
+    private async Task<BusinessConsoleSearchableDirectoryResponse> QueryLoginAccountsAsync(
+        BusinessConsoleSearchableDirectoryRequest request,
+        int pageOffset,
+        CancellationToken cancellationToken)
+    {
+        var response = await iamAccounts.ListMemberAccountsAsync(
+            tokenProvider.BearerToken,
+            new BusinessIamMemberAccountListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Keyword,
+                PageIndex: request.PageIndex,
+                PageSize: request.PageSize),
+            cancellationToken);
+        ValidateLoginAccounts(response, request, pageOffset);
+        return BusinessConsoleSearchableDirectoryResponse.FromItems(
+            request.DirectoryType,
+            [.. response.Items.Select(account => new BusinessConsoleSearchableDirectoryItem(
+                account.UserId,
+                string.IsNullOrWhiteSpace(account.DisplayName) ? account.LoginName : account.DisplayName,
+                account.LoginName,
+                "iam",
+                Context(("loginName", account.LoginName))))],
+            response.TotalCount,
+            "iam",
+            rankingMode: request.RankingMode);
+    }
+
+    private static void ValidateLoginAccounts(
+        BusinessIamMemberAccountPage response,
+        BusinessConsoleSearchableDirectoryRequest request,
+        int offset)
+    {
+        if (response.Items is null
+            || response.PageIndex != request.PageIndex
+            || response.PageSize != request.PageSize
+            || response.TotalCount < 0
+            || response.Items.Count > request.PageSize
+            || response.Items.Count > 0 && response.TotalCount < (long)offset + response.Items.Count
+            || response.Items.Any(item =>
+                string.IsNullOrWhiteSpace(item.UserId)
+                || string.IsNullOrWhiteSpace(item.LoginName)
+                || !item.Enabled))
+        {
+            throw InvalidOwnerResponse();
+        }
     }
 
     private static IReadOnlyDictionary<string, string?> Context(params (string Key, string? Value)[] values) =>

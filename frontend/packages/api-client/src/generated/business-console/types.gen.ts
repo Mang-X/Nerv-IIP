@@ -5832,6 +5832,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     teams?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem>;
     skills?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerSkillItem>;
     snapshotVersion?: string;
+    loginName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem = {
@@ -23499,7 +23500,7 @@ export type UnshelveBusinessConsoleEquipmentAlarmResponse = UnshelveBusinessCons
 export type ListBusinessConsoleSearchableDirectoryData = {
     body?: never;
     path: {
-        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason';
+        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason' | 'login-account';
     };
     query: {
         organizationId: string;

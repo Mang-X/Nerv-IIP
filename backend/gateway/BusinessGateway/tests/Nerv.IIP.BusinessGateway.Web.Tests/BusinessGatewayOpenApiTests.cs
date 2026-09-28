@@ -159,7 +159,8 @@ public sealed class BusinessGatewayOpenApiTests
             directoryOperation,
             "directoryType",
             "personnel", "team", "equipment", "work-center", "station", "workshop", "material", "priority",
-            "location", "batch", "serial", "defect-code", "scrap-reason", "downtime-reason", "maintenance-reason");
+            "location", "batch", "serial", "defect-code", "scrap-reason", "downtime-reason", "maintenance-reason",
+            "login-account");
         AssertParameterEnum(directoryOperation, "scopeKind", "team", "workshop", "work-center", "site");
         AssertParameterEnum(directoryOperation, "rankingMode", "default", "recent", "suggested");
         var directoryResponses = directoryOperation.GetProperty("responses");

@@ -27,6 +27,11 @@ export interface SearchableDirectoryPickerOptions {
   siteCode?: MaybeRefOrGetter<string | undefined>
   /** 为假时不取数（如表单还没选工厂）。 */
   enabled?: MaybeRefOrGetter<boolean>
+  /**
+   * 选项 `value` 取目录项的哪个字段，默认 `code`（人读编码）。
+   * 登录账号目录要回传账号 ID（`id`）——登录名只用于显示，放进选项的 `code`。
+   */
+  valueKey?: 'code' | 'id'
 }
 
 /**
@@ -89,6 +94,18 @@ export function useSearchableDirectoryPicker(
     const seen = new Set<string>()
     const rows: EntityPickerOption[] = []
     for (const item of pages.value.flatMap((page) => page.data?.items ?? [])) {
+      if (options.valueKey === 'id') {
+        const id = item.id?.trim()
+        const code = item.code?.trim()
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        rows.push({
+          value: id,
+          label: item.displayName?.trim() || code || id,
+          ...(code ? { code } : {}),
+        })
+        continue
+      }
       const value = item.code?.trim()
       // 批次 / 序列号按「物料 + 编码」分组，同一编码可能在不同物料下各出现一次。
       if (!value || seen.has(value)) continue

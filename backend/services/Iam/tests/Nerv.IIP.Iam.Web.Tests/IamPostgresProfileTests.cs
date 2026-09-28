@@ -641,6 +641,83 @@ public sealed class IamPostgresProfileTests
         }
     }
 
+    // #3924：成员账号目录的 EF 查询（成员关系子查询 + 启用过滤 + ID 批量 + 关键字 + 分页）只在真库上才翻译执行。
+    [Fact]
+    public async Task Postgres_member_account_directory_lists_only_enabled_members_of_the_organization_environment()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState
+            .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
+            .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
+            .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
+            .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
+        await using var factory = new WebApplicationFactory<Program>();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            database.AssertOwns(db.Database.GetConnectionString());
+            await scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>().MigrateAsync();
+            await scope.ServiceProvider.GetRequiredService<IamSeedService>().SeedAsync(CancellationToken.None);
+        }
+
+        var client = factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+        login.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", (await ReadResponseDataAsync<AuthResponse>(login)).AccessToken);
+
+        async Task<string> CreateAsync(string loginName, bool member)
+        {
+            var create = await client.PostAsJsonAsync(
+                "/api/iam/v1/users",
+                new { loginName, email = $"{loginName}@nerv-iip.local", password = "Operator123!" });
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var userId = (await ReadResponseDataAsync<UserResponse>(create)).UserId;
+            if (member)
+            {
+                var assign = await client.PutAsJsonAsync(
+                    $"/api/iam/v1/users/{userId}/membership",
+                    new { roleIds = new[] { "role-erp-sales" } });
+                assign.EnsureSuccessStatusCode();
+            }
+
+            return userId;
+        }
+
+        var member = await CreateAsync("acct-member", member: true);
+        var outsider = await CreateAsync("acct-outsider", member: false);
+        var disabledMember = await CreateAsync("acct-disabled", member: true);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/iam/v1/users/{disabledMember}/disable", null)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "local-internal-service-token");
+
+        var enabledOnly = await ReadResponseDataAsync<MemberAccountPage>(await client.GetAsync(
+            "/internal/iam/v1/member-accounts?organizationId=org-001&environmentId=env-dev&keyword=ACCT-&pageIndex=1&pageSize=10"));
+        Assert.Equal(1, enabledOnly.TotalCount);
+        Assert.Equal([member], enabledOnly.Items.Select(x => x.UserId));
+
+        var batch = await ReadResponseDataAsync<MemberAccountPage>(await client.GetAsync(
+            $"/internal/iam/v1/member-accounts?organizationId=org-001&environmentId=env-dev&includeDisabled=true&userIds={member}&userIds={outsider}&userIds={disabledMember}&pageIndex=1&pageSize=10"));
+        Assert.Equal(
+            new[] { member, disabledMember }.Order(StringComparer.Ordinal),
+            batch.Items.Select(x => x.UserId).Order(StringComparer.Ordinal));
+        Assert.False(batch.Items.Single(x => x.UserId == disabledMember).Enabled);
+
+        var otherEnvironment = await ReadResponseDataAsync<MemberAccountPage>(await client.GetAsync(
+            "/internal/iam/v1/member-accounts?organizationId=org-001&environmentId=env-other&includeDisabled=true&pageIndex=1&pageSize=10"));
+        Assert.Empty(otherEnvironment.Items);
+    }
+
     [Fact]
     public async Task Postgres_profile_persists_role_mutation_permission_catalog_and_password_reset()
     {
@@ -1199,6 +1276,8 @@ public sealed class IamPostgresProfileTests
         }
     }
 
+    private sealed record MemberAccount(string UserId, string LoginName, string? DisplayName, bool Enabled);
+    private sealed record MemberAccountPage(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<MemberAccount> Items);
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
     private sealed record LifecycleAuthResponse(
         string AccessToken,

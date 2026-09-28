@@ -57,6 +57,10 @@ public static class BusinessConsoleSearchableDirectoryPolicy
             ["scrap-reason"] = Define("scrap-reason", "quality", BusinessGatewayPermissions.QualityInspectionRecordsRead),
             ["downtime-reason"] = Define("downtime-reason", "maintenance", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
             ["maintenance-reason"] = Define("maintenance-reason", "maintenance", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
+            // 员工「关联登录账号」候选（#3924）：本组织/环境里已启用的成员账号。只有能维护员工档案的人
+            // （masterdata.resources.manage）才需要看到账号登录名，且账号目录是组织级事实、不按车间/班组切分，
+            // 因此只对持有组织级授权的主体开放（见 ResolveAuthorizedScope）。
+            ["login-account"] = Define("login-account", "iam", BusinessGatewayPermissions.MasterDataResourcesManage),
         };
 
     public static BusinessConsoleSearchableDirectoryDefinition Require(string directoryType)
@@ -116,6 +120,19 @@ public static class BusinessConsoleSearchableDirectoryPolicy
             || grants.Any(grant => !IsRepresentableGrant(definition, grant, organizationId)))
         {
             return null;
+        }
+
+        // 登录账号目录只对组织级授权开放：受限范围（self / 车间 / 班组）的主体不因「无范围维度」被放行去
+        // 读整个组织的账号名单；带显式范围同样拒绝。
+        if (string.Equals(definition.Owner, "iam", StringComparison.Ordinal))
+        {
+            var organizationWideGrant = grants.Any(grant =>
+                grant.OrganizationWide
+                && string.Equals(grant.ScopeKind.Trim(), "organization", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(grant.ScopeId.Trim(), organizationId, StringComparison.Ordinal));
+            return organizationWideGrant && string.IsNullOrWhiteSpace(requestedScopeKind)
+                ? new BusinessConsoleSearchableDirectoryScope(null, null)
+                : null;
         }
 
         // 无范围维度的目录（SupportedScopeKinds 为空集）：权威源查询里没有任何范围参数，

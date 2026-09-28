@@ -1567,8 +1567,28 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "Capabilities/DeadLetters/BusinessDeadLetterClient.cs",
             includeInLegacy: false);
 
+        // #3924：员工「关联登录账号」的候选与核验只读 IAM 成员账号目录；与鉴权 client 分开，
+        // 属于受管 capability client，按目录合同登记。
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Interface",
+            "IBusinessIamAccountDirectoryClient",
+            "Iam",
+            "Capabilities/Iam/BusinessIamAccountDirectoryClient.cs",
+            includeInLegacy: false);
+        AddManagedType(
+            seedCapabilities,
+            legacyDeclarations,
+            "Class",
+            "HttpBusinessIamAccountDirectoryClient",
+            "Iam",
+            "Capabilities/Iam/BusinessIamAccountDirectoryClient.cs",
+            includeInLegacy: false);
+
         var capabilityDirectories = capabilities.Values
             .Append("DeadLetters")
+            .Append("Iam")
             .Distinct(StringComparer.Ordinal)
             .ToDictionary(
                 capability => capability,

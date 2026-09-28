@@ -493,7 +493,10 @@ public sealed record BusinessConsoleWorkerDirectoryItem(
     bool Active,
     IReadOnlyCollection<BusinessConsoleWorkerTeamItem> Teams,
     IReadOnlyCollection<BusinessConsoleWorkerSkillItem> Skills,
-    string SnapshotVersion);
+    string SnapshotVersion,
+    // 关联的登录账号登录名（#3924）：只在员工名册读面由网关按 IAM 成员账号补出；
+    // 为空表示未关联可用账号（从未关联，或账号已不在本组织/环境）。
+    string? LoginName = null);
 
 public sealed record BusinessConsoleCreateWorkerRequest(
     string OrganizationId,
