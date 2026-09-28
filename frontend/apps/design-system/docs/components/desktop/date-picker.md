@@ -88,15 +88,16 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 
 ### NvDatePicker
 
-| 属性               | 说明                             | 类型             | 默认       |
-| ------------------ | -------------------------------- | ---------------- | ---------- |
-| `v-model`          | 绑定日期（`YYYY-MM-DD` 字符串）  | `string \| null` | `null`     |
-| `id`               | 触发按钮 ID，用于关联字段标签    | `string`         | —          |
-| `placeholder`      | 未选中占位文本                   | `string`         | `选择日期` |
-| `disabled`         | 是否禁用                         | `boolean`        | `false`    |
-| `clearable`        | 是否允许清除已选日期（回传空串） | `boolean`        | `false`    |
-| `aria-invalid`     | 字段是否处于校验失败状态         | `boolean`        | `false`    |
-| `aria-describedby` | 关联字段错误说明元素的 ID        | `string`         | —          |
+| 属性               | 说明                             | 类型                      | 默认       |
+| ------------------ | -------------------------------- | ------------------------- | ---------- |
+| `v-model`          | 绑定日期（`YYYY-MM-DD` 字符串）  | `string \| null`          | `null`     |
+| `id`               | 触发按钮 ID，用于关联字段标签    | `string`                  | —          |
+| `placeholder`      | 未选中占位文本                   | `string`                  | `选择日期` |
+| `disabled`         | 是否禁用                         | `boolean`                 | `false`    |
+| `clearable`        | 是否允许清除已选日期（回传空串） | `boolean`                 | `false`    |
+| `aria-invalid`     | 字段是否处于校验失败状态         | `boolean`                 | `false`    |
+| `aria-describedby` | 关联字段错误说明元素的 ID        | `string`                  | —          |
+| `class`            | 触发按钮宽度                     | `HTMLAttributes['class']` | —          |
 
 ### NvDateRangePicker
 
@@ -105,3 +106,4 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 | `v-model`     | 绑定区间       | `{ start: string \| null, end: string \| null } \| null` | `null`         |
 | `placeholder` | 未选中占位文本 | `string`                                                 | `选择日期范围` |
 | `disabled`    | 是否禁用       | `boolean`                                                | `false`        |
+| `class`       | 触发按钮宽度   | `HTMLAttributes['class']`                                | —              |

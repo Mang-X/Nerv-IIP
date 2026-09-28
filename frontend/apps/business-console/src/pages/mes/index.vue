@@ -330,7 +330,7 @@ const pendingEmptyMessage = computed(() => {
   if (overviewState.value === 'loading') return '正在读取按角色汇总的待办。'
   if (overviewState.value === 'error')
     return '待办获取失败，无法判断各角色是否有待办。请点右上角「刷新」重试。'
-  return '本次读取没有按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。'
+  return '当前没有按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。'
 })
 
 type BlockerRow = (typeof blockers)['value'][number]
