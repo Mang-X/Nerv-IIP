@@ -90,6 +90,13 @@ public sealed class ErpSalesOrderDemandConsumerTests
         Assert.Equal(0m, demand.Quantity);
         Assert.Equal(3, demand.SourceVersion);
         Assert.Equal("fulfilled", demand.SourceStatus);
+
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Changed(4, 5m, "10"), CancellationToken.None);
+        demand = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+        Assert.Equal(5m, demand.Quantity);
+        Assert.Equal(4, demand.SourceVersion);
+        Assert.Equal("active", demand.SourceStatus);
     }
 
     [Fact]

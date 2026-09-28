@@ -164,7 +164,7 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(DemandPlanningConverters.PlannedPurchaseSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlannedWorkOrderSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlanningSuggestionAcceptedIntegrationEventConverter),
-        // Erp（16 条）
+        // Erp（17 条）
         typeof(ErpConverters.AccountPayableCreatedIntegrationEventConverter),
         typeof(ErpConverters.AccountReceivableCreatedIntegrationEventConverter),
         typeof(ErpConverters.CostCandidateCreatedIntegrationEventConverter),
@@ -178,6 +178,7 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(ErpConverters.PurchaseRequisitionCreatedIntegrationEventConverter),
         typeof(ErpConverters.SalesOrderCancelledIntegrationEventConverter),
         typeof(ErpConverters.SalesOrderChangedIntegrationEventConverter),
+        typeof(ErpConverters.SalesOrderDeliveryRegisteredIntegrationEventConverter),
         typeof(ErpConverters.SalesOrderReleasedIntegrationEventConverter),
         typeof(ErpConverters.SalesReturnAuthorizedIntegrationEventConverter),
         typeof(ErpConverters.WorkOrderCostCompletedIntegrationEventConverter),

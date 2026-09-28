@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -13,7 +14,8 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ILogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection> logger)
+    ILogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection> logger,
+    IErpIntegrationEventContextAccessor eventContext)
     : IIntegrationEventHandler<WmsIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.wms-outbound-cancelled-delivery-projection";
@@ -44,6 +46,10 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
 
     private async Task HandleValidEventAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
+        using var causationScope = eventContext.BeginScope(
+            integrationEvent.EventId,
+            integrationEvent.CorrelationId,
+            integrationEvent.Actor);
         if (!string.Equals(integrationEvent.SourceService, WmsIntegrationEventSources.BusinessWms, StringComparison.OrdinalIgnoreCase))
         {
             await DeadLetterAsync(

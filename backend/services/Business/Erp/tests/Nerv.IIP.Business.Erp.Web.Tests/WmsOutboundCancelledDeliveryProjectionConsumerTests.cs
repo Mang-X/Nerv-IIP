@@ -30,7 +30,10 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-CANCEL-001", "SO-CANCEL-001", "SO-LINE-001", 2m, 80m);
         var integrationEvent = BuildWmsCancelledEvent(delivery, "customer-requested-cancel");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
+        var eventContext = new RecordingEventContextAccessor();
+        var handler = CreateHandler(dbContext, deadLetters, eventContext);
+        var orderBeforeCancellation = await dbContext.SalesOrders.SingleAsync(x => x.SalesOrderNo == "SO-CANCEL-001");
+        orderBeforeCancellation.ClearDomainEvents();
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -44,6 +47,11 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         var order = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(x => x.SalesOrderNo == "SO-CANCEL-001", CancellationToken.None);
         Assert.Equal(3, order.Version);
         Assert.Equal(0m, Assert.Single(order.Lines).DeliveredQuantity);
+        var changedFact = Assert.IsType<SalesOrderChangedDomainEvent>(Assert.Single(order.GetDomainEvents()));
+        var changed = new SalesOrderChangedIntegrationEventConverter(eventContext).Convert(changedFact);
+        Assert.Equal(integrationEvent.EventId, changed.CausationId);
+        Assert.Equal(integrationEvent.CorrelationId, changed.CorrelationId);
+        Assert.Equal(0m, Assert.Single(changed.Payload.Lines).DeliveredQuantity);
         Assert.Single(dbContext.ProcessedIntegrationEvents);
         Assert.Empty(dbContext.AccountReceivables);
         Assert.Empty(dbContext.JournalVouchers);
@@ -77,7 +85,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var integrationEvent = BuildWmsCancelledEvent(delivery, "customer-requested-cancel");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
+        var handler = CreateHandler(dbContext, deadLetters, new RecordingEventContextAccessor());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -105,7 +113,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var integrationEvent = BuildWmsCancelledEvent(delivery, "late-cancellation");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
+        var handler = CreateHandler(dbContext, deadLetters, new RecordingEventContextAccessor());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -125,12 +133,33 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
 
     private static WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection CreateHandler(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IErpIntegrationEventContextAccessor eventContext)
     {
         return new WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection(
             dbContext,
             deadLetterStore,
-            new TestLogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection>());
+            new TestLogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection>(),
+            eventContext);
+    }
+
+    private sealed class RecordingEventContextAccessor : IErpIntegrationEventContextAccessor
+    {
+        private ErpIntegrationEventContext? context;
+
+        public ErpIntegrationEventContext GetContext() => context
+            ?? throw new InvalidOperationException("WMS cancellation must establish event causation.");
+
+        public IDisposable BeginScope(string causationId, string? correlationId = null, string? actor = null)
+        {
+            context = new ErpIntegrationEventContext(correlationId!, causationId, actor!);
+            return new Scope();
+        }
+
+        private sealed class Scope : IDisposable
+        {
+            public void Dispose() { }
+        }
     }
 
     private static async Task<DeliveryOrder> ReleaseDeliveryOrderAsync(
