@@ -74,14 +74,10 @@ public sealed class HttpMesDeviceWorkCenterResolver(
 
         using (response)
         {
+            // 非 2xx 一律按瞬时故障抛出重试，不看响应体：5xx 诊断文本里出现 "multiple" 之类字样
+            // 不能被当成「主数据确认这台设备不唯一」。歧义只认 2xx 信封里的 success=false。
             if (!response.IsSuccessStatusCode)
             {
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                if (IsAmbiguous(body))
-                {
-                    return Unresolved(organizationId, environmentId, deviceAssetId, "ambiguous");
-                }
-
                 throw new MesMasterDataUnavailableException(
                     $"MasterData returned HTTP {(int)response.StatusCode} while resolving device work center.");
             }

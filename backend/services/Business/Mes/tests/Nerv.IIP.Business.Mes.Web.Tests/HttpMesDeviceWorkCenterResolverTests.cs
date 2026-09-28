@@ -49,14 +49,27 @@ public sealed class HttpMesDeviceWorkCenterResolverTests
     }
 
     [Fact]
-    public async Task Returns_null_when_masterdata_rejects_an_ambiguous_device_reference()
+    public async Task Returns_null_when_masterdata_envelope_reports_an_ambiguous_device_reference()
     {
-        var handler = new QueueHttpMessageHandler(new HttpResponseMessage(HttpStatusCode.BadRequest)
-        {
-            Content = new StringContent("""{"success":false,"message":"主数据设备引用 'DEV-CNC-01' 对应多条记录，无法唯一确定。"}""", Encoding.UTF8, "application/json"),
-        });
+        var handler = new QueueHttpMessageHandler(Json(
+            """{"success":false,"message":"主数据设备引用 'DEV-CNC-01' 对应多条记录，无法唯一确定。","code":400,"errorData":[]}"""));
 
         Assert.Null(await CreateResolver(handler).ResolveAsync("org-001", "env-dev", "DEV-CNC-01", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Throws_for_retry_when_a_server_error_body_merely_mentions_multiple()
+    {
+        var handler = new QueueHttpMessageHandler(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent(
+                """{"success":false,"message":"multiple active connections exhausted; 对应多条记录","code":500}""",
+                Encoding.UTF8,
+                "application/json"),
+        });
+
+        await Assert.ThrowsAsync<MesMasterDataUnavailableException>(
+            () => CreateResolver(handler).ResolveAsync("org-001", "env-dev", "DEV-CNC-01", CancellationToken.None));
     }
 
     public static TheoryData<string> OutageScenarios => new() { "http-500", "http-401", "truncated", "unreadable", "transport" };
