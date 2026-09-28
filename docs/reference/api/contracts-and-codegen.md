@@ -99,25 +99,43 @@
 **为什么不能走一般的主版本/迁移窗口程序**：那份 29 值并集本身就是缺陷载体，不是既有能力。
 它把 6 个互不相干的聚合的状态混成一个集合，并且**用小写拼写冒充 PascalCase 域的运行时值** ——
 工序、领料单、完工入库单、不良记录、交接班、停机这 6 个聚合在服务端实际会产生的值，
-**一个都不在**该枚举内。保留过渡期等于让 29 个并集码继续作为合法过滤值被接受，其中
-27 个在任何聚合上都没有对应数据；真正的运行时值反而被契约判为非法。契约此时不是在
-描述能力，而是在描述漂移。
+**一个都不在**该枚举内。保留过渡期等于让 29 个并集码继续作为合法过滤值被接受，而真正的运行时值
+反而被契约判为非法。契约此时不是在描述能力，而是在描述漂移。
+
+**那 29 个码逐个对回域，结论分三类**（不要笼统说成「27 个没有对应数据」——
+只有 4 个是真正无对应数据的，其余各有归属）：
+
+| 类别 | 个数 | 码 |
+| --- | --- | --- |
+| 与域值域字面相同（工单本就是小写） | 8 | `cancelled` `closed` `completed` `created` `hold` `released` `scrapped` `started` |
+| 拼写错误 —— 域里是对应的 PascalCase 码 | 17 | `queued` `inProgress` `paused` `scheduleInvalidated` `open` `recovered` `requested` `partiallyReceived` `received` `posted` `partiallyPosted` `inventoryPostingFailed` `reworkPending` `scrapAccepted` `returnAccepted` `dispositionAccepted` `accepted` |
+| **域里完全没有对应数据** | **4** | `active` `blocked` `ready` `warning` |
+
+**本次变更是「收窄 + 新增」，不是纯收窄。** 相对旧的 29 值并集，处理器为
+`MaterialIssueRequest` 补回了 `ReceiptPosting` / `ReturnRequested` / `ReservationExpired`，
+为 `WorkOrder` 补回了 `split` / `merged` —— 这 5 个码**旧并集里根本不存在**，是本次新增的
+合法过滤值（它们在域里都有常量与可达赋值）。把它们连同 PascalCase 正名一起记为「收窄」，
+会低报本次变更，故在此更正。同一批 PascalCase 正名也把 17 个拼写变体纠正为真实值。
 
 特别地，`/mes/downtime-events` 与 `/mes/capacity-impacts` 从 29 值收到 2 值（`Open` /
 `Recovered`）的准确性质是**两件事叠加**：
 
-- **取消 27 个本就不生效的码**。读面 `MesProductionQueries` / `MesWorkbenchQueries` 的过滤是
+- **取消本就不生效的码**。读面 `MesProductionQueries` / `MesWorkbenchQueries` 的过滤是
   `request.Status.Trim().ToLowerInvariant()` 之后 switch，只认 `open` / `recovered`，
-  其余一律 `Where(_ => false)`。被收窄掉的那 27 个码本就在这条 switch 的 `_` 分支里，
+  其余一律 `Where(_ => false)`。被收窄掉的那些码本就在这条 switch 的 `_` 分支里，
   传进去只会得到空结果集 —— 取消它们不损失任何能返回行的过滤能力。
+  **注意这是单条路径的口径，不是全局口径**：全局 29 值里只有 4 个（`active` / `blocked` /
+  `ready` / `warning`）在任何聚合上都没有对应数据；其余 25 个都对得上某个聚合的真实值域
+  （8 个字面相同 + 17 个拼写变体）。
 - **对仍生效的两个码改拼写**。`open` / `recovered` 在收窄前本来就在 29 值枚举内且**真能过滤到行**，
   收窄后契约写 PascalCase。这不是「取消」而是「改拼写」，但因为读面比较前先 lower，
   `Open` 与 `open` 行为等价（都归一化成 `open`），故运行时无差异。
 
-所以结论是「无可观测功能损失」，但理由不是「取消的码本就不生效」这一句 —— 生效的那两个
-是被改拼写而非被取消。
+所以对这两条路径而言结论是「无可观测功能损失」；但理由不是「取消的码本就不生效」这一句 ——
+生效的那两个是被改拼写而非被取消。
 
-**替代面**：无。这不是新增能力或重命名，是把契约校正回生产者的事实。
+**替代面**：无。新增的 5 个码是域里本就存在的过滤值（此前被统一并集挤掉），
+其余是把契约校正回生产者的事实。
 
 该例外要求后端与重新生成的客户端同批升级（本仓前端消费方已在同一 PR 内迁移到真实值域，
 `verify-openapi-client-drift.ps1` 为零漂移的机器判据；后端契约测试以 MES 域常量比对
@@ -141,8 +159,25 @@ Governance 的一般破坏性变更/主版本规则。
    合并需另票，届时一并决定键集归属。
 
 守卫现状：后端 `Nerv.IIP.ContractBoundary.Tests/MesListStatusContractTests` 以 MES 域常量
-比对导出 snapshot 的枚举（21 个用例）；前端 `useMesReferenceLabels.test.ts` 逐语境钉住
+比对导出 snapshot 的枚举；前端 `useMesReferenceLabels.test.ts` 逐语境钉住
 `overrides` 与词表键集。
+
+后端守门共 23 条，分三层：
+
+1. **逐条值域比对**（22 条）：10 个行 schema 的 `status` / `receiptStatus` 与 11 条列表
+   `status` 查询参数，各与对应聚合的域常量比。
+2. **schema 侧反向穷举**（`Every_mes_status_enum_is_registered`）：扫出 `BusinessConsoleMes*`
+   下所有行 schema 的所有内嵌 enum，逐个问「登记了吗」。新增一个带状态 enum 的行 schema
+   而忘了登记值域时必然红 —— 只做第 1 层的话，那条新 schema 根本进不来（`Assert.Single`
+   只在已登记后缀匹配到 ≥1 个时生效），门禁会照绿。
+3. **路径侧反向穷举**（`Every_mes_list_status_query_is_registered`）：扫出
+   `/api/business-console/v1/mes/**` 下所有带 `status` 查询参数的 GET 路径，逐个问
+   「登记了吗」，与第 2 层对称。
+
+第 2、3 层各有显式白名单（`NonRowStatusEnums` / `NonListStatusQueryPaths`），白名单项都带
+排除原因；新增枚举或路径却忘了登记/加白名单时断言会红并列出未登记项。`NonListStatusQueryPaths`
+里的两条（`reportable-operation-tasks` / `telemetry-production-report-candidates`）是
+`status` **无 enum** 的自由 string，属「缺值域」而非「值域被覆盖」，方向与本票相反，独立票处理。
 
 ## 历史材料边界
 
