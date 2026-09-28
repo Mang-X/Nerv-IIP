@@ -108,7 +108,26 @@ public sealed class CreateStockCountTaskCommandHandler(
             return new CreateStockCountTaskResult(existing.Id, existing.CountTaskCode, existing.ExpectedLedgerVersion);
         }
 
-        var countTaskCode = string.IsNullOrWhiteSpace(request.CountTaskCode)
+        var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SkuCode == request.SkuCode
+                && x.UomCode == request.UomCode
+                && x.SiteCode == request.SiteCode
+                && x.LocationCode == request.LocationCode
+                && x.LotNo == request.LotNo
+                && x.SerialNo == request.SerialNo
+                && x.QualityStatus == qualityStatus
+                && x.OwnerType == ownerType
+                && x.OwnerId == request.OwnerId,
+            cancellationToken)
+            ?? throw new KnownException("未找到盘点任务对应的库存台账。");
+        var requestedCountTaskCode = string.IsNullOrWhiteSpace(request.CountTaskCode) ? null : request.CountTaskCode;
+        ledger.EnsureCanFreezeForCount(requestedCountTaskCode);
+
+        // 分号放在全部业务校验之后：分配会当场提交「幂等键 → 号 + 载荷指纹」绑定，
+        // 失败的请求若先占了号，用户在同一弹窗改正后用同一个键重提会撞指纹冲突（#3918 审核 B1）。
+        var countTaskCode = requestedCountTaskCode is null
             ? await _codingService.AllocateAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -125,7 +144,7 @@ public sealed class CreateStockCountTaskCommandHandler(
                     ownerType,
                     request.OwnerId),
                 cancellationToken)
-            : request.CountTaskCode;
+            : requestedCountTaskCode;
 
         var existingCountCode = await dbContext.StockCountTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
@@ -136,21 +155,6 @@ public sealed class CreateStockCountTaskCommandHandler(
         {
             throw new KnownException("盘点任务编码已存在，请更换任务编码。");
         }
-
-        var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.SkuCode == request.SkuCode
-                && x.UomCode == request.UomCode
-                && x.SiteCode == request.SiteCode
-                && x.LocationCode == request.LocationCode
-                && x.LotNo == request.LotNo
-                && x.SerialNo == request.SerialNo
-                && x.QualityStatus == qualityStatus
-                && x.OwnerType == ownerType
-                && x.OwnerId == request.OwnerId,
-            cancellationToken)
-            ?? throw new KnownException("未找到盘点任务对应的库存台账。");
 
         var task = StockCountTask.Create(
             request.OrganizationId,

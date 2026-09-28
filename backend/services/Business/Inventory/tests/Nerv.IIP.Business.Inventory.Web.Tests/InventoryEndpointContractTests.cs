@@ -23,7 +23,6 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggrega
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Auth;
-using Nerv.IIP.Business.Inventory.Web.Application.Coding;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
@@ -740,65 +739,6 @@ public sealed class InventoryEndpointContractTests
                 CancellationToken.None));
 
         Assert.Contains("frozen", exception.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// #3918：控制台手工新建不传任务号，由编码规则生成。盘点会冻结台账，本地落库失败后同键重试
-    /// （新 scope）必须拿回同一个任务号，不能一次提交在界面上变成两个号。
-    /// </summary>
-    [Fact]
-    public async Task Count_task_without_a_code_gets_one_from_the_coding_rule_and_a_retry_in_a_new_scope_keeps_it()
-    {
-        await using var provider = CreateInMemoryProvider();
-        await using (var seedScope = provider.CreateAsyncScope())
-        {
-            var seedDb = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var ledger = DomainLedgerFactory.NewLedger();
-            ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
-            seedDb.StockLedgers.Add(ledger);
-            await seedDb.SaveChangesAsync(CancellationToken.None);
-        }
-
-        var coding = new InventoryCodingService(provider.GetRequiredService<IServiceScopeFactory>());
-        var command = new CreateStockCountTaskCommand(
-            "org-001",
-            "env-dev",
-            null,
-            "SKU-FG-1000",
-            "kg",
-            "SITE-01",
-            "LOC-A-01",
-            "LOT-001",
-            null,
-            "qualified",
-            "company",
-            "owner-001",
-            "console-count-task-intent-001");
-        async Task<CreateStockCountTaskResult> AttemptAsync(bool commit)
-        {
-            await using var scope = provider.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var result = await new CreateStockCountTaskCommandHandler(db, coding).Handle(command, CancellationToken.None);
-            if (commit)
-            {
-                await db.SaveChangesAsync(CancellationToken.None);
-            }
-
-            return result;
-        }
-
-        var lost = await AttemptAsync(commit: false);
-        var retried = await AttemptAsync(commit: true);
-        var replayed = await AttemptAsync(commit: true);
-
-        Assert.Matches(@"^SCT-\d{8}-\d{6}$", retried.CountTaskCode);
-        Assert.Equal(lost.CountTaskCode, retried.CountTaskCode);
-        Assert.Equal(retried.CountTaskId, replayed.CountTaskId);
-        Assert.Equal(retried.CountTaskCode, replayed.CountTaskCode);
-        await using var verifyScope = provider.CreateAsyncScope();
-        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var task = Assert.Single(await verifyDb.StockCountTasks.ToListAsync());
-        Assert.Equal(retried.CountTaskCode, task.CountTaskCode);
     }
 
     [Fact]

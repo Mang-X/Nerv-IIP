@@ -180,6 +180,22 @@ public sealed class CreatePutawayTaskCommandHandler(
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"未找到入库单，入库单 ID = {request.InboundOrderId}");
+        // 分号放在业务校验之后：分配会当场提交「幂等键 → 号 + 载荷指纹」绑定，
+        // 被拒的请求若先占了号，用户改正后用同一个键重提会撞指纹冲突（#3918 审核）。
+        try
+        {
+            inbound.EnsureCanCreatePutawayTask(request.LineNo, request.Quantity);
+        }
+        // 领域守卫的原因是英文，不上屏；给中文业务原因，不再落成 500（#3927）。
+        catch (InvalidOperationException exception) when (inbound.Status == InboundOrderStatus.Completed)
+        {
+            throw new KnownException("入库单已完成，只有质检放行的行还能补建上架任务。", exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException("当前入库行暂不能上架，请刷新后按最新状态处理。", exception);
+        }
+
         var taskNo = await _codingService.AllocateAsync(
             inbound.OrganizationId,
             inbound.EnvironmentId,
@@ -215,28 +231,14 @@ public sealed class CreatePutawayTaskCommandHandler(
             return existingTask.Id;
         }
 
-        WarehouseTask task;
-        try
-        {
-            task = inbound.CreatePutawayTask(
-                taskNo,
-                request.LineNo,
-                request.FromLocationCode,
-                request.ToLocationCode,
-                request.Quantity,
-                inbound.AssignedOperatorUserId,
-                inbound.AssignedPoolCode);
-        }
-        // 领域守卫的原因是英文，不上屏；给中文业务原因，不再落成 500（#3927）。
-        catch (InvalidOperationException exception) when (inbound.Status == InboundOrderStatus.Completed)
-        {
-            throw new KnownException("入库单已完成，只有质检放行的行还能补建上架任务。", exception);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException("当前入库行暂不能上架，请刷新后按最新状态处理。", exception);
-        }
-
+        var task = inbound.CreatePutawayTask(
+            taskNo,
+            request.LineNo,
+            request.FromLocationCode,
+            request.ToLocationCode,
+            request.Quantity,
+            inbound.AssignedOperatorUserId,
+            inbound.AssignedPoolCode);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -679,6 +681,17 @@ public sealed class CreatePickingTaskCommandHandler(
             ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var line = outbound.Lines.SingleOrDefault(x => x.LineNo == request.LineNo)
             ?? throw new KnownException($"未找到出库行，行号 = {request.LineNo}");
+        // 本地校验放在分号之前（理由同上架，#3918 审核）。库存预留必须拿着号去做（预留键由任务号派生，
+        // ADR 0031），所以远程预留被拒仍发生在分号之后，这一段保持原样。
+        try
+        {
+            outbound.EnsureCanCreatePickingTask(line.LineNo, request.Quantity);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException("当前出库单不可创建拣货任务，请检查状态后重试。", exception);
+        }
+
         var taskNo = await _codingService.AllocateAsync(
             outbound.OrganizationId,
             outbound.EnvironmentId,
@@ -702,15 +715,6 @@ public sealed class CreatePickingTaskCommandHandler(
         if (replayedTask is not null)
         {
             return replayedTask.Id;
-        }
-
-        try
-        {
-            outbound.EnsureCanCreatePickingTask(line.LineNo, request.Quantity);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException("当前出库单不可创建拣货任务，请检查状态后重试。", exception);
         }
 
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
