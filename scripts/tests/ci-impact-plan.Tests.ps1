@@ -251,7 +251,9 @@ function Assert-BusinessConsoleBrowserValidationWorkflowContract {
     Assert-Contract ([string]::Equals([string]$browserTestStep.env.NERV_IIP_OUT_DIR, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser artifacts must use the runner temporary directory.'
     Assert-Contract (([string]$browserTestStep.run).Contains('pnpm -C frontend --filter @nerv-iip/business-console exec playwright test', [StringComparison]::Ordinal) -and
         ([string]$browserTestStep.run).Contains('e2e/issue1974-tooling-visual.spec.ts', [StringComparison]::Ordinal) -and
-        ([string]$browserTestStep.run).Contains('--project=desktop', [StringComparison]::Ordinal)) 'Business Console browser invariants must run the governed desktop tooling specification.'
+        ([string]$browserTestStep.run).Contains('e2e/issue3734-column-width.spec.ts', [StringComparison]::Ordinal) -and
+        ([string]$browserTestStep.run).Contains('e2e/issue3735-layout.spec.ts', [StringComparison]::Ordinal) -and
+        ([string]$browserTestStep.run).Contains('--project=desktop', [StringComparison]::Ordinal)) 'Business Console browser invariants must run the governed desktop tooling specifications.'
 
     $browserUploadSteps = @($frontendValidation.steps | Where-Object {
             [string]::Equals([string]$_.name, 'Upload Business Console browser diagnostics', [StringComparison]::Ordinal)

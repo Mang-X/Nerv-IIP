@@ -315,7 +315,12 @@ function refreshAll() {
       <NvCascadePicker v-model="scope" :levels="levels" :aria-busy="scopePending" />
       <NvField>
         <NvFieldLabel for="rel-window">统计时段</NvFieldLabel>
-        <NvDateRangePicker id="rel-window" v-model="windowRange" placeholder="选择统计时段" />
+        <NvDateRangePicker
+          id="rel-window"
+          v-model="windowRange"
+          placeholder="选择统计时段"
+          class="w-full sm:w-64"
+        />
       </NvField>
     </div>
 

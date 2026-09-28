@@ -214,7 +214,7 @@ describe('MES index page', () => {
 
     const text = mountPage().text()
 
-    expect(text).toContain('本次读取的汇总里没有阻塞')
+    expect(text).toContain('当前范围内没有阻塞')
     expect(text).toContain('进入工单与派工')
   })
 
@@ -228,15 +228,18 @@ describe('MES index page', () => {
 
       expect(text).toContain('我的班组 · 现在该干什么')
       expect(text).toContain('作业范围：注塑一班（班组）')
-      expect(text).toContain('我的范围 · 待开工')
+      expect(text).toContain('我负责的 · 待开工')
       expect(text).toContain('12')
-      expect(text).toContain('我的范围 · 进行中')
+      expect(text).toContain('我负责的 · 进行中')
       expect(text).toContain('3')
       // 暂停与排程失效此前完全漏在外面（「进行中」的文案还把 paused 一起讲了进去）。
-      expect(text).toContain('我的范围 · 已暂停')
+      expect(text).toContain('我负责的 · 已暂停')
       expect(text).toContain('5')
-      expect(text).toContain('我的范围 · 排程已失效')
+      expect(text).toContain('我负责的 · 排程已失效')
       expect(text).toContain('7')
+      // 「范围」是取数口径不是产品语义（#3735），产品语义是「我负责的这一摊」；
+      // 口径由标题下那行 `作业范围：…` 交代。旧标签不许再出现。
+      expect(text).not.toContain('我的范围 ·')
 
       const queueLink = wrapper
         .findAll('[data-router-link]')
@@ -256,7 +259,7 @@ describe('MES index page', () => {
       expect(text).not.toContain('等着报工或完工')
     })
 
-    // 全厂总量与「我的范围」并排出现，口径必须自带标注，否则两组数字会被读成同一回事。
+    // 全厂总量与「我负责的」并排出现，口径必须自带标注，否则两组数字会被读成同一回事。
     it('全厂那一条明确标注全厂口径，不再叫「在制」', () => {
       const text = mountPage().text()
 

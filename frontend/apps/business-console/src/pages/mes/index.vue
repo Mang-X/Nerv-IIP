@@ -163,7 +163,7 @@ const blockerCard = computed(() => {
   }
   return {
     title: '先处理阻塞',
-    description: '本次读取的汇总里没有阻塞，可进入工单与派工继续推进。',
+    description: '当前范围内没有阻塞，可进入工单与派工继续推进。',
     action: '进入工单与派工',
     route: '/mes/work-orders',
     tone: 'border-success/30 bg-success/5',
@@ -248,7 +248,9 @@ const myScopeNote = computed(() => {
 const myScopeCells = computed<NvMetricStripCell[]>(() =>
   myScopeQueries.map(({ bucket, query }) => ({
     key: `my-${bucket.key}`,
-    label: `我的范围 · ${bucket.label}`,
+    // 「范围」是取数口径（作业范围可以是班组、也可以是工作中心），不是产品语义；
+    // 用户认的是「我负责的这一摊」。口径另由标题下的 `作业范围：…` 那行交代。
+    label: `我负责的 · ${bucket.label}`,
     value: readStateValue(query.operationTasksState.value, query.operationTasksTotal.value),
     unit: myScopeReady.value ? '个' : undefined,
     meta: bucket.meta,
@@ -321,14 +323,14 @@ const pendingWorkItems = computed(() =>
 const blockerEmptyMessage = computed(() => {
   if (overviewState.value === 'idle') return '尚未选择业务范围，未读取现场阻塞。'
   if (overviewState.value === 'loading') return '正在读取现场阻塞。'
-  return '本次读取的范围内没有阻塞记录。物料、质量、设备或产能出现卡点时会汇总到这里。'
+  return '当前范围内没有阻塞记录。物料、质量、设备或产能出现卡点时会汇总到这里。'
 })
 const pendingEmptyMessage = computed(() => {
   if (overviewState.value === 'idle') return '尚未选择业务范围，未读取待办。'
   if (overviewState.value === 'loading') return '正在读取按角色汇总的待办。'
   if (overviewState.value === 'error')
     return '待办获取失败，无法判断各角色是否有待办。请点右上角「刷新」重试。'
-  return '本次读取没有按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。'
+  return '当前没有按角色汇总的待办。各角色可从上方工作台直接进入自己的队列。'
 })
 
 type BlockerRow = (typeof blockers)['value'][number]

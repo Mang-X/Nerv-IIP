@@ -121,24 +121,26 @@ const label = computed(() =>
 
 <template>
   <Popover v-model:open="open">
-    <PopoverTrigger as-child>
-      <NvButton
-        variant="outline"
-        :disabled="disabled"
-        :class="
-          cn(
-            'w-full justify-between font-normal sm:w-64',
-            !(start && end) && 'text-muted-foreground',
-            props.class,
-          )
-        "
-      >
-        <template #leading
-          ><CalendarIcon class="size-4 text-muted-foreground" aria-hidden="true"
-        /></template>
-        {{ label }}
-      </NvButton>
-    </PopoverTrigger>
+    <!-- 宽度只由调用方的 `class` 给（与 `NvDatePicker` 同一套约定）。`class` 是
+         **声明 prop**，所以它不进 `$attrs`：根 `<Popover>` 的 `PopperRoot` 另有
+         `inheritAttrs: false` 且只渲染 slot，`class` 若不在模板里显式绑定就是
+         确定性丢弃，调用方传什么宽度都不生效（#3735）。包裹 div 就是那个落点。 -->
+    <div class="relative flex w-full" :class="props.class" data-slot="nv-date-range-picker">
+      <PopoverTrigger as-child>
+        <NvButton
+          variant="outline"
+          :disabled="disabled"
+          :class="
+            cn('w-full justify-between font-normal', !(start && end) && 'text-muted-foreground')
+          "
+        >
+          <template #leading
+            ><CalendarIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true"
+          /></template>
+          <span class="truncate tabular-nums">{{ label }}</span>
+        </NvButton>
+      </PopoverTrigger>
+    </div>
     <PopoverContent class="w-auto p-3" align="start">
       <div class="mb-2 flex items-center justify-between">
         <button

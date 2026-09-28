@@ -232,7 +232,7 @@ describe('MES 列表页读面失败时落到表格错误态（#2854）', () => {
       expect(wrapper.text()).toContain('数据加载失败')
       expect(wrapper.text()).not.toContain(readFailure.message)
       expect(wrapper.text()).not.toContain('暂无工序')
-      expect(wrapper.text()).not.toContain('本次读取的范围内没有阻塞记录')
+      expect(wrapper.text()).not.toContain('当前范围内没有阻塞记录')
       const retries = wrapper.findAll('button').filter((button) => button.text() === '重新加载')
       expect(retries).toHaveLength(1)
       retrySpies[refresh].mockClear()

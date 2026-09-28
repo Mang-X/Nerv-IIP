@@ -104,9 +104,7 @@ function degradationLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
     <article class="rounded-lg border bg-card p-4 shadow-sm">
       <div>
         <h2 class="text-sm font-semibold text-foreground">设备性能率</h2>
-        <p class="mt-1 text-xs text-muted-foreground">
-          性能率取自设备 OEE 统计，不由本页产量反算。
-        </p>
+        <p class="mt-1 text-xs text-muted-foreground">设备实际开动时间占计划开动时间的比例。</p>
       </div>
 
       <p v-if="!canReadOee" class="mt-4 text-sm text-muted-foreground">没有查看设备 OEE 的权限</p>

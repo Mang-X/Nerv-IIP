@@ -638,7 +638,11 @@ function formatDateTime(value?: string | null) {
             >
           </NvSelectContent>
         </NvSelect>
-        <NvDateRangePicker v-model="windowRange" placeholder="选择统计窗口" />
+        <NvDateRangePicker
+          v-model="windowRange"
+          placeholder="选择统计窗口"
+          class="w-full sm:w-64"
+        />
       </template>
     </NvToolbar>
 
