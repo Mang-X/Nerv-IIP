@@ -5,7 +5,12 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
-import { useBarcodePrintBatches, useBarcodeTemplates } from '@/composables/useBusinessBarcode'
+import { parseVariableRows, rowDisplayLabel } from '@/components/barcode/labelTemplateVariables'
+import {
+  useBarcodePrintBatches,
+  useBarcodeRules,
+  useBarcodeTemplates,
+} from '@/composables/useBusinessBarcode'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -21,8 +26,11 @@ import {
   NvDialogTrigger,
   NvEntityPicker,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
+  NvFieldLegend,
+  NvFieldSet,
   NvInput,
   NvPageHeader,
   NvSelect,
@@ -62,14 +70,20 @@ const SOURCE_OPTIONS = [
   { value: 'work-order', label: '生产工单' },
 ]
 
+// 与 BarcodeLabel 打印批次聚合（LabelPrintBatch）的状态码一一对应；tone 只借用状态徽标的色调键。
 const STATUS_OPTIONS = [
-  { value: 'requested', label: '已请求' },
-  { value: 'queued', label: '待打印' },
-  { value: 'printing', label: '打印中' },
-  { value: 'printed', label: '已打印' },
-  { value: 'completed', label: '已完成' },
-  { value: 'failed', label: '失败' },
+  { value: 'pending', label: '待处理', tone: 'pending' },
+  { value: 'reserved', label: '已预留', tone: 'pending' },
+  { value: 'ready-to-print', label: '待打印', tone: 'queued' },
+  { value: 'sent-to-printer', label: '已发送打印机', tone: 'dispatched' },
+  { value: 'delivery-unknown', label: '送达待核实', tone: 'held' },
+  { value: 'printed', label: '已打印', tone: 'completed' },
+  { value: 'failed', label: '打印失败', tone: 'failed' },
 ]
+
+// 这两个数据项由表单其它字段或条码规则决定，不让用户在取值区重复填写。
+const SOURCE_DOCUMENT_VARIABLE = 'sourceDocumentId'
+const LOT_NO_VARIABLE = 'lotNo'
 
 const route = useRoute()
 const {
@@ -96,22 +110,72 @@ const statusFilter = shallowRef('all')
 const createIdempotencyKey = shallowRef('')
 const form = reactive({
   labelTemplateId: '',
+  barcodeRuleId: '',
   sourceDocumentType: '',
   sourceDocumentId: '',
   requestedQuantity: '1',
 })
+// 按模板数据项逐项填写的标签取值，键是数据项（变量）名，只在组装请求时出现。
+const labelValues = shallowRef<Record<string, string>>({})
 
 // 标签模板绑定的是模板主键（GUID），没人能手输——一律从模板目录里选。选择器只展示模板名与编码，
 // 主键不上屏（选择器上关掉编码位，否则它会拿主键当编码显示）。
-const { templates, templatesPending } = useBarcodeTemplates()
+// 打印只接受启用的模板和规则（服务端按启用状态查找），停用的不进候选。
+const { templates, templatesPending } = useBarcodeTemplates({ status: 'active', take: 200 })
 const templateOptions = computed(() =>
   templates.value
-    .filter((template) => !!template.templateId)
+    .filter((template) => !!template.templateId && template.status === 'active')
     .map((template) => ({
       value: template.templateId as string,
       label: template.templateName || template.templateCode || '未命名模板',
       hint: template.templateCode ?? undefined,
     })),
+)
+const selectedTemplate = computed(() =>
+  templates.value.find((template) => template.templateId === form.labelTemplateId),
+)
+// 选中模板带出的数据项；来源单号由「业务对象编号」自动带入，不单独填写。
+const templateVariables = computed(() =>
+  parseVariableRows(selectedTemplate.value?.variableSchemaJson),
+)
+const valueVariables = computed(() =>
+  templateVariables.value.filter((variable) => variable.name !== SOURCE_DOCUMENT_VARIABLE),
+)
+
+// 条码规则：只列启用、且允许当前业务对象类型的规则。
+const { rules, rulesPending } = useBarcodeRules({ status: 'active', take: 200 })
+const BARCODE_TYPE_LABELS: Record<string, string> = {
+  code128: 'Code 128',
+  'gs1-128': 'GS1-128',
+  datamatrix: 'Data Matrix',
+  qr: 'QR Code',
+}
+const ruleOptions = computed(() =>
+  rules.value
+    .filter(
+      (rule) =>
+        !!rule.barcodeRuleId &&
+        rule.status === 'active' &&
+        !!form.sourceDocumentType &&
+        (rule.allowedSourceDocumentTypes ?? []).includes(form.sourceDocumentType),
+    )
+    .map((rule) => ({
+      value: rule.barcodeRuleId as string,
+      label: rule.ruleCode || '未命名规则',
+      hint: rule.barcodeType
+        ? (BARCODE_TYPE_LABELS[rule.barcodeType] ?? rule.barcodeType)
+        : undefined,
+    })),
+)
+const selectedRule = computed(() =>
+  rules.value.find((rule) => rule.barcodeRuleId === form.barcodeRuleId),
+)
+// GS1 条码的批次号取自标签取值里的「批次号」（lotNo），所以模板必须带这一数据项且必填。
+const ruleNeedsLotNo = computed(() =>
+  (selectedRule.value?.barcodeType ?? '').toLowerCase().startsWith('gs1-'),
+)
+const templateHasLotNo = computed(() =>
+  templateVariables.value.some((variable) => variable.name === LOT_NO_VARIABLE),
 )
 
 const batchColumns: NvDataTableColumn<BusinessConsoleBarcodePrintBatchItem>[] = [
@@ -177,22 +241,80 @@ watch(statusFilter, (value) => {
 const listErrorMessage = computed(() => inlineErrorMessage(printBatchesError.value))
 const detailErrorMessage = computed(() => inlineErrorMessage(printBatchDetailError.value))
 const selectedItems = computed(() => printBatchDetail.value?.items ?? [])
+function isValueRequired(name: string, required: boolean) {
+  return required || (ruleNeedsLotNo.value && name === LOT_NO_VARIABLE)
+}
+function valueError(variable: { name: string; required: boolean; maxLength: string }) {
+  const value = (labelValues.value[variable.name] ?? '').trim()
+  if (!value && isValueRequired(variable.name, variable.required)) return '请填写'
+  const maxLength = Number(variable.maxLength)
+  if (Number.isInteger(maxLength) && maxLength > 0 && value.length > maxLength) {
+    return `不超过 ${maxLength} 个字`
+  }
+  return ''
+}
+const lotNoMissingFromTemplate = computed(
+  () => ruleNeedsLotNo.value && !!selectedTemplate.value && !templateHasLotNo.value,
+)
+const labelValuesValid = computed(
+  () => !lotNoMissingFromTemplate.value && valueVariables.value.every((v) => !valueError(v)),
+)
 const canCreate = computed(
   () =>
     form.labelTemplateId.trim().length > 0 &&
+    form.barcodeRuleId.trim().length > 0 &&
     form.sourceDocumentType.trim().length > 0 &&
     form.sourceDocumentId.trim().length > 0 &&
-    Number(form.requestedQuantity) > 0,
+    Number(form.requestedQuantity) > 0 &&
+    labelValuesValid.value,
 )
+
+// 换模板：取值按新模板的数据项重来。
+watch(
+  () => form.labelTemplateId,
+  () => {
+    labelValues.value = {}
+  },
+)
+// 规则候选随业务对象类型变化：已选规则不再适用就清掉；只有一条可用时直接选上。
+watch(
+  ruleOptions,
+  (options) => {
+    if (form.barcodeRuleId && !options.some((option) => option.value === form.barcodeRuleId)) {
+      form.barcodeRuleId = ''
+    }
+    if (!form.barcodeRuleId && options.length === 1) form.barcodeRuleId = options[0]!.value
+  },
+  { immediate: true },
+)
+
+function setLabelValue(name: string, value: unknown) {
+  labelValues.value = { ...labelValues.value, [name]: String(value ?? '') }
+}
+
+// 只送模板声明过的数据项：服务端拒收未声明的键，空的选填项不送。
+function buildLabelValuesJson(sourceDocumentId: string) {
+  const values: Record<string, string> = {}
+  for (const variable of templateVariables.value) {
+    const value =
+      variable.name === SOURCE_DOCUMENT_VARIABLE
+        ? sourceDocumentId
+        : (labelValues.value[variable.name] ?? '').trim()
+    if (value) values[variable.name] = value
+  }
+  return JSON.stringify(values)
+}
 
 function openCreate() {
   const sourceDocumentId = filters.sourceDocumentId ?? 'manual'
   Object.assign(form, {
     labelTemplateId: '',
+    barcodeRuleId: '',
     sourceDocumentType: filters.sourceDocumentType ?? '',
     sourceDocumentId: sourceDocumentId === 'manual' ? '' : sourceDocumentId,
     requestedQuantity: '1',
   })
+  labelValues.value = {}
   createIdempotencyKey.value = newPrintBatchIdempotencyKey(sourceDocumentId)
   showErrors.value = false
   open.value = true
@@ -218,9 +340,11 @@ async function submitCreate() {
     const response = await createPrintBatch({
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
+      barcodeRuleId: form.barcodeRuleId.trim(),
       labelTemplateId: form.labelTemplateId.trim(),
       sourceDocumentType: form.sourceDocumentType.trim(),
       sourceDocumentId,
+      labelValuesJson: buildLabelValuesJson(sourceDocumentId),
       requestedQuantity: Number(form.requestedQuantity),
       idempotencyKey: createIdempotencyKey.value || newPrintBatchIdempotencyKey(sourceDocumentId),
     })
@@ -260,6 +384,10 @@ function sourceLabel(value?: string | null) {
 function statusLabel(value?: string | null) {
   if (!value) return '未知'
   return STATUS_OPTIONS.find((option) => option.value === value)?.label ?? '其他状态'
+}
+
+function statusTone(value?: string | null) {
+  return STATUS_OPTIONS.find((option) => option.value === value)?.tone ?? 'pending'
 }
 
 function formatDateTime(value?: string | null) {
@@ -313,7 +441,7 @@ function firstQuery(value: unknown) {
             </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCreate">
               <p v-if="showErrors && !canCreate" class="text-sm text-destructive" role="alert">
-                请填写标签模板、业务对象类型、业务对象编号，并确保打印数量大于 0。
+                请选择标签模板、业务对象和条码规则，补全标签取值，并确保打印数量大于 0。
               </p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField :data-invalid="showErrors && !form.labelTemplateId.trim()">
@@ -376,6 +504,59 @@ function firstQuery(value: unknown) {
                     :invalid="showErrors && !form.sourceDocumentId.trim()"
                   />
                 </NvField>
+                <NvField :data-invalid="showErrors && !form.barcodeRuleId.trim()">
+                  <NvFieldLabel for="barcode-print-rule"
+                    >条码规则 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvEntityPicker
+                    id="barcode-print-rule"
+                    v-model="form.barcodeRuleId"
+                    :options="ruleOptions"
+                    :show-code="false"
+                    title="选择条码规则"
+                    :placeholder="form.sourceDocumentType ? '选择条码规则' : '请先选择业务对象类型'"
+                    empty-text="暂无适用于该业务对象的启用规则，请先在条码规则维护"
+                    :loading="rulesPending"
+                    :disabled="!form.sourceDocumentType"
+                    aria-label="条码规则"
+                    clearable
+                  />
+                </NvField>
+                <NvFieldSet v-if="selectedTemplate" class="gap-3 sm:col-span-2">
+                  <NvFieldLegend variant="label">标签取值</NvFieldLegend>
+                  <p v-if="lotNoMissingFromTemplate" class="text-sm text-destructive" role="alert">
+                    所选条码规则是 GS1
+                    条码，需要「批次号」，但这个模板没有「批次号」数据项。请换一个模板，或先在标签模板里加上「批次号」。
+                  </p>
+                  <p v-else-if="valueVariables.length === 0" class="text-sm text-muted-foreground">
+                    这个模板的内容都由系统自动带出，不需要填写。
+                  </p>
+                  <div v-else class="grid gap-3 sm:grid-cols-2">
+                    <NvField
+                      v-for="variable in valueVariables"
+                      :key="variable.name"
+                      :data-invalid="showErrors && !!valueError(variable)"
+                    >
+                      <NvFieldLabel :for="`barcode-print-value-${variable.name}`"
+                        >{{ rowDisplayLabel(variable.name, variable.label) }}
+                        <span
+                          v-if="isValueRequired(variable.name, variable.required)"
+                          class="text-destructive"
+                          >*</span
+                        ></NvFieldLabel
+                      >
+                      <NvInput
+                        :id="`barcode-print-value-${variable.name}`"
+                        :model-value="labelValues[variable.name] ?? ''"
+                        autocomplete="off"
+                        @update:model-value="(value) => setLabelValue(variable.name, value)"
+                      />
+                      <NvFieldDescription v-if="showErrors && valueError(variable)">
+                        <span class="text-destructive">{{ valueError(variable) }}</span>
+                      </NvFieldDescription>
+                    </NvField>
+                  </div>
+                </NvFieldSet>
               </NvFieldGroup>
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
@@ -463,7 +644,7 @@ function firstQuery(value: unknown) {
           {{ sourceLabel(row.sourceDocumentType) }}
         </template>
         <template #cell-status="{ row }">
-          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+          <NvStatusBadge :value="statusTone(row.status)" :label="statusLabel(row.status)" />
         </template>
         <template #cell-actions="{ row }">
           <NvButton
