@@ -259,6 +259,56 @@ public sealed class BusinessConsoleWorkerLoginAccountTests
         Assert.Equal(2, data.GetProperty("items").GetArrayLength());
     }
 
+    // 员工维护权核验本身出错（IAM 鉴权不可达等）时 fail closed：不补登录名、不标记可见、不调 IAM 目录。
+    [Fact]
+    public async Task Worker_roster_hides_login_names_when_manage_authorization_check_throws()
+    {
+        var iamHandler = new RecordingJsonHandler(MemberAccountsPayload(1, 2, 1, ("user-019a", "zhangsan", "张三", true)));
+        var auth = new ManageCheckThrowingAuthorizationClient(
+            FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [ManageGrant()]));
+        await using var lease = LeaseHost(auth, iamHandler, RosterMasterData());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(RosterUrl);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, auth.ManageChecks);
+        Assert.Empty(iamHandler.Requests);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.False(data.GetProperty("loginNamesVisible").GetBoolean());
+        Assert.All(data.GetProperty("items").EnumerateArray(), item =>
+            Assert.Equal(JsonValueKind.Null, item.GetProperty("loginName").ValueKind));
+    }
+
+    private sealed class ManageCheckThrowingAuthorizationClient(IBusinessGatewayAuthorizationClient inner)
+        : IBusinessGatewayAuthorizationClient
+    {
+        public int ManageChecks { get; private set; }
+
+        public Task<BusinessGatewayAuthorizationResult> CheckAsync(
+            string bearerToken,
+            BusinessGatewayPermissionRequirement requirement,
+            CancellationToken cancellationToken) =>
+            CheckAsync(bearerToken, requirement, BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed, cancellationToken);
+
+        public Task<BusinessGatewayAuthorizationResult> CheckAsync(
+            string bearerToken,
+            BusinessGatewayPermissionRequirement requirement,
+            BusinessGatewayAuthorizationContinuityMode continuityMode,
+            CancellationToken cancellationToken)
+        {
+            if (requirement.PermissionCode == BusinessGatewayPermissions.MasterDataResourcesManage)
+            {
+                ManageChecks++;
+                throw new HttpRequestException("authorization check unavailable");
+            }
+
+            return inner.CheckAsync(bearerToken, requirement, continuityMode, cancellationToken);
+        }
+    }
+
     private static RecordingMasterDataClient RosterMasterData() => new()
     {
         ListWorkersHandler = (request, _) => Task.FromResult(new BusinessConsoleWorkerDirectoryResponse(
