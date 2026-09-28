@@ -737,7 +737,7 @@ function refreshAll() {
                 </NvSelectContent>
               </NvSelect>
               <NvSelect v-model="line.ownerType">
-                <NvSelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"
+                <NvSelectTrigger class="h-9 w-44" :aria-label="`第 ${index + 1} 行货主类型`"
                   ><NvSelectValue
                 /></NvSelectTrigger>
                 <NvSelectContent>
