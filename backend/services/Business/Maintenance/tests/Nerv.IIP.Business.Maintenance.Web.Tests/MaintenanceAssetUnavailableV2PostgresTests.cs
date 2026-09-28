@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
@@ -283,8 +284,17 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
     public async Task Baseline_downtime_reason_seed_waits_for_migrations_and_fills_the_catalog_on_the_next_start()
     {
         await ResetMaintenanceSchemaAsync();
-        await using (var beforeMigration = CreateFactory())
+        var startupLogs = new CapturingLoggerProvider();
+        await using (var beforeMigration = CreateFactory(services => services.AddSingleton<ILoggerProvider>(startupLogs)))
         {
+            // 宿主必须真的起得来：发一次 HTTP 请求（取 Services 不够——启动抛异常时它照样返回）。
+            using var client = CreateClient(beforeMigration);
+            // 库还没迁移，选一个不碰库的端点证明宿主已在服务请求。
+            var probe = await client.GetAsync("/swagger/v1/swagger.json");
+            Assert.Equal(HttpStatusCode.OK, probe.StatusCode);
+            Assert.Contains(startupLogs.Messages, message => message.StartsWith("Maintenance product seed skipped:", StringComparison.Ordinal));
+            Assert.DoesNotContain(startupLogs.Messages, message => message.StartsWith("Maintenance product seed completed:", StringComparison.Ordinal));
+
             using var scope = beforeMigration.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             AssertUsesGovernedDatabase(db);
@@ -303,6 +313,30 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         Assert.Equal(
             DowntimeReasonBaselineSeedService.Reasons.Select(x => x.Code).Order(StringComparer.Ordinal),
             codes.Order(StringComparer.Ordinal));
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> messages = new();
+
+        public IReadOnlyCollection<string> Messages => messages.ToArray();
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(messages);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(System.Collections.Concurrent.ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                messages.Enqueue(formatter(state, exception));
+        }
     }
 
     private static WebApplicationFactory<Program> CreateFactory(Action<IServiceCollection>? configureServices = null)
