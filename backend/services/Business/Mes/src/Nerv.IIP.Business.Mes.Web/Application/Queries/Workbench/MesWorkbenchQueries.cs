@@ -1740,7 +1740,8 @@ public sealed record MesMaterialReadinessResponse(
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<MesMaterialReadinessRow> Items,
-    string ReadinessScope = MesMaterialReadinessScopes.LineSideAndStaged);
+    string ReadinessScope = MesMaterialReadinessScopes.LineSideAndStaged,
+    DateTimeOffset? SnapshotCapturedAtUtc = null);
 
 /// <summary>
 /// 齐套核算口径。齐套只认「线边可用 + 已备料 + 已收料」,不含原料仓等其他库存;
@@ -1785,28 +1786,41 @@ public sealed class GetMaterialReadinessQueryHandler(
 {
     public async Task<MesMaterialReadinessResponse> Handle(GetMaterialReadinessQuery request, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.WorkOrders
+        var workOrder = await dbContext.WorkOrders
             .AsNoTracking()
-            .AnyAsync(x =>
+            .SingleOrDefaultAsync(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderIdValue == request.WorkOrderId,
                 cancellationToken);
-        if (!exists)
+        if (workOrder is null)
         {
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+        var snapshot = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrderAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
-            [request.WorkOrderId],
+            request.WorkOrderId,
             cancellationToken);
+        var requirements = snapshot.Requirements;
 
         if (requirements.Length == 0)
         {
-            return new MesMaterialReadinessResponse(request.WorkOrderId, "Ready", [], []);
+            var noRequirementsProven =
+                workOrder.MaterialRequirementSnapshotStatus == WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus &&
+                workOrder.MaterialRequirementSnapshotEvaluatedAtUtc is not null &&
+                workOrder.MaterialRequirementSnapshotProductionVersionId == workOrder.ProductionVersionId;
+            return noRequirementsProven
+                ? new MesMaterialReadinessResponse(
+                    request.WorkOrderId, "Ready", [], [],
+                    SnapshotCapturedAtUtc: workOrder.MaterialRequirementSnapshotEvaluatedAtUtc)
+                : new MesMaterialReadinessResponse(
+                    request.WorkOrderId,
+                    "Blocked",
+                    [MaterialReadinessGuards.MissingRequirementSnapshotReason],
+                    []);
         }
 
         var issues = await dbContext.MaterialIssueRequests
@@ -1871,9 +1885,7 @@ public sealed class GetMaterialReadinessQueryHandler(
                 liveCoverageByMaterial.TryGetValue(
                     (x.Key.MaterialId.ToUpperInvariant(), x.Key.MaterialLotId?.ToUpperInvariant(), x.Key.UomCode.ToUpperInvariant()),
                     out var coverage);
-                var available = liveCoverage.InventoryAvailable
-                    ? Math.Max(0m, coverage?.AvailableQuantity ?? 0m)
-                    : 0m;
+                var available = x.Sum(y => y.AvailableQuantity);
                 var staged = x.Sum(y => y.StagedQuantity);
                 // 「应领」只算仍然在途/已兑现的领料单。取消、退料中、预留失效的单子不代表仓库还在配货,
                 // 把它们算进来会让 requested 虚高,进而把「其实没人在配」误标成「仓库配送中」。
@@ -1918,7 +1930,9 @@ public sealed class GetMaterialReadinessQueryHandler(
             .Select(x => MaterialReadinessGuards.FormatShortageReason(x.MaterialId, x.MaterialLotId, x.ShortageQuantity))
             .ToArray();
         var status = blockingReasons.Length > 0 ? "Blocked" : "Ready";
-        return new MesMaterialReadinessResponse(request.WorkOrderId, status, blockingReasons, rows);
+        return new MesMaterialReadinessResponse(
+            request.WorkOrderId, status, blockingReasons, rows,
+            SnapshotCapturedAtUtc: snapshot.CaptureIdentity);
     }
 }
 

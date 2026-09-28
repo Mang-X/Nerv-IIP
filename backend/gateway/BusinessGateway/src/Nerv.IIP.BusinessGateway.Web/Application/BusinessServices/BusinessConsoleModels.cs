@@ -5181,7 +5181,8 @@ public sealed record BusinessConsoleMesMaterialReadinessResponse(
     IReadOnlyCollection<BusinessConsoleMesMaterialReadinessRow> Items,
     // 齐套核算口径（#1291）：只认线边可用 + 已备料 + 已收料，不含原料仓等其他库存。
     // MRP 用的是全厂库存口径，两个数字不同是正常的——读面必须显式标注，不能让用户以为系统自相矛盾。
-    string? ReadinessScope = null);
+    string? ReadinessScope = null,
+    DateTimeOffset? SnapshotCapturedAtUtc = null);
 
 public sealed record BusinessConsoleMesMaterialReadinessRow(
     string MaterialId,

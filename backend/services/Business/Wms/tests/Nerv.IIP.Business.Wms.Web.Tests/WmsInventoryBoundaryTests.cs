@@ -896,6 +896,39 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(4m, movementRequest.Quantity);
     }
 
+    /// <summary>
+    /// #3836：预留过期会取消该行未完成的拣货任务，仓库随后重建任务拣完。作废的任务不是执行事实，
+    /// 不能让出库复核永远卡在「拣货未完成」；复核以重建任务的实拣为准。
+    /// </summary>
+    [Fact]
+    public async Task Complete_outbound_ignores_a_cancelled_picking_task_replaced_by_a_completed_one()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RECREATED-001",
+            "sales-delivery",
+            "SO-RECREATED-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        var cancelledTask = outbound.CreatePickingTask("TASK-CANCELLED-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, assignedPoolCode: "POOL-PICKING");
+        cancelledTask.Cancel();
+        dbContext.WarehouseTasks.Add(cancelledTask);
+        dbContext.WarehouseTasks.Add(outbound.CreatePickingTask("TASK-RECREATED-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, assignedPoolCode: "POOL-PICKING"));
+        CompletePickingTasks(dbContext, outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-RECREATED-001", true, "idem-out-recreated-001")
+                .TrustedFor(dbContext, outbound),
+            CancellationToken.None);
+
+        Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
+        Assert.Equal(4m, Assert.Single(dbContext.InventoryMovementRequests.Local).Quantity);
+    }
+
     [Fact]
     public async Task Complete_outbound_has_a_per_order_distributed_lock()
     {
@@ -2063,6 +2096,190 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("reservation-renew-001", renewal.ReservationId);
     }
 
+    /// <summary>
+    /// #3836：拣货完成时把该行的库存预留标记为已拣，让它保持到出库过账，不再在复核前超时过期。
+    /// 进行中的登记进度仍只续期，不标记已拣。
+    /// </summary>
+    [Fact]
+    public async Task Completing_a_picking_task_marks_its_inventory_reservation_picked()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-PICKED-001",
+            "sales-order",
+            "SO-PICKED-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        var pickingTask = outbound.CreatePickingTask(
+            "TASK-PICKED-001",
+            "LINE-001",
+            "LOC-A-01",
+            "PACK-01",
+            5m,
+            "reservation-picked-001",
+            assignedPoolCode: "POOL-PICKING");
+        dbContext.OutboundOrders.Add(outbound);
+        dbContext.WarehouseTasks.Add(pickingTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventoryClient = new FakeWmsInventoryReservationClient("reservation-picked-001");
+        await GrantManualPoolAccessAsync(dbContext, pickingTask, "user-001");
+        pickingTask.Start("user-001", pickingTask.Version, claimPoolAssignment: true);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteWarehouseTaskActionCommandHandler(
+            dbContext,
+            CreateWorkScopeAuthorizer(dbContext),
+            inventoryClient).Handle(
+            new CompleteWarehouseTaskActionCommand(
+                pickingTask.Id,
+                "org-001",
+                "env-dev",
+                "user-001",
+                "picked-complete-001",
+                pickingTask.Version,
+                5m,
+                null,
+                WarehouseTaskType.Picking,
+                ["SITE-01"],
+                "self",
+                "user-001"),
+            CancellationToken.None);
+
+        Assert.Equal(WarehouseTaskStatus.Completed, pickingTask.Status);
+        var picked = Assert.Single(inventoryClient.PickedRequests);
+        Assert.Equal("reservation-picked-001", picked.ReservationId);
+        Assert.Empty(inventoryClient.RenewalRequests);
+    }
+
+    /// <summary>
+    /// #3836 审核：WCS 驱动的三个拣货完成入口（完成回调、进度达到计划量、内部完成命令）
+    /// 同样要把该行预留标记为已拣，与人工完成入口一致。
+    /// </summary>
+    [Theory]
+    [InlineData("wcs-callback")]
+    [InlineData("wcs-progress")]
+    [InlineData("complete-command")]
+    public async Task Wcs_driven_picking_completion_marks_the_inventory_reservation_picked(string entry)
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(dbContext, $"PICKED-{entry}", new FakeWmsInventoryReservationClient($"res-{entry}"));
+
+        await CompleteThroughWcsEntryAsync(dbContext, inventory, pickingTask, entry, $"WCS-PICKED-{entry}");
+
+        Assert.Equal(WarehouseTaskStatus.Completed, pickingTask.Status);
+        Assert.Equal($"res-{entry}", Assert.Single(inventory.PickedRequests).ReservationId);
+    }
+
+    /// <summary>
+    /// #3836 审核：标记已拣失败时异常向上抛出、不被吞掉，命令的工作单元因此不提交，拣货完成随之回滚。
+    /// 反向读数：在同步里吞掉 <c>MarkPickedAsync</c> 的异常，本用例读到命令正常返回。
+    /// </summary>
+    [Theory]
+    [InlineData("wcs-callback")]
+    [InlineData("wcs-progress")]
+    [InlineData("complete-command")]
+    public async Task Picking_completion_fails_when_the_reservation_cannot_be_marked_picked(string entry)
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(
+            dbContext,
+            $"PICK-FAIL-{entry}",
+            new FakeWmsInventoryReservationClient($"res-fail-{entry}")
+            {
+                PickedException = new KnownException("库存预留已失效，无法确认拣货完成，请刷新后重新创建拣货任务。"),
+            });
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            CompleteThroughWcsEntryAsync(dbContext, inventory, pickingTask, entry, $"WCS-PICK-FAIL-{entry}"));
+
+        Assert.Single(inventory.PickedRequests);
+    }
+
+    /// <summary>
+    /// #3836 审核：迟到的 WCS 完成回调在本地被拒（WCS 任务已失败）时，不得先把 Inventory 预留标记为已拣——
+    /// 否则 WMS 回滚后预留却已 picked、不再过期，留下收不回的占用。
+    /// </summary>
+    [Fact]
+    public async Task Late_wcs_completion_for_a_failed_wcs_task_does_not_mark_the_reservation_picked()
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(dbContext, "PICK-LATE", new FakeWmsInventoryReservationClient("res-late"));
+        dbContext.WcsTasks.Single().Fail("DEVICE-TIMEOUT", "device timed out");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new CompleteWcsTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-PICK-LATE", """{"actualQuantity":4}"""),
+                CancellationToken.None));
+
+        Assert.Empty(inventory.PickedRequests);
+    }
+
+    /// <summary>
+    /// #3842：WCS 回执的累计数量越界（超过计划数量）时，以稳定原因码拒绝，且不远程标记已拣。
+    /// </summary>
+    [Fact]
+    public async Task Out_of_range_wcs_completion_quantity_is_refused_without_marking_the_reservation_picked()
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(dbContext, "PICK-OVER", new FakeWmsInventoryReservationClient("res-over"));
+
+        var exception = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            new CompleteWcsTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-PICK-OVER", """{"actualQuantity":5}"""),
+                CancellationToken.None));
+
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange, exception.ReasonCode);
+        Assert.Empty(inventory.PickedRequests);
+        Assert.NotEqual(WarehouseTaskStatus.Completed, pickingTask.Status);
+        Assert.Equal(0m, pickingTask.ExecutedQuantity);
+    }
+
+    private static async Task<(WarehouseTask PickingTask, FakeWmsInventoryReservationClient Inventory)> CreateWcsDispatchedPickingTaskAsync(
+        ApplicationDbContext dbContext,
+        string suffix,
+        FakeWmsInventoryReservationClient inventory)
+    {
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            $"OUT-{suffix}",
+            "sales-delivery",
+            $"SO-{suffix}",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, $"TASK-{suffix}", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var pickingTask = dbContext.WarehouseTasks.Single();
+        await DispatchWcsAsync(dbContext, pickingTask, $"WCS-{suffix}", """{"step":1}""");
+        return (pickingTask, inventory);
+    }
+
+    private static Task CompleteThroughWcsEntryAsync(
+        ApplicationDbContext dbContext,
+        FakeWmsInventoryReservationClient inventory,
+        WarehouseTask pickingTask,
+        string entry,
+        string externalTaskId) =>
+        entry switch
+        {
+            "wcs-callback" => new CompleteWcsTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", externalTaskId, """{"actualQuantity":4}"""),
+                CancellationToken.None),
+            "wcs-progress" => new RecordWarehouseTaskProgressCommandHandler(dbContext, inventory).Handle(
+                new RecordWarehouseTaskProgressCommand(pickingTask.Id, 4m),
+                CancellationToken.None),
+            _ => new CompleteWarehouseTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWarehouseTaskCommand(pickingTask.Id),
+                CancellationToken.None),
+        };
+
     [Fact]
     public async Task Recording_picking_progress_keeps_the_local_progress_when_inventory_renewal_is_temporarily_unavailable()
     {
@@ -2457,6 +2674,7 @@ public sealed class WmsInventoryBoundaryTests
         public List<WmsInventoryFefoReservationRequest> FefoRequests { get; } = [];
         public List<WmsInventoryReservationReleaseRequest> ReleaseRequests { get; } = [];
         public List<WmsInventoryReservationRenewalRequest> RenewalRequests { get; } = [];
+        public List<WmsInventoryReservationPickedRequest> PickedRequests { get; } = [];
         public List<WmsInventoryCountTaskRequest> CountTaskRequests { get; } = [];
         public List<WmsInventoryCountAdjustmentRequest> CountAdjustmentRequests { get; } = [];
         public List<string> ReservationResults { get; } = [];
@@ -2464,6 +2682,7 @@ public sealed class WmsInventoryBoundaryTests
         public string CountTaskId { get; init; } = Guid.CreateVersion7().ToString();
         public string InventoryMovementId { get; init; } = Guid.CreateVersion7().ToString();
         public Exception? RenewalException { get; init; }
+        public Exception? PickedException { get; init; }
 
         public Task<WmsInventoryReservationResult> ReserveAsync(
             WmsInventoryReservationRequest request,
@@ -2516,6 +2735,19 @@ public sealed class WmsInventoryBoundaryTests
             }
 
             return Task.FromResult(new WmsInventoryReservationRenewalResult(request.ReservationId, DateTime.UtcNow.AddHours(2)));
+        }
+
+        public Task<WmsInventoryReservationPickedResult> MarkPickedAsync(
+            WmsInventoryReservationPickedRequest request,
+            CancellationToken cancellationToken)
+        {
+            PickedRequests.Add(request);
+            if (PickedException is not null)
+            {
+                throw PickedException;
+            }
+
+            return Task.FromResult(new WmsInventoryReservationPickedResult(request.ReservationId, "picked", 1m));
         }
 
         public Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(

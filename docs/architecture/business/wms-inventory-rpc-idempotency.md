@@ -1,6 +1,6 @@
 # WMS 与 Inventory RPC 幂等边界
 
-本文描述 WMS 到 Inventory 的同步命令在“Inventory 已提交但调用方超时”场景下的当前幂等与恢复架构。长期决策见 [ADR 0019](../../adr/0019-wms-inventory-rpc-idempotency.md)；M2-L 清理前含测试实现说明的原文冻结于 [`../../reports/m2-l-wms-inventory-rpc-idempotency-pre-clean-2026-09-07.md`](../../reports/m2-l-wms-inventory-rpc-idempotency-pre-clean-2026-09-07.md)。
+本文描述 WMS 到 Inventory 的同步命令在“Inventory 已提交但调用方超时”场景下的当前幂等与恢复架构。长期决策见 [ADR 0019](../../adr/0019-wms-inventory-rpc-idempotency.md) 与部分修订它的 [ADR 0031](../../adr/0031-wms-picking-reservation-key-follows-picking-task.md)；M2-L 清理前含测试实现说明的原文冻结于 [`../../reports/m2-l-wms-inventory-rpc-idempotency-pre-clean-2026-09-07.md`](../../reports/m2-l-wms-inventory-rpc-idempotency-pre-clean-2026-09-07.md)。
 
 ## 适用同步链路
 
@@ -12,6 +12,8 @@
 ## 幂等键所有权
 
 WMS 为一个持久业务操作意图生成稳定幂等键，并在网络/进程重试时复用同一键。键必须从稳定 WMS 业务身份派生，而不是一次调用的临时 task/request id。
+
+拣货预留的业务身份是拣货任务（[ADR 0031](../../adr/0031-wms-picking-reservation-key-follows-picking-task.md)）：同一任务的重试恢复同一份预留；任务作废后以新任务号重建是新的业务请求，得到新预留。
 
 Inventory 把 idempotency key 与已提交业务事实绑定：
 

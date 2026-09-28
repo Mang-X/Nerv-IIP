@@ -6,7 +6,7 @@
 
 /** 齐套核算口径说明（读面必须显式呈现，不许让用户自己猜）。 */
 export const MATERIAL_READINESS_SCOPE_NOTE =
-  '齐套按「线边可用 + 已备料 + 已收料」口径核算，不含原料仓等其他库存；MRP 用的是全厂库存口径，两者数字不同属正常。'
+  '齐套按工单冻结的线边可用量、已备料和已线边收料核算；MRP 核对的是全厂当前库存，原料仓补库存不会直接改变下达结论。补料后请发起领料，物料到线边后确认收料。'
 
 export type MaterialShortageStage = 'none' | 'awaitingPreparation' | 'awaitingDelivery'
 

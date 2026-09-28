@@ -58,6 +58,7 @@ public sealed class MesEndpointContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("2026-09-20T08:00:00+00:00", body.RootElement.GetProperty("snapshotCapturedAtUtc").GetString());
         var row = body.RootElement.GetProperty("items")[0];
         Assert.Equal(
             ["MAT-ALT-A", "MAT-ALT-B"],
@@ -1488,7 +1489,8 @@ public sealed class MesEndpointContractTests
         Assert.Equal(10m, wipRow.PlannedQuantity);
         Assert.Equal(8m, wipRow.GoodQuantity);
         Assert.Equal(1m, wipRow.ScrapQuantity);
-        Assert.Equal("Ready", material.ReadinessStatus);
+        Assert.Equal("Blocked", material.ReadinessStatus);
+        Assert.Equal([MaterialReadinessGuards.MissingRequirementSnapshotReason], material.BlockingReasons);
         Assert.Empty(material.Items);
     }
 
@@ -3510,7 +3512,8 @@ public sealed class MesEndpointContractTests
                     "Shortage",
                     SubstituteMaterialIds: ["MAT-ALT-A", "MAT-ALT-B"],
                     ExpectedAvailableAtUtc: DateTimeOffset.Parse("2026-09-28T00:00:00Z"),
-                    ExpectedAvailabilitySource: MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate)]);
+                    ExpectedAvailabilitySource: MesMaterialAvailabilitySources.ErpPurchaseOrderPromisedDate)],
+                SnapshotCapturedAtUtc: DateTimeOffset.Parse("2026-09-20T08:00:00Z"));
             return Task.FromResult((TResponse)(object)response);
         }
 

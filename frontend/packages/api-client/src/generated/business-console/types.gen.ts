@@ -576,7 +576,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleD
     expectedVersion: number;
     adapterType: string;
     externalTaskId: string;
-    payloadJson: string;
+    payloadJson?: string | null;
     deviceId?: string | null;
 };
 
@@ -624,6 +624,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     dispatchedAtUtc?: string;
     failedAtUtc?: string | null;
     completedAtUtc?: string | null;
+    warehouseTaskVersion?: number;
+    plannedQuantity?: number;
+    executedQuantity?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWcsTaskListRequest = {
@@ -4239,6 +4242,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     blockingReasons?: Array<string>;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow>;
     readinessScope?: string | null;
+    snapshotCapturedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow = {

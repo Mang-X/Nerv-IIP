@@ -2215,6 +2215,49 @@ public sealed class BusinessGatewayProxyTests
             Take: 15), mes.LastWorkOrderListRequest);
     }
 
+    // Contract: GatewayProxy + PublicContract. Authority: Issue #3908 acceptance.
+    [Theory]
+    [InlineData("2026-09-20T08:00:00Z")]
+    [InlineData(null)]
+    public async Task Mes_material_readiness_proxy_preserves_snapshot_capture_time(string? capturedAtUtc)
+    {
+        var mes = new RecordingMesClient
+        {
+            MaterialReadinessResponse = new BusinessConsoleMesMaterialReadinessResponse(
+                "WO-SNAPSHOT-GATEWAY",
+                "Ready",
+                [],
+                [],
+                SnapshotCapturedAtUtc: capturedAtUtc is null ? null : DateTimeOffset.Parse(capturedAtUtc))
+        };
+        await using var lease = LeaseHost(
+            AllowedOrganizationScope(BusinessGatewayPermissions.MesMaterialsRead),
+            services =>
+            {
+                services.RemoveAll<IBusinessMesClient>();
+                services.AddSingleton<IBusinessMesClient>(mes);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders/WO-SNAPSHOT-GATEWAY/material-readiness?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var snapshot = document.RootElement.GetProperty("data").GetProperty("snapshotCapturedAtUtc");
+        if (capturedAtUtc is null)
+        {
+            Assert.Equal(JsonValueKind.Null, snapshot.ValueKind);
+        }
+        else
+        {
+            Assert.Equal("2026-09-20T08:00:00+00:00", snapshot.GetString());
+        }
+    }
+
     // Contract: GatewayProxy + Regression. Authority: Issue #2223 acceptance 3-4.
     [Fact]
     public async Task Mes_material_readiness_proxy_preserves_uom_substitutes_and_live_eta()

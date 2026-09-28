@@ -702,6 +702,38 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Wcs_task_query_carries_the_warehouse_task_version_and_quantities_for_console_actions()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-PARTIAL-001", "IN-001", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m, assignedPoolCode: "POOL-WCS");
+        AddWcsPool(dbContext, "org-001");
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new Application.Commands.DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateWcsAuthorizer(dbContext)).Handle(
+            WcsDispatchCommand(warehouseTask, "EXT-PARTIAL-001", """{"step":1}""", 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new Application.Commands.CompleteWcsTaskCommand("org-001", "env-dev", "EXT-PARTIAL-001", """{"actualQuantity":4}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
+            new ListWcsTasksQuery("org-001", "env-dev", null),
+            CancellationToken.None);
+
+        var fact = Assert.Single(result.Items);
+        Assert.Equal("Dispatched", fact.Status);
+        Assert.Equal(warehouseTask.Version, fact.WarehouseTaskVersion);
+        Assert.Equal(10m, fact.PlannedQuantity);
+        Assert.Equal(4m, fact.ExecutedQuantity);
+    }
+
+    [Fact]
     public async Task Warehouse_task_progress_and_completion_commands_drive_execution_status()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();

@@ -17,6 +17,33 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayWmsTests
 {
     [Theory]
+    [InlineData(HttpStatusCode.Conflict, "wcs-retry-not-due")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-retry-limit-reached")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-redispatch-requires-failed-task")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-device-circuit-open")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "wcs-completion-quantity-out-of-range")]
+    public async Task Wms_http_client_preserves_the_wcs_manual_action_refusal_reason(
+        HttpStatusCode status,
+        string downstreamCode)
+    {
+        // #3842：此前这两类拒绝在控制台上被说成「状态已被其他操作更新」/「服务暂时不可用」。
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(status, new JsonObject { ["success"] = false, ["message"] = downstreamCode }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CompleteWcsTaskAsync(
+                "internal-token-001",
+                "EXT-001",
+                new BusinessConsoleCompleteWmsWcsTaskRequest("EXT-001", "org-001", "env-dev", "{\"actualQuantity\":1}"),
+                CancellationToken.None));
+
+        Assert.Equal(status, exception.StatusCode);
+        Assert.Equal(downstreamCode, exception.Message);
+    }
+
+    [Theory]
     [InlineData("missing-work-pool-assignment", false)]
     [InlineData("resource-not-assigned-to-self", true)]
     [InlineData("assignment-principal-mismatch", false)]
@@ -1083,12 +1110,12 @@ public sealed class BusinessGatewayWmsTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
+        // 控制台「确认重新下发」不带派发内容：网关原样不带，由 WMS 沿用已存的原报文。
         var dispatch = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
         {
             expectedVersion = 3,
             adapterType = "agv",
             externalTaskId = "EXT-001",
-            payloadJson = "{}",
         });
         var fail = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/EXT-001/fail?organizationId=org-001&environmentId=env-dev", new
         {
@@ -1111,7 +1138,6 @@ public sealed class BusinessGatewayWmsTests
             expectedVersion = 0,
             adapterType = "agv",
             externalTaskId = "EXT-001",
-            payloadJson = "{}",
         });
         Assert.Equal(HttpStatusCode.BadRequest, rejectedZeroVersion.StatusCode);
 
@@ -1121,6 +1147,7 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("user-admin", wms.LastDispatchWcsRequest.DispatcherPrincipalId);
         Assert.Equal(["S1"], wms.LastDispatchWcsRequest.AuthorizedSiteCodes);
         Assert.Equal(3, wms.LastDispatchWcsRequest.ExpectedVersion);
+        Assert.Null(wms.LastDispatchWcsRequest.PayloadJson);
         Assert.Equal("EXT-001", wms.LastFailWcsRequest!.ExternalTaskId);
         Assert.Equal("EXT-001", wms.LastCompleteWcsRequest!.ExternalTaskId);
     }
@@ -3621,7 +3648,10 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 null,
                 DateTime.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
                 null,
-                null),
+                null,
+                3,
+                10m,
+                4m),
         ],
         14));
     }
