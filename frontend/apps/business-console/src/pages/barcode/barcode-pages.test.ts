@@ -17,8 +17,11 @@ const barcode = vi.hoisted(() => ({
   createPrintBatch: vi.fn(),
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
-  printBatchStatus: 'completed',
+  printBatchStatus: 'ready-to-print',
   templateId: 'tpl-1',
+  // 打印批次用例额外追加的规则 / 模板；其它页面的用例保持为空。
+  extraRules: [] as Array<Record<string, unknown>>,
+  extraTemplates: [] as Array<Record<string, unknown>>,
   route: { query: {} as Record<string, unknown> },
   ruleFilters: undefined as undefined | { keyword?: string; skip: number; take: number },
   templateFilters: undefined as undefined | { skip: number; take: number },
@@ -84,6 +87,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
           allowedSourceDocumentTypes: ['inventory.receipt', 'production.report'],
           status: 'active',
         },
+        ...barcode.extraRules,
       ]),
       rulesError: shallowRef(undefined),
       rulesPending: shallowRef(false),
@@ -134,6 +138,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
           }),
           status: 'active',
         },
+        ...barcode.extraTemplates,
       ]),
       templatesError: shallowRef(undefined),
       templatesPending: shallowRef(false),
@@ -322,13 +327,59 @@ function setInput(wrapper: ReturnType<typeof mount>, selector: string, value: st
   return wrapper.find(selector).setValue(value)
 }
 
+const COUNT_RULE = {
+  barcodeRuleId: 'rule-count',
+  ruleCode: 'COUNT-TAG',
+  barcodeType: 'code128',
+  prefix: 'CT',
+  length: 12,
+  checksumRule: 'none',
+  gs1CompanyPrefixLength: null,
+  allowedSourceDocumentTypes: ['inventory.count'],
+  status: 'active',
+}
+
+const LOT_TEMPLATE = {
+  templateId: 'tpl-lot',
+  templateCode: 'LOT_TAG',
+  templateName: '批次标签',
+  templateFileId: 'file-label-lot',
+  variableSchemaJson: JSON.stringify({
+    version: 1,
+    variables: [
+      { name: 'lotNo', type: 'string', required: false, maxLength: 20 },
+      { name: 'sourceDocumentId', type: 'string', required: true, maxLength: 150 },
+    ],
+  }),
+  status: 'active',
+}
+
+function mountPrintBatches() {
+  return mount(PrintBatchesPage, {
+    global: {
+      stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+    },
+  })
+}
+
+async function openCreateDialog(wrapper: ReturnType<typeof mount>) {
+  await flushPromises()
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建打印批次'))!
+    .trigger('click')
+  await flushPromises()
+}
+
 describe('barcode pages', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     barcode.route.query = {}
     barcode.printBatchSourceDocumentType = 'production.report'
-    barcode.printBatchStatus = 'completed'
+    barcode.printBatchStatus = 'ready-to-print'
     barcode.templateId = 'tpl-1'
+    barcode.extraRules = []
+    barcode.extraTemplates = []
     barcode.ruleFilters = undefined
     barcode.templateFilters = undefined
     barcode.printBatchFilters = undefined
@@ -687,6 +738,47 @@ describe('barcode pages', () => {
     expect(wrapper.text()).not.toContain('file-label-1')
   })
 
+  it.each([
+    ['pending', '待处理'],
+    ['reserved', '已预留'],
+    ['ready-to-print', '待打印'],
+    ['sent-to-printer', '已发送打印机'],
+    ['delivery-unknown', '送达待核实'],
+    ['printed', '已打印'],
+    ['failed', '打印失败'],
+  ])('shows print batch status %s in Chinese', async (status, label) => {
+    barcode.printBatchStatus = status
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+
+    const cell = wrapper.findAll('td').map((td) => td.text())
+    expect(cell).toContain(label)
+    expect(wrapper.text()).not.toContain('其他状态')
+  })
+
+  it('filters print batches by the status codes the service reports', async () => {
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+
+    const statusSelect = wrapper
+      .findAll('select')
+      .find((select) => select.text().includes('全部状态'))!
+    const values = statusSelect.findAll('option').map((option) => option.attributes('value'))
+    expect(values).toEqual([
+      'all',
+      'pending',
+      'reserved',
+      'ready-to-print',
+      'sent-to-printer',
+      'delivery-unknown',
+      'printed',
+      'failed',
+    ])
+    await statusSelect.setValue('sent-to-printer')
+    await flushPromises()
+    expect(barcode.printBatchFilters?.status).toBe('sent-to-printer')
+  })
+
   it('maps print batch source objects to scan workflow filters when drilling into scans', async () => {
     const wrapper = mount(PrintBatchesPage, {
       global: {
@@ -774,38 +866,211 @@ describe('barcode pages', () => {
     },
   )
 
-  it('creates a print batch with template, source object, and quantity', async () => {
-    const wrapper = mount(PrintBatchesPage, {
-      global: {
-        stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
-      },
-    })
-    await flushPromises()
-
-    await wrapper
-      .findAll('button')
-      .find((b) => b.text().includes('新建打印批次'))!
-      .trigger('click')
-    await flushPromises()
+  it('creates a print batch with the rule and label values assembled from the template', async () => {
+    barcode.extraRules = [COUNT_RULE]
+    const wrapper = mountPrintBatches()
+    await openCreateDialog(wrapper)
     await setInput(wrapper, '#barcode-print-template', 'tpl-2')
     await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
     await setInput(wrapper, '#barcode-print-source-id', 'COUNT-001')
     await setInput(wrapper, '#barcode-print-quantity', '3')
     await flushPromises()
 
+    // 选模板后按数据项逐项出输入框，只显示中文名。
+    expect(wrapper.find('#barcode-print-value-palletGrade').exists()).toBe(true)
+    expect(wrapper.find('#barcode-print-value-skuCode').exists()).toBe(true)
+    expect(wrapper.text()).toContain('成品编码')
+    // 只有一条适用规则时自动选上。
+    expect((wrapper.find('#barcode-print-rule').element as HTMLInputElement).value).toBe(
+      'rule-count',
+    )
+    await setInput(wrapper, '#barcode-print-value-palletGrade', 'A 级')
+
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(barcode.createPrintBatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        labelTemplateId: 'tpl-2',
-        sourceDocumentType: 'inventory.count',
-        sourceDocumentId: 'COUNT-001',
-        requestedQuantity: 3,
-      }),
+    expect(barcode.createPrintBatch).toHaveBeenCalledTimes(1)
+    const body = barcode.createPrintBatch.mock.calls[0]![0]
+    expect(body).toEqual({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      barcodeRuleId: 'rule-count',
+      labelTemplateId: 'tpl-2',
+      sourceDocumentType: 'inventory.count',
+      sourceDocumentId: 'COUNT-001',
+      labelValuesJson: JSON.stringify({ palletGrade: 'A 级' }),
+      requestedQuantity: 3,
+      idempotencyKey: expect.any(String),
+    })
+  })
+
+  it('blocks submission until required label values are filled', async () => {
+    barcode.extraRules = [COUNT_RULE]
+    const wrapper = mountPrintBatches()
+    await openCreateDialog(wrapper)
+    await setInput(wrapper, '#barcode-print-template', 'tpl-2')
+    await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
+    await setInput(wrapper, '#barcode-print-source-id', 'COUNT-001')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.createPrintBatch).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('补全标签取值')
+  })
+
+  it('blocks a label value longer than the template allows', async () => {
+    barcode.extraRules = [COUNT_RULE]
+    const wrapper = mountPrintBatches()
+    await openCreateDialog(wrapper)
+    await setInput(wrapper, '#barcode-print-template', 'tpl-2')
+    await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
+    await setInput(wrapper, '#barcode-print-source-id', 'COUNT-001')
+    await setInput(wrapper, '#barcode-print-value-palletGrade', 'A')
+    // 模板里「成品编码」最大长度 40。
+    await setInput(wrapper, '#barcode-print-value-skuCode', 'S'.repeat(41))
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.createPrintBatch).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('不超过 40 个字')
+
+    await setInput(wrapper, '#barcode-print-value-skuCode', 'S'.repeat(40))
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(barcode.createPrintBatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows every supported barcode type in Chinese on rules and the rule picker', async () => {
+    const gs1Matrix = {
+      ...COUNT_RULE,
+      barcodeRuleId: 'rule-gs1-dm',
+      ruleCode: 'GS1-DM',
+      barcodeType: 'gs1-datamatrix',
+    }
+    barcode.extraRules = [gs1Matrix]
+    const rules = mount(RulesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    const ruleRow = rules.findAll('tr').find((row) => row.text().includes('GS1-DM'))!
+    expect(ruleRow.text()).toContain('GS1 Data Matrix')
+    expect(ruleRow.text()).not.toContain('gs1-datamatrix')
+
+    const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
+    const wrapper = mount(PrintBatchesPage, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...stubsWithRealPicker,
+          RouterLink: routerLinkStub,
+        },
+      },
+    })
+    await openCreateDialog(wrapper)
+    await wrapper.find('#barcode-print-source-type').setValue('inventory.count')
+    await flushPromises()
+    await wrapper.find('#barcode-print-rule').trigger('click')
+    await flushPromises()
+    const option = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (element) => element.textContent?.includes('GS1-DM'),
     )
+    expect(option?.textContent).toContain('GS1 Data Matrix')
+    expect(option?.textContent).not.toContain('gs1-datamatrix')
+    wrapper.unmount()
+  })
+
+  it('offers only active rules that allow the chosen source type', async () => {
+    barcode.extraRules = [
+      COUNT_RULE,
+      { ...COUNT_RULE, barcodeRuleId: 'rule-off', ruleCode: 'OFF', status: 'disabled' },
+    ]
+    const wrapper = mountPrintBatches()
+    await openCreateDialog(wrapper)
+    await setInput(wrapper, '#barcode-print-source-type', 'inventory.receipt')
+    await flushPromises()
+
+    // inventory.receipt 只有 GS1 规则适用，自动选上；换到盘点后它不再适用，改选盘点规则。
+    expect((wrapper.find('#barcode-print-rule').element as HTMLInputElement).value).toBe('rule-1')
+    await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
+    await flushPromises()
+    expect((wrapper.find('#barcode-print-rule').element as HTMLInputElement).value).toBe(
+      'rule-count',
+    )
+  })
+
+  it('requires a lot number for GS1 rules and fills the source number automatically', async () => {
+    barcode.extraTemplates = [LOT_TEMPLATE]
+    const wrapper = mountPrintBatches()
+    await openCreateDialog(wrapper)
+    await setInput(wrapper, '#barcode-print-template', 'tpl-lot')
+    await setInput(wrapper, '#barcode-print-source-type', 'production.report')
+    await setInput(wrapper, '#barcode-print-source-id', 'WO-009')
+    await flushPromises()
+
+    expect((wrapper.find('#barcode-print-rule').element as HTMLInputElement).value).toBe('rule-1')
+    // 来源单号由业务对象编号带入，不单独填写。
+    expect(wrapper.find('#barcode-print-value-sourceDocumentId').exists()).toBe(false)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(barcode.createPrintBatch).not.toHaveBeenCalled()
+
+    await setInput(wrapper, '#barcode-print-value-lotNo', 'L2409')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.createPrintBatch).toHaveBeenCalledTimes(1)
+    const body = barcode.createPrintBatch.mock.calls[0]![0]
+    expect(body.barcodeRuleId).toBe('rule-1')
+    expect(JSON.parse(body.labelValuesJson)).toEqual({ lotNo: 'L2409', sourceDocumentId: 'WO-009' })
+  })
+
+  it('explains when a GS1 rule meets a template without a lot number', async () => {
+    const wrapper = mountPrintBatches()
+    await openCreateDialog(wrapper)
+    await setInput(wrapper, '#barcode-print-template', 'tpl-2')
+    await setInput(wrapper, '#barcode-print-source-type', 'inventory.receipt')
+    await setInput(wrapper, '#barcode-print-source-id', 'RC-001')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('这个模板没有「批次号」数据项')
+    expect(wrapper.find('#barcode-print-value-palletGrade').exists()).toBe(false)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(barcode.createPrintBatch).not.toHaveBeenCalled()
+  })
+
+  it('leaves disabled templates out of the picker', async () => {
+    barcode.extraTemplates = [
+      { ...LOT_TEMPLATE, templateId: 'tpl-off', templateName: '停用标签', status: 'disabled' },
+    ]
+    const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
+    const wrapper = mount(PrintBatchesPage, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...stubsWithRealPicker,
+          RouterLink: routerLinkStub,
+        },
+      },
+    })
+    await openCreateDialog(wrapper)
+    await wrapper.find('#barcode-print-template').trigger('click')
+    await flushPromises()
+
+    const options = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).map(
+      (element) => element.textContent ?? '',
+    )
+    expect(options.some((text) => text.includes('外箱标签'))).toBe(true)
+    expect(options.some((text) => text.includes('停用标签'))).toBe(false)
+    wrapper.unmount()
   })
 
   // 模板选择器回传的是模板主键（GUID），选中后屏幕上只能出现模板名称 / 编码。
@@ -845,6 +1110,7 @@ describe('barcode pages', () => {
   })
 
   it('reuses the print batch idempotency key while retrying the same dialog submission', async () => {
+    barcode.extraRules = [COUNT_RULE]
     barcode.createPrintBatch
       .mockRejectedValueOnce(new Error('network'))
       .mockResolvedValueOnce(undefined)
@@ -864,6 +1130,7 @@ describe('barcode pages', () => {
     await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
     await setInput(wrapper, '#barcode-print-source-id', 'COUNT-001')
     await setInput(wrapper, '#barcode-print-quantity', '3')
+    await setInput(wrapper, '#barcode-print-value-palletGrade', 'A')
     await flushPromises()
 
     await wrapper.find('form').trigger('submit')

@@ -1,6 +1,20 @@
 import type { RouteLocationRaw } from 'vue-router'
 import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
 
+/** 条码类型中文名：与 BarcodeLabel 条码规则支持的码制（`BarcodeRule.SupportedTypes`）一一对应，规则页与打印批次页共用。 */
+export const BARCODE_TYPE_OPTIONS = [
+  { value: 'code128', label: 'Code 128' },
+  { value: 'gs1-128', label: 'GS1-128' },
+  { value: 'datamatrix', label: 'Data Matrix' },
+  { value: 'gs1-datamatrix', label: 'GS1 Data Matrix' },
+  { value: 'qr', label: 'QR Code' },
+] as const
+
+export function barcodeTypeLabel(value?: string | null) {
+  if (!value) return undefined
+  return BARCODE_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value
+}
+
 export const BARCODE_SCAN_WORKFLOW_OPTIONS = [
   { value: 'production.report', label: '生产报工' },
   { value: 'wms.receiving', label: '仓储收货' },
