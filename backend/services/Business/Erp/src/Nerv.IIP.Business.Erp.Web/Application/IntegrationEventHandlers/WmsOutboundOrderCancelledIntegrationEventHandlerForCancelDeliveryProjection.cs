@@ -150,6 +150,8 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
                 order.RecordDeliveryCancellation();
             }
         }
+
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 
     private Task DeadLetterAsync(
