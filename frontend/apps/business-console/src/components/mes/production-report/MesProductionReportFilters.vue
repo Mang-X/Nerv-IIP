@@ -2,10 +2,10 @@
 import type { BusinessConsoleMesProductionStatisticsDimension } from '@nerv-iip/api-client'
 import type { DateRange } from '@nerv-iip/ui'
 import {
+  NvDatePicker,
   NvDateRangePicker,
   NvField,
   NvFieldLabel,
-  NvInput,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -67,7 +67,13 @@ function fromDateInput(value: string, dayOffset: number) {
 <template>
   <NvToolbar :show-search="false">
     <template #filters>
-      <NvField class="min-w-40">
+      <!-- 六个筛选器此前写的是 `min-w-*`，于是各占一整行、吃掉整个首屏，数据被顶到折叠线
+           以下（#3735）。根因不在 min-w：`NvField` 基础类自带 `w-full`，每个字段都声明
+           「占满一行」，flex-wrap 里的每一行都只放得下一个。`min-w-*` 加得再多也压不下去——
+           1440px 下实测顶沿 145/216/288/359/430/501，六行。
+           改法是本 app 通行的 `w-full sm:w-*`：窄屏仍占满（不挤成一行），到 sm 断点收成
+           固定宽度才能横排，与 NvFilterBar 的搜索框 / 下拉框同一套写法。 -->
+      <NvField class="w-full sm:w-40">
         <NvFieldLabel>统计维度</NvFieldLabel>
         <NvSelect v-model="dimension">
           <NvSelectTrigger aria-label="统计维度"><NvSelectValue /></NvSelectTrigger>
@@ -78,19 +84,20 @@ function fromDateInput(value: string, dayOffset: number) {
           </NvSelectContent>
         </NvSelect>
       </NvField>
-      <NvField class="min-w-64">
+      <NvField class="w-full sm:w-64">
         <NvFieldLabel>统计时段</NvFieldLabel>
         <NvDateRangePicker v-model="windowRange" placeholder="选择统计时段" />
       </NvField>
-      <NvField class="min-w-36">
+      <NvField class="w-full sm:w-36">
         <NvFieldLabel>业务日</NvFieldLabel>
-        <NvInput
-          type="date"
-          :model-value="filters.businessDate"
-          @update:model-value="emit('update', { businessDate: String($event) })"
+        <NvDatePicker
+          :model-value="filters.businessDate || null"
+          placeholder="选择业务日"
+          aria-label="业务日"
+          @update:model-value="emit('update', { businessDate: $event })"
         />
       </NvField>
-      <NvField class="min-w-36">
+      <NvField class="w-full sm:w-36">
         <NvFieldLabel>班次</NvFieldLabel>
         <DirectoryPicker
           directory-type="shift"
@@ -100,7 +107,7 @@ function fromDateInput(value: string, dayOffset: number) {
           @update:model-value="emit('update', { shiftCode: $event })"
         />
       </NvField>
-      <NvField class="min-w-44">
+      <NvField class="w-full sm:w-44">
         <NvFieldLabel>工作中心</NvFieldLabel>
         <DirectoryPicker
           directory-type="work-center"
@@ -110,7 +117,7 @@ function fromDateInput(value: string, dayOffset: number) {
           @update:model-value="emit('update', { workCenterId: $event })"
         />
       </NvField>
-      <NvField class="min-w-44">
+      <NvField class="w-full sm:w-44">
         <NvFieldLabel>物料</NvFieldLabel>
         <DirectoryPicker
           directory-type="material"

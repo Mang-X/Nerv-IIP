@@ -93,11 +93,19 @@ function chartAriaLabel(cell: NvMetricStripCell) {
 </script>
 
 <template>
-  <NvCard :class="cn('flex flex-col overflow-hidden p-0 sm:flex-row', props.class)">
+  <NvCard
+    data-slot="nv-metric-strip"
+    :class="cn('flex flex-col overflow-hidden p-0 sm:flex-row', props.class)"
+  >
+    <!-- 每格补 `min-w-0`（#3735）：flex 项默认 `min-width: auto`，内容的
+         最小尺寸压不下去——迷你图那条 unovis SVG 按上一帧测得的宽度定死，等宽时格子
+         装不下就被顶宽，把整条指标带撑到内容宽度。1440px 实测卡片 1128px、条带
+         1411px，第四格（〈待办〉）右半被裁。`min-w-0` 解除自动最小尺寸后，格子才真的
+         收缩到 flex-1 分到的份，条带回到容器宽。 -->
     <div
       v-for="(cell, i) in cells"
       :key="metricItemKey(cell, i)"
-      class="flex flex-1 flex-col gap-1 border-border p-4 [&:not(:first-child)]:border-t sm:p-5 sm:[&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-t-0"
+      class="flex min-w-0 flex-1 flex-col gap-1 border-border p-4 [&:not(:first-child)]:border-t sm:p-5 sm:[&:not(:first-child)]:border-l sm:[&:not(:first-child)]:border-t-0"
     >
       <p class="truncate text-sm text-muted-foreground">{{ cell.label }}</p>
       <p

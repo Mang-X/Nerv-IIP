@@ -866,7 +866,10 @@ function isNonEmpty(value: string) {
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>
       <template #cell-operationCount="{ row }">
         <div class="grid gap-1">
-          <!-- 一行四段斜杠拼接读不出主次：第一行给「第几道 · 在哪做」，第二行给单号与状态。 -->
+          <!-- 一行四段斜杠拼接读不出主次：第一行给「第几道 · 在哪做」，第二行只给状态。
+               工序任务号（WO-…-OP-10）此前每道都印一遍——左边〈工单〉列已经有同一个
+               WO-…，前缀完全重复，8 道工序就把真正有用的「第几道 · 在哪做」淹了，
+               行高涨到约 320px 没法扫读。工序号不是这一格要回答的问题。 -->
           <div
             v-for="task in row.operationTasks ?? []"
             :key="task.operationTaskId ?? `${row.workOrderId}-${task.operationSequence}`"
@@ -880,10 +883,7 @@ function isNonEmpty(value: string) {
                 '未指定工作中心'
               }}
             </span>
-            <span class="text-xs text-muted-foreground">
-              {{ task.operationTaskNo ?? task.operationTaskId ?? '未生成任务' }} ·
-              {{ formatStatus(task.status) }}
-            </span>
+            <span class="text-xs text-muted-foreground">{{ formatStatus(task.status) }}</span>
           </div>
           <span v-if="!row.operationTasks?.length" class="text-xs text-muted-foreground"
             >暂无工序任务</span
