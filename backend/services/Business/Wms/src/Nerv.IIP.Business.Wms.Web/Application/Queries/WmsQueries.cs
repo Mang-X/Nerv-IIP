@@ -1416,7 +1416,10 @@ public sealed record WcsTaskFact(
     string? FailureMessage,
     DateTime DispatchedAtUtc,
     DateTime? FailedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    long WarehouseTaskVersion,
+    decimal PlannedQuantity,
+    decimal ExecutedQuantity);
 
 public sealed record ListWcsDispatchCircuitsQuery(string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<WcsDispatchCircuitFact>>;
 
@@ -1479,24 +1482,32 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderByDescending(x => x.DispatchedAtUtc)
-            .ThenByDescending(x => x.ExternalTaskId)
+            .Join(
+                dbContext.WarehouseTasks.AsNoTracking(),
+                x => x.WarehouseTaskId,
+                t => t.Id,
+                (x, t) => new { Wcs = x, Task = t })
+            .OrderByDescending(x => x.Wcs.DispatchedAtUtc)
+            .ThenByDescending(x => x.Wcs.ExternalTaskId)
             .Skip(page.Skip)
             .Take(page.Take)
             .Select(x => new WcsTaskFact(
-                x.Id,
-                x.OrganizationId,
-                x.EnvironmentId,
-                x.WarehouseTaskId,
-                x.AdapterType,
-                x.ExternalTaskId,
-                x.Status.ToString(),
-                x.AttemptCount,
-                x.FailureCode,
-                x.FailureMessage,
-                x.DispatchedAtUtc,
-                x.FailedAtUtc,
-                x.CompletedAtUtc))
+                x.Wcs.Id,
+                x.Wcs.OrganizationId,
+                x.Wcs.EnvironmentId,
+                x.Wcs.WarehouseTaskId,
+                x.Wcs.AdapterType,
+                x.Wcs.ExternalTaskId,
+                x.Wcs.Status.ToString(),
+                x.Wcs.AttemptCount,
+                x.Wcs.FailureCode,
+                x.Wcs.FailureMessage,
+                x.Wcs.DispatchedAtUtc,
+                x.Wcs.FailedAtUtc,
+                x.Wcs.CompletedAtUtc,
+                x.Task.Version,
+                x.Task.PlannedQuantity,
+                x.Task.ExecutedQuantity))
             .ToArrayAsync(cancellationToken);
         return new ListWcsTasksResponse(items, total);
     }

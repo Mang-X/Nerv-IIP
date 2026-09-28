@@ -350,7 +350,7 @@ public sealed record BusinessConsoleDispatchWmsWcsTaskRequest(
     [property: JsonRequired, Required] long ExpectedVersion,
     string AdapterType,
     string ExternalTaskId,
-    string PayloadJson,
+    string? PayloadJson = null,
     string? DeviceId = null);
 
 public sealed record BusinessWmsDispatchWcsTaskRequest(
@@ -362,7 +362,7 @@ public sealed record BusinessWmsDispatchWcsTaskRequest(
     long ExpectedVersion,
     string AdapterType,
     string ExternalTaskId,
-    string PayloadJson,
+    string? PayloadJson = null,
     string? DeviceId = null);
 
 public sealed record BusinessConsoleDispatchWmsWcsTaskResponse(string WcsTaskId);
@@ -701,7 +701,10 @@ public sealed record BusinessConsoleWmsWcsTaskItem(
     string? FailureMessage,
     DateTime DispatchedAtUtc,
     DateTime? FailedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    long WarehouseTaskVersion,
+    decimal PlannedQuantity,
+    decimal ExecutedQuantity);
 
 public sealed record BusinessConsoleWmsInventoryContext(
     string Source,

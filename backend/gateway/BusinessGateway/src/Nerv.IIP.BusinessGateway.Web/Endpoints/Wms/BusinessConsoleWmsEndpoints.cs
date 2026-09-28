@@ -2246,7 +2246,6 @@ public sealed class BusinessConsoleDispatchWmsWcsTaskRequestValidator
         RuleFor(x => x.ExpectedVersion).GreaterThan(0);
         RuleFor(x => x.AdapterType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ExternalTaskId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.PayloadJson).NotEmpty();
         RuleFor(x => x.DeviceId).MaximumLength(150);
     }
 }

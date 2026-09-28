@@ -795,7 +795,6 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
       payload: {
         adapterType: string
         externalTaskId: string
-        payloadJson: string
         expectedVersion?: number
       },
     ) => {
@@ -808,7 +807,6 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
         body: {
           adapterType: payload.adapterType,
           externalTaskId: payload.externalTaskId,
-          payloadJson: payload.payloadJson,
           expectedVersion: payload.expectedVersion!,
         },
       })
