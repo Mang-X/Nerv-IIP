@@ -12,6 +12,7 @@ public enum PlanningSuggestionStatus
     Accepted = 1,
     Rejected = 2,
     Closed = 3,
+    Superseded = 4,
 }
 
 public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregateRoot
@@ -83,6 +84,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
     public string Formula { get; private set; } = string.Empty;
     public string UomConversionSummary { get; private set; } = string.Empty;
     public PlanningSuggestionStatus Status { get; private set; }
+    public MrpRunId? SupersededByRunId { get; private set; }
     public string? AcceptedDownstreamService { get; private set; }
     public string? AcceptedDownstreamDocumentType { get; private set; }
     public string? AcceptedDownstreamDocumentId { get; private set; }
@@ -260,6 +262,17 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         }
 
         Status = PlanningSuggestionStatus.Rejected;
+    }
+
+    public void Supersede(MrpRunId successorRunId)
+    {
+        if (Status != PlanningSuggestionStatus.Open)
+        {
+            return;
+        }
+
+        Status = PlanningSuggestionStatus.Superseded;
+        SupersededByRunId = successorRunId;
     }
 }
 

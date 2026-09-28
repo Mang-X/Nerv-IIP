@@ -14,6 +14,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggreg
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
@@ -22,6 +23,7 @@ using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
 using Nerv.IIP.ServiceAuth;
 using Nerv.IIP.Testing;
+using Nerv.IIP.Testing.PostgreSql;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
@@ -438,6 +440,125 @@ public sealed class DemandPlanningEndpointContractTests
         var replay = await Assert.ThrowsAsync<KnownException>(() =>
             executeHandler.Handle(new ExecuteMrpRunCommand(result.RunId), CancellationToken.None));
         Assert.Contains("不能重复执行", replay.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Completed_mrp_run_supersedes_only_older_open_suggestions_in_same_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var snapshotProvider = new DemandPlanningFixtureInputSnapshotProvider(dbContext);
+        var first = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        var firstSuggestions = dbContext.PlanningSuggestions.Where(x => x.MrpRunId == first.RunId).ToArray();
+        firstSuggestions[0].Accept("BusinessErp", "PurchaseRequisition", "PR-001");
+        firstSuggestions[1].Reject("planner", "not needed");
+        var open = PlanningSuggestion.Create("org-001", "env-dev", first.RunId, "planned-purchase", "SKU-RM-2000", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        var otherScope = PlanningSuggestion.Create("org-002", "env-dev", first.RunId, "planned-purchase", "SKU-RM-3000", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.AddRange(open, otherScope);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var second = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+
+        var listed = await new ListPlanningSuggestionsQueryHandler(dbContext)
+            .Handle(new ListPlanningSuggestionsQuery("org-001", "env-dev", "Superseded"), CancellationToken.None);
+        var superseded = Assert.Single(listed);
+        Assert.Equal(open.Id, superseded.SuggestionId);
+        Assert.Equal(second.RunId, superseded.SupersededByRunId);
+        Assert.Equal(PlanningSuggestionStatus.Accepted, firstSuggestions[0].Status);
+        Assert.Equal(PlanningSuggestionStatus.Rejected, firstSuggestions[1].Status);
+        Assert.Equal(PlanningSuggestionStatus.Open, otherScope.Status);
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == second.RunId), x =>
+        {
+            Assert.Equal(PlanningSuggestionStatus.Open, x.Status);
+            Assert.Null(x.SupersededByRunId);
+        });
+    }
+
+    [Fact]
+    public async Task Failed_mrp_run_keeps_prior_open_suggestions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var first = await ExecuteMrpAsync(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext), new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        var secondRunId = await new RunMrpCommandHandler(dbContext)
+            .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ExecuteMrpRunCommandHandler(dbContext, new ThrowingPlanningInputSnapshotProvider())
+                .Handle(new ExecuteMrpRunCommand(secondRunId), CancellationToken.None));
+
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == first.RunId), x =>
+        {
+            Assert.Equal(PlanningSuggestionStatus.Open, x.Status);
+            Assert.Null(x.SupersededByRunId);
+        });
+    }
+
+    [Fact]
+    public async Task Older_run_completing_after_newer_run_does_not_replace_newer_suggestions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var runHandler = new RunMrpCommandHandler(dbContext);
+        var olderRunId = await runHandler.Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        var newerRunId = await runHandler.Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var executeHandler = new ExecuteMrpRunCommandHandler(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext));
+
+        await executeHandler.Handle(new ExecuteMrpRunCommand(newerRunId), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await executeHandler.Handle(new ExecuteMrpRunCommand(olderRunId), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == newerRunId), x => Assert.Equal(PlanningSuggestionStatus.Open, x.Status));
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == olderRunId), x =>
+        {
+            Assert.Equal(PlanningSuggestionStatus.Superseded, x.Status);
+            Assert.Equal(newerRunId, x.SupersededByRunId);
+        });
+    }
+
+    [DemandPlanningRealPostgresFact]
+    public async Task PostgreSql_migration_and_completion_persist_superseded_suggestions()
+    {
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!, "nerv_dp_supersession");
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
+                database.ConnectionString,
+                postgres => postgres.MigrationsHistoryTable("__EFMigrationsHistory", DemandPlanningFacts.Schema)));
+            await using var provider = services.BuildServiceProvider();
+            using var scope = provider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await dbContext.Database.MigrateAsync();
+            await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            var snapshotProvider = new DemandPlanningFixtureInputSnapshotProvider(dbContext);
+            var first = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+            var second = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+            dbContext.ChangeTracker.Clear();
+
+            var suggestions = await dbContext.PlanningSuggestions.AsNoTracking().ToArrayAsync();
+            Assert.Equal(2, suggestions.Count(x => x.MrpRunId == first.RunId && x.Status == PlanningSuggestionStatus.Superseded && x.SupersededByRunId == second.RunId));
+            Assert.Equal(2, suggestions.Count(x => x.MrpRunId == second.RunId && x.Status == PlanningSuggestionStatus.Open && x.SupersededByRunId is null));
+        }
+        finally
+        {
+            await database.DropAsync();
+        }
     }
 
     [Fact]
