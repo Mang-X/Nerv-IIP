@@ -97,14 +97,18 @@
 | `/mes/downtime-events`、`/mes/capacity-impacts`、2 个停机/产能 schema | `WorkCenterUnavailability`（读面派生） | 2（PascalCase） |
 
 **为什么不能走一般的主版本/迁移窗口程序**：那份 29 值并集本身就是缺陷载体，不是既有能力。
-它把 7 个互不相干的聚合的状态混成一个集合，并且**用小写拼写冒充 PascalCase 域的运行时值** ——
-工序、领料单、完工入库单、不良记录、交接班、停机事件、产能影响这 7 个聚合在服务端实际会产生的值，
+它把 7 个互不相干的读面聚合的状态混成一个集合，并且**用小写拼写冒充 PascalCase 域的运行时值** ——
+工序、领料单、完工入库单、不良记录、交接班、停机事件、产能影响这 7 个读面在服务端实际会产生的值，
 **一个都不在**该枚举内。保留过渡期等于让 29 个并集码继续作为合法过滤值被接受，而真正的运行时值
 反而被契约判为非法。契约此时不是在描述能力，而是在描述漂移。
 
 （「停机事件」与「产能影响」是同一个 `WorkCenterUnavailability` 聚合派生出的两套读面
-—— `DowntimeEventRow` 与 `CapacityImpactRow`，见上表合并的那一行；按读面计是 7 个，
-按聚合计是 6 个。）
+—— `DowntimeEventRow` 与 `CapacityImpactRow`，见上表合并的那一行。）
+**「几个」要看按什么数，三种数法别混**：按**读面**是 7 个（工单、工序、领料单、完工入库单、
+不良记录、交接班、停机/产能）；按**聚合**是 6 个（停机与产能同属 `WorkCenterUnavailability`）；
+按**域值域来源**是 7 个 —— `OperationTask` 的 6 个值域被 4 个读面共用，但每读面各一行契约，
+而 `WorkCenterUnavailability` 的 2 个值被停机、产能两个读面共用，因此「读面数」与
+「值域来源数」在工序任务与停机产能这两处方向相反，不能互相换算。
 
 **那 29 个码逐个对回域，结论分三类**（不要笼统说成「27 个没有对应数据」——
 只有 4 个是真正无对应数据的，其余各有归属）：
@@ -166,35 +170,42 @@ Governance 的一般破坏性变更/主版本规则。
 比对导出 snapshot 的枚举；前端 `useMesReferenceLabels.test.ts` 逐语境钉住
 `overrides` 与词表键集。
 
-后端守门共 23 条，分三层：
+后端守门共 24 条，分三层：
 
-1. **逐条值域比对**（22 条）：10 个行 schema 的 `status` / `receiptStatus` 与 11 条列表
+1. **逐条值域比对**（21 条）：10 个行 schema 的 `status` / `receiptStatus` 与 11 条列表
    `status` 查询参数，各与对应聚合的域常量比。
-2. **schema 侧反向穷举**（`Every_mes_status_enum_is_registered`）：扫出 `BusinessConsoleMes*`
+2. **值域归属穷举**（`Every_mes_enum_value_domain_has_an_owner`）：扫出 `BusinessConsoleMes*`
    下所有 **object 型 schema**（实测 134 个里 128 个：响应包装、请求体、详情、联合体都在内 ——
-   扫得比「行 schema」宽是好事，宽到覆盖将来新增的任何一种）的所有内嵌 enum 与 $ref 状态属性，
-   逐个问「登记了吗」。新增一个带状态枚举的 schema 而忘了登记值域时必然红 —— 只做第 1 层的话，
-   那条新 schema 根本进不来（`Assert.Single` 只在已登记后缀匹配到 ≥1 个时生效），门禁会照绿。
+   扫得比「行 schema」宽是好事，宽到覆盖将来新增的任何一种）的所有枚举值域，**跟随 `$ref` 解析到
+   实际值域**（藏在包装层、藏在 `items[]` 元素上、经几层间接引用都算同一处），逐个问
+   「说得出属于谁吗」。新增一个枚举值域而既不属本票聚合、也没在白名单写明理由时必然红 —— 只做第 1 层
+   的话，那条值域根本进不来，门禁会照绿。
 3. **路径侧反向穷举**（`Every_mes_list_status_query_is_registered`）：扫出
    `/api/business-console/v1/mes/**` 下所有带 `status` 查询参数的 GET 路径，逐个问
    「登记了吗」，与第 2 层对称。
 
-第 2、3 层各有显式白名单，白名单项都带排除原因；新增枚举或路径却忘了登记/加白名单时断言会红
-并列出未登记项。四张白名单的分工必须都保留，缺一张就留下一个无提示的旁路：
+另有第 4 条 `Aggregated_status_domains_are_declared_only_by_registered_schemas`：
+**本票聚合的状态值域只允许由登记的 10 个行 schema 就地声明**（不跟随 `$ref`）。
+NSwag 的 `XxxListResponse` / `XxxResponse` 包装层只经 `items[].$ref` 传递地含有该值域、自身不声明，
+所以不判「携带」只判「声明」—— 判携带等于要求把生成物也登记一遍。
+
+**判据的根基是「值域归属」，不是属性命名。** 前五轮依次用过「属性名以 `Status` 结尾」
+「(schema, 属性) 登记表」「跟随 `$ref`」「不跟随 `$ref` + (schema, 属性) 登记表」，
+每轮都被找出新旁路：属性改名 `state` / `phase` 即绕过（`$ref` 形态放过、内联形态仍被抓）；
+状态 enum 藏进 `*ResponseDataOf*` 包装层即绕过；`items[]` 元素 `$ref` 到白名单 enum 即绕过；
+污染白名单引用目标的值域即绕过。共同点是**都在认「这个位置像不像状态」**，而位置可以随便改。
+现在只认一件事：这个枚举的值域等于本票哪个聚合的域值域 —— 值域改不动。
+7 条注入实测（含前三种曾放行的旁路）现在一律转红。
+
+白名单只剩两张，粒度都落在**值域**上（不是位置），新增值域却忘了登记时断言会红并列出未认领项：
 
 | 白名单 | 粒度 | 内容 | 缺了会怎样 |
 | --- | --- | --- | --- |
-| `NonRowStatusEnums` | **类型**（6 项） | 安灯 3 个 + 生产统计 3 个，值域不由本票 6 个聚合的域常量定义 | 漏判成「未登记」而误红 |
-| `NonAggregatedStatusProperties` | **属性**（2 项） | `AndonCallResponse.status` / `ProductionStatisticsBucket.resolutionStatus`，值域经 `$ref` 写在别处且不属本票聚合 | 同上 |
+| `NonAggregatedDomains` | **值域**（9 项） | 安灯 3 个 + 生产统计 3 个 + 回执字面量 3 个，值域不由本票 7 个聚合的域常量定义 | 漏判成「无人认领」而误红 |
 | `NonListStatusQueryPaths` | **路径**（2 项） | 见下 | 同上 |
-| `FindEnumPaths` 里对 `$ref` 的处理 | — | **状态属性的 `$ref` 要收一条按未解析形态判红**，非状态属性的 `$ref` 跳过 | **被 `$ref` 完全绕过** |
 
-最后一条是第五轮实测出来的：把未登记 schema 的 `status` 改 `$ref` 指向白名单内的
-`AndonStatus`（并把该类型值域换成任意 bogus 值），或指向已登记的 `WorkOrderItem`，
-23 条守门此前**全绿**。现在这类注入一律转红。
-
-同理，**`NonRowStatusEnums` 不是通用逃生口** —— 往里加类型能让任意行 schema 的状态藏进去。
-本仓只允许加「值域确实不由本票聚合的域常量定义」的 top-level enum 类型。
+`NonAggregatedDomains` 不是通用逃生口 —— 往里加一项值域，那一整个值域（可能正是本票某个状态的
+旧拼写）就不再受任何约束。本仓只允许加「值域确实不由本票聚合的域常量定义」的项。
 
 `NonListStatusQueryPaths` 里的两条（`reportable-operation-tasks` /
 `telemetry-production-report-candidates`）是 `status` **无 enum** 的自由 string，

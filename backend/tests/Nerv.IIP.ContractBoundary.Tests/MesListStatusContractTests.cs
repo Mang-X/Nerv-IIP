@@ -31,9 +31,19 @@ namespace Nerv.IIP.ContractBoundary.Tests;
 /// 「是否已恢复」在读面派生，因此值域取聚合上的两个常量
 /// <see cref="WorkCenterUnavailability.OpenStatus"/> / <see cref="WorkCenterUnavailability.RecoveredStatus"/>。</para>
 ///
-/// <para><b>登记表之外的漂移怎么防</b>：见
-/// <see cref="Every_mes_status_enum_is_registered"/> —— 它反向穷举 <c>BusinessConsoleMes*</c>
-/// 下的全部内嵌 enum，不从登记表出发，所以新增一个带状态 enum 的行 schema 而忘了登记值域时必然红。</para>
+/// <para><b>守门判据的根基：值域归属，不是属性命名（#3912 守门六轮演化的结论）</b>。
+/// 前五轮依次用过「属性名以 <c>Status</c> 结尾」「(schema, 属性) 登记表」「跟随 <c>$ref</c>」
+/// 「不跟随 <c>$ref</c> + (schema, 属性) 登记表」，每一轮都被找到了新旁路：
+/// 改名 <c>state</c>/<c>phase</c> 即绕过 <c>$ref</c> 形态、把枚举藏进 <c>*ResponseDataOf*</c>
+/// 包装层即绕过、<c>items[]</c> 元素 <c>$ref</c> 到白名单枚举即绕过。
+/// 共同点是<b>都在认「这个位置像不像状态」</b>，而位置是可以随便改的。
+/// 现在判据只认一件事：<b>这个枚举的值域等于本票哪个聚合的域值域</b>。
+/// 值域是聚合的客观事实，改名、换包装层、换引用形态都改不动它。</para>
+///
+/// <para>登记表之外的漂移由 <see cref="Every_mes_enum_value_domain_has_an_owner"/> 和
+/// <see cref="Aggregated_status_domains_appear_only_on_registered_schemas"/> 兜底：
+/// 面上每个枚举值域都必须说得出属于谁（要么等于本票聚合域值域，要么在
+/// <see cref="NonAggregatedDomains"/> 里写明理由），而本票的值域只允许出现在登记的行 schema 上。</para>
 /// </summary>
 public sealed class MesListStatusContractTests
 {
@@ -41,7 +51,8 @@ public sealed class MesListStatusContractTests
 
     private static readonly string[] OperationTaskStatuses = Enum.GetNames<OperationTaskLifecycleStatus>();
 
-    private static readonly string[] MaterialIssueRequestStatuses = DeclaredStatusConstants<MaterialIssueRequest>();
+    private static readonly string[] MaterialIssueRequestStatuses =
+        DeclaredStatusConstants<MaterialIssueRequest>();
 
     private static readonly string[] FinishedGoodsReceiptRequestStatuses =
         DeclaredStatusConstants<FinishedGoodsReceiptRequest>();
@@ -54,7 +65,8 @@ public sealed class MesListStatusContractTests
         [WorkCenterUnavailability.OpenStatus, WorkCenterUnavailability.RecoveredStatus];
 
     /// <summary>
-    /// 行属性上的状态：schema 后缀 + 属性名 + 该聚合的真实值域。
+    /// 行属性上的状态：schema 短名 + 属性名 + 该聚合的真实值域。
+    /// 键（schema 短名）同时也是 <see cref="AggregatedStatusDomains"/> 的键。
     /// </summary>
     public static IEnumerable<object[]> RowStatusProperties =>
     [
@@ -70,51 +82,80 @@ public sealed class MesListStatusContractTests
         ["BusinessConsoleMesCapacityImpactRow", "status", WorkCenterUnavailabilityStatuses],
     ];
 
-    /// <summary>
-    /// MES 契约前缀。列表 schema 的全名以此开头，穷举扫描时用它划定范围。
-    /// </summary>
+    /// <summary>MES 契约的 schema 命名空间前缀，扫描时用它划定范围。</summary>
     private const string MesSchemaPrefix =
         "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMes";
 
     /// <summary>
-    /// 命名空间前缀，扫描产出 schema 短名时要剥掉它。剥完留下
-    /// <c>BusinessConsoleMesXxx</c>，与 <see cref="RowStatusProperties"/> 登记表的键
-    /// 同一形式 —— 剥到 <c>BusinessConsole</c> 就停，不要把 <c>Mes</c> 一起吃掉。
+    /// 剥掉命名空间前缀，留下 <c>BusinessConsoleMesXxx</c>，与登记表同一形式。
+    /// 剥到 <c>BusinessConsole</c> 就停 —— 不能和 <see cref="MesSchemaPrefix"/> 用同一个常量，
+    /// 那会把 <c>Mes</c> 一起吃掉，键就与登记表对不上了。
     /// </summary>
     private const string SchemaNamespacePrefix =
         "NervIIPBusinessGatewayWebApplicationBusinessServices";
 
     /// <summary>
-    /// <b>不在 <see cref="RowStatusProperties"/> 值域守门范围内</b>的独立命名类型白名单。
+    /// 本票 7 个 MES 读面聚合的状态值域，按<b>声明该枚举的 schema</b> 登记。
     ///
-    /// <para>这些不是行 schema 的内嵌状态属性，而是各自独立的 top-level enum 类型，
-    /// 被别的 schema 以 <c>$ref</c> 引用。它们的值域不由 MES 域常量定义（安灯队列、
-    /// 统计维度、统计降级原因等），所以不在「枚举 = 聚合真实值域」这条断言范围内。</para>
+    /// <para>实测（<c>BusinessConsoleMes*</c> 面上 134 个 schema）：本票的每个值域都<b>内联声明</b>在
+    /// 恰好一个 schema 上，从不藏在 <c>$ref</c> 后面；<c>*ListResponse</c> 包装层只通过
+    /// <c>items[].$ref</c> 指向行 schema，自身不声明任何状态枚举。所以「值域 → 声明者」是
+    /// 一一对应的，登记表按声明者登记即可，不必按名字猜哪个是状态。</para>
     ///
-    /// <para><b>为什么必须显式列出</b>：<see cref="Every_mes_status_enum_is_registered"/> 会穷举
-    /// <c>BusinessConsoleMes*</c> 下所有内嵌 enum 并要求每一条都登记在
-    /// <see cref="RowStatusProperties"/> 里。少列一个，那条断言就红。</para>
-    ///
-    /// <para><b>本白名单不是通用逃生口</b>（第五轮实测证伪了它原先的自称）。原文写的是
-    /// 「新增一个带状态 enum 的行 schema 而忘了在这里登记值域，必须立刻暴露」——
-    /// 但加进本白名单同样能让任意行 schema 的状态藏进去，<b>无提示无失败</b>：把未登记
-    /// schema 的 <c>status</c> 改 <c>$ref</c> 指向本表里的某个类型，再把那个类型的值域
-    /// 换成任意 bogus 值，23 条守门全绿。所以本表只列**确实由非本票聚合定义的 top-level
-    /// enum 类型**（安灯队列 / 统计维度 / 统计降级原因），不是「想让谁过就加谁」的地方。
-    /// 往这里加东西前先确认那个类型的值域真的不由 MES 域常量定义。</para>
-    ///
-    /// <para>与之配套的 <see cref="NonAggregatedStatusProperties"/> 是一张**属性级**白名单，
-    /// 两者都要显式：没有它们，<c>$ref</c> 就是一个无提示的旁路。</para>
+    /// <para>这张表是<b>事实的映射</b>，不是判据本身。判据是值域归属；这张表负责回答
+    /// 「等于这个值域的那个 schema 叫什么、它的哪个属性带这个值域」。</para>
     /// </summary>
-    private static readonly HashSet<string> NonRowStatusEnums =
-    [
-        "BusinessConsoleMesAndonCategory",
-        "BusinessConsoleMesAndonQueue",
-        "BusinessConsoleMesAndonStatus",
-        "BusinessConsoleMesProductionStatisticsDegradedReason",
-        "BusinessConsoleMesProductionStatisticsDimension",
-        "BusinessConsoleMesProductionStatisticsResolutionStatus",
-    ];
+    private static readonly Dictionary<string, (string PropertyName, string[] Domain)> StatusDeclarers =
+        new(StringComparer.Ordinal)
+        {
+            ["BusinessConsoleMesWorkOrderItem"] = ("status", WorkOrderStatuses),
+            ["BusinessConsoleMesOperationTaskItem"] = ("status", OperationTaskStatuses),
+            ["BusinessConsoleMesMaterialIssueRequestRow"] = ("status", MaterialIssueRequestStatuses),
+            ["BusinessConsoleMesDispatchTaskRow"] = ("status", OperationTaskStatuses),
+            ["BusinessConsoleMesOperationTaskRow"] = ("status", OperationTaskStatuses),
+            ["BusinessConsoleMesWipSummaryRow"] = ("status", OperationTaskStatuses),
+            ["BusinessConsoleMesRelatedQualityItemRow"] = ("status", DefectRecordStatuses),
+            ["BusinessConsoleMesReceiptRequestRow"] = ("receiptStatus", FinishedGoodsReceiptRequestStatuses),
+            ["BusinessConsoleMesDowntimeEventRow"] = ("status", WorkCenterUnavailabilityStatuses),
+            ["BusinessConsoleMesCapacityImpactRow"] = ("status", WorkCenterUnavailabilityStatuses),
+        };
+
+    /// <summary>
+    /// 本票聚合之外的值域显式登记表：值域 → 为什么不归本票管。
+    ///
+    /// <para>这是判据的一部分，不是逃生口 —— 表里没有的值域既不是本票状态、又没写明理由，直接判红。
+    /// 实测面上共 15 个唯一值域：本票 6 个（覆盖 7 个读面聚合 —— 工序任务聚合被 4 个读面共用、
+    /// 停机与产能共用一个 2 值域）+ 下表 9 个，逐条写明理由。键为「排好序、用空格分隔」的值域串。</para>
+    ///
+    /// <para><b>为什么必须逐条写、不能用「属性名不像 Status」筛</b>：那正是实测出的旁路 ——
+    /// 属性改名 <c>state</c> / <c>phase</c> 即绕过。名字能改，值域不能。
+    /// 反过来完全跟随 <c>$ref</c> 也不可行：会把 57 个非状态 <c>$ref</c> 连同
+    /// <c>GET</c> / <c>confirmed</c> / <c>accepted</c> 这类回执字面量一起收进判定面。
+    /// 用<b>值域</b>划界，两个问题同时消失：改名无效，包装层与 <c>items[]</c> 引用也无处藏身。</para>
+    /// </summary>
+    private static readonly Dictionary<string, string> NonAggregatedDomains =
+        new(StringComparer.Ordinal)
+        {
+            ["equipment materialShortage process quality"] =
+                "安灯类别（AndonCategory），不是聚合状态值域。",
+            ["claimed closed open"] =
+                "安灯呼叫状态（AndonCallStatus，AndonCall.cs 的域枚举），不是本票 7 个读面聚合的状态。",
+            ["all awaitingResponse unclosed"] =
+                "安灯队列过滤值（AndonQueue），是筛选面取值不是状态值域。",
+            ["day shift sku workCenter"] =
+                "生产统计维度（ProductionStatisticsDimension），是统计口径不是状态。",
+            ["degraded resolved"] =
+                "生产统计快照解析状态（ResolutionStatus），不是聚合生命周期状态。",
+            ["historicalDimensionLegacyUnresolved historicalDimensionSnapshotDegraded "
+                + "historicalLocalTimeAmbiguous historicalLocalTimeInvalid "
+                + "historicalReportOutsideShiftWindow historicalShiftDefinitionInvalid "
+                + "historicalShiftDefinitionMissing historicalTimezoneInvalid "
+                + "historicalTimezoneMissing nonPositiveTotalOutput workCenterMissing"] =
+                "生产统计降级原因（DegradedReason），是原因码不是状态值域。",
+            ["GET"] = "工序动作回执里的 HTTP 方法字面量。",
+            ["confirmed"] = "工序动作回执的确认位字面量。",
+            ["accepted"] = "工单转序回执的受理位字面量。",
+        };
 
     [Theory]
     [MemberData(nameof(RowStatusProperties))]
@@ -124,7 +165,7 @@ public sealed class MesListStatusContractTests
         string[] expected)
     {
         using var document = LoadSnapshot();
-        var property = FindSchemaBySuffix(document, schemaNameSuffix)
+        var property = FindSchemaByShortName(document, schemaNameSuffix)
             .GetProperty("properties")
             .GetProperty(propertyName);
 
@@ -160,274 +201,92 @@ public sealed class MesListStatusContractTests
         AssertStatusEnumEqualsDomain(schema, $"{path} status query parameter", ExpectedStatusQueryValues(path));
     }
 
-    /// <summary>取聚合上声明的全部 <c>public const string *Status</c> 值。</summary>
-    private static string[] DeclaredStatusConstants<T>() =>
-        typeof(T)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(field => field is { IsLiteral: true, FieldType: var type } && type == typeof(string))
-            .Where(field => field.Name.EndsWith("Status", StringComparison.Ordinal))
-            .Select(field => (string)field.GetRawConstantValue()!)
-            .ToArray();
-
-    private static string[] ExpectedStatusQueryValues(string path) => path switch
-    {
-        // 生产计划读的是带计划来源的工单，status 过滤的就是工单状态。
-        "/api/business-console/v1/mes/work-orders" => WorkOrderStatuses,
-        "/api/business-console/v1/mes/production-plans" => WorkOrderStatuses,
-        "/api/business-console/v1/mes/material-issue-requests" => MaterialIssueRequestStatuses,
-        "/api/business-console/v1/mes/dispatch-tasks" => OperationTaskStatuses,
-        "/api/business-console/v1/mes/operation-tasks" => OperationTaskStatuses,
-        "/api/business-console/v1/mes/wip" => OperationTaskStatuses,
-        "/api/business-console/v1/mes/related-quality-items" => DefectRecordStatuses,
-        "/api/business-console/v1/mes/finished-goods-receipt-requests" => FinishedGoodsReceiptRequestStatuses,
-        "/api/business-console/v1/mes/downtime-events" => WorkCenterUnavailabilityStatuses,
-        "/api/business-console/v1/mes/shift-handovers" => ShiftHandoverStatuses,
-        "/api/business-console/v1/mes/capacity-impacts" => WorkCenterUnavailabilityStatuses,
-        _ => throw new InvalidOperationException($"No MES status value domain registered for {path}."),
-    };
-
-    private static void AssertStatusEnumEqualsDomain(JsonElement schema, string description, string[] expected)
-    {
-        Assert.True(
-            schema.TryGetProperty("enum", out var values),
-            $"{description} must be an OpenAPI enum, not a free-form string.");
-
-        // 枚举顺序不是契约的一部分，按序值集合比较。
-        Assert.Equal(
-            expected.Order(StringComparer.Ordinal),
-            values.EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal));
-    }
-
     /// <summary>
-    /// 值域经 <c>$ref</c> 写在别处、且不属于本票 6 个聚合的 <b>状态属性</b>白名单。
+    /// <b>值域归属穷举</b>：<c>BusinessConsoleMes*</c> 面上每个枚举值域都必须说得出属于谁 ——
+    /// 要么等于本票某个聚合的域值域，要么在 <see cref="NonAggregatedDomains"/> 里写明不属于本票的理由。
     ///
-    /// <para>这两条是 $ref 形态的状态属性：<c>AndonCallResponse.status</c> 指向
-    /// <c>AndonStatus</c>（安灯域枚举 <c>AndonCallStatus { Open, Claimed, Closed }</c>），
-    /// <c>ProductionStatisticsBucket.resolutionStatus</c> 指向
-    /// <c>ProductionStatisticsResolutionStatus</c>（<c>{ resolved, degraded }</c>）。
-    /// 二者都是安灯 / 生产统计读面的状态，不在本票收敛的 6 个聚合内，故不登记值域。</para>
+    /// <para>上面 22 条逐条比对只在<b>已登记</b>的位置生效：登记表里没写的地方冒出一个等于本票状态
+    /// 值域的枚举，逐条比对看不见。这条从值域侧反过来穷举，补上那个缺口。</para>
     ///
-    /// <para><b>与 <see cref="NonRowStatusEnums"/> 的分工</b>：那张表白名单的是**类型**
-    ///（$ref 指向它就不管），这张表白名单的是**属性**（值域在别处、但这一对不纳管）。
-    /// 两张都必须显式 —— 否则「$ref 指向白名单内的类型」就是一个无提示的旁路
-    /// （第五轮实测：未登记 schema 的 status 改 $ref 指向白名单 enum 并把该 enum 值域
-    /// 换成任意 bogus 值，23 条守门全绿）。</para>
-    /// </summary>
-    private static readonly HashSet<string> NonAggregatedStatusProperties =
-    [
-        "BusinessConsoleMesAndonCallResponse.status",
-        "BusinessConsoleMesProductionStatisticsBucket.resolutionStatus",
-    ];
-
-    /// <summary>
-    /// <b>穷举守门：<c>BusinessConsoleMes*</c> 下的行内嵌 enum 必须全部登记在
-    /// <see cref="RowStatusProperties"/> 里。</b>
-    ///
-    /// <para>前几轮这条守门只对「已登记的 10 个」生效：<c>FindSchemaBySuffix</c> 的
-    /// <c>Assert.Single</c> 只在已登记后缀匹配到 ≥1 个时起作用，登记表外的 schema 根本进不来。
-    /// 实测证伪：把 snapshot 里一个未登记的 <c>MesTelemetryCandidateRow.status</c> 改成任意
-    /// enum，21 条用例仍全绿 —— 明天有人往 <c>RowStatusProperties</c> 之外加第 11 个行 schema，
-    /// 门禁照绿。这正是本票前三轮反复出现的同一形状：断言没盖住它声称盖的行为。</para>
-    ///
-    /// <para><b>因此这里换个口径</b>：不从登记表出发逐条找，而是<b>反向穷举</b> ——
-    /// 扫出 <c>BusinessConsoleMes*</c> 下所有 schema 的所有内嵌 enum，逐个问「你登记了吗」。
-    /// 这样新增一个带状态 enum 的行 schema、而忘了登记值域时，本条必然红。</para>
-    ///
-    /// <para>独立命名的 top-level enum 类型（安灯 / 统计那 6 个）经 <c>$ref</c> 引用，
-    /// 不是行内嵌状态属性，值域也不由 MES 域常量定义，按
-    /// <see cref="NonRowStatusEnums"/> 排除。</para>
+    /// <para>扫描跟随 <c>$ref</c> 解析到实际值域，所以藏在 <c>*ResponseDataOf*</c> 包装层、
+    /// 藏在 <c>items[]</c> 元素上、经几层间接引用都算同一处；环状 <c>$ref</c> 由已访问集合截断。</para>
     /// </summary>
     [Fact]
-    public void Every_mes_status_enum_is_registered()
+    public void Every_mes_enum_value_domain_has_an_owner()
     {
         using var document = LoadSnapshot();
-        // 登记表存的是「schema 短名（含 BusinessConsoleMes 前缀）+ 属性名」，
-        // 扫描产出的也是同一形式，两边逐字符可比。
-        var registered = RowStatusProperties
-            .Select(row => row[0] + "." + row[1])
+        var owned = StatusDeclarers
+            .Values
+            .Select(declarer => Normalize(declarer.Domain))
+            .Concat(NonAggregatedDomains.Keys)
             .ToHashSet(StringComparer.Ordinal);
 
-        var unregistered = FindInlineEnums(document)
-            .Select(inline => $"{inline.Schema}{inline.PropertyPath}")
-            .Where(location => !registered.Contains(location))
-            .Where(location => !NonAggregatedStatusProperties.Contains(location))
+        var unowned = CollectEnumValueDomains(document)
+            .Where(domain => !owned.Contains(domain))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
         Assert.True(
-            unregistered.Length == 0,
-            "以下 MES 行 schema 的内嵌 enum 没有在 RowStatusProperties 里登记值域，"
-                + "等于对「域新增状态 / 契约漂移」失守。逐条处理：确属状态枚举则补登记到 "
-                + "RowStatusProperties 并指明对应聚合；确非状态枚举则把 schema 短名加进 "
-                + "NonRowStatusEnums 白名单并写明理由。未登记项：\n"
-                + string.Join("\n", unregistered.Select(location => $"  - {location}")));
+            unowned.Length == 0,
+            "以下枚举值域既不等于本票 7 个 MES 读面聚合的域值域、也没在 NonAggregatedDomains 里写明理由 —— "
+                + "无法判断它该归谁。确属本票聚合状态则补登记到 StatusDeclarers（并确认对应 schema 的"
+                + "属性已进 RowStatusProperties）；确属其他读面则在 NonAggregatedDomains 加一条并写明理由。"
+                + "未认领的值域：\n"
+                + string.Join("\n", unowned.Select(domain => "  - " + domain)));
     }
 
     /// <summary>
-    /// 扫出 <c>BusinessConsoleMes*</c> 下所有 schema 的所有内嵌 enum（任意属性名、任意深度，
-    /// 含 <c>items</c> 与 <c>oneOf</c>）。独立命名的 top-level enum 类型本身也返回一条记录，
-    /// 由 <see cref="NonRowStatusEnums"/> 白名单排除。
+    /// <b>本票状态值域只能由登记表里的 schema 声明。</b>
+    ///
+    /// <para><see cref="Every_mes_enum_value_domain_has_an_owner"/> 只保证「每个值域都说得出属于谁」，
+    /// 这一条保证「本票的状态没跑到别处去」：<b>不跟随 <c>$ref</c>、就地声明</b>某个聚合域值域的
+    /// schema，只允许是 <see cref="StatusDeclarers"/> 登记的那 10 个行 schema。
+    /// 新增一个带本票状态值域的 schema 而忘了登记，这里必然红 —— 与那个属性叫什么名字无关。</para>
+    ///
+    /// <para><b>为什么只判「声明」而不判「携带」</b>：NSwag 为每个列表生成
+    /// <c>XxxListResponse</c> / <c>XxxResponse</c> 包装层，它通过 <c>items[].$ref</c> 指向行 schema，
+    /// 于是<b>传递地</b>含有该值域，但自己并不声明任何状态。实测 10 个包装层全部是这种形态。
+    /// 把传递携带也判红，等于要求连 NSwag 的响应包装都登记一遍 —— 那是生成物，不是契约。
+    /// 判「声明」则恰好卡在真问题上：谁真正写出了这个状态枚举，那个 schema 必须在登记表里。</para>
     /// </summary>
-    private static IEnumerable<(string Schema, string PropertyPath)> FindInlineEnums(JsonDocument document)
+    [Fact]
+    public void Aggregated_status_domains_are_declared_only_by_registered_schemas()
     {
-        var schemas = document.RootElement
-            .GetProperty("components")
-            .GetProperty("schemas");
+        using var document = LoadSnapshot();
+        var aggregatedDomains = StatusDeclarers
+            .Values
+            .Select(declarer => Normalize(declarer.Domain))
+            .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var schema in schemas.EnumerateObject())
+        var strays = new List<string>();
+        foreach (var schemaName in MesSchemaNames(document))
         {
-            if (!schema.Name.StartsWith(MesSchemaPrefix, StringComparison.Ordinal)
-                || schema.Name.Contains("ResponseDataOf", StringComparison.Ordinal))
+            if (StatusDeclarers.ContainsKey(schemaName))
             {
                 continue;
             }
 
-            // 去掉命名空间前缀，留下 "BusinessConsoleMesXxx"，
-            // 与 RowStatusProperties 登记表里的键同一形式。
-            var registeredName = schema.Name[SchemaNamespacePrefix.Length..];
-
-            // 独立命名的 top-level enum 类型不纳管：它们值域不由 MES 域常量定义
-            // （安灯 / 统计那几类）。跳过而不是登记。
-            if (NonRowStatusEnums.Contains(registeredName))
+            foreach (var domain in FindLocalEnumDomains(document, FindSchema(document, schemaName)))
             {
-                continue;
-            }
-
-            foreach (var propertyPath in FindEnumPaths(schema.Value, string.Empty))
-            {
-                yield return (registeredName, propertyPath);
+                if (aggregatedDomains.Contains(Normalize(domain)))
+                {
+                    strays.Add($"{schemaName}: {Normalize(domain)}");
+                }
             }
         }
+
+        Assert.True(
+            strays.Count == 0,
+            "以下 schema 就地声明了本票聚合的状态值域，但不在 StatusDeclarers 登记的 10 个行 schema 里。"
+                + "若它确实是同一聚合的列表行，请补登记到 StatusDeclarers 与 RowStatusProperties；"
+                + "若是别处复用同一值域，请在 NonAggregatedDomains 写明理由。游离项：\n"
+                + string.Join("\n", strays.Select(stray => "  - " + stray)));
     }
 
     /// <summary>
-    /// 递归收集一个 schema 内所有 enum 所在的位置（点号路径）。
-    ///
-    /// <para>两种形态都要认：属性写成 <c>{ "type": "string", "enum": [...] }</c>（最常见），
-    /// 或直接把裸字符串数组写在属性值上。碰到 <c>enum</c> 键就以该属性的路径收一条，
-    /// 不再往里递归 —— 否则同一条值域会被 <c>enum</c> 键和它下面的数组各记一次。</para>
-    ///
-    /// <para><c>properties</c> 是「属性名 → 属性 schema」的映射而非一个属性，所以它的
-    /// 路径段直接是属性名（<c>.status</c> 而不是 <c>.properties.status</c>）；
-    /// <c>required</c> 是必填属性**名字**的数组，与值域无关，必须跳过，
-    /// 否则每个带 required 的请求体都会被误判成一条未登记枚举。</para>
-    ///
-    /// <para><b><c>$ref</c> 必须跟随，不能跳过。</b>属性写成
-    /// <c>{ "$ref": "#/components/schemas/X" }</c> 时，值域在目标类型上而不在引用处 ——
-    /// 跳过它等于给未登记的 schema 开一个后门：把 <c>status</c> 改指向
-    /// <c>NonRowStatusEnums</c> 里的某个类型（并把那个类型的值域换成任意 bogus 值），
-    /// 或指向任意已登记 / 未登记的类型，守门都看不见。这里跟随引用、把目标类型记进
-    /// 路径，交给 <c>Every_mes_status_enum_is_registered</c> 按同一套白名单判红。
-    /// 目标类型自身被白名单放行时，路径末段会带上它的短名，白名单与登记表都能对上。</para>
-    /// </summary>
-    private static IEnumerable<string> FindEnumPaths(JsonElement schema, string path)
-    {
-        if (schema.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in schema.EnumerateObject())
-            {
-                if (property.Name == "properties")
-                {
-                    foreach (var field in property.Value.EnumerateObject())
-                    {
-                        foreach (var found in FindEnumPaths(field.Value, path + "." + field.Name))
-                        {
-                            yield return found;
-                        }
-                    }
-
-                    continue;
-                }
-
-                // $ref 不跟随（跟随会一路穿过响应包装 / 回执联合体，把 outcome、
-                // readbackMethod 这些无关枚举也收进来），**但状态属性仍要受登记表管**：
-                // 值域写在别处不等于不受管，判据是「这个 status 属性登记了没有」，
-                // 不是「值域写在哪」。把该属性按未解析的形态收一条，交给
-                // Every_mes_status_enum_is_registered 按 (schema, 属性) 判红 ——
-                // 否则把未登记 schema 的 status 改指向任意类型（含白名单内的）即可绕过。
-                if (property.Name == "$ref")
-                {
-                    if (IsStatusPropertyPath(path))
-                    {
-                        yield return path;
-                    }
-
-                    continue;
-                }
-
-                if (property.Name is "description" or "title" or "example" or "default" or "required")
-                {
-                    continue;
-                }
-
-                // NSwag 的厂商扩展：与同一个 enum 键配对给出显示名，不是独立值域。
-                if (property.Name.StartsWith("x-", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (property.Name == "enum")
-                {
-                    yield return path;
-                    continue;
-                }
-
-                foreach (var found in FindEnumPaths(property.Value, path + "." + property.Name))
-                {
-                    yield return found;
-                }
-            }
-
-            yield break;
-        }
-
-        if (schema.ValueKind == JsonValueKind.Array)
-        {
-            if (IsEnumNode(schema))
-            {
-                yield return path;
-                yield break;
-            }
-
-            foreach (var item in schema.EnumerateArray())
-            {
-                foreach (var found in FindEnumPaths(item, path + "[]"))
-                {
-                    yield return found;
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// 不在路径侧穷举守门范围内的 MES 列表路径，各带原因。
-    ///
-    /// <para>这两条路径的 <c>status</c> 查询参数<b>根本没有 enum</b>（自由 string），
-    /// 不属于「枚举被统一并集覆盖」这一类漂移，因此不是 #3912 的收窄对象。
-    /// 把它们列进来是因为否则它们会被「新增带 status 参数的路径必须登记」这条卡住 ——
-    /// 登记的前提是有一个域值域可登记，而它们目前没有。</para>
-    ///
-    /// <para>它们真正的缺陷是<b>该有值域却没有</b>（自由 string 等于把过滤语义交给调用方），
-    /// 方向与本票相反，属独立票，不在本次修。</para>
-    /// </summary>
-    private static readonly Dictionary<string, string> NonListStatusQueryPaths = new()
-    {
-        // 可报工工序任务：status 是自由 string，读面按可报工判据过滤，未声明枚举值域。
-        ["/api/business-console/v1/mes/reportable-operation-tasks"] =
-            "status 无 enum，自由 string；属「缺值域」而非「值域被覆盖」，独立票处理。",
-        // 遥测生产报告候选：同上，status 无 enum。
-        ["/api/business-console/v1/mes/telemetry-production-report-candidates"] =
-            "status 无 enum，自由 string；属「缺值域」而非「值域被覆盖」，独立票处理。",
-    };
-
-    /// <summary>
-    /// <b>与 <see cref="Every_mes_status_enum_is_registered"/> 对称的路径侧穷举</b>：
-    /// <c>/api/business-console/v1/mes/**</c> 下所有带 <c>status</c> 查询参数的 GET 路径，
-    /// 都必须登记在 <see cref="List_status_query_enum_equals_aggregate_value_domain"/> 的
+    /// <b>路径侧穷举</b>：<c>/api/business-console/v1/mes/**</c> 下所有带 <c>status</c> 查询参数的
+    /// GET 路径，都必须登记在 <see cref="List_status_query_enum_equals_aggregate_value_domain"/> 的
     /// <c>InlineData</c> 里，或在 <see cref="NonListStatusQueryPaths"/> 里写明排除原因。
-    ///
-    /// <para>同样是反向穷举：新增一条带 status 查询参数的 MES 列表路径而忘了登记值域时，
-    /// 本条必然红。只登记不穷举的话，那条新路径会带着一个未经域常量核对的值域直接进契约。</para>
     /// </summary>
     [Fact]
     public void Every_mes_list_status_query_is_registered()
@@ -459,36 +318,267 @@ public sealed class MesListStatusContractTests
                     parameter.GetProperty("in").GetString() == "query"
                     && parameter.GetProperty("name").GetString() == "status"))
             .Select(path => path.Name)
-            .Where(path => !registered.Contains(path))
-            .Where(path => !NonListStatusQueryPaths.ContainsKey(path))
+            .Where(path => !registered.Contains(path) && !NonListStatusQueryPaths.ContainsKey(path))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
         Assert.True(
             unregistered.Length == 0,
-            "以下 MES 列表路径带 status 查询参数但没有登记值域，等于对「域新增状态 / 契约漂移」"
-                + "失守。请在 List_status_query_enum_equals_aggregate_value_domain 补一条 InlineData "
-                + "并指明该路径过滤的是哪个聚合；确实不该带 status 的路径请从契约移除该参数；"
-                + "确属票外（如同 NonListStatusQueryPaths 那两条自由 string 的）请连同原因加进该表。"
+            "以下 MES 列表路径带 status 查询参数但没有登记值域。请在 "
+                + "List_status_query_enum_equals_aggregate_value_domain 补一条 InlineData 并指明该路径"
+                + "过滤的是哪个聚合；确实不该带 status 的请从契约移除该参数；确属票外的"
+                + "（如同 NonListStatusQueryPaths 那两条自由 string 的）请连同原因加进该表。"
                 + "未登记路径：\n"
                 + string.Join("\n", unregistered.Select(path => $"  - {path}")));
     }
 
-    /// <summary>
-    /// 该路径末段是不是状态属性。与 <see cref="RowStatusProperties"/> 登记表同口径：
-    /// <c>status</c>、<c>receiptStatus</c>，以及任何以 <c>Status</c> 结尾的名字
-    /// （<c>workOrderStatus</c> / <c>handoverStatus</c> 之类）。
-    /// </summary>
-    private static bool IsStatusPropertyPath(string path)
+    /// <summary>取聚合上声明的全部 <c>public const string *Status</c> 值。</summary>
+    private static string[] DeclaredStatusConstants<T>() =>
+        typeof(T)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field is { IsLiteral: true, FieldType: var type } && type == typeof(string))
+            .Where(field => field.Name.EndsWith("Status", StringComparison.Ordinal))
+            .Select(field => (string)field.GetRawConstantValue()!)
+            .ToArray();
+
+    private static string[] ExpectedStatusQueryValues(string path) => path switch
     {
-        var lastSegment = path[(path.LastIndexOf('.') + 1)..];
-        return lastSegment.EndsWith("Status", StringComparison.OrdinalIgnoreCase);
+        // 生产计划读的是带计划来源的工单，status 过滤的就是工单状态。
+        "/api/business-console/v1/mes/work-orders" => WorkOrderStatuses,
+        "/api/business-console/v1/mes/production-plans" => WorkOrderStatuses,
+        "/api/business-console/v1/mes/material-issue-requests" => MaterialIssueRequestStatuses,
+        "/api/business-console/v1/mes/dispatch-tasks" => OperationTaskStatuses,
+        "/api/business-console/v1/mes/operation-tasks" => OperationTaskStatuses,
+        "/api/business-console/v1/mes/wip" => OperationTaskStatuses,
+        "/api/business-console/v1/mes/related-quality-items" => DefectRecordStatuses,
+        "/api/business-console/v1/mes/finished-goods-receipt-requests" => FinishedGoodsReceiptRequestStatuses,
+        "/api/business-console/v1/mes/downtime-events" => WorkCenterUnavailabilityStatuses,
+        "/api/business-console/v1/mes/shift-handovers" => ShiftHandoverStatuses,
+        "/api/business-console/v1/mes/capacity-impacts" => WorkCenterUnavailabilityStatuses,
+        _ => throw new InvalidOperationException($"No MES status value domain registered for {path}."),
+    };
+
+    /// <summary>不在路径侧穷举守门范围内的 MES 列表路径，各带原因。</summary>
+    private static readonly Dictionary<string, string> NonListStatusQueryPaths = new()
+    {
+        // 可报工工序任务：status 是自由 string，读面按可报工判据过滤，未声明枚举值域。
+        ["/api/business-console/v1/mes/reportable-operation-tasks"] =
+            "status 无 enum，自由 string；属「缺值域」而非「值域被覆盖」，独立票处理。",
+        // 遥测生产报告候选：同上，status 无 enum。
+        ["/api/business-console/v1/mes/telemetry-production-report-candidates"] =
+            "status 无 enum，自由 string；属「缺值域」而非「值域被覆盖」，独立票处理。",
+    };
+
+    private static void AssertStatusEnumEqualsDomain(JsonElement schema, string description, string[] expected)
+    {
+        Assert.True(
+            schema.TryGetProperty("enum", out var values),
+            $"{description} must be an OpenAPI enum, not a free-form string.");
+
+        // 枚举顺序不是契约的一部分，按排好序的值集合比较。
+        Assert.Equal(
+            expected.Order(StringComparer.Ordinal),
+            values.EnumerateArray().Select(value => value.GetString()!).Order(StringComparer.Ordinal));
     }
 
-    private static bool IsEnumNode(JsonElement node) =>
-        node.ValueKind == JsonValueKind.Array
-        && node.GetArrayLength() > 0
-        && node.EnumerateArray().All(value => value.ValueKind == JsonValueKind.String);
+    /// <summary>把值域排好序后拼成登记表的键形式：顺序不是契约的一部分，值域才是。</summary>
+    private static string Normalize(IEnumerable<string> domain) =>
+        string.Join(' ', domain.Order(StringComparer.Ordinal));
+
+    /// <summary>面上所有 <c>BusinessConsoleMes*</c> schema 的短名（剥掉命名空间前缀）。</summary>
+    private static string[] MesSchemaNames(JsonDocument document) => document.RootElement
+        .GetProperty("components")
+        .GetProperty("schemas")
+        .EnumerateObject()
+        .Select(schema => schema.Name)
+        .Where(name => name.StartsWith(MesSchemaPrefix, StringComparison.Ordinal))
+        .Select(name => name[SchemaNamespacePrefix.Length..])
+        .Order(StringComparer.Ordinal)
+        .ToArray();
+
+    /// <summary>面上所有唯一枚举值域，排好序去重。</summary>
+    private static string[] CollectEnumValueDomains(JsonDocument document) => document.RootElement
+        .GetProperty("components")
+        .GetProperty("schemas")
+        .EnumerateObject()
+        .Where(schema => schema.Name.StartsWith(MesSchemaPrefix, StringComparison.Ordinal))
+        .SelectMany(schema => CollectEnumValueDomains(document, schema.Name[SchemaNamespacePrefix.Length..]))
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal)
+        .ToArray();
+
+    /// <summary>
+    /// 单个 schema 内所有枚举值域（跟随 <c>$ref</c> 解析到实际值域），排好序去重。
+    /// 已访问集合按 <c>$ref</c> 目标名截断，环状引用不会无限展开。
+    /// </summary>
+    private static string[] CollectEnumValueDomains(JsonDocument document, string shortSchemaName) =>
+        FindEnumDomains(
+                document,
+                FindSchema(document, shortSchemaName),
+                new HashSet<string>(StringComparer.Ordinal))
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>
+    /// 在一个 schema 节点内找出所有枚举值域，<b>跟随 <c>$ref</c> 解析到目标类型</b>。
+    ///
+    /// <para>跟随的理由（与被否决的旧方案不同）：旧方案把「属性路径」当判据，跟随只是为了拿路径；
+    /// 现在判据是值域本身，<c>$ref</c> 背后的值域和内联的值域在判据上没有区别，所以必须跟随 ——
+    /// 否则把状态藏到 <c>$ref</c> 后面就等于逃出判定面。隐藏位置因此只剩「换名字」一种，
+    /// 而换名字在值域判据下无效。</para>
+    ///
+    /// <para><c>enum</c> 键下不再往里递归，否则同一条值域会被记两次；
+    /// <c>required</c> 是字段名数组不是值域；<c>x-enumNames</c> 是 NSwag 的显示名扩展不是值域。</para>
+    /// </summary>
+    /// <summary>
+    /// 与 <see cref="FindEnumDomains"/> 相同，但<b>不跟随 <c>$ref</c></b>：只返回本 schema
+    /// 就地写出的值域，引用到别处的值域不算「它声明的」。
+    /// </summary>
+    private static IEnumerable<string[]> FindLocalEnumDomains(JsonDocument document, JsonElement node)
+    {
+        switch (node.ValueKind)
+        {
+            case JsonValueKind.Object:
+                if (TryReadStringArray(node, "enum", out var enumValues))
+                {
+                    yield return enumValues;
+                }
+
+                foreach (var property in node.EnumerateObject())
+                {
+                    if (property.Name is "enum" or "description" or "title" or "example" or "default"
+                        or "required" or "x-enumNames" or "$ref")
+                    {
+                        continue;
+                    }
+
+                    foreach (var found in FindLocalEnumDomains(document, property.Value))
+                    {
+                        yield return found;
+                    }
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (var item in node.EnumerateArray())
+                {
+                    foreach (var found in FindLocalEnumDomains(document, item))
+                    {
+                        yield return found;
+                    }
+                }
+
+                break;
+        }
+    }
+
+    private static IEnumerable<string[]> FindEnumDomains(
+        JsonDocument document,
+        JsonElement node,
+        HashSet<string> visitedRefs)
+    {
+        switch (node.ValueKind)
+        {
+            case JsonValueKind.Object:
+                if (TryReadStringArray(node, "enum", out var enumValues))
+                {
+                    yield return enumValues;
+                }
+
+                foreach (var property in node.EnumerateObject())
+                {
+                    switch (property.Name)
+                    {
+                        case "enum":
+                        case "description":
+                        case "title":
+                        case "example":
+                        case "default":
+                        case "required":
+                        case "x-enumNames":
+                            continue;
+
+                        case "$ref":
+                            var reference = property.Value.GetString();
+                            if (reference is not null
+                                && reference.StartsWith("#/components/schemas/", StringComparison.Ordinal)
+                                && visitedRefs.Add(reference)
+                                && TryFindSchemaByReference(document, reference, out var target))
+                            {
+                                foreach (var found in FindEnumDomains(document, target, visitedRefs))
+                                {
+                                    yield return found;
+                                }
+                            }
+
+                            continue;
+
+                        default:
+                            foreach (var found in FindEnumDomains(document, property.Value, visitedRefs))
+                            {
+                                yield return found;
+                            }
+
+                            continue;
+                    }
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (var item in node.EnumerateArray())
+                {
+                    foreach (var found in FindEnumDomains(document, item, visitedRefs))
+                    {
+                        yield return found;
+                    }
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>读一个非空、全字符串的 JSON 数组；不是这个形态就当它不是值域。</summary>
+    private static bool TryReadStringArray(JsonElement node, string name, out string[] values)
+    {
+        values = [];
+        if (!node.TryGetProperty(name, out var array) || array.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var items = array.EnumerateArray().ToArray();
+        if (items.Length == 0 || items.Any(value => value.ValueKind != JsonValueKind.String))
+        {
+            return false;
+        }
+
+        values = items.Select(value => value.GetString()!).ToArray();
+        return true;
+    }
+
+    private static bool TryFindSchemaByReference(JsonDocument document, string reference, out JsonElement schema)
+    {
+        schema = default;
+        return document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .TryGetProperty(reference["#/components/schemas/".Length..], out schema);
+    }
+
+    private static JsonElement FindSchema(JsonDocument document, string shortSchemaName)
+    {
+        Assert.True(
+            document.RootElement
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .TryGetProperty(SchemaNamespacePrefix + shortSchemaName, out var schema),
+            $"Schema {shortSchemaName} is missing from the snapshot.");
+        return schema;
+    }
 
     /// <summary>读导入的 BusinessGateway OpenAPI 导出产物（见 csproj 的 EmbeddedResource）。</summary>
     private static string ReadSnapshot()
@@ -503,24 +593,22 @@ public sealed class MesListStatusContractTests
 
     private static JsonDocument LoadSnapshot() => JsonDocument.Parse(ReadSnapshot());
 
-    private static JsonElement FindSchemaBySuffix(JsonDocument document, string schemaNameSuffix)
+    private static JsonElement FindSchemaByShortName(JsonDocument document, string schemaNameSuffix)
     {
         var schemaObject = document.RootElement
             .GetProperty("components")
             .GetProperty("schemas");
-        if (schemaObject.TryGetProperty(schemaNameSuffix, out var exactSchema))
+        if (schemaObject.TryGetProperty(SchemaNamespacePrefix + schemaNameSuffix, out var exactSchema))
         {
             return exactSchema;
         }
 
-        var schemas = schemaObject
+        var matches = schemaObject
             .EnumerateObject()
-            .Where(schema =>
-                schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal) &&
-                !schema.Name.Contains("ResponseDataOf", StringComparison.Ordinal))
+            .Where(schema => schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal))
             .ToArray();
 
-        Assert.Single(schemas);
-        return schemas[0].Value;
+        Assert.Single(matches);
+        return matches[0].Value;
     }
 }
