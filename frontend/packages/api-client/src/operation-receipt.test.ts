@@ -456,6 +456,51 @@ describe('business operation receipt confirmation', () => {
     expect(readback).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps polling an outbound review while inventory posting is still pending', async () => {
+    // #3926：复核已落库、过账是异步的；刚提交读到「过账中」不能判成「尚未确认」。
+    const envelope = accepted('wms.outbound-order.complete', 'out-1')
+    const postingPending = {
+      success: true,
+      data: {
+        items: [
+          {
+            outboundOrderId: 'out-1',
+            status: 'InventoryPostingPending',
+            inventoryPostingStatus: 'pending',
+          },
+        ],
+      },
+    }
+    const posted = {
+      success: true,
+      data: {
+        items: [
+          { outboundOrderId: 'out-1', status: 'Completed', inventoryPostingStatus: 'posted' },
+        ],
+      },
+    }
+    const options = {
+      expectedOperationType: 'wms.outbound-order.complete',
+      expectedIdempotencyKey: 'idem:wms.outbound-order.complete:out-1',
+      expectedResourceId: 'out-1',
+      retryDelayMs: 0,
+    }
+
+    const settles = vi.fn().mockResolvedValueOnce(postingPending).mockResolvedValue(posted)
+    await expect(
+      confirmBusinessConsoleOperation(envelope, { ...options, readback: settles }),
+    ).resolves.toBe(envelope)
+    expect(settles).toHaveBeenCalledTimes(2)
+
+    const stillPosting = vi.fn().mockResolvedValue(postingPending)
+    await expect(
+      confirmBusinessConsoleOperation(envelope, { ...options, readback: stillPosting }),
+    ).rejects.toMatchObject({
+      name: 'BusinessOperationPendingError',
+      message: '出库复核已提交，库存正在过账。请稍后刷新查看过账结果。',
+    })
+  })
+
   it('surfaces a confirmed WMS posting failure without retrying readback', async () => {
     const envelope = accepted('wms.outbound-order.complete', 'out-1')
     const readback = vi.fn().mockResolvedValue({

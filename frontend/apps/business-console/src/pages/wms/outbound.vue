@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { statusActionGate } from '@nerv-iip/business-core'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
@@ -34,6 +35,7 @@ import {
   notifyError,
   notifyOperationFailure,
   notifySuccess,
+  notifyWarning,
 } from '@/utils/notify'
 import {
   NvButton,
@@ -303,6 +305,13 @@ function onReviewOpenChange(open: boolean) {
   if (!open && reviewIntentLocked.value) return
   reviewOpen.value = open
 }
+function closeSettledReview() {
+  reviewOpen.value = false
+  reviewIntentKey.value = ''
+  reviewIntentAttempted.value = false
+  reviewIntentLocked.value = false
+  reviewFrozenPayload.value = undefined
+}
 async function submitReview() {
   const id = pendingOrder.value?.outboundOrderId
   if (!id) return
@@ -315,13 +324,16 @@ async function submitReview() {
         reviewIntentAttempted.value = true
       },
     })
-    reviewOpen.value = false
-    reviewIntentKey.value = ''
-    reviewIntentAttempted.value = false
-    reviewIntentLocked.value = false
-    reviewFrozenPayload.value = undefined
-    notifySuccess('出库复核已提交')
+    closeSettledReview()
+    notifySuccess('出库复核已完成，库存已过账')
   } catch (error) {
+    // 复核已落库、库存还在异步过账：这是中间态不是失败（#3926），收起弹框、刷新列表看「过账中」。
+    if (error instanceof BusinessOperationPendingError) {
+      closeSettledReview()
+      notifyWarning('出库复核已提交，库存正在过账。请稍后刷新查看过账结果。')
+      void refreshOutboundOrders()
+      return
+    }
     if (
       await recoverLifecycleAction(error, {
         reset: () => {

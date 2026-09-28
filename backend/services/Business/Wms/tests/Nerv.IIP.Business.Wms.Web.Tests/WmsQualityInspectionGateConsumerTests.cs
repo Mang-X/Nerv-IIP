@@ -7,9 +7,11 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing.PostgreSql;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -49,11 +51,56 @@ public sealed class WmsQualityInspectionGateConsumerTests
         await using var assertionContext = CreateContext(databaseName, databaseRoot);
         var persistedInbound = await assertionContext.InboundOrders.SingleAsync(x => x.InboundOrderNo == "IN-QA-PASS-001");
         Assert.Equal(InboundOrderStatus.Completed, persistedInbound.Status);
+        // 已完成但质检放行的单仍可补建上架：读面的放行标志与领域守卫同口径（#3927）。
+        var listed = await new ListInboundOrdersQueryHandler(assertionContext).Handle(
+            new ListInboundOrdersQuery("org-001", "env-dev", SiteCodes: ["SITE-01"], SiteWideScope: true),
+            CancellationToken.None);
+        Assert.True(Assert.Single(listed.Items).IsReleasedForPutaway);
         var task = await new CreatePutawayTaskCommandHandler(assertionContext).Handle(
             new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-QA-PASS-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
             CancellationToken.None);
         await assertionContext.SaveChangesAsync(CancellationToken.None);
         Assert.True(await assertionContext.WarehouseTasks.AnyAsync(x => x.Id == task));
+    }
+
+    [Fact]
+    public async Task Completed_exempt_inbound_order_offers_no_putaway_and_rejects_it_with_a_business_reason()
+    {
+        // #3927：免检单完成入库后，读面曾仍给「可上架」，建上架任务落成 500「未知错误」。
+        var databaseName = nameof(Completed_exempt_inbound_order_offers_no_putaway_and_rejects_it_with_a_business_reason);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var dbContext = CreateContext(databaseName, databaseRoot))
+        {
+            var createdInbound = InboundOrder.Create(
+                "org-001",
+                "env-dev",
+                "IN-EXEMPT-DONE-001",
+                "purchase-receipt",
+                "PO-001",
+                "SITE-01",
+                [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "unrestricted", "company", "owner-001")]);
+            dbContext.InboundOrders.Add(createdInbound);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
+                new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-exempt-done-001")
+                    .TrustedFor(dbContext, createdInbound),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var persistedInbound = await assertionContext.InboundOrders.SingleAsync(x => x.InboundOrderNo == "IN-EXEMPT-DONE-001");
+        Assert.Equal(InboundOrderStatus.Completed, persistedInbound.Status);
+
+        var listed = await new ListInboundOrdersQueryHandler(assertionContext).Handle(
+            new ListInboundOrdersQuery("org-001", "env-dev", SiteCodes: ["SITE-01"], SiteWideScope: true),
+            CancellationToken.None);
+        Assert.False(Assert.Single(listed.Items).IsReleasedForPutaway);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+            new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-EXEMPT-DONE-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
+            CancellationToken.None));
+        Assert.Equal("入库单已完成，只有质检放行的行还能补建上架任务。", exception.Message);
     }
 
     [Fact]
@@ -83,7 +130,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
         var supplierReturn = await assertionContext.Set<SupplierReturnRequest>().SingleAsync();
         Assert.Equal("IN-QA-REJ-001", supplierReturn.InboundOrderNo);
         Assert.Equal("QI-001", supplierReturn.InspectionRecordId);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
             new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-QA-REJ-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
             CancellationToken.None));
     }
@@ -238,7 +285,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
             }
             else
             {
-                await Assert.ThrowsAsync<InvalidOperationException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+                await Assert.ThrowsAsync<KnownException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
                     new CreatePutawayTaskCommand(persistedInbound.Id, $"PUT-{scenario.InboundOrderNo}", "LINE-001", "LOC-STAGE", scenario.TargetLocationCode, 5m),
                     CancellationToken.None));
             }

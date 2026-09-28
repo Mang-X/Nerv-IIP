@@ -574,6 +574,7 @@ function formatDateTime(value?: string | null) {
           v-if="row.inboundOrderNo"
           :inbound-order-id="row.inboundOrderId"
           :inbound-order-no="row.inboundOrderNo"
+          :inbound-order-status="row.status"
           :site-code="row.siteCode ?? undefined"
           :gates="receivingQualityGates"
           :supplier-returns="supplierReturns"
