@@ -3,6 +3,7 @@ extern alias WmsWeb;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
@@ -15,8 +16,12 @@ using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using OutboundOrderCancelledIntegrationEventConverter = WmsWeb::Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters.OutboundOrderCancelledIntegrationEventConverter;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -26,21 +31,44 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
     [Fact]
     public async Task OutboundOrderCancelledHandler_ProjectsCancellationToErpDeliveryOrderOnce()
     {
-        await using var dbContext = CreateDbContext();
-        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-CANCEL-001", "SO-CANCEL-001", "SO-LINE-001", 2m, 80m);
-        var integrationEvent = BuildWmsCancelledEvent(delivery, "customer-requested-cancel");
+        var databaseName = $"erp-wms-outbound-cancel-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        WmsIntegrationEvent integrationEvent;
+        await using (var setupContext = CreateDbContext(databaseName, databaseRoot))
+        {
+            var delivery = await ReleaseDeliveryOrderAsync(setupContext, "DO-CANCEL-001", "SO-CANCEL-001", "SO-LINE-001", 2m, 80m);
+            integrationEvent = BuildWmsCancelledEvent(delivery, "customer-requested-cancel");
+        }
+
+        await using var provider = CreatePublishingProvider(databaseName, databaseRoot);
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
+        var handler = CreateHandler(
+            dbContext,
+            scope.ServiceProvider.GetRequiredService<ITransactionUnitOfWork>(),
+            deadLetters,
+            scope.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var persisted = await dbContext.DeliveryOrders.SingleAsync(x => x.DeliveryOrderNo == "DO-CANCEL-001", CancellationToken.None);
         Assert.Equal("cancelled", persisted.Status);
         Assert.Equal("customer-requested-cancel", persisted.CancellationReason);
         Assert.NotNull(persisted.CancelledAtUtc);
+        var order = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(x => x.SalesOrderNo == "SO-CANCEL-001", CancellationToken.None);
+        Assert.Equal(3, order.Version);
+        Assert.Equal(0m, Assert.Single(order.Lines).DeliveredQuantity);
+        var changed = Assert.Single(scope.ServiceProvider
+            .GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published
+            .OfType<SalesOrderChangedIntegrationEvent>());
+        Assert.Equal(integrationEvent.EventId, changed.CausationId);
+        Assert.Equal(integrationEvent.CorrelationId, changed.CorrelationId);
+        Assert.Equal(integrationEvent.Actor, changed.Actor);
+        Assert.Equal(3, changed.Payload.OrderVersion);
+        Assert.Equal(0m, Assert.Single(changed.Payload.Lines).DeliveredQuantity);
         Assert.Single(dbContext.ProcessedIntegrationEvents);
         Assert.Empty(dbContext.AccountReceivables);
         Assert.Empty(dbContext.JournalVouchers);
@@ -74,7 +102,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var integrationEvent = BuildWmsCancelledEvent(delivery, "customer-requested-cancel");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
+        var handler = CreateHandler(dbContext, dbContext, deadLetters, new RecordingEventContextAccessor());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -102,7 +130,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var integrationEvent = BuildWmsCancelledEvent(delivery, "late-cancellation");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
+        var handler = CreateHandler(dbContext, dbContext, deadLetters, new RecordingEventContextAccessor());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -122,12 +150,35 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
 
     private static WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection CreateHandler(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
+        ITransactionUnitOfWork unitOfWork,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IErpIntegrationEventContextAccessor eventContext)
     {
         return new WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection(
             dbContext,
+            unitOfWork,
             deadLetterStore,
-            new TestLogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection>());
+            new TestLogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection>(),
+            eventContext);
+    }
+
+    private sealed class RecordingEventContextAccessor : IErpIntegrationEventContextAccessor
+    {
+        private ErpIntegrationEventContext? context;
+
+        public ErpIntegrationEventContext GetContext() => context
+            ?? throw new InvalidOperationException("WMS cancellation must establish event causation.");
+
+        public IDisposable BeginScope(string causationId, string? correlationId = null, string? actor = null)
+        {
+            context = new ErpIntegrationEventContext(correlationId!, causationId, actor!);
+            return new Scope();
+        }
+
+        private sealed class Scope : IDisposable
+        {
+            public void Dispose() { }
+        }
     }
 
     private static async Task<DeliveryOrder> ReleaseDeliveryOrderAsync(
@@ -189,10 +240,49 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
 
     private static ApplicationDbContext CreateDbContext()
     {
+        return CreateDbContext($"erp-wms-outbound-cancel-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+    }
+
+    private static ApplicationDbContext CreateDbContext(string databaseName, InMemoryDatabaseRoot databaseRoot)
+    {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase($"erp-wms-outbound-cancel-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot())
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .ConfigureWarnings(warnings => warnings.Ignore(
+                Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ServiceProvider CreatePublishingProvider(string databaseName, InMemoryDatabaseRoot databaseRoot)
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddSingleton<RecordingIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(provider =>
+            provider.GetRequiredService<RecordingIntegrationEventPublisher>());
+        services.AddHttpContextAccessor();
+        services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options
+                .UseInMemoryDatabase(databaseName, databaseRoot)
+                .ConfigureWarnings(warnings => warnings.Ignore(
+                    Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestLogger<T> : ILogger<T>

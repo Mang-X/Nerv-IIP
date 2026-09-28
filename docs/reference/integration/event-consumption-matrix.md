@@ -33,7 +33,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | ERP | `MaterialSupplyEtaChangedIntegrationEvent` | ERP | Scheduling 按受影响 SKU 精确失效 generated 排程方案 | `consumed-internally` |
 | ERP | `PurchaseReceiptRecordedIntegrationEvent` | ERP | ERP GR/IR 处理；Quality 来料检验 | `consumed-internally` |
 | ERP | `SalesReturnAuthorizedIntegrationEvent` | ERP | WMS | `consumed-internally` |
-| ERP | `SalesOrderReleased` / `SalesOrderChanged` / `SalesOrderCancelled` | ERP | DemandPlanning 销售订单需求投影 | `consumed-internally` |
+| ERP | `SalesOrderReleased` / `SalesOrderChanged` / `SalesOrderCancelled` / `SalesOrderDeliveryRegisteredIntegrationEvent` | ERP | DemandPlanning 销售订单未交付需求投影 | `consumed-internally` |
 | ERP | `DeliveryOrderReleasedPayload` | ERP | 实际仓储交接使用公开 `wms.OutboundOrderRequested` | `deprecated/covered-by-other-contract` |
 | ERP | `AccountPayableCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `AccountReceivableCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |

@@ -12,6 +12,7 @@ public static class ErpIntegrationEventTypes
     public const string SalesOrderReleased = "erp.SalesOrderReleased";
     public const string SalesOrderChanged = "erp.SalesOrderChanged";
     public const string SalesOrderCancelled = "erp.SalesOrderCancelled";
+    public const string SalesOrderDeliveryRegistered = "erp.SalesOrderDeliveryRegistered";
     public const string DeliveryOrderReleased = "erp.DeliveryOrderReleased";
     public const string AccountPayableCreated = "erp.AccountPayableCreated";
     public const string AccountReceivableCreated = "erp.AccountReceivableCreated";
@@ -160,7 +161,8 @@ public sealed record SalesOrderLineSnapshot(
     decimal Quantity,
     string UomCode,
     DateOnly RequiredDate,
-    bool Cancelled);
+    bool Cancelled,
+    decimal DeliveredQuantity = 0m);
 
 public sealed record SalesOrderLifecyclePayload(
     string SalesOrderId,
@@ -206,6 +208,23 @@ public sealed record SalesOrderChangedIntegrationEvent(
 }
 
 public sealed record SalesOrderCancelledIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SalesOrderLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SalesOrderDeliveryRegisteredIntegrationEvent(
     string EventId,
     string EventType,
     int EventVersion,

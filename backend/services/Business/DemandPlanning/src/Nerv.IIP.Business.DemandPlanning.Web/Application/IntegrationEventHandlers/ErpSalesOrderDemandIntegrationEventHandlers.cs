@@ -67,6 +67,25 @@ public sealed class SalesOrderCancelledIntegrationEventHandlerForProjectDemandSo
     public Task HandleCapAsync(SalesOrderCancelledIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
 }
 
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.SalesOrderDeliveryRegisteredIntegrationEvent", ConsumerName)]
+public sealed class SalesOrderDeliveryRegisteredIntegrationEventHandlerForProjectDemandSource(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<SalesOrderDeliveryRegisteredIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource.ConsumerName;
+    private readonly SalesOrderDemandEventProcessor processor = new(dbContext, deadLetterStore, ConsumerName);
+    private readonly IntegrationEventConsumerGuard<SalesOrderDeliveryRegisteredIntegrationEvent> guard = new(
+        new IntegrationEventEnvelopeValidator(), deadLetterStore,
+        new IntegrationEventConsumerOptions(ConsumerName, ErpIntegrationEventTypes.SalesOrderDeliveryRegistered, ErpIntegrationEventVersions.V1));
+
+    public Task HandleAsync(SalesOrderDeliveryRegisteredIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        guard.HandleAsync(integrationEvent, processor.ProcessAsync, cancellationToken);
+
+    [CapSubscribe(nameof(SalesOrderDeliveryRegisteredIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(SalesOrderDeliveryRegisteredIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
+}
+
 internal sealed class SalesOrderDemandEventProcessor(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
@@ -80,6 +99,9 @@ internal sealed class SalesOrderDemandEventProcessor(
 
     public Task ProcessAsync(SalesOrderCancelledIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         ProcessCoreAsync(integrationEvent, integrationEvent.Payload, "cancelled", cancellationToken);
+
+    public Task ProcessAsync(SalesOrderDeliveryRegisteredIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        ProcessCoreAsync(integrationEvent, integrationEvent.Payload, "released", cancellationToken);
 
     private async Task ProcessCoreAsync(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload, string expectedStatus, CancellationToken cancellationToken)
     {
@@ -146,11 +168,19 @@ internal sealed class SalesOrderDemandEventProcessor(
             foreach (var line in payload.Lines.Where(x => !x.Cancelled))
             {
                 activeLineReferences.Add(line.SalesOrderLineNo);
+                var remainingQuantity = line.Quantity - line.DeliveredQuantity;
                 if (existingByLine.TryGetValue((payload.SalesOrderNo, line.SalesOrderLineNo), out var demand))
                 {
-                    demand.ApplySalesOrderSnapshot(line.Quantity, line.RequiredDate, payload.OrderVersion);
+                    if (remainingQuantity == 0m)
+                    {
+                        demand.FulfillFromSalesOrder(payload.OrderVersion);
+                    }
+                    else
+                    {
+                        demand.ApplySalesOrderSnapshot(remainingQuantity, line.RequiredDate, payload.OrderVersion);
+                    }
                 }
-                else
+                else if (remainingQuantity > 0m)
                 {
                     dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
                         integrationEvent.OrganizationId,
@@ -162,7 +192,7 @@ internal sealed class SalesOrderDemandEventProcessor(
                         line.SkuCode,
                         line.UomCode,
                         payload.SiteCode,
-                        line.Quantity,
+                        remainingQuantity,
                         line.RequiredDate,
                         payload.OrderVersion));
                 }
@@ -222,9 +252,10 @@ internal sealed class SalesOrderDemandEventProcessor(
         }
 
         if (payload.Lines.GroupBy(x => x.SalesOrderLineNo, StringComparer.Ordinal).Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1) ||
-            payload.Lines.Any(line => string.IsNullOrWhiteSpace(line.SkuCode) || string.IsNullOrWhiteSpace(line.UomCode) || line.RequiredDate == default || (!line.Cancelled && line.Quantity <= 0m)))
+            payload.Lines.Any(line => string.IsNullOrWhiteSpace(line.SkuCode) || string.IsNullOrWhiteSpace(line.UomCode) || line.RequiredDate == default ||
+                line.DeliveredQuantity < 0m || line.DeliveredQuantity > line.Quantity || (!line.Cancelled && line.Quantity <= 0m)))
         {
-            return "Sales order lines require unique line numbers, SKU, UOM, due date, and positive active quantity.";
+            return "Sales order lines require unique line numbers, SKU, UOM, due date, positive active quantity, and delivery quantity within ordered quantity.";
         }
 
         return null;

@@ -10,11 +10,11 @@ ERP 拥有销售订单、客户、站点、行数量/UOM/要求交期、状态�
 
 ## 生命周期事件
 
-ERP 的销售订单生命周期通过 released / changed / cancelled 事实表达。事件必须携带：
+ERP 的销售订单生命周期通过 released / changed / cancelled 事实表达。发货单登记交付后，ERP 另发布 delivery-registered 事实；它与生命周期事件共享订单版本和完整订单行快照。事件必须携带：
 
 - organization/environment；
 - 稳定 order id / order no；
-- customer、site 与完整有效订单行快照；
+- customer、site 与完整有效订单行快照；行快照包含订单数量和已交付数量；
 - 单调递增 `orderVersion`；
 - correlation/causation；
 - 稳定业务幂等键。
@@ -24,8 +24,8 @@ DemandPlanning 只消费公开 contract，不引用 ERP Domain/Web/Infrastructur
 ## 版本收敛
 
 1. 初次 released 建立/更新每个有效订单行的 DemandSource。
-2. changed 是完整快照；只接受高于当前 watermark 的版本。数量/交期随新版本更新，快照中缺失或取消的既有行归零并保留取消来源状态。
-3. cancelled 将订单下既有需求行归零并推进订单水位；低版本 release/change 不能复活已取消需求。
+2. changed 与 delivery-registered 都是完整快照；只接受高于当前 watermark 的版本。交付数量必须介于零与订单数量之间，有效销售需求取订单数量减已交付数量；交付完的既有行归零并标记 fulfilled，未曾投影的零需求行不创建 DemandSource。数量/交期随新版本更新，快照中缺失或取消的既有行归零并保留取消来源状态。
+3. cancelled 将订单下既有需求行归零并推进订单水位；低版本 release/change/delivery-registered 不能复活已取消需求。
 4. 相同 consumer + idempotency key 只执行一次；合法但低版本的不同事件可以留下 inbox 审计，但不回滚投影。
 5. 合法业务拒绝与 poison message 进入受控 DLQ/诊断路径；数据库或 transport 瞬态失败由消息基础设施重试，handler 不吞掉失败伪造成功。
 6. MRP 只消费有效、正数量的需求投影；pegging/计划建议继续携带稳定 `source_reference`，因此可追溯 ERP 订单而无需复制订单详情。

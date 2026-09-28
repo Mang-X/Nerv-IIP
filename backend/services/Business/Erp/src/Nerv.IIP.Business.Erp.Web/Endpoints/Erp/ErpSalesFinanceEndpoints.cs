@@ -246,12 +246,19 @@ public sealed class ReleaseSalesOrderCreditHoldEndpoint(ISender sender, IErpInte
     }
 }
 
-public sealed class ReleaseDeliveryOrderEndpoint(ISender sender) : ErpEndpoint<ReleaseDeliveryOrderRequest, ResponseData<ReleaseDeliveryOrderResponse>>
+public sealed class ReleaseDeliveryOrderEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<ReleaseDeliveryOrderRequest, ResponseData<ReleaseDeliveryOrderResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ReleaseDeliveryOrderEndpoint>());
 
     public override async Task HandleAsync(ReleaseDeliveryOrderRequest req, CancellationToken ct)
     {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "release-delivery-order",
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SalesOrderNo,
+            req.DeliveryOrderNo,
+            req.IdempotencyKey));
         var id = await sender.Send(new ReleaseDeliveryOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeliveryOrderNo, req.SalesOrderNo, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new ReleaseDeliveryOrderResponse(id).AsResponseData(), cancellation: ct);
     }

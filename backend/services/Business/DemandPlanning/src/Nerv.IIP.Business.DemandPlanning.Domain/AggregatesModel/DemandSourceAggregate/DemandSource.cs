@@ -151,4 +151,18 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
         UpdatedAtUtc = DateTimeOffset.UtcNow;
         return true;
     }
+
+    public bool FulfillFromSalesOrder(int sourceVersion)
+    {
+        if (sourceVersion <= SourceVersion)
+        {
+            return false;
+        }
+
+        Quantity = 0m;
+        SourceVersion = sourceVersion;
+        SourceStatus = "fulfilled";
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+        return true;
+    }
 }
