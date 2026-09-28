@@ -330,6 +330,7 @@ export const TELEMETRY_UNIT_LABELS: Readonly<Record<string, string>> = {
   mpa: '兆帕',
   ph: 'pH 值',
   count: '次',
+  pcs: '件',
   pct: '百分比',
   '%': '百分比',
   mm: '毫米',
@@ -358,6 +359,55 @@ export function formatTelemetryUnit(code?: string | null, fallback = '无'): str
   const name = TELEMETRY_UNIT_LABELS[normalizeUnitCode(code)]
   return name && name !== code ? `${name} (${code})` : code
 }
+
+/**
+ * 采集点位的数据类型（`valueType`，#3870 起后端收成闭集）。两种计数类型让点位参与报工：
+ * 自动报工直接过账，待人工确认生成遥测候选，由现场在 PDA 上确认。
+ */
+export const TELEMETRY_VALUE_TYPE_OPTIONS = [
+  { value: 'number', label: '数值' },
+  { value: 'bool', label: '开关' },
+  { value: 'text', label: '文本' },
+  { value: 'production-count-draft', label: '计数（待人工确认）' },
+  { value: 'production-count-posted', label: '计数（自动报工）' },
+] as const
+
+/** 闭集之前的历史写法（种子数据里的 decimal / string 等）归到闭集里的同义类型。 */
+const TELEMETRY_VALUE_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  decimal: 'number',
+  numeric: 'number',
+  int: 'number',
+  integer: 'number',
+  boolean: 'bool',
+  string: 'text',
+}
+
+/** 把点位上的值类型归到闭集；归不上返回空串（表单里就是「未选」）。 */
+export function normalizeTelemetryValueType(value?: string | null): string {
+  const raw = (value ?? '').trim().toLowerCase()
+  const normalized = TELEMETRY_VALUE_TYPE_ALIASES[raw] ?? raw
+  return TELEMETRY_VALUE_TYPE_OPTIONS.some((option) => option.value === normalized)
+    ? normalized
+    : ''
+}
+
+/** 数据类型说人话；词表外显示「—」，不把后端英文码回吐到界面上。 */
+export function formatTelemetryValueType(value?: string | null): string {
+  const normalized = normalizeTelemetryValueType(value)
+  return TELEMETRY_VALUE_TYPE_OPTIONS.find((option) => option.value === normalized)?.label ?? '—'
+}
+
+export function isProductionCountValueType(value?: string | null): boolean {
+  return normalizeTelemetryValueType(value).startsWith('production-count-')
+}
+
+/** 采集周期候选：必须与连接器里该点位的采集周期一致，否则采样会被拒收。 */
+export const TELEMETRY_SAMPLING_POLICY_OPTIONS = [
+  { value: 'sample-10s', label: '每 10 秒' },
+  { value: 'sample-30s', label: '每 30 秒' },
+  { value: 'sample-60s', label: '每 1 分钟' },
+  { value: 'sample-300s', label: '每 5 分钟' },
+] as const
 
 const DURATION_UNIT_LABELS: Readonly<Record<string, string>> = {
   ms: '毫秒',

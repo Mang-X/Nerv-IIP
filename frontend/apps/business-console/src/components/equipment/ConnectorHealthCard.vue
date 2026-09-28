@@ -177,11 +177,11 @@ const offlineDuration = computed(() => {
         }}</span>
       </div>
       <p class="text-muted-foreground">
-        以下清单来自该连接器上报的配置；标签实时数值可在
+        以下清单来自该连接器上报的配置；点位实时数值可在
         <RouterLink
           to="/equipment/telemetry/tags"
           class="text-brand underline-offset-4 hover:underline"
-          >采集标签</RouterLink
+          >采集点位</RouterLink
         >
         中按设备查看。
       </p>

@@ -21,6 +21,16 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleTelemetryTagListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleCreateOrUpdateTelemetryTagResponse> CreateOrUpdateTagAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryTagRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleDisableTelemetryTagResponse> DisableTagAsync(
+        string internalBearerToken,
+        BusinessConsoleDisableTelemetryTagRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryTagCurrentValueRequest request,
@@ -194,7 +204,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 ("environmentId", request.EnvironmentId),
                 ("deviceAssetId", request.DeviceAssetId),
                 ("skip", request.Skip),
-                ("take", request.Take)),
+                ("take", request.Take),
+                ("includeDisabled", request.IncludeDisabled ? "true" : null)),
             null,
             cancellationToken);
         return new BusinessConsoleTelemetryTagListResponse(page.Items.Select(tag =>
@@ -210,7 +221,37 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 tag.IsWritable,
                 tag.ControlMinValue,
                 tag.ControlMaxValue,
-                tag.ControlAllowedValues ?? [])).ToArray(), page.Total);
+                tag.ControlAllowedValues ?? [],
+                tag.DisplayName,
+                tag.IsEnabled)).ToArray(), page.Total);
+    }
+
+    public async Task<BusinessConsoleCreateOrUpdateTelemetryTagResponse> CreateOrUpdateTagAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryTagRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamTelemetryTagIdResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/iiot/tags",
+            request,
+            cancellationToken);
+        return new BusinessConsoleCreateOrUpdateTelemetryTagResponse(FormatJsonScalar(response.TelemetryTagId));
+    }
+
+    public async Task<BusinessConsoleDisableTelemetryTagResponse> DisableTagAsync(
+        string internalBearerToken,
+        BusinessConsoleDisableTelemetryTagRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamTelemetryTagIdResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/iiot/tags/disable",
+            request,
+            cancellationToken);
+        return new BusinessConsoleDisableTelemetryTagResponse(FormatJsonScalar(response.TelemetryTagId));
     }
 
     public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
@@ -1068,7 +1109,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         bool IsWritable = false,
         decimal? ControlMinValue = null,
         decimal? ControlMaxValue = null,
-        IReadOnlyCollection<string>? ControlAllowedValues = null);
+        IReadOnlyCollection<string>? ControlAllowedValues = null,
+        string? DisplayName = null,
+        bool IsEnabled = true);
+
+    private sealed record DownstreamTelemetryTagIdResponse(JsonElement TelemetryTagId);
 
     private sealed record DownstreamAlarmRuleListItem(
         JsonElement AlarmRuleId,

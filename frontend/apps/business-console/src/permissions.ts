@@ -59,6 +59,7 @@ export const BUSINESS_PERMISSION_CODES = {
   erpFinanceManage: 'business.erp.finance.manage',
   iiotTelemetryRead: 'business.iiot.telemetry.read',
   iiotAlarmRulesManage: 'business.iiot.alarm-rules.manage',
+  iiotTagsManage: 'business.iiot.tags.manage',
   iiotAlarmsRead: 'business.iiot.alarms.read',
   iiotAlarmsWrite: 'business.iiot.alarms.write',
   iiotDeviceControlRead: 'business.iiot.device-control.read',
@@ -145,6 +146,7 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
   equipment: [
     P.iiotTelemetryRead,
     P.iiotAlarmRulesManage,
+    P.iiotTagsManage,
     P.iiotAlarmsRead,
     P.iiotAlarmsWrite,
     P.iiotDeviceControlRead,

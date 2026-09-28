@@ -40,7 +40,9 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', () => ({
+vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => ({
+  formatOeeQuantity: (await importOriginal<typeof import('@/composables/useBusinessTelemetry')>())
+    .formatOeeQuantity,
   useBusinessTelemetryTags: () => ({
     filters: reactive({ deviceAssetId: 'DEV-CNC-01' }),
     tags: computed(() => [
@@ -62,7 +64,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
       {
         itemType: 'sample',
         tagKey: 'spindle.speed',
-        value: '42',
+        value: '1350.000000',
         occurredAtUtc: '2026-07-01T06:00:00Z',
       },
     ]),
@@ -145,8 +147,19 @@ describe('DeviceControlSheet', () => {
     expect(wrapper.text()).toContain('设备控制 · 数控车床 1 号（DEV-CNC-01）')
     expect(wrapper.text()).toContain('值域：0 ~ 100 转/分 (rpm)')
     expect(wrapper.text()).toContain('当前值')
-    expect(wrapper.text()).toContain('55')
+    expect(wrapper.text()).toContain('55 转/分 (rpm)')
     expect(wrapper.text()).not.toContain('暂无读数')
+  })
+
+  it('formats the recent average of a numeric tag with its unit instead of the raw decimal', async () => {
+    const wrapper = mountSheet()
+    wrapper.findComponent(stubs.NvTabs).vm.$emit('update:modelValue', 'parameter-set')
+    await flushPromises()
+    await wrapper.find('select').setValue('spindle.speed')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('近期平均值 1,350 转/分 (rpm)')
+    expect(wrapper.text()).not.toContain('1350.000000')
   })
 
   it('distinguishes current-value loading, read failure and no-sample states', async () => {

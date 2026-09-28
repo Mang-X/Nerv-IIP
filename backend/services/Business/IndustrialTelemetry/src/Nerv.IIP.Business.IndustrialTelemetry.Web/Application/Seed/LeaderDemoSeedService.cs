@@ -57,17 +57,22 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
                 environmentId,
                 DeviceAssetId,
                 tagKey,
-                "decimal",
+                "number",
                 unitCode,
                 "sample-2s"));
             return;
         }
 
-        if (tag.ValueType != "decimal" || tag.UnitCode != unitCode || tag.SamplingPolicy != "sample-2s")
+        // 点位值类型自 #3870 收成闭集，早期种子写的 decimal 与闭集里的 number 同义：在设备详情里改过
+        // 点位名称的演示点位会以 number 回写，这里两者都视为相容，否则下次启动种子会误判冲突。
+        if (!IsNumericValueType(tag.ValueType) || tag.UnitCode != unitCode || tag.SamplingPolicy != "sample-2s")
         {
             throw Collision(tagKey);
         }
     }
+
+    private static bool IsNumericValueType(string valueType) =>
+        valueType is "number" or "decimal";
 
     private static InvalidOperationException Collision(string key) =>
         new($"Reserved leader-demo telemetry fact '{key}' exists with incompatible tenant facts; the seed will not overwrite it.");
