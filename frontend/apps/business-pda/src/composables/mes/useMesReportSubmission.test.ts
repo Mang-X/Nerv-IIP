@@ -24,7 +24,7 @@ function harness(
   const task = ref({
     workOrderId: 'WO-A',
     operationTaskId: 'OP-A',
-    status: 'inProgress' as const,
+    status: 'InProgress' as const,
     allowedActions: ['report'],
   })
   const context = ref({

@@ -235,7 +235,7 @@ describe('operation-tasks 排程已失效 quick filter', () => {
 
     await button.trigger('click')
     expect(button.attributes('aria-pressed')).toBe('true')
-    expect(state.filters.status).toBe('scheduleInvalidated')
+    expect(state.filters.status).toBe('ScheduleInvalidated')
 
     await button.trigger('click')
     expect(button.attributes('aria-pressed')).toBe('false')

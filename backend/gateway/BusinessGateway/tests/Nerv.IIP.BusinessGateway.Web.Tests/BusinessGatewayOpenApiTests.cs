@@ -1650,7 +1650,6 @@ public sealed class BusinessGatewayOpenApiTests
                 "deviceAssetId",
                 "skip",
                 "take");
-            AssertMesStatusQueryEnum(paths, mesListPath);
         }
 
         AssertQueryParameters(
@@ -2334,7 +2333,6 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterName",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesCapacityImpactRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2343,7 +2341,6 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskNo",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesDowntimeEventRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2357,7 +2354,6 @@ public sealed class BusinessGatewayOpenApiTests
             "allowedActions",
             "blockReasons",
             "evaluatedAtUtc");
-        AssertMesStatusEnum(document, "BusinessConsoleMesOperationTaskRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2375,7 +2371,6 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterName",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesDispatchTaskRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2384,7 +2379,6 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskNo",
             "workCenterCode",
             "workCenterName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesWipSummaryRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2395,7 +2389,6 @@ public sealed class BusinessGatewayOpenApiTests
             "isSupplementary",
             "originalMaterialIssueRequestNo",
             "substitutedMaterialId");
-        AssertMesStatusEnum(document, "BusinessConsoleMesMaterialIssueRequestRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2418,7 +2411,6 @@ public sealed class BusinessGatewayOpenApiTests
             "inventoryPostingFailureCode",
             "inventoryPostingFailureMessage",
             "inventoryPostingFailedAtUtc");
-        AssertMesStatusEnum(document, "BusinessConsoleMesReceiptRequestRow", "receiptStatus");
 
         // MAN-445/#799: 工单详情活跃质量保留投影,支撑 hold 区块时间线定位键(sourceService+sourceDocumentId)+强制释放。
         AssertMesDisplayProperties(
@@ -2571,37 +2563,6 @@ public sealed class BusinessGatewayOpenApiTests
                     header.GetProperty("description").GetString());
             }
         }
-    }
-
-    private static void AssertMesStatusEnum(JsonDocument document, string schemaNameSuffix, string propertyName)
-    {
-        var property = FindSchemaBySuffix(document, schemaNameSuffix)
-            .GetProperty("properties")
-            .GetProperty(propertyName);
-
-        Assert.True(
-            property.TryGetProperty("enum", out var inlineEnum)
-            || property.TryGetProperty("$ref", out _)
-            || property.TryGetProperty("oneOf", out _),
-            $"{schemaNameSuffix}.{propertyName} must be an OpenAPI enum, not a free-form string.");
-
-        if (property.TryGetProperty("enum", out inlineEnum))
-        {
-            Assert.Contains(inlineEnum.EnumerateArray(), value => value.GetString() == "ready");
-            Assert.Contains(inlineEnum.EnumerateArray(), value => value.GetString() == "posted");
-        }
-    }
-
-    private static void AssertMesStatusQueryEnum(JsonElement paths, string path)
-    {
-        var statusParameter = FindQueryParameter(paths, path, "get", "status");
-        var schema = statusParameter.GetProperty("schema");
-
-        Assert.True(
-            schema.TryGetProperty("enum", out var values),
-            $"{path} status query parameter must be an OpenAPI enum, not a free-form string.");
-        Assert.Contains(values.EnumerateArray(), value => value.GetString() == "ready");
-        Assert.Contains(values.EnumerateArray(), value => value.GetString() == "posted");
     }
 
     private static void AssertQueryParameterEnum(

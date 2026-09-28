@@ -30,6 +30,7 @@ import {
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
+import { type MesStatusValue } from '@/composables/mes/useMesReferenceLabels'
 
 definePage({
   meta: {
@@ -212,12 +213,12 @@ const commandCards = computed(() => [
  * 根本没进任何一格；`scheduleInvalidated`（排程已失效）同样漏在外面——走查里堵住主链的
  * 533 项正是这一类。少一格就等于让班组长以为"我这摊只有这些活"。
  */
-const MY_SCOPE_TASK_BUCKETS = [
-  { key: 'queued', label: '待开工', meta: '已排程、尚未开工' },
-  { key: 'inProgress', label: '进行中', meta: '已开工、正在做' },
-  { key: 'paused', label: '已暂停', meta: '开工后被挂起，等着恢复' },
-  { key: 'scheduleInvalidated', label: '排程已失效', meta: '排程作废，需重新排产才能开工' },
-] as const
+const MY_SCOPE_TASK_BUCKETS: { key: MesStatusValue; label: string; meta: string }[] = [
+  { key: 'Queued', label: '待开工', meta: '已排程、尚未开工' },
+  { key: 'InProgress', label: '进行中', meta: '已开工、正在做' },
+  { key: 'Paused', label: '已暂停', meta: '开工后被挂起，等着恢复' },
+  { key: 'ScheduleInvalidated', label: '排程已失效', meta: '排程作废，需重新排产才能开工' },
+]
 
 // 一格一次查询：只要服务端算好的 total，不需要行——页大小取 1，别为一个数字拉回 100 行。
 const myScopeQueries = MY_SCOPE_TASK_BUCKETS.map((bucket) => {

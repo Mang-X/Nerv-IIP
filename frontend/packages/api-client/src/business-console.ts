@@ -1138,6 +1138,14 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest,
   ListBusinessConsoleMesWorkOrdersData,
   ListBusinessConsoleMesOperationTasksData,
+  GetBusinessConsoleMesWipSummaryData,
+  ListBusinessConsoleMesDispatchTasksData,
+  ListBusinessConsoleMesMaterialIssueRequestsData,
+  ListBusinessConsoleMesFinishedGoodsReceiptRequestsData,
+  ListBusinessConsoleMesRelatedQualityItemsData,
+  ListBusinessConsoleMesShiftHandoversData,
+  ListBusinessConsoleMesDowntimeEventsData,
+  ListBusinessConsoleMesCapacityImpactsData,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketItem,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsListRequest,
@@ -2256,6 +2264,14 @@ export type BusinessConsoleMesEngineeringChangeDecisionRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest
 export type { ListBusinessConsoleMesWorkOrdersData }
 export type { ListBusinessConsoleMesOperationTasksData }
+export type { GetBusinessConsoleMesWipSummaryData }
+export type { ListBusinessConsoleMesDispatchTasksData }
+export type { ListBusinessConsoleMesMaterialIssueRequestsData }
+export type { ListBusinessConsoleMesFinishedGoodsReceiptRequestsData }
+export type { ListBusinessConsoleMesRelatedQualityItemsData }
+export type { ListBusinessConsoleMesShiftHandoversData }
+export type { ListBusinessConsoleMesDowntimeEventsData }
+export type { ListBusinessConsoleMesCapacityImpactsData }
 export type BusinessConsoleMrpPeggingItem =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrpPeggingItem
 export type BusinessConsoleMrpRunItem =

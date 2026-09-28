@@ -4115,7 +4115,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     priority?: number;
     dueUtc?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
     operationTasks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem>;
     workOrderNo?: string | null;
     skuCode?: string | null;
@@ -4128,7 +4128,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
     operationTaskId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     operationSequence?: number;
     workCenterId?: string;
     alternativeWorkCenterIds?: Array<string>;
@@ -4172,7 +4172,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     operationSequence?: number;
     workCenterId?: string;
     deviceAssetId?: string | null;
@@ -4432,7 +4432,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     requestedQuantity?: number;
     receivedQuantity?: number;
     consumedQuantity?: number;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Requested' | 'PartiallyReceived' | 'ReceiptPosting' | 'Received' | 'Cancelled' | 'ReturnRequested' | 'ReservationExpired';
     wmsRequestId?: string | null;
     requestedAtUtc?: string;
     workOrderNo?: string | null;
@@ -4532,7 +4532,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     workCenterId?: string;
     deviceAssetId?: string | null;
     shiftId?: string | null;
@@ -4619,7 +4619,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string;
     workCenterId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     plannedQuantity?: number;
     goodQuantity?: number;
     scrapQuantity?: number;
@@ -4933,7 +4933,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     qualityItemId?: string;
     sourceType?: string;
     sourceDocumentId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'ReworkPending' | 'ScrapAccepted' | 'ReturnAccepted' | 'DispositionAccepted';
     defectCode?: string | null;
     ncrId?: string | null;
 };
@@ -4954,7 +4954,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skuId?: string;
     quantity?: number;
     unitCost?: number | null;
-    receiptStatus?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    receiptStatus?: 'Requested' | 'PartiallyPosted' | 'Posted' | 'InventoryPostingFailed' | 'Cancelled';
     requestedAtUtc?: string;
     workOrderNo?: string | null;
     skuCode?: string | null;
@@ -5082,7 +5082,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string | null;
     operationTaskId?: string | null;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'Recovered';
     startedAtUtc?: string;
     recoveredAtUtc?: string | null;
     workOrderNo?: string | null;
@@ -5285,7 +5285,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     impactId?: string;
     workCenterId?: string;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'Recovered';
     effectiveFromUtc?: string;
     effectiveToUtc?: string | null;
     reasonCode?: string;
@@ -16049,7 +16049,7 @@ export type ListBusinessConsoleMesProductionPlansData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -16158,7 +16158,7 @@ export type ListBusinessConsoleMesWorkOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -16696,7 +16696,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Requested' | 'PartiallyReceived' | 'ReceiptPosting' | 'Received' | 'Cancelled' | 'ReturnRequested' | 'ReservationExpired';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -16913,7 +16913,7 @@ export type ListBusinessConsoleMesDispatchTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17029,7 +17029,7 @@ export type ListBusinessConsoleMesOperationTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17333,7 +17333,7 @@ export type GetBusinessConsoleMesWipSummaryData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17724,7 +17724,7 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'ReworkPending' | 'ScrapAccepted' | 'ReturnAccepted' | 'DispositionAccepted';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17762,7 +17762,7 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Requested' | 'PartiallyPosted' | 'Posted' | 'InventoryPostingFailed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17866,7 +17866,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Recovered';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -18005,7 +18005,7 @@ export type ListBusinessConsoleMesShiftHandoversData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Accepted';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -18236,7 +18236,7 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Recovered';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;

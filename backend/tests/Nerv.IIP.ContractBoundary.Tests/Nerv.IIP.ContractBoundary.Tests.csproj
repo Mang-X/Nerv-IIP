@@ -30,6 +30,21 @@
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
   </ItemGroup>
 
+  <!--
+    #3912：MES 列表 status 枚举的跨服务守门需要「Gateway 的 OpenAPI 产物」与「MES 域常量」
+    两侧同时在手。docs/architecture/overview/repo-layout.md 规则 11 禁止 **BusinessGateway
+    的任何项目**（含 tests）引用 backend/services/Business 下的 Web/Domain/Infrastructure，
+    所以这条断言不能待在 BusinessGateway.Web.Tests 里 —— 改从导出的 snapshot 读契约。
+
+    读的是导出产物而非重新生成，与 Nerv.IIP.FacadeCoverage.Tests 读同一份 snapshot 的做法一致：
+    契约漂移由 verify-openapi-client-drift.ps1 负责判零，本测试只判「快照里的枚举 = 域真实值域」。
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\frontend\packages\api-client\openapi\business-gateway-console.v1.json">
+      <LogicalName>business-gateway-console.v1.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>

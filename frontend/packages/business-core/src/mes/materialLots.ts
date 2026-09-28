@@ -13,14 +13,14 @@ export interface AvailableMaterialLotFields {
   materialLotId: string
   receivedQuantity: number
   consumedQuantity: number
-  status: 'received'
+  status: 'Received'
 }
 
 export function isAvailableMaterialLot<T extends MaterialLotAvailabilityLike>(
   row: T,
 ): row is T & AvailableMaterialLotFields {
   return (
-    row.status === 'received' &&
+    row.status === 'Received' &&
     typeof row.requestId === 'string' &&
     typeof row.materialId === 'string' &&
     typeof row.materialLotId === 'string' &&
