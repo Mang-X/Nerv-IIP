@@ -190,7 +190,7 @@ public sealed class MesFinishedGoodsReceiptInventoryPostingKeyBoundContractTests
             LotNo: null,
             SerialNo: null,
             QualityStatus: "unrestricted",
-            OwnerType: "production",
+            OwnerType: "company",
             OwnerId: null,
             Quantity: 1m);
 
