@@ -3,6 +3,7 @@ import { NvBottomSheet, NvMobileDropdownMenuItem, NvPullRefresh } from '@nerv-ii
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 
 const push = vi.fn()
 const routeGuardState = vi.hoisted(() => ({
@@ -320,6 +321,22 @@ describe('WMS 复核发货', () => {
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
     expect(wrapper.text()).toContain('出库复核已完成')
+    wrapper.unmount()
+  })
+
+  it('复核已受理、库存仍在过账时进结果态说明正在过账，不报失败（#3926）', async () => {
+    wmsState.completeOutbound.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.outbound-order.complete'),
+    )
+    const wrapper = mount(ReviewPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('出库复核已提交')
+    expect(wrapper.text()).toContain('库存正在过账')
+    expect(wrapper.text()).not.toContain('失败')
     wrapper.unmount()
   })
 

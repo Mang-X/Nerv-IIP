@@ -701,6 +701,10 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
           expectedResourceId: outboundOrderId,
           // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
           readbackScope: commandScope,
+          // 库存过账是异步事件，通常几秒内落定：多等一会儿拿到过账结果（#3926）；
+          // 仍在过账就以「已提交、正在过账」收尾，不报失败。
+          attempts: 20,
+          retryDelayMs: 500,
         })
         return envelope
       })

@@ -20,6 +20,7 @@ import {
   NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -91,6 +92,8 @@ const selectedOrderId = ref('')
 const selectedOrderNo = ref('')
 const sheetOpen = ref(false)
 const completed = ref(false)
+/** 复核已落库、库存仍在异步过账（#3926）：结果页如实说「已提交、正在过账」。 */
+const postingPending = ref(false)
 
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复出库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
@@ -182,8 +185,16 @@ async function confirmComplete() {
     })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
+    postingPending.value = false
     completed.value = true
   } catch (e) {
+    // 复核已被接受、只是库存还在过账：这是中间态不是失败，照样进结果态。
+    if (e instanceof BusinessOperationPendingError) {
+      sheetOpen.value = false
+      postingPending.value = true
+      completed.value = true
+      return
+    }
     if (await lifecycleRecovery.handle(e)) return
     const info = intent.recordFailure(e, '完成出库复核失败')
     submitError.value = intentLocked.value
@@ -195,6 +206,7 @@ async function confirmComplete() {
 function resetFlow() {
   sheetOpen.value = false
   completed.value = false
+  postingPending.value = false
   selectedOrderId.value = ''
   selectedOrderNo.value = ''
   passed.value = true
@@ -224,8 +236,14 @@ function goHome() {
     <NvMobileResult
       v-if="completed"
       status="success"
-      title="出库复核已完成"
-      :description="selectedOrderNo ? `出库单 ${selectedOrderNo}` : undefined"
+      :title="postingPending ? '出库复核已提交' : '出库复核已完成'"
+      :description="
+        postingPending
+          ? `${selectedOrderNo ? `出库单 ${selectedOrderNo}，` : ''}库存正在过账，请稍后在列表查看过账结果。`
+          : selectedOrderNo
+            ? `出库单 ${selectedOrderNo}`
+            : undefined
+      "
     >
       <template #actions>
         <NvMobileButton block size="lg" variant="primary" @click="backToList">

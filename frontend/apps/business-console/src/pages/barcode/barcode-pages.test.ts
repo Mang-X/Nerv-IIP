@@ -898,6 +898,35 @@ describe('barcode pages', () => {
     expect(barcode.scanFilters?.take).toBe(10)
   })
 
+  it('keys a manual scan audit with gateway-safe characters and reuses the key on retry', async () => {
+    // 与 #3922 同类：来源单号原样拼进键，中文或带空格的单号会被网关 400 拒掉。
+    barcode.recordScan.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(undefined)
+    const wrapper = mount(ScansPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('补录扫码审计'))!
+      .trigger('click')
+    await flushPromises()
+    await setInput(wrapper, '#barcode-scan-device', 'PC-01')
+    await setInput(wrapper, '#barcode-scan-value', '(01)06912345678901(10)L2407')
+    await setInput(wrapper, '#barcode-scan-workflow', 'inventory.count')
+    await setInput(wrapper, '#barcode-scan-source-id', '期初盘点 一号仓')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const keys = barcode.recordScan.mock.calls.map(([body]) => body.idempotencyKey)
+    expect(keys).toHaveLength(2)
+    for (const key of keys) expect(key).toMatch(/^[A-Za-z0-9._:/-]+$/)
+    expect(keys[1]).toBe(keys[0])
+  })
+
   it('records a manual scan audit attempt without pretending to be PDA scanning', async () => {
     const wrapper = mount(ScansPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
