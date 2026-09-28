@@ -184,7 +184,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         Assert.Equal(2m, Assert.Single(source.Lines).ReceivedQuantity);
         Assert.Null(Assert.Single(source.Lines).UnitPrice);
         Assert.Null(Assert.Single(source.Lines).EstimatedUnitCost);
-        Assert.Equal(receipt.Id, await Handler(read.ServiceProvider).Handle(command, CancellationToken.None));
+        Assert.Equal(receipt.Id, (await Handler(read.ServiceProvider).Handle(command, CancellationToken.None)).PurchaseReceiptId);
         Assert.Empty(receipt.GetDomainEvents());
         var conflict = await Assert.ThrowsAsync<KnownException>(() => Handler(read.ServiceProvider).Handle(
             command with { InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Wms }, CancellationToken.None));

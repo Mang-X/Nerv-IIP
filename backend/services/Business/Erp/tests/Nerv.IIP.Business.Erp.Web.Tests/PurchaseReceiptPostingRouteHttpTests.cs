@@ -103,7 +103,7 @@ public sealed class PurchaseReceiptPostingRouteHttpTests
             if (request is RecordPurchaseReceiptCommand command)
             {
                 Commands.Add(command);
-                response = new PurchaseReceiptId(Guid.Parse("00000000-0000-0000-0000-000000002120"));
+                response = new RecordPurchaseReceiptResult(new PurchaseReceiptId(Guid.Parse("00000000-0000-0000-0000-000000002120")), "RCV-HTTP");
             }
             else if (request is GetPurchaseReceiptSourceDocumentQuery query)
                 response = new PurchaseReceiptSourceDocumentResponse(query.PurchaseReceiptNo, "recorded", [], Commands.Single().InventoryPostingRoute);
