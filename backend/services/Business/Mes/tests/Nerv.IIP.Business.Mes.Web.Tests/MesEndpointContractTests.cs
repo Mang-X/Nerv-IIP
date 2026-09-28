@@ -1488,7 +1488,8 @@ public sealed class MesEndpointContractTests
         Assert.Equal(10m, wipRow.PlannedQuantity);
         Assert.Equal(8m, wipRow.GoodQuantity);
         Assert.Equal(1m, wipRow.ScrapQuantity);
-        Assert.Equal("Ready", material.ReadinessStatus);
+        Assert.Equal("Blocked", material.ReadinessStatus);
+        Assert.Equal([MaterialReadinessGuards.MissingRequirementSnapshotReason], material.BlockingReasons);
         Assert.Empty(material.Items);
     }
 

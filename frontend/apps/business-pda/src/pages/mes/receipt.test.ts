@@ -62,7 +62,9 @@ const receipts: MockReceipt[] = [
     skuId: 'SKU-B',
     quantity: 50,
     unitCost: 23.45,
-    receiptStatus: 'Received',
+    // 用域里真实存在的码（FinishedGoodsReceiptRequest.PostedStatus），不是 `Received`——
+    // 入库申请的已入库态叫 Posted，`Received` 是完工入库前记的别的东西，从不作为本字段取值（#3898）。
+    receiptStatus: 'Posted',
   },
 ]
 
