@@ -257,7 +257,7 @@ public sealed class MesListStatusContractTests
     /// <b>值域归属穷举</b>：<c>BusinessConsoleMes*</c> 面上每个枚举值域都必须说得出属于谁 ——
     /// 要么等于本票某个聚合的域值域，要么在 <see cref="NonAggregatedDomains"/> 里写明不属于本票的理由。
     ///
-    /// <para>上面 22 条逐条比对只在<b>已登记</b>的位置生效：登记表里没写的地方冒出一个等于本票状态
+    /// <para>上面 21 条逐条比对只在<b>已登记</b>的位置生效：登记表里没写的地方冒出一个等于本票状态
     /// 值域的枚举，逐条比对看不见。这条从值域侧反过来穷举，补上那个缺口。</para>
     ///
     /// <para>扫描跟随 <c>$ref</c> 解析到实际值域，所以藏在 <c>*ResponseDataOf*</c> 包装层、
