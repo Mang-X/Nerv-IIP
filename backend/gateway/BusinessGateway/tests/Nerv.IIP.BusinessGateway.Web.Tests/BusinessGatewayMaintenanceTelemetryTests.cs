@@ -2628,6 +2628,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             skuCode = "SPARE-001",
             quantity = 2m,
             uomCode = "EA",
+            siteCode = "SITE-001",
+            locationCode = "loc-spare-01",
         });
 
         Assert.Equal(HttpStatusCode.OK, inspectionsResponse.StatusCode);
@@ -2640,6 +2642,87 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(new BusinessConsoleMaintenanceListRequest("org-001", "env-dev", 4, 5), maintenance.LastSparePartListRequest);
         Assert.Equal("wo-maint-001", maintenance.LastCreateSparePartRequest.GetProperty("workOrderId").GetString());
         Assert.Equal("SPARE-001", maintenance.LastCreateSparePartRequest.GetProperty("skuCode").GetString());
+        // #3902：领出工厂与库位原样转给维保服务。
+        Assert.Equal("SITE-001", maintenance.LastCreateSparePartRequest.GetProperty("siteCode").GetString());
+        Assert.Equal("loc-spare-01", maintenance.LastCreateSparePartRequest.GetProperty("locationCode").GetString());
+    }
+
+    [Fact]
+    public async Task Maintenance_downtime_reason_write_facades_use_work_order_manage_and_forward_route_code()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var created = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/downtime-reasons", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "DT-HYD",
+            description = "液压系统故障",
+            reasonCategory = "breakdown",
+            lossCategory = "availability",
+        });
+        var updated = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/downtime-reasons/DT-HYD", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            description = "液压系统泄漏",
+            reasonCategory = "breakdown",
+            lossCategory = "availability",
+        });
+        using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, "/api/business-console/v1/maintenance/downtime-reasons/DT-HYD")
+        {
+            Content = JsonContent.Create(new { organizationId = "org-001", environmentId = "env-dev" }),
+        };
+        var deleted = await client.SendAsync(deleteRequest);
+
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        Assert.Equal(3, auth.Requirements.Count);
+        Assert.All(auth.Requirements, x => Assert.Equal(BusinessGatewayPermissions.MaintenanceWorkOrdersManage, x.PermissionCode));
+        Assert.Equal("DT-HYD", maintenance.LastCreateDowntimeReasonRequest?.ReasonCode);
+        Assert.Equal(("DT-HYD", "液压系统泄漏"), (maintenance.LastUpdateDowntimeReasonCode, maintenance.LastUpdateDowntimeReasonRequest?.Description));
+        Assert.Equal(("DT-HYD", "org-001"), (maintenance.LastDeleteDowntimeReasonCode, maintenance.LastDeleteDowntimeReasonRequest?.OrganizationId));
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+    }
+
+    [Theory]
+    [InlineData("mystery", "availability")]
+    [InlineData("breakdown", "equipment-failure")]
+    public async Task Maintenance_downtime_reason_create_rejects_uncontrolled_categories(string reasonCategory, string lossCategory)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/downtime-reasons", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "DT-HYD",
+            description = "液压系统故障",
+            reasonCategory,
+            lossCategory,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(maintenance.LastCreateDowntimeReasonRequest);
     }
 
     [Fact]
@@ -3408,6 +3491,50 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 2m,
                 "EA"),
         ], request.Skip, request.Take, 1));
+    }
+
+    public BusinessConsoleCreateMaintenanceDowntimeReasonRequest? LastCreateDowntimeReasonRequest { get; private set; }
+
+    public string? LastUpdateDowntimeReasonCode { get; private set; }
+
+    public BusinessConsoleUpdateMaintenanceDowntimeReasonRequest? LastUpdateDowntimeReasonRequest { get; private set; }
+
+    public string? LastDeleteDowntimeReasonCode { get; private set; }
+
+    public BusinessConsoleDeleteMaintenanceDowntimeReasonRequest? LastDeleteDowntimeReasonRequest { get; private set; }
+
+    public Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> CreateDowntimeReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateDowntimeReasonRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(request.ReasonCode));
+    }
+
+    public Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> UpdateDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdateDowntimeReasonCode = reasonCode;
+        LastUpdateDowntimeReasonRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode));
+    }
+
+    public Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> DeleteDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeleteDowntimeReasonCode = reasonCode;
+        LastDeleteDowntimeReasonRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode));
     }
 
     public Task<BusinessConsoleCreateMaintenanceSparePartResponse> CreateSparePartAsync(

@@ -210,7 +210,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
                     MaintenanceText.Required(request.Result ?? string.Empty, nameof(request.Result)),
                     reasonCode,
                     request.DowntimeMinutes ?? throw new KnownException("Downtime minutes are required."),
-                    request.SpareParts?.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)).ToArray(),
+                    request.SpareParts?.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode, x.SiteCode, x.LocationCode)).ToArray(),
                     request.ActorPrincipalId,
                     request.ActualLaborMinutes,
                     request.SparePartCostAmount,
@@ -279,7 +279,13 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
                 SkuCode = x.SkuCode.Trim(),
                 Quantity = MaintenanceIdempotencyFingerprints.CanonicalDecimal(x.Quantity),
                 UomCode = x.UomCode?.Trim(),
-            }).OrderBy(x => x.SkuCode, StringComparer.Ordinal).ThenBy(x => x.UomCode, StringComparer.Ordinal).ToArray(),
+                SiteCode = x.SiteCode?.Trim(),
+                LocationCode = x.LocationCode?.Trim(),
+            }).OrderBy(x => x.SkuCode, StringComparer.Ordinal)
+                .ThenBy(x => x.UomCode, StringComparer.Ordinal)
+                .ThenBy(x => x.SiteCode, StringComparer.Ordinal)
+                .ThenBy(x => x.LocationCode, StringComparer.Ordinal)
+                .ToArray(),
         });
 }
 
@@ -349,6 +355,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandValidator : AbstractVal
             RuleFor(x => x.Result).NotEmpty().MaximumLength(1000);
             RuleFor(x => x.DowntimeReasonCode).NotEmpty().MaximumLength(100);
             RuleFor(x => x.DowntimeMinutes).NotNull().GreaterThan(0);
+            RuleForEach(x => x.SpareParts).SetValidator(new MaintenanceSparePartInputValidator());
         });
     }
 }

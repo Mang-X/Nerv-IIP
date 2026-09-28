@@ -11,6 +11,7 @@ import {
   CalendarClockIcon,
   CalendarCogIcon,
   CalendarRangeIcon,
+  CircleSlashIcon,
   CoinsIcon,
   CheckCheckIcon,
   ClipboardCheckIcon,
@@ -863,6 +864,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           icon: PackageSearchIcon,
           to: { path: '/maintenance/spare-parts' },
           requiredPermissions: [P.maintenanceWorkOrdersRead],
+        },
+        {
+          title: '停机原因',
+          icon: CircleSlashIcon,
+          to: { path: '/maintenance/downtime-reasons' },
+          requiredPermissions: [P.maintenanceDowntimeReasonsRead],
         },
         {
           title: '可靠性指标',

@@ -19,7 +19,35 @@ using Nerv.IIP.Contracts.Maintenance;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 
-public sealed record MaintenanceSparePartInput(string SkuCode, decimal Quantity, string? UomCode);
+/// <summary>
+/// 备件领用输入。<c>SiteCode</c>/<c>LocationCode</c> 是领出工厂与已登记库位（#3902），写入口必填：
+/// 出库请求按它们扣减库存，不再使用占位值。
+/// </summary>
+public sealed record MaintenanceSparePartInput(
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
+
+/// <summary>三个备件写入口（完工 v1、生命周期完工、单独登记备件）共用的逐行校验。</summary>
+public sealed class MaintenanceSparePartInputValidator : AbstractValidator<MaintenanceSparePartInput>
+{
+    public MaintenanceSparePartInputValidator()
+    {
+        RuleFor(p => p.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(p => p.Quantity)
+            .GreaterThan(0)
+            .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
+            .WithMessage("Spare part quantity must fit numeric(18,6).");
+        // The spare part's unit drives the inventory issue posting; it must come from the part's
+        // master data. Reject the write instead of letting the integration event converter guess.
+        RuleFor(p => p.UomCode).NotEmpty().MaximumLength(50);
+        // 领出工厂与库位决定从哪条库存台账扣减；缺了就拒绝写入，不让出库请求带占位值（#3902）。
+        RuleFor(p => p.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(p => p.LocationCode).NotEmpty().MaximumLength(100);
+    }
+}
 
 public sealed record MaintenanceInspectionMeasurementInput(
     string CharacteristicCode,
@@ -524,17 +552,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValid
         RuleFor(x => x.CostCurrencyCode).MaximumLength(10);
         RuleFor(x => x.ActualTechnicianUserId).MaximumLength(150);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
-        RuleForEach(x => x.SpareParts).ChildRules(x =>
-        {
-            x.RuleFor(p => p.SkuCode).NotEmpty().MaximumLength(100);
-            x.RuleFor(p => p.Quantity)
-                .GreaterThan(0)
-                .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
-                .WithMessage("Spare part quantity must fit numeric(18,6).");
-            // The spare part's unit drives the inventory issue posting; it must come from the part's
-            // master data. Reject the write instead of letting the integration event converter guess.
-            x.RuleFor(p => p.UomCode).NotEmpty().MaximumLength(50);
-        });
+        RuleForEach(x => x.SpareParts).SetValidator(new MaintenanceSparePartInputValidator());
     }
 }
 
@@ -589,7 +607,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             request.Result,
             downtimeReasonCode,
             request.DowntimeMinutes,
-            request.SpareParts.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)),
+            request.SpareParts.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode, x.SiteCode, x.LocationCode)),
             request.ActualLaborMinutes,
             request.SparePartCostAmount,
             request.ExternalServiceCostAmount,
@@ -708,9 +726,13 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
                     SkuCode = x.SkuCode.Trim().ToUpperInvariant(),
                     Quantity = MaintenanceIdempotencyFingerprints.CanonicalDecimal(x.Quantity),
                     UomCode = x.UomCode?.Trim().ToUpperInvariant(),
+                    SiteCode = MaintenanceText.Optional(x.SiteCode),
+                    LocationCode = MaintenanceText.Optional(x.LocationCode),
                 })
                 .OrderBy(x => x.SkuCode, StringComparer.Ordinal)
                 .ThenBy(x => x.UomCode, StringComparer.Ordinal)
+                .ThenBy(x => x.SiteCode, StringComparer.Ordinal)
+                .ThenBy(x => x.LocationCode, StringComparer.Ordinal)
                 .ThenBy(x => x.Quantity)
                 .ToArray(),
         });
@@ -1002,7 +1024,9 @@ public sealed record CreateMaintenanceSparePartCommand(
     MaintenanceWorkOrderId WorkOrderId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode) : ICommand<SparePartLineId>;
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null) : ICommand<SparePartLineId>;
 
 public sealed class CreateMaintenanceSparePartCommandValidator : AbstractValidator<CreateMaintenanceSparePartCommand>
 {
@@ -1015,6 +1039,9 @@ public sealed class CreateMaintenanceSparePartCommandValidator : AbstractValidat
         RuleFor(x => x.Quantity).GreaterThan(0);
         // Same rule as the completion path: no unit, no inventory issue — do not fabricate one downstream.
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        // 同完工路径：领出工厂与库位必填（#3902）。
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -1036,7 +1063,12 @@ public sealed class CreateMaintenanceSparePartCommandHandler(ApplicationDbContex
             throw new KnownException("Completed maintenance work orders are immutable.");
         }
 
-        var sparePart = workOrder.AddSparePartLine(new SparePartLineDraft(request.SkuCode, request.Quantity, request.UomCode));
+        var sparePart = workOrder.AddSparePartLine(new SparePartLineDraft(
+            request.SkuCode,
+            request.Quantity,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode));
         return sparePart.Id;
     }
 }

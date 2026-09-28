@@ -6315,6 +6315,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skuCode?: string;
     quantity?: number;
     uomCode?: string | null;
+    siteCode?: string | null;
+    locationCode?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceWorkOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6612,6 +6614,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skuCode?: string;
     quantity?: number;
     uomCode?: string | null;
+    siteCode?: string | null;
+    locationCode?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceSparePartResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6629,6 +6633,38 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     skuCode: string;
     quantity?: number;
     uomCode?: string | null;
+    siteCode?: string | null;
+    locationCode?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceDowntimeReasonMutationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceDowntimeReasonMutationResponse = {
+    reasonCode?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceDowntimeReasonRequest = {
+    organizationId: string;
+    environmentId: string;
+    reasonCode: string;
+    description: string;
+    reasonCategory?: string;
+    lossCategory?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenanceDowntimeReasonRequest = {
+    organizationId: string;
+    environmentId: string;
+    description: string;
+    reasonCategory?: string;
+    lossCategory?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeleteMaintenanceDowntimeReasonRequest = {
+    organizationId: string;
+    environmentId: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAssetReliabilityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -20631,6 +20667,109 @@ export type CreateBusinessConsoleMaintenanceSparePartResponses = {
 };
 
 export type CreateBusinessConsoleMaintenanceSparePartResponse = CreateBusinessConsoleMaintenanceSparePartResponses[keyof CreateBusinessConsoleMaintenanceSparePartResponses];
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceDowntimeReasonRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/maintenance/downtime-reasons';
+};
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonError = CreateBusinessConsoleMaintenanceDowntimeReasonErrors[keyof CreateBusinessConsoleMaintenanceDowntimeReasonErrors];
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse;
+};
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonResponse = CreateBusinessConsoleMaintenanceDowntimeReasonResponses[keyof CreateBusinessConsoleMaintenanceDowntimeReasonResponses];
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeleteMaintenanceDowntimeReasonRequest;
+    path: {
+        reasonCode: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/maintenance/downtime-reasons/{reasonCode}';
+};
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonError = DeleteBusinessConsoleMaintenanceDowntimeReasonErrors[keyof DeleteBusinessConsoleMaintenanceDowntimeReasonErrors];
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse;
+};
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonResponse = DeleteBusinessConsoleMaintenanceDowntimeReasonResponses[keyof DeleteBusinessConsoleMaintenanceDowntimeReasonResponses];
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenanceDowntimeReasonRequest;
+    path: {
+        reasonCode: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/maintenance/downtime-reasons/{reasonCode}';
+};
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonError = UpdateBusinessConsoleMaintenanceDowntimeReasonErrors[keyof UpdateBusinessConsoleMaintenanceDowntimeReasonErrors];
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse;
+};
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonResponse = UpdateBusinessConsoleMaintenanceDowntimeReasonResponses[keyof UpdateBusinessConsoleMaintenanceDowntimeReasonResponses];
 
 export type QueryBusinessConsoleMaintenanceAssetReliabilityData = {
     body?: never;

@@ -1269,6 +1269,130 @@ public sealed class CreateBusinessConsoleMaintenanceSparePartEndpoint(
         maintenance.CreateSparePartAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+// 停机原因目录维护（#3855）：读走可搜索目录 downtime-reason；写沿用维修工单管理权限（编排裁定，不新建权限码）。
+[Tags("Business Console Maintenance")]
+[HttpPost("/api/business-console/v1/maintenance/downtime-reasons")]
+[BusinessGatewayOperationId("createBusinessConsoleMaintenanceDowntimeReason")]
+public sealed class CreateBusinessConsoleMaintenanceDowntimeReasonEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMaintenanceDowntimeReasonRequest, BusinessConsoleMaintenanceDowntimeReasonMutationResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateMaintenanceDowntimeReasonRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateMaintenanceDowntimeReasonRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleCreateMaintenanceDowntimeReasonRequest request) => "maintenance-downtime-reason";
+
+    protected override string? ResourceId(BusinessConsoleCreateMaintenanceDowntimeReasonRequest request) => request.ReasonCode;
+
+    protected override Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> ForwardAsync(
+        BusinessConsoleCreateMaintenanceDowntimeReasonRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        maintenance.CreateDowntimeReasonAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Maintenance")]
+[HttpPut("/api/business-console/v1/maintenance/downtime-reasons/{reasonCode}")]
+[BusinessGatewayOperationId("updateBusinessConsoleMaintenanceDowntimeReason")]
+public sealed class UpdateBusinessConsoleMaintenanceDowntimeReasonEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUpdateMaintenanceDowntimeReasonRequest, BusinessConsoleMaintenanceDowntimeReasonMutationResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+{
+    protected override string OrganizationId(BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request) => "maintenance-downtime-reason";
+
+    protected override string? ResourceId(BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request) => Route<string>("reasonCode");
+
+    protected override Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> ForwardAsync(
+        BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        maintenance.UpdateDowntimeReasonAsync(tokenProvider.BearerToken, Route<string>("reasonCode")!, request, cancellationToken);
+}
+
+[Tags("Business Console Maintenance")]
+[HttpDelete("/api/business-console/v1/maintenance/downtime-reasons/{reasonCode}")]
+[BusinessGatewayOperationId("deleteBusinessConsoleMaintenanceDowntimeReason")]
+public sealed class DeleteBusinessConsoleMaintenanceDowntimeReasonEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleDeleteMaintenanceDowntimeReasonRequest, BusinessConsoleMaintenanceDowntimeReasonMutationResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersManage)
+{
+    protected override string OrganizationId(BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request) => "maintenance-downtime-reason";
+
+    protected override string? ResourceId(BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request) => Route<string>("reasonCode");
+
+    protected override Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> ForwardAsync(
+        BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        maintenance.DeleteDowntimeReasonAsync(tokenProvider.BearerToken, Route<string>("reasonCode")!, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleCreateMaintenanceDowntimeReasonRequestValidator
+    : Validator<BusinessConsoleCreateMaintenanceDowntimeReasonRequest>
+{
+    public BusinessConsoleCreateMaintenanceDowntimeReasonRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ReasonCategory)
+            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.ReasonCategories.Contains)
+            .WithMessage("reasonCategory is not a supported downtime reason category");
+        RuleFor(x => x.LossCategory)
+            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.LossCategories.Contains)
+            .WithMessage("lossCategory is not a supported OEE loss category");
+    }
+}
+
+public sealed class BusinessConsoleUpdateMaintenanceDowntimeReasonRequestValidator
+    : Validator<BusinessConsoleUpdateMaintenanceDowntimeReasonRequest>
+{
+    public BusinessConsoleUpdateMaintenanceDowntimeReasonRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ReasonCategory)
+            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.ReasonCategories.Contains)
+            .WithMessage("reasonCategory is not a supported downtime reason category");
+        RuleFor(x => x.LossCategory)
+            .Must(BusinessConsoleMaintenanceDowntimeReasonCategories.LossCategories.Contains)
+            .WithMessage("lossCategory is not a supported OEE loss category");
+    }
+}
+
+public sealed class BusinessConsoleDeleteMaintenanceDowntimeReasonRequestValidator
+    : Validator<BusinessConsoleDeleteMaintenanceDowntimeReasonRequest>
+{
+    public BusinessConsoleDeleteMaintenanceDowntimeReasonRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
 [Tags("Business Console Maintenance")]
 [HttpGet("/api/business-console/v1/maintenance/assets/{deviceAssetId}/reliability")]
 [BusinessGatewayOperationId("queryBusinessConsoleMaintenanceAssetReliability")]

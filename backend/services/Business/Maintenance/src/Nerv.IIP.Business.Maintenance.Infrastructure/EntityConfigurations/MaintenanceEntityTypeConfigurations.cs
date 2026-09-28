@@ -115,6 +115,8 @@ public sealed class SparePartLineEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Referenced spare part SKU code.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Required spare part quantity.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Optional spare part unit of measure code.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("Inventory site the spare part is issued from; null only on lines recorded before issue locations were captured.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").HasMaxLength(100).HasComment("Registered inventory location the spare part is issued from; null only on lines recorded before issue locations were captured.");
     }
 }
 

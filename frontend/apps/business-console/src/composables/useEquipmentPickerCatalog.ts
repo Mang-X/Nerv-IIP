@@ -130,6 +130,36 @@ export function useEquipmentDeviceCatalog() {
 }
 
 /**
+ * 设备所在工厂（#3902）：维修工单归属设备所在工厂，备件从该工厂已登记的库位领出。
+ * 维保侧的设备标识可能是设备编号，也可能是主数据设备 ID，两种都能查到；查不到返回空串，
+ * 由调用方提示「设备未登记所属工厂」，不猜一个工厂。
+ */
+export function useDeviceSiteLookup() {
+  const deviceCatalog = useBusinessMasterDataResources('device-asset')
+  deviceCatalog.filters.take = CATALOG_TAKE
+  const siteCatalog = useBusinessMasterDataResources('site')
+  const siteByDevice = computed(() => {
+    const map = new Map<string, string>()
+    for (const row of deviceCatalog.resources.value) {
+      const site = row.siteCode?.trim()
+      if (!site) continue
+      if (row.code) map.set(row.code, site)
+      if (row.deviceAssetId) map.set(row.deviceAssetId, site)
+    }
+    return map
+  })
+  return {
+    deviceSiteCode: (deviceAssetId?: string | null) =>
+      deviceAssetId ? (siteByDevice.value.get(deviceAssetId.trim()) ?? '') : '',
+    siteLabel: (siteCode: string) => {
+      const site = siteCatalog.resources.value.find((row) => row.code === siteCode)
+      return site?.displayName?.trim() || siteCode
+    },
+    devicesPending: deviceCatalog.resourcesPending,
+  }
+}
+
+/**
  * 采集标签目录，**跟随已选设备联动**：传入设备编号就只列该设备已配置的采集标签，
  * 没选设备时列全部标签（换设备时目录自动重取，不会把上一台设备的测点留在选项里）。
  *
@@ -270,6 +300,10 @@ export function useMaintenanceDocumentCatalog() {
   const workOrderCatalog = useMaintenanceWorkOrders({ take: DOCUMENT_CATALOG_TAKE })
 
   return {
+    /** 工单 ID → 设备标识：选了工单就能推出设备所在工厂。 */
+    workOrderDeviceId: (workOrderId?: string | null) =>
+      workOrderCatalog.workOrders.value.find((row) => row.workOrderId === workOrderId)
+        ?.deviceAssetId ?? '',
     planOptions: computed<EntityPickerOption[]>(() =>
       planCatalog.plans.value.flatMap((row) =>
         toOption(

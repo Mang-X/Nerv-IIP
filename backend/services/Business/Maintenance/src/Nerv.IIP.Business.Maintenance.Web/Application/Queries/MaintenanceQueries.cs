@@ -556,7 +556,9 @@ public sealed record MaintenanceSparePartListItem(
     string DeviceAssetId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceSparePartsQuery, PagedMaintenanceListResponse<MaintenanceSparePartListItem>>
@@ -586,7 +588,9 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
                 x.workOrder.DeviceAssetId,
                 x.sparePart.SkuCode,
                 x.sparePart.Quantity,
-                x.sparePart.UomCode))
+                x.sparePart.UomCode,
+                x.sparePart.SiteCode,
+                x.sparePart.LocationCode))
             .ToArrayAsync(cancellationToken);
         return new PagedMaintenanceListResponse<MaintenanceSparePartListItem>(items, skip, take, total);
     }

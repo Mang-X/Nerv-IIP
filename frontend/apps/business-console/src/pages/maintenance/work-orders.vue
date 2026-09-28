@@ -17,6 +17,7 @@ import {
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
 import {
+  useDeviceSiteLookup,
   useEquipmentAlarmCatalog,
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
@@ -29,6 +30,7 @@ import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import { CURRENCY_OPTIONS } from '@/data/currencyReference'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import DowntimeReasonFormSheet from '@/components/maintenance/DowntimeReasonFormSheet.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   inlineErrorMessage,
@@ -127,6 +129,8 @@ const deviceNameByCode = computed(() => {
   }
   return map
 })
+// 设备所在工厂：维修工单归属设备所在工厂，备件从该工厂已登记的库位领出（#3902）。
+const { deviceSiteCode, siteLabel } = useDeviceSiteLookup()
 /** 设备展示串：名称优先，台账查不到就只显编号，不编名字。 */
 function deviceLabel(code?: string | null, fallback = '—') {
   if (!code) return fallback
@@ -167,11 +171,6 @@ const resultOptions = [
   { label: '已修复', value: 'repaired' },
   { label: '已更换部件', value: 'replaced' },
   { label: '已校准', value: 'calibrated' },
-]
-const reasonOptions = [
-  { label: '预防性保养', value: 'preventive' },
-  { label: '部件磨损', value: 'worn-part' },
-  { label: '突发故障', value: 'breakdown' },
 ]
 // 指派技师 / 实际技师均走 master-data 复用件 WorkerSelect（服务端检索工人目录，绑 userId）。
 // 建单写 assignedTechnicianUserId、完工写 actualTechnicianUserId（#897 已补契约）。
@@ -222,14 +221,45 @@ const {
   message: directoryMessage,
   total: reasonsTotal,
 } = downtimeReasons
+// 完工登记的停机原因与建单同一份权威目录（#3855）。以前是写死的三个码，目录里根本没有，
+// 服务端按目录硬校验，完工一律失败。单独一个实例：两个抽屉的检索词互不串。
+const completeReasons = useMaintenanceDowntimeReasonDirectory(filters)
+const {
+  keyword: completeReasonKeyword,
+  options: completeReasonOptions,
+  state: completeReasonState,
+  message: completeReasonMessage,
+  total: completeReasonsTotal,
+} = completeReasons
 watch(
   () => [filters.organizationId, filters.environmentId],
   () => {
     createForm.assetUnavailableReasonCode = ''
     reasonKeyword.value = ''
+    completeReasonKeyword.value = ''
   },
   { flush: 'sync' },
 )
+
+// 停机原因就地新增：目录里没有要用的原因时不离开当前抽屉，建好后自动选中（#3855）。
+const reasonFormSession = shallowRef(0)
+const reasonFormOpen = shallowRef(false)
+let reasonFormTarget: 'create' | 'complete' = 'create'
+function openReasonCreate(target: 'create' | 'complete') {
+  reasonFormTarget = target
+  reasonFormSession.value += 1
+  reasonFormOpen.value = true
+}
+const knownReasonCodes = computed(() => [
+  ...new Set([
+    ...downtimeReasons.reasons.value.map((row) => row.reasonCode),
+    ...completeReasons.reasons.value.map((row) => row.reasonCode),
+  ]),
+])
+function onReasonSaved(reasonCode: string) {
+  if (reasonFormTarget === 'create') createForm.assetUnavailableReasonCode = reasonCode
+  else completeForm.downtimeReasonCode = reasonCode
+}
 
 interface SparePartRow {
   id: number
@@ -237,18 +267,28 @@ interface SparePartRow {
   quantity: string
   uomCode: string
   unitCost: string
+  /** 领出库位：设备所在工厂下已登记的库位（#3902）。 */
+  locationCode: string
 }
 let nextSpareRowId = 1
 function createSpareRow(): SparePartRow {
   // 单位留空：选完物料自动带出它的基本单位；主档没维护就由操作员选，不预填假单位。
-  return { id: nextSpareRowId++, skuCode: '', quantity: '1', uomCode: '', unitCost: '' }
+  return {
+    id: nextSpareRowId++,
+    skuCode: '',
+    quantity: '1',
+    uomCode: '',
+    unitCost: '',
+    locationCode: '',
+  }
 }
 
 const completeOpen = shallowRef(false)
 const completeTarget = shallowRef<BusinessConsoleMaintenanceWorkOrderItem>()
 const completeForm = reactive({
   result: 'repaired',
-  downtimeReasonCode: 'preventive',
+  // 停机原因从目录里选，不预填：预填码一旦不在目录里，完工就会被拒。
+  downtimeReasonCode: '',
   downtimeMinutes: '30',
   actualLaborMinutes: '',
   externalServiceCostAmount: '',
@@ -312,8 +352,14 @@ const completeCarriedItems = computed(() => {
         : undefined,
     },
     { label: '开单时间', value: omitPlaceholder(formatDateTime(target.openedAtUtc)) },
+    {
+      label: '备件领出工厂',
+      value: completeSiteCode.value ? siteLabel(completeSiteCode.value) : '设备未登记所属工厂',
+    },
   ]
 })
+/** 完工工单的设备所在工厂：备件的领出库位只在这个工厂里选。 */
+const completeSiteCode = computed(() => deviceSiteCode(completeTarget.value?.deviceAssetId))
 
 type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
 // 没有可用操作的角色不渲染「操作」列，免得只剩表头、整列空白。
@@ -454,7 +500,8 @@ async function submitCreate() {
 function openComplete(row: WorkOrderRow) {
   completeTarget.value = row
   completeForm.result = 'repaired'
-  completeForm.downtimeReasonCode = 'preventive'
+  completeForm.downtimeReasonCode = ''
+  completeReasonKeyword.value = ''
   completeForm.downtimeMinutes = '30'
   completeForm.actualLaborMinutes = ''
   completeForm.externalServiceCostAmount = ''
@@ -491,6 +538,10 @@ function spareOutOfBounds(row: SparePartRow) {
 async function submitComplete() {
   const target = completeTarget.value
   if (!target?.workOrderId) return
+  if (!completeForm.downtimeReasonCode) {
+    completeError.value = completeReasonMessage.value || '请选择停机原因。'
+    return
+  }
   const minutes = Number(completeForm.downtimeMinutes)
   if (!(minutes >= 0)) {
     completeError.value = '停机时长需为非负数。'
@@ -536,10 +587,23 @@ async function submitComplete() {
     completeError.value = '备件单位缺失，请为每条备件选择计量单位。'
     return
   }
+  // 备件从设备所在工厂的已登记库位领出，库存按工厂 + 库位扣减（#3902）。
+  const siteCode = completeSiteCode.value
+  if (!siteCode) {
+    completeError.value =
+      '该设备未登记所属工厂，无法确定备件从哪里领出，请先在设备台账维护所属工厂。'
+    return
+  }
+  if (filledSpares.some((row) => !row.locationCode.trim())) {
+    completeError.value = '请为每条备件选择领出库位。'
+    return
+  }
   const spareParts: BusinessConsoleMaintenanceSparePartInput[] = filledSpares.map((row) => ({
     skuCode: row.skuCode.trim(),
     quantity: Number(row.quantity),
     uomCode: row.uomCode.trim(),
+    siteCode,
+    locationCode: row.locationCode.trim(),
   }))
   try {
     await completeWorkOrder(target.workOrderId, {
@@ -840,13 +904,25 @@ watch(
               <NvFieldDescription v-if="directoryMessage" role="status">
                 {{ directoryMessage }}；也可选择“不登记设备不可用”继续建单。
               </NvFieldDescription>
-              <NvButton
-                v-if="directoryState === 'failed'"
-                type="button"
-                variant="outline"
-                @click="downtimeReasons.refresh()"
-                >重试读取停机原因</NvButton
-              >
+              <div class="flex flex-wrap gap-2">
+                <NvButton
+                  v-if="directoryState === 'failed'"
+                  type="button"
+                  variant="outline"
+                  @click="downtimeReasons.refresh()"
+                  >重试读取停机原因</NvButton
+                >
+                <NvButton
+                  v-if="canManageWorkOrders"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  @click="openReasonCreate('create')"
+                >
+                  <PlusIcon aria-hidden="true" />
+                  新增停机原因
+                </NvButton>
+              </div>
             </NvField>
           </NvFieldGroup>
 
@@ -888,12 +964,29 @@ watch(
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-reason">停机原因</NvFieldLabel>
-              <NvSearchSelect
+              <NvEntityPicker
                 id="mwo-reason"
                 v-model="completeForm.downtimeReasonCode"
-                :options="reasonOptions"
+                v-model:search="completeReasonKeyword"
+                title="停机原因"
+                :options="completeReasonOptions"
+                :server-search="true"
+                :total-count="completeReasonsTotal"
+                :loading="completeReasonState === 'loading'"
+                :empty-text="completeReasonMessage"
+                placeholder="请选择停机原因"
                 aria-label="停机原因"
               />
+              <NvButton
+                v-if="canManageWorkOrders"
+                type="button"
+                variant="link"
+                size="sm"
+                class="h-auto justify-start px-0"
+                @click="openReasonCreate('complete')"
+              >
+                没有合适的原因？新增停机原因
+              </NvButton>
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-minutes">停机时长（分钟）</NvFieldLabel>
@@ -1009,6 +1102,20 @@ watch(
               >
                 <Trash2Icon aria-hidden="true" />
               </NvButton>
+              <!-- 领出库位：只列设备所在工厂下已登记的库位，库存按工厂 + 库位扣减（#3902）。 -->
+              <NvField class="sm:col-span-full">
+                <NvFieldLabel :for="`spare-location-${row.id}`">领出库位</NvFieldLabel>
+                <DirectoryPicker
+                  :id="`spare-location-${row.id}`"
+                  v-model="row.locationCode"
+                  directory-type="location"
+                  creatable
+                  :form-site-code="completeSiteCode"
+                  site-missing-text="设备未登记所属工厂，请先在设备台账维护所属工厂"
+                  placeholder="选择领出库位"
+                  aria-label="领出库位"
+                />
+              </NvField>
             </div>
           </div>
 
@@ -1060,5 +1167,12 @@ watch(
         </form>
       </NvSheetContent>
     </NvSheet>
+    <DowntimeReasonFormSheet
+      v-if="reasonFormSession"
+      :key="reasonFormSession"
+      v-model:open="reasonFormOpen"
+      :existing-codes="knownReasonCodes"
+      @saved="onReasonSaved"
+    />
   </BusinessLayout>
 </template>

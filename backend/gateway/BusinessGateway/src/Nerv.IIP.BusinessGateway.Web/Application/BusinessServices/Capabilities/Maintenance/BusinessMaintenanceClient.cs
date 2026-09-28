@@ -13,6 +13,26 @@ public interface IBusinessMaintenanceClient
         CancellationToken cancellationToken) =>
         throw new NotSupportedException("Maintenance reason directory client is not configured.");
 
+    Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> CreateDowntimeReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Maintenance downtime reason client is not configured.");
+
+    Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> UpdateDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Maintenance downtime reason client is not configured.");
+
+    Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> DeleteDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Maintenance downtime reason client is not configured.");
+
     Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
@@ -173,6 +193,60 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             response.Skip,
             response.Take,
             response.Total);
+    }
+
+    public async Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> CreateDowntimeReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<JsonElement>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/downtime-reasons",
+            request,
+            cancellationToken);
+        return new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(request.ReasonCode.Trim());
+    }
+
+    public async Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> UpdateDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<JsonElement>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/maintenance/downtime-reasons/{Uri.EscapeDataString(reasonCode)}",
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                ReasonCode = reasonCode,
+                request.Description,
+                request.ReasonCategory,
+                request.LossCategory,
+            },
+            cancellationToken);
+        return new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode);
+    }
+
+    public async Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> DeleteDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<JsonElement>(
+            internalBearerToken,
+            HttpMethod.Delete,
+            $"/api/business/v1/maintenance/downtime-reasons/{Uri.EscapeDataString(reasonCode)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode);
     }
 
     public async Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
@@ -819,7 +893,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 sparePart.DeviceAssetId,
                 sparePart.SkuCode,
                 sparePart.Quantity,
-                sparePart.UomCode)).ToArray(),
+                sparePart.UomCode,
+                sparePart.SiteCode,
+                sparePart.LocationCode)).ToArray(),
             spareParts.Skip,
             spareParts.Take,
             spareParts.Total);
@@ -1095,7 +1171,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string DeviceAssetId,
         string SkuCode,
         decimal Quantity,
-        string? UomCode);
+        string? UomCode,
+        string? SiteCode = null,
+        string? LocationCode = null);
 
     private sealed record DownstreamCreateMaintenanceWorkOrderResponse(
         JsonElement WorkOrderId,

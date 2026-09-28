@@ -103,6 +103,18 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
 vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
   useMaintenanceDowntimeReasonDirectory: () => ({
     keyword: shallowRef(''),
+    reasons: computed(() =>
+      state.directory.state === 'ok'
+        ? [
+            {
+              reasonCode: 'Line-A.Spindle',
+              description: '主轴检修',
+              reasonCategory: 'breakdown',
+              lossCategory: 'availability',
+            },
+          ]
+        : [],
+    ),
     options: computed(() =>
       state.directory.state === 'ok' ? [{ value: 'Line-A.Spindle', label: '主轴检修' }] : [],
     ),
@@ -182,6 +194,12 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
       { value: 'CEL', label: '摄氏度' },
     ]),
     uomsPending: shallowRef(false),
+  }),
+  // 设备所在工厂：DEV-1 登记在 SITE-001，其余设备没有所属工厂。
+  useDeviceSiteLookup: () => ({
+    deviceSiteCode: (device?: string | null) => (device === 'DEV-1' ? 'SITE-001' : ''),
+    siteLabel: (code: string) => (code === 'SITE-001' ? '一号工厂' : code),
+    devicesPending: shallowRef(false),
   }),
   useMaintenanceDocumentCatalog: () => ({
     planOptions: computed(() => [{ value: 'plan-1', label: 'PM-SMT-01-M' }]),
@@ -286,6 +304,29 @@ beforeEach(() => {
     },
   })
 })
+
+/** 完工抽屉的必填项：停机原因从目录选、每条备件选领出库位（#3855 / #3902）。 */
+async function fillCompleteReasonAndLocation(locationCode = 'loc-spare-01') {
+  const reason = document.body.querySelector<HTMLInputElement>('#mwo-reason')!
+  reason.value = 'Line-A.Spindle'
+  reason.dispatchEvent(new Event('input', { bubbles: true }))
+  for (const location of document.body.querySelectorAll<HTMLInputElement>(
+    '[id^="spare-location-"]',
+  )) {
+    location.value = locationCode
+    location.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  await flushPromises()
+}
+
+async function openCompleteSheet() {
+  document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+  await flushPromises()
+  ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    .find((el) => el.textContent?.includes('完成工单'))!
+    .click()
+  await flushPromises()
+}
 
 /** 表头里有没有「操作」这一列。 */
 function hasActionsColumn() {
@@ -569,6 +610,7 @@ describe('maintenance work orders page', () => {
     costInput.value = '-1'
     costInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
+    await fillCompleteReasonAndLocation()
 
     const form = costInput.closest('form')!
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -613,6 +655,7 @@ describe('maintenance work orders page', () => {
     spareSku.value = 'BRG-6205'
     spareSku.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
+    await fillCompleteReasonAndLocation()
 
     const form = spareSku.closest('form')!
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -664,6 +707,7 @@ describe('maintenance work orders page', () => {
     ])
     await flushPromises()
     expect(spareUom.value).toBe('kg')
+    await fillCompleteReasonAndLocation()
 
     spareSku
       .closest('form')!
@@ -673,6 +717,120 @@ describe('maintenance work orders page', () => {
     expect(body).toMatchObject({
       spareParts: [expect.objectContaining({ skuCode: 'SKU-NEW', uomCode: 'kg' })],
     })
+  })
+
+  // #3855：完工停机原因来自权威目录，不再预填目录里根本不存在的写死码。
+  it('完工停机原因从目录选择，不预填；未选原因不提交', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-reason',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openCompleteSheet()
+
+    const reason = document.body.querySelector<HTMLInputElement>('#mwo-reason')!
+    expect(reason.value).toBe('')
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'BRG-6205'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.completeWorkOrder).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请选择停机原因')
+
+    await fillCompleteReasonAndLocation()
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    const [, body] = state.completeWorkOrder.mock.calls.at(-1)!
+    expect(body.downtimeReasonCode).toBe('Line-A.Spindle')
+  })
+
+  // #3902：备件从设备所在工厂的已登记库位领出，出库请求带上工厂与库位。
+  it('完工换件行带出设备所在工厂，并要求每条备件选择领出库位', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-location',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openCompleteSheet()
+
+    expect(document.body.textContent).toContain('一号工厂')
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'BRG-6205'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    const reason = document.body.querySelector<HTMLInputElement>('#mwo-reason')!
+    reason.value = 'Line-A.Spindle'
+    reason.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const form = spareSku.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(state.completeWorkOrder).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请为每条备件选择领出库位')
+
+    await fillCompleteReasonAndLocation('loc-spare-01')
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    const [, body] = state.completeWorkOrder.mock.calls.at(-1)!
+    expect(body).toMatchObject({
+      spareParts: [
+        expect.objectContaining({
+          skuCode: 'BRG-6205',
+          siteCode: 'SITE-001',
+          locationCode: 'loc-spare-01',
+        }),
+      ],
+    })
+  })
+
+  it('设备没有所属工厂时如实提示，不猜工厂也不提交', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-no-site',
+        deviceAssetId: 'DEV-NO-SITE',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openCompleteSheet()
+
+    expect(document.body.textContent).toContain('设备未登记所属工厂')
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'BRG-6205'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    await fillCompleteReasonAndLocation()
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.completeWorkOrder).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('该设备未登记所属工厂')
   })
 })
 

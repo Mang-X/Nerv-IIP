@@ -116,6 +116,7 @@ try
         MaintenanceFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
+    builder.Services.AddScoped<DowntimeReasonBaselineSeedService>();
     builder.Services.AddScoped<MaintenanceSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
@@ -145,6 +146,18 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 停机原因产品基线 seed（#3855）：默认开启、只补缺，显式 false 可关闭；目标租户读 IAM 引导种子的
+    // 同一组键（与 Inventory 产品基线同一姿势）。Testing 宿主默认不跑：它没有真实数据库，需要的用例显式打开。
+    var baselineSeedEnabled = builder.Configuration.GetValue("Maintenance:Seed:Enabled", !isTesting);
+    if (baselineSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var written = await scope.ServiceProvider.GetRequiredService<DowntimeReasonBaselineSeedService>().SeedAsync(
+            builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
+        app.Logger.LogInformation("Maintenance product seed completed: {DowntimeReasons} missing downtime reasons added.", written);
     }
 
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");

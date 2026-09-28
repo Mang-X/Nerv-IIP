@@ -8,6 +8,13 @@ import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 import { hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
 import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
+export interface MaintenanceDowntimeReasonRow {
+  reasonCode: string
+  description: string
+  reasonCategory: string
+  lossCategory: string
+}
+
 /** Console 建单使用的 Maintenance 权威目录，码值原样进入 v2 请求。 */
 export function useMaintenanceDowntimeReasonDirectory(scope: BusinessContextFields) {
   const keyword = ref('')
@@ -40,6 +47,23 @@ export function useMaintenanceDowntimeReasonDirectory(scope: BusinessContextFiel
     if (response.value.success !== true) return 'failed'
     return response.value.data?.items?.length ? 'ok' : 'empty'
   })
+  /** 目录行（维护页用）：原因码、描述、分类与损失类别。 */
+  const reasons = computed<MaintenanceDowntimeReasonRow[]>(() =>
+    state.value === 'ok'
+      ? (response.value?.data?.items ?? []).flatMap((item) =>
+          item.code
+            ? [
+                {
+                  reasonCode: item.code,
+                  description: item.displayName || item.code,
+                  reasonCategory: item.context?.reasonCategory ?? '',
+                  lossCategory: item.context?.lossCategory ?? '',
+                },
+              ]
+            : [],
+        )
+      : [],
+  )
   const options = computed(() =>
     state.value === 'ok'
       ? (response.value?.data?.items ?? []).flatMap((item) =>
@@ -67,6 +91,7 @@ export function useMaintenanceDowntimeReasonDirectory(scope: BusinessContextFiel
   })
   return {
     keyword,
+    reasons,
     options,
     state,
     message,

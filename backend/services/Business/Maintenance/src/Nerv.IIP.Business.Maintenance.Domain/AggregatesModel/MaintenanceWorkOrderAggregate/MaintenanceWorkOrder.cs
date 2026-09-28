@@ -49,7 +49,16 @@ public static class MaintenanceWorkOrderSourceActors
     public const string Inspection = "maintenanceInspection";
 }
 
-public sealed record SparePartLineDraft(string SkuCode, decimal Quantity, string? UomCode = null);
+/// <summary>
+/// 备件领用行草稿。<c>SiteCode</c>/<c>LocationCode</c> 是备件的领出工厂与库位（#3902）：写入口必填，
+/// 出库请求按它们扣减库存；聚合对历史行保持宽松（旧行没有领出库位）。
+/// </summary>
+public sealed record SparePartLineDraft(
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggregateRoot
 {
@@ -609,11 +618,15 @@ public sealed class SparePartLine : Entity<SparePartLineId>
         SkuCode = MaintenanceText.Required(draft.SkuCode, nameof(draft.SkuCode));
         Quantity = MaintenanceText.Positive(draft.Quantity, nameof(draft.Quantity));
         UomCode = MaintenanceText.Optional(draft.UomCode);
+        SiteCode = MaintenanceText.Optional(draft.SiteCode);
+        LocationCode = MaintenanceText.Optional(draft.LocationCode);
     }
 
     public string SkuCode { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
     public string? UomCode { get; private set; }
+    public string? SiteCode { get; private set; }
+    public string? LocationCode { get; private set; }
 
     public static SparePartLine Create(SparePartLineDraft draft)
     {
