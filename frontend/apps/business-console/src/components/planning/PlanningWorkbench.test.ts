@@ -51,6 +51,8 @@ const planningSpies = vi.hoisted(() => ({
   // 需求池刷新后"某类需求整类消失"要能在用例里复现 → 把 demands 的 ref 交出来供测试改写。
   demandsRef: null as { value: Array<Record<string, unknown>> } | null,
   mpsBucketsRef: null as { value: Array<Record<string, unknown>> } | null,
+  mrpRunsRef: null as { value: Array<Record<string, unknown>> } | null,
+  suggestionsRef: null as { value: Array<Record<string, unknown>> } | null,
   resetDemands: () => {},
   runMrp: vi.fn(async () => undefined),
   toastError: vi.fn(),
@@ -134,7 +136,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       demands: demandsRef,
       demandsError: shallowRef(null),
       demandsPending: shallowRef(false),
-      mrpRuns: shallowRef([
+      mrpRuns: (planningSpies.mrpRunsRef = shallowRef([
         {
           runId: 'run-001',
           horizonStart: '2026-06-01',
@@ -146,7 +148,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
           hasInputDegradation: false,
           inputDegradationSources: [],
         },
-      ]),
+      ])),
       mrpRunsError: shallowRef(null),
       mrpRunsPending: shallowRef(false),
       mpsBuckets: (planningSpies.mpsBucketsRef = shallowRef([])),
@@ -203,7 +205,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
         status: 'open',
       }),
       suggestionTypeFilter: reactive({ type: 'all' }),
-      suggestions: shallowRef([
+      suggestions: (planningSpies.suggestionsRef = shallowRef([
         {
           suggestionId: 'suggestion-001',
           runId: 'run-001',
@@ -292,7 +294,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
           downstreamDocumentType: 'work-order',
           downstreamDocumentId: 'WO-2026-0007',
         },
-      ]),
+      ])),
       suggestionsError: shallowRef(null),
       suggestionsPending: shallowRef(false),
     }),
@@ -441,6 +443,142 @@ describe('PlanningWorkbench', () => {
     planningSpies.activeMrpRun.failureReason = ''
     planningSpies.activeMrpRun.suggestionCount = null
     planningSpies.resetDemands()
+  })
+
+  it('建议页默认按运行顺序显示最近完成批次，切换历史后显示作废与继任关系', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-running',
+        status: 'Running',
+        horizonStart: '2026-05-01',
+        horizonEnd: '2026-05-31',
+      },
+      {
+        runId: 'run-new',
+        status: 'Completed',
+        horizonStart: '2026-04-01',
+        horizonEnd: '2026-04-30',
+      },
+      {
+        runId: 'run-old',
+        status: 'Completed',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'new-1',
+        runId: 'run-new',
+        suggestionType: 'planned-work-order',
+        skuCode: 'SKU-NEW',
+        status: 'Open',
+      },
+      {
+        suggestionId: 'old-1',
+        runId: 'run-old',
+        suggestionType: 'planned-work-order',
+        skuCode: 'SKU-OLD',
+        status: 'Superseded',
+        supersededByRunId: 'run-new',
+      },
+      {
+        suggestionId: 'old-2',
+        runId: 'run-old',
+        suggestionType: 'planned-purchase',
+        skuCode: 'SKU-ACCEPTED',
+        status: 'Accepted',
+      },
+      {
+        suggestionId: 'old-3',
+        runId: 'run-old',
+        suggestionType: 'planned-purchase',
+        skuCode: 'SKU-REJECTED',
+        status: 'Rejected',
+      },
+    ]
+    await nextTick()
+
+    expect(wrapper.get('[data-select-value="run-new"]').text()).toContain('2026-04-01')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).toContain('SKU-NEW')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).not.toContain('SKU-OLD')
+
+    await wrapper.get('[data-select-value="run-old"]').trigger('click')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).toContain('SKU-OLD')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).not.toContain('SKU-NEW')
+    expect(wrapper.text()).toContain('已被替代')
+    expect(wrapper.text()).toContain('2026-04-01')
+    const supersededRow = wrapper
+      .findAll('.cell-skuCode')
+      .find((cell) => cell.text().includes('SKU-OLD'))!.element.parentElement!
+    const supersededActions = supersededRow.querySelector('.cell-actions')!
+    expect(supersededActions.textContent).not.toContain('接受')
+    expect(supersededActions.textContent).not.toContain('拒绝')
+    expect(supersededActions.querySelectorAll('button')).toHaveLength(0)
+    expect(wrapper.text()).toContain('SKU-ACCEPTED')
+    expect(wrapper.text()).toContain('SKU-REJECTED')
+  })
+
+  it('建议先于运行列表刷新时不显示错误的继任运行标签', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'old-1',
+        runId: 'run-001',
+        suggestionType: 'planned-work-order',
+        skuCode: 'SKU-OLD',
+        status: 'Superseded',
+        supersededByRunId: 'run-new',
+      },
+    ]
+    await nextTick()
+
+    const row = wrapper.findAll('.cell-skuCode').find((cell) => cell.text().includes('SKU-OLD'))!
+      .element.parentElement!
+    expect(row.querySelector('.cell-status')?.textContent).toContain('后续 MRP 运行')
+    expect(row.querySelector('.cell-status')?.textContent).not.toContain('选择一次运行')
+
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-new',
+        status: 'Completed',
+        horizonStart: '2026-07-01',
+        horizonEnd: '2026-07-31',
+      },
+      {
+        runId: 'run-001',
+        status: 'Completed',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      },
+    ]
+    await nextTick()
+    await wrapper.get('[data-select-value="run-001"]').trigger('click')
+    const refreshedRow = wrapper
+      .findAll('.cell-skuCode')
+      .find((cell) => cell.text().includes('SKU-OLD'))!.element.parentElement!
+    expect(refreshedRow.querySelector('.cell-status')?.textContent).toContain('2026-07-01')
   })
 
   it('MPS 评审人 / 发布人显示员工姓名，名录里查不到的账号显示「—」', async () => {
