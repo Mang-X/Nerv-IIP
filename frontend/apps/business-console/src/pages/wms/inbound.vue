@@ -6,7 +6,7 @@ import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vu
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
-import { wmsStatusTone } from '@/data/businessLabels'
+import { WMS_LINE_OWNER_TYPE_OPTIONS, wmsStatusTone } from '@/data/businessLabels'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import {
@@ -151,12 +151,7 @@ const QUALITY_OPTIONS = WMS_RECEIVING_QUALITY_OPTIONS
 const DEFAULT_RECEIVING_QUALITY_STATUS = WMS_RECEIVING_QUALITY_OPTIONS.find(
   (option) => option.label === '可用',
 )!.value
-const OWNER_OPTIONS = [
-  { label: '自有', value: 'owned' },
-  { label: '客户', value: 'customer' },
-  { label: '供应商', value: 'supplier' },
-  { label: '寄售', value: 'consignment' },
-]
+const OWNER_OPTIONS = WMS_LINE_OWNER_TYPE_OPTIONS
 interface InboundLine {
   skuCode: string
   uomCode: string
@@ -755,7 +750,7 @@ function formatDateTime(value?: string | null) {
                 </NvSelectContent>
               </NvSelect>
               <NvSelect v-model="line.ownerType">
-                <NvSelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"
+                <NvSelectTrigger class="h-9 w-44" :aria-label="`第 ${index + 1} 行货主类型`"
                   ><NvSelectValue
                 /></NvSelectTrigger>
                 <NvSelectContent>

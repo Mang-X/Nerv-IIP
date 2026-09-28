@@ -150,7 +150,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                 LotNo: source.PendingLotNo,
                 SerialNo: null,
                 QualityStatus: InventoryQualityStatuses.Unrestricted,
-                OwnerType: "production",
+                OwnerType: "company",
                 OwnerId: null,
                 Quantity: ReceiptQuantity,
                 RequestedAtUtc: requestedAtUtc,
@@ -589,7 +589,7 @@ public sealed partial class MesInventoryProducedLotPostgresRedisAcceptanceTests
                   AND lot_no = @lot_no
                   AND serial_no IS NULL
                   AND quality_status = 'unrestricted'
-                  AND owner_type = 'production'
+                  AND owner_type = 'company'
                   AND owner_id IS NULL;
                 """;
             ledger.Parameters.AddWithValue("organization_id", source.OrganizationId);

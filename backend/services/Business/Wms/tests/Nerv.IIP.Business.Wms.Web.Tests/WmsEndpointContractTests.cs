@@ -1085,7 +1085,7 @@ public sealed class WmsEndpointContractTests
             "erp-delivery-order",
             "DO-FAILED-001",
             "finished-goods",
-            [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "production", null)],
+            [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "company", null)],
             assignedPoolCode: "POOL-TEST");
         var movementRequest = Assert.Single(outbound.CompletePackReview(
             "PACK-001",
@@ -1121,7 +1121,7 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("receiving", line.LocationCode);
         Assert.Equal("LOT-001", line.LotNo);
         Assert.Equal("unrestricted", line.QualityStatus);
-        Assert.Equal("production", line.OwnerType);
+        Assert.Equal("company", line.OwnerType);
         Assert.Null(line.OwnerId);
         Assert.Equal("failed", line.InventoryPostingStatus);
         Assert.Equal("NEGATIVE_ON_HAND", line.FailureCode);

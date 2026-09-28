@@ -38,7 +38,8 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
         Assert.Equal("LOC-A-01", line.PickLocationCode);
         Assert.Equal("LOT-001", line.LotNo);
         Assert.Equal("unrestricted", line.QualityStatus);
-        Assert.Equal("production", line.OwnerType);
+        // 发货按法律所有权预留本公司库存，与采购收货、完工入库同一口径（#3930）。
+        Assert.Equal("company", line.OwnerType);
         Assert.Null(line.OwnerId);
     }
 

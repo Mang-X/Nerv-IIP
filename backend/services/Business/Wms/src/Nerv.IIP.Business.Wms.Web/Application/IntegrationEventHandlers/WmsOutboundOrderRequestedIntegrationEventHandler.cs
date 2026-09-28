@@ -14,7 +14,9 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
 {
     public const string ConsumerName = "business-wms.outbound-order-requested";
     private const string ErpFinishedGoodsQualityStatus = WmsReceivingQualityStatuses.Unrestricted;
-    private const string ErpFinishedGoodsOwnerType = "production";
+    // 库存归属只按法律所有权区分（#3930）：可售库存无论来自采购收货还是完工入库都记在本公司名下，
+    // 发货必须按同一口径预留；客供料/寄售由 customer/supplier 单独表达，不从 ERP 发货链路进来。
+    private const string ErpDeliveryOwnerType = "company";
 
     private readonly IntegrationEventConsumerGuard<WmsOutboundOrderRequestedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -72,10 +74,10 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
                     x.LocationCode,
                     x.LotNo,
                     null,
-                    // ERP delivery currently ships the same released finished-goods bucket created by MES receipt.
+                    // ERP delivery currently ships the released (unrestricted) bucket.
                     // A future quality allocation policy must carry that dimension explicitly instead of falling back.
                     ErpFinishedGoodsQualityStatus,
-                    ErpFinishedGoodsOwnerType,
+                    ErpDeliveryOwnerType,
                     null)).ToArray()),
             cancellationToken);
     }

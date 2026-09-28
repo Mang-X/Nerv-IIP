@@ -320,6 +320,9 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(
             InventoryMovementUnitCostAuthorityReferences.MesFinishedGoodsReceipt,
             integrationEvent.Payload.UnitCostAuthorityReference);
+        // 自制成品记在本公司名下（#3930），ERP 发货与 MES 半成品领用都按 company 取货。
+        Assert.Equal("company", integrationEvent.Payload.OwnerType);
+        Assert.Null(integrationEvent.Payload.OwnerId);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
     }
 

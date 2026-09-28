@@ -121,6 +121,17 @@ export const STOCK_OWNER_TYPE_LABELS: Readonly<Record<string, string>> = {
   subcontractor: '外协方',
 }
 
+/**
+ * WMS 入库单、出库单行上可选的货主类型。取值必须是 Inventory `StockOwnerType.Normalize`
+ * 接受的值（规范值或别名），否则过账会被拒成「库存归属类型无效」（#3930）。
+ * 库存归属只按法律所有权区分：寄售不另设取值，客户寄售/客供料用 `customer`，供应商寄售用 `supplier`。
+ */
+export const WMS_LINE_OWNER_TYPE_OPTIONS: ReadonlyArray<{ label: string; value: string }> = [
+  { label: '本公司', value: 'owned' },
+  { label: '客户寄售/客供料', value: 'customer' },
+  { label: '供应商寄售', value: 'supplier' },
+]
+
 // 不合格品处置方式**不在这里**：受控值与显示函数都在
 // `@/composables/useQualityPickerCatalog` 的 QUALITY_DISPOSITION_OPTIONS /
 // qualityDispositionLabel，那份还会把词表外的历史自由文本显式标成「未知处置：xxx」。
