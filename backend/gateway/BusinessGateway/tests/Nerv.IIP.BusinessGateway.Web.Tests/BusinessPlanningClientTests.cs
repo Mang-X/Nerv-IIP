@@ -58,6 +58,29 @@ public sealed class BusinessPlanningClientTests
     }
 
     [Fact]
+    public async Task List_suggestions_preserves_superseded_status_and_successor_run()
+    {
+        const string successorRunId = "2ee1a0a9-861c-4a3a-b580-133756a92711";
+        var client = PlanningClient(new StubHandler($$"""
+            {"data":[
+              {"suggestionId":"old","mrpRunId":"11111111-1111-1111-1111-111111111111","status":4,"supersededByRunId":"{{successorRunId}}"},
+              {"suggestionId":"current","mrpRunId":"{{successorRunId}}","status":0,"supersededByRunId":null},
+              {"suggestionId":"accepted","mrpRunId":"{{successorRunId}}","status":1,"supersededByRunId":null}
+            ]}
+            """));
+
+        var response = await client.ListSuggestionsAsync(
+            "internal-token",
+            new BusinessConsolePlanningSuggestionListRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Collection(response.Items,
+            item => { Assert.Equal("Superseded", item.Status); Assert.Equal(successorRunId, item.SupersededByRunId); },
+            item => { Assert.Equal("Open", item.Status); Assert.Null(item.SupersededByRunId); },
+            item => { Assert.Equal("Accepted", item.Status); Assert.Null(item.SupersededByRunId); });
+    }
+
+    [Fact]
     public async Task Mps_review_and_release_forward_the_gateway_supplied_actor_to_demand_planning()
     {
         const string trustedActor = "trusted-client-actor-77";

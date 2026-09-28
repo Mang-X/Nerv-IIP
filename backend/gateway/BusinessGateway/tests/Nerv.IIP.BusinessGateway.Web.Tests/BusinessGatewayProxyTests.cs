@@ -7124,6 +7124,43 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_suggestions_expose_supersession_to_business_console()
+    {
+        const string successorRunId = "2ee1a0a9-861c-4a3a-b580-133756a92711";
+        var planning = new RecordingPlanningClient
+        {
+            SuggestionsResponse = new BusinessConsolePlanningSuggestionListResponse([
+                new BusinessConsolePlanningSuggestionItem(
+                    "old", "old-run", "planned-purchase", "SKU-001", "pcs", "SITE-01", 4m,
+                    new DateOnly(2026, 6, 1), "Superseded", "component-net-requirement",
+                    SupersededByRunId: successorRunId),
+                new BusinessConsolePlanningSuggestionItem(
+                    "current", successorRunId, "planned-purchase", "SKU-001", "pcs", "SITE-01", 4m,
+                    new DateOnly(2026, 6, 1), "Open", "component-net-requirement"),
+            ]),
+        };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = document.RootElement.GetProperty("data").GetProperty("items");
+        Assert.Equal("Superseded", items[0].GetProperty("status").GetString());
+        Assert.Equal(successorRunId, items[0].GetProperty("supersededByRunId").GetString());
+        Assert.Equal("Open", items[1].GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("supersededByRunId").ValueKind);
+    }
+
+    [Fact]
     public async Task Planning_forecast_facade_uses_internal_service_token_for_downstream_business_service()
     {
         var planning = new RecordingPlanningClient();

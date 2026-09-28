@@ -427,7 +427,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
                     x.NetRequirementExplanation.DegradationSources ?? []),
             x.AcceptedDownstreamService,
             x.AcceptedDownstreamDocumentType,
-            x.AcceptedDownstreamDocumentId)).ToArray());
+            x.AcceptedDownstreamDocumentId,
+            x.SupersededByRunId)).ToArray());
     }
 
     public Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(
@@ -516,6 +517,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             1 => "Accepted",
             2 => "Rejected",
             3 => "Closed",
+            4 => "Superseded",
             _ => status.ToString(CultureInfo.InvariantCulture),
         };
 
@@ -573,7 +575,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         string? AcceptedDownstreamService,
         string? AcceptedDownstreamDocumentType,
         string? AcceptedDownstreamDocumentId,
-        DownstreamNetRequirementExplanation? NetRequirementExplanation);
+        DownstreamNetRequirementExplanation? NetRequirementExplanation,
+        string? SupersededByRunId);
 
     private sealed record DownstreamNetRequirementExplanation(
         decimal GrossDemandQuantity,
