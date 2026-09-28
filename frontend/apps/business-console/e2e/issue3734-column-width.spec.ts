@@ -170,8 +170,10 @@ async function routeBusinessConsoleApi(route: Route) {
               quantity: 5,
               unitCost: 1280,
               // 取 api-client 生成类型 receiptStatus 联合类型里的真值（页面按它查标签表）：
-              // `posted` 才是「已入库」（`completed` 属工单状态域，入库语境不查这张表）。
-              receiptStatus: 'posted',
+              // `Posted` 才是「已入库」（`completed` 属工单状态域，入库语境不查这张表）。
+              // #3912：契约收敛到 FinishedGoodsReceiptRequest 的真实值域后运行时是 PascalCase；
+              // 旧 fixture 写的小写 `posted` 之所以还能过，是因为词表有一层大小写归一化把它吸收了。
+              receiptStatus: 'Posted',
               requestedAtUtc: '2026-09-22T10:31:00.000Z',
             },
           ],
