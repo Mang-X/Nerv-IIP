@@ -49,7 +49,9 @@ public sealed class MesMaterialIssueRequestedConsumerTests
         Assert.Equal("MAT-OIL", line.SkuCode);
         Assert.Equal("L", line.UomCode);
         Assert.Equal(7m, line.RequestedQuantity);
-        Assert.Equal("WO-001", line.OwnerId);
+        // 领料拣的是本公司库存；工单不是货主（#3930）。
+        Assert.Equal("company", line.OwnerType);
+        Assert.Null(line.OwnerId);
 
         var task = await assertionContext.WarehouseTasks.SingleAsync(CancellationToken.None);
         Assert.Equal(WarehouseTaskType.Picking, task.TaskType);
@@ -180,7 +182,7 @@ public sealed class MesMaterialIssueRequestedConsumerTests
             WmsSourceDocumentTypes.MesMaterialIssueRequest,
             "MIR-001",
             "SITE-001",
-            [new OutboundOrderLineDraft("1", "MAT-OIL", "L", 7m, "WH-WB-RM-01", null, null, "unrestricted", "production", "WO-001")]);
+            [new OutboundOrderLineDraft("1", "MAT-OIL", "L", 7m, "WH-WB-RM-01", null, null, "unrestricted", "company", null)]);
         var preparedAtUtc = DateTimeOffset.Parse("2026-06-15T07:50:00Z");
         order.AnnounceMaterialIssuePrepared("MIR-001", "MI-MIR-001-P1", preparedAtUtc);
 
@@ -207,7 +209,7 @@ public sealed class MesMaterialIssueRequestedConsumerTests
             WmsSourceDocumentTypes.MesMaterialIssueRequest,
             "MIR-001",
             "SITE-001",
-            [new OutboundOrderLineDraft("1", "MAT-OIL", "L", 7m, "WH-WB-RM-01", null, null, "unrestricted", "production", "WO-001")]);
+            [new OutboundOrderLineDraft("1", "MAT-OIL", "L", 7m, "WH-WB-RM-01", null, null, "unrestricted", "company", null)]);
 
         Assert.Throws<InvalidOperationException>(
             () => order.AnnounceMaterialIssuePrepared("MIR-999", null, DateTimeOffset.UtcNow));

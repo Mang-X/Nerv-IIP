@@ -251,7 +251,7 @@ Schema 演进说明（发布、降级与恢复操作统一见 [`../../runbooks/d
 
 ## BusinessMES 数据库 Schema
 
-`source_allocations_json` 的每项同时可冻结 `OwnerType`/`OwnerId`；旧四字段 JSON 缺少货权时仍读取为 `production/null`，不从当前库存推断或改写为公司货权。`production_report_material_consumptions.owner_type`（最长 50，默认 `production`）与可空 `owner_id`（最长 100）保存耗料货权，冲销复制原耗料身份；`material_issue_request_no` 保留供料单关联，退料可读取该单的来源快照。当前正常领料、耗料与 movement 路径仍维持既有 `production/null` 行为，公司料选择与过账激活另行交付。新增列的 migration 不搬移 Inventory 账、不改写旧来源 JSON；开始保存显式货权后应前滚修复，执行 `Down` 会丢失耗料货权快照。
+`source_allocations_json` 的每项同时可冻结 `OwnerType`/`OwnerId`；旧四字段 JSON 缺少货权时仍读取为 `production/null`，不从当前库存推断或改写为公司货权。`production_report_material_consumptions.owner_type`（最长 50，默认 `production`）与可空 `owner_id`（最长 100）保存耗料货权，冲销复制原耗料身份；`material_issue_request_no` 保留供料单关联，退料可读取该单的来源快照。当前正常领料、线边接收、退料与耗料沿用来源分配冻结的货权（来源解析只取 `company/null` 库存）；完工入库按 `company/null` 入账（#3930），库存归属只按法律所有权区分，`production` 仅为旧数据兜底值。新增列的 migration 不搬移 Inventory 账、不改写旧来源 JSON；开始保存显式货权后应前滚修复，执行 `Down` 会丢失耗料货权快照。
 
 数据库 Schema：`mes`
 

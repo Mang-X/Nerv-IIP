@@ -232,7 +232,7 @@ public sealed class MesInventoryProducedLotPostgresRedisAcceptanceTestTransportC
                 "LOT-typed-cap-envelope",
                 null,
                 InventoryQualityStatuses.Unrestricted,
-                "production",
+                "company",
                 null,
                 1m,
                 DateTimeOffset.UnixEpoch,

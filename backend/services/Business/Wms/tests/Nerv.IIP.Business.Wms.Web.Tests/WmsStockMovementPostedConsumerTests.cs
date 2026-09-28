@@ -58,7 +58,7 @@ public sealed class WmsStockMovementPostedConsumerTests
                     "LOT-001",
                     null,
                     "unrestricted",
-                    "production",
+                    "company",
                     null),
             ]);
         outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
@@ -113,7 +113,7 @@ public sealed class WmsStockMovementPostedConsumerTests
                         "LOT-001",
                         null,
                         "unrestricted",
-                        "production",
+                        "company",
                         null),
                     new OutboundOrderLineDraft(
                         "SO-LINE-002",
@@ -124,7 +124,7 @@ public sealed class WmsStockMovementPostedConsumerTests
                         "LOT-002",
                         null,
                         "unrestricted",
-                        "production",
+                        "company",
                         null),
                 ]);
             outbound.CreatePickingTask("TASK-OUT-001", "SO-LINE-001", "receiving", "PACK-01", 4m);
@@ -338,7 +338,7 @@ public sealed class WmsStockMovementPostedConsumerTests
                 "LOT-001",
                 null,
                 "unrestricted",
-                "production",
+                "company",
                 null,
                 -4m,
                 DateTimeOffset.UtcNow,
