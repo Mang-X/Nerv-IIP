@@ -199,7 +199,8 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         if (statusCode == HttpStatusCode.Unauthorized)
         {
             var failureCode = ReadSingleHeader(response, GatewayAuthResponseHeaders.LoginFailure);
-            if (failureCode is "iam-account-locked" or "iam-invalid-credentials")
+            // iam-no-membership：IAM 只在密码校验通过后才发，表示账号没有分配到任何组织或角色。
+            if (failureCode is "iam-account-locked" or "iam-invalid-credentials" or "iam-no-membership")
             {
                 var lockoutUntilUtc = failureCode == "iam-account-locked"
                     ? ReadUtcTimestampHeader(response, GatewayAuthResponseHeaders.LockoutUntilUtc)

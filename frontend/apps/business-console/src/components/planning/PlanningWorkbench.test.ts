@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -50,6 +50,7 @@ const routerPush = vi.hoisted(() => vi.fn())
 const planningSpies = vi.hoisted(() => ({
   // 需求池刷新后"某类需求整类消失"要能在用例里复现 → 把 demands 的 ref 交出来供测试改写。
   demandsRef: null as { value: Array<Record<string, unknown>> } | null,
+  mpsBucketsRef: null as { value: Array<Record<string, unknown>> } | null,
   resetDemands: () => {},
   runMrp: vi.fn(async () => undefined),
   toastError: vi.fn(),
@@ -148,7 +149,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       ]),
       mrpRunsError: shallowRef(null),
       mrpRunsPending: shallowRef(false),
-      mpsBuckets: shallowRef([]),
+      mpsBuckets: (planningSpies.mpsBucketsRef = shallowRef([])),
       mpsBucketsError: shallowRef(null),
       mpsBucketsPending: shallowRef(false),
       mpsForm: reactive({
@@ -301,7 +302,14 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
 vi.mock('@/composables/useBusinessMasterData', async () => {
   const { shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   return {
-    useBusinessMasterDataResources: () => ({ resources: shallowRef([]) }),
+    useBusinessMasterDataResources: (resourceType: string) => ({
+      filters: {},
+      resources: shallowRef(
+        resourceType === 'worker'
+          ? [{ userId: 'user-emp-zhangwei', code: 'EMP-0001', displayName: '张伟' }]
+          : [],
+      ),
+    }),
     useBusinessSkus: () => ({ skus: shallowRef([]) }),
   }
 })
@@ -433,6 +441,27 @@ describe('PlanningWorkbench', () => {
     planningSpies.activeMrpRun.failureReason = ''
     planningSpies.activeMrpRun.suggestionCount = null
     planningSpies.resetDemands()
+  })
+
+  it('MPS 评审人 / 发布人显示员工姓名，名录里查不到的账号显示「—」', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mpsBucketsRef!.value = [
+      {
+        mpsId: 'mps-001',
+        skuCode: 'SKU-FG-1000',
+        uomCode: 'pcs',
+        quantity: 10,
+        status: 'Released',
+        reviewedBy: 'user-emp-zhangwei',
+        releasedBy: 'user-admin',
+      },
+    ]
+    await flushPromises()
+
+    const text = wrapper.find('.cell-reviewRelease').text()
+    expect(text).toContain('评审 张伟')
+    expect(text).toContain('发布 —')
+    expect(text).not.toContain('user-')
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {

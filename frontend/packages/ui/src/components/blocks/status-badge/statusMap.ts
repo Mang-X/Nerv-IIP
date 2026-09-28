@@ -58,6 +58,8 @@ const STATUS_LABELS: Record<string, string> = {
   passed: '通过',
   paused: '暂停',
   pending: '待处理',
+  // 采购订单 / 采购订单变更的「待审批」（ERP PurchaseOrderStatus.PendingApproval）。
+  pendingapproval: '待审批',
   pendingconfirmation: '待确认',
   planned: '已计划',
   posted: '已过账',
@@ -146,6 +148,7 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'partiallyposted',
     'paused',
     'pending',
+    'pendingapproval',
     'pendingconfirmation',
     'planned',
     'quality',

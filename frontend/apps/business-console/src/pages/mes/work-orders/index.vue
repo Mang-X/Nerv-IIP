@@ -188,7 +188,8 @@ const workCenterOptions = computed(() => toResourceOptions(workCenterResources.v
 
 // ── 急单表单的四个选择器 ────────────────────────────────────────
 // 物料 ▸ 生产版本 从属，工作中心 ▸ 工序任务 从属：上游变了清空下游。
-const { productionVersionOptions, productionVersionsPending } = useMesMaterialVersionCatalog()
+const { productionVersionLabel, productionVersionOptions, productionVersionsPending } =
+  useMesMaterialVersionCatalog()
 const { operationTasks, operationTasksPending, refreshOperationTasks } = useMesOperationTasks()
 
 const auth = useAuthStore()
@@ -954,7 +955,7 @@ function isNonEmpty(value: string) {
             </div>
             <div class="flex justify-between gap-4">
               <dt class="text-muted-foreground">生产版本</dt>
-              <dd>{{ releaseIntentOrder.productionVersionId }}</dd>
+              <dd>{{ productionVersionLabel(releaseIntentOrder.productionVersionId) }}</dd>
             </div>
             <div class="flex justify-between gap-4">
               <dt class="text-muted-foreground">工序任务</dt>
@@ -1037,6 +1038,7 @@ function isNonEmpty(value: string) {
                 :loading="productionVersionsPending"
                 aria-label="生产版本"
                 clearable
+                :show-code="false"
               />
             </NvField>
             <NvField>
@@ -1082,6 +1084,7 @@ function isNonEmpty(value: string) {
                 :loading="operationTasksPending"
                 aria-label="工序任务"
                 clearable
+                :show-code="false"
               />
             </NvField>
             <NvField>

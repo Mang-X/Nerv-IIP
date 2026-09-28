@@ -4,6 +4,10 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
+  deviceControlApprovalLabel,
+  deviceControlCommandTypeLabel,
+  deviceControlStatusLabel,
+  deviceReceiptLabel,
   isTerminalDeviceControlStatus,
   useBusinessDeviceControlCommands,
 } from './useBusinessDeviceControl'
@@ -109,5 +113,14 @@ describe('useBusinessDeviceControlCommands', () => {
     expect(isTerminalDeviceControlStatus('failed')).toBe(true)
     expect(isTerminalDeviceControlStatus('approval-pending')).toBe(false)
     expect(isTerminalDeviceControlStatus(null)).toBe(false)
+  })
+
+  it('词表外的码值显示「—」，不把英文码送上屏', () => {
+    expect(deviceControlStatusLabel('approval-pending')).toBe('待审批')
+    expect(deviceControlStatusLabel('superseded')).toBe('—')
+    expect(deviceControlCommandTypeLabel('firmware-flash')).toBe('—')
+    expect(deviceControlApprovalLabel('escalated')).toBe('—')
+    expect(deviceReceiptLabel('BadOutOfRange')).toBe('设备拒绝执行')
+    expect(deviceReceiptLabel('opcua.write.rejected')).toBe('—')
   })
 })

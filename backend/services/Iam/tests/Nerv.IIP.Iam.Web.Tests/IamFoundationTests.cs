@@ -452,6 +452,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             new { loginName = "reset-user", email = "reset-user@nerv-iip.local", password = "OldPassword123!" });
         create.EnsureSuccessStatusCode();
         var user = await ReadResponseDataAsync<UserResponse>(create);
+        await IamTestMembership.AssignAsync(_client, user!.UserId);
 
         var login = await _client.PostAsJsonAsync(
             "/api/iam/v1/auth/login",
@@ -490,6 +491,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             "/api/iam/v1/users",
             new { loginName, email = $"{loginName}@nerv-iip.local", password });
         create.EnsureSuccessStatusCode();
+        await IamTestMembership.AssignAsync(_client, (await ReadResponseDataAsync<UserResponse>(create))!.UserId);
 
         for (var attempt = 0; attempt < 4; attempt++)
         {

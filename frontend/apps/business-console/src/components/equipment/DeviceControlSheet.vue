@@ -5,6 +5,7 @@ import {
   deviceControlCommandTypeLabel,
   deviceControlStatusLabel,
   deviceControlStatusTone,
+  deviceReceiptLabel,
   isTerminalDeviceControlStatus,
   useBusinessDeviceControlCommands,
   type DeviceControlCommandType,
@@ -14,6 +15,8 @@ import {
   useBusinessTelemetryTagCurrentValue,
   useBusinessTelemetryTags,
 } from '@/composables/useBusinessTelemetry'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { readFaceText } from '@/utils/readFace'
 import { notifyOperationFailure } from '@/utils/notify'
 import {
   NvBadge,
@@ -44,6 +47,18 @@ const props = defineProps<{ deviceAssetId: string }>()
 const open = defineModel<boolean>('open', { required: true })
 
 const deviceAssetId = toRef(props, 'deviceAssetId')
+
+// 抽屉标题说设备「名称（编码）」；单位码换成单位名称。设备引用可能是公开 ID，名录查不到时不回吐。
+const { resolveDevice, resolveDeviceCode, formatUom } = useMasterDataDisplayNames({
+  devices: true,
+  uoms: true,
+})
+const deviceTitle = computed(() => {
+  const name = resolveDevice(deviceAssetId.value)
+  const code = resolveDeviceCode(deviceAssetId.value)
+  if (name && code && name !== code) return `${name}（${code}）`
+  return name ?? readFaceText(deviceAssetId.value)
+})
 
 const { filters: tagFilters, tags } = useBusinessTelemetryTags({
   deviceAssetId: props.deviceAssetId,
@@ -115,7 +130,7 @@ function tagByKey(tagKey: string): BusinessConsoleTelemetryTagItem | undefined {
 }
 
 // 只取最新一条原始采样（itemType==='sample'）。历史读面同时合并 raw 采样与 hourly/daily rollup，
-// 且值均为 bucket 平均值——没有专门的瞬时当前值 facade，故如实标注为「最近采样(均值)」，不冒充实时当前值。
+// 且值均为 bucket 平均值——没有专门的瞬时当前值 facade，故如实标注为「近期平均值」，不冒充实时当前值。
 function latestSampleValue(tagKey: string): string | null {
   if (!tagKey) return null
   const matches = historyItems.value
@@ -132,11 +147,11 @@ function rangeHint(tag?: BusinessConsoleTelemetryTagItem): string {
   if (allowed.length) return `允许值：${allowed.join(' / ')}`
   const min = tag.controlMinValue
   const max = tag.controlMaxValue
-  const unit = tag.unitCode ? ` ${tag.unitCode}` : ''
+  const unit = tag.unitCode ? ` ${formatUom(tag.unitCode)}` : ''
   if (min != null && max != null) return `值域：${min} ~ ${max}${unit}`
   if (min != null) return `不小于 ${min}${unit}`
   if (max != null) return `不大于 ${max}${unit}`
-  return tag.unitCode ? `单位：${tag.unitCode}` : ''
+  return tag.unitCode ? `单位：${formatUom(tag.unitCode)}` : ''
 }
 
 // 前端即时校验：类型 / 越界 / 允许值；后端 ValidateWritableTag 仍为权威兜底。
@@ -218,23 +233,15 @@ const trackedStatus = computed(() => trackedResult.value?.status)
 const trackedTerminal = computed(() => isTerminalDeviceControlStatus(trackedStatus.value))
 const trackedFailedStatus = computed(() => trackedStatus.value?.toLowerCase() === 'failed')
 
-// 优先展示 Connector 回执里的设备实际回执码（attempt.output.deviceReceiptCode，如 BadOutOfRange），
-// 其次回退 Ops 通用 failureCode（如 opcua.write.rejected）。
+// 设备回执（attempt.output.deviceReceiptCode，OPC UA 状态码如 BadOutOfRange）按三档严重度说成业务话；
+// 连接器通用失败码（如 opcua.write.rejected）与设备原文没有中文可补，不上屏，只显示「—」。
 const trackedReceipt = computed(() => {
   const attempts = trackedResult.value?.attempts ?? []
   const failed = [...attempts]
     .reverse()
     .find((attempt) => attempt.output?.deviceReceiptCode || attempt.failureCode)
   if (!failed) return null
-  const deviceCode = failed.output?.deviceReceiptCode ?? null
-  const connectorCode = failed.failureCode ?? null
-  return {
-    code: deviceCode ?? connectorCode,
-    message: failed.output?.deviceReceiptMessage ?? null,
-    // 设备回执码与连接器通用码不同才另行展示连接器码，避免重复。
-    connectorCode:
-      deviceCode && connectorCode && deviceCode !== connectorCode ? connectorCode : null,
-  }
+  return { label: deviceReceiptLabel(failed.output?.deviceReceiptCode) }
 })
 // 失败但没有 attempt 明细（Ops 不可用回退台账快照）时，给出明确反馈而非空白。
 const trackedFailedWithoutReceipt = computed(
@@ -248,7 +255,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
   <NvSheet v-model:open="open">
     <NvSheetContent class="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-xl">
       <NvSheetHeader class="border-b">
-        <NvSheetTitle>设备控制 · {{ deviceAssetId }}</NvSheetTitle>
+        <NvSheetTitle>设备控制 · {{ deviceTitle }}</NvSheetTitle>
         <!-- 破坏性动作：审批与审计是操作员必须知道的后果，保留这一行。 -->
         <NvSheetDescription>命令需运维审批后下发，全程审计。</NvSheetDescription>
       </NvSheetHeader>
@@ -315,7 +322,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                 <p v-else-if="singleCurrentValue?.hasSample" class="font-medium text-foreground">
                   {{ singleCurrentValue.value }}
                 </p>
-                <p v-else class="text-muted-foreground">无采样</p>
+                <p v-else class="text-muted-foreground">暂无读数</p>
               </div>
             </div>
 
@@ -391,7 +398,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                   <p v-if="row.tagKey" class="text-xs text-muted-foreground">
                     {{ rangeHint(tagByKey(row.tagKey)) }}
                     <span v-if="latestSampleValue(row.tagKey)">
-                      · 最近采样(均值) {{ latestSampleValue(row.tagKey) }}</span
+                      · 近期平均值 {{ latestSampleValue(row.tagKey) }}</span
                     >
                   </p>
                   <p
@@ -495,23 +502,16 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
             <span class="text-foreground">{{ trackedResult.approval.decisionReason }}</span>
           </div>
           <div v-if="trackedReceipt" class="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
-            <span class="text-muted-foreground">设备回执码</span>
-            <span class="grid gap-0.5">
-              <span class="font-mono text-destructive">{{ trackedReceipt.code }}</span>
-              <span v-if="trackedReceipt.message" class="text-xs text-muted-foreground">{{
-                trackedReceipt.message
-              }}</span>
-              <!-- 连接器原样透传的设备返回码，没有中文名可补——如实标注它是设备侧原始码。 -->
-              <span v-if="trackedReceipt.connectorCode" class="text-xs text-muted-foreground"
-                >设备侧原始返回码 {{ trackedReceipt.connectorCode }}</span
-              >
-            </span>
+            <span class="text-muted-foreground">设备回执</span>
+            <span :class="trackedFailedStatus ? 'text-destructive' : 'text-foreground'">{{
+              trackedReceipt.label
+            }}</span>
           </div>
           <div
             v-else-if="trackedFailedWithoutReceipt"
             class="grid grid-cols-[96px_minmax(0,1fr)] gap-2"
           >
-            <span class="text-muted-foreground">设备回执码</span>
+            <span class="text-muted-foreground">设备回执</span>
             <span class="text-xs text-muted-foreground"
               >命令失败，设备回执尚未返回，请稍后查看命令台账。</span
             >

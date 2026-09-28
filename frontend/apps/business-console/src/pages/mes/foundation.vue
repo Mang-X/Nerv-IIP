@@ -238,6 +238,7 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
             :loading="productionVersionsPending"
             aria-label="生产版本"
             clearable
+            :show-code="false"
           />
         </NvField>
       </NvFieldGroup>

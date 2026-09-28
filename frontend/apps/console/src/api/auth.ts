@@ -33,10 +33,11 @@ export const consoleAuthApi = createConsoleAuthApi({
   messages: {
     changePasswordFallback: '修改密码失败，请稍后重试。',
     accountLocked: (lockoutUntilUtc) => formatConsoleLockoutMessage(lockoutUntilUtc),
-    invalidCredentialsOrExpiredSession: 'Invalid credentials or expired session.',
-    loginFallback: 'Unable to connect to the authentication service.',
-    principalFallback: 'Unable to load the current principal.',
+    invalidCredentialsOrExpiredSession: '账号密码错误或会话已过期。',
+    loginFallback: '无法连接认证服务。',
+    noMembership: '账号还没有分配到任何组织或角色，请联系管理员。',
+    principalFallback: '无法加载当前登录用户。',
     remainingAttempts: (count) => `登录失败，还可尝试 ${count} 次。`,
-    refreshFallback: 'Unable to refresh the session.',
+    refreshFallback: '无法刷新会话。',
   },
 })

@@ -3,12 +3,12 @@ import type { ConsoleIamRoleResponse, ConsoleIamUserResponse } from '@nerv-iip/a
 import UserRoleSelector from '@/components/iam/UserRoleSelector.vue'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldDescription,
   FieldLabel,
@@ -47,14 +47,14 @@ function handleSubmit() {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>分配角色</DialogTitle>
-        <DialogDescription>
+  <NvDialog v-model:open="open">
+    <NvDialogContent>
+      <NvDialogHeader>
+        <NvDialogTitle>分配角色</NvDialogTitle>
+        <NvDialogDescription>
           为用户 {{ user?.loginName || user?.userId }} 设置在当前组织环境中的角色。
-        </DialogDescription>
-      </DialogHeader>
+        </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <Field>
@@ -69,10 +69,10 @@ function handleSubmit() {
           </FieldDescription>
         </Field>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit" :disabled="disabled"> 保存 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

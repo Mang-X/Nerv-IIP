@@ -28,6 +28,29 @@ public sealed class GatewayConsoleIamAdminTests
         ["role-platform-admin"]);
 
     [Fact]
+    public async Task Iam_admin_client_passes_iam_rejection_reason_through_as_bad_request()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    "{\"success\":false,\"message\":\"平台管理员账号不能停用。\",\"code\":400,\"errorData\":[]}",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var admin = new HttpGatewayIamAdminClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(() =>
+            admin.DisableUserAsync("access-token", "user-admin", CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("平台管理员账号不能停用。", exception.Reason);
+    }
+
+    [Fact]
     public void Console_iam_admin_endpoints_use_authorized_proxy_endpoint()
     {
         var source = File.ReadAllText(FindConsoleIamAdminEndpointsPath());
@@ -498,5 +521,14 @@ public sealed class GatewayConsoleIamAdminTests
         Assert.True(envelope.Success, envelope.Message);
         Assert.NotNull(envelope.Data);
         return envelope.Data;
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(responseFactory(request));
     }
 }

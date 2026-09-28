@@ -3,12 +3,12 @@ import type { ConsoleIamUserResponse, ConsoleUpdateIamUserRequest } from '@nerv-
 import {
   Button,
   Checkbox,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldError,
   FieldGroup,
@@ -90,12 +90,12 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>编辑用户</DialogTitle>
-        <DialogDescription> 更新用户的登录名、邮箱与启用状态。 </DialogDescription>
-      </DialogHeader>
+  <NvDialog v-model:open="open">
+    <NvDialogContent>
+      <NvDialogHeader>
+        <NvDialogTitle>编辑用户</NvDialogTitle>
+        <NvDialogDescription> 更新用户的登录名、邮箱与启用状态。 </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
@@ -138,10 +138,10 @@ watch(open, (isOpen) => {
           </Field>
         </FieldGroup>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit"> 保存修改 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

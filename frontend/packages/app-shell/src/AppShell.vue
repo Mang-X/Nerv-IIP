@@ -10,9 +10,9 @@ import {
   SidebarHeader,
   SidebarInset,
   NvSidebarBrand,
+  NvSidebarRail,
+  NvSidebarTrigger,
   SidebarProvider,
-  SidebarRail,
-  SidebarTrigger,
 } from '@nerv-iip/ui'
 import NavMain from './NavMain.vue'
 import NavUser from './NavUser.vue'
@@ -64,14 +64,14 @@ defineEmits<{
       <SidebarFooter v-if="user">
         <NavUser :sign-out-label="signOutLabel" :user="user" @sign-out="$emit('signOut')" />
       </SidebarFooter>
-      <SidebarRail />
+      <NvSidebarRail />
     </Sidebar>
 
     <SidebarInset>
       <header
         class="flex h-16 shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12"
       >
-        <SidebarTrigger class="-ml-1" />
+        <NvSidebarTrigger class="-ml-1" />
         <Separator
           orientation="vertical"
           class="mr-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-auto"

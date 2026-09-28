@@ -2,6 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Iam.Domain;
+using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
@@ -54,6 +58,13 @@ public sealed class IamRepositoryTests
             Guid.NewGuid().ToString("n"),
             1);
         db.Users.Add(user);
+        // 没有成员关系的账号登录会被拒（iam-no-membership），这里要验的是会话 ID，给它一个成员关系。
+        db.Memberships.Add(new Membership(
+            new MembershipId("membership-session-v7"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [new RoleId("role-erp-sales")]));
         await db.SaveChangesAsync();
         var tokenService = new IamTokenService(
             new ConfigurationBuilder().Build(),
@@ -76,6 +87,44 @@ public sealed class IamRepositoryTests
         var response = await authService.LoginAsync("session-v7", "Password123!", null, null, CancellationToken.None);
 
         Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(response.SessionId, "session-"));
+    }
+
+    [Fact]
+    public async Task PostgreSql_auth_service_rejects_a_user_without_membership_only_after_the_password_matches()
+    {
+        await using var db = CreateDbContext();
+        var passwordService = new IamPasswordService();
+        db.Users.Add(new User(
+            new UserId("user-unassigned"),
+            "unassigned",
+            "unassigned@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1));
+        await db.SaveChangesAsync();
+        var authService = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            new IamTokenService(new ConfigurationBuilder().Build(), new TestWebHostEnvironment()),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+
+        var wrongPassword = await Assert.ThrowsAsync<IamLoginRejectedException>(() =>
+            authService.LoginAsync("unassigned", "Wrong123!", null, null, CancellationToken.None));
+        Assert.Equal(IamLoginFailureCodes.InvalidCredentials, wrongPassword.Code);
+
+        var unassigned = await Assert.ThrowsAsync<IamLoginRejectedException>(() =>
+            authService.LoginAsync("unassigned", "Password123!", null, null, CancellationToken.None));
+        Assert.Equal(IamLoginFailureCodes.NoMembership, unassigned.Code);
     }
 
     private static ApplicationDbContext CreateDbContext()

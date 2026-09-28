@@ -369,6 +369,27 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     expect(visibleText).not.toContain('user-emp-')
   })
 
+  it('齐套行状态说「缺料」而不是英文码 Shortage', () => {
+    state.materialReadiness = {
+      items: [
+        {
+          materialId: 'MAT-OIL',
+          requiredQuantity: 5,
+          availableQuantity: 1,
+          stagedQuantity: 0,
+          shortageQuantity: 4,
+          status: 'Shortage',
+        },
+      ],
+      readinessStatus: 'Blocked',
+      blockingReasons: [],
+    }
+
+    const visibleText = mountDetail(['business.mes.work-orders.read']).text()
+    expect(visibleText).toContain('缺料')
+    expect(visibleText).not.toContain('Shortage')
+  })
+
   it('read-face guard：目录失败与人读字段缺失时显示占位符且不泄露 ID', () => {
     const technicalId = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
     routeState.params.workOrderId = technicalId

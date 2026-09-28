@@ -165,6 +165,7 @@ public sealed class IamUserLifecyclePolicyTests : IClassFixture<WebApplicationFa
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var user = await ReadResponseDataAsync<UserResponse>(create);
         Assert.Null(user.PasswordExpiresAtUtc);
+        await IamTestMembership.AssignAsync(client, user.UserId);
 
         await ChangePasswordAsync(client, loginName, "LongPassword123", "LongPassword234");
         await ChangePasswordAsync(client, loginName, "LongPassword234", "LongPassword345");
@@ -177,7 +178,9 @@ public sealed class IamUserLifecyclePolicyTests : IClassFixture<WebApplicationFa
             "/api/iam/v1/users",
             new { loginName, email, password });
         response.EnsureSuccessStatusCode();
-        return await ReadResponseDataAsync<UserResponse>(response);
+        var user = await ReadResponseDataAsync<UserResponse>(response);
+        await IamTestMembership.AssignAsync(_client, user.UserId);
+        return user;
     }
 
     private async Task<AuthResponse> LoginAsync(string loginName, string password)

@@ -87,12 +87,12 @@ vi.mock('@/composables/useIamAdmin', () => ({
 }))
 
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogDescription: { template: '<p><slot /></p>' },
-  DialogFooter: { template: '<footer><slot /></footer>' },
-  DialogHeader: { template: '<header><slot /></header>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialog: { template: '<div><slot /></div>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogFooter: { template: '<footer><slot /></footer>' },
+  NvDialogHeader: { template: '<header><slot /></header>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
 }
 
 function mountPage() {

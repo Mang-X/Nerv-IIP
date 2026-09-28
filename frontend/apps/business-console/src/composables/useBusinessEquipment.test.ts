@@ -196,9 +196,10 @@ describe('business equipment composables', () => {
       label: '无可替代设备',
       nextStep: '调整排程或维护设备能力配置',
     })
+    // 词表外的原因码不把英文码送上屏。
     expect(describeEquipmentReason('vendor.custom')).toMatchObject({
       code: 'vendor.custom',
-      label: 'vendor.custom',
+      label: '—',
       nextStep: '查看设备详情并处理来源业务单据',
     })
   })

@@ -73,6 +73,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 // 急单表单的物料 ▸ 生产版本目录走 colada 读面，本文件只看文案与提交体，整体打桩。
 vi.mock('@/composables/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
+    productionVersionLabel: () => '—',
     skuOptions: ref([]),
     skusPending: ref(false),
     productionVersionOptions: () => [],

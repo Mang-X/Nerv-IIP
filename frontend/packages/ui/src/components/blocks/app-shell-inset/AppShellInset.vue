@@ -6,9 +6,8 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
-  SidebarRail,
-  SidebarTrigger,
 } from '../../ui/sidebar'
+import { NvSidebarRail, NvSidebarTrigger } from '../../pc/sidebar'
 import { Separator } from '../../ui/separator'
 
 withDefaults(
@@ -32,14 +31,14 @@ withDefaults(
       <SidebarFooter v-if="$slots['sidebar-footer']">
         <slot name="sidebar-footer" />
       </SidebarFooter>
-      <SidebarRail />
+      <NvSidebarRail />
     </Sidebar>
 
     <SidebarInset class="min-w-0">
       <header
         class="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4 transition-[width,height] ease-linear md:rounded-t-xl"
       >
-        <SidebarTrigger class="-ml-1" />
+        <NvSidebarTrigger class="-ml-1" />
         <Separator
           v-if="$slots.header"
           orientation="vertical"

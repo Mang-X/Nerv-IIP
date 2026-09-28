@@ -143,9 +143,19 @@ export function useMesMaterialVersionCatalog() {
       })
   }
 
+  /** 生产版本的人读说法（「物料 · 生效日」）；目录里查不到时显示「—」，不回吐版本主键。 */
+  function productionVersionLabel(productionVersionId?: string | null): string {
+    if (!productionVersionId) return '—'
+    return (
+      productionVersionOptions('').find((option) => option.value === productionVersionId)?.label ??
+      '—'
+    )
+  }
+
   return {
     skuOptions,
     skusPending: skuCatalog.skusPending,
+    productionVersionLabel,
     productionVersionOptions,
     productionVersionsPending: versionCatalog.productionVersionsPending,
   }

@@ -3,12 +3,12 @@ import type { ConsoleCreateIamUserRequest, ConsoleIamRoleResponse } from '@nerv-
 import UserRoleSelector from '@/components/iam/UserRoleSelector.vue'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldError,
   FieldGroup,
@@ -97,14 +97,14 @@ function toUtcEndOfDay(value: string) {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>新建用户</DialogTitle>
-        <DialogDescription>
+  <NvDialog v-model:open="open">
+    <NvDialogContent>
+      <NvDialogHeader>
+        <NvDialogTitle>新建用户</NvDialogTitle>
+        <NvDialogDescription>
           创建一个控制台用户并加入当前组织环境，填写登录名、邮箱、初始密码与角色。
-        </DialogDescription>
-      </DialogHeader>
+        </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
@@ -160,10 +160,10 @@ function toUtcEndOfDay(value: string) {
           </Field>
         </FieldGroup>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit"> 新建用户 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

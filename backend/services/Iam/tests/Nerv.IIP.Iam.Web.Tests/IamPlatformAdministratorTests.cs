@@ -27,6 +27,7 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
     {
         var disable = await _client.PostAsync("/api/iam/v1/users/user-admin/disable", null);
         Assert.Equal(HttpStatusCode.BadRequest, disable.StatusCode);
+        Assert.Equal("平台管理员账号不能停用。", (await disable.Content.ReadFromJsonAsync<ResponseDataEnvelope<object>>())!.Message);
 
         var patchDisabled = await _client.PatchAsJsonAsync(
             "/api/iam/v1/users/user-admin",
@@ -84,8 +85,9 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         created.EnsureSuccessStatusCode();
         var userId = (await created.Content.ReadFromJsonAsync<ResponseDataEnvelope<CreatedUser>>())!.Data!.UserId;
 
-        var operatorLogin = await LoginAsync(_client, "assigned-operator", "Operator123!");
-        Assert.Equal(HttpStatusCode.Unauthorized, (await GetMeAsync(operatorLogin.AccessToken)).StatusCode);
+        // 还没分配角色：密码对时明确告诉用户「未分配组织或角色」，密码错时仍只说口令错误，不泄露账号状态。
+        await AssertLoginRejectedAsync("assigned-operator", "Operator123!", "iam-no-membership");
+        await AssertLoginRejectedAsync("assigned-operator", "Wrong123!", "iam-invalid-credentials");
 
         var assign = await _client.PutAsJsonAsync($"/api/iam/v1/users/{userId}/membership", new { roleIds = new[] { "role-erp-sales" } });
         assign.EnsureSuccessStatusCode();
@@ -109,8 +111,7 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         var remove = await _client.PutAsJsonAsync($"/api/iam/v1/users/{userId}/membership", new { roleIds = Array.Empty<string>() });
         remove.EnsureSuccessStatusCode();
         _client.DefaultRequestHeaders.Authorization = null;
-        var removedLogin = await LoginAsync(_client, "assigned-operator", "Operator123!");
-        Assert.Equal(HttpStatusCode.Unauthorized, (await GetMeAsync(removedLogin.AccessToken)).StatusCode);
+        await AssertLoginRejectedAsync("assigned-operator", "Operator123!", "iam-no-membership");
     }
 
     [Fact]
@@ -220,6 +221,13 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/iam/v1/me");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return await _client.SendAsync(request);
+    }
+
+    private async Task AssertLoginRejectedAsync(string loginName, string password, string failureCode)
+    {
+        var login = await _client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName, password });
+        Assert.Equal(HttpStatusCode.Unauthorized, login.StatusCode);
+        Assert.Equal(failureCode, login.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
     }
 
     private static async Task<AuthResponse> LoginAsync(HttpClient client, string loginName, string password)

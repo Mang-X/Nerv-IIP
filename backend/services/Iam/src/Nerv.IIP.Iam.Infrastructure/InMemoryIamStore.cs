@@ -78,6 +78,11 @@ public sealed class InMemoryIamStore
                 throw InvalidCredentials(remainingAttempts <= 2 ? remainingAttempts : null);
             }
 
+            if (!_memberships.Any(x => x.UserId == user.UserId))
+            {
+                throw new IamLoginRejectedException(IamLoginFailureCodes.NoMembership);
+            }
+
             var successful = user with
             {
                 FailedLoginCount = 0,

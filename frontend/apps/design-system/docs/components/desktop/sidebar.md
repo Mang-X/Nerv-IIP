@@ -10,7 +10,7 @@ import {
   SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge,
   SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
   SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, SidebarInset,
-  NvSidebarBrand, NvSidebarDot, NvSidebarUser, NvSidebarSub,
+  NvSidebarBrand, NvSidebarDot, NvSidebarUser, NvSidebarSub, NvSidebarRail, NvSidebarTrigger,
   TooltipProvider,
 } from '@nerv-iip/ui'
 import {
@@ -31,7 +31,7 @@ const todo = ref('待派工单')
 
 # Sidebar 侧栏
 
-可折叠的控制台侧栏**原子件**：`SidebarProvider` 提供上下文，`Sidebar` 承载分组导航，配合 `SidebarRail` / `SidebarTrigger` 折叠。需要开箱即用的整页外壳时用 [NvAppShellInset](/components/desktop/dashboard)，需要自定义结构时用这些原子件自行拼装。
+可折叠的控制台侧栏**原子件**：`SidebarProvider` 提供上下文，`Sidebar` 承载分组导航，配合 `NvSidebarRail` / `NvSidebarTrigger` 折叠。需要开箱即用的整页外壳时用 [NvAppShellInset](/components/desktop/dashboard)，需要自定义结构时用这些原子件自行拼装。
 
 ## 完整控制台侧栏
 
@@ -88,11 +88,11 @@ const todo = ref('待派工单')
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      <SidebarRail />
+      <NvSidebarRail />
     </Sidebar>
     <SidebarInset class="nv-nv-scr-inset">
       <header class="nv-nv-scr-topbar">
-        <SidebarTrigger />
+        <NvSidebarTrigger />
         <span class="nv-nv-scr-topbar-divider" aria-hidden="true" />
         <span class="text-sm text-muted-foreground">控制台</span>
         <ChevronRightIcon class="size-3.5 text-muted-foreground/50" />
@@ -272,13 +272,14 @@ const todo = ref('待派工单')
 - `SidebarMenuAction` / `SidebarMenuBadge` — 行内操作（`showOnHover`）与计数徽标。
 - `SidebarMenuSub` / `SidebarMenuSubItem` / `SidebarMenuSubButton` — 二级菜单（展开状态自管理）。
 - `SidebarSeparator` / `SidebarInput` — 分隔线与侧栏输入框。
-- `SidebarRail` — 右缘可点/可拖的折叠条；`SidebarTrigger` — 折叠按钮（放任意处）。
+- `SidebarRail` / `SidebarTrigger` — 原版折叠条与折叠按钮，读屏名称是英文 `Toggle Sidebar`；产品界面改用下方的 `NvSidebarRail` / `NvSidebarTrigger`。
 
 ### Pro 件（高级化封装，配合上面的原子件）
 
 - `NvSidebarBrand` — 工作区品牌锁头（渐变 logo + 名称 + 副标题），放 `SidebarHeader`；折叠为图标条时文字/箭头自动隐藏。属性：`name`、`sub?`、`logo?`、`caret?`。
 - `NvSidebarDot` — 行尾状态点（`tone` `ok` / `warn` / `danger`），作 `SidebarMenuButton` 末位子节点。
 - `NvSidebarUser` — 底栏用户行（首字头像 + 在线点 + 名称/角色），放页脚的 `SidebarMenuButton size="lg"`。属性：`name`、`role?`、`initials?`、`online?`、`caret?`。
+- `NvSidebarRail` — 右缘可点的折叠条；`NvSidebarTrigger` — 折叠按钮（放任意处）。二者与原版同形，读屏名称与悬停提示为中文「展开或收起侧栏」。
 - `NvSidebarSub` — 二级菜单高度动画外壳（`grid-rows 0fr→1fr` + 缩进导引线），`open` 用你自己的 `ref` 驱动，内裹 `SidebarMenuSub`。
 - 统一**选中态**（中性高起填充 + 品牌色图标）已是系统默认（`theme.css` 全局），无需额外样式即对所有侧栏生效。
 

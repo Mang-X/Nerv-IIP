@@ -133,9 +133,10 @@ const equipmentReasonDisplays: Record<string, EquipmentReasonEntry> = {
 export function describeEquipmentReason(code: string): EquipmentReasonDisplay {
   const normalizedCode = code.trim()
 
+  // 词表外的原因码不把英文码送上屏，显示「—」。
   const entry = equipmentReasonDisplays[normalizedCode] ?? {
     code: normalizedCode,
-    label: normalizedCode,
+    label: '—',
     nextStep: '查看设备详情并处理来源业务单据',
   }
   return { ...entry, tone: entry.tone ?? 'danger' }

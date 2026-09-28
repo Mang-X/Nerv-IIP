@@ -34,6 +34,7 @@ const messages = {
   changePasswordFallback: 'Change password failed.',
   invalidCredentialsOrExpiredSession: 'Bad credentials.',
   loginFallback: 'Login failed.',
+  noMembership: '账号还没有分配到任何组织或角色，请联系管理员。',
   refreshFallback: 'Refresh failed.',
   principalFallback: 'Principal failed.',
   remainingAttempts: (count: number) => `${count} attempts remaining.`,
@@ -129,6 +130,23 @@ describe('console auth api factory', () => {
       message: '2 attempts remaining.',
       remainingAttempts: 2,
       status: 401,
+    } satisfies Partial<ConsoleAuthError>)
+  })
+
+  it('tells a user without any organization or role apart from a wrong password', async () => {
+    const { api, client } = createApi()
+    client.loginConsoleUser.mockResolvedValue({
+      data: { success: false },
+      response: new Response(null, {
+        headers: { 'X-Nerv-Iam-Login-Failure': 'iam-no-membership' },
+        status: 401,
+      }),
+    })
+
+    await expect(
+      api.loginConsole({ loginName: 'caiwu02', password: 'right' }),
+    ).rejects.toMatchObject({
+      message: '账号还没有分配到任何组织或角色，请联系管理员。',
     } satisfies Partial<ConsoleAuthError>)
   })
 

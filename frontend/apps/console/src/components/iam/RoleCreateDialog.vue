@@ -3,12 +3,12 @@ import type { ConsoleIamPermissionResponse } from '@nerv-iip/api-client'
 import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldError,
   FieldGroup,
@@ -75,15 +75,12 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent
-      data-testid="role-create-dialog-content"
-      class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl"
-    >
-      <DialogHeader>
-        <DialogTitle>新建角色</DialogTitle>
-        <DialogDescription> 创建 IAM 角色并从权限目录中分配权限。 </DialogDescription>
-      </DialogHeader>
+  <NvDialog v-model:open="open">
+    <NvDialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
+      <NvDialogHeader>
+        <NvDialogTitle>新建角色</NvDialogTitle>
+        <NvDialogDescription> 创建 IAM 角色并从权限目录中分配权限。 </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
@@ -101,10 +98,10 @@ watch(open, (isOpen) => {
           <RolePermissionEditor v-model="permissionCodes" :permissions="props.permissions" />
         </FieldGroup>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit" :disabled="props.pending"> 新建角色 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

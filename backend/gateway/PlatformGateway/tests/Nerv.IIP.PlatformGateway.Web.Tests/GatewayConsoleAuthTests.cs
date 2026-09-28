@@ -439,6 +439,30 @@ public sealed class GatewayConsoleAuthTests
     }
 
     [Fact]
+    public async Task Console_login_tells_a_user_without_membership_apart_from_a_wrong_password()
+    {
+        await using var factory = CreateFactoryWithIamHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    "{\"success\":false,\"message\":\"iam-no-membership\",\"code\":401,\"errorData\":[]}",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            };
+            response.Headers.Add("X-Nerv-Iam-Login-Failure", "iam-no-membership");
+            return Task.FromResult(response);
+        });
+
+        var response = await factory.CreateClient().PostAsJsonAsync(
+            "/api/console/v1/auth/login",
+            new ConsoleLoginRequest("caiwu02", "Correct123!"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("iam-no-membership", response.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
+    }
+
+    [Fact]
     public async Task Iam_auth_client_fails_closed_and_disposes_malformed_login_failure_response()
     {
         var content = new TrackingContent();

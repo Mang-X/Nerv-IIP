@@ -5,12 +5,12 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldError,
   FieldGroup,
@@ -67,12 +67,14 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>重置密码</DialogTitle>
-        <DialogDescription> 为 {{ user?.loginName || '该用户' }} 设置新密码。 </DialogDescription>
-      </DialogHeader>
+  <NvDialog v-model:open="open">
+    <NvDialogContent>
+      <NvDialogHeader>
+        <NvDialogTitle>重置密码</NvDialogTitle>
+        <NvDialogDescription>
+          为 {{ user?.loginName || '该用户' }} 设置新密码。
+        </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
@@ -89,10 +91,10 @@ watch(open, (isOpen) => {
           </Field>
         </FieldGroup>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit"> 重置密码 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

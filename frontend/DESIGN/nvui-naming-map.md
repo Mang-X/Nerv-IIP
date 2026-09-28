@@ -7,8 +7,8 @@
 语义 token 的 nv 化清单。
 
 分开住的理由是两者变更频率不同：规则只被新决策取代，映射表却随代码增长。附录 A 冻结后
-已因新增组件增补四次（下文四个「收口后新增」块：MAN-439/#793 的 combobox 家族、
-PR #1093 的指标家族件、演示走查整改前端批 1、演示走查整改 MES 前端批），也就是每加一个
+已因新增组件增补五次（下文五个「收口后新增」块：MAN-439/#793 的 combobox 家族、
+PR #1093 的指标家族件、演示走查整改前端批 1、演示走查整改 MES 前端批、#3875 的侧栏折叠件），也就是每加一个
 组件都要编辑一次决策记录。**新增或改名组件时更新本页，不要回头编辑 ADR**；若映射与规则
 冲突，或需要改动判定规则本身，那是决策变更，走 ADR。
 
@@ -76,6 +76,16 @@ PR #1093 的指标家族件、演示走查整改前端批 1、演示走查整改
 > 而是「分组容器」这一业务语义的区块件。文件名即 `NvGroupPanel.vue`，`data-slot` 为
 > `nv-group-panel`。已并入 `nvui-naming.contract.test.ts` 冻结规范集合，
 > 文档站页 `components/desktop/group-panel`。
+
+> **收口后新增（无旧名，完全不含 Pro）。** #3875 在 `pc/sidebar/` 新增两件：
+>
+> - `NvSidebarTrigger`（侧栏折叠按钮）
+> - `NvSidebarRail`（侧栏边缘的折叠热区）
+>
+> 原版 `SidebarTrigger` / `SidebarRail` 把读屏名称与悬停提示写死成英文 `Toggle Sidebar`，而原版
+> 零改动，故按「定制即复制重建」在品牌层重建，外观与交互与原版一致，只把文案换成中文。定名走
+> §1.1(2) PC 层取素名，R1–R5 不适用。`data-slot` 为 `nv-sidebar-trigger` / `nv-sidebar-rail`，
+> 已并入 `nvui-naming.contract.test.ts` 冻结规范集合，文档站页 `components/desktop/sidebar`。
 
 ### A1. PC 素名层 — `pc/`（35 目录，116 个组件导出）
 

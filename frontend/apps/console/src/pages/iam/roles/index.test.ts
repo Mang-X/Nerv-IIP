@@ -169,12 +169,12 @@ describe('IAM roles page', () => {
     await createButton!.trigger('click')
     await flushPromises()
 
-    expect(
-      document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className,
-    ).toContain('overflow-y-auto')
-    expect(
-      document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className,
-    ).toContain('max-h-')
+    expect(document.body.querySelector('[data-slot="nv-dialog-content"]')?.className).toContain(
+      'overflow-y-auto',
+    )
+    expect(document.body.querySelector('[data-slot="nv-dialog-content"]')?.className).toContain(
+      'max-h-',
+    )
     expect(
       document.body.querySelector('[data-testid="role-permission-editor-scroll"]')?.className,
     ).toContain('overflow-y-auto')
@@ -182,11 +182,11 @@ describe('IAM roles page', () => {
     await wrapper.get('button[aria-label="编辑权限 Platform Administrator"]').trigger('click')
     await flushPromises()
 
-    expect(
-      document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className,
-    ).toContain('overflow-y-auto')
-    expect(
-      document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className,
-    ).toContain('max-h-')
+    expect(document.body.querySelector('[data-slot="nv-dialog-content"]')?.className).toContain(
+      'overflow-y-auto',
+    )
+    expect(document.body.querySelector('[data-slot="nv-dialog-content"]')?.className).toContain(
+      'max-h-',
+    )
   })
 })

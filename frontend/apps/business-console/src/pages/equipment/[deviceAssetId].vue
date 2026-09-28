@@ -30,6 +30,7 @@ import {
   deviceControlCommandTypeLabel,
   deviceControlStatusLabel,
   deviceControlStatusTone,
+  deviceReceiptLabel,
   useBusinessDeviceControlCommands,
 } from '@/composables/useBusinessDeviceControl'
 import { usePagedList } from '@/composables/usePagedList'
@@ -529,16 +530,6 @@ const SOURCE_TEXT = { fresh: '采集正常', stale: '采集过期', notConnected
 const SOURCE_TONE = { fresh: 'success', stale: 'warning', notConnected: 'neutral' } as const
 const sourceText = computed(() => SOURCE_TEXT[sourceStatus.value])
 const sourceTone = computed(() => SOURCE_TONE[sourceStatus.value])
-/**
- * 设备回执码是 OPC UA 状态码（Good… / Uncertain… / Bad…），按标准的三档严重度说成业务话；
- * 解析不出来的回执码和通用失败码不上屏，显示「—」（执行结果本身已由状态徽标给出）。
- */
-function deviceReceiptLabel(code?: string | null) {
-  if (code?.startsWith('Good')) return '设备已确认'
-  if (code?.startsWith('Uncertain')) return '设备回执不确定'
-  if (code?.startsWith('Bad')) return '设备拒绝执行'
-  return '—'
-}
 /** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
 function deviceLabel(reference?: string | null) {
   if (!reference) return '—'

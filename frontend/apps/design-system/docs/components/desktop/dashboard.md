@@ -14,7 +14,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 
 # NvAppShellInset 应用外壳
 
-控制台页面的标准外壳区块：组合 `@nerv-iip/ui` 稳定导出的 `Sidebar` 系统（可折叠 / `SidebarRail` / 移动抽屉）、inset 内容区与顶部栏。搭建控制台页面应从它起步，而不是手工拼装分区组件。侧栏导航用 `SidebarGroup` / `SidebarMenu` / `SidebarMenuButton` 组织。
+控制台页面的标准外壳区块：组合 `@nerv-iip/ui` 稳定导出的 `Sidebar` 系统（可折叠 / `NvSidebarRail` / 移动抽屉）、inset 内容区与顶部栏。搭建控制台页面应从它起步，而不是手工拼装分区组件。侧栏导航用 `SidebarGroup` / `SidebarMenu` / `SidebarMenuButton` 组织。
 
 ## 完整外壳
 
@@ -119,7 +119,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 | `#sidebar-header` | 侧栏顶部（品牌 / 切换器）                                  |
 | `#sidebar`        | 侧栏主体(用 `SidebarGroup` + `SidebarMenu` 组织导航)       |
 | `#sidebar-footer` | 侧栏底部（用户 / 操作）                                    |
-| `#header`         | 顶部栏内容（面包屑等），自带 `SidebarTrigger` 折叠按钮     |
+| `#header`         | 顶部栏内容（面包屑等），自带 `NvSidebarTrigger` 折叠按钮   |
 | `default`         | inset 主内容区                                             |
 | `collapsible`     | `offcanvas` \| `icon` \| `none`，侧栏折叠方式(默认 `icon`) |
 

@@ -5,6 +5,7 @@ import type {
   NvDataTableColumn,
   NvMetricStatus,
   NvMetricTone,
+  StatusTone,
 } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
@@ -385,7 +386,12 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
   { key: 'availableQuantity', header: '线边可用', align: 'end', width: 'w-24' },
   { key: 'stagedQuantity', header: '已备', align: 'end', width: 'w-20' },
   { key: 'shortageQuantity', header: '短缺', align: 'end', width: 'w-20' },
-  { key: 'status', header: '状态', width: 'w-24' },
+  {
+    key: 'status',
+    header: '状态',
+    width: 'w-24',
+    accessor: (r) => materialRowStatus(r.status).label,
+  },
   // 缺口卡在哪个环节 + 下一步动作（#1291：齐套页要能讲清「缺什么、缺在哪个环节、下一步动作」）。
   { key: 'shortageStage', header: '缺在哪个环节', width: 'w-56' },
   { key: 'actions', header: '操作', width: 'w-28' },
@@ -944,6 +950,13 @@ function formatDateTime(value?: string | null) {
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
+/** 齐套行状态（MES 齐套读面只回 Shortage / Ready）；词表外的码显示「—」。 */
+function materialRowStatus(value?: string | null): { label: string; tone: StatusTone } {
+  const status = value?.toLowerCase()
+  if (status === 'shortage') return { label: '缺料', tone: 'warning' }
+  if (status === 'ready') return { label: '已齐套', tone: 'success' }
+  return { label: '—', tone: 'neutral' }
+}
 function formatStatus(value?: string | null) {
   const map: Record<string, string> = {
     blocked: '阻塞',
@@ -955,10 +968,11 @@ function formatStatus(value?: string | null) {
     ready: '可开工',
     released: '已下达',
     running: '执行中',
+    scrapped: '已报废',
     started: '已开工',
     warning: '预警',
   }
-  return value ? (map[value.toLowerCase()] ?? value) : '未知'
+  return (value && map[value.toLowerCase()]) || '—'
 }
 </script>
 
@@ -1345,7 +1359,10 @@ function formatStatus(value?: string | null) {
           ><span class="tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</span></template
         >
         <template #cell-status="{ row }">
-          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+          <NvStatusBadge
+            :label="materialRowStatus(row.status).label"
+            :tone="materialRowStatus(row.status).tone"
+          />
         </template>
         <template #cell-shortageStage="{ row }">
           <div class="grid gap-0.5">
