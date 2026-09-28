@@ -529,14 +529,56 @@ describe('PlanningWorkbench', () => {
     ).not.toContain('SKU-NEW')
     expect(wrapper.text()).toContain('已被替代')
     expect(wrapper.text()).toContain('2026-04-01')
-    expect(
-      wrapper
-        .findAll('.cell-actions')
-        .map((cell) => cell.text())
-        .join(' '),
-    ).not.toContain('拒绝')
+    const supersededRow = wrapper
+      .findAll('.cell-skuCode')
+      .find((cell) => cell.text().includes('SKU-OLD'))!.element.parentElement!
+    const supersededActions = supersededRow.querySelector('.cell-actions')!
+    expect(supersededActions.textContent).not.toContain('接受')
+    expect(supersededActions.textContent).not.toContain('拒绝')
+    expect(supersededActions.querySelectorAll('button')).toHaveLength(0)
     expect(wrapper.text()).toContain('SKU-ACCEPTED')
     expect(wrapper.text()).toContain('SKU-REJECTED')
+  })
+
+  it('建议先于运行列表刷新时不显示错误的继任运行标签', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'old-1',
+        runId: 'run-001',
+        suggestionType: 'planned-work-order',
+        skuCode: 'SKU-OLD',
+        status: 'Superseded',
+        supersededByRunId: 'run-new',
+      },
+    ]
+    await nextTick()
+
+    const row = wrapper.findAll('.cell-skuCode').find((cell) => cell.text().includes('SKU-OLD'))!
+      .element.parentElement!
+    expect(row.querySelector('.cell-status')?.textContent).toContain('后续 MRP 运行')
+    expect(row.querySelector('.cell-status')?.textContent).not.toContain('选择一次运行')
+
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-new',
+        status: 'Completed',
+        horizonStart: '2026-07-01',
+        horizonEnd: '2026-07-31',
+      },
+      {
+        runId: 'run-001',
+        status: 'Completed',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      },
+    ]
+    await nextTick()
+    await wrapper.get('[data-select-value="run-001"]').trigger('click')
+    const refreshedRow = wrapper
+      .findAll('.cell-skuCode')
+      .find((cell) => cell.text().includes('SKU-OLD'))!.element.parentElement!
+    expect(refreshedRow.querySelector('.cell-status')?.textContent).toContain('2026-07-01')
   })
 
   it('MPS 评审人 / 发布人显示员工姓名，名录里查不到的账号显示「—」', async () => {

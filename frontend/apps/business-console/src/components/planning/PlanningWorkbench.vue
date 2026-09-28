@@ -396,6 +396,10 @@ const scopedSuggestions = computed(() =>
 function runChoiceLabel(run: BusinessConsoleMrpRunItem): string {
   return `第 ${mrpRuns.value.length - mrpRuns.value.indexOf(run)} 次 · ${runHorizonLabel(run)}`
 }
+function successorRunLabel(runId: string): string {
+  const run = mrpRuns.value.find((item) => item.runId === runId)
+  return run ? runChoiceLabel(run) : '后续 MRP 运行'
+}
 // 历次 MRP 产出的建议条数——真实时序，作为最近一次运行卡的迷你趋势。
 const mrpSuggestionSeries = computed(() =>
   runsChronological.value.map((run) => run.suggestionCount ?? 0),
@@ -1728,7 +1732,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             />
             <span v-if="row.supersededByRunId" class="text-xs text-muted-foreground">
               由
-              {{ runChoiceLabel(mrpRuns.find((run) => run.runId === row.supersededByRunId)!) }} 替代
+              {{ successorRunLabel(row.supersededByRunId) }} 替代
             </span>
           </div></template
         >
