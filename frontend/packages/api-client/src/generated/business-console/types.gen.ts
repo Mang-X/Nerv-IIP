@@ -7495,6 +7495,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordErpPurchas
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptResponse = {
     purchaseReceiptId?: string;
+    purchaseReceiptNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest = {

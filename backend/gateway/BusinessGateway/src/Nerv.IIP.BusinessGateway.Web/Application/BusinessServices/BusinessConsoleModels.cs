@@ -3729,7 +3729,7 @@ public sealed record BusinessConsoleErpPurchaseReceiptLine(
     string QualityStatus,
     string? LocationCode = null);
 
-public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId);
+public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId, string PurchaseReceiptNo);
 
 public sealed record BusinessConsoleErpRequestForQuotationListResponse(
     IReadOnlyCollection<BusinessConsoleErpRequestForQuotationItem> Items,

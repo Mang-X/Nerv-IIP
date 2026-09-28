@@ -56,7 +56,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
             await using (var write = provider.CreateAsyncScope())
             {
                 var db = write.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                receiptId = await Handler(write.ServiceProvider).Handle(command, CancellationToken.None);
+                receiptId = (await Handler(write.ServiceProvider).Handle(command, CancellationToken.None)).PurchaseReceiptId;
                 var receipt = db.PurchaseReceipts.Local.Single();
                 var movements = receipt.GetDomainEvents().OfType<PurchaseReceiptInventoryMovementRequestedDomainEvent>().ToArray();
                 Assert.Equal(inventoryCount, movements.Length);
@@ -94,7 +94,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
                 Assert.Equal(1m, source.ExchangeRate);
                 Assert.Equal(12.5m, Assert.Single(source.Lines).UnitPrice);
                 Assert.Equal(12.5m, Assert.Single(source.Lines).EstimatedUnitCost);
-                Assert.Equal(receiptId, await Handler(read.ServiceProvider).Handle(command, CancellationToken.None));
+                Assert.Equal(receiptId, (await Handler(read.ServiceProvider).Handle(command, CancellationToken.None)).PurchaseReceiptId);
                 Assert.Empty(db.PurchaseReceipts.Local.Single().GetDomainEvents());
                 await db.SaveChangesAsync();
                 var otherRoute = route == PurchaseReceiptInventoryPostingRoute.Direct

@@ -294,6 +294,7 @@ beforeEach(() => {
     {
       purchaseOrderNo: 'PO-002',
       supplierCode: 'SUP-002',
+      siteCode: 'SITE-02',
       status: 'Released',
       receiptReadiness: 'Open',
       lines: [
@@ -400,9 +401,21 @@ describe('ERP procurement receipt page', () => {
   })
 
   // #1345：qualityStatus 是 ERP 收货命令必填字段，表单必须带出质检状态并随行提交。
-  it('submits the receipt with the selected quality status and defaults to pending inspection', async () => {
+  // #3900：直接过账必须带收货库位；库位候选按采购单的工厂收窄。
+  const receiptLocationStub = {
+    DirectoryPicker: {
+      props: ['modelValue', 'id', 'formSiteCode'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :data-form-site-code="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
+  }
+
+  it('submits the receipt with the selected quality status and receiving location, defaulting to pending inspection', async () => {
     state.recordPurchaseReceipt.mockResolvedValue({})
-    const wrapper = mount(ReceiptsPage, { global: { stubs: globalStubs } })
+    const wrapper = mount(ReceiptsPage, {
+      global: { stubs: { ...globalStubs, ...receiptLocationStub } },
+    })
     await flushPromises()
 
     const receiveButton = wrapper
@@ -418,25 +431,47 @@ describe('ERP procurement receipt page', () => {
       new Set(['quality', 'unrestricted', 'blocked']),
     )
     expect((select.element as HTMLSelectElement).value).toBe('quality')
+    const location = wrapper.get('#erp-receipt-location')
+    expect(location.attributes('data-form-site-code')).toBe('SITE-02')
 
+    // 没选库位不提交，并提示原因。
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.recordPurchaseReceipt).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请选择收货库位。')
+
+    await location.setValue('loc-raw-01')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
     expect(state.recordPurchaseReceipt).toHaveBeenCalledWith({
       purchaseOrderNo: 'PO-002',
-      purchaseReceiptNo: undefined,
-      lines: [{ purchaseOrderLineNo: '10', receivedQuantity: 5, qualityStatus: 'quality' }],
+      lines: [
+        {
+          purchaseOrderLineNo: '10',
+          receivedQuantity: 5,
+          qualityStatus: 'quality',
+          locationCode: 'loc-raw-01',
+        },
+      ],
     })
 
     await receiveButton!.trigger('click')
     await wrapper.get('select').setValue('unrestricted')
+    await wrapper.get('#erp-receipt-location').setValue('loc-raw-01')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
     expect(state.recordPurchaseReceipt).toHaveBeenLastCalledWith({
       purchaseOrderNo: 'PO-002',
-      purchaseReceiptNo: undefined,
-      lines: [{ purchaseOrderLineNo: '10', receivedQuantity: 5, qualityStatus: 'unrestricted' }],
+      lines: [
+        {
+          purchaseOrderLineNo: '10',
+          receivedQuantity: 5,
+          qualityStatus: 'unrestricted',
+          locationCode: 'loc-raw-01',
+        },
+      ],
     })
   })
 })

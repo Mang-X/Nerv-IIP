@@ -19187,7 +19187,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
     {
         LastInternalToken = internalBearerToken;
         LastRecordPurchaseReceiptRequest = request;
-        return Task.FromResult(new BusinessConsoleRecordErpPurchaseReceiptResponse("receipt-001"));
+        return Task.FromResult(new BusinessConsoleRecordErpPurchaseReceiptResponse("receipt-001", "RCV-001"));
     }
 
     public Task<BusinessConsoleErpSalesOrderListResponse> ListSalesOrdersAsync(

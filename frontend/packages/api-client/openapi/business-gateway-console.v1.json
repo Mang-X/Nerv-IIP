@@ -62486,6 +62486,9 @@
         "properties": {
           "purchaseReceiptId": {
             "type": "string"
+          },
+          "purchaseReceiptNo": {
+            "type": "string"
           }
         }
       },

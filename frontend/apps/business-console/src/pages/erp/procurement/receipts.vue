@@ -6,6 +6,7 @@ import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -35,7 +36,13 @@ import {
 } from '@nerv-iip/ui'
 import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { UNAVAILABLE_TEXT, erpReadState, formatQuantity, readCount } from '../shared'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatQuantity,
+  pickerInvalidClass,
+  readCount,
+} from '../shared'
 
 definePage({
   meta: {
@@ -57,6 +64,7 @@ const rows = computed(() =>
   receipts.items.value.flatMap((order) =>
     (order.lines ?? []).map((line) => ({
       purchaseOrderNo: order.purchaseOrderNo ?? '-',
+      siteCode: order.siteCode ?? '',
       supplierCode: order.supplierCode ?? '-',
       supplierName: resolvePartner(order.supplierCode),
       status: order.status ?? '-',
@@ -128,13 +136,22 @@ const qualityStatusOptions = [
 // 「带出式录入」：收货对象只能由所选采购行带入，弹窗自身不提供采购单/行号的挑选或补填入口。
 const open = shallowRef(false)
 const receiptRow = shallowRef<(typeof rows.value)[number] | null>(null)
-const form = reactive({ receivedQuantity: '1', purchaseReceiptNo: '', qualityStatus: 'quality' })
+const form = reactive({ receivedQuantity: '1', locationCode: '', qualityStatus: 'quality' })
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const invalid = computed(() => ({
   receivedQuantity: !(Number(form.receivedQuantity) > 0),
+  locationCode: !form.locationCode.trim(),
 }))
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
+const submitErrorText = computed(() =>
+  [
+    invalid.value.receivedQuantity ? '收货数量需为正数。' : '',
+    invalid.value.locationCode ? '请选择收货库位。' : '',
+  ]
+    .filter(Boolean)
+    .join(''),
+)
 
 const receiptContextItems = computed(() => {
   const row = receiptRow.value
@@ -158,7 +175,7 @@ function openDialog(row: (typeof rows.value)[number]) {
   receiptRow.value = row
   // 默认按待收数量整单收货，一线只在部分到货时改小。
   form.receivedQuantity = String(row.openQuantity > 0 ? row.openQuantity : 1)
-  form.purchaseReceiptNo = ''
+  form.locationCode = ''
   // 默认「待检」：来料先入待检库位、由质检裁定放行，是收货环节业务上更稳妥的默认。
   form.qualityStatus = 'quality'
   showErrors.value = false
@@ -173,12 +190,12 @@ async function submit() {
   try {
     await receipts.recordPurchaseReceipt({
       purchaseOrderNo: row.purchaseOrderNo,
-      purchaseReceiptNo: form.purchaseReceiptNo.trim() || undefined,
       lines: [
         {
           purchaseOrderLineNo: row.lineNo,
           receivedQuantity: Number(form.receivedQuantity),
           qualityStatus: form.qualityStatus,
+          locationCode: form.locationCode.trim(),
         },
       ],
     })
@@ -323,13 +340,27 @@ async function submit() {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField
-              ><NvFieldLabel for="erp-receipt-no">送货单号（可选）</NvFieldLabel
-              ><NvInput id="erp-receipt-no" v-model="form.purchaseReceiptNo" autocomplete="off"
-            /></NvField>
+            <!-- 直接过账把货记进这个库位（#3900）：候选按采购单的工厂收窄，没有合适的库位可就地新增。 -->
+            <NvField>
+              <NvFieldLabel for="erp-receipt-location">
+                收货库位 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <DirectoryPicker
+                id="erp-receipt-location"
+                v-model="form.locationCode"
+                directory-type="location"
+                creatable
+                :form-site-code="receiptRow.siteCode"
+                site-missing-text="采购单没有工厂，无法选择收货库位"
+                title="选择收货库位"
+                placeholder="选择收货库位"
+                aria-label="收货库位"
+                :class="pickerInvalidClass(showErrors && invalid.locationCode)"
+              />
+            </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            收货数量需为正数。
+            {{ submitErrorText }}
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child
