@@ -81,10 +81,10 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
     width: 'w-32',
     accessor: (r) => formatTelemetryUnit(r.unitCode),
   },
-  // 采样策略是配置串（sample-2s / bucket=30s;raw=7d），翻成「每 2 秒采样」。
+  // 采集周期是配置串（sample-2s / bucket=30s;raw=7d），翻成「每 2 秒采样」。
   {
     key: 'samplingPolicy',
-    header: '采样策略',
+    header: '采集周期',
     accessor: (r) => formatSamplingPolicy(r.samplingPolicy),
   },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },

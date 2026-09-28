@@ -29,7 +29,6 @@ import {
   NvSheet,
   NvSheetContent,
   NvSheetDescription,
-  NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
   NvStatusBadge,
@@ -479,12 +478,12 @@ async function confirmDisable() {
           </div>
         </NvFieldGroup>
 
-        <NvSheetFooter class="flex-row justify-end gap-2 p-0">
+        <div class="flex justify-end gap-2">
           <NvButton type="button" variant="outline" @click="backToList">取消</NvButton>
           <NvButton type="submit" :disabled="savePointPending">
             {{ editing ? '保存点位' : '新建点位' }}
           </NvButton>
-        </NvSheetFooter>
+        </div>
       </form>
 
       <!-- 停用确认 -->
@@ -495,7 +494,7 @@ async function confirmDisable() {
         <p class="text-sm text-muted-foreground">
           停用后，这个点位不再计数，也不会出现在报警规则、历史趋势和设备控制的点位选择里；已采集的历史数据保留。停用不能撤回，同一个编码也不能再用。
         </p>
-        <NvSheetFooter class="flex-row justify-end gap-2 p-0">
+        <div class="flex justify-end gap-2">
           <NvButton type="button" variant="outline" @click="backToList">取消</NvButton>
           <NvButton
             type="button"
@@ -505,7 +504,7 @@ async function confirmDisable() {
           >
             确认停用
           </NvButton>
-        </NvSheetFooter>
+        </div>
       </div>
     </NvSheetContent>
   </NvSheet>

@@ -34,7 +34,6 @@ const stubs = {
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvSheetDescription: { template: '<p><slot /></p>' },
-  NvSheetFooter: { template: '<div><slot /></div>' },
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
