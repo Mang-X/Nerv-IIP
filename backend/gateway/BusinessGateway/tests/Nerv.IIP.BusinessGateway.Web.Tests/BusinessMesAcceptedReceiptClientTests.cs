@@ -96,6 +96,44 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             // The dismiss endpoint answers status "dismissed"; a 2xx body is still an acceptance.
             status: "dismissed");
 
+    /// <summary>
+    /// #3844：MES 端候选号是强类型标识，HTTP 端点没注册它的 JSON 转换器，只能从路由绑定；请求体里再带一份
+    /// 字符串候选号，JSON 反序列化失败，转正 / 忽略整单 400。候选号只能出现在路径上；转正应答按真实下游形状（报工单号是 { id } 对象）读。
+    /// </summary>
+    [Fact]
+    public async Task Telemetry_candidate_promote_and_dismiss_use_the_real_mes_wire_shapes()
+    {
+        const string candidateId = "019f0000-0000-7000-8000-000000000001";
+        string? promoteBody = null;
+        var promoteClient = ClientReturning(
+            // MES 转正应答与直接报工同形：报工单号是 { id } 对象，不是字符串。
+            "{\"productionReportId\":{\"id\":\"019f0000-0000-7000-8000-000000000002\"},\"reportNo\":\"PRPT-000001\",\"serialNumbers\":[]}",
+            capturedBody: body => promoteBody = body);
+        var promoted = await promoteClient.PromoteTelemetryCandidateAsync(
+            "token",
+            candidateId,
+            new BusinessConsoleMesTelemetryCandidatePromoteRequest(candidateId, "org", "env", "WO-1", "WO-1-OP-10"),
+            "user:operator",
+            CancellationToken.None);
+        string? dismissBody = null;
+        var dismissClient = ClientReturning(AcceptedJson(candidateId, "dismissed"), capturedBody: body => dismissBody = body);
+        await dismissClient.DismissTelemetryCandidateAsync(
+            "token",
+            candidateId,
+            new BusinessConsoleMesTelemetryCandidateDismissRequest(candidateId, "org", "env", "重复采集"),
+            "user:operator",
+            CancellationToken.None);
+
+        Assert.Equal("019f0000-0000-7000-8000-000000000002", promoted.ProductionReportId);
+        Assert.Equal("PRPT-000001", promoted.ReportNo);
+        using var promote = JsonDocument.Parse(promoteBody!);
+        Assert.False(promote.RootElement.TryGetProperty("candidateId", out _));
+        Assert.Equal("WO-1-OP-10", promote.RootElement.GetProperty("operationTaskId").GetString());
+        using var dismiss = JsonDocument.Parse(dismissBody!);
+        Assert.False(dismiss.RootElement.TryGetProperty("candidateId", out _));
+        Assert.Equal("重复采集", dismiss.RootElement.GetProperty("reason").GetString());
+    }
+
     [Fact]
     public async Task Record_defect_returns_an_accepted_receipt_carrying_the_defect_no() =>
         await AssertAcceptedReceiptAsync(
