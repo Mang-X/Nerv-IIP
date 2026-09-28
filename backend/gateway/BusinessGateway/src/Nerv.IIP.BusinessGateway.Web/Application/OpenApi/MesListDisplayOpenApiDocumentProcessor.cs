@@ -93,8 +93,9 @@ public sealed class MesListDisplayOpenApiDocumentProcessor : IDocumentProcessor
     ];
 
     // 停机事件与产能影响读的是同一个 WorkCenterUnavailability，聚合本身没有状态列：状态由
-    // 「是否已恢复」在读面派生（MesWorkbenchQueries / MesProductionQueries 的
-    // `ToUtc == null ? "Open" : "Recovered"`）。
+    // 「是否已恢复」在读面派生 —— MesWorkbenchQueries / MesProductionQueries 都调
+    // `WorkCenterUnavailability.DeriveStatus(x.ToUtc)`，值域见该聚合的 OpenStatus /
+    // RecoveredStatus 两个常量。
     private static readonly string[] WorkCenterUnavailabilityStatuses =
     [
         "Open",

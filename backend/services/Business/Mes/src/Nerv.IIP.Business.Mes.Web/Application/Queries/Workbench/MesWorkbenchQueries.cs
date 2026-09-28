@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -2272,7 +2273,7 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 null,
                 null,
                 x.DeviceAssetId,
-                x.ToUtc == null ? "Open" : "Recovered",
+                WorkCenterUnavailability.DeriveStatus(x.ToUtc),
                 x.FromUtc,
                 x.ToUtc,
                 x.WorkCenterId,

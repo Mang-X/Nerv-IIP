@@ -1,52 +1,46 @@
 import type { StatusTone } from '@nerv-iip/ui'
+import type {
+  GetBusinessConsoleMesWipSummaryData,
+  ListBusinessConsoleMesCapacityImpactsData,
+  ListBusinessConsoleMesDispatchTasksData,
+  ListBusinessConsoleMesDowntimeEventsData,
+  ListBusinessConsoleMesFinishedGoodsReceiptRequestsData,
+  ListBusinessConsoleMesMaterialIssueRequestsData,
+  ListBusinessConsoleMesOperationTasksData,
+  ListBusinessConsoleMesRelatedQualityItemsData,
+  ListBusinessConsoleMesShiftHandoversData,
+  ListBusinessConsoleMesWorkOrdersData,
+} from '@nerv-iip/api-client'
 
 /**
- * MES 各聚合状态码的字面量联合。刻意不从某一条 list query 的生成枚举推导：
- * 旧的 `MesListDisplayOpenApiDocumentProcessor` 把 10 个聚合的状态重填成同一份 29 值并集，
- * 那份并集让本文件服务 6 个聚合的共享词表「碰巧」只有一个 key 类型可写；收敛为按聚合的真实
- * 值域后，再借用单个聚合的枚举做键类型就只剩 10 个工单码，其余全部成为 excess property。
- * 这里的码值与各聚合域常量逐字一致，权威归生产者（#3912）。
+ * 取某条 list/query 生成类型里 `status` 的真值域。约束成带 query 的形状，
+ * 该路径不带 status 时结果是 `undefined`（即联合里没有这一项）。
+ */
+type StatusOf<T extends { query?: unknown }> =
+  T['query'] extends { status?: infer S } ? NonNullable<S> : never
+
+/**
+ * MES 各聚合状态码的字面量联合 = 各聚合生成 query 类型的 `status` 联合之并。
+ *
+ * 逐个聚合从 api-client 生成类型取，而不是手抄：生成类型由 Gateway 契约派生，
+ * 契约收敛到真实值域后（#3912）每条路径的枚举都已经是该聚合自己的值域。后端给某个
+ * 聚合增删一个状态，重新生成的类型会立刻带上变化，本联合随之变化；手抄则要靠人记得同步。
+ *
+ * 取并集而非某一个聚合的联合，是因为这份联合要当**共享词表**的键类型 —— 词表服务 6 个
+ * 聚合，任一聚合的码都必须是合法键。旧实现借 WorkOrder 一家的枚举当键类型，其余 5 个
+ * 聚合的码全是 excess property，那正是 21 个 typecheck 错误的来源。
  */
 export type MesStatusValue =
-  // WorkOrder.AllStatuses
-  | 'created'
-  | 'released'
-  | 'started'
-  | 'hold'
-  | 'completed'
-  | 'closed'
-  | 'cancelled'
-  | 'scrapped'
-  | 'split'
-  | 'merged'
-  // OperationTaskLifecycleStatus
-  | 'Queued'
-  | 'InProgress'
-  | 'Paused'
-  | 'ScheduleInvalidated'
-  | 'Completed'
-  | 'Cancelled'
-  // MaterialIssueRequest.*Status
-  | 'Requested'
-  | 'PartiallyReceived'
-  | 'ReceiptPosting'
-  | 'Received'
-  | 'ReturnRequested'
-  | 'ReservationExpired'
-  // FinishedGoodsReceiptRequest.*Status
-  | 'PartiallyPosted'
-  | 'Posted'
-  | 'InventoryPostingFailed'
-  // DefectRecord.*Status
-  | 'Open'
-  | 'ReworkPending'
-  | 'ScrapAccepted'
-  | 'ReturnAccepted'
-  | 'DispositionAccepted'
-  // ShiftHandover.OpenStatus / AcceptedStatus
-  | 'Accepted'
-  // WorkCenterUnavailability 读面派生
-  | 'Recovered'
+  | StatusOf<ListBusinessConsoleMesWorkOrdersData>
+  | StatusOf<ListBusinessConsoleMesOperationTasksData>
+  | StatusOf<GetBusinessConsoleMesWipSummaryData>
+  | StatusOf<ListBusinessConsoleMesDispatchTasksData>
+  | StatusOf<ListBusinessConsoleMesMaterialIssueRequestsData>
+  | StatusOf<ListBusinessConsoleMesFinishedGoodsReceiptRequestsData>
+  | StatusOf<ListBusinessConsoleMesRelatedQualityItemsData>
+  | StatusOf<ListBusinessConsoleMesShiftHandoversData>
+  | StatusOf<ListBusinessConsoleMesDowntimeEventsData>
+  | StatusOf<ListBusinessConsoleMesCapacityImpactsData>
 
 export type MesStatusOption = {
   value: 'all' | MesStatusValue
@@ -203,20 +197,15 @@ function warnMissingStatusLabel(value: string) {
   console.warn(`[MES] 词表缺失: ${value}，请补 useMesReferenceLabels.ts 的状态词表`)
 }
 
-/**
- * 共享词表的唯一查表入口。刻意**不做**大小写归一化：命中不到就返回 undefined，
- * 交给调用方兜底，而不是换个拼写再试一次 —— 那层兼容正是 `contracts-and-codegen.md`
- * 「不得用前端临时适配掩盖后端漂移」所禁止的。导出供负向守卫直接断言「查不到」。
- */
-export function statusLabelForTest(value: string): string | undefined {
-  return statusLabels[value as MesStatusValue]
-}
-
 export function useMesReferenceLabels() {
   function statusLabel(value?: string | null) {
     if (!value) return '未知'
     // 直查，不做大小写归一化：见本文件 RECEIPT_STATUS_LABELS 上方的说明。
-    const label = statusLabelForTest(value)
+    // 查不到就回吐原值并告警，而不是换个拼写再试一次 —— 那层兼容正是
+    // `contracts-and-codegen.md`「不得用前端临时适配掩盖后端漂移」所禁止的。
+    // 刻意不导出只读表入口给测试另开一条路：守卫必须打在这条生产渲染路径上，
+    // 否则有人把归一化加回这里而测试仍绿，正确性就成了实现巧合而非断言保证。
+    const label = statusLabels[value as MesStatusValue]
     if (label === undefined) warnMissingStatusLabel(value)
     return label ?? value
   }

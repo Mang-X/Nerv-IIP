@@ -257,9 +257,15 @@ function resetFilters() {
 }
 
 // 「排程已失效」快捷项：一键把状态筛选切到失效任务，再点一次取消。
-const invalidatedFilterActive = computed(() => statusFilter.value === 'scheduleInvalidated')
+// 两侧都取选项表里的值，不再手抄码：工序状态运行时是 PascalCase
+// （`OperationTaskLifecycleStatus`），手写小写会让这一格恒不激活、且给
+// NvSelect 一个不在选项里的值。`MesListFilters.status` 是 string，typecheck 抓不到。
+const invalidatedStatus = mesOperationTaskStatusOptions.find(
+  (option) => option.label === '排程已失效',
+)?.value
+const invalidatedFilterActive = computed(() => statusFilter.value === invalidatedStatus)
 function toggleInvalidatedFilter() {
-  statusFilter.value = invalidatedFilterActive.value ? 'all' : 'scheduleInvalidated'
+  statusFilter.value = invalidatedFilterActive.value ? 'all' : (invalidatedStatus ?? 'all')
 }
 
 function openWorkOrder(workOrderId?: string | null) {

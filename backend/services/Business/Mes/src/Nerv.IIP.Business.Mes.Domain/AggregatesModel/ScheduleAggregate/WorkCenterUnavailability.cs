@@ -34,6 +34,22 @@ public sealed class WorkCenterUnavailability : Entity<WorkCenterUnavailabilityId
         OperationTaskId = string.IsNullOrWhiteSpace(operationTaskId) ? null : operationTaskId.Trim();
     }
 
+    /// <summary>
+    /// 停机窗口的读面状态码（#3912）。本聚合**没有状态列**：状态由「是否已恢复」派生 ——
+    /// <c>ToUtc</c> 为空即 <see cref="OpenStatus"/>，否则 <see cref="RecoveredStatus"/>。
+    /// 此前这两个字面量只存在于 Web 层两处读面投影（<c>MesWorkbenchQueries</c> /
+    /// <c>MesProductionQueries</c>）与 Gateway 契约处理器里各抄一份，没有任何常量钉住它们；
+    /// 读面把 <c>Open</c> 改成 <c>Opened</c> 之类不会有任何测试变红。声明在聚合上，
+    /// 让值域与它所描述的生命周期同处一地，读面改为引用即可。
+    /// </summary>
+    public const string OpenStatus = "Open";
+
+    public const string RecoveredStatus = "Recovered";
+
+    /// <summary>按恢复时刻派生读面状态码；与读面投影共用同一实现。</summary>
+    public static string DeriveStatus(DateTimeOffset? toUtc) =>
+        toUtc is null ? OpenStatus : RecoveredStatus;
+
     public string WorkCenterId { get; private set; } = string.Empty;
     public string DowntimeEventNo { get; private set; } = string.Empty;
     public string? OrganizationId { get; private set; }

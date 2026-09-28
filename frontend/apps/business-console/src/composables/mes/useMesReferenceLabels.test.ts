@@ -5,7 +5,7 @@ import {
   mesOperationTaskStatusOptions,
   mesWorkOrderStatusOptions,
   receiptStatusLabel,
-  statusLabelForTest,
+  useMesReferenceLabels,
 } from './useMesReferenceLabels'
 
 /**
@@ -14,9 +14,14 @@ import {
  * 旧实现把每个 key 展开成「原形 / 首字母大写 / 全小写」三重，运行时值命中哪一重都能查到标签。
  * 那种写法会掩盖后端哪天改发另一种拼写 —— 前端静默继续接受，没有任何类型或测试会红。
  * 真实值是各聚合域常量的字面量：工单小写，其余（工序 / 领料单 / 完工入库单 / 不良记录 /
- * 交接班 / 停机产能）都是 PascalCase。所以小写码必须落到未知，而不是被吸收。
+ * 交接班 / 停机产能）都是 PascalCase。所以小写码必须落空，而不是被吸收。
+ *
+ * 断言一律打 `useMesReferenceLabels().statusLabel` 这条**生产渲染路径**，不走任何
+ * 只读表的旁路导出：只要有人把归一化加回 `statusLabel`，这里立刻红。
  */
 describe('MES 状态词表不吸收契约漂移', () => {
+  const { statusLabel } = useMesReferenceLabels()
+
   it('完工入库按运行时 PascalCase 查表', () => {
     expect(receiptStatusLabel('Requested')).toBe('待入库')
     expect(receiptStatusLabel('PartiallyPosted')).toBe('部分入库')
@@ -58,16 +63,17 @@ describe('MES 状态词表不吸收契约漂移', () => {
     expect(values).not.toContain('Created')
   })
 
-  it('共享词表对两种拼写同时返回标签即为归一化层，必须为否', () => {
+  it('生产渲染路径对两种拼写只认真实值域那一侧', () => {
     // 这条比上面任何一条都强：只要有人把归一化加回 statusLabel，两种拼写就都会命中，
     // 断言立刻红。它直接钉住「不得有大小写兼容层」这个不变量本身，而不是钉住某几个码。
-    expect(statusLabelForTest('Queued')).toBe('待开工')
-    expect(statusLabelForTest('queued')).toBeUndefined()
-    expect(statusLabelForTest('InProgress')).toBe('执行中')
-    expect(statusLabelForTest('inProgress')).toBeUndefined()
-    expect(statusLabelForTest('created')).toBe('已创建')
-    // 工单是真小写，PascalCase 变体同样必须查不到。
-    expect(statusLabelForTest('Created')).toBeUndefined()
+    // 走 statusLabel（页面真正调用的那个），不是任何测试专用的查表入口。
+    expect(statusLabel('Queued')).toBe('待开工')
+    expect(statusLabel('queued')).toBe('queued')
+    expect(statusLabel('InProgress')).toBe('执行中')
+    expect(statusLabel('inProgress')).toBe('inProgress')
+    // 工单是真小写，PascalCase 变体同样必须查不到（查不到时回吐原值）。
+    expect(statusLabel('created')).toBe('已创建')
+    expect(statusLabel('Created')).toBe('Created')
   })
 
   it('工序筛选项是 PascalCase 的真实值域，不含小写变体', () => {

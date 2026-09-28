@@ -6,6 +6,7 @@ using NJsonSchema.Annotations;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries;
 
@@ -608,7 +609,7 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.DowntimeEventNo,
                 x.WorkCenterId,
                 x.DeviceAssetId,
-                x.ToUtc == null ? "Open" : "Recovered",
+                WorkCenterUnavailability.DeriveStatus(x.ToUtc),
                 x.FromUtc,
                 x.ToUtc,
                 x.Reason,

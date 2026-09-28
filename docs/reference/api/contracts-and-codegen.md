@@ -75,6 +75,47 @@
 
 该例外要求后端与重新生成的客户端同批升级（本仓前端调用方已在同一 PR 内迁移，`verify-openapi-client-drift.ps1` 为零漂移的机器判据）。它**只适用于 #3314 与上表四条路由**；两个 Gateway 形成受支持客户发布后，路由删除仍遵循 Governance 的一般破坏性变更/主版本规则。
 
+### MES 列表 `status` 枚举收窄到聚合真实值域（#3912）
+
+2026-09-28 已批准一个窄范围版本例外：#3912 允许把 BusinessGateway v1 OpenAPI 中
+**MES 列表**的状态枚举，从「10 个 schema 与 11 条列表路径共用的同一份 29 值小写并集」
+收窄为各聚合的真实值域，而不为被移除的码值建立 v2 路由或保留过渡期。
+
+**收窄前**：每个 MES 列表的 `status`（行属性与 `status` 查询参数）都是同一份
+`accepted/active/blocked/cancelled/closed/completed/...` 共 29 值的并集。
+
+**收窄后**，按路径背后聚合的真实值域：
+
+| 路径 / schema 组 | 聚合 | 值域 |
+| --- | --- | --- |
+| `/mes/work-orders`、`/mes/production-plans`、`BusinessConsoleMesWorkOrderItem` | `WorkOrder` | 10（小写） |
+| `/mes/operation-tasks`、`/mes/dispatch-tasks`、`/mes/wip`、3 个工序相关 schema | `OperationTask` | 6（PascalCase） |
+| `/mes/material-issue-requests`、`BusinessConsoleMesMaterialIssueRequestRow` | `MaterialIssueRequest` | 7（PascalCase） |
+| `/mes/finished-goods-receipt-requests`、`BusinessConsoleMesReceiptRequestRow.receiptStatus` | `FinishedGoodsReceiptRequest` | 5（PascalCase） |
+| `/mes/related-quality-items`、`BusinessConsoleMesRelatedQualityItemRow` | `DefectRecord` | 5（PascalCase） |
+| `/mes/shift-handovers` | `ShiftHandover` | 2（PascalCase） |
+| `/mes/downtime-events`、`/mes/capacity-impacts`、2 个停机/产能 schema | `WorkCenterUnavailability`（读面派生） | 2（PascalCase） |
+
+**为什么不能走一般的主版本/迁移窗口程序**：那份 29 值并集本身就是缺陷载体，不是既有能力。
+它把 6 个互不相干的聚合的状态混成一个集合，并且**用小写拼写冒充 PascalCase 域的运行时值** ——
+工序、领料单、完工入库单、不良记录、交接班、停机这 6 个聚合在服务端实际会产生的值，
+**一个都不在**该枚举内。保留过渡期等于让 29 个并集码继续作为合法过滤值被接受，其中
+27 个在任何聚合上都没有对应数据；真正的运行时值反而被契约判为非法。契约此时不是在
+描述能力，而是在描述漂移。
+
+特别地，`/mes/downtime-events` 与 `/mes/capacity-impacts` 从 29 值收到 2 值（`Open` /
+`Recovered`）**是取消无效过滤能力，不是修正拼写** —— 但被取消的 27 个码在这两条路径上
+本就永远匹配不到任何行（它们不属于 `WorkCenterUnavailability` 的值域），因此没有可观测的
+功能损失。
+
+**替代面**：无。这不是新增能力或重命名，是把契约校正回生产者的事实。
+
+该例外要求后端与重新生成的客户端同批升级（本仓前端消费方已在同一 PR 内迁移到真实值域，
+`verify-openapi-client-drift.ps1` 为零漂移的机器判据；后端契约测试以 MES 域常量比对
+OpenAPI 枚举，域里增删状态而契约没跟上时断言必然红）。它**只适用于 #3912 与上表所列
+MES 列表路径/schema**；两个 Gateway 形成受支持客户发布后，任何状态枚举的收窄仍遵循
+Governance 的一般破坏性变更/主版本规则。
+
 ## 历史材料边界
 
 `docs/reports/audits/**` 保存迁移前总账、历史漂移、修复批次、调查和曾经的端点渲染，目的是可追溯，不承担当前规范或机器事实。若 audit 与 Current Architecture / Governance / Runbook / Reference 或代码生产者冲突，以当前权威来源为准，并把 audit 视为当时状态快照。

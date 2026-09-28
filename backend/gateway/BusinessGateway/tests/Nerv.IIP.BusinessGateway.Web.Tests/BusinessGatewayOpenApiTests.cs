@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
@@ -2642,8 +2643,10 @@ public sealed class BusinessGatewayOpenApiTests
 
     private static readonly string[] ShiftHandoverStatuses = DeclaredStatusConstants<ShiftHandover>();
 
-    // MesWorkbenchQueries / MesProductionQueries 的 `ToUtc == null ? "Open" : "Recovered"`。
-    private static readonly string[] WorkCenterUnavailabilityStatuses = ["Open", "Recovered"];
+    // 取聚合上的两个常量，不再手抄：读面 MesWorkbenchQueries / MesProductionQueries 已改为
+    // 引用 WorkCenterUnavailability.DeriveStatus，所以改域常量时本断言会跟着走。
+    private static readonly string[] WorkCenterUnavailabilityStatuses =
+        [WorkCenterUnavailability.OpenStatus, WorkCenterUnavailability.RecoveredStatus];
 
     private static string[] ExpectedStatusQueryValues(string path) => path switch
     {
