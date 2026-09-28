@@ -108,7 +108,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
             cancellationToken);
         if (equipmentIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(equipmentIssues));
         }
 
         var qualityIssues = await ReadinessReasonCodes.GetQualityBlockingIssuesAsync(
@@ -120,7 +120,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
             cancellationToken);
         if (qualityIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(qualityIssues));
         }
 
         var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
@@ -1357,7 +1357,7 @@ public sealed class AssignDispatchTaskCommandHandler(
             cancellationToken);
         if (qualityIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(qualityIssues));
         }
 
         var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
@@ -1370,7 +1370,7 @@ public sealed class AssignDispatchTaskCommandHandler(
             cancellationToken);
         if (equipmentIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(equipmentIssues));
         }
 
         await workerSkillQualificationGate.EnsureQualifiedAsync(
@@ -1471,7 +1471,7 @@ public sealed class ClaimDispatchTaskCommandHandler(
             task.OperationTaskIdValue, cancellationToken);
         if (qualityIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(qualityIssues));
         }
 
         var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
@@ -1479,7 +1479,7 @@ public sealed class ClaimDispatchTaskCommandHandler(
             task.WorkOrderId, request.AssignedAtUtc, cancellationToken);
         if (equipmentIssues.Count > 0)
         {
-            throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+            throw new KnownException(ReadinessReasonCodes.DescribeForUser(equipmentIssues));
         }
 
         await workerSkillQualificationGate.EnsureQualifiedAsync(
@@ -2293,6 +2293,13 @@ internal sealed record ReadinessBlockingIssue(
 
 internal static class ReadinessReasonCodes
 {
+    /// <summary>
+    /// 写操作被设备/质量阻断时给用户看的一句话（#3858）：只拼各阻断项的中文说明，不拼英文码——
+    /// 这句经网关原样上屏。码值仍由读面按 <c>CODE: 中文</c> 给前端取标签与下一步。
+    /// </summary>
+    public static string DescribeForUser(IEnumerable<ReadinessBlockingIssue> issues) =>
+        string.Join("；", issues.Select(x => x.Message).Distinct(StringComparer.Ordinal));
+
     public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetQualityBlockingIssuesAsync(
         ApplicationDbContext dbContext,
         string organizationId,
@@ -2409,7 +2416,7 @@ internal static class ReadinessReasonCodes
                     classification.SourceSystem,
                     "DowntimeEvent",
                     x.DowntimeEventNo,
-                    $"设备或工作中心存在维护/报警/停机冲突，WorkCenterId = {x.WorkCenterId}");
+                    $"工作中心 {x.WorkCenterId}：{classification.Message}");
             })
             .ToArray();
     }

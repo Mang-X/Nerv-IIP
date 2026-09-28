@@ -893,7 +893,8 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-QH-001", now.AddMinutes(5)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, releaseHold.Message);
+        // #3858：拒绝文案经网关原样上屏，只给中文说明，不拼英文码。
+        Assert.Equal("工单存在有效质量保留，无法放行或开工：critical-defect", releaseHold.Message);
 
         await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
             "evt-qh-passed-001",
@@ -1226,7 +1227,7 @@ public sealed class MesPersistenceContractTests
             new AssignDispatchTaskCommandHandler(dbContext).Handle(
                 new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-10", "operator-a", null, "shift-a", now.AddMinutes(3)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, blockedDispatch.Message);
+        Assert.Equal("工单存在有效质量保留，无法放行或开工：critical-defect", blockedDispatch.Message);
 
         await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
             "evt-qh-scope-conditional-10",
@@ -1247,7 +1248,7 @@ public sealed class MesPersistenceContractTests
             new AssignDispatchTaskCommandHandler(dbContext).Handle(
                 new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-20", "operator-b", null, "shift-b", now.AddMinutes(6)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, stillBlockedDispatch.Message);
+        Assert.Equal("工单存在有效质量保留，无法放行或开工：critical-defect", stillBlockedDispatch.Message);
 
         var releasedHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-10");
         var activeHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-20");
@@ -1834,7 +1835,7 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-EQUIP-001", now.AddMinutes(30)),
                 CancellationToken.None));
-        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, releaseEquipmentException.Message);
+        Assert.Equal("工作中心 WC-FILL：设备存在维修或保养占用，当前工序不能派工或开工。", releaseEquipmentException.Message);
 
         var startException = await Assert.ThrowsAsync<KnownException>(() =>
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
@@ -1935,7 +1936,7 @@ public sealed class MesPersistenceContractTests
                     now.AddMinutes(15)),
                 CancellationToken.None));
 
-        Assert.Contains(EquipmentRuntimeReasonCodes.ActiveAlarm, exception.Message);
+        Assert.Equal("工作中心 WC-OIL：工业遥测存在未解除报警，设备不可用于当前工序。", exception.Message);
     }
 
     [Fact]
