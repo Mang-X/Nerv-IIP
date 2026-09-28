@@ -23148,6 +23148,7 @@ export type ListBusinessConsoleSearchableDirectoryData = {
         pageIndex?: number;
         pageSize?: number;
         rankingMode?: 'default' | 'recent' | 'suggested';
+        siteCode?: string | null;
     };
     url: '/api/business-console/v1/directories/{directoryType}';
 };

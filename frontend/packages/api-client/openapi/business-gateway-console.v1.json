@@ -31647,6 +31647,14 @@
                 "suggested"
               ]
             }
+          },
+          {
+            "name": "siteCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {

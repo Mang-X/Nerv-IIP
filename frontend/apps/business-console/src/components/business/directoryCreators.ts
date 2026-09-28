@@ -11,8 +11,9 @@ import type { BusinessPermissionCode } from '@/permissions'
  * - `v-model:open` 控制开关；
  * - 每次点入口，选择器都会重新挂载一个全新的弹窗实例（递增 `key`），所以弹窗在 setup 里按
  *   `context` 初始化表单即可，不用自己写「重新打开时重置」；
- * - 可选的 `context` 属性收调用方给的上下文（`DirectoryPicker` 的 `create-context` 原样传入），
- *   用来预填父级，如设备表单已选产线时新增工位传 `{ lineCode: 'LINE-01' }`；键由各类弹窗自己定义；
+ * - 可选的 `context` 属性收预填父级用的上下文，如设备表单已选产线时新增工位传 `{ lineCode: 'LINE-01' }`；
+ *   键由各类弹窗自己定义。一般由 `DirectoryPicker` 的 `create-context` 原样传入；按工厂切分的库存目录
+ *   （库位）例外：`siteCode` 只取 `DirectoryPicker` 的 `form-site-code`，不走 `create-context`；
  * - 建好后发出 `created`，带上新建项的编码和名称（`DirectoryCreatedItem`），选择器据此自动选中
  *   并显示名称。
  */
