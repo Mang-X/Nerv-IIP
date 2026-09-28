@@ -17,20 +17,17 @@ import {
   NvListRow,
   NvMobileResult,
   NvMobileButton,
-  NvMobileInput,
   NvMobileToast,
   NvNumberKeyboard,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   useMesExactOperationTask,
   useMesProductionReports,
-  useMesTelemetryProductionReportCandidates,
   useMesWorkOrderDetail,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
-import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
@@ -47,15 +44,8 @@ import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
-import { useTelemetryCandidateTarget } from '@/composables/mes/useTelemetryCandidateTarget'
-import { useDeviceAssetNames } from '@/composables/useBusinessDeviceDirectory'
-import TelemetryCandidateTarget from './components/TelemetryCandidateTarget.vue'
-import {
-  formatOperationDateTime,
-  reworkSourceLabel,
-  telemetryCandidateStateLabel,
-  withReworkLabel,
-} from './components/operationPresentation'
+import TelemetryCandidateQueue from './components/TelemetryCandidateQueue.vue'
+import { reworkSourceLabel, withReworkLabel } from './components/operationPresentation'
 
 definePage({
   meta: {
@@ -157,75 +147,13 @@ const {
   reportableTasksError,
   reportableTasksReady,
 })
-const telemetryQueue = useMesTelemetryProductionReportCandidates()
-const telemetryCandidateId = ref<string | null>(null)
-const activeTelemetryCandidate = computed(() =>
-  telemetryQueue.candidates.value.find(
-    (candidate) => candidate.candidateId === telemetryCandidateId.value,
-  ),
-)
-const telemetryTarget = useTelemetryCandidateTarget(activeTelemetryCandidate, reportContext)
-// 候选读面只回设备标识，卡片标题的「名称（编码）」回主数据查；查不到就显示占位，不露标识。
-const telemetryDeviceNames = useDeviceAssetNames(
-  computed(() => telemetryQueue.candidates.value.map((candidate) => candidate.deviceAssetId ?? '')),
-)
-function telemetryDeviceLabel(deviceAssetId?: string) {
-  return telemetryDeviceNames.resolveDeviceName(deviceAssetId) ?? '—'
-}
-// 遥测候选区里的输入框（工序搜索、忽略原因）获焦时，扫码框让出焦点（同 equipment/inspect.vue）。
+// 遥测候选区里的输入框获焦时扫码框让出焦点（候选区自己上报，见 TelemetryCandidateQueue）。
 const telemetryEditing = ref(false)
-const telemetryDismissReason = ref('')
 const scanGate = useMesScanGate()
 const scanPending = scanGate.pending
 const scanGuarded = scanGate.guarded
 const validatedDeviceAssetId = ref('')
 const validatedPersonnelId = ref('')
-function resetTelemetryAction() {
-  telemetryDismissReason.value = ''
-}
-function toggleTelemetryCandidate(candidateId?: string) {
-  resetTelemetryAction()
-  telemetryCandidateId.value =
-    telemetryCandidateId.value === candidateId ? null : (candidateId ?? null)
-}
-
-// 转正 / 忽略的结果必须上屏：成功时候选只是从列表里消失，失败时什么都不显示，操作工会以为没生效而重复点。
-const telemetryToast = shallowRef<{ show: boolean; message: string; type: 'success' | 'error' }>({
-  show: false,
-  message: '',
-  type: 'success',
-})
-function showTelemetryToast(message: string, type: 'success' | 'error') {
-  telemetryToast.value = { show: true, message, type }
-}
-async function promoteTelemetryCandidate(candidateId?: string) {
-  if (scanPending.value) return
-  const workOrderId = telemetryTarget.target.value?.workOrderId
-  const operationTaskId = telemetryTarget.target.value?.operationTaskId
-  if (!candidateId || !workOrderId || !operationTaskId) return
-  try {
-    const reportNo = await telemetryQueue.promote(candidateId, workOrderId, operationTaskId)
-    showTelemetryToast(reportNo ? `已转为报工 ${reportNo}` : '已转为报工', 'success')
-  } catch (error) {
-    showTelemetryToast(describeRequestError(error, '转为报工失败，请重试。').message, 'error')
-    return
-  }
-  telemetryCandidateId.value = null
-  resetTelemetryAction()
-}
-async function dismissTelemetryCandidate(candidateId?: string) {
-  if (scanPending.value) return
-  if (!candidateId || !telemetryDismissReason.value.trim()) return
-  try {
-    await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
-    showTelemetryToast('已忽略这条遥测记录', 'success')
-  } catch (error) {
-    showTelemetryToast(describeRequestError(error, '忽略失败，请重试。').message, 'error')
-    return
-  }
-  telemetryCandidateId.value = null
-  resetTelemetryAction()
-}
 
 // --- 流程上下文（productionReportFlow 驱动当前步/进度）---
 const ctx = reactive<ReportCtx>({
@@ -627,69 +555,11 @@ async function onScanAccepted(value: MesScanAccepted) {
           @retry="() => refreshWorkOrderDetail()"
         />
       </section>
-      <section
-        v-if="telemetryQueue.candidates.value.length"
-        class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3"
-        @focusin="telemetryEditing = true"
-        @focusout="telemetryEditing = false"
-      >
-        <div class="flex items-center justify-between">
-          <h2 class="font-semibold">遥测待确认</h2>
-          <span class="text-xs text-muted-foreground">{{ telemetryQueue.total.value }} 条</span>
-        </div>
-        <div
-          v-for="candidate in telemetryQueue.candidates.value"
-          :key="candidate.candidateId"
-          class="rounded-lg border border-border bg-card p-3"
-        >
-          <NvMobileButton
-            variant="text"
-            block
-            class="h-auto min-w-0 flex-col items-start justify-start gap-0.5 p-0 text-left whitespace-normal"
-            @click="toggleTelemetryCandidate(candidate.candidateId)"
-          >
-            <span class="block min-w-0 font-medium break-words"
-              >设备 {{ telemetryDeviceLabel(candidate.deviceAssetId) }} ·
-              {{ candidate.goodQuantity }} 件 ·
-              {{ formatOperationDateTime(candidate.bucketStartUtc) }}</span
-            ><span class="block text-xs text-muted-foreground">{{
-              telemetryCandidateStateLabel(candidate)
-            }}</span>
-          </NvMobileButton>
-          <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
-            <TelemetryCandidateTarget
-              v-model:keyword="telemetryTarget.keyword.value"
-              v-model:choosing="telemetryTarget.choosing.value"
-              :device-asset-id="telemetryTarget.deviceAssetId.value"
-              :target="telemetryTarget.target.value"
-              :tasks="telemetryTarget.tasks.value"
-              :pending="telemetryTarget.pending.value"
-              :error="telemetryTarget.error.value"
-              :scope-ready="Boolean(reportContext)"
-              :device-label="telemetryTarget.deviceLabel"
-              @choose="telemetryTarget.choose"
-              @retry="telemetryTarget.refresh"
-            />
-            <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
-            <div class="grid grid-cols-2 gap-2">
-              <NvMobileButton
-                variant="primary"
-                data-testid="telemetry-promote"
-                :disabled="
-                  !telemetryTarget.target.value || telemetryTarget.choosing.value || scanPending
-                "
-                @click="promoteTelemetryCandidate(candidate.candidateId)"
-                >确认转正</NvMobileButton
-              ><NvMobileButton
-                variant="outline"
-                :disabled="!telemetryDismissReason.trim() || scanPending"
-                @click="dismissTelemetryCandidate(candidate.candidateId)"
-                >忽略</NvMobileButton
-              >
-            </div>
-          </div>
-        </div>
-      </section>
+      <TelemetryCandidateQueue
+        v-model:editing="telemetryEditing"
+        :context="reportContext"
+        :scan-pending="scanPending"
+      />
       <!-- 步骤 1：选工单 -->
       <template v-if="currentStep === 'selectWorkOrder'">
         <MesScanPrevalidation
@@ -981,12 +851,6 @@ async function onScanAccepted(value: MesScanAccepted) {
       </div>
     </NvBottomSheet>
 
-    <NvMobileToast
-      :show="telemetryToast.show"
-      :message="telemetryToast.message"
-      :type="telemetryToast.type"
-      @update:show="telemetryToast = { ...telemetryToast, show: $event }"
-    />
     <NvMobileToast
       :show="lifecycleRecovery.toast.value.show"
       :message="lifecycleRecovery.toast.value.message"

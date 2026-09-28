@@ -1475,6 +1475,20 @@ describe('PDA MES production reporting page', () => {
     expect(listScanner().props('active')).toBe(true)
   })
 
+  it('遥测候选区的按钮获焦时扫码框不让出焦点，点过按钮仍能直接扫码', async () => {
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-button-focus',
+      deviceAssetId: 'DEV-CNC-01',
+    })
+    const listScanner = () => wrapper.getComponent({ name: 'MesScanPrevalidation' })
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('12 件'))!
+      .trigger('focusin')
+    expect(listScanner().props('active')).toBe(true)
+  })
+
   it('遥测候选已关联工单工序时直接带出，确认转正不需要输入任何编号', async () => {
     telemetryTargetTasksRef.value = deviceTasks
     const wrapper = await openTelemetryCandidate({
