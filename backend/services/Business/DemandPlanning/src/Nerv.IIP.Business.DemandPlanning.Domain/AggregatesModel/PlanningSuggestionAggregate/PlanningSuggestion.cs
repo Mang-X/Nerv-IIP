@@ -276,6 +276,47 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         Status = PlanningSuggestionStatus.Superseded;
         SupersededByRunId = successorRunId;
     }
+
+    public void InvalidateDemandReference(string demandSourceReference)
+    {
+        if (Status != PlanningSuggestionStatus.Open)
+        {
+            return;
+        }
+
+        var demandLinks = peggingLinks.Where(x => string.Equals(x.PeggingType, "demand", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var invalidQuantity = demandLinks
+            .Where(x => string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal))
+            .Sum(x => x.Quantity);
+        if (invalidQuantity == 0m)
+        {
+            return;
+        }
+
+        var remainingQuantity = demandLinks.Sum(x => x.Quantity) - invalidQuantity;
+        if (remainingQuantity == 0m)
+        {
+            Status = PlanningSuggestionStatus.Closed;
+            return;
+        }
+
+        Quantity = decimal.Round(Quantity * remainingQuantity / (remainingQuantity + invalidQuantity), 6, MidpointRounding.AwayFromZero);
+        if (Quantity == 0m)
+        {
+            Status = PlanningSuggestionStatus.Closed;
+            return;
+        }
+
+        peggingLinks.RemoveAll(x => string.Equals(x.PeggingType, "demand", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal));
+        PlannedQuantity = Quantity;
+    }
+
+    public void NotifySalesOrderDemandChanged(string demandSourceReference, string salesOrderId, int orderVersion, bool cancelled)
+    {
+        this.AddDomainEvent(new SalesOrderDemandChangedForWorkOrderDomainEvent(
+            this, demandSourceReference, salesOrderId, orderVersion, cancelled));
+    }
 }
 
 public sealed class PeggingLink : Entity<PeggingLinkId>

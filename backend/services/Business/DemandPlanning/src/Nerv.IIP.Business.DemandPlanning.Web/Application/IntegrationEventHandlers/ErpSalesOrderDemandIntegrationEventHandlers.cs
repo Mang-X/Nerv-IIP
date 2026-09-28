@@ -1,9 +1,11 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.Erp;
+using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -162,6 +164,8 @@ internal sealed class SalesOrderDemandEventProcessor(
         var existingByLine = existingDemands.ToDictionary(x => (x.SourceReference, x.SourceLineReference));
         var isOrderCancelled = string.Equals(payload.Status, "cancelled", StringComparison.Ordinal);
         var activeLineReferences = new HashSet<string>(StringComparer.Ordinal);
+        var changedDemandReferences = new HashSet<string>(StringComparer.Ordinal);
+        var hasWorkOrderSignal = false;
 
         if (!isOrderCancelled)
         {
@@ -171,6 +175,10 @@ internal sealed class SalesOrderDemandEventProcessor(
                 var remainingQuantity = line.Quantity - line.DeliveredQuantity;
                 if (existingByLine.TryGetValue((payload.SalesOrderNo, line.SalesOrderLineNo), out var demand))
                 {
+                    if (demand.Quantity != remainingQuantity || (remainingQuantity > 0m && demand.DueDate != line.RequiredDate))
+                    {
+                        changedDemandReferences.Add(demand.SourceReference);
+                    }
                     if (remainingQuantity == 0m)
                     {
                         demand.FulfillFromSalesOrder(payload.OrderVersion);
@@ -201,7 +209,39 @@ internal sealed class SalesOrderDemandEventProcessor(
 
         foreach (var demand in existingDemands.Where(x => isOrderCancelled || !activeLineReferences.Contains(x.SourceLineReference)))
         {
+            if (demand.Quantity > 0m)
+            {
+                changedDemandReferences.Add(demand.SourceReference);
+            }
             demand.CancelFromSalesOrder(payload.OrderVersion);
+        }
+
+        if (changedDemandReferences.Count > 0)
+        {
+            var suggestions = await dbContext.PlanningSuggestions
+                .Include(x => x.PeggingLinks)
+                .Where(x => x.OrganizationId == integrationEvent.OrganizationId
+                    && x.EnvironmentId == integrationEvent.EnvironmentId
+                    && (x.Status == PlanningSuggestionStatus.Open || x.Status == PlanningSuggestionStatus.Accepted)
+                    && x.PeggingLinks.Any(link => link.PeggingType == "demand"
+                        && changedDemandReferences.Contains(link.DemandSourceReference)))
+                .ToListAsync(cancellationToken);
+            foreach (var suggestion in suggestions)
+            {
+                foreach (var demandReference in suggestion.GetDemandSourceReferences().Where(changedDemandReferences.Contains))
+                {
+                    if (suggestion.Status == PlanningSuggestionStatus.Open)
+                    {
+                        suggestion.InvalidateDemandReference(demandReference);
+                    }
+                    else if (string.Equals(suggestion.AcceptedDownstreamService, DemandPlanningDownstreamReferences.BusinessMes, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(suggestion.AcceptedDownstreamDocumentType, DemandPlanningDownstreamReferences.WorkOrder, StringComparison.OrdinalIgnoreCase))
+                    {
+                        suggestion.NotifySalesOrderDemandChanged(demandReference, payload.SalesOrderId, payload.OrderVersion, isOrderCancelled);
+                        hasWorkOrderSignal = true;
+                    }
+                }
+            }
         }
 
         if (projection is null)
@@ -223,12 +263,16 @@ internal sealed class SalesOrderDemandEventProcessor(
             projection.Apply(payload.SalesOrderNo, payload.CustomerCode, payload.SiteCode, payload.OrderVersion, payload.Status, integrationEvent.EventId, integrationEvent.OccurredAtUtc);
         }
 
-        await SaveAsync(cancellationToken);
+        await SaveAsync(cancellationToken, hasWorkOrderSignal);
     }
 
-    private Task<int> SaveAsync(CancellationToken cancellationToken) =>
+    private Task<int> SaveAsync(CancellationToken cancellationToken, bool publishDomainEvents = false) =>
         ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
-            dbContext, dbContext.SaveChangesAsync, cancellationToken);
+            dbContext,
+            publishDomainEvents
+                ? async ct => await dbContext.SaveEntitiesAsync(ct) ? 1 : 0
+                : dbContext.SaveChangesAsync,
+            cancellationToken);
 
     private static string? Validate(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload, string expectedStatus)
     {

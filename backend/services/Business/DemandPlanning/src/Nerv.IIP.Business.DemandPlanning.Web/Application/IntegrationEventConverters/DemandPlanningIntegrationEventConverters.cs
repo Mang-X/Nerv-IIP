@@ -86,6 +86,35 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
     }
 }
 
+public sealed class SalesOrderDemandChangedForWorkOrderIntegrationEventConverter
+    : IIntegrationEventConverter<SalesOrderDemandChangedForWorkOrderDomainEvent, SalesOrderDemandChangedForWorkOrderIntegrationEvent>
+{
+    public SalesOrderDemandChangedForWorkOrderIntegrationEvent Convert(SalesOrderDemandChangedForWorkOrderDomainEvent domainEvent)
+    {
+        var suggestion = domainEvent.PlanningSuggestion;
+        return new SalesOrderDemandChangedForWorkOrderIntegrationEvent(
+            EventIds.New(),
+            DemandPlanningIntegrationEventTypes.SalesOrderDemandChangedForWorkOrder,
+            DemandPlanningIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
+            "system:demand-planning",
+            domainEvent.SalesOrderId,
+            suggestion.OrganizationId,
+            suggestion.EnvironmentId,
+            "system:demand-planning",
+            EventIds.Idempotency("sales-order-demand-changed", suggestion.OrganizationId, suggestion.EnvironmentId,
+                PublicId(suggestion.Id), domainEvent.DemandSourceReference, domainEvent.OrderVersion.ToString()),
+            new SalesOrderDemandChangedForWorkOrderPayload(
+                PublicId(suggestion.Id),
+                suggestion.AcceptedDownstreamDocumentId!,
+                domainEvent.DemandSourceReference,
+                domainEvent.SalesOrderId,
+                domainEvent.OrderVersion,
+                domainEvent.Cancelled));
+    }
+}
+
 internal static class DemandPlanningIntegrationEventConverterHelpers
 {
     public static DemandPlanningIntegrationEvent<TPayload> Envelope<TPayload>(

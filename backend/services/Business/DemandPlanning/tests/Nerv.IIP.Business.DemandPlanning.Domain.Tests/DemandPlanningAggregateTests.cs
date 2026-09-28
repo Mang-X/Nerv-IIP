@@ -288,6 +288,32 @@ public sealed class DemandPlanningAggregateTests
         Assert.Null(NewSuggestion().GetPrimaryDemandSourceReference());
     }
 
+    [Fact]
+    public void Changed_sales_demand_removes_only_its_share_of_a_mixed_open_suggestion()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("demand", "SO-001", "SKU-FG-1000", "SKU-RM-1000", 8m, null, null, null);
+        suggestion.AddPeggingLink("demand", "SO-002", "SKU-FG-1000", "SKU-RM-1000", 12m, null, null, null);
+
+        suggestion.InvalidateDemandReference("SO-001");
+
+        Assert.Equal(PlanningSuggestionStatus.Open, suggestion.Status);
+        Assert.Equal(11.4m, suggestion.Quantity);
+        Assert.Equal("SO-002", Assert.Single(suggestion.PeggingLinks).DemandSourceReference);
+    }
+
+    [Fact]
+    public void Cancelled_sales_demand_closes_an_open_suggestion_when_no_other_demand_remains()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("demand", "SO-001", "SKU-FG-1000", "SKU-RM-1000", 19m, null, null, null);
+
+        suggestion.InvalidateDemandReference("SO-001");
+
+        Assert.Equal(PlanningSuggestionStatus.Closed, suggestion.Status);
+        Assert.Equal(19m, suggestion.Quantity);
+    }
+
     private static DemandSource NewDemand()
     {
         return DemandSource.Create(
