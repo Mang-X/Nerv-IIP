@@ -1803,8 +1803,26 @@
       "method": "POST",
       "route": "/api/business/v1/iiot/tags",
       "operationId": "createBusinessIiotTelemetryTag",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; telemetry tag create follows the equipment/telemetry config menu phase (only tag list GET is exposed today)."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsoleTelemetryTag"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/tags/disable",
+      "operationId": "disableBusinessIiotTelemetryTag",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "disableBusinessConsoleTelemetryTag"
+      ]
     },
     {
       "service": "Inventory",

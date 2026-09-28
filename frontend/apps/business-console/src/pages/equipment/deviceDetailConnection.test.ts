@@ -150,6 +150,7 @@ const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
   DeviceControlSheet: { template: '<div />' },
+  DeviceTelemetryPointsSheet: { template: '<div />' },
   EquipmentHealthCard: { template: '<section />' },
 }
 

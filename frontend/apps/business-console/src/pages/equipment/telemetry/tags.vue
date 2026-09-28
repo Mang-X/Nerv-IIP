@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryTagItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { formatSamplingPolicy, formatTelemetryUnit } from '@/data/businessLabels'
+import {
+  formatSamplingPolicy,
+  formatTelemetryUnit,
+  formatTelemetryValueType,
+} from '@/data/businessLabels'
 import { useBusinessTelemetryTags } from '@/composables/useBusinessTelemetry'
 import { useEquipmentDeviceCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
@@ -24,7 +28,7 @@ import { inlineErrorMessage } from '@/utils/notify'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '采集标签',
+    title: '采集点位',
     requiredPermissions: ['business.iiot.telemetry.read'],
   },
 })
@@ -35,7 +39,7 @@ const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 
 const errorMessage = computed(() => inlineErrorMessage(tagsError.value))
 
-// 采集标签读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+// 采集点位读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 /** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
 function deviceLabel(code?: string | null, fallback = '无设备') {
@@ -44,11 +48,17 @@ function deviceLabel(code?: string | null, fallback = '无设备') {
 }
 
 const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
+  // 点位名称可空（#3870 新增）；没填名称的点位用编码代替，编码列照常显示。
+  {
+    key: 'displayName',
+    header: '点位名称',
+    cellClass: 'font-medium',
+    accessor: (r) => r.displayName?.trim() || r.tagKey || '—',
+  },
   {
     key: 'tagKey',
-    header: '采集标签',
-    cellClass: 'font-medium',
-    accessor: (r) => r.tagKey ?? '无标签',
+    header: '点位编码',
+    accessor: (r) => r.tagKey ?? '—',
   },
   {
     key: 'deviceAssetId',
@@ -60,9 +70,9 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
   },
   {
     key: 'valueType',
-    header: '值类型',
-    width: 'w-24',
-    accessor: (r) => valueTypeLabel(r.valueType),
+    header: '数据类型',
+    width: 'w-36',
+    accessor: (r) => formatTelemetryValueType(r.valueType),
   },
   // 单位是设备侧工程单位（degC / mm/s），与主数据计量单位不同，走独立词表。
   {
@@ -80,21 +90,6 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-function valueTypeLabel(value?: string | null) {
-  const labels: Record<string, string> = {
-    bool: '布尔',
-    boolean: '布尔',
-    number: '数值',
-    numeric: '数值',
-    decimal: '数值',
-    int: '整数',
-    integer: '整数',
-    text: '文本',
-    string: '文本',
-  }
-  // 词表漏了就说「未知类型」，绝不把后端英文码回吐到界面上。
-  return value ? (labels[value.toLowerCase()] ?? '未知类型') : '未知'
-}
 function rowKey(row: BusinessConsoleTelemetryTagItem) {
   return row.telemetryTagId ?? `${row.deviceAssetId}-${row.tagKey}`
 }
@@ -103,9 +98,9 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      title="采集标签"
+      title="采集点位"
       :breadcrumbs="[{ label: '设备监控' }]"
-      :count="`${tagsTotal} 个采集标签`"
+      :count="`${tagsTotal} 个采集点位`"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -162,7 +157,7 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
       :loading="tagsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无采集标签。请先完成设备采集映射，再查看历史趋势和报警规则。"
+      empty-message="暂无采集点位。请在设备详情的「采集点位」里为设备添加点位。"
     >
       <template #cell-deviceAssetId="{ row }">
         <RouterLink
@@ -176,7 +171,7 @@ function rowKey(row: BusinessConsoleTelemetryTagItem) {
         </RouterLink>
       </template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`采集标签操作 ${row.tagKey ?? ''}`">
+        <NvRowActions :label="`采集点位操作 ${row.tagKey ?? ''}`">
           <NvDropdownMenuItem as-child>
             <RouterLink
               :to="{

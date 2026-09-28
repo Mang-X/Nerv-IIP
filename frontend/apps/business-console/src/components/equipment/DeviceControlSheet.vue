@@ -157,7 +157,7 @@ function rangeHint(tag?: BusinessConsoleTelemetryTagItem): string {
 // 前端即时校验：类型 / 越界 / 允许值；后端 ValidateWritableTag 仍为权威兜底。
 function validateValue(tagKey: string, value: string): string | null {
   const tag = tagByKey(tagKey)
-  if (!tagKey) return '请选择采集点'
+  if (!tagKey) return '请选择采集点位'
   if (!value.trim()) return '请填写下发值'
   if (!tag) return null
   const allowed = tag.controlAllowedValues ?? []
@@ -274,17 +274,17 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
           v-if="noWritableTags"
           class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
         >
-          该设备没有可写采集点，无法下发控制命令。请先在「采集标签」为该设备配置可写值域。
+          该设备没有可远程写入的采集点位，无法下发控制命令。请先在设备详情的「采集点位」里把点位设为允许远程写入。
         </div>
 
-        <!-- 写值 / 启停：单采集点 -->
+        <!-- 写值 / 启停：单采集点位 -->
         <template v-else-if="isSingleTag">
           <NvFieldGroup class="grid gap-3">
             <NvField>
-              <NvFieldLabel for="devctl-tag">采集点</NvFieldLabel>
+              <NvFieldLabel for="devctl-tag">采集点位</NvFieldLabel>
               <NvSelect v-model="singleForm.tagKey">
-                <NvSelectTrigger id="devctl-tag" aria-label="采集点">
-                  <NvSelectValue placeholder="选择可写采集点" />
+                <NvSelectTrigger id="devctl-tag" aria-label="采集点位">
+                  <NvSelectValue placeholder="选择可写采集点位" />
                 </NvSelectTrigger>
                 <NvSelectContent>
                   <NvSelectItem
@@ -377,8 +377,8 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
               <div class="flex items-start gap-2">
                 <div class="grid flex-1 gap-2">
                   <NvSelect v-model="row.tagKey">
-                    <NvSelectTrigger :aria-label="`参数采集点 ${index + 1}`">
-                      <NvSelectValue placeholder="选择采集点" />
+                    <NvSelectTrigger :aria-label="`参数采集点位 ${index + 1}`">
+                      <NvSelectValue placeholder="选择采集点位" />
                     </NvSelectTrigger>
                     <NvSelectContent>
                       <NvSelectItem

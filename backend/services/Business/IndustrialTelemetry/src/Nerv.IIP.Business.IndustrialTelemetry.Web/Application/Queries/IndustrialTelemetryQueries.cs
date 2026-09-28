@@ -150,7 +150,7 @@ public sealed class GetConnectorTagCoverageQueryHandler(ApplicationDbContext dbC
         DateTimeOffset ManifestObservedAtUtc);
 }
 
-public sealed record ListTelemetryTagsQuery(string OrganizationId, string EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = OffsetPage.DefaultTake) : IQuery<PagedListResponse<TelemetryTagListItem>>;
+public sealed record ListTelemetryTagsQuery(string OrganizationId, string EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = OffsetPage.DefaultTake, bool IncludeDisabled = false) : IQuery<PagedListResponse<TelemetryTagListItem>>;
 
 public sealed class ListTelemetryTagsQueryValidator : AbstractValidator<ListTelemetryTagsQuery>
 {
@@ -172,7 +172,9 @@ public sealed record TelemetryTagListItem(
     bool IsWritable,
     decimal? ControlMinValue,
     decimal? ControlMaxValue,
-    IReadOnlyCollection<string> ControlAllowedValues);
+    IReadOnlyCollection<string> ControlAllowedValues,
+    string? DisplayName,
+    bool IsEnabled);
 
 public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListTelemetryTagsQuery, PagedListResponse<TelemetryTagListItem>>
@@ -184,14 +186,16 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
         var query = dbContext.TelemetryTags
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
-            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId);
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            // 停用点位默认不进目录（选择器只列在用点位）；设备的点位维护抽屉显式带 includeDisabled 看全量。
+            .Where(x => request.IncludeDisabled || x.IsEnabled);
         var total = await query.CountAsync(cancellationToken);
         // Project the raw allowed-values JSON column (ControlAllowedValues is a computed property that is
         // not translatable in LINQ) and deserialize after materialization.
         var projected = await query
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.TagKey)
-            .Select(x => new TelemetryTagProjection(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy, x.IsWritable, x.ControlMinValue, x.ControlMaxValue, x.ControlAllowedValuesJson))
+            .Select(x => new TelemetryTagProjection(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy, x.IsWritable, x.ControlMinValue, x.ControlMaxValue, x.ControlAllowedValuesJson, x.DisplayName, x.IsEnabled))
             .Skip(page.Skip)
             .Take(page.Take)
             .ToArrayAsync(cancellationToken);
@@ -208,7 +212,9 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
                 x.IsWritable,
                 x.ControlMinValue,
                 x.ControlMaxValue,
-                DeserializeAllowedValues(x.ControlAllowedValuesJson)))
+                DeserializeAllowedValues(x.ControlAllowedValuesJson),
+                x.DisplayName,
+                x.IsEnabled))
             .ToArray();
         return new PagedListResponse<TelemetryTagListItem>(items, total);
     }
@@ -235,7 +241,9 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
         bool IsWritable,
         decimal? ControlMinValue,
         decimal? ControlMaxValue,
-        string ControlAllowedValuesJson);
+        string ControlAllowedValuesJson,
+        string? DisplayName,
+        bool IsEnabled);
 }
 
 // Latest instantaneous tag value for the device-control write form. Sources the newest raw sample's

@@ -46,10 +46,11 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(28, contracts.Length);
+        Assert.Equal(29, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/connector-tag-manifests" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "reportBusinessIiotConnectorTagManifest");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotConnectorTagCoverage");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags/disable" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "disableBusinessIiotTelemetryTag");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "listBusinessIiotTelemetryTags");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags/current-value" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotTelemetryTagCurrentValue");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-commands" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlWrite && x.OperationId == "createBusinessIiotDeviceControlCommand");
@@ -324,6 +325,133 @@ public sealed class IndustrialTelemetryEndpointContractTests
         AssertPagedResponse(await tagsResponse.Content.ReadAsStringAsync(), expectedTotal: 2, expectedItems: 1);
         AssertPagedResponse(await rulesResponse.Content.ReadAsStringAsync(), expectedTotal: 1, expectedItems: 1);
         AssertPagedResponse(await alarmsResponse.Content.ReadAsStringAsync(), expectedTotal: 1, expectedItems: 1);
+    }
+
+    [Fact]
+    public async Task Tag_maintenance_round_trips_name_and_control_and_soft_disable_hides_the_tag()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using (var created = await client.PostAsJsonAsync("/api/business/v1/iiot/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-TAG-01",
+            tagKey = "Spindle.Speed",
+            displayName = "主轴转速",
+            valueType = "number",
+            unitCode = "rpm",
+            samplingPolicy = "sample-10s",
+            isWritable = true,
+            controlMinValue = 100m,
+            controlMaxValue = 3000m,
+        }))
+        {
+            Assert.True(created.IsSuccessStatusCode, await created.Content.ReadAsStringAsync());
+        }
+
+        var item = Assert.Single(await ListTagItemsAsync(client, "DEV-TAG-01", includeDisabled: false));
+        Assert.Equal("spindle.speed", item.GetProperty("tagKey").GetString());
+        Assert.Equal("主轴转速", item.GetProperty("displayName").GetString());
+        Assert.True(item.GetProperty("isEnabled").GetBoolean());
+        Assert.True(item.GetProperty("isWritable").GetBoolean());
+        Assert.Equal(100m, item.GetProperty("controlMinValue").GetDecimal());
+        Assert.Equal(3000m, item.GetProperty("controlMaxValue").GetDecimal());
+
+        using (var disabled = await client.PostAsJsonAsync("/api/business/v1/iiot/tags/disable", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-TAG-01",
+            tagKey = "SPINDLE.SPEED",
+        }))
+        {
+            Assert.True(disabled.IsSuccessStatusCode, await disabled.Content.ReadAsStringAsync());
+        }
+
+        Assert.Empty(await ListTagItemsAsync(client, "DEV-TAG-01", includeDisabled: false));
+        var disabledItem = Assert.Single(await ListTagItemsAsync(client, "DEV-TAG-01", includeDisabled: true));
+        Assert.False(disabledItem.GetProperty("isEnabled").GetBoolean());
+        Assert.Equal("主轴转速", disabledItem.GetProperty("displayName").GetString());
+
+        // 停用的编码不能被同编码的新建复活，否则新旧两段采样历史会混在一起。
+        using var revived = await client.PostAsJsonAsync("/api/business/v1/iiot/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-TAG-01",
+            tagKey = "spindle.speed",
+            valueType = "number",
+            unitCode = "rpm",
+            samplingPolicy = "sample-10s",
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, revived.StatusCode);
+        Assert.False(Assert.Single(await ListTagItemsAsync(client, "DEV-TAG-01", includeDisabled: true)).GetProperty("isEnabled").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("decimal")]
+    [InlineData("counter")]
+    [InlineData("production-count")]
+    public async Task Tag_create_rejects_value_types_outside_the_closed_set(string valueType)
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/iiot/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-TAG-02",
+            tagKey = "parts",
+            valueType,
+            unitCode = "pcs",
+            samplingPolicy = "sample-10s",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(await ListTagItemsAsync(client, "DEV-TAG-02", includeDisabled: true));
+    }
+
+    [Theory]
+    [InlineData("number")]
+    [InlineData("bool")]
+    [InlineData("text")]
+    [InlineData("production-count-posted")]
+    [InlineData("PRODUCTION-COUNT-DRAFT")]
+    public async Task Tag_create_accepts_every_value_type_in_the_closed_set(string valueType)
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/iiot/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-TAG-03",
+            tagKey = "parts",
+            valueType,
+            unitCode = "pcs",
+            samplingPolicy = "sample-10s",
+        });
+
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(await ListTagItemsAsync(client, "DEV-TAG-03", includeDisabled: false));
+        Assert.Equal(valueType.ToLowerInvariant(), item.GetProperty("valueType").GetString());
+    }
+
+    private static async Task<JsonElement[]> ListTagItemsAsync(HttpClient client, string deviceAssetId, bool includeDisabled)
+    {
+        using var response = await client.GetAsync(
+            $"/api/business/v1/iiot/tags?organizationId=org-001&environmentId=env-dev&deviceAssetId={deviceAssetId}&includeDisabled={(includeDisabled ? "true" : "false")}");
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, body);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().Select(x => x.Clone()).ToArray();
     }
 
     [Fact]

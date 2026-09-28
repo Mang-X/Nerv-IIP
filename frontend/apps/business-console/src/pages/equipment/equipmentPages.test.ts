@@ -569,6 +569,11 @@ const stubs = {
     props: ['open', 'deviceAssetId'],
     template: '<div data-testid="device-control-sheet" />',
   },
+  DeviceTelemetryPointsSheet: {
+    props: ['open', 'deviceAssetId', 'deviceTitle', 'canManage'],
+    template:
+      '<div data-testid="telemetry-points-sheet" :data-open="String(open)" :data-can-manage="String(canManage)" :data-device="deviceAssetId" />',
+  },
   EquipmentHealthCard: {
     name: 'EquipmentHealthCard',
     props: ['health', 'pending', 'error'],
@@ -1014,6 +1019,29 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.findAll('button').some((b) => b.text().includes('设备控制'))).toBe(false)
   })
+  it('opens the in-place telemetry point sheet from the device detail, with management gated by tags.manage', async () => {
+    authState.permissionCodes = [...authState.permissionCodes, 'business.iiot.tags.manage']
+    const manager = mount(EquipmentDetailPage, { global: { stubs } })
+    const sheet = () => manager.get('[data-testid="telemetry-points-sheet"]')
+    expect(sheet().attributes('data-open')).toBe('false')
+    expect(sheet().attributes('data-can-manage')).toBe('true')
+
+    const button = manager.findAll('button').find((b) => b.text().includes('采集点位'))
+    expect(button).toBeDefined()
+    await button!.trigger('click')
+    expect(sheet().attributes('data-open')).toBe('true')
+    expect(sheet().attributes('data-device')).toBeTruthy()
+
+    authState.permissionCodes = authState.permissionCodes.filter(
+      (code) => code !== 'business.iiot.tags.manage',
+    )
+    const reader = mount(EquipmentDetailPage, { global: { stubs } })
+    expect(reader.get('[data-testid="telemetry-points-sheet"]').attributes('data-can-manage')).toBe(
+      'false',
+    )
+    expect(reader.findAll('button').some((b) => b.text().includes('采集点位'))).toBe(true)
+  })
+
   describe('「创建维修工单」只给有维护工单管理权限的人', () => {
     function signInWithoutWorkOrderManage() {
       authState.permissionCodes = authState.permissionCodes.filter(

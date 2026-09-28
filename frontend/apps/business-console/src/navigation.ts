@@ -801,7 +801,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.iiotAlarmsRead],
         },
         {
-          title: '采集标签',
+          title: '采集点位',
           icon: HashIcon,
           to: { path: '/equipment/telemetry/tags' },
           requiredPermissions: [P.iiotTelemetryRead],

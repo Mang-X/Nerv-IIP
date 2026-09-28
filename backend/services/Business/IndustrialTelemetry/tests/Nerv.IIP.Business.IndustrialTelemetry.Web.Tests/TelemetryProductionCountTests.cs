@@ -63,6 +63,42 @@ public sealed class TelemetryProductionCountTests
         Assert.DoesNotContain(delayedSummary.GetDomainEvents(), x => x is TelemetryProductionCountDeltaDomainEvent);
     }
 
+    [Fact]
+    public async Task Disabled_production_count_tag_stops_raising_delta_events()
+    {
+        await using var dbContext = CreateDbContext(nameof(Disabled_production_count_tag_stops_raising_delta_events));
+        var tag = TelemetryTag.Create(
+            "org-001",
+            "env-dev",
+            "DEV-PACK-01",
+            "parts_count",
+            "production-count-draft",
+            "PCS",
+            "60s");
+        dbContext.TelemetryTags.Add(tag);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordTelemetrySampleCommandHandler(dbContext);
+        await handler.Handle(CreateCommand("seq-001", 100m, "2026-07-11T08:00:00Z"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateCommand("seq-002", 103m, "2026-07-11T08:01:00Z"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var enabledSummary = dbContext.TelemetrySummaries.Local.Single(x => x.SourceSequence == "seq-002");
+        Assert.Contains(enabledSummary.GetDomainEvents(), x => x is TelemetryProductionCountDeltaDomainEvent);
+
+        await new DisableTelemetryTagCommandHandler(dbContext, TimeProvider.System).Handle(
+            new DisableTelemetryTagCommand("org-001", "env-dev", "DEV-PACK-01", "PARTS_COUNT"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await handler.Handle(CreateCommand("seq-003", 110m, "2026-07-11T08:02:00Z"), CancellationToken.None);
+
+        var disabledSummary = dbContext.TelemetrySummaries.Local.Single(x => x.SourceSequence == "seq-003");
+        Assert.DoesNotContain(disabledSummary.GetDomainEvents(), x => x is TelemetryProductionCountDeltaDomainEvent);
+        Assert.False(tag.IsEnabled);
+        Assert.NotNull(tag.DisabledAtUtc);
+    }
+
     private static RecordTelemetrySampleCommand CreateCommand(string sourceSequence, decimal count, string bucketStartUtc)
     {
         var start = DateTimeOffset.Parse(bucketStartUtc);

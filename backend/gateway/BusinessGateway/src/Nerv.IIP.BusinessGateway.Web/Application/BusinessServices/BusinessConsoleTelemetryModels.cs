@@ -8,7 +8,8 @@ public sealed record BusinessConsoleTelemetryTagListRequest(
     string EnvironmentId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    bool IncludeDisabled = false);
 
 public sealed record BusinessConsoleTelemetryTagListResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryTagItem> Items,
@@ -39,7 +40,39 @@ public sealed record BusinessConsoleTelemetryTagItem(
     bool IsWritable = false,
     decimal? ControlMinValue = null,
     decimal? ControlMaxValue = null,
+    IReadOnlyCollection<string>? ControlAllowedValues = null,
+    string? DisplayName = null,
+    bool IsEnabled = true);
+
+/// <summary>
+/// 设备采集点位的新建/编辑（#3870）。按「设备 + 点位编码」upsert：编码是与连接器配置对接的键，
+/// 编辑时必须原样回传；可写与上下限、允许值也要整体回传，否则会被清空。
+/// </summary>
+public sealed record BusinessConsoleCreateOrUpdateTelemetryTagRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey,
+    string ValueType,
+    string UnitCode,
+    string SamplingPolicy,
+    string? DisplayName = null,
+    bool IsWritable = false,
+    decimal? ControlMinValue = null,
+    decimal? ControlMaxValue = null,
     IReadOnlyCollection<string>? ControlAllowedValues = null);
+
+public sealed record BusinessConsoleCreateOrUpdateTelemetryTagResponse(
+    string TelemetryTagId);
+
+public sealed record BusinessConsoleDisableTelemetryTagRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey);
+
+public sealed record BusinessConsoleDisableTelemetryTagResponse(
+    string TelemetryTagId);
 
 public sealed record BusinessConsoleTelemetryAlarmRuleListRequest(
     string OrganizationId,
