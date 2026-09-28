@@ -12,6 +12,7 @@ const stub = vi.hoisted(() => ({
   refresh: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  loginNamesVisible: true,
   // 与 types.gen.ts 的 BusinessConsoleWorkerDirectoryItem 字段一一对应。
   workers: [
     {
@@ -34,6 +35,7 @@ const stub = vi.hoisted(() => ({
       ],
       skills: [{ skillCode: 'cnc-operation', skillName: 'CNC 操作', level: 'senior' }],
       snapshotVersion: '1',
+      loginName: 'chenzhiqiang',
     },
     {
       userId: 'user-op-005',
@@ -48,6 +50,7 @@ const stub = vi.hoisted(() => ({
       teams: [],
       skills: [],
       snapshotVersion: '1',
+      loginName: null,
     },
   ],
 }))
@@ -68,6 +71,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     workersError: shallowRef(undefined),
     workersPending: shallowRef(false),
     workersTotal: computed(() => stub.workers.length),
+    loginNamesVisible: computed(() => stub.loginNamesVisible),
     refresh: stub.refresh,
     create: stub.create,
     createPending: shallowRef(false),
@@ -119,6 +123,15 @@ const dialogStubs = {
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
 }
+// 登录账号选择器走网关目录（需要 pinia / 业务上下文）；页面测试只关心它回传的账号 ID 怎么提交。
+const directoryPickerStub = {
+  DirectoryPicker: {
+    props: ['modelValue', 'directoryType'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :data-directory-type="directoryType" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}
 const selectStubs = {
   NvSelect: {
     props: ['modelValue'],
@@ -134,7 +147,9 @@ const selectStubs = {
 
 describe('master-data workers page', () => {
   it('renders employee number, name, department, teams, skills and duty status', async () => {
-    const wrapper = mount(WorkersPage, { global: { stubs: { ...layoutStub, ...dialogStubs } } })
+    const wrapper = mount(WorkersPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...directoryPickerStub } },
+    })
     await flushPromises()
 
     const text = wrapper.text()
@@ -147,12 +162,36 @@ describe('master-data workers page', () => {
     expect(text).toContain('休假')
     // 内部人员标识不进业务界面。
     expect(text).not.toContain('user-op-001')
+    // 登录账号列：关联了的显示登录名，没关联的明确写「未关联」。
+    expect(text).toContain('登录账号')
+    expect(text).toContain('chenzhiqiang')
+    expect(text).toContain('未关联')
+  })
+
+  it('当前主体看不到登录名时显示「—」，不误报「未关联」', async () => {
+    const saved = stub.workers[0]!.loginName
+    stub.loginNamesVisible = false
+    stub.workers[0]!.loginName = null
+    try {
+      const wrapper = mount(WorkersPage, {
+        global: { stubs: { ...layoutStub, ...dialogStubs, ...directoryPickerStub } },
+      })
+      await flushPromises()
+
+      const text = wrapper.text()
+      expect(text).toContain('登录账号')
+      expect(text).not.toContain('未关联')
+      expect(text).toContain('—')
+    } finally {
+      stub.loginNamesVisible = true
+      stub.workers[0]!.loginName = saved
+    }
   })
 
   it('blocks creation without a name and never calls the facade', async () => {
     stub.create.mockClear()
     const wrapper = mount(WorkersPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...directoryPickerStub } },
     })
     await flushPromises()
 
@@ -171,7 +210,7 @@ describe('master-data workers page', () => {
   it('creates a worker with the selected department and duty status', async () => {
     stub.create.mockClear()
     const wrapper = mount(WorkersPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...directoryPickerStub } },
     })
     await flushPromises()
 
@@ -194,12 +233,40 @@ describe('master-data workers page', () => {
     expect(body.employmentStatus).toBe('active')
     // 工号由系统分配，前端不编号。
     expect(body.code).toBeNull()
+    // 没选登录账号就不关联，不能拿别的值顶上。
+    expect(body.userId).toBeNull()
+  })
+
+  it('creates a worker linked to the selected login account', async () => {
+    stub.create.mockClear()
+    const wrapper = mount(WorkersPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...directoryPickerStub } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新增员工'))!
+      .trigger('click')
+    await flushPromises()
+    await wrapper.find('#worker-name').setValue('周立新')
+    const accountPicker = wrapper.find('[data-directory-type="login-account"]')
+    expect(accountPicker.exists()).toBe(true)
+    await accountPicker.setValue('user-019a')
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.create).toHaveBeenCalledTimes(1)
+    const body = stub.create.mock.calls[0]![0] as Record<string, unknown>
+    expect(body.userId).toBe('user-019a')
+    expect(body.name).toBe('周立新')
   })
 
   it('停用员工必须填原因，空原因不发请求；填写后原因随请求提交', async () => {
     stub.disable.mockClear()
     const wrapper = mount(WorkersPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...directoryPickerStub } },
     })
     await flushPromises()
 
@@ -227,7 +294,7 @@ describe('master-data workers page', () => {
     stub.enable.mockClear()
     stub.workers[0]!.active = false
     const wrapper = mount(WorkersPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...directoryPickerStub } },
     })
     await flushPromises()
 
@@ -253,7 +320,7 @@ describe('master-data workers page', () => {
   it('edits a worker through the employee number as its identity', async () => {
     stub.update.mockClear()
     const wrapper = mount(WorkersPage, {
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...directoryPickerStub } },
     })
     await flushPromises()
 
@@ -262,6 +329,11 @@ describe('master-data workers page', () => {
       .find((b) => b.text() === '编辑')!
       .trigger('click')
     await flushPromises()
+    // 编辑态只读展示已关联的登录名，不给改绑入口。
+    expect(wrapper.find('[data-directory-type="login-account"]').exists()).toBe(false)
+    expect(wrapper.findAll('input').some((input) => input.element.value === 'chenzhiqiang')).toBe(
+      true,
+    )
     await wrapper.find('#worker-title').setValue('装配主管')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -269,5 +341,6 @@ describe('master-data workers page', () => {
     expect(stub.update).toHaveBeenCalledTimes(1)
     expect(stub.update.mock.calls[0]![0]).toBe('EMP-1001')
     expect(stub.update.mock.calls[0]![1]).toMatchObject({ jobTitle: '装配主管', name: '陈志强' })
+    expect(stub.update.mock.calls[0]![1]).not.toHaveProperty('userId')
   })
 })

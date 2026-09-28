@@ -23627,6 +23627,15 @@
               "default": false,
               "nullable": false
             }
+          },
+          {
+            "name": "includeLoginNames",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "nullable": false
+            }
           }
         ],
         "responses": {
@@ -32187,7 +32196,8 @@
                 "defect-code",
                 "scrap-reason",
                 "downtime-reason",
-                "maintenance-reason"
+                "maintenance-reason",
+                "login-account"
               ]
             }
           },
@@ -56595,6 +56605,9 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem"
             }
+          },
+          "loginNamesVisible": {
+            "type": "boolean"
           }
         }
       },
@@ -56647,6 +56660,10 @@
           },
           "snapshotVersion": {
             "type": "string"
+          },
+          "loginName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

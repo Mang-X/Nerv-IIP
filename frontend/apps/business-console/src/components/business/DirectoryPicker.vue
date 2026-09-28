@@ -35,6 +35,7 @@ type SearchableType =
   | 'location'
   | 'batch'
   | 'serial'
+  | 'login-account'
 
 const DIRECTORY_NOUN: Record<SearchableType | ListType, string> = {
   'work-center': '工作中心',
@@ -45,6 +46,7 @@ const DIRECTORY_NOUN: Record<SearchableType | ListType, string> = {
   location: '库位',
   batch: '批次',
   serial: '序列号',
+  'login-account': '登录账号',
   shift: '班次',
   'production-line': '产线',
   site: '工厂',
@@ -91,6 +93,8 @@ const source =
         skuCode: () => props.skuCode,
         siteCode: formSite,
         enabled: () => !siteMissing.value,
+        // 登录账号回传账号 ID，登录名只作显示（选项的 code）。
+        ...(type === 'login-account' ? { valueKey: 'id' as const } : {}),
       })
 const { options, pending } = source
 const serverSearch = source.serverSearch
@@ -115,7 +119,9 @@ if (source.serverSearch) {
   watch(model, () => updateSearch(''))
 }
 // 库位目录的名称就是编码，批次 / 序列号目录的名称是「编码 · 物料」，再印一行编码是重复。
-const showCode = type !== 'location' && type !== 'batch' && type !== 'serial'
+// 登录账号的值是内部账号 ID，不能当编码显示；登录名走候选的 hint。
+const showCode =
+  type !== 'location' && type !== 'batch' && type !== 'serial' && type !== 'login-account'
 
 const auth = useAuthStore()
 const creator = props.creatable ? directoryCreatorFor(type) : undefined
@@ -158,7 +164,9 @@ function isHierarchyType(type: SearchableType): type is 'workshop' | 'work-cente
     :options="options"
     :title="`选择${noun}`"
     :placeholder="`选择${noun}`"
-    :search-placeholder="`搜索${noun}名称 / 编码…`"
+    :search-placeholder="
+      type === 'login-account' ? '搜索姓名 / 登录名…' : `搜索${noun}名称 / 编码…`
+    "
     :empty-text="emptyText"
     :loading="pending"
     :server-search="serverSearch"

@@ -47,15 +47,17 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
     /// <summary>
     /// 演示班组成员对应的员工档案。工号用 <c>EMP-9xx</c> 段：既避开设定集 L0 的 <c>EMP-001..058</c>，
     /// 也避开编码引擎 <c>worker</c> 规则发放的四位流水 <c>EMP-0001</c>，三者永不撞号。
+    /// 这 6 人没有登录账号（IAM 不为他们开户），所以人员身份与控制台新建的未关联员工一致、回落为工号；
+    /// 班组成员与技能也按工号挂接。此前这里写的 <c>user-op-00x</c> 等在 IAM 里并不存在（#3924）。
     /// </summary>
     private static readonly WorkerSeed[] Workers =
     [
-        new("EMP-901", "陈志强", "user-op-001", "DEPT-PROD", "装配班组长"),
-        new("EMP-902", "李海涛", "user-op-002", "DEPT-PROD", "装配操作工"),
-        new("EMP-903", "王建军", "user-op-003", "DEPT-PROD", "装配班组长"),
-        new("EMP-904", "赵鹏", "user-op-004", "DEPT-PROD", "装配操作工"),
-        new("EMP-905", "孙敏", "user-qc-001", "DEPT-QA", "质量检验员"),
-        new("EMP-906", "周立新", "user-eq-001", "DEPT-EQ", "维修技师")
+        new("EMP-901", "陈志强", "EMP-901", "DEPT-PROD", "装配班组长"),
+        new("EMP-902", "李海涛", "EMP-902", "DEPT-PROD", "装配操作工"),
+        new("EMP-903", "王建军", "EMP-903", "DEPT-PROD", "装配班组长"),
+        new("EMP-904", "赵鹏", "EMP-904", "DEPT-PROD", "装配操作工"),
+        new("EMP-905", "孙敏", "EMP-905", "DEPT-QA", "质量检验员"),
+        new("EMP-906", "周立新", "EMP-906", "DEPT-EQ", "维修技师")
     ];
 
     private static readonly TeamSeed[] Teams =
@@ -66,29 +68,29 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
 
     private static readonly TeamMemberSeed[] TeamMembers =
     [
-        new("TEAM-ASSY-A", "user-op-001", true),
-        new("TEAM-ASSY-A", "user-op-002", false),
-        new("TEAM-ASSY-A", "user-qc-001", false),
-        new("TEAM-ASSY-B", "user-op-003", true),
-        new("TEAM-ASSY-B", "user-op-004", false),
-        new("TEAM-ASSY-B", "user-eq-001", false)
+        new("TEAM-ASSY-A", "EMP-901", true),
+        new("TEAM-ASSY-A", "EMP-902", false),
+        new("TEAM-ASSY-A", "EMP-905", false),
+        new("TEAM-ASSY-B", "EMP-903", true),
+        new("TEAM-ASSY-B", "EMP-904", false),
+        new("TEAM-ASSY-B", "EMP-906", false)
     ];
 
     private static readonly PersonnelSkillSeed[] PersonnelSkills =
     [
-        new("user-op-001", "assembly", "senior"),
-        new("user-op-001", "cnc-operation", "intermediate"),
-        new("user-op-001", "inspection", "junior"),
-        new("user-op-002", "assembly", "intermediate"),
-        new("user-op-002", "equipment-maintenance", "junior"),
-        new("user-qc-001", "inspection", "senior"),
-        new("user-qc-001", "assembly", "junior"),
-        new("user-op-003", "cnc-operation", "senior"),
-        new("user-op-003", "welding", "intermediate"),
-        new("user-op-004", "assembly", "intermediate"),
-        new("user-op-004", "forklift", "junior"),
-        new("user-eq-001", "equipment-maintenance", "expert"),
-        new("user-eq-001", "cnc-operation", "intermediate")
+        new("EMP-901", "assembly", "senior"),
+        new("EMP-901", "cnc-operation", "intermediate"),
+        new("EMP-901", "inspection", "junior"),
+        new("EMP-902", "assembly", "intermediate"),
+        new("EMP-902", "equipment-maintenance", "junior"),
+        new("EMP-905", "inspection", "senior"),
+        new("EMP-905", "assembly", "junior"),
+        new("EMP-903", "cnc-operation", "senior"),
+        new("EMP-903", "welding", "intermediate"),
+        new("EMP-904", "assembly", "intermediate"),
+        new("EMP-904", "forklift", "junior"),
+        new("EMP-906", "equipment-maintenance", "expert"),
+        new("EMP-906", "cnc-operation", "intermediate")
     ];
 
     private static readonly DateOnly PersonnelSkillEffectiveFrom = new(2026, 1, 1);
@@ -167,7 +169,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
             cncTeam.Update(cncTeam.Name, cncTeam.DepartmentCode, cncTeam.ShiftCode, DemoWorkshopCode);
         }
 
-        foreach (var (userId, isLeader) in new[] { ("user-op-003", true), ("user-op-001", false) })
+        foreach (var (userId, isLeader) in new[] { ("EMP-903", true), ("EMP-901", false) })
         {
             if (!await dbContext.TeamMembers.AnyAsync(x =>
                     x.OrganizationId == organizationId &&
@@ -263,10 +265,11 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
     {
         foreach (var item in Workers)
         {
+            // 按工号判存在：工号是员工的业务主键，人员身份（UserId）是否关联账号可以变化。
             if (!await dbContext.Workers.AnyAsync(x =>
                     x.OrganizationId == organizationId &&
                     x.EnvironmentId == environmentId &&
-                    x.UserId == item.UserId,
+                    x.Code == item.Code,
                     cancellationToken))
             {
                 dbContext.Workers.Add(Worker.Create(

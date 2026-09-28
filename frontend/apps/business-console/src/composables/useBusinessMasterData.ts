@@ -733,6 +733,11 @@ export interface WorkerDirectoryFilters extends BusinessContextFilters {
   /** 在岗状态：active / on-leave / resigned。 */
   employmentStatus?: string
   includeDisabled?: boolean
+  /**
+   * 员工名册页要求带出关联账号的登录名（#3924）。只有员工维护权 + 组织级授权的主体才真的拿得到，
+   * 是否拿到看返回的 `loginNamesVisible`；各处员工选择器不要开，免得每次多一跳 IAM。
+   */
+  includeLoginNames?: boolean
   pageIndex: number
   pageSize: number
 }
@@ -793,6 +798,7 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
           ...optionalQuery('skillCode', filters.skillCode),
           ...optionalQuery('employmentStatus', filters.employmentStatus),
           ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('includeLoginNames', filters.includeLoginNames),
           pageIndex: filters.pageIndex,
           pageSize: filters.pageSize,
         },
@@ -810,6 +816,8 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
     workersError: workersQuery.error,
     workersPending: workersQuery.isLoading,
     workersTotal: computed(() => workerTotal(workersQuery.data.value)),
+    /** 本次名册的 `loginName` 是否可信：为假时空值不代表「未关联」，只是当前主体看不到。 */
+    loginNamesVisible: computed(() => workersQuery.data.value?.data?.loginNamesVisible === true),
   }
 }
 
@@ -818,7 +826,12 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
  * `master-data/resources/worker/{code}`，code 即工号）。
  */
 export function useWorkerRegistry(initial: Partial<WorkerDirectoryFilters> = {}) {
-  const directory = useBusinessWorkers({ includeDisabled: true, pageSize: 50, ...initial })
+  const directory = useBusinessWorkers({
+    includeDisabled: true,
+    includeLoginNames: true,
+    pageSize: 50,
+    ...initial,
+  })
   const actions = useMasterDataResourceActions('worker')
   const queryCache = useQueryCache()
 

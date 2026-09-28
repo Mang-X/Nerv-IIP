@@ -17,6 +17,13 @@ public interface IIamUserApplicationService
 {
     Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// 列出在指定组织/环境里有成员关系的账号（供业务侧「关联登录账号」选择与核验）。
+    /// </summary>
+    Task<PagedListResponse<MemberAccountResponse>> ListMemberAccountsAsync(
+        MemberAccountListOptions options,
+        CancellationToken cancellationToken);
+
     Task<UserResponse> CreateUserAsync(
         string loginName,
         string email,
@@ -80,6 +87,30 @@ public sealed class InMemoryIamUserApplicationService(
             .ApplyUserSort(options)
             .ToPagedResponse(options);
         return Task.FromResult(users);
+    }
+
+    public Task<PagedListResponse<MemberAccountResponse>> ListMemberAccountsAsync(
+        MemberAccountListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var rows = store.Users
+            .Where(user => store.UserHasMembership(user.UserId, options.OrganizationId, options.EnvironmentId))
+            .Where(user => options.IncludeDisabled || user.Enabled)
+            .Where(user => options.UserIds is null || options.UserIds.Contains(user.UserId, StringComparer.Ordinal))
+            .Where(user => options.Keyword is null
+                || user.LoginName.Contains(options.Keyword, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(user => user.LoginName, StringComparer.Ordinal)
+            .ThenBy(user => user.UserId, StringComparer.Ordinal)
+            .ToArray();
+        return Task.FromResult(new PagedListResponse<MemberAccountResponse>(
+            options.PageIndex,
+            options.PageSize,
+            rows.Length,
+            rows
+                .Skip((options.PageIndex - 1) * options.PageSize)
+                .Take(options.PageSize)
+                .Select(user => new MemberAccountResponse(user.UserId, user.LoginName, null, user.Enabled))
+                .ToArray()));
     }
 
     public Task<UserResponse> CreateUserAsync(
@@ -260,6 +291,26 @@ public sealed class PostgreSqlIamUserApplicationService(
             .Select(ToResponse)
             .ApplyUserSort(options)
             .ToPagedResponse(options);
+    }
+
+    public async Task<PagedListResponse<MemberAccountResponse>> ListMemberAccountsAsync(
+        MemberAccountListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var (items, total) = await repository.ListMembersAsync(
+            new OrganizationId(options.OrganizationId),
+            new IamEnvironmentId(options.EnvironmentId),
+            options.Keyword,
+            options.UserIds?.Select(x => new UserId(x)).ToArray(),
+            options.IncludeDisabled,
+            (options.PageIndex - 1) * options.PageSize,
+            options.PageSize,
+            cancellationToken);
+        return new PagedListResponse<MemberAccountResponse>(
+            options.PageIndex,
+            options.PageSize,
+            total,
+            items.Select(user => new MemberAccountResponse(user.Id.Id, user.LoginName, user.DisplayName, user.Enabled)).ToArray());
     }
 
     public async Task<UserResponse> CreateUserAsync(

@@ -103,6 +103,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         {
             return await RecoverLifecycleOperationReplayAsync(cancellationToken);
         }
+        catch (DbUpdateException exception) when (IsWorkerUserIdConflict(exception))
+        {
+            throw WorkerUserIdConflict(exception);
+        }
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -159,4 +163,75 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         left.TargetEnabled == right.TargetEnabled &&
         left.ActorId == right.ActorId &&
         left.Reason == right.Reason;
+
+    // 员工 ↔ 登录账号一对一（#3924）：(organization_id, environment_id, user_id) 唯一索引是权威把关。
+    // 命令里的预检挡住顺序提交；并发提交撞上唯一索引时在这里转成中文业务错误，不再以 500 漏出。
+    internal const string WorkerUserIdIndexName = "IX_workers_organization_id_environment_id_user_id";
+
+    private static readonly string[] WorkerUserIdSqliteColumns = ["workers.OrganizationId", "workers.EnvironmentId", "workers.UserId"];
+    private static readonly string[] WorkerUserIdSqliteSnakeColumns = ["workers.organization_id", "workers.environment_id", "workers.user_id"];
+
+    private bool IsWorkerUserIdConflict(DbUpdateException exception)
+    {
+        if (!ChangeTracker.Entries<Worker>().Any(entry => entry.State is EntityState.Added or EntityState.Modified))
+        {
+            return false;
+        }
+
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (IsPostgreSqlUniqueViolation(current, WorkerUserIdIndexName) || IsSqliteUniqueViolation(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private KnownException WorkerUserIdConflict(DbUpdateException exception)
+    {
+        ChangeTracker.Clear();
+        // 与 CreateWorkerCommand 预检同文案；不回显账号 ID。
+        return new KnownException("所选登录账号已关联其他员工，一个账号只能关联一名员工。", exception);
+    }
+
+    private static bool IsPostgreSqlUniqueViolation(Exception exception, string indexName)
+    {
+        if (!string.Equals(exception.GetType().FullName, "Npgsql.PostgresException", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var sqlState = exception.GetType().GetProperty("SqlState")?.GetValue(exception) as string;
+        var constraintName = exception.GetType().GetProperty("ConstraintName")?.GetValue(exception) as string;
+        return sqlState == "23505" && string.Equals(constraintName, indexName, StringComparison.Ordinal);
+    }
+
+    private bool IsSqliteUniqueViolation(Exception exception)
+    {
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        if (!typeName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
+            && !(Database.ProviderName ?? string.Empty).Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        const string marker = "UNIQUE constraint failed:";
+        var markerIndex = exception.Message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return false;
+        }
+
+        var columns = exception.Message[(markerIndex + marker.Length)..]
+            .Trim()
+            .Trim('\'', '.')
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return Matches(columns, WorkerUserIdSqliteColumns) || Matches(columns, WorkerUserIdSqliteSnakeColumns);
+
+        static bool Matches(string[] actual, string[] expected) =>
+            actual.Length == expected.Length
+            && expected.All(column => actual.Contains(column, StringComparer.OrdinalIgnoreCase));
+    }
 }

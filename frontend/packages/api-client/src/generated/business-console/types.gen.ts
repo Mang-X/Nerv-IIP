@@ -5857,6 +5857,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     pageSize?: number;
     totalCount?: number;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem>;
+    loginNamesVisible?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem = {
@@ -5872,6 +5873,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     teams?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem>;
     skills?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerSkillItem>;
     snapshotVersion?: string;
+    loginName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem = {
@@ -19333,6 +19335,7 @@ export type ListBusinessConsoleWorkersData = {
         pageIndex?: number;
         pageSize?: number;
         includeDisabled?: boolean;
+        includeLoginNames?: boolean;
     };
     url: '/api/business-console/v1/master-data/workers';
 };
@@ -23606,7 +23609,7 @@ export type UnshelveBusinessConsoleEquipmentAlarmResponse = UnshelveBusinessCons
 export type ListBusinessConsoleSearchableDirectoryData = {
     body?: never;
     path: {
-        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason';
+        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason' | 'login-account';
     };
     query: {
         organizationId: string;

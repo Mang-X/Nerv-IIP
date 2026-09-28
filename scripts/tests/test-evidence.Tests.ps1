@@ -1509,7 +1509,11 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # 「照抄了 canonical」在这里是待核主张，不能让一条用例替两份实现作证。
 # #3846 登记 IAM 生产引导的真库证据（非 Development 启动时只补缺管理员/默认组织/环境、
 # 口令策略与重启不覆盖，只有真库上的 Production 启动分得开），增至 61。
-Assert-Equal 61 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #3924 登记 IAM 成员账号目录的真库证据：WebApplicationFactory 默认走 InMemory 服务，不经过
+# UserRepository.ListMembersAsync，组织/环境成员关系子查询只有真库才执行（删掉组织或环境谓词，
+# 本机实测 InMemory 侧全绿、PostgreSQL 用例红）。⭐ 刻意不蹭 IAM 生产引导那条理由，一类一属性一规则。
+# MasterData 员工账号唯一冲突的真库用例复用既有 masterdata-postgres 属性与理由，不新增 source。增至 62。
+Assert-Equal 62 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)

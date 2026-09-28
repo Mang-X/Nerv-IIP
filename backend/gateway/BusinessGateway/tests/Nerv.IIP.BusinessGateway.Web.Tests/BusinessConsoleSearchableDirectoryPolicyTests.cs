@@ -22,6 +22,7 @@ public sealed class BusinessConsoleSearchableDirectoryPolicyTests
     [InlineData("scrap-reason", BusinessGatewayPermissions.QualityInspectionRecordsRead)]
     [InlineData("downtime-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead)]
     [InlineData("maintenance-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead)]
+    [InlineData("login-account", BusinessGatewayPermissions.MasterDataResourcesManage)]
     public void Directory_type_resolves_only_its_owner_permission(string directoryType, string permission)
     {
         var definition = BusinessConsoleSearchableDirectoryPolicy.Require(directoryType);
@@ -56,6 +57,8 @@ public sealed class BusinessConsoleSearchableDirectoryPolicyTests
     [InlineData("scrap-reason", true)]
     [InlineData("material", true)]
     [InlineData("priority", true)]
+    // #3924：登录账号目录虽无范围维度，但账号名单是组织级人事事实，self 授权不得读到整份名单。
+    [InlineData("login-account", false)]
     public void Self_scoped_grant_is_representable_only_on_directories_without_a_scope_dimension(
         string directoryType,
         bool expectAuthorized)

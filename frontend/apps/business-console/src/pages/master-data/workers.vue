@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleWorkerDirectoryItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useMasterDataResource, useWorkerRegistry } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -55,6 +56,7 @@ const {
   enable,
   enablePending,
   filters,
+  loginNamesVisible,
   refresh,
   update,
   updatePending,
@@ -111,6 +113,7 @@ const columns: NvDataTableColumn<BusinessConsoleWorkerDirectoryItem>[] = [
   { key: 'displayName', header: '姓名', cellClass: 'font-medium' },
   { key: 'jobTitle', header: '岗位', width: 'w-40' },
   { key: 'departmentName', header: '部门', width: 'w-36' },
+  { key: 'loginName', header: '登录账号', width: 'w-36' },
   { key: 'teams', header: '班组' },
   { key: 'skills', header: '技能' },
   { key: 'employmentStatus', header: '在岗状态', width: 'w-28' },
@@ -119,6 +122,8 @@ const columns: NvDataTableColumn<BusinessConsoleWorkerDirectoryItem>[] = [
 
 interface WorkerForm {
   name: string
+  /** 关联的登录账号（账号 ID）；只在新增时可选，空串 = 不关联。 */
+  userId: string
   departmentCode: string
   jobTitle: string
   employmentStatus: string
@@ -126,13 +131,22 @@ interface WorkerForm {
 }
 
 function blankForm(): WorkerForm {
-  return { name: '', departmentCode: '', jobTitle: '', employmentStatus: 'active', phone: '' }
+  return {
+    name: '',
+    userId: '',
+    departmentCode: '',
+    jobTitle: '',
+    employmentStatus: 'active',
+    phone: '',
+  }
 }
 
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 // null = 新建；否则为正在编辑员工的工号（工号即身份，编辑态只读）。
 const editingCode = shallowRef<string | null>(null)
+// 编辑态只读展示已关联的登录名：账号只在新增时关联，建好后不改（改绑会牵动已派任务的归属）。
+const editingLoginName = shallowRef<string | null>(null)
 const form = reactive<WorkerForm>(blankForm())
 
 const nameValid = computed(() => form.name.trim().length > 0)
@@ -140,6 +154,7 @@ const canSubmit = computed(() => nameValid.value)
 
 function openCreate() {
   editingCode.value = null
+  editingLoginName.value = null
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
@@ -148,9 +163,12 @@ function openCreate() {
 function openEdit(row: BusinessConsoleWorkerDirectoryItem) {
   if (!row.employeeNo) return
   editingCode.value = row.employeeNo
+  // 看不到登录名（非员工维护权）时显示「—」，不能说成「未关联」。
+  editingLoginName.value = row.loginName?.trim() || (loginNamesVisible.value ? '未关联' : '—')
   showErrors.value = false
   Object.assign(form, {
     name: row.displayName ?? '',
+    userId: '',
     departmentCode: row.departmentCode ?? '',
     jobTitle: row.jobTitle ?? '',
     employmentStatus: row.employmentStatus ?? 'active',
@@ -181,7 +199,7 @@ async function submitForm() {
         environmentId: filters.environmentId,
         code: null,
         name,
-        userId: null,
+        userId: form.userId.trim() || null,
         departmentCode: form.departmentCode || null,
         jobTitle: form.jobTitle.trim() || null,
         employmentStatus: form.employmentStatus,
@@ -322,6 +340,29 @@ async function confirmRestore() {
                 </NvField>
               </NvFieldGroup>
 
+              <FormSectionTitle>登录账号</FormSectionTitle>
+              <NvField v-if="!editingCode">
+                <NvFieldLabel for="worker-login-account">关联登录账号</NvFieldLabel>
+                <DirectoryPicker
+                  id="worker-login-account"
+                  v-model="form.userId"
+                  directory-type="login-account"
+                  clearable
+                  aria-describedby="worker-login-account-hint"
+                />
+                <NvFieldDescription id="worker-login-account-hint">
+                  可选。关联后，这名员工用该账号登录
+                  PDA，就能看到并执行派给他的任务；一个账号只能关联一名员工。
+                </NvFieldDescription>
+              </NvField>
+              <NvField v-else>
+                <NvFieldLabel>关联登录账号</NvFieldLabel>
+                <NvInput :model-value="editingLoginName ?? '—'" readonly disabled />
+                <NvFieldDescription>
+                  登录账号只能在新增员工时关联。未关联账号的员工需要停用后重新新增并选择账号。
+                </NvFieldDescription>
+              </NvField>
+
               <FormSectionTitle>在岗与联系方式</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField>
@@ -398,6 +439,12 @@ async function confirmRestore() {
       </template>
       <template #cell-departmentName="{ row }">
         <span>{{ row.departmentName || row.departmentCode || '—' }}</span>
+      </template>
+      <template #cell-loginName="{ row }">
+        <span v-if="row.loginName">{{ row.loginName }}</span>
+        <!-- 当前主体看不到登录名（非员工维护权）时是「—」，不能误报成「未关联」。 -->
+        <span v-else-if="loginNamesVisible" class="text-muted-foreground">未关联</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-teams="{ row }">
         <div v-if="row.teams?.length" class="flex flex-wrap gap-1">
