@@ -62,6 +62,7 @@ public sealed class EquipmentRuntimeContractSerializationTests
             EquipmentRuntimeReasonCodes.MaintenanceWindow,
             EquipmentRuntimeReasonCodes.InspectionRequired,
             EquipmentRuntimeReasonCodes.SourceStale,
+            EquipmentRuntimeReasonCodes.SourceNotConnected,
             EquipmentRuntimeReasonCodes.TagMappingMissing,
             EquipmentRuntimeReasonCodes.NoEligibleSubstitute
         };
@@ -74,6 +75,7 @@ public sealed class EquipmentRuntimeContractSerializationTests
                 "equipment.maintenanceWindow",
                 "equipment.inspectionRequired",
                 "equipment.sourceStale",
+                "equipment.sourceNotConnected",
                 "equipment.tagMappingMissing",
                 "equipment.noEligibleSubstitute"
             ],

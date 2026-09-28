@@ -21,7 +21,7 @@ import {
   NvMobileToast,
   NvNumberKeyboard,
 } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   useMesExactOperationTask,
@@ -30,6 +30,7 @@ import {
   useMesWorkOrderDetail,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
+import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
@@ -46,6 +47,8 @@ import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
+import { useTelemetryCandidateTarget } from '@/composables/mes/useTelemetryCandidateTarget'
+import TelemetryCandidateTarget from './components/TelemetryCandidateTarget.vue'
 import {
   formatOperationDateTime,
   reworkSourceLabel,
@@ -155,8 +158,12 @@ const {
 })
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
-const telemetryWorkOrderId = ref('')
-const telemetryOperationTaskId = ref('')
+const activeTelemetryCandidate = computed(() =>
+  telemetryQueue.candidates.value.find(
+    (candidate) => candidate.candidateId === telemetryCandidateId.value,
+  ),
+)
+const telemetryTarget = useTelemetryCandidateTarget(activeTelemetryCandidate, reportContext)
 const telemetryDismissReason = ref('')
 const scanGate = useMesScanGate()
 const scanPending = scanGate.pending
@@ -164,8 +171,6 @@ const scanGuarded = scanGate.guarded
 const validatedDeviceAssetId = ref('')
 const validatedPersonnelId = ref('')
 function resetTelemetryAction() {
-  telemetryWorkOrderId.value = ''
-  telemetryOperationTaskId.value = ''
   telemetryDismissReason.value = ''
 }
 function toggleTelemetryCandidate(candidateId?: string) {
@@ -174,24 +179,40 @@ function toggleTelemetryCandidate(candidateId?: string) {
     telemetryCandidateId.value === candidateId ? null : (candidateId ?? null)
 }
 
-async function promoteTelemetryCandidate(candidate: {
-  candidateId?: string
-  workOrderId?: string | null
-  operationTaskId?: string | null
-}) {
+// 转正 / 忽略的结果必须上屏：成功时候选只是从列表里消失，失败时什么都不显示，操作工会以为没生效而重复点。
+const telemetryToast = shallowRef<{ show: boolean; message: string; type: 'success' | 'error' }>({
+  show: false,
+  message: '',
+  type: 'success',
+})
+function showTelemetryToast(message: string, type: 'success' | 'error') {
+  telemetryToast.value = { show: true, message, type }
+}
+async function promoteTelemetryCandidate(candidateId?: string) {
   if (scanPending.value) return
-  if (!candidate.candidateId) return
-  const workOrderId = telemetryWorkOrderId.value.trim() || candidate.workOrderId?.trim()
-  const operationTaskId = telemetryOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
-  if (!workOrderId || !operationTaskId) return
-  await telemetryQueue.promote(candidate.candidateId, workOrderId, operationTaskId)
+  const workOrderId = telemetryTarget.target.value?.workOrderId
+  const operationTaskId = telemetryTarget.target.value?.operationTaskId
+  if (!candidateId || !workOrderId || !operationTaskId) return
+  try {
+    const reportNo = await telemetryQueue.promote(candidateId, workOrderId, operationTaskId)
+    showTelemetryToast(reportNo ? `已转为报工 ${reportNo}` : '已转为报工', 'success')
+  } catch (error) {
+    showTelemetryToast(describeRequestError(error, '转为报工失败，请重试。').message, 'error')
+    return
+  }
   telemetryCandidateId.value = null
   resetTelemetryAction()
 }
 async function dismissTelemetryCandidate(candidateId?: string) {
   if (scanPending.value) return
   if (!candidateId || !telemetryDismissReason.value.trim()) return
-  await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
+  try {
+    await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
+    showTelemetryToast('已忽略这条遥测记录', 'success')
+  } catch (error) {
+    showTelemetryToast(describeRequestError(error, '忽略失败，请重试。').message, 'error')
+    return
+  }
   telemetryCandidateId.value = null
   resetTelemetryAction()
 }
@@ -620,20 +641,28 @@ async function onScanAccepted(value: MesScanAccepted) {
             }}</span>
           </NvMobileButton>
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
-            <NvMobileInput
-              v-model="telemetryWorkOrderId"
-              :placeholder="candidate.workOrderId ? '留空则沿用已关联工单' : '工单号'"
-            />
-            <NvMobileInput
-              v-model="telemetryOperationTaskId"
-              :placeholder="candidate.operationTaskId ? '留空则沿用已关联工序' : '工序任务号'"
+            <TelemetryCandidateTarget
+              v-model:keyword="telemetryTarget.keyword.value"
+              v-model:choosing="telemetryTarget.choosing.value"
+              :device-asset-id="telemetryTarget.deviceAssetId.value"
+              :target="telemetryTarget.target.value"
+              :tasks="telemetryTarget.tasks.value"
+              :pending="telemetryTarget.pending.value"
+              :error="telemetryTarget.error.value"
+              :scope-ready="Boolean(reportContext)"
+              :device-label="telemetryTarget.deviceLabel"
+              @choose="telemetryTarget.choose"
+              @retry="telemetryTarget.refresh"
             />
             <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
             <div class="grid grid-cols-2 gap-2">
               <NvMobileButton
                 variant="primary"
-                @click="promoteTelemetryCandidate(candidate)"
-                :disabled="scanPending"
+                data-testid="telemetry-promote"
+                :disabled="
+                  !telemetryTarget.target.value || telemetryTarget.choosing.value || scanPending
+                "
+                @click="promoteTelemetryCandidate(candidate.candidateId)"
                 >确认转正</NvMobileButton
               ><NvMobileButton
                 variant="outline"
@@ -936,6 +965,12 @@ async function onScanAccepted(value: MesScanAccepted) {
       </div>
     </NvBottomSheet>
 
+    <NvMobileToast
+      :show="telemetryToast.show"
+      :message="telemetryToast.message"
+      :type="telemetryToast.type"
+      @update:show="telemetryToast = { ...telemetryToast, show: $event }"
+    />
     <NvMobileToast
       :show="lifecycleRecovery.toast.value.show"
       :message="lifecycleRecovery.toast.value.message"

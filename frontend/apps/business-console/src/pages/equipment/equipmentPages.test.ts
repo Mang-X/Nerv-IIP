@@ -58,6 +58,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
         readFaceState.catalogResolved
           ? '五轴加工中心'
           : undefined,
+      resolveDeviceCode: () => undefined,
       resolveLocation: () => undefined,
       resolveWorkCenter: (code?: string | null) =>
         code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
@@ -65,11 +66,12 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
           ? '精加工一线'
           : undefined,
       resolveTeam: () => undefined,
-      resolveUom: () => undefined,
+      resolveUom: (code?: string | null) => (code === 'pcs' ? '件' : undefined),
+      // 员工名录里只有 operator-a；user-admin 是系统管理员账号，不在名录里。
+      resolveUser: (userId?: string | null) => (userId === 'operator-a' ? '王建国' : undefined),
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -130,6 +132,21 @@ const deviceControlState = vi.hoisted(() => ({
       approvalStatus: 'approved',
       correlationId: 'corr-1',
       requestedAtUtc: '2026-07-01T06:00:00Z',
+      deviceReceiptCode: 'BadOutOfRange',
+    },
+    {
+      commandId: 'cmd-2',
+      operationTaskId: 'op-2',
+      deviceAssetId: 'DEV-OIL-01',
+      commandType: 'write-tag',
+      tagKey: 'spindle.speed',
+      value: '90',
+      requestedBy: 'user-admin',
+      status: 'failed',
+      approvalStatus: 'approved',
+      correlationId: 'corr-2',
+      requestedAtUtc: '2026-07-01T07:00:00Z',
+      failureCode: 'opcua.write.rejected',
     },
   ],
 }))
@@ -141,6 +158,7 @@ const runtimeRemainingState = vi.hoisted(() => ({
 
 // Cumulative runtime-hours read; configurable so a no-samples device can be exercised.
 const runtimeHoursState = vi.hoisted(() => ({ total: 720, hasSamples: true }))
+const reliabilityState = vi.hoisted(() => ({ mtbfHours: 128 as number | null, failureCount: 2 }))
 
 const equipmentHealthState = vi.hoisted(() => ({
   deviceAssetId: undefined as Ref<string> | undefined,
@@ -284,7 +302,7 @@ const reviewFixture = vi.hoisted(() => {
       deviceAssetId: 'DEV-OIL-01',
       skuCode: 'BEARING-6205',
       quantity: 2,
-      uomCode: 'EA',
+      uomCode: 'pcs',
     },
   ] satisfies BusinessConsoleMaintenanceSparePartItem[]
 
@@ -303,12 +321,8 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('@/composables/useBusinessEquipment', () => ({
-  describeEquipmentReason: (code: string) => ({
-    code,
-    label: code || '未知',
-    nextStep: '查看设备详情并处理来源业务单据',
-  }),
+vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/useBusinessEquipment')>()),
   equipmentStatusTone: (state?: string | null) =>
     state === 'faulted' || state === 'down' ? 'danger' : state === 'idle' ? 'neutral' : 'success',
   useBusinessEquipmentAlarms: () => ({
@@ -409,7 +423,8 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
 vi.mock('@/composables/useBusinessTelemetry', () => ({
   describeTelemetryOeeDegradation: (reason: string) => reason,
   describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',
-  formatOeeQuantity: (value: number | null | undefined) => (value == null ? '无数据' : `${value}`),
+  formatOeeQuantity: (value: number | null | undefined, uom?: string | null) =>
+    value == null ? '无数据' : `${value}${uom ? ` ${uom}` : ''}`,
   formatOeeRate: (value: number | null | undefined) =>
     value == null ? '无数据' : `${(value * 100).toFixed(1)}%`,
   useBusinessTelemetryHistory: () => ({
@@ -450,6 +465,8 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
       qualityRate: 0.95,
       isDegraded: false,
       stateSampleCount: 12,
+      expectedOutputQuantity: 120,
+      outputUomCode: 'pcs',
     })),
     oeeError: shallowRef(),
     oeePending: shallowRef(false),
@@ -518,10 +535,10 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
       windowEndUtc: '2026-07-01T00:00:00Z',
     },
     reliability: computed(() => ({
-      mtbfHours: 128,
+      mtbfHours: reliabilityState.mtbfHours,
       mtbfRuntimeHasSamples: true,
       mttrMinutes: 42,
-      failureCount: 2,
+      failureCount: reliabilityState.failureCount,
       repairCount: 2,
     })),
     reliabilityError: shallowRef(),
@@ -718,6 +735,8 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('设备运行指标')
     expect(wrapper.text()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(wrapper.text()).toContain('82.0%')
+    // 理论产出的单位按主数据名称显示，不直接显示单位编码。
+    expect(wrapper.text()).toContain('理论产出120 件')
     expect(wrapper.text()).toContain('历史事件6')
     expect(wrapper.text()).toContain('temperature')
     expect(wrapper.text()).toContain('维护与可靠性')
@@ -849,14 +868,14 @@ describe('equipment pages', () => {
     expect(wrapper.text()).not.toContain('可能更紧迫')
   })
 
-  it('shows 无样本 (not 0.0 小时) for cumulative runtime hours when the device has no real samples', () => {
+  it('shows 暂无记录 (not 0.0 小时) for cumulative runtime hours when the device has no real samples', () => {
     runtimeHoursState.total = 0
     runtimeHoursState.hasSamples = false
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     // NvSectionCard renders description immediately followed by its value — assert the cumulative card
-    // value is the honest "无样本", never a fabricated definitive "0.0 小时".
-    expect(wrapper.text()).toContain('累计运行小时无样本')
+    // value is the honest "暂无记录", never a fabricated definitive "0.0 小时".
+    expect(wrapper.text()).toContain('累计运行小时暂无记录')
     expect(wrapper.text()).not.toContain('累计运行小时0.0')
   })
 
@@ -877,7 +896,7 @@ describe('equipment pages', () => {
     // Reason names the actual status (读取失败) and does not enumerate absent causes.
     expect(wrapper.text()).toContain('另 1 个计划读取失败')
     expect(wrapper.text()).not.toContain('阈值缺失')
-    expect(wrapper.text()).not.toContain('暂无样本')
+    expect(wrapper.text()).not.toContain('暂无运行记录')
   })
 
   it('shows read-failed for the hours-until-next card when every candidate runtime plan read failed', () => {
@@ -908,16 +927,16 @@ describe('equipment pages', () => {
     expect(wrapper.text()).not.toContain('运行小时型计划 PM-CNC-RUNTIME · 运行小时读取失败')
   })
 
-  it('surfaces 阈值缺失 (consistent with the list, not 无样本) when all candidates are invalid', () => {
+  it('surfaces 阈值缺失 (consistent with the list, not 暂无记录) when all candidates are invalid', () => {
     runtimeRemainingState.map = {
       'plan-2': { status: 'invalid' },
       'plan-3': { status: 'invalid' },
     }
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
-    // Detail card must use the same data-truth wording as the list — invalid is not "无样本".
+    // Detail card must use the same data-truth wording as the list — invalid is not "暂无记录".
     expect(wrapper.text()).toContain('阈值缺失')
-    expect(wrapper.text()).not.toContain('距下次保养还需无样本')
+    expect(wrapper.text()).not.toContain('距下次保养还需暂无记录')
   })
 
   it('flags incompleteness including invalid candidates alongside a known value', () => {
@@ -936,7 +955,7 @@ describe('equipment pages', () => {
     // Must NOT enumerate reasons that do not apply — otherwise the operator would think it might also be
     // a telemetry read failure or no-samples, when the only real cause is a missing threshold.
     expect(wrapper.text()).not.toContain('读取失败')
-    expect(wrapper.text()).not.toContain('暂无样本')
+    expect(wrapper.text()).not.toContain('暂无运行记录')
   })
 
   it('renders the device control action and command history when the user can control the device', () => {
@@ -946,6 +965,37 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.text()).toContain('spindle.speed')
     expect(wrapper.find('[data-testid="device-control-sheet"]').exists()).toBe(true)
+  })
+
+  it('states MTBF with its real 30-day range, and says 无故障 when there is runtime but no failure', () => {
+    // 可靠性取数范围是近 30 天（mock 为 06-01 至 07-01），MTBF = 运行时长 ÷ 故障次数。
+    const withFailures = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(withFailures).toContain('运行时长 ÷ 故障次数')
+    expect(withFailures).toContain('近 30 天维护事件')
+
+    reliabilityState.mtbfHours = null
+    reliabilityState.failureCount = 0
+    try {
+      const noFailure = mount(EquipmentDetailPage, { global: { stubs } }).text()
+      expect(noFailure).toContain('MTBF无故障')
+      expect(noFailure).toContain('近 30 天没有故障记录')
+      expect(noFailure).not.toContain('运行时长 ÷ 故障次数')
+    } finally {
+      reliabilityState.mtbfHours = 128
+      reliabilityState.failureCount = 2
+    }
+  })
+
+  it('shows operators by name and device receipts in business words, never raw accounts or codes', () => {
+    const text = mount(EquipmentDetailPage, { global: { stubs } }).text()
+
+    expect(text).toContain('王建国')
+    // 备件数量的单位同样按主数据名称显示。
+    expect(text).toContain('数量 2 件')
+    expect(text).toContain('设备拒绝执行')
+    for (const raw of ['operator-a', 'user-admin', 'BadOutOfRange', 'opcua.write.rejected']) {
+      expect(text).not.toContain(raw)
+    }
   })
 
   it('hides the device control dispatch action without the device-control write permission', () => {

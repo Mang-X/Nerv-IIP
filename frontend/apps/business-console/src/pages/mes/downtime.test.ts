@@ -172,16 +172,11 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 // 名录解析不是本用例被测对象；给稳定桩，避免真实实现要求装 Pinia。
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
-  const { computed } = await import('vue')
-  const emptyIndex = computed(() => new Map<string, string>())
-  return {
-    useMasterDataDisplayNames: () => ({
-      resolveDevice: () => undefined,
-      deviceByCode: emptyIndex,
-    }),
-  }
-})
+vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+  useMasterDataDisplayNames: () => ({
+    resolveDevice: () => undefined,
+  }),
+}))
 
 vi.mock('@/utils/notify', async () => {
   // isForbiddenError 必须用**真实实现**：给桩的话「403 走权限文案」就退化成

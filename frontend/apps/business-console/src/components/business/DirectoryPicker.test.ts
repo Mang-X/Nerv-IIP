@@ -50,7 +50,9 @@ vi.mock('./directoryCreators', () => ({
   directoryCreatorFor: (type: string) =>
     type === 'work-center' || type === 'shift' || type === 'station'
       ? { permission: 'business.masterdata.resources.manage', dialog: StubCreateDialog }
-      : undefined,
+      : type === 'location'
+        ? { permission: 'business.inventory.locations.manage', dialog: StubCreateDialog }
+        : undefined,
 }))
 
 interface Recorded {
@@ -337,5 +339,218 @@ describe('DirectoryPicker 就地新增（#3796）', () => {
       .join()
     expect(optionText).toContain('ST-B1')
     expect(optionText).not.toContain('WC-0042')
+  })
+})
+
+// #3832：库位 / 批次 / 序列号走服务端搜索。库位多的仓库几千个：
+// 列表滚到底接着取下一页，输入关键字由服务端在全部库位里找，第 501 个以后照样选得到。
+describe('DirectoryPicker 库位目录：服务端搜索与滚动加载（#3832）', () => {
+  const TOTAL = 1200
+  const code = (n: number) => `LOC-${String(n).padStart(4, '0')}`
+
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    configureApiClient()
+    document.body.innerHTML = ''
+  })
+
+  function mountLocationPicker(
+    options: {
+      failStatus?: number
+      holdLaterPages?: Promise<void>
+      formSiteCode?: string
+      /** 表单里的库位选择器（可就地新增）；不开就是筛选区用法。 */
+      creatable?: boolean
+      siteMissingText?: string
+    } = {},
+  ) {
+    const requests: URL[] = []
+    configureApiClient({
+      baseUrl: 'http://gateway.local',
+      fetch: (async (request: Request) => {
+        const url = new URL(request.url)
+        requests.push(url)
+        if (options.failStatus) {
+          return Response.json(
+            { success: false, message: 'directory-unavailable', code: options.failStatus },
+            { status: options.failStatus },
+          )
+        }
+        const keyword = url.searchParams.get('keyword')
+        const pageIndex = Number(url.searchParams.get('pageIndex'))
+        if (pageIndex > 1) await options.holdLaterPages
+        const pageSize = Number(url.searchParams.get('pageSize'))
+        const siteCode = url.searchParams.get('siteCode')
+        // 奇数号库位在 SITE-A，偶数号在 SITE-B；带了工厂就只回那个工厂的。
+        const all = Array.from({ length: TOTAL }, (_, i) => ({
+          value: code(i + 1),
+          site: (i + 1) % 2 ? 'SITE-A' : 'SITE-B',
+        })).filter(
+          (row) =>
+            (!keyword || row.value.includes(keyword)) && (!siteCode || row.site === siteCode),
+        )
+        const items = all.slice((pageIndex - 1) * pageSize, pageIndex * pageSize).map((row) => ({
+          code: row.value,
+          displayName: row.value,
+          context: { siteCode: row.site },
+        }))
+        return Response.json({ success: true, data: { items, total: all.length } })
+      }) as typeof fetch,
+    })
+    const model = ref('')
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          useBusinessContextStore().patchContext({
+            organizationId: 'org-a',
+            environmentId: 'env-a',
+          })
+          return () =>
+            h(DirectoryPicker, {
+              directoryType: 'location',
+              creatable: options.creatable ?? false,
+              formSiteCode: options.formSiteCode,
+              siteMissingText: options.siteMissingText,
+              modelValue: model.value,
+              'onUpdate:modelValue': (value: string) => (model.value = value),
+            })
+        },
+      }),
+      { global: { plugins: [createPinia(), PiniaColada] }, attachTo: document.body },
+    )
+    mounted.push(wrapper)
+    return { model, requests, wrapper }
+  }
+
+  const optionTexts = () =>
+    [...document.body.querySelectorAll('[role="option"]')].map((row) => row.textContent ?? '')
+
+  function scrollToBottom() {
+    const list = document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 5000 })
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 288 })
+    Object.defineProperty(list, 'scrollTop', { configurable: true, value: 5000 - 288 })
+    list.dispatchEvent(new Event('scroll'))
+  }
+
+  it('滚到底取下一页并接在后面', async () => {
+    let release!: () => void
+    const holdLaterPages = new Promise<void>((resolve) => (release = resolve))
+    const { requests, wrapper } = mountLocationPicker({ holdLaterPages })
+    await openPicker(wrapper)
+
+    expect(requests.at(-1)?.pathname).toBe('/api/business-console/v1/directories/location')
+    expect(optionTexts()).toHaveLength(50)
+    expect(optionTexts().some((text) => text.includes(code(51)))).toBe(false)
+
+    scrollToBottom()
+    // 取下一页期间列表照常显示，不整列换成「加载中…」（否则滚动位置丢失）；
+    // 连着触发两次也只发一次请求。
+    await flushPromises()
+    expect(optionTexts()).toHaveLength(50)
+    expect(document.body.textContent).not.toContain('加载中')
+    scrollToBottom()
+    await flushPromises()
+    release()
+    await flushPromises()
+
+    expect(requests.filter((url) => url.searchParams.get('pageIndex') === '2')).toHaveLength(1)
+    expect(optionTexts().some((text) => text.includes(code(1)))).toBe(true)
+    expect(optionTexts().some((text) => text.includes(code(100)))).toBe(true)
+  })
+
+  // 取数失败时不能说成「没有匹配」，也不给「新增」入口（会引导用户去新建可能已存在的库位）；
+  // 403 与其它失败说法不同（审核 R2-2）。对照：取数成功时有新增权限就有入口。
+  it('取数成功时给新增入口', async () => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { wrapper } = mountLocationPicker({ creatable: true, formSiteCode: 'SITE-A' })
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain('新增库位')
+  })
+
+  it.each([
+    [403, '当前角色无权查看库位', '库位加载失败'],
+    [502, '库位加载失败，请稍后重试', '无权查看'],
+  ])('目录返回 %i 时如实说明、不给新增入口', async (status, shown, notShown) => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { wrapper } = mountLocationPicker({
+      failStatus: status,
+      creatable: true,
+      formSiteCode: 'SITE-A',
+    })
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain(shown)
+    expect(document.body.textContent).not.toContain(notShown)
+    expect(document.body.textContent).not.toContain('没有匹配的库位')
+    expect(document.body.textContent).not.toContain('新增库位')
+  })
+
+  // #3832 审核 R3-2：表单工厂是库位选择器唯一的工厂口径——候选只有这个工厂的库位，新增时预选它。
+  it('给定表单工厂时，候选只有该工厂的库位，新增时预选该工厂', async () => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { requests, wrapper } = mountLocationPicker({ creatable: true, formSiteCode: 'SITE-B' })
+    await openPicker(wrapper)
+
+    expect(requests.at(-1)?.searchParams.get('siteCode')).toBe('SITE-B')
+    const rows = [...document.body.querySelectorAll('[role="option"]')]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((row) => row.textContent?.includes('SITE-B'))).toBe(true)
+
+    createEntry('库位')!.click()
+    await flushPromises()
+    const context = JSON.parse(
+      document.body.querySelector('[data-testid="save"]')!.getAttribute('data-context')!,
+    )
+    expect(context).toMatchObject({ siteCode: 'SITE-B' })
+  })
+
+  // 还没选（空串）与调用点漏传（undefined）同样处理：表单里的库位不会静默落到别的工厂（审核 R4-1）。
+  it.each([
+    ['还没选工厂', ''],
+    ['调用点漏传工厂', undefined],
+  ])('%s时提示先选工厂，不取数、不给新增入口', async (_case, formSiteCode) => {
+    state.permissionCodes = ['business.inventory.locations.manage']
+    const { requests, wrapper } = mountLocationPicker({ creatable: true, formSiteCode })
+    await openPicker(wrapper)
+
+    expect(requests).toHaveLength(0)
+    expect(document.body.textContent).toContain('请先选择工厂')
+    expect(document.body.textContent).not.toContain('新增库位')
+    expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0)
+  })
+
+  it('工厂从单据推出的表单缺工厂时，提示调用方给的文案', async () => {
+    const { wrapper } = mountLocationPicker({
+      creatable: true,
+      formSiteCode: '',
+      siteMissingText: '请先选择入库单',
+    })
+    await openPicker(wrapper)
+
+    expect(document.body.textContent).toContain('请先选择入库单')
+    expect(document.body.textContent).not.toContain('请先选择工厂')
+  })
+
+  it('输入关键字由服务端在全部库位里找，第 501 个以后也选得到', async () => {
+    const { model, requests, wrapper } = mountLocationPicker()
+    await openPicker(wrapper)
+
+    const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+    search.value = code(1001)
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    // 搜索词去抖 300ms 后才发请求。
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    await flushPromises()
+
+    expect(requests.at(-1)?.searchParams.get('keyword')).toBe(code(1001))
+    const target = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes(code(1001)),
+    )
+    expect(target).toBeDefined()
+    target!.click()
+    await flushPromises()
+    expect(model.value).toBe(code(1001))
   })
 })

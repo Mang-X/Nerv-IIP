@@ -245,7 +245,7 @@ public sealed class GetEquipmentHealthQueryHandler(
             decimal.ToDouble(response.TotalRuntimeHours),
             new EquipmentHealthSourceFact(
                 "runtime-state",
-                $"设备 {request.DeviceAssetId} 运行状态",
+                "设备运行状态",
                 newestStateAtUtc.Value));
     }
 
@@ -339,7 +339,7 @@ public sealed class GetEquipmentHealthQueryHandler(
     {
         return new EquipmentHealthSourceFact(
             "telemetry-raw-sample",
-            $"规则 {rule.RuleCode} · 标签 {rule.TagKey}",
+            $"报警规则 {rule.RuleCode}（采集点 {rule.TagKey}）",
             occurredAtUtc);
     }
 

@@ -210,7 +210,7 @@ public static class EquipmentHealthScoringPolicy
                 "无当前值",
                 "距离阈值不超过20%",
                 "—",
-                "尚无带当前样本的规则观察，继续积累。",
+                "报警规则还没有当前采集值，继续积累。",
                 null);
         }
 
@@ -220,9 +220,9 @@ public static class EquipmentHealthScoringPolicy
             observation.Direction == EquipmentHealthRiskDirection.High ? "上限" : "下限";
         var evidencePrefix = ObservationIdentity(observation);
         var evidence = selected.IsRisk
-            ? $"{evidencePrefix} 当前值距{directionText}的安全侧距离 {Format(selected.SafeSideDistance)}，"
+            ? $"{evidencePrefix}当前值距{directionText}的安全侧距离 {Format(selected.SafeSideDistance)}，"
                 + $"不超过边界 {Format(selected.ProximityBoundary)}。"
-            : $"{evidencePrefix} 当前值距{directionText}的安全侧距离 {Format(selected.SafeSideDistance)}，"
+            : $"{evidencePrefix}当前值距{directionText}的安全侧距离 {Format(selected.SafeSideDistance)}，"
                 + $"超过边界 {Format(selected.ProximityBoundary)}。";
 
         return Evaluation(
@@ -247,10 +247,10 @@ public static class EquipmentHealthScoringPolicy
             return Accumulating(
                 RuntimeHoursRuleCode,
                 label,
-                "无运行汇总",
+                "暂无运行记录",
                 "20",
                 "小时",
-                "尚无近24小时生产运行事实，继续积累。",
+                "近24小时还没有生产运行记录，继续积累。",
                 null);
         }
 
@@ -357,10 +357,10 @@ public static class EquipmentHealthScoringPolicy
             return Accumulating(
                 SustainedExceedanceRuleCode,
                 label,
-                "无规则观察",
+                "暂无报警规则数据",
                 "≥6个/≥30分钟/超限≥80%",
-                "样本",
-                "缺少建立阈值与风险方向的规则观察，继续积累。",
+                "采集值",
+                "还没有带阈值和报警方向的报警规则数据，继续积累。",
                 null);
         }
 
@@ -428,9 +428,9 @@ public static class EquipmentHealthScoringPolicy
         var selected = sufficientCandidates[0];
         var isRisk = selected.BreachRatio >= HistoricalBreachRatio;
         var evidence =
-            $"{ObservationIdentity(selected.Observation)} {selected.History.Length}个样本覆盖 "
+            $"{ObservationIdentity(selected.Observation)}{selected.History.Length} 个采集值覆盖 "
             + $"{Format(HistorySpan(selected.History).TotalMinutes)} 分钟，"
-            + $"{selected.BreachCount}个超限，占 {Format(selected.BreachRatio * 100)}%。";
+            + $"其中 {selected.BreachCount} 个超限，占 {Format(selected.BreachRatio * 100)}%。";
 
         return Evaluation(
             SustainedExceedanceRuleCode,
@@ -454,10 +454,10 @@ public static class EquipmentHealthScoringPolicy
             return Accumulating(
                 TrendGrowthRuleCode,
                 label,
-                "无规则观察",
+                "暂无报警规则数据",
                 "20%",
                 "%",
-                "缺少建立风险方向与阈值的规则观察，继续积累且不扣分。",
+                "还没有带报警方向和阈值的报警规则数据，继续积累，不扣分。",
                 null);
         }
 
@@ -542,7 +542,7 @@ public static class EquipmentHealthScoringPolicy
         var selected = sufficientCandidates[0];
         var isRisk = selected.DeteriorationPercent >= 20;
         var evidence =
-            $"{ObservationIdentity(selected.Observation)} 首段均值 {Format(selected.FirstAverage)}，"
+            $"{ObservationIdentity(selected.Observation)}首段均值 {Format(selected.FirstAverage)}，"
             + $"末段均值 {Format(selected.LastAverage)}，"
             + $"报警风险方向恶化 {Format(selected.DeteriorationPercent)}%。";
 
@@ -570,9 +570,9 @@ public static class EquipmentHealthScoringPolicy
             label,
             $"{history.Length}个/{Format(span.TotalMinutes)}分钟",
             "≥6个/≥30分钟",
-            "样本/分钟",
-            $"{ObservationIdentity(observation)} 历史仅有 {history.Length} 个样本、覆盖 "
-                + $"{Format(span.TotalMinutes)} 分钟，继续积累且不扣分。",
+            "采集值个数/分钟",
+            $"{ObservationIdentity(observation)}历史仅有 {history.Length} 个采集值、覆盖 "
+                + $"{Format(span.TotalMinutes)} 分钟，继续积累，不扣分。",
             NewestHistorySource(history));
     }
 
@@ -686,7 +686,7 @@ public static class EquipmentHealthScoringPolicy
 
     private static string ObservationIdentity(EquipmentHealthRuleObservation observation)
     {
-        return $"规则 {observation.RuleCode} / 标签 {observation.TagKey}。";
+        return $"报警规则 {observation.RuleCode}（采集点 {observation.TagKey}）：";
     }
 
     private static ImmutableArray<EquipmentHealthRuleObservation> RuleObservations(

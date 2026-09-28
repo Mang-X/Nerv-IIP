@@ -187,12 +187,12 @@ function nextDueLabel(row: PlanRow) {
         ? '运行小时读取失败'
         : entry?.status === 'invalid'
           ? '运行小时阈值缺失'
-          : '暂无运行样本'
+          : '暂无运行记录'
     if (row.interval && row.nextDueOn) return `${row.nextDueOn}（${note}）`
     // Runtime-only plan (no calendar fallback): surface the settled runtime state as the value.
     if (entry?.status === 'error') return '运行小时（读取失败）'
     if (entry?.status === 'invalid') return '运行小时（阈值缺失）'
-    return '运行小时（暂无样本）'
+    return '运行小时（暂无运行记录）'
   }
   return row.nextDueOn ?? row.startsOn ?? '—'
 }

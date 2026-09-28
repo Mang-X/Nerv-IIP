@@ -2726,6 +2726,7 @@ export type {
 // MAN-632 / #1169: unified owner-backed searchable directory contract.
 export {
   listBusinessConsoleSearchableDirectory,
+  listBusinessConsoleSearchableDirectoryQueryKey,
   listBusinessConsoleSearchableDirectoryQueryOptions,
 } from './generated/business-console'
 

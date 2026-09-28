@@ -232,7 +232,7 @@ function fromDateInput(value: string, dayOffset: number) {
   <BusinessLayout>
     <NvPageHeader
       title="历史趋势"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="hasDeviceScope ? `${visibleHistoryItems.length} 条记录` : scopeLabel"
     >
       <template #actions>

@@ -19,6 +19,8 @@ public static class EquipmentRuntimeReasonCodes
     public const string MaintenanceWindow = "equipment.maintenanceWindow";
     public const string InspectionRequired = "equipment.inspectionRequired";
     public const string SourceStale = "equipment.sourceStale";
+    // 设备从来没有过任何状态观测：还没接入采集，不是「采集过期」。
+    public const string SourceNotConnected = "equipment.sourceNotConnected";
     public const string TagMappingMissing = "equipment.tagMappingMissing";
     public const string NoEligibleSubstitute = "equipment.noEligibleSubstitute";
 }

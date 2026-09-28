@@ -14,7 +14,9 @@ import {
 } from '@nerv-iip/api-client'
 import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
 import {
+  describeAvailabilityWindowReference,
   describeEquipmentReason,
+  equipmentSourceStatus,
   equipmentStatusTone,
   useBusinessEquipmentAlarms,
   useBusinessEquipmentAvailability,
@@ -181,6 +183,10 @@ describe('business equipment composables', () => {
     expect(describeEquipmentReason('equipment.sourceStale')).toMatchObject({
       label: '采集数据过期',
       nextStep: '检查采集连接并刷新设备状态',
+    })
+    expect(describeEquipmentReason('equipment.sourceNotConnected')).toMatchObject({
+      label: '尚未接入采集',
+      nextStep: '为设备配置采集连接后即可看到运行状态',
     })
     expect(describeEquipmentReason('equipment.tagMappingMissing')).toMatchObject({
       label: '采集点未配置',
@@ -522,5 +528,60 @@ describe('business equipment composables', () => {
     await active.shelveAlarm('alarm-1', 'operator-a', 120, 'planned maintenance', intent)
 
     expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledOnce()
+  })
+})
+
+describe('可用性窗口的关联业务', () => {
+  const publicId = '019fbb41-5555-7555-8555-555555555555'
+
+  it('设备状态与采集类窗口显示设备编码，不显示 IIoT 回填的设备引用或快照主键', () => {
+    for (const sourceType of ['device-state', 'stale-source'] as const) {
+      expect(
+        describeAvailabilityWindowReference(
+          { sourceType, sourceReferenceLabel: publicId },
+          'EQ00001',
+        ),
+      ).toBe('EQ00001')
+    }
+    expect(
+      describeAvailabilityWindowReference(
+        { sourceType: 'stale-source', sourceReferenceLabel: publicId },
+        '',
+      ),
+    ).toBe('—')
+  })
+
+  it('其余窗口显示来源单据的人读标识，缺失时显示占位', () => {
+    expect(
+      describeAvailabilityWindowReference(
+        { sourceType: 'maintenance-window', sourceReferenceLabel: 'MWO000001' },
+        'EQ00001',
+      ),
+    ).toBe('MWO000001')
+    expect(describeAvailabilityWindowReference({ sourceType: 'alarm' }, 'EQ00001')).toBe('—')
+  })
+})
+
+describe('设备采集接入状态', () => {
+  const notConnected = { deviceAssetId: 'EQ00001', reasonCode: 'equipment.sourceNotConnected' }
+  const stale = { deviceAssetId: 'EQ00002', reasonCode: 'equipment.sourceStale' }
+
+  it('只有后端发了「尚未接入采集」窗口才算未接入，其余不新鲜的都是采集中断', () => {
+    expect(equipmentSourceStatus(false, [notConnected])).toBe('notConnected')
+    // 只上报样本、不带状态的设备没有状态快照，但后端按样本新鲜度发的是采集过期
+    expect(equipmentSourceStatus(false, [stale])).toBe('stale')
+    expect(equipmentSourceStatus(false, [])).toBe('stale')
+    expect(equipmentSourceStatus(true, [notConnected])).toBe('fresh')
+  })
+
+  it('看板按设备取自己的窗口，不被别的设备的未接入窗口带偏', () => {
+    expect(equipmentSourceStatus(false, [notConnected, stale], 'EQ00002')).toBe('stale')
+    expect(equipmentSourceStatus(false, [notConnected, stale], 'EQ00001')).toBe('notConnected')
+  })
+
+  it('原因徽标色由字典给出：尚未接入为中性色，其余缺省为危险色', () => {
+    expect(describeEquipmentReason('equipment.sourceNotConnected').tone).toBe('neutral')
+    expect(describeEquipmentReason('equipment.sourceStale').tone).toBe('danger')
+    expect(describeEquipmentReason('equipment.unknown-code').tone).toBe('danger')
   })
 })

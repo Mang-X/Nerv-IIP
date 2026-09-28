@@ -17,15 +17,8 @@ vi.mock('@nerv-iip/api-client', async (original) => ({
   ...(await original<typeof import('@nerv-iip/api-client')>()),
   listBusinessConsoleMesAndonCalls: api.list,
   // 工作中心筛选走可搜目录：目录项的 id 与编码不同，用来证明筛选提交的是编码。
-  listBusinessConsoleSearchableDirectoryQueryOptions: ({
-    path,
-    query,
-  }: {
-    path: Record<string, string>
-    query: Record<string, unknown>
-  }) => ({
-    key: ['searchable-directory', path, query],
-    query: async () => ({
+  listBusinessConsoleSearchableDirectory: async () => ({
+    data: {
       success: true,
       data: {
         items: [
@@ -34,7 +27,7 @@ vi.mock('@nerv-iip/api-client', async (original) => ({
         ],
         total: 2,
       },
-    }),
+    },
   }),
   claimBusinessConsoleMesAndonCall: api.claim,
   getBusinessConsolePrincipalWorkContextQueryOptions: ({

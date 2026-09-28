@@ -188,7 +188,7 @@ const columns: NvDataTableColumn<Alarm>[] = [
         ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
         : (r.deviceAssetId ?? '无设备'),
   },
-  { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '无代码' },
+  { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '未设报警代码' },
   { key: 'severity', header: '级别', width: 'w-24' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'lifecycle', header: '处置', width: 'w-64' },
@@ -721,7 +721,7 @@ function formatDateTime(value?: string | null) {
   <BusinessLayout>
     <NvPageHeader
       title="设备报警"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="`${alarms.length} 条未解除`"
     >
       <template #actions>

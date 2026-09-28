@@ -34,6 +34,8 @@ const registry: Record<string, KeywordResetChannel> = {
   // v-model 写进 useMaintenanceSelfWorkOrders 的响应式 filters.keyword。
   'pages/equipment/repair.vue': 'model-derived',
   'pages/equipment/work-orders/components/MaintenanceWorkOrderFilters.vue': 'model-derived',
+  // v-model 关键词直接进可报工工序查询的 key，清空即回到按设备收窄的列表。
+  'pages/mes/components/TelemetryCandidateTarget.vue': 'model-derived',
 }
 
 // 与 WmsOperationalCandidatePicker.test.ts 同一套路径口径：包内跑用包相对路径，

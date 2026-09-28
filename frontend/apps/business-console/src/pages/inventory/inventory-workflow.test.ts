@@ -388,25 +388,6 @@ vi.mock('@/composables/useInventorySiteStock', async () => {
   }
 })
 
-// 库位/批次/序列号后端无主数据读面，真实实现从台账与仓储作业记录派生；测试给确定目录。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, ref } = await import('vue')
-  return {
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'A-01', label: 'A-01' },
-        { value: 'B-02', label: 'B-02' },
-      ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: ref(false),
-    }),
-  }
-})
-
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   PageHeader: {
@@ -492,10 +473,10 @@ const uiStubs = {
   },
   // 物料字段是目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖），同样换成 select。
   DirectoryPicker: {
-    props: ['modelValue'],
+    props: ['modelValue', 'formSiteCode'],
     emits: ['update:modelValue'],
     template:
-      '<select data-directory-picker v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"></select>',
+      '<select data-directory-picker v-bind="$attrs" :data-form-site="formSiteCode" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"></select>',
   },
   NvSelect: { template: '<div><slot /></div>' },
   NvSelectContent: { template: '<div><slot /></div>' },
@@ -673,15 +654,15 @@ describe('inventory workflow pages', () => {
       expect(wrapper.text()).toContain('已扫描 24/48 个物料')
     })
 
-    it('库位/批次/序列号是从既有数据派生的选择器，不再让仓管手输', () => {
+    it('库位/批次/序列号走库存可搜目录选择器，不再让仓管手输', () => {
       const wrapper = mountInventoryPage(AvailabilityPage)
 
-      const pickerLabels = wrapper
-        .findAll('[data-entity-picker]')
-        .map((picker) => picker.attributes('aria-label'))
-      expect(pickerLabels).toContain('库位')
-      expect(pickerLabels).toContain('批次')
-      expect(pickerLabels).toContain('序列号')
+      const pickers = wrapper
+        .findAll('[data-directory-picker]')
+        .map((picker) => [picker.attributes('aria-label'), picker.attributes('directory-type')])
+      expect(pickers).toContainEqual(['库位', 'location'])
+      expect(pickers).toContainEqual(['批次', 'batch'])
+      expect(pickers).toContainEqual(['序列号', 'serial'])
       // 这三项过去是自由文本框，改造后不允许再出现同名输入框。
       const inputLabels = wrapper.findAll('input').map((input) => input.attributes('aria-label'))
       expect(inputLabels).not.toContain('库位')
@@ -694,6 +675,52 @@ describe('inventory workflow pages', () => {
     const wrapper = mountInventoryPage(CountsPage)
 
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
+  })
+
+  // #3832 审核 R3-2：库位选择器的工厂只从表单工厂来（候选收窄与就地新增都用它），每页一条轻量断言。
+  // 批次 / 序列号不可新增，漏传工厂不会在界面上显形，只能靠这里逐字段钉住（审核 R4-1）。
+  it.each([
+    ['库存移动 · 库位', MovementsPage, '#movement-site', '#movement-location'],
+    ['库存移动 · 批次', MovementsPage, '#movement-site', '#movement-lot'],
+    ['库存移动 · 序列号', MovementsPage, '#movement-site', '#movement-serial'],
+    ['库存盘点 · 库位', CountsPage, '#count-task-site', '#count-task-location'],
+    ['库存盘点 · 批次', CountsPage, '#count-task-site', '#count-task-lot'],
+    ['库存盘点 · 序列号', CountsPage, '#count-task-site', '#count-task-serial'],
+  ])('%s拿到表单工厂', async (_name, Page, siteSelector, fieldSelector) => {
+    const wrapper = mountInventoryPage(Page)
+
+    await wrapper.get(siteSelector).setValue('S1')
+
+    expect(wrapper.get(fieldSelector).attributes('data-form-site')).toBe('S1')
+  })
+
+  it('库存移动 · 调拨入库库位拿到表单工厂', async () => {
+    const wrapper = mount(MovementsPage, {
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          ...uiStubs,
+          // 移动类型要能切到「移库」，入库库位才出现。
+          NvSelect: {
+            props: ['modelValue'],
+            emits: ['update:modelValue'],
+            template:
+              '<select data-select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+          },
+          NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+          NvSelectTrigger: { template: '<slot />' },
+          NvSelectContent: { template: '<slot />' },
+          RouterLink: { template: '<a><slot /></a>' },
+        },
+      },
+    })
+    const movementType = wrapper
+      .findAll('select[data-select]')
+      .find((select) => select.find('option[value="transfer"]').exists())!
+    await movementType.setValue('transfer')
+    await wrapper.get('#movement-site').setValue('S1')
+
+    expect(wrapper.get('#movement-transfer-in-location').attributes('data-form-site')).toBe('S1')
   })
 
   it('uses design-system table components for the stock movement read face', () => {

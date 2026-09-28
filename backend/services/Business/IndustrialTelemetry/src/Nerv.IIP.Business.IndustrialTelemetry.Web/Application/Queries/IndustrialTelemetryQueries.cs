@@ -1266,21 +1266,43 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
             }
         }
 
+        // 没有状态快照的设备。快照只在样本带设备状态时才写，Modbus / MQTT / OPC UA 连接器上报的样本不带状态，
+        // 所以「没有快照」不等于「没接入」：有样本的按样本新鲜度判（新鲜不出窗口，过期发采集过期）；
+        // 快照和样本都没有，才是尚未接入采集。
         foreach (var deviceAssetId in deviceAssetIds.Where(deviceAssetId => latestStates.All(x => !string.Equals(x.DeviceAssetId, deviceAssetId, StringComparison.OrdinalIgnoreCase))))
         {
+            DateTimeOffset startUtc;
+            string reasonCode;
+            if (latestSampleByDevice.TryGetValue(deviceAssetId, out var latestSampleAtUtc))
+            {
+                var staleStartUtc = latestSampleAtUtc.AddMinutes(request.FreshnessMaxAgeMinutes);
+                if (staleStartUtc > request.WindowStartUtc)
+                {
+                    continue;
+                }
+
+                startUtc = Max(staleStartUtc, request.WindowStartUtc);
+                reasonCode = EquipmentRuntimeReasonCodes.SourceStale;
+            }
+            else
+            {
+                startUtc = request.WindowStartUtc;
+                reasonCode = EquipmentRuntimeReasonCodes.SourceNotConnected;
+            }
+
             windows.Add(new EquipmentRuntimeAvailabilityWindowContract(
                 DeviceAssetId: deviceAssetId,
                 WorkCenterId: null,
                 AvailabilityStatus: EquipmentRuntimeAvailabilityStatus.Unknown,
-                ReasonCode: EquipmentRuntimeReasonCodes.SourceStale,
+                ReasonCode: reasonCode,
                 Severity: EquipmentRuntimeSeverity.Warning,
-                StartUtc: request.WindowStartUtc,
+                StartUtc: startUtc,
                 EndUtc: request.WindowEndUtc,
                 SourceType: EquipmentRuntimeSourceType.StaleSource,
                 SourceReferenceId: deviceAssetId,
-                MessageKey: EquipmentRuntimeReasonCodes.SourceStale,
+                MessageKey: reasonCode,
                 SubstituteDeviceAssetIds: [],
-                // 这一路的 SourceReferenceId 本就是设备编码（人读），标签同值即可。
+                // 这一路没有来源单据，SourceReferenceId 就是调用方传入的设备引用（编码或公开 ID）。
                 SourceReferenceLabel: deviceAssetId));
         }
 

@@ -41,7 +41,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -133,25 +132,6 @@ vi.mock('@/composables/useBusinessWms', async () => {
   }
 })
 
-// 库位目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'STAGE-01', label: 'STAGE-01' },
-        { value: 'RACK-A-01-01', label: 'RACK-A-01-01' },
-      ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: shallowRef(false),
-    }),
-  }
-})
-
 vi.mock('@/composables/usePagedList', async () => {
   const { shallowRef } = await import('vue')
   return {
@@ -201,6 +181,32 @@ describe('WMS putaway route handoff', () => {
     })
 
     wrapper.unmount()
+  })
+
+  // #3832 审核 R3-1：从入库页带入的入库单可能不在本页最近 200 条里，工厂取路由带来的入库单工厂，
+  // 不能回落成空（空工厂会让库位选择器没有候选、新增时落到别的工厂）。
+  it('从入库页带入较早的入库单时，库位选择器用路由带来的入库单工厂', async () => {
+    const previous = state.routeQuery
+    state.routeQuery = {
+      inboundOrderNo: 'IB-OLD',
+      inboundOrderId: 'ib-old',
+      siteCode: 'SITE-OLD',
+      create: '1',
+    }
+    try {
+      const wrapper = mountPutaway()
+      await flushPromises()
+
+      for (const field of ['#wms-putaway-from', '#wms-putaway-to']) {
+        const picker = document.body.querySelector(field)!
+        expect(picker.getAttribute('data-form-site')).toBe('SITE-OLD')
+        // 上架表单没有工厂字段，工厂从入库单推出：缺工厂时要提示先选入库单。
+        expect(picker.getAttribute('data-site-missing')).toBe('请先选择入库单')
+      }
+      wrapper.unmount()
+    } finally {
+      state.routeQuery = previous
+    }
   })
 
   it('入库单行只从所选入库单的收货行里挑，不混入别的入库单', async () => {
@@ -273,6 +279,12 @@ function wmsStubs() {
   return {
     BusinessLayout: { template: '<main><slot /></main>' },
     WmsInventoryContextPanel: true,
+    DirectoryPicker: {
+      props: ['modelValue', 'id', 'formSiteCode', 'siteMissingText'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :data-form-site="formSiteCode" :data-site-missing="siteMissingText" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
     NvEntityPicker: {
       props: ['modelValue', 'options', 'id'],
       emits: ['update:modelValue'],
