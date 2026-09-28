@@ -6650,16 +6650,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     environmentId: string;
     reasonCode: string;
     description: string;
-    reasonCategory?: string;
-    lossCategory?: string;
+    reasonCategory: string;
+    lossCategory: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenanceDowntimeReasonRequest = {
     organizationId: string;
     environmentId: string;
     description: string;
-    reasonCategory?: string;
-    lossCategory?: string;
+    reasonCategory: string;
+    lossCategory: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeleteMaintenanceDowntimeReasonRequest = {
@@ -20688,6 +20688,7 @@ export type CreateBusinessConsoleMaintenanceDowntimeReasonErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
 
 export type CreateBusinessConsoleMaintenanceDowntimeReasonError = CreateBusinessConsoleMaintenanceDowntimeReasonErrors[keyof CreateBusinessConsoleMaintenanceDowntimeReasonErrors];

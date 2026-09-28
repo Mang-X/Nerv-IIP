@@ -26296,6 +26296,16 @@
           "x-position": 1
         },
         "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -59811,7 +59821,9 @@
           "organizationId",
           "environmentId",
           "reasonCode",
-          "description"
+          "description",
+          "reasonCategory",
+          "lossCategory"
         ],
         "properties": {
           "organizationId": {
@@ -59839,10 +59851,16 @@
             "nullable": false
           },
           "reasonCategory": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "lossCategory": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -59852,7 +59870,9 @@
         "required": [
           "organizationId",
           "environmentId",
-          "description"
+          "description",
+          "reasonCategory",
+          "lossCategory"
         ],
         "properties": {
           "organizationId": {
@@ -59874,10 +59894,16 @@
             "nullable": false
           },
           "reasonCategory": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           },
           "lossCategory": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
