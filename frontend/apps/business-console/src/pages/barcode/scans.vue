@@ -4,6 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { useBarcodeScans } from '@/composables/useBusinessBarcode'
+import { makeIdempotencyKey } from '@/composables/useBusinessMes'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -89,6 +90,9 @@ const form = reactive({
   sourceDocumentId: '',
   result: 'accepted',
   rejectionReason: '',
+  // 一次补录一把键：失败重试沿用，打开新补录才换新键。键只用网关白名单字符，
+  // 不再把来源单号原样拼进键——中文或带空格的单号会被网关 400 拒掉（同 #3922）。
+  idempotencyKey: makeIdempotencyKey('scan'),
 })
 
 // 筛选区的设备/终端从设备资产主数据里选，不再手输编码（补录表单用可新增的设备选择器）。
@@ -175,6 +179,7 @@ function openRecordDialog() {
     sourceDocumentId: filters.sourceDocumentId ?? '',
     result: 'accepted',
     rejectionReason: '',
+    idempotencyKey: makeIdempotencyKey('scan'),
   })
   showErrors.value = false
   open.value = true
@@ -202,7 +207,7 @@ async function submitScan() {
       sourceDocumentId,
       result: form.result.trim(),
       rejectionReason: form.result === 'accepted' ? undefined : form.rejectionReason.trim(),
-      idempotencyKey: `scan-${sourceDocumentId}-${Date.now()}`,
+      idempotencyKey: form.idempotencyKey,
     })
     notifySuccess('扫码审计已记录。')
     open.value = false

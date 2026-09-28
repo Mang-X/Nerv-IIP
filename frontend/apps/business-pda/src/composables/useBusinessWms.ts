@@ -812,6 +812,10 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceId: outboundOrderId,
             readbackScope: { scopeKind: frozen.scopeKind, scopeId: frozen.scopeId },
+            // 库存过账是异步事件，通常几秒内落定：多等一会儿拿到过账结果（#3926）；
+            // 仍在过账就以「已提交、正在过账」收尾，不按结果不明处理。
+            attempts: 20,
+            retryDelayMs: 500,
           },
         ),
       )

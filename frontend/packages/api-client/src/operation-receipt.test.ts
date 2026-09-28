@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  BusinessOperationPendingError,
   BusinessOperationUnconfirmedError,
   confirmBusinessConsoleOperation,
   readBusinessConsoleOperationState,
@@ -368,7 +367,10 @@ describe('business operation receipt confirmation', () => {
         readback,
         retryDelayMs: 0,
       }),
-    ).rejects.toBeInstanceOf(BusinessOperationPendingError)
+    ).rejects.toMatchObject({
+      name: 'BusinessOperationPendingError',
+      message: '返工请求已受理，系统工单仍在创建中。请刷新查看最新状态。',
+    })
     expect(readback).toHaveBeenCalledTimes(3)
   })
 
@@ -499,6 +501,28 @@ describe('business operation receipt confirmation', () => {
       name: 'BusinessOperationPendingError',
       message: '出库复核已提交，库存正在过账。请稍后刷新查看过账结果。',
     })
+  })
+
+  it('treats either posting signal alone as an outbound review still posting', () => {
+    const receipt = { operationType: 'wms.outbound-order.complete', resourceId: 'out-1' }
+    const readback = (item: Record<string, string>) => ({
+      success: true,
+      data: { items: [{ outboundOrderId: 'out-1', ...item }] },
+    })
+    // 只有行级过账状态是 pending：单头已是 Completed（两条判据各自要有鉴别力）。
+    expect(
+      verifyBusinessConsoleOperationReadback(
+        receipt,
+        readback({ status: 'Completed', inventoryPostingStatus: 'pending' }),
+      ),
+    ).toEqual({ state: 'pending' })
+    // 只有单头是 InventoryPostingPending：行级状态尚未派生。
+    expect(
+      verifyBusinessConsoleOperationReadback(
+        receipt,
+        readback({ status: 'InventoryPostingPending', inventoryPostingStatus: 'not-started' }),
+      ),
+    ).toEqual({ state: 'pending' })
   })
 
   it('surfaces a confirmed WMS posting failure without retrying readback', async () => {
