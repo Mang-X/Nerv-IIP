@@ -406,7 +406,6 @@ public sealed class MesSchemaConventionTests
             typeof(MaterialRequirement),
             typeof(MaterialIssueRequest),
             typeof(WorkCenterUnavailability),
-            typeof(DeviceAssetWorkCenterMapping),
             typeof(FinishedGoodsReceiptRequest),
             typeof(ShiftHandover),
             typeof(ShiftHandoverWipItem),

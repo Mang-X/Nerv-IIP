@@ -56,8 +56,6 @@ public interface IMesPlanningStore
 
     void AddUnavailability(WorkCenterUnavailability unavailability);
 
-    void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId);
-
     Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default);
 
     Task<bool> WorkOrderExistsAsync(
@@ -84,14 +82,6 @@ public interface IMesPlanningStore
         DateTimeOffset restoredAtUtc,
         CancellationToken cancellationToken = default);
 
-    Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default);
-
-    Task<string> ResolveWorkCenterIdAsync(
-        string organizationId,
-        string environmentId,
-        string deviceAssetId,
-        CancellationToken cancellationToken = default);
-
 }
 
 /// <summary>
@@ -103,7 +93,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
     private readonly List<PlannedWorkOrder> _workOrders = [];
     private readonly List<PlannedOperationTask> _operationTasks = [];
     private readonly List<WorkCenterUnavailability> _unavailabilities = [];
-    private readonly Dictionary<string, string> _assetWorkCenterMap = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyCollection<PlannedWorkOrder> WorkOrders => _workOrders;
 
@@ -150,18 +139,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
 
         var current = _unavailabilities[index];
         _unavailabilities[index] = current with { ToUtc = restoredAtUtc };
-    }
-
-    public void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId)
-    {
-        _assetWorkCenterMap[deviceAssetId] = workCenterId;
-    }
-
-    public string ResolveWorkCenterId(string deviceAssetId)
-    {
-        return _assetWorkCenterMap.TryGetValue(deviceAssetId, out var workCenterId)
-            ? workCenterId
-            : deviceAssetId;
     }
 
     public Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
@@ -234,24 +211,6 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
         }
 
         return Task.CompletedTask;
-    }
-
-    public Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(ResolveWorkCenterId(deviceAssetId));
-    }
-
-    public Task<string> ResolveWorkCenterIdAsync(
-        string organizationId,
-        string environmentId,
-        string deviceAssetId,
-        CancellationToken cancellationToken = default)
-    {
-        _ = organizationId;
-        _ = environmentId;
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(ResolveWorkCenterId(deviceAssetId));
     }
 
     private static bool IsInScope(WorkCenterUnavailability unavailability, string organizationId, string environmentId)

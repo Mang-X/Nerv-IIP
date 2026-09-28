@@ -37,7 +37,9 @@ public sealed class ProcessAssetUnavailableCommandValidator : AbstractValidator<
 
 public sealed class ProcessAssetUnavailableCommandHandler(
     IMesAssetUnavailableInboxClaimCoordinator claimCoordinator,
-    IMesPlanningStore store)
+    IMesPlanningStore store,
+    IMesDeviceWorkCenterResolver workCenterResolver,
+    ILogger<ProcessAssetUnavailableCommandHandler> logger)
     : ICommandHandler<ProcessAssetUnavailableCommand, ProcessAssetUnavailableResult>
 {
     public async Task<ProcessAssetUnavailableResult> Handle(
@@ -55,11 +57,26 @@ public sealed class ProcessAssetUnavailableCommandHandler(
         }
 
         var envelope = request.Envelope;
-        var workCenterId = await store.ResolveWorkCenterIdAsync(
+        // 设备归属的工作中心由 MasterData 拥有（#3878）。主数据不可用时 resolver 抛出，
+        // 整个 UoW（含 claim）回滚，消息系统重试。
+        var workCenterId = await workCenterResolver.ResolveAsync(
             envelope.OrganizationId,
             envelope.EnvironmentId,
             request.DeviceAssetId,
             cancellationToken);
+        if (workCenterId is null)
+        {
+            // 主数据里查不到这台设备的工作中心：不得拿设备编号冒充工作中心，也不得扩大到任意工作中心
+            // （equipment-status-event-flow.md）。claim 照常落库，这条停机事实跳过、不重试。
+            logger.LogWarning(
+                "Skipped asset-unavailable event {EventId}: MasterData has no work center for device {DeviceAssetId} in {OrganizationId}/{EnvironmentId}.",
+                envelope.EventId,
+                request.DeviceAssetId,
+                envelope.OrganizationId,
+                envelope.EnvironmentId);
+            return new ProcessAssetUnavailableResult(true);
+        }
+
         store.AddUnavailability(new WorkCenterUnavailability(
             workCenterId,
             request.FromUtc,

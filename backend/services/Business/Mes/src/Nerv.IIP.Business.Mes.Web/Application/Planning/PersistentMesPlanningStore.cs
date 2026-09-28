@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
-using DeviceAssetWorkCenterMapping = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.DeviceAssetWorkCenterMapping;
 using DomainOperationTask = Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask;
 using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 
@@ -68,19 +67,6 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             unavailability.ToUtc,
             unavailability.Reason,
             unavailability.DeviceAssetId));
-    }
-
-    public void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId)
-    {
-        var existing = dbContext.DeviceAssetWorkCenterMappings.Local
-            .SingleOrDefault(x => string.Equals(x.DeviceAssetId, deviceAssetId, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null)
-        {
-            existing.Remap(workCenterId);
-            return;
-        }
-
-        dbContext.DeviceAssetWorkCenterMappings.Add(DeviceAssetWorkCenterMapping.Create(deviceAssetId, workCenterId));
     }
 
     public async Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
@@ -217,57 +203,6 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
         current?.Close(restoredAtUtc);
     }
 
-    public async Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default)
-    {
-        var localMapped = dbContext.DeviceAssetWorkCenterMappings.Local
-            .Where(x => x.DeviceAssetId == deviceAssetId)
-            .Select(x => x.WorkCenterId)
-            .LastOrDefault();
-        if (localMapped is not null)
-        {
-            return localMapped;
-        }
-
-        var mapped = await dbContext.DeviceAssetWorkCenterMappings
-            .AsNoTracking()
-            .Where(x => x.DeviceAssetId == deviceAssetId)
-            .Select(x => x.WorkCenterId)
-            .SingleOrDefaultAsync(cancellationToken);
-
-        return mapped ?? deviceAssetId;
-    }
-
-    public async Task<string> ResolveWorkCenterIdAsync(
-        string organizationId,
-        string environmentId,
-        string deviceAssetId,
-        CancellationToken cancellationToken = default)
-    {
-        var localMapped = dbContext.DeviceAssetWorkCenterMappings.Local
-            .Where(x =>
-                IsInScope(x, organizationId, environmentId) &&
-                x.DeviceAssetId == deviceAssetId)
-            .OrderByDescending(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
-            .Select(x => x.WorkCenterId)
-            .FirstOrDefault();
-        if (localMapped is not null)
-        {
-            return localMapped;
-        }
-
-        var mapped = await dbContext.DeviceAssetWorkCenterMappings
-            .AsNoTracking()
-            .Where(x =>
-                (x.OrganizationId == null || x.OrganizationId == organizationId) &&
-                (x.EnvironmentId == null || x.EnvironmentId == environmentId) &&
-                x.DeviceAssetId == deviceAssetId)
-            .OrderByDescending(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
-            .Select(x => x.WorkCenterId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return mapped ?? deviceAssetId;
-    }
-
     private static OperationTaskStatus ToWebStatus(OperationTaskLifecycleStatus status)
     {
         return Enum.Parse<OperationTaskStatus>(status.ToString());
@@ -284,15 +219,6 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             || string.Equals(unavailability.OrganizationId, organizationId, StringComparison.Ordinal);
         var environmentMatches = unavailability.EnvironmentId is null
             || string.Equals(unavailability.EnvironmentId, environmentId, StringComparison.Ordinal);
-        return organizationMatches && environmentMatches;
-    }
-
-    private static bool IsInScope(DeviceAssetWorkCenterMapping mapping, string organizationId, string environmentId)
-    {
-        var organizationMatches = mapping.OrganizationId is null
-            || string.Equals(mapping.OrganizationId, organizationId, StringComparison.Ordinal);
-        var environmentMatches = mapping.EnvironmentId is null
-            || string.Equals(mapping.EnvironmentId, environmentId, StringComparison.Ordinal);
         return organizationMatches && environmentMatches;
     }
 }

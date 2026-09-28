@@ -468,20 +468,16 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
                     options.FailedRetryCount = 2;
                     options.FailedRetryInterval = 1;
                 });
-                services.RemoveAll<IMesPlanningStore>();
+                services.RemoveAll<IMesDeviceWorkCenterResolver>();
                 services.AddSingleton(poison);
                 services.AddSingleton(arrivals);
                 services.Replace(ServiceDescriptor.Scoped<IMesAssetUnavailableCanonicalProcessor>(provider =>
                     new RecordingProcessor(
                         provider.GetRequiredService<MesAssetUnavailableCanonicalProcessor>(),
                         provider.GetRequiredService<ArrivalLog>())));
-                services.AddScoped<IMesPlanningStore>(provider =>
-                {
-                    var db = provider.GetRequiredService<ApplicationDbContext>();
-                    return new PoisoningPlanningStore(
-                        new PersistentMesPlanningStore(db),
-                        poison);
-                });
+                services.AddSingleton<IMesDeviceWorkCenterResolver>(new PoisoningWorkCenterResolver(
+                    new FakeMesDeviceWorkCenterResolver().Map("ASSET-CNC-01", "WC-A"),
+                    poison));
             });
         });
     }
@@ -598,30 +594,18 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         public void RecordAttempt() => Interlocked.Increment(ref attempts);
     }
 
-    private sealed class PoisoningPlanningStore(IMesPlanningStore inner, PoisonSwitch poison) : IMesPlanningStore
+    private sealed class PoisoningWorkCenterResolver(IMesDeviceWorkCenterResolver inner, PoisonSwitch poison)
+        : IMesDeviceWorkCenterResolver
     {
-        public void AddWorkOrder(PlannedWorkOrder workOrder) => inner.AddWorkOrder(workOrder);
-        public void AddOperationTask(PlannedOperationTask operationTask) => inner.AddOperationTask(operationTask);
-        public void AddUnavailability(WorkCenterUnavailability unavailability) => inner.AddUnavailability(unavailability);
-        public void MapDeviceAssetToWorkCenter(string deviceAssetId, string workCenterId) => inner.MapDeviceAssetToWorkCenter(deviceAssetId, workCenterId);
-        public Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default) => inner.GetWorkOrdersAsync(cancellationToken);
-        public Task<bool> WorkOrderExistsAsync(string organizationId, string environmentId, string workOrderId, CancellationToken cancellationToken = default) => inner.WorkOrderExistsAsync(organizationId, environmentId, workOrderId, cancellationToken);
-        public Task<IReadOnlyCollection<PlannedOperationTask>> GetOperationTasksAsync(CancellationToken cancellationToken = default) => inner.GetOperationTasksAsync(cancellationToken);
-        public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(cancellationToken);
-        public Task<IReadOnlyCollection<WorkCenterUnavailability>> GetUnavailabilitiesAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default) => inner.GetUnavailabilitiesAsync(organizationId, environmentId, cancellationToken);
-        public Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(deviceAssetId, restoredAtUtc, cancellationToken);
-        public Task CloseUnavailabilityAsync(string organizationId, string environmentId, string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default) => inner.CloseUnavailabilityAsync(organizationId, environmentId, deviceAssetId, restoredAtUtc, cancellationToken);
-        public Task<string> ResolveWorkCenterIdAsync(string deviceAssetId, CancellationToken cancellationToken = default) => ResolveAsync(() => inner.ResolveWorkCenterIdAsync(deviceAssetId, cancellationToken));
-        public Task<string> ResolveWorkCenterIdAsync(string organizationId, string environmentId, string deviceAssetId, CancellationToken cancellationToken = default) => ResolveAsync(() => inner.ResolveWorkCenterIdAsync(organizationId, environmentId, deviceAssetId, cancellationToken));
-
-        private Task<string> ResolveAsync(Func<Task<string>> next)
+        public Task<string?> ResolveAsync(string organizationId, string environmentId, string deviceAssetId, CancellationToken cancellationToken)
         {
             if (poison.Enabled)
             {
                 poison.RecordAttempt();
                 throw new InvalidOperationException("issue-2966 controlled poison");
             }
-            return next();
+
+            return inner.ResolveAsync(organizationId, environmentId, deviceAssetId, cancellationToken);
         }
     }
 }

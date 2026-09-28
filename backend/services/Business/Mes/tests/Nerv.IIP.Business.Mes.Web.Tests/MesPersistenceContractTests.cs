@@ -180,7 +180,6 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-            store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
             store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
             store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
             await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
@@ -213,7 +212,6 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-a", "env-dev", "WO-A", "SKU-A", null, 1m, 10, now.AddHours(4)));
         store.AddOperationTask(new PlannedOperationTask("WO-A", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), "SKU-001", OrganizationId: "org-a", EnvironmentId: "env-dev"));
         store.AddWorkOrder(new PlannedWorkOrder("org-b", "env-dev", "WO-B", "SKU-B", null, 1m, 10, now.AddHours(4)));
@@ -3940,6 +3938,7 @@ public sealed class MesPersistenceContractTests
         services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
         services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
         services.AddScoped<IMesAssetUnavailableInboxClaimCoordinator, PostgreSqlMesAssetUnavailableInboxClaimCoordinator>();
+        services.AddSingleton<IMesDeviceWorkCenterResolver>(new FakeMesDeviceWorkCenterResolver().Map("ASSET-CNC-01", "WC-A"));
         return services.BuildServiceProvider();
     }
 
