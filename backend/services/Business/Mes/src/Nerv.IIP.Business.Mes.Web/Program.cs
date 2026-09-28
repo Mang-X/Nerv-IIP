@@ -161,6 +161,7 @@ builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider, HttpMesMaterialL
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
 builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
 builder.Services.AddScoped<IProductionReportOeeDimensionSnapshotProvider, HttpProductionReportOeeDimensionSnapshotProvider>();
+builder.Services.AddScoped<IMesDeviceWorkCenterResolver, HttpMesDeviceWorkCenterResolver>();
 builder.Services.AddScoped<IMesFirstArticleGate, HttpMesFirstArticleGate>();
 builder.Services.AddScoped<MesQualityInspectionPlanClient>();
 builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
@@ -338,16 +339,14 @@ if (leaderDemoSeedEnabled)
             genealogy.Validation.OutputLotGenealogiesChecked,
             genealogy.Validation.MaterialConsumptionsChecked);
 
-        // L1「生产准备底座」块：设备 ↔ 工作中心映射 / SKU 停用投影（主数据投影，与工单链无先后依赖）。
+        // L1「生产准备底座」块：SKU 停用投影（主数据投影，与工单链无先后依赖）。
+        // 设备 ↔ 工作中心归属由主数据拥有，MES 运行时直接查询，不再写本地映射（#3878）。
         var foundation = await scope.ServiceProvider.GetRequiredService<WorldHistoryFoundationSeedService>().SeedAsync(
             leaderDemoOrganizationId,
             leaderDemoEnvironmentId);
         app.Logger.LogInformation(
-            "World-history MES foundation seed completed: {Mappings} device-asset mappings, {DisabledSkus} disabled SKUs; " +
-            "validator checked {CheckedMappings}/{CheckedDisabled}.",
-            foundation.DeviceAssetMappingsWritten,
+            "World-history MES foundation seed completed: {DisabledSkus} disabled SKUs; validator checked {CheckedDisabled}.",
             foundation.DisabledSkusWritten,
-            foundation.Validation.DeviceAssetMappingsChecked,
             foundation.Validation.DisabledSkusChecked);
     }
 }

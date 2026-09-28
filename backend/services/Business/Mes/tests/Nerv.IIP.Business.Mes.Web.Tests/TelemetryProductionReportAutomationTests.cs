@@ -1,12 +1,12 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
-using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
@@ -25,7 +25,8 @@ public sealed class TelemetryProductionReportAutomationTests
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore(),
-            sender);
+            sender,
+            MappedResolver());
 
         await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
 
@@ -64,7 +65,8 @@ public sealed class TelemetryProductionReportAutomationTests
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore(),
-            new ProductionReportSender(dbContext));
+            new ProductionReportSender(dbContext),
+            MappedResolver());
 
         await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: true), CancellationToken.None);
         await using var verificationDbContext = CreateDbContext(databaseName);
@@ -79,13 +81,11 @@ public sealed class TelemetryProductionReportAutomationTests
     {
         var databaseName = nameof(Production_count_delta_without_current_work_order_creates_pending_confirmation);
         await using var dbContext = CreateDbContext(databaseName);
-        dbContext.DeviceAssetWorkCenterMappings.Add(
-            DeviceAssetWorkCenterMapping.Create("org-001", "env-dev", "DEV-PACK-01", "WC-PACK-01"));
-        await dbContext.SaveChangesAsync();
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore(),
-            new ProductionReportSender(dbContext));
+            new ProductionReportSender(dbContext),
+            MappedResolver());
 
         await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
 
@@ -108,7 +108,8 @@ public sealed class TelemetryProductionReportAutomationTests
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore(),
-            new ProductionReportSender(dbContext));
+            new ProductionReportSender(dbContext),
+            MappedResolver());
 
         await handler.HandleAsync(CreateEvent(reportingMode: "draft", hasActiveAlarm: false), CancellationToken.None);
         await using var verificationDbContext = CreateDbContext(databaseName);
@@ -129,7 +130,8 @@ public sealed class TelemetryProductionReportAutomationTests
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
             dbContext,
             deadLetterStore,
-            new ProductionReportSender(dbContext));
+            new ProductionReportSender(dbContext),
+            MappedResolver());
 
         await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false, deltaQuantity: 0m), CancellationToken.None);
 
@@ -140,6 +142,107 @@ public sealed class TelemetryProductionReportAutomationTests
         var deadLetter = Assert.Single(deadLetters);
         Assert.Equal("non-positive-count-delta", deadLetter.FailureCode);
     }
+
+    [Fact]
+    public async Task Production_count_delta_for_device_without_masterdata_work_center_creates_pending_confirmation()
+    {
+        var databaseName = nameof(Production_count_delta_for_device_without_masterdata_work_center_creates_pending_confirmation);
+        await using var dbContext = CreateDbContext(databaseName);
+        SeedRunningOperation(dbContext);
+        await dbContext.SaveChangesAsync();
+        var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new ProductionReportSender(dbContext),
+            new FakeMesDeviceWorkCenterResolver());
+
+        await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
+
+        await using var verificationDbContext = CreateDbContext(databaseName);
+        var pending = await verificationDbContext.TelemetryProductionReportCandidates.SingleAsync();
+        Assert.Equal("pending-confirmation", pending.Status);
+        Assert.Equal("no-work-center-mapping", pending.SuspensionReason);
+        Assert.Null(pending.WorkCenterId);
+        Assert.Empty(await verificationDbContext.ProductionReports.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Production_count_delta_follows_the_masterdata_work_center_of_the_device()
+    {
+        // 归属以主数据为准（#3878）：主数据把设备改到别的工作中心后，下一次采样立刻按新归属解析，
+        // 不再命中旧工作中心上的工序。
+        var databaseName = nameof(Production_count_delta_follows_the_masterdata_work_center_of_the_device);
+        await using var dbContext = CreateDbContext(databaseName);
+        SeedRunningOperation(dbContext);
+        await dbContext.SaveChangesAsync();
+        var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new ProductionReportSender(dbContext),
+            new FakeMesDeviceWorkCenterResolver().Map("org-001", "env-dev", "DEV-PACK-01", "WC-PACK-02"));
+
+        await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
+
+        await using var verificationDbContext = CreateDbContext(databaseName);
+        var pending = await verificationDbContext.TelemetryProductionReportCandidates.SingleAsync();
+        Assert.Equal("no-current-work-order", pending.SuspensionReason);
+        Assert.Equal("WC-PACK-02", pending.WorkCenterId);
+        Assert.Empty(await verificationDbContext.ProductionReports.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Masterdata_outage_propagates_for_retry_without_parking_a_candidate_and_the_retry_reports_once()
+    {
+        var databaseName = nameof(Masterdata_outage_propagates_for_retry_without_parking_a_candidate_and_the_retry_reports_once);
+        await using (var seedContext = CreateDbContext(databaseName))
+        {
+            SeedRunningOperation(seedContext);
+            await seedContext.SaveChangesAsync();
+        }
+
+        var resolver = MappedResolver();
+        resolver.Failure = new MesMasterDataUnavailableException("master-data down");
+        await using (var dbContext = CreateDbContext(databaseName))
+        {
+            var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore(),
+                new ProductionReportSender(dbContext),
+                resolver);
+            await Assert.ThrowsAsync<MesMasterDataUnavailableException>(
+                () => handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None));
+        }
+
+        await using (var verificationDbContext = CreateDbContext(databaseName))
+        {
+            Assert.Empty(await verificationDbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            Assert.Empty(await verificationDbContext.TelemetryProductionReportCandidates.ToArrayAsync());
+            Assert.Empty(await verificationDbContext.ProductionReports.ToArrayAsync());
+        }
+
+        resolver.Failure = null;
+        for (var redelivery = 0; redelivery < 2; redelivery++)
+        {
+            await using var dbContext = CreateDbContext(databaseName);
+            var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore(),
+                new ProductionReportSender(dbContext),
+                resolver);
+            await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
+        }
+
+        await using (var verificationDbContext = CreateDbContext(databaseName))
+        {
+            var report = Assert.Single(await verificationDbContext.ProductionReports.ToArrayAsync());
+            Assert.Equal(3m, report.GoodQuantity);
+            Assert.Equal(3m, (await verificationDbContext.WorkOrders.SingleAsync()).CompletedQuantity);
+            Assert.Empty(await verificationDbContext.TelemetryProductionReportCandidates.ToArrayAsync());
+        }
+    }
+
+    private static FakeMesDeviceWorkCenterResolver MappedResolver() =>
+        new FakeMesDeviceWorkCenterResolver().Map("org-001", "env-dev", "DEV-PACK-01", "WC-PACK-01");
 
     private static TelemetryProductionCountDeltaIntegrationEvent CreateEvent(
         string reportingMode,
@@ -188,7 +291,6 @@ public sealed class TelemetryProductionReportAutomationTests
         operation.Assign(null, "DEV-PACK-01", null, DateTimeOffset.Parse("2026-07-11T07:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(operation);
-        dbContext.DeviceAssetWorkCenterMappings.Add(DeviceAssetWorkCenterMapping.Create("org-001", "env-dev", "DEV-PACK-01", "WC-PACK-01"));
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)
