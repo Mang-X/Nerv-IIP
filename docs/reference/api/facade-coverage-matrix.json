@@ -2032,6 +2032,14 @@
     {
       "service": "Inventory",
       "method": "POST",
+      "route": "/api/inventory/v1/reservations/{reservationId}/pick",
+      "operationId": "markInventoryReservationPicked",
+      "classification": "internal",
+      "rationale": "Service-to-service call made when a WMS picking task completes; the reservation is then held until outbound posting consumes it instead of expiring (#3836)."
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
       "route": "/api/inventory/v1/status-transfers",
       "operationId": "postInventoryStatusTransfer",
       "classification": "internal",

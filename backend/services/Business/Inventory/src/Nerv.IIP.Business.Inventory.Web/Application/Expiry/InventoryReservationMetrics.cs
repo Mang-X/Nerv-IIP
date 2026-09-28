@@ -17,7 +17,7 @@ public sealed class InventoryReservationMetrics(TimeProvider timeProvider, Colle
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var count = await dbContext.StockReservations.CountAsync(
-            x => x.OpenQuantity > 0m && x.ExpiresAtUtc <= now,
+            ExpiredStockReservationService.IsDue(now),
             cancellationToken);
         hangingReservations.Set(count);
     }

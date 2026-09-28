@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Wms.Domain;
@@ -63,6 +64,135 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         var task = Assert.Single(wmsDb.WarehouseTasks);
         Assert.Equal(recoveredTaskId, task.Id);
         Assert.Equal(reservation.Id.ToString(), wmsDb.OutboundOrders.Include(x => x.Lines).Single().Lines.Single().InventoryReservationId);
+    }
+
+    /// <summary>
+    /// #3836：预留在复核后、过账前已不再 open（此处用超时过期制造），过账核销被拒；
+    /// WMS 的失败回执仍要释放同一份预留。释放必须幂等成功，出库单才能进入可重试的
+    /// <see cref="OutboundOrderStatus.InventoryPostingFailed"/>，而不是永远停在 InventoryPostingPending。
+    /// 反向读数：把 <c>StockReservation.Release</c> 改回「超过 open 数量就抛异常」，失败回执在此处抛出。
+    /// </summary>
+    [Fact]
+    public async Task Failure_receipt_for_a_reservation_that_is_no_longer_open_leaves_the_outbound_retryable()
+    {
+        await using var wmsDb = CreateWmsContext();
+        await using var inventoryDb = CreateInventoryContext();
+        await SeedInventoryAsync(inventoryDb, "SKU-FG-1000", "LOC-A-01", "LOT-001", 10m, "seed-failure-receipt-001");
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RPC-FAILED-001",
+            "sales-delivery",
+            "SO-RPC-FAILED-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        wmsDb.OutboundOrders.Add(outbound);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+        var inventoryClient = new TimeoutAfterInventoryCommitClient(inventoryDb);
+        await new CreatePickingTaskCommandHandler(wmsDb, inventoryClient).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-RPC-FAILED-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+        var request = Assert.Single(outbound.CompletePackReview(
+            "REVIEW-RPC-FAILED-001",
+            passed: true,
+            "complete-rpc-failed-001",
+            outbound.Version,
+            new Dictionary<string, decimal>(StringComparer.Ordinal) { ["LINE-001"] = 4m }));
+        wmsDb.InventoryMovementRequests.Add(request);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+        var reservation = Assert.Single(inventoryDb.StockReservations);
+        inventoryDb.StockLedgers.Single().ExpireReservation(reservation, reservation.ExpiresAtUtc.AddMinutes(1));
+        await inventoryDb.SaveChangesAsync(CancellationToken.None);
+
+        var rejection = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+            new PostStockMovementCommandHandler(inventoryDb).Handle(
+                new PostStockMovementCommand(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.MovementType,
+                    "wms",
+                    request.SourceDocumentId,
+                    request.SourceDocumentLineId,
+                    request.IdempotencyKey,
+                    request.SkuCode,
+                    request.UomCode,
+                    request.SiteCode,
+                    request.LocationCode,
+                    request.LotNo,
+                    request.SerialNo,
+                    request.QualityStatus,
+                    request.OwnerType,
+                    request.OwnerId,
+                    -request.Quantity,
+                    ReservationId: new StockReservationId(Guid.Parse(request.InventoryReservationId!))),
+                CancellationToken.None));
+        Assert.Equal(InventoryPostingFailureCodes.ReservationAllocationRejected, rejection.FailureCode);
+
+        await new MarkInventoryMovementRequestFailedCommandHandler(wmsDb, inventoryClient).Handle(
+            new MarkInventoryMovementRequestFailedCommand(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.MovementType,
+                request.SourceDocumentId,
+                request.SourceDocumentLineId,
+                request.IdempotencyKey,
+                rejection.FailureCode,
+                rejection.FailureMessage),
+            CancellationToken.None);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(OutboundOrderStatus.InventoryPostingFailed, outbound.Status);
+        Assert.Null(outbound.Lines.Single().InventoryReservationId);
+        Assert.Equal(0m, inventoryDb.StockLedgers.Single().ReservedQuantity);
+        Assert.Equal("expired", reservation.Status);
+    }
+
+    /// <summary>
+    /// ADR 0031 / #3836：拣货预留跟随拣货任务。原任务的预留过期、任务被取消后，以新任务号重建拣货任务，
+    /// 必须拿到一份新的 open 预留，而不是把已过期的旧预留当幂等结果重放回来。
+    /// 反向读数：幂等键不含任务号时，重建拿回的仍是那份已过期的预留。
+    /// </summary>
+    [Fact]
+    public async Task Recreated_picking_task_after_cancellation_gets_a_new_reservation()
+    {
+        await using var wmsDb = CreateWmsContext();
+        await using var inventoryDb = CreateInventoryContext();
+        await SeedInventoryAsync(inventoryDb, "SKU-FG-1000", "LOC-A-01", "LOT-001", 10m, "seed-recreate-pick-001");
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RPC-RECREATE-001",
+            "sales-delivery",
+            "SO-RPC-RECREATE-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        wmsDb.OutboundOrders.Add(outbound);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+        var inventoryClient = new TimeoutAfterInventoryCommitClient(inventoryDb);
+        var firstTaskId = await new CreatePickingTaskCommandHandler(wmsDb, inventoryClient).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-RPC-RECREATE-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+        var firstReservation = Assert.Single(inventoryDb.StockReservations);
+
+        // 原预留超时过期；WMS 的过期消费者随即清掉该行预留并取消未完成的拣货任务。
+        inventoryDb.StockLedgers.Single().ExpireReservation(firstReservation, firstReservation.ExpiresAtUtc.AddMinutes(1));
+        await inventoryDb.SaveChangesAsync(CancellationToken.None);
+        outbound.MarkInventoryReservationReleased(firstReservation.Id.ToString());
+        wmsDb.WarehouseTasks.Single(x => x.Id == firstTaskId).Cancel();
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePickingTaskCommandHandler(wmsDb, inventoryClient).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-RPC-RECREATE-002", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+
+        var newReservation = Assert.Single(inventoryDb.StockReservations, x => x.Id != firstReservation.Id);
+        Assert.Equal("open", newReservation.Status);
+        Assert.Equal(4m, newReservation.OpenQuantity);
+        Assert.Equal(newReservation.Id.ToString(), outbound.Lines.Single().InventoryReservationId);
+        Assert.Equal(4m, inventoryDb.StockLedgers.Single().ReservedQuantity);
     }
 
     [Fact]
@@ -383,11 +513,15 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             throw new NotSupportedException("This test uses explicit lot reservations.");
         }
 
-        public Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
+        public async Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
             WmsInventoryReservationReleaseRequest request,
             CancellationToken cancellationToken)
         {
-            throw new NotSupportedException("This test does not release reservations.");
+            var result = await new ReleaseStockReservationCommandHandler(inventoryDb).Handle(
+                new ReleaseStockReservationCommand(new StockReservationId(Guid.Parse(request.ReservationId)), request.Quantity),
+                cancellationToken);
+            await inventoryDb.SaveChangesAsync(cancellationToken);
+            return new WmsInventoryReservationReleaseResult(result.ReservationId.ToString(), result.OpenQuantity, result.AvailableQuantity);
         }
 
         public Task<WmsInventoryReservationRenewalResult> RenewAsync(
@@ -395,6 +529,13 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException("This test does not renew reservations.");
+        }
+
+        public Task<WmsInventoryReservationPickedResult> MarkPickedAsync(
+            WmsInventoryReservationPickedRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("This test does not mark reservations picked.");
         }
 
         public async Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(
@@ -530,6 +671,13 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException("This test does not renew reservations.");
+        }
+
+        public Task<WmsInventoryReservationPickedResult> MarkPickedAsync(
+            WmsInventoryReservationPickedRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("This test does not mark reservations picked.");
         }
 
         public async Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(

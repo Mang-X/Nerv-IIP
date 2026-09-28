@@ -230,8 +230,13 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
     {
         ArgumentNullException.ThrowIfNull(reservation);
         EnsureSameDimension(reservation);
-        reservation.Release(quantity);
-        ReservedQuantity -= quantity;
+        var releasedQuantity = reservation.Release(quantity);
+        if (releasedQuantity == 0m)
+        {
+            return;
+        }
+
+        ReservedQuantity -= releasedQuantity;
         if (ReservedQuantity < 0)
         {
             throw new InventoryDomainException(

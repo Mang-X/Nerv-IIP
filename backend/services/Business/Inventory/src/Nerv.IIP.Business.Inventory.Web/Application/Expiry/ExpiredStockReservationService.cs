@@ -1,5 +1,7 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 
@@ -11,7 +13,7 @@ public sealed class ExpiredStockReservationService(
     {
         var batchSize = Math.Clamp(options.Value.BatchSize, 1, 1000);
         var reservations = await dbContext.StockReservations
-            .Where(x => x.OpenQuantity > 0m && x.ExpiresAtUtc <= expiredAtUtc)
+            .Where(IsDue(expiredAtUtc))
             .OrderBy(x => x.ExpiresAtUtc)
             .ThenBy(x => x.Id)
             .Take(batchSize)
@@ -46,4 +48,11 @@ public sealed class ExpiredStockReservationService(
 
         return expiredCount;
     }
+
+    /// <summary>
+    /// 到期待回收的预留：仍有 open 数量、已过失效时间、且货物尚未拣出。
+    /// 已拣预留保持到过账核销，不参与超时回收，也不算挂起（#3836）。
+    /// </summary>
+    internal static Expression<Func<StockReservation, bool>> IsDue(DateTime asOfUtc) =>
+        x => x.OpenQuantity > 0m && x.ExpiresAtUtc <= asOfUtc && x.Status != StockReservation.PickedStatus;
 }
