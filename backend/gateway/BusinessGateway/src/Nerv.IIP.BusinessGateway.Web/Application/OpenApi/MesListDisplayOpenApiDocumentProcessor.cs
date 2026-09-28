@@ -17,7 +17,9 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 /// 小写并集：对一半聚合声明了运行时永不产生的值，又让这些聚合真正会产生的值在契约里查无此项。</para>
 ///
 /// <para>各值域的权威来源是 MES 域常量，逐个标注在下面的声明处；契约枚举与运行时值域的一致性
-/// 由 <c>BusinessGatewayOpenApiTests</c> 断言。</para>
+/// 由 <c>Nerv.IIP.ContractBoundary.Tests</c> 的 <c>MesListStatusContractTests</c> 断言
+/// （它引用 MES 域常量并对导出的 OpenAPI snapshot 取值；BusinessGateway 自己的测试项目按
+/// repo-layout 规则 11 不得引用 services/Business 下的 Domain）。</para>
 /// </summary>
 public sealed class MesListDisplayOpenApiDocumentProcessor : IDocumentProcessor
 {

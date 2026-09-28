@@ -125,6 +125,25 @@ OpenAPI 枚举，域里增删状态而契约没跟上时断言必然红）。它
 MES 列表路径/schema**；两个 Gateway 形成受支持客户发布后，任何状态枚举的收窄仍遵循
 Governance 的一般破坏性变更/主版本规则。
 
+### #3912 的两次范围裁定（消费端迁移登记）
+
+本仓前端的消费端迁移分两次裁定完成，两次的范围都记在这里，使票内可审计（issue 评论是
+过程记录，本节是长期事实）：
+
+1. **值域收窄随契约同批落地**：前端各处状态字面量、筛选下拉、词表键集一律改用上表所列
+   真实值域；`useMesReferenceLabels.ts` 的 `toLowerCase()` 归一化适配层**删除**而非保留 ——
+   保留它会让后端哪天改发另一种拼写时的契约漂移被静默吸收。`Open` 是跨聚合重码
+   （不良记录=待处理、交接=待接班、停机/产能=未恢复），共享词表只放停机语境的读法，
+   其余语境由 `statusOptions` 的 `overrides` 显式覆盖。
+2. **console 与 `business-core` 的入库词表本次不合并**：`console` 的
+   `RECEIPT_STATUS_LABELS` / `RECEIPT_STATUS_TONES` 与
+   `frontend/packages/business-core/src/labels/mesLabels.ts` 保持两份，本次仅登记为已知重复。
+   合并需另票，届时一并决定键集归属。
+
+守卫现状：后端 `Nerv.IIP.ContractBoundary.Tests/MesListStatusContractTests` 以 MES 域常量
+比对导出 snapshot 的枚举（21 个用例）；前端 `useMesReferenceLabels.test.ts` 逐语境钉住
+`overrides` 与词表键集。
+
 ## 历史材料边界
 
 `docs/reports/audits/**` 保存迁移前总账、历史漂移、修复批次、调查和曾经的端点渲染，目的是可追溯，不承担当前规范或机器事实。若 audit 与 Current Architecture / Governance / Runbook / Reference 或代码生产者冲突，以当前权威来源为准，并把 audit 视为当时状态快照。

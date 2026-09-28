@@ -80,8 +80,8 @@ const statusLabels: Record<MesStatusValue, string> = {
   InventoryPostingFailed: '入库失败',
   // DefectRecord（PascalCase）。`Open` 是跨聚合重码：不良记录=待处理、交接=待接班、
   // 停机/产能=未恢复。共享表取停机语境的读法（与 base 一致），其余语境在
-  // statusOptions 的 overrides 里显式覆盖 —— 漏覆盖就会印错词，所以那三个调用点
-  // 各有断言钉住（见 useMesReferenceLabels.test.ts）。
+  // statusOptions 的 overrides 里显式覆盖 —— 漏覆盖就会印错词，所以那三个语境
+  // 各有一条断言钉住（见 useMesReferenceLabels.test.ts 的「Open 是跨聚合重码」）。
   Open: '未恢复',
   ReworkPending: '返工待处理',
   ScrapAccepted: '报废已受理',
@@ -111,6 +111,10 @@ function statusOptions(
   ]
 }
 
+// 工单值域取 MES 域 `WorkOrder.AllStatuses` 的全集（#3912），与 `work-orders` /
+// `production-plans` 两条契约的 status 枚举一致。此前这里只列 8 个，漏了
+// `split` / `merged` —— 两者在域里都有可达赋值（WorkOrder.cs:741 / :748），
+// 契约也列了，只是下拉少两项，用户筛不到拆单/并单后的工单。
 export const mesWorkOrderStatusOptions = statusOptions([
   'created',
   'released',
@@ -120,6 +124,8 @@ export const mesWorkOrderStatusOptions = statusOptions([
   'closed',
   'cancelled',
   'scrapped',
+  'split',
+  'merged',
 ])
 
 export const mesProductionPlanStatusOptions = mesWorkOrderStatusOptions

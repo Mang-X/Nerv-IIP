@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isFailedReceiptStatus,
+  mesDowntimeStatusOptions,
+  mesHandoverStatusOptions,
   mesOperationTaskStatusOptions,
+  mesQualityStatusOptions,
   mesWorkOrderStatusOptions,
   receiptStatusLabel,
+  receiptStatusTone,
   useMesReferenceLabels,
 } from './useMesReferenceLabels'
 
@@ -47,8 +51,11 @@ describe('MES 状态词表不吸收契约漂移', () => {
     expect(isFailedReceiptStatus('inventoryPostingFailed')).toBe(false)
   })
 
-  it('工单筛选项保持小写真实值域，不含 PascalCase 变体', () => {
+  it('工单筛选项是小写的完整值域，与 work-orders 契约一致', () => {
     const values = mesWorkOrderStatusOptions.map((option) => option.value)
+    // 10 个值 = MES 域 WorkOrder.AllStatuses 全集 = 契约里 work-orders 与
+    // production-plans 两条 status 查询参数的枚举。`split` / `merged` 曾被漏掉
+    // （域里有可达赋值，契约也列了，只有下拉少两项），这里逐个钉住。
     expect(values).toEqual([
       'all',
       'created',
@@ -59,6 +66,8 @@ describe('MES 状态词表不吸收契约漂移', () => {
       'closed',
       'cancelled',
       'scrapped',
+      'split',
+      'merged',
     ])
     expect(values).not.toContain('Created')
   })
@@ -99,5 +108,28 @@ describe('MES 状态词表不吸收契约漂移', () => {
     ])
     expect(values).not.toContain('queued')
     expect(values).not.toContain('inProgress')
+  })
+
+  it('Open 是跨聚合重码，三个语境各印各的说法', () => {
+    // 共享词表只放停机语境的「未恢复」，其余两个语境靠 overrides 覆盖。这三条
+    // 是 overrides 唯一的防线：删掉任何一个 override，页面照单全收、测试全绿，
+    // 但不良记录会印成「未恢复」、交接班会印成「未恢复」。所以逐语境钉住。
+    const labelOf = (options: { value: string; label: string }[], value: string) =>
+      options.find((option) => option.value === value)?.label
+
+    expect(labelOf(mesQualityStatusOptions, 'Open')).toBe('待处理')
+    expect(labelOf(mesHandoverStatusOptions, 'Open')).toBe('待接班')
+    expect(labelOf(mesDowntimeStatusOptions, 'Open')).toBe('未恢复')
+  })
+
+  it('完工入库徽章色按运行时 PascalCase 取', () => {
+    // 徽章色与标签是两回事：标签错了看得见，色调错了（已入库印成红色告警）同样
+    // 是契约漂移的表现，只是更难发现，所以单列一条。
+    expect(receiptStatusTone('Posted')).toBe('success')
+    expect(receiptStatusTone('InventoryPostingFailed')).toBe('danger')
+    expect(receiptStatusTone('PartiallyPosted')).toBe('info')
+    expect(receiptStatusTone('Requested')).toBe('neutral')
+    // 小写不得命中，否则漂移又被静默吸收。
+    expect(receiptStatusTone('posted')).toBe('neutral')
   })
 })
