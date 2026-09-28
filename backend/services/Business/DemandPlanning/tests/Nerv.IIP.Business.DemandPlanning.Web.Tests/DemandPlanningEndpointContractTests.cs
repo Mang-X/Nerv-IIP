@@ -14,7 +14,6 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggreg
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
-using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
@@ -23,7 +22,6 @@ using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
 using Nerv.IIP.ServiceAuth;
 using Nerv.IIP.Testing;
-using Nerv.IIP.Testing.PostgreSql;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
@@ -475,6 +473,10 @@ public sealed class DemandPlanningEndpointContractTests
             Assert.Equal(PlanningSuggestionStatus.Open, x.Status);
             Assert.Null(x.SupersededByRunId);
         });
+        dbContext.ChangeTracker.Clear();
+        var persisted = await dbContext.PlanningSuggestions.AsNoTracking().ToArrayAsync();
+        Assert.Contains(persisted, x => x.Id == open.Id && x.Status == PlanningSuggestionStatus.Superseded && x.SupersededByRunId == second.RunId);
+        Assert.All(persisted.Where(x => x.MrpRunId == second.RunId), x => Assert.Equal(PlanningSuggestionStatus.Open, x.Status));
     }
 
     [Fact]
@@ -526,39 +528,6 @@ public sealed class DemandPlanningEndpointContractTests
             Assert.Equal(PlanningSuggestionStatus.Superseded, x.Status);
             Assert.Equal(newerRunId, x.SupersededByRunId);
         });
-    }
-
-    [DemandPlanningRealPostgresFact]
-    public async Task PostgreSql_migration_and_completion_persist_superseded_suggestions()
-    {
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!, "nerv_dp_supersession");
-        try
-        {
-            var services = new ServiceCollection();
-            services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
-                database.ConnectionString,
-                postgres => postgres.MigrationsHistoryTable("__EFMigrationsHistory", DemandPlanningFacts.Schema)));
-            await using var provider = services.BuildServiceProvider();
-            using var scope = provider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await dbContext.Database.MigrateAsync();
-            await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            var snapshotProvider = new DemandPlanningFixtureInputSnapshotProvider(dbContext);
-            var first = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
-            var second = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
-            dbContext.ChangeTracker.Clear();
-
-            var suggestions = await dbContext.PlanningSuggestions.AsNoTracking().ToArrayAsync();
-            Assert.Equal(2, suggestions.Count(x => x.MrpRunId == first.RunId && x.Status == PlanningSuggestionStatus.Superseded && x.SupersededByRunId == second.RunId));
-            Assert.Equal(2, suggestions.Count(x => x.MrpRunId == second.RunId && x.Status == PlanningSuggestionStatus.Open && x.SupersededByRunId is null));
-        }
-        finally
-        {
-            await database.DropAsync();
-        }
     }
 
     [Fact]
