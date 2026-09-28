@@ -9,7 +9,7 @@ describe('isAvailableMaterialLot', () => {
     materialLotId: 'LOT-001',
     receivedQuantity: 10,
     consumedQuantity: 2,
-    status: 'received',
+    status: 'Received',
   }
 
   it('只接受已收料且仍有可用量的批次', () => {
@@ -17,7 +17,7 @@ describe('isAvailableMaterialLot', () => {
     expect(isAvailableMaterialLot({ ...receivedLot, consumedQuantity: 10 })).toBe(false)
   })
 
-  it.each(['partiallyReceived', 'inventoryPostingFailed'])(
+  it.each(['PartiallyReceived', 'inventoryPostingFailed'])(
     '拒绝 %s 但仍有正剩余量的非已收料批次',
     (status) => {
       expect(isAvailableMaterialLot({ ...receivedLot, status })).toBe(false)

@@ -2420,7 +2420,10 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-receipt-stable')
   })
 
-  it('只把 received 且仍有余量的批次提供给报工表单', () => {
+  // 状态字面量取运行时真实值（MES 域 MaterialIssueRequest 常量，#3912）。camelCase 的
+  // received/partiallyReceived/inventoryPostingFailed 是旧展示层契约的产物、运行时不可达；
+  // 这里按真实值摆数据，若 isAvailableMaterialLot 退回小写归一化，下面的负向断言会红。
+  it('只把 Received 且仍有余量的批次提供给报工表单', () => {
     reactiveAuthState.principal = {
       ...reactiveAuthState.principal!,
       permissionCodes: ['business.mes.materials.read'],
@@ -2435,7 +2438,7 @@ describe('pda useBusinessMes composables', () => {
             materialLotId: 'LOT-1',
             receivedQuantity: 10,
             consumedQuantity: 2,
-            status: 'received',
+            status: 'Received',
           },
           {
             requestId: 'MIR-PARTIAL',
@@ -2443,7 +2446,7 @@ describe('pda useBusinessMes composables', () => {
             materialLotId: 'LOT-2',
             receivedQuantity: 10,
             consumedQuantity: 2,
-            status: 'partiallyReceived',
+            status: 'PartiallyReceived',
           },
           {
             requestId: 'MIR-FAILED',
@@ -2451,7 +2454,7 @@ describe('pda useBusinessMes composables', () => {
             materialLotId: 'LOT-3',
             receivedQuantity: 10,
             consumedQuantity: 2,
-            status: 'inventoryPostingFailed',
+            status: 'InventoryPostingFailed',
           },
         ],
       },
