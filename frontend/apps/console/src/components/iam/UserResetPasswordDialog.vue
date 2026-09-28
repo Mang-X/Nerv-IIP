@@ -84,6 +84,7 @@ watch(open, (isOpen) => {
               id="iam-reset-password"
               v-model="form.newPassword"
               :aria-invalid="Boolean(errors.newPassword)"
+              :invalid="Boolean(errors.newPassword)"
               autocomplete="new-password"
               type="password"
             />

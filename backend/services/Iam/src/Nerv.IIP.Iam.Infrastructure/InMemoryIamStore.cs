@@ -892,12 +892,12 @@ public sealed class InMemoryIamStore
     {
         if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.LoginName, loginName, StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException($"Login name '{loginName}' is already used.");
+            throw new InvalidOperationException($"登录名「{loginName}」已被使用。");
         }
 
         if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException($"Email '{email}' is already used.");
+            throw new InvalidOperationException($"邮箱「{email}」已被使用。");
         }
     }
 
@@ -981,7 +981,7 @@ public sealed class InMemoryIamStore
     {
         if (_roles.Any(x => x.RoleId != currentRoleId && string.Equals(x.RoleName, roleName, StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException($"Role name '{roleName}' is already used.");
+            throw new InvalidOperationException($"角色名称「{roleName}」已被使用。");
         }
     }
 

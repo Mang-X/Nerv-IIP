@@ -413,6 +413,10 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             "/api/iam/v1/roles",
             new { roleName = "auditor", permissionCodes = Array.Empty<string>() });
         Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
+        // 这句经网关透传到控制台上屏，必须是中文业务文案。
+        Assert.Equal(
+            "角色名称「auditor」已被使用。",
+            (await duplicate.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
 
         var unknown = await _client.PostAsJsonAsync(
             "/api/iam/v1/roles",

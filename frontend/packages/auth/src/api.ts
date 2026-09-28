@@ -188,6 +188,14 @@ function describePasswordChangeRejection(message: string | undefined): string | 
     return undefined
   }
 
+  return describeIamPasswordRejection(message) ?? message
+}
+
+/**
+ * IAM 口令策略的英文拒绝文案译成中文；不认识的返回 undefined，由调用方决定兜底。
+ * 控制台管理员新建用户、重置密码时撞口令策略，也走这张表。
+ */
+export function describeIamPasswordRejection(message: string): string | undefined {
   for (const [pattern, describe] of PASSWORD_CHANGE_REJECTIONS) {
     const match = message.match(pattern)
     if (match) {
@@ -195,7 +203,7 @@ function describePasswordChangeRejection(message: string | undefined): string | 
     }
   }
 
-  return message
+  return undefined
 }
 
 function readErrorMessage(error: unknown): string | undefined {

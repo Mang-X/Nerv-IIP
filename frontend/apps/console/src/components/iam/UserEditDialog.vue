@@ -105,6 +105,7 @@ watch(open, (isOpen) => {
               id="iam-edit-login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(errors.loginName)"
+              :invalid="Boolean(errors.loginName)"
               autocomplete="username"
             />
             <FieldError v-if="errors.loginName" :errors="[errors.loginName]" />
@@ -116,6 +117,7 @@ watch(open, (isOpen) => {
               id="iam-edit-email"
               v-model="form.email"
               :aria-invalid="Boolean(errors.email)"
+              :invalid="Boolean(errors.email)"
               autocomplete="email"
               type="email"
             />

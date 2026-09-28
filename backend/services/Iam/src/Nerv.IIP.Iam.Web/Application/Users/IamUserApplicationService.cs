@@ -272,12 +272,12 @@ public sealed class PostgreSqlIamUserApplicationService(
         passwordPolicy.ValidateComplexity(password);
         if (await repository.GetByLoginNameAsync(loginName, cancellationToken) is not null)
         {
-            throw new KnownException($"Login name '{loginName}' is already used.");
+            throw new KnownException($"登录名「{loginName}」已被使用。");
         }
 
         if (await repository.GetByEmailAsync(email, cancellationToken) is not null)
         {
-            throw new KnownException($"Email '{email}' is already used.");
+            throw new KnownException($"邮箱「{email}」已被使用。");
         }
 
         var userId = new UserId($"user-{Guid.CreateVersion7():N}");
@@ -313,13 +313,13 @@ public sealed class PostgreSqlIamUserApplicationService(
         var userWithLoginName = await repository.GetByLoginNameAsync(loginName, cancellationToken);
         if (userWithLoginName is not null && userWithLoginName.Id != typedUserId)
         {
-            throw new KnownException($"Login name '{loginName}' is already used.");
+            throw new KnownException($"登录名「{loginName}」已被使用。");
         }
 
         var userWithEmail = await repository.GetByEmailAsync(email, cancellationToken);
         if (userWithEmail is not null && userWithEmail.Id != typedUserId)
         {
-            throw new KnownException($"Email '{email}' is already used.");
+            throw new KnownException($"邮箱「{email}」已被使用。");
         }
 
         var shouldRevokeSessions = user.Enabled && !enabled;

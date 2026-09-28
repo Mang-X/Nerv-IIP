@@ -90,6 +90,7 @@ watch(open, (isOpen) => {
               id="iam-create-role-name"
               v-model="roleName"
               :aria-invalid="Boolean(errors.roleName)"
+              :invalid="Boolean(errors.roleName)"
               autocomplete="off"
             />
             <FieldError v-if="errors.roleName" :errors="[errors.roleName]" />

@@ -114,6 +114,7 @@ function toUtcEndOfDay(value: string) {
               id="iam-create-login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(errors.loginName)"
+              :invalid="Boolean(errors.loginName)"
               autocomplete="username"
             />
             <FieldError v-if="errors.loginName" :errors="[errors.loginName]" />
@@ -125,6 +126,7 @@ function toUtcEndOfDay(value: string) {
               id="iam-create-email"
               v-model="form.email"
               :aria-invalid="Boolean(errors.email)"
+              :invalid="Boolean(errors.email)"
               autocomplete="email"
               type="email"
             />
@@ -137,6 +139,7 @@ function toUtcEndOfDay(value: string) {
               id="iam-create-password"
               v-model="form.password"
               :aria-invalid="Boolean(errors.password)"
+              :invalid="Boolean(errors.password)"
               autocomplete="new-password"
               type="password"
             />
