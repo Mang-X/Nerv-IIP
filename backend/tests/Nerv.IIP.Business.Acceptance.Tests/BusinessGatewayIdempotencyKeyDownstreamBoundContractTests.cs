@@ -42,6 +42,7 @@ using InventoryDbContext = Nerv.IIP.Business.Inventory.Infrastructure.Applicatio
 using MasterDataDbContext = Nerv.IIP.Business.MasterData.Infrastructure.ApplicationDbContext;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 using ProductEngineeringDbContext = Nerv.IIP.Business.ProductEngineering.Infrastructure.ApplicationDbContext;
+using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
@@ -665,6 +666,13 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
     private static readonly DownstreamAuthority ErpCodeKeyColumn =
         Column<CodeIdempotencyKey>(ErpModel, nameof(CodeIdempotencyKey.IdempotencyKey), "Erp");
 
+    /// <summary>
+    /// WMS 单号分配的幂等键落库列（#3848/#3849）：网关原样转发，<c>WmsCodingService</c> 交给
+    /// <c>CodeAllocator</c>，只 Trim 后落 <c>code_idempotency_keys.idempotency_key</c>。
+    /// </summary>
+    private static readonly DownstreamAuthority WmsCodeKeyColumn =
+        Column<CodeIdempotencyKey>(WmsModel, nameof(CodeIdempotencyKey.IdempotencyKey), "Wms");
+
     private static readonly DownstreamAuthority DemandPlanningCodeKeyColumn =
         Column<CodeIdempotencyKey>(
             DemandPlanningModel,
@@ -846,6 +854,14 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         [typeof(BusinessConsoleCompleteWmsInboundOrderRequest)] = [Command<CompleteInboundOrderCommand>()],
         [typeof(BusinessConsoleCompleteWmsOutboundOrderRequest)] = [Command<CompleteOutboundOrderCommand>()],
         [typeof(BusinessConsoleCompleteWmsCountExecutionRequest)] = [Command<CompleteCountExecutionCommand>()],
+
+        // ---- Wms 单号编码规则（#3848/#3849）：新建单据/作业池的幂等键落编码幂等表 ----
+        [typeof(BusinessConsoleCreateWmsInboundOrderRequest)] = [WmsCodeKeyColumn],
+        [typeof(BusinessConsoleCreateWmsPutawayTaskRequest)] = [WmsCodeKeyColumn],
+        [typeof(BusinessConsoleCreateWmsOutboundOrderRequest)] = [WmsCodeKeyColumn],
+        [typeof(BusinessConsoleCreateWmsPickingTaskRequest)] = [WmsCodeKeyColumn],
+        [typeof(BusinessConsoleCreateWmsCountExecutionRequest)] = [WmsCodeKeyColumn],
+        [typeof(BusinessConsoleCreateWmsWorkPoolRequest)] = [WmsCodeKeyColumn],
 
         // ---- Inventory ----
         [typeof(BusinessConsoleConfirmStockCountAdjustmentRequest)] =
@@ -1275,6 +1291,9 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
 
     private static DbContext InventoryModel() => ModelOnly<InventoryDbContext>(
         options => new InventoryDbContext(options, NullMediator.Instance));
+
+    private static DbContext WmsModel() => ModelOnly<WmsDbContext>(
+        options => new WmsDbContext(options, NullMediator.Instance));
 
     /// <summary>
     /// 只用于读 EF 模型：不开连接、不建库。连接串必须语法合法，Npgsql 才肯建 provider。

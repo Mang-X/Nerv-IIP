@@ -101,6 +101,7 @@ vi.mock('@/composables/useWmsWorkScope', () => ({
 }))
 
 vi.mock('@/composables/useBusinessWms', () => ({
+  createWmsIdempotencyKey: () => 'picking-intent-key',
   // 拣货任务必须挂在已存在的出库单下：出库单选择器的目录来源。
   useWmsOutboundOrders: () => ({
     filters: reactive({ skip: 0, take: 200 }),
@@ -295,18 +296,20 @@ describe('WMS picking route context', () => {
     }
     expect((wrapper.get('#wms-picking-line').element as HTMLInputElement).value).toBe('1')
 
-    await wrapper.get('#wms-picking-no').setValue('PICK-OB-001-01')
     await wrapper.get('#wms-picking-from').setValue('A-01')
     await wrapper.get('#wms-picking-to').setValue('STAGE-01')
-    await wrapper.get('#wms-picking-no').element.closest('form')!.dispatchEvent(new Event('submit'))
+    await wrapper
+      .get('#wms-picking-from')
+      .element.closest('form')!
+      .dispatchEvent(new Event('submit'))
     await flushPromises()
 
     expect(wmsState.createPicking).toHaveBeenCalledWith('ob-1', {
-      taskNo: 'PICK-OB-001-01',
       lineNo: '1',
       fromLocationCode: 'A-01',
       toLocationCode: 'STAGE-01',
       quantity: undefined,
+      idempotencyKey: expect.any(String),
     })
   })
 

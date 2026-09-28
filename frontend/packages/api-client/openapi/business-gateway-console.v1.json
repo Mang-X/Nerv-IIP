@@ -4239,6 +4239,322 @@
         ]
       }
     },
+    "/api/business-console/v1/wms/work-pools": {
+      "get": {
+        "tags": [
+          "Business Console WMS",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleWmsWorkPools",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Business Console WMS",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleWmsWorkPool",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateWmsWorkPoolRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsWorkPoolRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/wms/work-pools/{poolCode}/members": {
+      "post": {
+        "tags": [
+          "Business Console WMS",
+          "Api"
+        ],
+        "operationId": "addBusinessConsoleWmsWorkPoolMember",
+        "parameters": [
+          {
+            "name": "poolCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleAddWmsWorkPoolMemberRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAddWmsWorkPoolMemberRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "422": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/wms/work-pools/{poolCode}/members/{principalId}/remove": {
+      "post": {
+        "tags": [
+          "Business Console WMS",
+          "Api"
+        ],
+        "operationId": "removeBusinessConsoleWmsWorkPoolMember",
+        "parameters": [
+          {
+            "name": "poolCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "principalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberRemovalResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/telemetry/connectors/{connectorId}/collection-health": {
       "get": {
         "tags": [
@@ -34527,11 +34843,11 @@
         "required": [
           "organizationId",
           "environmentId",
-          "inboundOrderNo",
           "sourceDocumentType",
           "sourceDocumentId",
           "siteCode",
-          "lines"
+          "lines",
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -34541,12 +34857,6 @@
             "nullable": false
           },
           "environmentId": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
-          },
-          "inboundOrderNo": {
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
@@ -34577,6 +34887,12 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineInput"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -35194,18 +35510,12 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "taskNo",
           "lineNo",
           "fromLocationCode",
-          "toLocationCode"
+          "toLocationCode",
+          "idempotencyKey"
         ],
         "properties": {
-          "taskNo": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
-          },
           "lineNo": {
             "type": "string",
             "maxLength": 50,
@@ -35229,6 +35539,12 @@
             "format": "decimal",
             "minimum": 0.0,
             "exclusiveMinimum": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -35715,11 +36031,11 @@
         "required": [
           "organizationId",
           "environmentId",
-          "outboundOrderNo",
           "sourceDocumentType",
           "sourceDocumentId",
           "siteCode",
-          "lines"
+          "lines",
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -35729,12 +36045,6 @@
             "nullable": false
           },
           "environmentId": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
-          },
-          "outboundOrderNo": {
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
@@ -35765,6 +36075,12 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundLineInput"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -35964,18 +36280,12 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "taskNo",
           "lineNo",
           "fromLocationCode",
-          "toLocationCode"
+          "toLocationCode",
+          "idempotencyKey"
         ],
         "properties": {
-          "taskNo": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
-          },
           "lineNo": {
             "type": "string",
             "maxLength": 50,
@@ -35999,6 +36309,12 @@
             "format": "decimal",
             "minimum": 0.0,
             "exclusiveMinimum": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -36007,16 +36323,9 @@
         "additionalProperties": false,
         "required": [
           "expectedVersion",
-          "packReviewNo",
           "idempotencyKey"
         ],
         "properties": {
-          "packReviewNo": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
-          },
           "passed": {
             "type": "boolean"
           },
@@ -36091,11 +36400,11 @@
         "required": [
           "organizationId",
           "environmentId",
-          "countNo",
           "skuCode",
           "uomCode",
           "siteCode",
-          "locationCode"
+          "locationCode",
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -36105,12 +36414,6 @@
             "nullable": false
           },
           "environmentId": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
-          },
-          "countNo": {
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
@@ -36143,6 +36446,12 @@
           "expectedQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -36343,8 +36652,7 @@
         "additionalProperties": false,
         "required": [
           "expectedVersion",
-          "adapterType",
-          "externalTaskId"
+          "adapterType"
         ],
         "properties": {
           "expectedVersion": {
@@ -36363,7 +36671,7 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "payloadJson": {
             "type": "string",
@@ -36806,6 +37114,254 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPool"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPool": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "poolCode": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMember"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMember": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "principalId": {
+            "type": "string"
+          },
+          "effectiveFromUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "effectiveToUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolResult"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "poolCode": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsWorkPoolRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "displayName",
+          "siteCode",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          },
+          "siteCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberResult"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "poolCode": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "effectiveFromUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "effectiveToUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAddWmsWorkPoolMemberRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "principalId"
+        ],
+        "properties": {
+          "principalId": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberRemovalResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberRemovalResult"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberRemovalResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "poolCode": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "removedCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveWmsWorkPoolMemberRequest": {
         "type": "object",
         "additionalProperties": false
       },

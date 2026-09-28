@@ -33,11 +33,11 @@ public sealed record BusinessConsoleWmsOutboundLineInput(
 public sealed record BusinessConsoleCreateWmsInboundOrderRequest(
     string OrganizationId,
     string EnvironmentId,
-    string InboundOrderNo,
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<BusinessConsoleWmsInboundLineInput> Lines);
+    IReadOnlyCollection<BusinessConsoleWmsInboundLineInput> Lines,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateWmsInboundOrderResponse(string InboundOrderId);
 
@@ -45,11 +45,11 @@ public sealed record BusinessConsoleCreateWmsPutawayTaskRequest(
     [property: RouteParam] string InboundOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string TaskNo,
     string LineNo,
     string FromLocationCode,
     string ToLocationCode,
-    decimal Quantity);
+    decimal Quantity,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateWmsWarehouseTaskResponse(string WarehouseTaskId);
 
@@ -261,11 +261,11 @@ public sealed record BusinessConsoleCompleteWmsMovementResponse(
 public sealed record BusinessConsoleCreateWmsOutboundOrderRequest(
     string OrganizationId,
     string EnvironmentId,
-    string OutboundOrderNo,
     string SourceDocumentType,
     string SourceDocumentId,
     string SiteCode,
-    IReadOnlyCollection<BusinessConsoleWmsOutboundLineInput> Lines);
+    IReadOnlyCollection<BusinessConsoleWmsOutboundLineInput> Lines,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateWmsOutboundOrderResponse(string OutboundOrderId);
 
@@ -273,17 +273,16 @@ public sealed record BusinessConsoleCreateWmsPickingTaskRequest(
     [property: RouteParam] string OutboundOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string TaskNo,
     string LineNo,
     string FromLocationCode,
     string ToLocationCode,
-    decimal Quantity);
+    decimal Quantity,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCompleteWmsOutboundOrderRequest(
     [property: RouteParam] string OutboundOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string PackReviewNo,
     bool Passed,
     string IdempotencyKey,
     string? ScopeKind = null,
@@ -299,7 +298,6 @@ public sealed record BusinessWmsCompleteOutboundOrderRequest(
     string ScopeKind,
     string ScopeId,
     long ExpectedVersion,
-    string PackReviewNo,
     bool Passed,
     string IdempotencyKey);
 
@@ -312,12 +310,12 @@ public sealed record BusinessConsoleRetryWmsOutboundInventoryPostingRequest(
 public sealed record BusinessConsoleCreateWmsCountExecutionRequest(
     string OrganizationId,
     string EnvironmentId,
-    string CountNo,
     string SkuCode,
     string UomCode,
     string SiteCode,
     string LocationCode,
-    decimal ExpectedQuantity);
+    decimal ExpectedQuantity,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateWmsCountExecutionResponse(string CountExecutionId);
 
@@ -349,7 +347,7 @@ public sealed record BusinessConsoleDispatchWmsWcsTaskRequest(
     [property: QueryParam] string EnvironmentId,
     [property: JsonRequired, Required] long ExpectedVersion,
     string AdapterType,
-    string ExternalTaskId,
+    string? ExternalTaskId = null,
     string? PayloadJson = null,
     string? DeviceId = null);
 
@@ -361,7 +359,7 @@ public sealed record BusinessWmsDispatchWcsTaskRequest(
     IReadOnlyCollection<string> AuthorizedSiteCodes,
     long ExpectedVersion,
     string AdapterType,
-    string ExternalTaskId,
+    string? ExternalTaskId,
     string? PayloadJson = null,
     string? DeviceId = null);
 
@@ -808,3 +806,85 @@ public sealed record BusinessConsoleWmsSupplierReturnItem(
     string? DispositionReason,
     string Status,
     DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleWmsWorkPoolListRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleWmsWorkPoolMember(
+    string PrincipalId,
+    DateTime EffectiveFromUtc,
+    DateTime? EffectiveToUtc);
+
+public sealed record BusinessConsoleWmsWorkPool(
+    string PoolCode,
+    string DisplayName,
+    string SiteCode,
+    IReadOnlyCollection<BusinessConsoleWmsWorkPoolMember> Members);
+
+public sealed record BusinessConsoleWmsWorkPoolListResponse(
+    IReadOnlyCollection<BusinessConsoleWmsWorkPool> Items);
+
+public sealed record BusinessConsoleCreateWmsWorkPoolRequest(
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string DisplayName,
+    string SiteCode,
+    string IdempotencyKey);
+
+public sealed record BusinessWmsProvisionWorkPoolRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string? PoolCode,
+    string DisplayName,
+    string SiteCode,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleWmsWorkPoolResult(
+    string PoolCode,
+    string DisplayName,
+    string SiteCode,
+    bool Active,
+    bool Created);
+
+public sealed record BusinessConsoleAddWmsWorkPoolMemberRequest(
+    [property: RouteParam] string PoolCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PrincipalId);
+
+public sealed record BusinessWmsAddWorkPoolMemberRequest(
+    string PoolCode,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string PrincipalId);
+
+public sealed record BusinessConsoleWmsWorkPoolMemberResult(
+    string PoolCode,
+    string PrincipalId,
+    DateTime EffectiveFromUtc,
+    DateTime? EffectiveToUtc,
+    bool Created);
+
+public sealed record BusinessConsoleRemoveWmsWorkPoolMemberRequest(
+    [property: RouteParam] string PoolCode,
+    [property: RouteParam] string PrincipalId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessWmsRemoveWorkPoolMemberRequest(
+    string PoolCode,
+    string PrincipalId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes);
+
+public sealed record BusinessConsoleWmsWorkPoolMemberRemovalResult(
+    string PoolCode,
+    string PrincipalId,
+    int RemovedCount);

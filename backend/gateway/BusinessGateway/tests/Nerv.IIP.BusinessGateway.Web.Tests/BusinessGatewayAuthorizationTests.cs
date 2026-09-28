@@ -1008,7 +1008,7 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            inboundOrderNo = "IN-001",
+            idempotencyKey = "IN-001",
             sourceDocumentType = "purchase-receipt",
             sourceDocumentId = "PR-001",
             siteCode = "S1",
@@ -1028,7 +1028,7 @@ public sealed class BusinessGatewayAuthorizationTests
         },
         "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks" => new
         {
-            taskNo = "PUT-001",
+            idempotencyKey = "PUT-001",
             lineNo = "10",
             fromLocationCode = "STAGE-01",
             toLocationCode = "BIN-01",
@@ -1054,7 +1054,7 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            outboundOrderNo = "OUT-001",
+            idempotencyKey = "OUT-001",
             sourceDocumentType = "sales-shipment",
             sourceDocumentId = "SO-001",
             siteCode = "S1",
@@ -1074,7 +1074,7 @@ public sealed class BusinessGatewayAuthorizationTests
         },
         "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks" => new
         {
-            taskNo = "PICK-001",
+            idempotencyKey = "PICK-001",
             lineNo = "10",
             fromLocationCode = "BIN-01",
             toLocationCode = "SHIP-01",
@@ -1082,7 +1082,6 @@ public sealed class BusinessGatewayAuthorizationTests
         },
         "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete" => new
         {
-            packReviewNo = "PACK-001",
             passed = true,
             idempotencyKey = "complete-out-001",
             expectedVersion = 1,
@@ -1091,7 +1090,7 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            countNo = "COUNT-001",
+            idempotencyKey = "COUNT-001",
             skuCode = "SKU-001",
             uomCode = "EA",
             siteCode = "S1",

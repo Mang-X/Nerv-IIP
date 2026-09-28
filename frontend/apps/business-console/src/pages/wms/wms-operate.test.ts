@@ -1,3 +1,4 @@
+import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -481,25 +482,14 @@ describe('WMS operate actions', () => {
     )
   })
 
-  it('requires a pack review number before completing outbound review', async () => {
+  it('completes outbound review without asking for a pack review number (#3848)', async () => {
     const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
     await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
     await flushPromises()
 
-    // Submit without a review number → validation blocks the mutation.
-    document.body
-      .querySelector('form')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await flushPromises()
-    expect(wms.completeOutbound).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('请输入复核单号。')
-
-    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
-    input.value = 'PR-1'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
+    // 复核单号由系统按编码规则生成：直接提交复核结论即可。
     document.body
       .querySelector('form')!
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -507,10 +497,7 @@ describe('WMS operate actions', () => {
 
     expect(wms.completeOutbound).toHaveBeenCalledWith(
       'ob-1',
-      {
-        packReviewNo: 'PR-1',
-        passed: true,
-      },
+      { passed: true },
       'wms-intent-1',
       expect.objectContaining({ attempt: 'initial' }),
     )
@@ -532,10 +519,6 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
-    await flushPromises()
-    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
-    input.value = 'PR-1'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     const submit = () =>
       document.body
@@ -560,14 +543,14 @@ describe('WMS operate actions', () => {
     expect(wms.completeOutbound).toHaveBeenNthCalledWith(
       1,
       'ob-1',
-      { packReviewNo: 'PR-1', passed: true },
+      { passed: true },
       'wms-intent-1',
       expect.objectContaining({ attempt: 'initial' }),
     )
     expect(wms.completeOutbound).toHaveBeenNthCalledWith(
       2,
       'ob-1',
-      { packReviewNo: 'PR-1', passed: true },
+      { passed: true },
       'wms-intent-1',
       expect.objectContaining({ attempt: 'retry' }),
     )
@@ -641,17 +624,13 @@ describe('WMS operate actions', () => {
         options?: { onCommandAttempt?: () => void },
       ) => {
         options?.onCommandAttempt?.()
-        return Promise.reject({ success: false, statusCode: 422, message: '复核单号无效' })
+        return Promise.reject({ success: false, statusCode: 422, message: '复核结论无效' })
       },
     )
     const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
     await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
-    await flushPromises()
-    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
-    input.value = 'PR-1'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     const submit = () =>
       document.body
@@ -660,8 +639,7 @@ describe('WMS operate actions', () => {
     submit()
     await flushPromises()
 
-    input.value = 'PR-2'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.body.querySelector<HTMLButtonElement>('#wms-pack-passed')!.click()
     await flushPromises()
     submit()
     await flushPromises()
@@ -669,7 +647,7 @@ describe('WMS operate actions', () => {
     expect(wms.completeOutbound).toHaveBeenNthCalledWith(
       2,
       'ob-1',
-      { packReviewNo: 'PR-2', passed: true },
+      { passed: false },
       'wms-intent-2',
       expect.objectContaining({ attempt: 'initial' }),
     )
@@ -717,7 +695,6 @@ describe('WMS operate actions', () => {
       .trigger('click')
     await flushPromises()
 
-    setInput('#wms-in-no', 'IB-NEW')
     setInput('#wms-in-site', 'S1')
     setInput('#wms-in-srctype', '采购收货')
     setInput('#wms-in-srcid', 'PO-1')
@@ -741,12 +718,16 @@ describe('WMS operate actions', () => {
     expect(body).toMatchObject({
       organizationId: 'org-001',
       environmentId: 'env-dev',
-      inboundOrderNo: 'IB-NEW',
+      idempotencyKey: expect.any(String),
       siteCode: 'S1',
       sourceDocumentType: '采购收货',
       sourceDocumentId: 'PO-1',
     })
     expect(body.lines).toHaveLength(1)
+    // 新行默认质量状态是「可用」对应的 WMS 免检码（#3923），不是库存侧别名 available。
+    expect(body.lines[0].qualityStatus).toBe(
+      WMS_RECEIVING_QUALITY_OPTIONS.find((option) => option.label === '可用')!.value,
+    )
     // 后端契约要求的行字段必须全部下发。
     expect(body.lines[0]).toMatchObject({
       lineNo: '1',
@@ -754,7 +735,7 @@ describe('WMS operate actions', () => {
       uomCode: 'pcs',
       receivedQuantity: 5,
       stagingLocationCode: 'A-01',
-      qualityStatus: 'available',
+      qualityStatus: 'unrestricted',
       ownerType: 'owned',
     })
   })
@@ -1042,7 +1023,6 @@ describe('WMS operate actions', () => {
       .trigger('click')
     await flushPromises()
 
-    setInput('#wms-in-no', 'IB-NEW')
     setInput('#wms-in-site', 'S1')
     setInput('#wms-in-srctype', '采购收货')
     setInput('#wms-in-srcid', 'PO-1')
@@ -1076,7 +1056,7 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wms.createInbound).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('请填写入库单号、来源类型、来源单据与工厂。')
+    expect(document.body.textContent).toContain('请填写来源类型、来源单据与工厂。')
   })
 
   it('renders per-row WCS action menus', async () => {

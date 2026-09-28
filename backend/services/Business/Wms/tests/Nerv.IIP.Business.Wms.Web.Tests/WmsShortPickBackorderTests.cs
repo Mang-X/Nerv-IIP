@@ -34,7 +34,7 @@ public sealed class WmsShortPickBackorderTests
         dbContext.AddRange(outbound, picking);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CompleteOutboundOrderCommandHandler(dbContext);
-        var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "complete-out-001")
+        var command = new CompleteOutboundOrderCommand(outbound.Id, true, "complete-out-001")
             .TrustedFor(dbContext, outbound);
 
         var first = await handler.Handle(command, CancellationToken.None);
@@ -133,7 +133,7 @@ public sealed class WmsShortPickBackorderTests
             dbContext.AddRange(outbound, picking);
             await dbContext.SaveChangesAsync();
             var handler = new CompleteOutboundOrderCommandHandler(dbContext);
-            var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-PG-001", true, "complete-pg-001")
+            var command = new CompleteOutboundOrderCommand(outbound.Id, true, "complete-pg-001")
                 .TrustedFor(dbContext, outbound);
 
             await handler.Handle(command, CancellationToken.None);

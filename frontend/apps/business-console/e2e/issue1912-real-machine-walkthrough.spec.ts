@@ -63,10 +63,10 @@ const PURCHASE_ORDER_APPROVAL_TEMPLATE_VERSION = 1
 let purchaseReceiptNo = ''
 const SALES_ORDER_NO = 'SO-WALK-001'
 const DELIVERY_ORDER_NO = 'DO-WALK-001'
-const INBOUND_ORDER_NO = 'IN-WALK-001'
-const PUTAWAY_TASK_NO = 'PUT-WALK-001'
+// 入库单号、上架与拣货任务号、复核单号由 WMS 编码规则生成（#3848），创建后从读面取回。
+const INBOUND_INTENT_KEY = 'IN-WALK-001'
+let inboundOrderNo = ''
 const PRODUCED_LOT_NO = 'LOT-WALK-001'
-const PACK_REVIEW_NO = 'PACK-WALK-001'
 const FINISHED_SKU = 'FG-QJ-P1-L'
 const SITE_CODE = 'SITE-001'
 const INBOUND_LOCATION = 'loc-raw-01'
@@ -634,7 +634,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     const inbound = await workerCall('POST', '/api/business-console/v1/wms/inbound-orders', {
       organizationId,
       environmentId,
-      inboundOrderNo: INBOUND_ORDER_NO,
+      idempotencyKey: INBOUND_INTENT_KEY,
       sourceDocumentType: 'purchase-order',
       sourceDocumentId: PURCHASE_ORDER_NO,
       siteCode: SITE_CODE,
@@ -654,21 +654,22 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       ],
     })
     const inboundOrderId = textOf(asRecord(dataOf(inbound.payload)).inboundOrderId)
-    if (!inboundOrderId) throw new Error(`WMS inbound ${INBOUND_ORDER_NO} did not return an ID.`)
+    if (!inboundOrderId) throw new Error(`WMS inbound ${INBOUND_INTENT_KEY} did not return an ID.`)
     const inboundRow = await workerPollRows(
       '/api/business-console/v1/wms/inbound-orders',
       {
         organizationId,
         environmentId,
-        keyword: INBOUND_ORDER_NO,
+        inboundOrderId,
         scopeKind: receiptReadScopeKind,
         scopeId: receiptReadScopeId,
         siteCode: receiptReadSiteCode,
         skip: 0,
         take: 100,
       },
-      (row) => textOf(row.inboundOrderNo) === INBOUND_ORDER_NO,
+      (row) => textOf(row.inboundOrderId) === inboundOrderId,
     )
+    inboundOrderNo = textOf(inboundRow.match.inboundOrderNo)
     const inboundVersion = Number(inboundRow.match.version ?? 1)
     const noScopeInventoryQuery = {
       organizationId,
@@ -690,7 +691,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       queryPath('/api/business-console/v1/inventory/movements', {
         organizationId,
         environmentId,
-        sourceDocumentId: INBOUND_ORDER_NO,
+        sourceDocumentId: inboundOrderNo,
         page: 1,
         pageSize: 100,
       }),
@@ -702,7 +703,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         { organizationId, environmentId },
       ),
       {
-        idempotencyKey: `issue1912-${INBOUND_ORDER_NO}-missing-scope`,
+        idempotencyKey: `issue1912-${inboundOrderNo}-missing-scope`,
         lines: [{ lineNo: textOf(quoteLine.lineNo || '10'), lotNo: 'LOT-WALK-RM-001' }],
         expectedVersion: inboundVersion,
       },
@@ -713,14 +714,14 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       {
         organizationId,
         environmentId,
-        keyword: INBOUND_ORDER_NO,
+        keyword: inboundOrderNo,
         scopeKind: receiptReadScopeKind,
         scopeId: receiptReadScopeId,
         siteCode: receiptReadSiteCode,
         skip: 0,
         take: 100,
       },
-      (row) => textOf(row.inboundOrderNo) === INBOUND_ORDER_NO,
+      (row) => textOf(row.inboundOrderNo) === inboundOrderNo,
     )
     expect(Number(inboundAfterNoScope.match.version ?? 0)).toBe(inboundVersion)
     expect(textOf(inboundAfterNoScope.match.status).toLowerCase()).not.toBe('completed')
@@ -733,7 +734,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       queryPath('/api/business-console/v1/inventory/movements', {
         organizationId,
         environmentId,
-        sourceDocumentId: INBOUND_ORDER_NO,
+        sourceDocumentId: inboundOrderNo,
         page: 1,
         pageSize: 100,
       }),
@@ -797,12 +798,12 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       },
       receiptScope,
       inboundOrderId,
-      `issue1912-${INBOUND_ORDER_NO}-assignment`,
+      `issue1912-${inboundOrderNo}-assignment`,
       inboundVersion,
     )
     if (!inboundAssignmentPlan.called) {
       throw new Error(
-        `WMS inbound ${INBOUND_ORDER_NO} cannot be assigned without an authorized work-pool scope: ${inboundAssignmentPlan.reason}`,
+        `WMS inbound ${inboundOrderNo} cannot be assigned without an authorized work-pool scope: ${inboundAssignmentPlan.reason}`,
       )
     }
     const inboundAssignment = await workerCall(
@@ -825,14 +826,14 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       {
         organizationId,
         environmentId,
-        keyword: INBOUND_ORDER_NO,
+        keyword: inboundOrderNo,
         scopeKind: receiptScopeKind,
         scopeId: receiptScopeId,
         skip: 0,
         take: 100,
       },
       (row) =>
-        textOf(row.inboundOrderNo) === INBOUND_ORDER_NO &&
+        textOf(row.inboundOrderNo) === inboundOrderNo &&
         textOf(row.assignedPoolCode) === receiptPoolCode &&
         textOf(row.assignedOperatorUserId) === workerRuntime.principalId,
     )
@@ -860,7 +861,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         { organizationId, environmentId },
       ),
       {
-        taskNo: PUTAWAY_TASK_NO,
+        idempotencyKey: 'PUT-WALK-001',
         lineNo: textOf(quoteLine.lineNo || '10'),
         fromLocationCode: INBOUND_LOCATION,
         toLocationCode: LINE_SIDE_LOCATION,
@@ -874,7 +875,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         { organizationId, environmentId },
       ),
       {
-        idempotencyKey: `issue1912-${INBOUND_ORDER_NO}-complete`,
+        idempotencyKey: `issue1912-${inboundOrderNo}-complete`,
         lines: [{ lineNo: textOf(quoteLine.lineNo || '10'), lotNo: 'LOT-WALK-RM-001' }],
         scopeKind: receiptScopeKind,
         scopeId: receiptScopeId,
@@ -902,7 +903,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       scopeKind: receiptScopeKind,
       scopeId: receiptScopeId,
       siteCode: receiptReadSiteCode,
-      keyword: INBOUND_ORDER_NO,
+      keyword: inboundOrderNo,
       pageWindow: NERV_1571_WMS_DEFAULT_PAGE_WINDOW_INPUT,
     }
     const inboundKeywordQuery = buildWmsInboundListQueryFacts(inboundQueryFacts)
@@ -937,8 +938,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     record({
       node: 'receipt-inbound-inventory',
       sourceObject: purchaseReceiptNo,
-      downstreamObject: INBOUND_ORDER_NO,
-      stableKey: `${purchaseReceiptNo} -> ${INBOUND_ORDER_NO} -> ${textOf(inventory.data.movementId ?? inventory.data.ledgerVersion)}`,
+      downstreamObject: inboundOrderNo,
+      stableKey: `${purchaseReceiptNo} -> ${inboundOrderNo} -> ${textOf(inventory.data.movementId ?? inventory.data.ledgerVersion)}`,
       automationMode: 'mixed',
       request: inbound.summary,
       responseOrLog: {
@@ -1540,7 +1541,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     const picking = await executeWalkthroughPicking(
       {
         outboundOrderId: outboundId,
-        taskNo: `PICK-${DELIVERY_ORDER_NO}`,
+        intentKey: `PICK-${DELIVERY_ORDER_NO}`,
         lineNo: textOf(pickingLine.lineNo),
         fromLocationCode: textOf(pickingLine.locationCode),
         toLocationCode: FINISHED_GOODS_LOCATION,
@@ -1583,7 +1584,6 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         { organizationId, environmentId },
       ),
       {
-        packReviewNo: PACK_REVIEW_NO,
         passed: true,
         idempotencyKey: `issue1912-complete-${DELIVERY_ORDER_NO}`,
         scopeKind: shipmentScopeKind,

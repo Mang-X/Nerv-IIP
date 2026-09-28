@@ -2,10 +2,12 @@
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
+import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import {
   isIndeterminateLifecycleWriteError,
@@ -112,6 +114,14 @@ const operationalCandidates = useWmsOperationalCandidates('receipt', filters)
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageReceipts = computed(() => permissionCodes.value.includes(P.wmsReceiptsManage))
+// 分配作业池由仓库主管（作业池维护权限）操作；入库单要先进池，质检与上架才能在现场执行。
+const canManagePools = computed(() => permissionCodes.value.includes(P.wmsWorkPoolsManage))
+const assignOpen = shallowRef(false)
+const assignTarget = shallowRef<InboundRow>()
+function openAssign(row: InboundRow) {
+  assignTarget.value = row
+  assignOpen.value = true
+}
 const canReadQuality = computed(() =>
   permissionCodes.value.includes(P.qualityInspectionRecordsRead),
 )
@@ -136,12 +146,11 @@ const completeIntentLocked = shallowRef(false)
 usePendingWriteLeaveGuard(completeIntentLocked)
 
 // 后端 WMS InboundOrderLine 要求 uomCode/正数 receivedQuantity/stagingLocationCode/qualityStatus/ownerType 均非空。
-const QUALITY_OPTIONS = [
-  { label: '可用', value: 'available' },
-  { label: '待检', value: 'inspection' },
-  { label: '冻结', value: 'blocked' },
-  { label: '不合格', value: 'rejected' },
-]
+// 码值口径与回归锁见 WMS_RECEIVING_QUALITY_OPTIONS（#3923）。
+const QUALITY_OPTIONS = WMS_RECEIVING_QUALITY_OPTIONS
+const DEFAULT_RECEIVING_QUALITY_STATUS = WMS_RECEIVING_QUALITY_OPTIONS.find(
+  (option) => option.label === '可用',
+)!.value
 const OWNER_OPTIONS = [
   { label: '自有', value: 'owned' },
   { label: '客户', value: 'customer' },
@@ -164,14 +173,16 @@ function emptyLine(): InboundLine {
     receivedQuantity: '',
     stagingLocationCode: '',
     lotNo: '',
-    qualityStatus: 'available',
+    // 新行默认「可用」，码值只从选项表取，不在这里另写一份（#3923）。
+    qualityStatus: DEFAULT_RECEIVING_QUALITY_STATUS,
     ownerType: 'owned',
   }
 }
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
+// 入库单号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键，不会重复建单。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
-  inboundOrderNo: '',
   sourceDocumentType: '',
   sourceDocumentId: '',
   siteCode: '',
@@ -179,7 +190,7 @@ const createForm = reactive({
 })
 
 function openCreate() {
-  createForm.inboundOrderNo = ''
+  createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.sourceDocumentType = ''
   createForm.sourceDocumentId = ''
   createForm.siteCode = filters.siteCode ?? ''
@@ -201,12 +212,11 @@ function removeLine(index: number) {
 }
 async function submitCreate() {
   if (
-    !createForm.inboundOrderNo.trim() ||
     !createForm.sourceDocumentType.trim() ||
     !createForm.sourceDocumentId.trim() ||
     !createForm.siteCode.trim()
   ) {
-    createError.value = '请填写入库单号、来源类型、来源单据与工厂。'
+    createError.value = '请填写来源类型、来源单据与工厂。'
     return
   }
   const filled = createForm.lines.filter(
@@ -241,14 +251,14 @@ async function submitCreate() {
     await createInbound({
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
-      inboundOrderNo: createForm.inboundOrderNo.trim(),
       sourceDocumentType: createForm.sourceDocumentType.trim(),
       sourceDocumentId: createForm.sourceDocumentId.trim(),
       siteCode: createForm.siteCode.trim(),
       lines,
+      idempotencyKey: createIdempotencyKey.value,
     })
     createOpen.value = false
-    notifySuccess('入库单已创建')
+    notifySuccess('入库单已创建，单号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建入库单失败', error, '创建入库单失败，请稍后重试。')
   }
@@ -306,7 +316,9 @@ async function confirmComplete() {
     }
     completeIntentLocked.value =
       completeIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
-    notifyOperationFailure('完成入库失败', error, '完成入库失败，请稍后重试。')
+    notifyOperationFailure('完成入库失败', error, '完成入库失败，请稍后重试。', {
+      inboundOrderNo: pendingOrder.value?.inboundOrderNo ?? undefined,
+    })
   }
 }
 
@@ -384,7 +396,8 @@ const columns: NvDataTableColumn<InboundRow>[] = [
   // `min-width` 不参与列宽计算（#3734）。
   { key: 'quality', header: '质检门禁', width: 'w-[22rem]' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
+  // 分配作业池与完成动作并排（#3849）：按钮数决定列宽，列宽不够会压到相邻列上。
+  { key: 'actions', header: '操作', align: 'end', width: 'w-[20rem]' },
 ]
 
 function rowKey(row: InboundRow) {
@@ -578,6 +591,17 @@ function formatDateTime(value?: string | null) {
             <RouterLink :to="scanRecordRoute(row)">扫码记录</RouterLink>
           </NvButton>
           <NvButton
+            v-if="canManagePools"
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`分配作业池 ${row.inboundOrderNo ?? ''}`"
+            :disabled="!canComplete(row) || !row.inboundOrderId"
+            @click="openAssign(row)"
+          >
+            {{ row.assignedPoolCode ? `作业池 ${row.assignedPoolCode}` : '分配作业池' }}
+          </NvButton>
+          <NvButton
             size="sm"
             type="button"
             variant="outline"
@@ -590,6 +614,18 @@ function formatDateTime(value?: string | null) {
         </div>
       </template>
     </NvDataTable>
+
+    <WmsAssignWorkPoolDialog
+      v-if="canManagePools"
+      v-model:open="assignOpen"
+      target="inbound"
+      :resource-id="assignTarget?.inboundOrderId"
+      :resource-label="`入库单 ${assignTarget?.inboundOrderNo ?? ''}`"
+      :site-code="assignTarget?.siteCode"
+      :version="assignTarget?.version"
+      :current-pool-code="assignTarget?.assignedPoolCode"
+      @assigned="refreshInboundOrders"
+    />
 
     <NvAlertDialog :open="completeOpen" @update:open="onCompleteOpenChange">
       <NvAlertDialogContent>
@@ -620,10 +656,6 @@ function formatDateTime(value?: string | null) {
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="wms-in-no">入库单号</NvFieldLabel>
-              <NvInput id="wms-in-no" v-model="createForm.inboundOrderNo" autocomplete="off" />
-            </NvField>
             <NvField>
               <NvFieldLabel for="wms-in-site">工厂</NvFieldLabel>
               <NvEntityPicker

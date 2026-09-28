@@ -149,6 +149,7 @@ describe('BusinessLayout (T-shaped)', () => {
       '拣货任务',
       'WCS 任务',
       '盘点执行',
+      '作业池',
     ])
   })
 

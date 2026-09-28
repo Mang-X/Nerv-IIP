@@ -86,7 +86,7 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(49, contracts.Length);
+        Assert.Equal(51, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsInboundOrder");
@@ -124,6 +124,8 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/work-pools" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "provisionWmsWorkPool");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/work-pools/{poolCode}/members" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "addWmsWorkPoolMember");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-pools" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "listWmsWorkPools");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/work-pools/{poolCode}/members/{principalId}/remove" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "removeWmsWorkPoolMember");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/receipts" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "getWmsReceiptWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/shipments" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "getWmsShipmentWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/counts" && x.PermissionCode == WmsPermissionCodes.CountsRead && x.OperationId == "getWmsCountWorkScopes");
