@@ -21,6 +21,7 @@ using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using OutboundOrderCancelledIntegrationEventConverter = WmsWeb::Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters.OutboundOrderCancelledIntegrationEventConverter;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -45,6 +46,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = CreateHandler(
             dbContext,
+            scope.ServiceProvider.GetRequiredService<ITransactionUnitOfWork>(),
             deadLetters,
             scope.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>());
 
@@ -100,7 +102,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var integrationEvent = BuildWmsCancelledEvent(delivery, "customer-requested-cancel");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters, new RecordingEventContextAccessor());
+        var handler = CreateHandler(dbContext, dbContext, deadLetters, new RecordingEventContextAccessor());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -128,7 +130,7 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var integrationEvent = BuildWmsCancelledEvent(delivery, "late-cancellation");
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters, new RecordingEventContextAccessor());
+        var handler = CreateHandler(dbContext, dbContext, deadLetters, new RecordingEventContextAccessor());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -148,11 +150,13 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
 
     private static WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection CreateHandler(
         ApplicationDbContext dbContext,
+        ITransactionUnitOfWork unitOfWork,
         IIntegrationEventDeadLetterStore deadLetterStore,
         IErpIntegrationEventContextAccessor eventContext)
     {
         return new WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection(
             dbContext,
+            unitOfWork,
             deadLetterStore,
             new TestLogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection>(),
             eventContext);

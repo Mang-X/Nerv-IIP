@@ -7,12 +7,14 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", ConsumerName)]
 public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection(
     ApplicationDbContext dbContext,
+    ITransactionUnitOfWork unitOfWork,
     IIntegrationEventDeadLetterStore deadLetterStore,
     ILogger<WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection> logger,
     IErpIntegrationEventContextAccessor eventContext)
@@ -151,7 +153,7 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
             }
         }
 
-        await dbContext.SaveEntitiesAsync(cancellationToken);
+        await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
     }
 
     private Task DeadLetterAsync(
