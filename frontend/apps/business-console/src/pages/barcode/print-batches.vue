@@ -179,39 +179,52 @@ const templateHasLotNo = computed(() =>
 )
 
 const batchColumns: NvDataTableColumn<BusinessConsoleBarcodePrintBatchItem>[] = [
+  // 列宽显式给定、长文本列允许换行：单号与条码值较长，自动列宽会让相邻两列文字叠在一起。
   {
     key: 'sourceDocumentId',
     header: '来源单据',
-    cellClass: 'font-medium',
+    width: 'w-44',
+    cellClass: 'font-medium whitespace-normal break-all',
     accessor: (r) => r.sourceDocumentId ?? '未关联单据',
   },
-  { key: 'source', header: '业务来源' },
+  { key: 'source', header: '业务来源', width: 'w-20', cellClass: 'whitespace-normal' },
   {
     key: 'requestedQuantity',
     header: '数量',
     align: 'end',
-    width: 'w-20',
+    width: 'w-16',
     accessor: (r) => formatQuantity(r.requestedQuantity),
   },
-  { key: 'status', header: '状态', width: 'w-28' },
-  { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-32' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  {
+    key: 'createdAtUtc',
+    header: '创建时间',
+    width: 'w-32',
+    cellClass: 'whitespace-normal',
+    accessor: (r) => formatDateTime(r.createdAtUtc),
+  },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
 const itemColumns: NvDataTableColumn<BusinessConsoleBarcodePrintItemDetail>[] = [
   {
     key: 'sequenceNo',
     header: '序号',
-    width: 'w-20',
+    width: 'w-14',
     accessor: (r) => String(r.sequenceNo ?? '无'),
   },
   {
     key: 'labelValue',
     header: '标签内容',
-    cellClass: 'font-mono text-xs',
+    cellClass: 'font-mono text-xs whitespace-normal break-all',
     accessor: (r) => r.labelValue ?? '无',
   },
-  { key: 'fileId', header: '标签文件', accessor: (r) => (r.fileId ? '已生成' : '未生成') },
+  {
+    key: 'fileId',
+    header: '标签文件',
+    width: 'w-20',
+    accessor: (r) => (r.fileId ? '已生成' : '未生成'),
+  },
 ]
 
 watch(
