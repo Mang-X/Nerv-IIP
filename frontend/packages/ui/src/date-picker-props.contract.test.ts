@@ -22,13 +22,20 @@ import { describe, expect, it } from 'vitest'
  * 越来越长的豁免名单。约定定义在这一族，就守在这一族。
  *
  * 只覆盖会**透传到 DOM** 的 prop。事件型 prop（`v-model`、`@x`）是行为不是
- * DOM 属性，不在此列。
+ * DOM 属性，不在此列。名单是**封闭的**：白名单外的名字一个都不查。
  */
 
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const pickerDir = resolve(srcDir, 'components/pc/date-picker')
 
-/** 会透传到 DOM 的 prop。`aria-*` / `data-*` 由任意前缀白名单覆盖。 */
+/**
+ * 会透传到 DOM 的 prop——**封闭名单**。`aria-*` / `data-*` 由前缀覆盖，所以那两类
+ * 无需枚举；除它们之外只认这六项。
+ *
+ * 白名单是封闭的，代价要说清楚：日后哪个组件若声明了 `name` / `href` / `width` 这类
+ * 同样会落 DOM 的 prop，**本测试不会变红，是根本不检查**。所以新加透传 prop 时必须
+ * 手动往这里补一项，注释不替这件事兜底。
+ */
 const DOM_PROPS = new Set(['class', 'style', 'id', 'title', 'role', 'tabindex'])
 const isDomProp = (name: string) => {
   const kebab = name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
@@ -43,7 +50,9 @@ describe.each(pickers)('%s 声明的 DOM prop 必须被消费', (file) => {
     const module = await import(/* @vite-ignore */ resolve(pickerDir, file))
     const component = module.default
     const declared = Object.keys(component?.props ?? {}).filter(isDomProp)
-    // 这一族目前只有 `class` 一项；万一以后加了新的透传 prop，这里会自动跟着走。
+    // 兜底：白名单与组件脱节（有人从 `DOM_PROPS` 删了名字、或组件改了声明）时这里红。
+    // 失败方向不对称——它只在「该组件仅剩的 DOM prop 被移出白名单」时才兜得住；一旦
+    // 组件还有第二个 DOM prop，把 `class` 挪出白名单会静默通过。
     expect(declared.length).toBeGreaterThan(0)
 
     const undelivered: string[] = []
