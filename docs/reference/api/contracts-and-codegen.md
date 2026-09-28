@@ -97,10 +97,14 @@
 | `/mes/downtime-events`、`/mes/capacity-impacts`、2 个停机/产能 schema | `WorkCenterUnavailability`（读面派生） | 2（PascalCase） |
 
 **为什么不能走一般的主版本/迁移窗口程序**：那份 29 值并集本身就是缺陷载体，不是既有能力。
-它把 6 个互不相干的聚合的状态混成一个集合，并且**用小写拼写冒充 PascalCase 域的运行时值** ——
-工序、领料单、完工入库单、不良记录、交接班、停机这 6 个聚合在服务端实际会产生的值，
+它把 7 个互不相干的聚合的状态混成一个集合，并且**用小写拼写冒充 PascalCase 域的运行时值** ——
+工序、领料单、完工入库单、不良记录、交接班、停机事件、产能影响这 7 个聚合在服务端实际会产生的值，
 **一个都不在**该枚举内。保留过渡期等于让 29 个并集码继续作为合法过滤值被接受，而真正的运行时值
 反而被契约判为非法。契约此时不是在描述能力，而是在描述漂移。
+
+（「停机事件」与「产能影响」是同一个 `WorkCenterUnavailability` 聚合派生出的两套读面
+—— `DowntimeEventRow` 与 `CapacityImpactRow`，见上表合并的那一行；按读面计是 7 个，
+按聚合计是 6 个。）
 
 **那 29 个码逐个对回域，结论分三类**（不要笼统说成「27 个没有对应数据」——
 只有 4 个是真正无对应数据的，其余各有归属）：
@@ -167,17 +171,34 @@ Governance 的一般破坏性变更/主版本规则。
 1. **逐条值域比对**（22 条）：10 个行 schema 的 `status` / `receiptStatus` 与 11 条列表
    `status` 查询参数，各与对应聚合的域常量比。
 2. **schema 侧反向穷举**（`Every_mes_status_enum_is_registered`）：扫出 `BusinessConsoleMes*`
-   下所有行 schema 的所有内嵌 enum，逐个问「登记了吗」。新增一个带状态 enum 的行 schema
-   而忘了登记值域时必然红 —— 只做第 1 层的话，那条新 schema 根本进不来（`Assert.Single`
-   只在已登记后缀匹配到 ≥1 个时生效），门禁会照绿。
+   下所有 **object 型 schema**（实测 134 个里 128 个：响应包装、请求体、详情、联合体都在内 ——
+   扫得比「行 schema」宽是好事，宽到覆盖将来新增的任何一种）的所有内嵌 enum 与 $ref 状态属性，
+   逐个问「登记了吗」。新增一个带状态枚举的 schema 而忘了登记值域时必然红 —— 只做第 1 层的话，
+   那条新 schema 根本进不来（`Assert.Single` 只在已登记后缀匹配到 ≥1 个时生效），门禁会照绿。
 3. **路径侧反向穷举**（`Every_mes_list_status_query_is_registered`）：扫出
    `/api/business-console/v1/mes/**` 下所有带 `status` 查询参数的 GET 路径，逐个问
    「登记了吗」，与第 2 层对称。
 
-第 2、3 层各有显式白名单（`NonRowStatusEnums` / `NonListStatusQueryPaths`），白名单项都带
-排除原因；新增枚举或路径却忘了登记/加白名单时断言会红并列出未登记项。`NonListStatusQueryPaths`
-里的两条（`reportable-operation-tasks` / `telemetry-production-report-candidates`）是
-`status` **无 enum** 的自由 string，属「缺值域」而非「值域被覆盖」，方向与本票相反，独立票处理。
+第 2、3 层各有显式白名单，白名单项都带排除原因；新增枚举或路径却忘了登记/加白名单时断言会红
+并列出未登记项。四张白名单的分工必须都保留，缺一张就留下一个无提示的旁路：
+
+| 白名单 | 粒度 | 内容 | 缺了会怎样 |
+| --- | --- | --- | --- |
+| `NonRowStatusEnums` | **类型**（6 项） | 安灯 3 个 + 生产统计 3 个，值域不由本票 6 个聚合的域常量定义 | 漏判成「未登记」而误红 |
+| `NonAggregatedStatusProperties` | **属性**（2 项） | `AndonCallResponse.status` / `ProductionStatisticsBucket.resolutionStatus`，值域经 `$ref` 写在别处且不属本票聚合 | 同上 |
+| `NonListStatusQueryPaths` | **路径**（2 项） | 见下 | 同上 |
+| `FindEnumPaths` 里对 `$ref` 的处理 | — | **状态属性的 `$ref` 要收一条按未解析形态判红**，非状态属性的 `$ref` 跳过 | **被 `$ref` 完全绕过** |
+
+最后一条是第五轮实测出来的：把未登记 schema 的 `status` 改 `$ref` 指向白名单内的
+`AndonStatus`（并把该类型值域换成任意 bogus 值），或指向已登记的 `WorkOrderItem`，
+23 条守门此前**全绿**。现在这类注入一律转红。
+
+同理，**`NonRowStatusEnums` 不是通用逃生口** —— 往里加类型能让任意行 schema 的状态藏进去。
+本仓只允许加「值域确实不由本票聚合的域常量定义」的 top-level enum 类型。
+
+`NonListStatusQueryPaths` 里的两条（`reportable-operation-tasks` /
+`telemetry-production-report-candidates`）是 `status` **无 enum** 的自由 string，
+属「缺值域」而非「值域被覆盖」，方向与本票相反，独立票处理。
 
 ## 历史材料边界
 

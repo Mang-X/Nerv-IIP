@@ -93,10 +93,18 @@ public sealed class MesListStatusContractTests
     ///
     /// <para><b>为什么必须显式列出</b>：<see cref="Every_mes_status_enum_is_registered"/> 会穷举
     /// <c>BusinessConsoleMes*</c> 下所有内嵌 enum 并要求每一条都登记在
-    /// <see cref="RowStatusProperties"/> 里。少列一个，那条断言就红 —— 这是刻意的：
-    /// 新增一个带状态 enum 的行 schema 而忘了在这里登记值域，必须立刻暴露，
-    /// 而不是像原先那样「登记表外的 schema 根本进不来」（见 <see cref="RowStatusProperties"/>）。
-    /// 确实不该纳管时，把类型名加进本白名单并写明理由。</para>
+    /// <see cref="RowStatusProperties"/> 里。少列一个，那条断言就红。</para>
+    ///
+    /// <para><b>本白名单不是通用逃生口</b>（第五轮实测证伪了它原先的自称）。原文写的是
+    /// 「新增一个带状态 enum 的行 schema 而忘了在这里登记值域，必须立刻暴露」——
+    /// 但加进本白名单同样能让任意行 schema 的状态藏进去，<b>无提示无失败</b>：把未登记
+    /// schema 的 <c>status</c> 改 <c>$ref</c> 指向本表里的某个类型，再把那个类型的值域
+    /// 换成任意 bogus 值，23 条守门全绿。所以本表只列**确实由非本票聚合定义的 top-level
+    /// enum 类型**（安灯队列 / 统计维度 / 统计降级原因），不是「想让谁过就加谁」的地方。
+    /// 往这里加东西前先确认那个类型的值域真的不由 MES 域常量定义。</para>
+    ///
+    /// <para>与之配套的 <see cref="NonAggregatedStatusProperties"/> 是一张**属性级**白名单，
+    /// 两者都要显式：没有它们，<c>$ref</c> 就是一个无提示的旁路。</para>
     /// </summary>
     private static readonly HashSet<string> NonRowStatusEnums =
     [
@@ -191,6 +199,27 @@ public sealed class MesListStatusContractTests
     }
 
     /// <summary>
+    /// 值域经 <c>$ref</c> 写在别处、且不属于本票 6 个聚合的 <b>状态属性</b>白名单。
+    ///
+    /// <para>这两条是 $ref 形态的状态属性：<c>AndonCallResponse.status</c> 指向
+    /// <c>AndonStatus</c>（安灯域枚举 <c>AndonCallStatus { Open, Claimed, Closed }</c>），
+    /// <c>ProductionStatisticsBucket.resolutionStatus</c> 指向
+    /// <c>ProductionStatisticsResolutionStatus</c>（<c>{ resolved, degraded }</c>）。
+    /// 二者都是安灯 / 生产统计读面的状态，不在本票收敛的 6 个聚合内，故不登记值域。</para>
+    ///
+    /// <para><b>与 <see cref="NonRowStatusEnums"/> 的分工</b>：那张表白名单的是**类型**
+    ///（$ref 指向它就不管），这张表白名单的是**属性**（值域在别处、但这一对不纳管）。
+    /// 两张都必须显式 —— 否则「$ref 指向白名单内的类型」就是一个无提示的旁路
+    /// （第五轮实测：未登记 schema 的 status 改 $ref 指向白名单 enum 并把该 enum 值域
+    /// 换成任意 bogus 值，23 条守门全绿）。</para>
+    /// </summary>
+    private static readonly HashSet<string> NonAggregatedStatusProperties =
+    [
+        "BusinessConsoleMesAndonCallResponse.status",
+        "BusinessConsoleMesProductionStatisticsBucket.resolutionStatus",
+    ];
+
+    /// <summary>
     /// <b>穷举守门：<c>BusinessConsoleMes*</c> 下的行内嵌 enum 必须全部登记在
     /// <see cref="RowStatusProperties"/> 里。</b>
     ///
@@ -221,6 +250,7 @@ public sealed class MesListStatusContractTests
         var unregistered = FindInlineEnums(document)
             .Select(inline => $"{inline.Schema}{inline.PropertyPath}")
             .Where(location => !registered.Contains(location))
+            .Where(location => !NonAggregatedStatusProperties.Contains(location))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
@@ -242,19 +272,22 @@ public sealed class MesListStatusContractTests
     {
         var schemas = document.RootElement
             .GetProperty("components")
-            .GetProperty("schemas")
-            .EnumerateObject()
-            .Where(schema => schema.Name.StartsWith(MesSchemaPrefix, StringComparison.Ordinal))
-            .Where(schema => !schema.Name.Contains("ResponseDataOf", StringComparison.Ordinal));
+            .GetProperty("schemas");
 
-        foreach (var schema in schemas)
+        foreach (var schema in schemas.EnumerateObject())
         {
+            if (!schema.Name.StartsWith(MesSchemaPrefix, StringComparison.Ordinal)
+                || schema.Name.Contains("ResponseDataOf", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             // 去掉命名空间前缀，留下 "BusinessConsoleMesXxx"，
             // 与 RowStatusProperties 登记表里的键同一形式。
             var registeredName = schema.Name[SchemaNamespacePrefix.Length..];
 
-            // 独立命名的 top-level enum 类型不纳管：它们经 $ref 被引用，值域也不由
-            // MES 域常量定义（安灯 / 统计那几类）。跳过而不是登记。
+            // 独立命名的 top-level enum 类型不纳管：它们值域不由 MES 域常量定义
+            // （安灯 / 统计那几类）。跳过而不是登记。
             if (NonRowStatusEnums.Contains(registeredName))
             {
                 continue;
@@ -278,6 +311,14 @@ public sealed class MesListStatusContractTests
     /// 路径段直接是属性名（<c>.status</c> 而不是 <c>.properties.status</c>）；
     /// <c>required</c> 是必填属性**名字**的数组，与值域无关，必须跳过，
     /// 否则每个带 required 的请求体都会被误判成一条未登记枚举。</para>
+    ///
+    /// <para><b><c>$ref</c> 必须跟随，不能跳过。</b>属性写成
+    /// <c>{ "$ref": "#/components/schemas/X" }</c> 时，值域在目标类型上而不在引用处 ——
+    /// 跳过它等于给未登记的 schema 开一个后门：把 <c>status</c> 改指向
+    /// <c>NonRowStatusEnums</c> 里的某个类型（并把那个类型的值域换成任意 bogus 值），
+    /// 或指向任意已登记 / 未登记的类型，守门都看不见。这里跟随引用、把目标类型记进
+    /// 路径，交给 <c>Every_mes_status_enum_is_registered</c> 按同一套白名单判红。
+    /// 目标类型自身被白名单放行时，路径末段会带上它的短名，白名单与登记表都能对上。</para>
     /// </summary>
     private static IEnumerable<string> FindEnumPaths(JsonElement schema, string path)
     {
@@ -298,8 +339,23 @@ public sealed class MesListStatusContractTests
                     continue;
                 }
 
-                // 独立命名的 enum 经 $ref 引用，不是本 schema 的内嵌值域。
-                if (property.Name is "$ref" or "description" or "title" or "example" or "default" or "required")
+                // $ref 不跟随（跟随会一路穿过响应包装 / 回执联合体，把 outcome、
+                // readbackMethod 这些无关枚举也收进来），**但状态属性仍要受登记表管**：
+                // 值域写在别处不等于不受管，判据是「这个 status 属性登记了没有」，
+                // 不是「值域写在哪」。把该属性按未解析的形态收一条，交给
+                // Every_mes_status_enum_is_registered 按 (schema, 属性) 判红 ——
+                // 否则把未登记 schema 的 status 改指向任意类型（含白名单内的）即可绕过。
+                if (property.Name == "$ref")
+                {
+                    if (IsStatusPropertyPath(path))
+                    {
+                        yield return path;
+                    }
+
+                    continue;
+                }
+
+                if (property.Name is "description" or "title" or "example" or "default" or "required")
                 {
                     continue;
                 }
@@ -416,6 +472,17 @@ public sealed class MesListStatusContractTests
                 + "确属票外（如同 NonListStatusQueryPaths 那两条自由 string 的）请连同原因加进该表。"
                 + "未登记路径：\n"
                 + string.Join("\n", unregistered.Select(path => $"  - {path}")));
+    }
+
+    /// <summary>
+    /// 该路径末段是不是状态属性。与 <see cref="RowStatusProperties"/> 登记表同口径：
+    /// <c>status</c>、<c>receiptStatus</c>，以及任何以 <c>Status</c> 结尾的名字
+    /// （<c>workOrderStatus</c> / <c>handoverStatus</c> 之类）。
+    /// </summary>
+    private static bool IsStatusPropertyPath(string path)
+    {
+        var lastSegment = path[(path.LastIndexOf('.') + 1)..];
+        return lastSegment.EndsWith("Status", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsEnumNode(JsonElement node) =>
