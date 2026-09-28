@@ -155,11 +155,6 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
   const lineCode = `LINE-QB-${suffix}`
   const workCenterCode = `WC-QB-${suffix}`
   const finishedSku = `FG-QB-${suffix}`
-  const materialSku = `RM-QB-${suffix}`
-  const operationCode = `OP-QB-${suffix}`
-  const engineeringBomCode = `EB-QB-${suffix}`
-  const manufacturingBomCode = `MB-QB-${suffix}`
-  const routingCode = `RT-QB-${suffix}`
   const planCode = `IP-QB-${suffix}`
   // Quality lower-cases characteristic codes on persist, so the run-scoped code is authored
   // lower-case and every read-back comparison stays an exact match.
@@ -430,55 +425,66 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
         complianceTags: [],
         idempotencyKey: `sku-${finishedSku}`,
       })
-      await create('/api/business-console/v1/master-data/skus', {
-        organizationId,
-        environmentId,
-        code: materialSku,
-        name: 'MAN-520 quality branch raw material',
-        baseUomCode: uomCode,
-        category: 'electronic',
-        materialType: 'raw-material',
-        batchTrackingPolicy: 'none',
-        serialTrackingPolicy: 'none',
-        shelfLifePolicyCode: 'none',
-        storageConditionCode: 'ambient',
-        defaultBarcodeRuleCode: 'code128',
-        qualityRequired: false,
-        complianceTags: [],
-        idempotencyKey: `sku-${materialSku}`,
-      })
+      // #3858 新增的造数一律不传编号，由服务端按编码规则分配，下游读返回值。
+      const materialSkuItem = asRecord(
+        await create('/api/business-console/v1/master-data/skus', {
+          organizationId,
+          environmentId,
+          name: 'MAN-520 quality branch raw material',
+          baseUomCode: uomCode,
+          category: 'electronic',
+          materialType: 'raw-material',
+          batchTrackingPolicy: 'none',
+          serialTrackingPolicy: 'none',
+          shelfLifePolicyCode: 'none',
+          storageConditionCode: 'ambient',
+          defaultBarcodeRuleCode: 'code128',
+          qualityRequired: false,
+          complianceTags: [],
+          idempotencyKey: `sku-material-${suffix}`,
+        }),
+      )
+      const materialSku = textOf(materialSkuItem.code).trim()
 
       // #3858：急单与计划转工单同口径，建单必须带已发布的生产版本（建单时按它冻结齐套需求），
       // 所以先按公开 API 发布 EBOM → MBOM → 工艺路线，再建生产版本。
-      await create('/api/business-console/v1/engineering/standard-operations', {
-        organizationId,
-        environmentId,
-        operationCode,
-        operationName: 'MAN-520 quality branch operation',
-        defaultWorkCenterCode: workCenterCode,
-        standardSetupMinutes: 0,
-        standardRunMinutes: 30,
-        controlKey: 'internal',
-        requiresReporting: true,
-        requiresQualityInspection: true,
-        isOutsourced: false,
-        idempotencyKey: `op-${suffix}`,
-      })
-      await create('/api/business-console/v1/engineering/engineering-boms/release', {
-        organizationId,
-        environmentId,
-        bomCode: engineeringBomCode,
-        revision: 'A',
-        parentItemCode: finishedSku,
-        effectiveDate: dateOnly(now),
-        lines: [{ componentCode: materialSku, quantity: 1, unitOfMeasureCode: uomCode }],
-        idempotencyKey: `ebom-${suffix}`,
-      })
+      const standardOperation = asRecord(
+        await create('/api/business-console/v1/engineering/standard-operations', {
+          organizationId,
+          environmentId,
+          operationName: 'MAN-520 quality branch operation',
+          defaultWorkCenterCode: workCenterCode,
+          standardSetupMinutes: 0,
+          standardRunMinutes: 30,
+          controlKey: 'internal',
+          requiresReporting: true,
+          requiresQualityInspection: true,
+          isOutsourced: false,
+          idempotencyKey: `op-${suffix}`,
+        }),
+      )
+      const operationCode = textOf(standardOperation.operationCode).trim()
+      const engineeringBom = asRecord(
+        await create('/api/business-console/v1/engineering/engineering-boms/release', {
+          organizationId,
+          environmentId,
+          revision: 'A',
+          parentItemCode: finishedSku,
+          effectiveDate: dateOnly(now),
+          lines: [{ componentCode: materialSku, quantity: 1, unitOfMeasureCode: uomCode }],
+          idempotencyKey: `ebom-${suffix}`,
+        }),
+      )
+      const engineeringBomCode = textOf(engineeringBom.id).trim()
+      if (!materialSku || !operationCode || !engineeringBomCode) {
+        throw new Error(
+          'MasterData/ProductEngineering did not return the allocated material, operation or EBOM code.',
+        )
+      }
       const mbom = asRecord(
         await create('/api/business-console/v1/engineering/manufacturing-boms/release', {
           organizationId,
           environmentId,
-          bomCode: manufacturingBomCode,
           revision: 'A',
           skuCode: finishedSku,
           engineeringBomCode,
@@ -495,7 +501,6 @@ test('MAN-520 records the public quality exception branch', async ({ page }) => 
         await create('/api/business-console/v1/engineering/routings/release', {
           organizationId,
           environmentId,
-          routingCode,
           revision: 'A',
           skuCode: finishedSku,
           effectiveDate: dateOnly(now),
