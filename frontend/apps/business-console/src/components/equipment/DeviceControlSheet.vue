@@ -11,11 +11,13 @@ import {
   type DeviceControlCommandType,
 } from '@/composables/useBusinessDeviceControl'
 import {
+  formatOeeQuantity,
   useBusinessTelemetryHistory,
   useBusinessTelemetryTagCurrentValue,
   useBusinessTelemetryTags,
 } from '@/composables/useBusinessTelemetry'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { normalizeTelemetryValueType } from '@/data/businessLabels'
 import { readFaceText } from '@/utils/readFace'
 import { notifyOperationFailure } from '@/utils/notify'
 import {
@@ -139,6 +141,20 @@ function latestSampleValue(tagKey: string): string | null {
       (a, b) => new Date(b.occurredAtUtc ?? 0).getTime() - new Date(a.occurredAtUtc ?? 0).getTime(),
     )
   return matches[0]?.value ?? null
+}
+
+/**
+ * 读数上屏：数值型点位按数值格式化（去掉后端 decimal 的尾随零）并带上点位单位；
+ * 开关 / 文本等非数值读数原样显示，不硬转数字。
+ */
+function formatReading(tagKey: string, raw?: string | number | null): string | null {
+  if (raw === null || raw === undefined || String(raw).trim() === '') return null
+  const tag = tagByKey(tagKey)
+  const numeric = typeof raw === 'number' ? raw : Number(String(raw).trim())
+  if (normalizeTelemetryValueType(tag?.valueType) !== 'number' || !Number.isFinite(numeric)) {
+    return String(raw)
+  }
+  return formatOeeQuantity(numeric, tag?.unitCode ? formatUom(tag.unitCode) : null)
 }
 
 function rangeHint(tag?: BusinessConsoleTelemetryTagItem): string {
@@ -320,7 +336,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                   读取失败，点击重试
                 </button>
                 <p v-else-if="singleCurrentValue?.hasSample" class="font-medium text-foreground">
-                  {{ singleCurrentValue.value }}
+                  {{ formatReading(singleForm.tagKey, singleCurrentValue.value) }}
                 </p>
                 <p v-else class="text-muted-foreground">暂无读数</p>
               </div>
@@ -398,7 +414,8 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                   <p v-if="row.tagKey" class="text-xs text-muted-foreground">
                     {{ rangeHint(tagByKey(row.tagKey)) }}
                     <span v-if="latestSampleValue(row.tagKey)">
-                      · 近期平均值 {{ latestSampleValue(row.tagKey) }}</span
+                      · 近期平均值
+                      {{ formatReading(row.tagKey, latestSampleValue(row.tagKey)) }}</span
                     >
                   </p>
                   <p
