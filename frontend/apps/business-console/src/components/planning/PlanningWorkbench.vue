@@ -310,18 +310,23 @@ const demandTypeOptions = [
   { label: '安全库存', value: 'safety-stock' },
 ]
 const suggestionStatusOptions = [
+  { label: '全部状态', value: 'all' },
   { label: '待评审', value: 'open' },
   { label: '已接受', value: 'accepted' },
+  { label: '已拒绝', value: 'rejected' },
+  { label: '已被替代', value: 'superseded' },
 ]
 
 // 建议分型（呼应两组：生产→MES / 采购→ERP）。
 const productionSuggestions = computed(() =>
-  suggestions.value.filter((i) => i.suggestionType === 'planned-work-order'),
+  scopedSuggestions.value.filter((i) => i.suggestionType === 'planned-work-order'),
 )
 const purchaseSuggestions = computed(() =>
-  suggestions.value.filter((i) => i.suggestionType === 'planned-purchase'),
+  scopedSuggestions.value.filter((i) => i.suggestionType === 'planned-purchase'),
 )
-const openSuggestionCount = computed(() => suggestions.value.filter((i) => isOpen(i.status)).length)
+const openSuggestionCount = computed(
+  () => scopedSuggestions.value.filter((i) => isOpen(i.status)).length,
+)
 const releasedMpsCount = computed(
   () => mpsBuckets.value.filter((i) => isMpsReleased(i.status)).length,
 )
@@ -364,16 +369,40 @@ const mpsSegments = computed<NvMetricSegment[]>(() => [
   },
 ])
 
-// 卡3：最近一次 MRP（状态 + 建议数）。运行按计划范围排序取最后一条。
-const runsByHorizon = computed(() =>
-  [...mrpRuns.value].sort((a, b) => (a.horizonStart ?? '').localeCompare(b.horizonStart ?? '')),
+// 运行列表由服务端按创建时间降序返回，不能用计划范围判断新旧。
+const runsChronological = computed(() => [...mrpRuns.value].reverse())
+const latestRun = computed(() => mrpRuns.value[0] ?? null)
+const latestCompletedRun = computed(
+  () => mrpRuns.value.find((run) => run.status?.toLowerCase() === 'completed') ?? null,
 )
-const latestRun = computed(() => runsByHorizon.value[runsByHorizon.value.length - 1] ?? null)
+const manualSuggestionRunId = shallowRef('latest')
+const suggestionRunChoice = computed({
+  get: () =>
+    mrpRuns.value.some((run) => run.runId === manualSuggestionRunId.value)
+      ? manualSuggestionRunId.value
+      : 'latest',
+  set: (runId: string) => {
+    manualSuggestionRunId.value = runId
+  },
+})
+const suggestionRun = computed(() =>
+  suggestionRunChoice.value === 'latest'
+    ? latestCompletedRun.value
+    : (mrpRuns.value.find((run) => run.runId === suggestionRunChoice.value) ?? null),
+)
+const scopedSuggestions = computed(() =>
+  suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
+)
+function runChoiceLabel(run: BusinessConsoleMrpRunItem): string {
+  return `第 ${mrpRuns.value.length - mrpRuns.value.indexOf(run)} 次 · ${runHorizonLabel(run)}`
+}
 // 历次 MRP 产出的建议条数——真实时序，作为最近一次运行卡的迷你趋势。
 const mrpSuggestionSeries = computed(() =>
-  runsByHorizon.value.map((run) => run.suggestionCount ?? 0),
+  runsChronological.value.map((run) => run.suggestionCount ?? 0),
 )
-const mrpRunLabels = computed(() => runsByHorizon.value.map((run) => formatDate(run.horizonStart)))
+const mrpRunLabels = computed(() =>
+  runsChronological.value.map((run) => formatDate(run.horizonStart)),
+)
 const latestRunKpiValue = computed(() =>
   latestRun.value ? planningStatus(latestRun.value.status).label : '未运行',
 )
@@ -430,8 +459,8 @@ function isComponentRow(row: BusinessConsoleMrpPeggingItem): boolean {
 const visibleSuggestions = computed(() => {
   const t = suggestionTypeFilter.type
   // 'all' 哨兵 = 不过滤（reka 的 SelectItem 不允许空串 value，故用 'all' 代替原空串）。
-  if (!t || t === 'all') return suggestions.value
-  return suggestions.value.filter((s) => s.suggestionType === t)
+  if (!t || t === 'all') return scopedSuggestions.value
+  return scopedSuggestions.value.filter((s) => s.suggestionType === t)
 })
 const suggestionTypeFilterOptions = [
   { label: '全部类型', value: 'all' },
@@ -604,6 +633,8 @@ function planningStatus(status?: string | null): { label: string; tone: StatusTo
   // Created = 异步受理后的排队态（#1306）。
   if (s === 'created' || s === 'queued') return { label: '排队中', tone: 'info' }
   if (s === 'failed') return { label: '失败', tone: 'danger' }
+  if (s === 'rejected') return { label: '已拒绝', tone: 'neutral' }
+  if (s === 'superseded') return { label: '已被替代', tone: 'neutral' }
   if (s === 'open' || s === 'pending') return { label: '待评审', tone: 'warning' }
   return { label: status || '未知', tone: 'neutral' }
 }
@@ -1189,7 +1220,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       <NvTabsTrigger value="mps">MPS 主计划 ({{ mpsBuckets.length }})</NvTabsTrigger>
       <NvTabsTrigger value="phasing">时段视图</NvTabsTrigger>
       <NvTabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</NvTabsTrigger>
-      <NvTabsTrigger value="suggestions">计划建议 ({{ suggestions.length }})</NvTabsTrigger>
+      <NvTabsTrigger value="suggestions">计划建议 ({{ scopedSuggestions.length }})</NvTabsTrigger>
     </NvTabsList>
 
     <NvTabsContent value="demands" class="grid gap-3">
@@ -1542,6 +1573,22 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
     <NvTabsContent value="suggestions" class="grid gap-3">
       <div class="flex flex-wrap items-center gap-2">
+        <NvSelect v-model="suggestionRunChoice">
+          <NvSelectTrigger class="h-9 w-72" aria-label="建议运行"
+            ><NvSelectValue placeholder="选择运行"
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem v-if="latestCompletedRun" value="latest"
+              >最近完成 · {{ runHorizonLabel(latestCompletedRun) }}</NvSelectItem
+            >
+            <NvSelectItem
+              v-for="run in mrpRuns.filter((item) => item.status?.toLowerCase() === 'completed')"
+              :key="run.runId"
+              :value="run.runId ?? ''"
+              >{{ runChoiceLabel(run) }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
         <NvSelect v-model="suggestionTypeFilter.type">
           <NvSelectTrigger class="h-9 w-44" aria-label="建议分型"
             ><NvSelectValue placeholder="全部类型"
@@ -1576,7 +1623,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         :loading="suggestionsPending"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前范围没有计划建议。"
+        :empty-message="
+          latestCompletedRun ? '该次运行在当前状态下没有计划建议。' : '尚无已完成的 MRP 运行。'
+        "
       >
         <template #cell-suggestionType="{ row }">
           <NvStatusBadge
@@ -1672,10 +1721,17 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           <span v-else class="text-sm text-muted-foreground">未承接</span>
         </template>
         <template #cell-status="{ row }"
-          ><NvStatusBadge
-            :label="planningStatus(row.status).label"
-            :tone="planningStatus(row.status).tone"
-        /></template>
+          ><div class="grid gap-1">
+            <NvStatusBadge
+              :label="planningStatus(row.status).label"
+              :tone="planningStatus(row.status).tone"
+            />
+            <span v-if="row.supersededByRunId" class="text-xs text-muted-foreground">
+              由
+              {{ runChoiceLabel(mrpRuns.find((run) => run.runId === row.supersededByRunId)!) }} 替代
+            </span>
+          </div></template
+        >
         <template #cell-actions="{ row }">
           <div v-if="isOpen(row.status)" class="flex items-center justify-end gap-2">
             <NvButton

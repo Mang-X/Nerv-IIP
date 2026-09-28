@@ -232,7 +232,7 @@ describe('business planning composable', () => {
       query: { organizationId: 'org-002', environmentId: 'prod' },
     })
     expect(listBusinessConsolePlanningSuggestionsQueryOptions).toHaveBeenCalledWith({
-      query: { organizationId: 'org-002', environmentId: 'prod', status: 'open' },
+      query: { organizationId: 'org-002', environmentId: 'prod', status: undefined },
     })
     expect(getBusinessConsolePlanningMrpPeggingQueryOptions).toHaveBeenCalledWith({
       path: { runId: '' },

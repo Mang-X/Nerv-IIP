@@ -148,7 +148,7 @@ function defaultSuggestionFilters(
     reactive({
       organizationId,
       environmentId,
-      status: 'open',
+      status: 'all',
     }),
   )
 }
@@ -323,7 +323,7 @@ export function useBusinessPlanning() {
         query: {
           organizationId: suggestionFilters.organizationId,
           environmentId: suggestionFilters.environmentId,
-          status: suggestionFilters.status,
+          status: suggestionFilters.status === 'all' ? undefined : suggestionFilters.status,
         },
       }),
       suggestionFilters,
