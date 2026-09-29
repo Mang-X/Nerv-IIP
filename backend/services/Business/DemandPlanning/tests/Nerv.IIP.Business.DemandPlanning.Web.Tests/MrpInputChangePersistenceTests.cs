@@ -11,43 +11,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 public sealed class MrpInputChangePersistenceTests
 {
     [DemandPlanningRealPostgresFact]
-    public async Task Rolled_back_manual_demand_write_leaves_neither_source_nor_change_fact_on_postgres()
-    {
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!, "nerv_dp_input_rollback");
-        try
-        {
-            var services = new ServiceCollection();
-            services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
-                database.ConnectionString,
-                postgres => postgres.MigrationsHistoryTable("__EFMigrationsHistory", DemandPlanningFacts.Schema)));
-            await using var provider = services.BuildServiceProvider();
-            using var scope = provider.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.MigrateAsync();
-
-            await using (var transaction = await db.Database.BeginTransactionAsync())
-            {
-                await new CreateOrUpdateDemandSourceCommandHandler(db).Handle(
-                    new("org-a", "env-a", "manual", "ROLLBACK-1", "SKU", "pcs", "SITE", 10,
-                        new DateOnly(2026, 10, 10)), default);
-                await db.SaveChangesAsync();
-                Assert.Single(await db.MrpInputChanges.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
-                await transaction.RollbackAsync();
-            }
-
-            db.ChangeTracker.Clear();
-            Assert.Empty(await db.DemandSources.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
-            Assert.Empty(await db.MrpInputChanges.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
-        }
-        finally
-        {
-            await database.DropAsync();
-        }
-    }
-
-    [DemandPlanningRealPostgresFact]
     public async Task Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres()
     {
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
@@ -107,6 +70,19 @@ public sealed class MrpInputChangePersistenceTests
                 newHorizon.Select(x => x.Operation).ToArray());
             Assert.False(newHorizon[^1].CurrentlyEligible);
             Assert.Null(newHorizon[^1].CurrentStartDate);
+
+            await using (var transaction = await db.Database.BeginTransactionAsync())
+            {
+                await new CreateOrUpdateDemandSourceCommandHandler(db).Handle(
+                    new("org-a", "env-a", "manual", "ROLLBACK-1", "SKU", "pcs", "SITE", 10, oldDate), default);
+                await db.SaveChangesAsync();
+                Assert.Single(await db.MrpInputChanges.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
+                await transaction.RollbackAsync();
+            }
+
+            db.ChangeTracker.Clear();
+            Assert.Empty(await db.DemandSources.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
+            Assert.Empty(await db.MrpInputChanges.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
         }
         finally
         {
