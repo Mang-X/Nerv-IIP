@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Iam.Domain;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Testing.PostgreSql;
@@ -153,6 +154,9 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
             using var scope = migrator.Services.CreateScope();
             database.AssertOwns(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.GetConnectionString());
             await scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>().MigrateAsync();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Roles.Add(new Role(new RoleId("role-existing-planner"), "生产计划员", ["business.planning.mps.read"]));
+            await db.SaveChangesAsync();
         }
 
         await using (var withoutPassword = ProductionFactory(adminPassword: null))
@@ -190,9 +194,12 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
             Assert.Equal("user-admin", Assert.Single(await db.Users.ToListAsync()).Id.Id);
             Assert.Equal("org-001", Assert.Single(await db.Organizations.ToListAsync()).Id.Id);
             Assert.Equal("env-dev", Assert.Single(await db.Environments.ToListAsync()).Id.Id);
+            var roles = await db.Roles.ToListAsync();
             Assert.Equal(
-                ["role-platform-admin", "role-production-planner"],
-                (await db.Roles.ToListAsync()).Select(role => role.Id.Id).Order(StringComparer.Ordinal));
+                ["role-existing-planner", "role-platform-admin", "role-production-planner"],
+                roles.Select(role => role.Id.Id).Order(StringComparer.Ordinal));
+            Assert.Equal("生产计划员", roles.Single(role => role.Id == new RoleId("role-existing-planner")).RoleName);
+            Assert.Equal("生产计划员（系统预置）", roles.Single(role => role.Id == new RoleId("role-production-planner")).RoleName);
             Assert.Equal(1, await db.Memberships.CountAsync());
             Assert.Equal(0, await db.ConnectorHostCredentials.CountAsync());
             Assert.Equal(0, await db.ExternalClients.CountAsync());

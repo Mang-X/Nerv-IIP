@@ -155,8 +155,8 @@ public sealed class UserRepository(ApplicationDbContext context)
                 && DbContext.Roles.Any(role => role.Id == roleId && role.Deleted == NotDeleted));
         var total = await query.CountAsync(cancellationToken);
         var ids = await query.OrderBy(user => user.Id)
-            .Skip(skip).Take(take).Select(user => user.Id.Id).ToArrayAsync(cancellationToken);
-        return (ids, total);
+            .Skip(skip).Take(take).Select(user => user.Id).ToArrayAsync(cancellationToken);
+        return (ids.Select(id => id.Id).ToArray(), total);
     }
 
     public async Task PersistFailedLoginAsync(User user, CancellationToken cancellationToken = default)

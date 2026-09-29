@@ -270,7 +270,12 @@ public sealed class IamSeedService(
             return;
         }
 
-        var role = new Role(new RoleId(definition.RoleId), definition.RoleName, definition.PermissionCodes);
+        var normalizedDefaultName = Role.NormalizeName(definition.RoleName);
+        var defaultNameTaken = await dbContext.Roles.AnyAsync(
+            role => role.NormalizedRoleName == normalizedDefaultName,
+            cancellationToken);
+        var roleName = defaultNameTaken ? "生产计划员（系统预置）" : definition.RoleName;
+        var role = new Role(new RoleId(definition.RoleId), roleName, definition.PermissionCodes);
         role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
         dbContext.Roles.Add(role);
     }

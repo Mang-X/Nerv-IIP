@@ -3,6 +3,10 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Testing;
@@ -45,20 +49,43 @@ public sealed class IamMemberAccountDirectoryPostgresTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", (await ReadAsync<AuthResponse>(login)).AccessToken);
 
         var planner = await CreateAsync(client, "planner-valid", member: true, roleId: "role-production-planner");
+        var secondPlanner = await CreateAsync(client, "planner-valid-second", member: true, roleId: "role-production-planner");
         await CreateAsync(client, "planner-nonmember", member: true);
+        var otherEnvironmentPlanner = await CreateAsync(client, "planner-other-environment", member: false);
         var disabled = await CreateAsync(client, "planner-disabled", member: true, roleId: "role-production-planner");
         await CreateAsync(client, "planner-expired", member: true, roleId: "role-production-planner", expiresAt: DateTimeOffset.UtcNow.AddDays(-1));
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/iam/v1/users/{disabled}/disable", null)).StatusCode);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Environments.Add(new IamEnvironment(new IamEnvironmentId("env-other"), new OrganizationId("org-001"), "Other", "active"));
+            db.Memberships.Add(new Membership(
+                new MembershipId("membership-other-environment-planner"),
+                new UserId(otherEnvironmentPlanner),
+                new OrganizationId("org-001"),
+                new IamEnvironmentId("env-other"),
+                [new RoleId("role-production-planner")]));
+            await db.SaveChangesAsync();
+        }
         client.DefaultRequestHeaders.Authorization = new("Bearer", "local-internal-service-token");
 
-        var page = await ReadAsync<MemberIdsPage>(await client.GetAsync(
+        var firstPage = await ReadAsync<MemberIdsPage>(await client.GetAsync(
             "/internal/iam/v1/production-planner-members?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=1"));
-        Assert.Equal(1, page.TotalCount);
-        Assert.Equal([planner], page.Items);
+        var secondPage = await ReadAsync<MemberIdsPage>(await client.GetAsync(
+            "/internal/iam/v1/production-planner-members?organizationId=org-001&environmentId=env-dev&pageIndex=2&pageSize=1"));
+        var expected = new[] { planner, secondPlanner }.Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(2, firstPage.TotalCount);
+        Assert.Equal(2, secondPage.TotalCount);
+        Assert.Equal([expected[0]], firstPage.Items);
+        Assert.Equal([expected[1]], secondPage.Items);
 
         var otherScope = await ReadAsync<MemberIdsPage>(await client.GetAsync(
             "/internal/iam/v1/production-planner-members?organizationId=org-other&environmentId=env-dev"));
         Assert.Empty(otherScope.Items);
+
+        var otherEnvironment = await ReadAsync<MemberIdsPage>(await client.GetAsync(
+            "/internal/iam/v1/production-planner-members?organizationId=org-001&environmentId=env-other"));
+        Assert.Equal([otherEnvironmentPlanner], otherEnvironment.Items);
     }
 
     [IamMemberAccountPostgresFact]

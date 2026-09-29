@@ -47,6 +47,26 @@ public sealed class IamErpRoleSeedTests
     }
 
     [Fact]
+    public async Task Bootstrap_preserves_an_existing_same_name_role_and_creates_the_canonical_planner_role()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.Roles.Add(new Role(new RoleId("role-operator-created"), "生产计划员", ["business.planning.mps.read"]));
+        await dbContext.SaveChangesAsync();
+
+        await CreateSeed(dbContext).BootstrapAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var roles = await dbContext.Roles.Include(role => role.Permissions).ToListAsync();
+        var existing = Assert.Single(roles, role => role.Id == new RoleId("role-operator-created"));
+        Assert.Equal("生产计划员", existing.RoleName);
+        Assert.Equal(["business.planning.mps.read"], existing.Permissions.Select(permission => permission.PermissionCode));
+
+        var canonical = Assert.Single(roles, role => role.Id == new RoleId("role-production-planner"));
+        Assert.Equal("生产计划员（系统预置）", canonical.RoleName);
+        Assert.Contains(canonical.Permissions, permission => permission.PermissionCode == "business.planning.mps.release");
+    }
+
+    [Fact]
     public async Task Template_asset_retirement_is_in_the_catalog_and_only_the_default_platform_administrator()
     {
         const string permission = "business.barcodes.template-assets.retire";
