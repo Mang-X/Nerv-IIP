@@ -46,6 +46,12 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
         : undefined,
     startUtc: a.startUtc ?? '',
     endUtc: a.endUtc ?? '',
+    segments: a.segments?.length
+      ? a.segments.map((segment) => ({
+          startUtc: segment.startUtc ?? '',
+          endUtc: segment.endUtc ?? '',
+        }))
+      : undefined,
     locked: a.isLocked ?? false,
     hasConflict: false,
     conflictReason: null,
@@ -259,5 +265,6 @@ export function toLockedAssignments(model: ScheduleModel): ScheduleAssignmentCon
       startUtc: t.startUtc,
       endUtc: t.endUtc,
       isLocked: true,
+      segments: t.segments,
     }))
 }

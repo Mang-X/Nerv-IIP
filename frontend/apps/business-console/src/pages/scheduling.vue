@@ -1047,8 +1047,20 @@ function reasonLabel(reason?: string | null) {
                   />
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">
-                  {{ formatDateTime(assignment.startUtc) }} 至
-                  {{ formatDateTime(assignment.endUtc) }}
+                  <template v-if="assignment.segments?.length">
+                    <span
+                      v-for="(segment, index) in assignment.segments"
+                      :key="index"
+                      class="block"
+                    >
+                      第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
+                      {{ formatDateTime(segment.endUtc) }}
+                    </span>
+                  </template>
+                  <template v-else>
+                    {{ formatDateTime(assignment.startUtc) }} 至
+                    {{ formatDateTime(assignment.endUtc) }}
+                  </template>
                 </p>
               </div>
             </div>

@@ -197,7 +197,13 @@ const GRID_COLUMNS = (
 
 function durationLabel(t: GridTask): string {
   if (t.type === 'project' || !t.start_date || !t.end_date) return ''
-  const h = Math.round((t.end_date.getTime() - t.start_date.getTime()) / 3_600_000)
+  const milliseconds = t.nerv?.segments?.length
+    ? t.nerv.segments.reduce(
+        (sum, segment) => sum + Date.parse(segment.endUtc) - Date.parse(segment.startUtc),
+        0,
+      )
+    : t.end_date.getTime() - t.start_date.getTime()
+  const h = Math.round(milliseconds / 3_600_000)
   return h >= 1 ? `${h}h` : '<1h'
 }
 function ownerCell(t: GridTask): string {
@@ -557,6 +563,7 @@ export class DhtmlxEngine implements SchedulingEngine {
         const id = bar.getAttribute('task_id')
         const t = id ? inst.getTask(id) : undefined
         if (!id || !t) return
+        if ((t.nerv?.segments?.length ?? 0) > 1) return
         if (t.nerv?.locked) {
           // 已锁定:不可拖拽。给出抖动反馈并上报(上层提示「先解锁」并聚焦该块)。
           this.signalLockedDrag(id, bar)
@@ -892,6 +899,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       if (t?.colorKey && !t?.blockKind) cls.push(`nerv-cat-${t.colorKey}`)
       if (t?.hasConflict) cls.push('nerv-conflict')
       if (t?.locked) cls.push('nerv-locked')
+      if ((t?.segments?.length ?? 0) > 1) cls.push('nerv-segmented')
       if (t?.id === this.selectedTaskId) cls.push('nerv-selected')
       // 搜索态:命中加环、未命中压暗。工单汇总行不参与压暗——把父行也压掉会让整棵树"消失",
       // 看起来像图加载失败。
@@ -912,6 +920,23 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 资源排产板:条内渲染工单卡片;工单甘特:条内不渲染,工序名放右侧。
     inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
+      if ((t?.segments?.length ?? 0) > 1) {
+        const origin = inst.getTaskPosition!(
+          task as DhxTask,
+          new Date(t!.startUtc),
+          new Date(t!.endUtc),
+        ).left
+        return t!
+          .segments!.map((segment, index) => {
+            const pos = inst.getTaskPosition!(
+              task as DhxTask,
+              new Date(segment.startUtc),
+              new Date(segment.endUtc),
+            )
+            return `<div class="nerv-segment" style="left:${pos.left - origin}px;width:${pos.width}px" title="第 ${index + 1} 段 · ${fmt(segment.startUtc)} 至 ${fmt(segment.endUtc)}">${isResource ? cardHtml({ ...t!, ...segment }) : ''}</div>`
+          })
+          .join('')
+      }
       if (!isResource || t?.type !== 'operation') return ''
       return cardHtml(t)
     }
@@ -979,6 +1004,12 @@ export class DhtmlxEngine implements SchedulingEngine {
           this.emit('conflictClicked', { taskId })
         return true
       }),
+    )
+    this.eventIds.push(
+      inst.attachEvent(
+        'onBeforeTaskDrag',
+        (id) => (inst.getTask(String(id))?.nerv?.segments?.length ?? 0) <= 1,
+      ),
     )
     this.eventIds.push(
       inst.attachEvent('onAfterTaskDrag', (id, mode) =>
