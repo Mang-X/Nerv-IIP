@@ -80,6 +80,7 @@ public sealed class ListSchedulePlansQueryHandlerTests
         {
             var plan = CreatePlan($"history-{index:000}", SchedulePlanStatusContract.Generated);
             plan.Release(releasedAt.AddMinutes(index), index + 1);
+            plan.Revoke(releasedAt.AddDays(1));
             dbContext.SchedulePlans.Add(plan);
             if (index % 2 == 0)
             {
@@ -89,8 +90,10 @@ public sealed class ListSchedulePlansQueryHandlerTests
         }
         var otherOrg = CreatePlan("other-org", SchedulePlanStatusContract.Generated, "org-other");
         otherOrg.Release(releasedAt, 1);
+        otherOrg.Revoke(releasedAt.AddDays(1));
         var otherEnv = CreatePlan("other-env", SchedulePlanStatusContract.Generated, environmentId: "env-other");
         otherEnv.Release(releasedAt, 1);
+        otherEnv.Revoke(releasedAt.AddDays(1));
         dbContext.SchedulePlans.AddRange(otherOrg, otherEnv, CreatePlan("unreleased", SchedulePlanStatusContract.Generated));
         // Same plan identifier outside the requested scope must not invalidate the clean local plan.
         dbContext.SchedulePlanInvalidations.Add(SchedulePlanInvalidation.Create("org-other", "env-dev", "history-103",
@@ -98,12 +101,12 @@ public sealed class ListSchedulePlansQueryHandlerTests
         await dbContext.SaveChangesAsync();
         var handler = new ListSchedulePlanHistoryQueryHandler(dbContext);
         var invalid = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", 1, 50,
-            SchedulePlanStatusContract.Released, new DateOnly(2026, 6, 2), true), CancellationToken.None);
+            SchedulePlanStatusContract.Revoked, new DateOnly(2026, 6, 2), true), CancellationToken.None);
         Assert.Equal(53, invalid.Total);
         Assert.Equal(new[] { "history-004", "history-002", "history-000" }, invalid.Items.Select(x => x.PlanId));
         Assert.All(invalid.Items, item => { Assert.True(item.IsInvalidated); Assert.Equal("latest", item.LatestInvalidationReasonCode); });
         var clean = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", 0, 100,
-            SchedulePlanStatusContract.Released, new DateOnly(2026, 6, 2), false), CancellationToken.None);
+            SchedulePlanStatusContract.Revoked, new DateOnly(2026, 6, 2), false), CancellationToken.None);
         Assert.Equal(52, clean.Total);
         Assert.Equal("history-103", clean.Items.First().PlanId);
         Assert.All(clean.Items, item => Assert.False(item.IsInvalidated));

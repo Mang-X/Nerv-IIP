@@ -779,6 +779,7 @@ public sealed class SchedulingEndpointContractTests
             {
                 var plan = CreatePersistedPlan($"history-{index:000}", $"history-problem-{index:000}", FixedNow.AddMinutes(105 - index));
                 plan.Release(FixedNow.AddDays(1).AddMinutes(index), index + 1);
+                plan.Revoke(FixedNow.AddDays(2));
                 dbContext.SchedulePlans.Add(plan);
                 dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(plan.ProblemId, 1, "org-001", "prod",
                     plan.ProblemFingerprint, "{}", FixedNow.AddDays(-1), FixedNow.AddDays(3), FixedNow));
@@ -786,7 +787,7 @@ public sealed class SchedulingEndpointContractTests
             await dbContext.SaveChangesAsync();
         }
 
-        using var response = await client.GetAsync("/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod&pageIndex=1&pageSize=100&status=released&releasedOn=2026-06-02&isInvalidated=false");
+        using var response = await client.GetAsync("/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod&pageIndex=1&pageSize=100&status=revoked&releasedOn=2026-06-02&isInvalidated=false");
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = json.RootElement.GetProperty("data");
