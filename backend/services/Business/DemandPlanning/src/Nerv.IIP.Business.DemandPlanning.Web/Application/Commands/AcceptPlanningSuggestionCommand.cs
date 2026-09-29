@@ -147,8 +147,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         return string.Equals(suggestion.AcceptedDownstreamService, request.DownstreamService, StringComparison.OrdinalIgnoreCase)
             && string.Equals(suggestion.AcceptedDownstreamDocumentType, request.DownstreamDocumentType, StringComparison.OrdinalIgnoreCase)
             && (IsErpPurchaseRequisitionTarget(request)
-                || IsScheduledReceiptTarget(suggestion)
-                || string.IsNullOrWhiteSpace(request.DownstreamDocumentId)
+                || (!IsScheduledReceiptTarget(suggestion) && string.IsNullOrWhiteSpace(request.DownstreamDocumentId))
                 || string.Equals(suggestion.AcceptedDownstreamDocumentId, NormalizeOptional(request.DownstreamDocumentId), StringComparison.Ordinal));
     }
 

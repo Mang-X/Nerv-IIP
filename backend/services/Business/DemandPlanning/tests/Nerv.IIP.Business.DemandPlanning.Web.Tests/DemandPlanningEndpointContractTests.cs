@@ -1018,6 +1018,10 @@ public sealed class DemandPlanningEndpointContractTests
             suggestion.Id, "ScheduledReceipt", "OtherType", "other-id"), CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
             suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", "other-id"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "BusinessErp", "PurchaseOrderLine", "PO-999:10"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "BusinessErp", "PurchaseOrderLine", null), CancellationToken.None));
     }
 
     [Fact]
