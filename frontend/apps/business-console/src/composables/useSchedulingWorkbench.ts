@@ -11,7 +11,10 @@ import type { UseQueryEntry } from '@pinia/colada'
 import { computed } from 'vue'
 import { useMesWorkOrders } from './useBusinessMes'
 
-const SCHEDULING_IDS = ['listBusinessConsoleSchedulingPlans', 'getBusinessConsoleSchedulingPlan']
+const SCHEDULING_IDS = [
+  'listBusinessConsoleSchedulingPlanHistory',
+  'getBusinessConsoleSchedulingPlan',
+]
 
 /**
  * 工单状态 → 是否可进排程候选，**单一事实来源**。

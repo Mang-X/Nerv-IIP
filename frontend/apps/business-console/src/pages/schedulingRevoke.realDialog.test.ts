@@ -124,6 +124,7 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
     planDetail: computed(() => undefined),
     planDetailError: shallowRef(undefined),
     planDetailPending: shallowRef(false),
+    plansTotal: computed(() => 1),
     plans: computed(() => [
       {
         planId: 'plan-released',

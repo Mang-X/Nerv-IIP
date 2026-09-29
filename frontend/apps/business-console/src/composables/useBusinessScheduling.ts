@@ -1,16 +1,16 @@
 import {
   getBusinessConsoleSchedulingPlanQueryOptions,
-  listBusinessConsoleSchedulingPlansQueryOptions,
+  listBusinessConsoleSchedulingPlanHistoryQueryOptions,
   releaseBusinessConsoleSchedulingPlanMutationOptions,
   revokeBusinessConsoleSchedulingPlanMutationOptions,
   upsertBusinessConsoleSchedulingOperationOverrideMutationOptions,
   type BusinessConsoleSchedulePlanEnvelope,
-  type BusinessConsoleSchedulingPlanSummaryListEnvelope,
+  type BusinessConsoleSchedulingHistoryEnvelope,
   type BusinessConsoleSchedulingPlanSummaryResponse,
   type BusinessConsoleSchedulePlan,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -18,18 +18,19 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { assertEnvelopeSuccess } from './serviceEnvelope'
+import { usePagedList, type PagedListFilters } from './usePagedList'
+import type { BusinessConsoleSchedulingPlanStatus } from '@nerv-iip/api-client'
 
 const SCHEDULING_QUERY_IDS = [
-  'listBusinessConsoleSchedulingPlans',
+  'listBusinessConsoleSchedulingPlanHistory',
   'getBusinessConsoleSchedulingPlan',
   'getBusinessConsoleSchedulingPlanGantt',
 ]
-// TODO(#630): restore real pagination when the Scheduling summary facade returns total/horizon.
-const SINGLE_PAGE_PLAN_LIST_SIZE = 100
 
-export interface SchedulingPlanListFilters extends BusinessContextFields {
-  pageIndex: number
-  pageSize: number
+export interface SchedulingPlanListFilters extends BusinessContextFields, PagedListFilters {
+  status?: BusinessConsoleSchedulingPlanStatus
+  releasedOn: string
+  isInvalidated?: boolean
 }
 
 export interface SchedulingPlanSelection extends BusinessContextFields {
@@ -41,8 +42,9 @@ function defaultFilters(): SchedulingPlanListFilters {
     reactive({
       organizationId: '',
       environmentId: '',
-      pageIndex: 1,
-      pageSize: SINGLE_PAGE_PLAN_LIST_SIZE,
+      status: undefined,
+      releasedOn: '',
+      isInvalidated: undefined,
     }),
   )
 }
@@ -57,12 +59,12 @@ function defaultSelection(): SchedulingPlanSelection {
   )
 }
 
-function unwrapPlans(envelope: BusinessConsoleSchedulingPlanSummaryListEnvelope | undefined) {
+function unwrapPlans(envelope: BusinessConsoleSchedulingHistoryEnvelope | undefined) {
   if (!envelope?.success) {
     return []
   }
 
-  return envelope.data ?? []
+  return envelope.data?.items ?? []
 }
 
 function unwrapPlan(envelope: BusinessConsoleSchedulePlanEnvelope | undefined) {
@@ -90,25 +92,22 @@ function ignoreBackgroundError(_error: unknown) {}
 export function useBusinessScheduling() {
   const filters = defaultFilters()
   const detailSelection = defaultSelection()
-  const page = shallowRef(1)
-  const pageSize = shallowRef(String(SINGLE_PAGE_PLAN_LIST_SIZE))
+  const { page, pageSize, pageSizeNumber } = usePagedList(filters, {
+    resetOn: [() => filters.status, () => filters.releasedOn, () => filters.isInvalidated],
+  })
   const queryCache = useQueryCache()
 
   const plansQuery = useQuery(() => {
-    // Scheduling ListSchedulePlans is a 0-based pageIndex contract (Skip(pageIndex * pageSize),
-    // asserted by SchedulingEndpointContractTests). `page` is the 1-based UI page, so a page of 1
-    // must map to API pageIndex 0 — otherwise the first 100 plans are skipped and the workbench
-    // shows nothing until there are >100 plans.
-    filters.pageIndex = Math.max(0, page.value - 1)
-    filters.pageSize = Number(pageSize.value) || SINGLE_PAGE_PLAN_LIST_SIZE
-
     return {
-      ...listBusinessConsoleSchedulingPlansQueryOptions({
+      ...listBusinessConsoleSchedulingPlanHistoryQueryOptions({
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          pageIndex: filters.pageIndex,
-          pageSize: filters.pageSize,
+          pageIndex: page.value - 1,
+          pageSize: pageSizeNumber.value,
+          status: filters.status,
+          releasedOn: filters.releasedOn || undefined,
+          isInvalidated: filters.isInvalidated,
         },
       }),
       enabled: hasBusinessContext(filters),
@@ -168,10 +167,12 @@ export function useBusinessScheduling() {
     planDetailError: detailQuery.error,
     planDetailPending: detailQuery.isLoading,
     plans: computed<BusinessConsoleSchedulingPlanSummaryResponse[]>(() =>
-      unwrapPlans(
-        plansQuery.data.value as BusinessConsoleSchedulingPlanSummaryListEnvelope | undefined,
-      ),
+      unwrapPlans(plansQuery.data.value as BusinessConsoleSchedulingHistoryEnvelope | undefined),
     ),
+    plansTotal: computed(() => {
+      const envelope = plansQuery.data.value as BusinessConsoleSchedulingHistoryEnvelope | undefined
+      return envelope?.success ? (envelope.data?.total ?? 0) : 0
+    }),
     plansError: plansQuery.error,
     plansPending: plansQuery.isLoading,
     // 与 revoke/override 同款诚实失败：200 + success:false 一律抛错，不给界面假成功。
