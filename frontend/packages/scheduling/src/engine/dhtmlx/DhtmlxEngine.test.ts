@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { toModel } from '../../model/aps-mapper'
 import { samplePlan, samplePlanWithCalendar } from '../../model/fixtures'
 import type { SchedulingEngineOptions } from '../engine'
@@ -75,6 +75,7 @@ const options = (): SchedulingEngineOptions => ({
 })
 
 describe('DhtmlxEngine (fake factory)', () => {
+  afterEach(() => vi.useRealTimers())
   it('resource endpoints resize without starting the custom move, including read-only changes (#4041)', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
@@ -138,6 +139,8 @@ describe('DhtmlxEngine (fake factory)', () => {
       const fake = makeFakeGantt()
       const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
       const model = toModel(samplePlan)
+      // 设备资源与工作中心是不同身份;resize 不得把分组泳道写成资源。
+      model.tasks.find((task) => task.id === 'a1')!.resourceId = 'RES-001'
       engine.mount(el(), { ...options(), view: 'resource' })
       engine.setData(model)
       const task = fake.gantt.getTask('a1')!
@@ -156,7 +159,7 @@ describe('DhtmlxEngine (fake factory)', () => {
         {
           taskId: 'a1',
           operationId: 'op-10',
-          resourceId: 'WC-001',
+          resourceId: 'RES-001',
           kind: 'resize',
           startUtc:
             endpoint === 'start_date' ? '2026-06-10T07:00:00.000Z' : '2026-06-10T08:00:00.000Z',
@@ -165,7 +168,6 @@ describe('DhtmlxEngine (fake factory)', () => {
       ])
       expect(fake.gantt.getTask('a1')).toBeDefined()
       engine.destroy()
-      vi.useRealTimers()
     },
   )
 

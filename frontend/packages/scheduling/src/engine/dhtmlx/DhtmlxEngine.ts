@@ -1376,7 +1376,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     const payload = {
       taskId,
       operationId: src?.operationId ?? taskId,
-      resourceId: reassignedResource ?? src?.resourceId,
+      resourceId:
+        mode === 'resize' ? originalResourceId : (reassignedResource ?? originalResourceId),
       startUtc: start,
       endUtc: end,
       kind: kind as 'move' | 'resize' | 'reassign',
