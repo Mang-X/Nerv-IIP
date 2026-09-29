@@ -31,6 +31,11 @@ public sealed class CancelDemandSourceCommandHandler(ApplicationDbContext dbCont
             cancellationToken)
             ?? throw new KnownException($"需求来源不存在：{request.DemandSourceId}");
 
+        if (DemandSource.IsSalesOrderDemandType(demand.DemandType))
+        {
+            throw new KnownException("销售订单需求由 ERP 集成维护，不能手动作废。");
+        }
+
         demand.Cancel();
     }
 }

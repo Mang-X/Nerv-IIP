@@ -416,12 +416,9 @@ const scopedSuggestions = computed(() =>
   suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
 )
 function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
-  if (
-    !row.suggestionId ||
-    !suggestions.value.some((item) => item.suggestionId === row.suggestionId)
-  )
-    return
+  if (!row.suggestionId) return
   suggestionRunChoice.value = runSelection.runId
+  suggestionFilters.status = 'all'
   suggestionTypeFilter.type = 'all'
   focusedSuggestionId.value = row.suggestionId
   activeTab.value = 'suggestions'

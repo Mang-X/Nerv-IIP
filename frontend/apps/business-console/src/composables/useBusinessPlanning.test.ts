@@ -73,7 +73,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     data: {
       success: true,
       data: {
-        items: [{ suggestionId: 'suggestion-erp', requisitionNo: 'PR-1', status: 'Approved' }],
+        items: [
+          { suggestionId: 'suggestion-erp', requisitionNo: 'PR-OTHER', status: 'Open' },
+          { suggestionId: 'suggestion-erp', requisitionNo: 'PR-1', status: 'Approved' },
+        ],
       },
     },
   })),

@@ -137,6 +137,26 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Cancel_demand_source_command_rejects_erp_owned_sales_order_projection()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var demand = DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-1001", "SO-1001", "10", "CUST-001",
+            "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), 1);
+        dbContext.DemandSources.Add(demand);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new CancelDemandSourceCommandHandler(dbContext).Handle(
+            new CancelDemandSourceCommand("org-001", "env-dev", demand.Id), CancellationToken.None));
+
+        Assert.Equal("active", demand.SourceStatus);
+        Assert.Equal(10m, demand.Quantity);
+        Assert.Equal(1, demand.SourceVersion);
+    }
+
+    [Fact]
     public async Task Mps_bucket_commands_create_update_review_release_and_list_real_status()
     {
         await using var provider = CreateInMemoryProvider();
