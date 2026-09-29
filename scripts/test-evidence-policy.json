@@ -733,9 +733,10 @@
       "testIdentities": [
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability"
       ],
-      "expectedRuntimeTestCount": 3
+      "expectedRuntimeTestCount": 4
     },
     {
       "id": "demandplanning-postgres-redis",
