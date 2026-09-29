@@ -6,6 +6,11 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken);
+
     Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
@@ -90,6 +95,18 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/scheduling/workbench/plans",
+            request,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/scheduling/workbench/plans/preview",
             request,
             cancellationToken,
             SchedulingJson.Options);

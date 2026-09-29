@@ -9015,6 +9015,38 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Workbench_preview_facade_forwards_selection_with_internal_token()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var request = new BusinessConsoleCreateSchedulingWorkbenchPlanRequest("org-001", "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-02T08:00:00Z", CultureInfo.InvariantCulture), [new("WO-001", 10, true)]);
+
+        using var response = await client.PostAsJsonAsync("/api/business-console/v1/scheduling/workbench/plans/preview", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.SchedulingPlansManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("internal-test-token", scheduling.LastInternalToken);
+        Assert.Equal(request.OrganizationId, scheduling.LastWorkbenchPreview!.OrganizationId);
+        Assert.Equal(request.EnvironmentId, scheduling.LastWorkbenchPreview.EnvironmentId);
+        Assert.Equal(request.HorizonStartUtc, scheduling.LastWorkbenchPreview.HorizonStartUtc);
+        Assert.Equal(request.HorizonEndUtc, scheduling.LastWorkbenchPreview.HorizonEndUtc);
+        Assert.Equal(request.Orders, scheduling.LastWorkbenchPreview.Orders);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("preview", body.RootElement.GetProperty("data").GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task Scheduling_facade_uses_internal_service_token_and_forwards_stable_dtos()
     {
         var scheduling = new RecordingSchedulingClient();
@@ -10099,6 +10131,14 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Get, handler.Requests[9].Method);
         Assert.Equal("/api/business/v1/scheduling/plans/plan-001/overrides", handler.Requests[9].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[9].RequestUri!.Query.TrimStart('?'));
+        await client.PreviewWorkbenchPlanAsync("internal-token-001", new(
+            "org-001", "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-02T08:00:00Z", CultureInfo.InvariantCulture),
+            [new("WO-001", 1, true)]), CancellationToken.None);
+        Assert.Equal(HttpMethod.Post, handler.Requests[10].Method);
+        Assert.Equal("/api/business/v1/scheduling/workbench/plans/preview", handler.Requests[10].RequestUri!.AbsolutePath);
+
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
         Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
@@ -20183,6 +20223,16 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
     public BusinessConsoleSchedulingPlanRequest? LastPlanRequest { get; private set; }
 
     public string? LastOverrideActor { get; private set; }
+
+    public BusinessConsoleCreateSchedulingWorkbenchPlanRequest? LastWorkbenchPreview { get; private set; }
+
+    public Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastWorkbenchPreview = request;
+        return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan(SchedulePlanStatusContract.Preview));
+    }
 
     public Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,

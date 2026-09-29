@@ -12069,6 +12069,39 @@ export type CreateBusinessConsoleSchedulingWorkbenchPlanResponses = {
 
 export type CreateBusinessConsoleSchedulingWorkbenchPlanResponse = CreateBusinessConsoleSchedulingWorkbenchPlanResponses[keyof CreateBusinessConsoleSchedulingWorkbenchPlanResponses];
 
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/plans/preview';
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanError = PreviewBusinessConsoleSchedulingWorkbenchPlanErrors[keyof PreviewBusinessConsoleSchedulingWorkbenchPlanErrors];
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanResponse = PreviewBusinessConsoleSchedulingWorkbenchPlanResponses[keyof PreviewBusinessConsoleSchedulingWorkbenchPlanResponses];
+
 export type CreateBusinessConsoleSchedulingPlanRevisionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest;
     path: {

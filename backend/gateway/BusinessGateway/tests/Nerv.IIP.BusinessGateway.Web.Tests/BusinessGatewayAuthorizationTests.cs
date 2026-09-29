@@ -667,7 +667,7 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             problem = SchedulingProblemBody(),
         },
-        "/api/business-console/v1/scheduling/workbench/plans" => new
+        "/api/business-console/v1/scheduling/workbench/plans" or "/api/business-console/v1/scheduling/workbench/plans/preview" => new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
@@ -1396,6 +1396,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/workbench/plans", BusinessGatewayPermissions.SchedulingPlansManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/workbench/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/plan-001/revisions", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans/plan-001", BusinessGatewayPermissions.SchedulingPlansRead);

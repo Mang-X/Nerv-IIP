@@ -4,7 +4,9 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
-public sealed record PreviewSchedulePlanCommand(SchedulingProblemContract Problem) : ICommand<SchedulePlanContract>;
+public sealed record PreviewSchedulePlanCommand(
+    SchedulingProblemContract Problem,
+    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null) : ICommand<SchedulePlanContract>;
 
 public sealed class PreviewSchedulePlanCommandValidator : AbstractValidator<PreviewSchedulePlanCommand>
 {
@@ -38,10 +40,16 @@ public sealed class PreviewSchedulePlanCommandHandler(
         var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
         var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
         var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
+        var schedulingProblem = SchedulingProblemNormalizer.Normalize(MaterialReadinessSchedulingAdapter.Apply(
             EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
-            materialReadiness);
-        var plan = scheduler.Schedule(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow());
+            materialReadiness));
+        var fixedReservations = request.FixedReservations ?? [];
+        var operationKeys = schedulingProblem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation.OperationId)))
+            .ToHashSet();
+        var plan = scheduler.ScheduleNormalized(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow(),
+            fixedReservations.Where(x => operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+            fixedReservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray());
         return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);
     }
 }
