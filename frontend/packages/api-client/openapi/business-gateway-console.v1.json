@@ -40934,6 +40934,10 @@
           },
           "sortKey": {
             "type": "string"
+          },
+          "utilizationRate": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },

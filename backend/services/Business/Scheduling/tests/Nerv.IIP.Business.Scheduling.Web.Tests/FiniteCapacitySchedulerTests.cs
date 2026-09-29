@@ -41,6 +41,44 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Interruptible_segments_reserve_capacity_according_to_resource_utilization()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(12),
+            Resources = [template.Resources.Single() with { UtilizationRate = 0.5m }],
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 120 });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-utilization-plan", GeneratedAtUtc);
+
+        var assignment = Assert.Single(plan.Assignments);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11))
+        ], assignment.Segments);
+        Assert.Empty(plan.UnscheduledOperations);
+        Assert.Equal(120, plan.Metrics.AssignedMinutes);
+
+        var lockedProblem = problem with
+        {
+            LockedAssignments = [new SchedulingLockedAssignmentContract(
+                assignment.AssignmentId, assignment.OrderId, assignment.OperationId,
+                assignment.OperationSequence, assignment.ResourceId, assignment.WorkCenterId,
+                assignment.StartUtc, assignment.EndUtc, "planner-lock", assignment.Segments)]
+        };
+        var lockedPlan = new FiniteCapacityScheduler().Schedule(
+            lockedProblem, "locked-split-utilization-plan", GeneratedAtUtc);
+        Assert.Equal(assignment.Segments, Assert.Single(lockedPlan.Assignments).Segments);
+        Assert.DoesNotContain(lockedPlan.Conflicts,
+            x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment);
+    }
+
+    [Fact]
     public void Interruptible_operation_does_not_repeat_setup_between_its_own_segments()
     {
         var template = CreateSingleOperationProblem();
@@ -1182,6 +1220,51 @@ public class FiniteCapacitySchedulerTests
         var open = Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY");
         Assert.Equal(start, open.StartUtc);
         Assert.Equal("DEV-PARALLEL-02", open.ResourceId);
+    }
+
+    [Fact]
+    public void Schedule_fixed_actual_interval_is_not_extended_by_resource_utilization()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1, UtilizationRate = 0.8m }],
+            Orders = [problem.Orders.Single() with
+            {
+                Operations = [problem.Orders.Single().Operations.Single() with { DurationMinutes = 30 }]
+            }]
+        };
+        var frozen = new FixedWorkCenterReservation(
+            "WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-fixed-utilization", GeneratedAtUtc, [frozen]);
+
+        Assert.Equal(start.AddHours(1), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+    }
+
+    [Fact]
+    public void Schedule_external_fixed_actual_interval_is_not_extended_by_resource_utilization()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1, UtilizationRate = 0.8m }],
+            Orders = [problem.Orders.Single() with
+            {
+                Operations = [problem.Orders.Single().Operations.Single() with { DurationMinutes = 30 }]
+            }]
+        };
+        var frozen = new FixedWorkCenterReservation(
+            "WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleNormalized(
+            SchedulingProblemNormalizer.Normalize(problem), "plan-external-utilization", GeneratedAtUtc,
+            externalReservations: [frozen]);
+
+        Assert.Equal(start.AddHours(1), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+        Assert.DoesNotContain(plan.Assignments, x => x.OperationId == "OP-FIXED");
     }
 
     [Fact]

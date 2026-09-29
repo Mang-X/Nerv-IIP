@@ -92,7 +92,8 @@ public sealed record SchedulingResourceContract(
     IReadOnlyCollection<string> CapabilityCodes,
     int CapacityUnits,
     string CalendarId,
-    string SortKey);
+    string SortKey,
+    decimal UtilizationRate = 1m);
 
 public sealed record SchedulingCalendarContract(
     string CalendarId,

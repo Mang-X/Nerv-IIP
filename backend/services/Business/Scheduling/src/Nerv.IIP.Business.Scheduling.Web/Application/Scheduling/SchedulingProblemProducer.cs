@@ -313,7 +313,8 @@ public sealed class SchedulingProblemProducer(
                         .Concat([workCenter.Code])),
                     CapacityUnits: capacityUnits,
                     CalendarId: workCenter.DefaultCalendarCode,
-                    SortKey: $"{workCenter.Code}:{resourceId}");
+                    SortKey: $"{workCenter.Code}:{resourceId}",
+                    UtilizationRate: workCenter.UtilizationRate);
             }
         }
 
@@ -412,7 +413,8 @@ public sealed record SchedulingProblemWorkCenterSnapshot(
     string DefaultCalendarCode,
     int NumberOfCapacities,
     IReadOnlyCollection<string> CapabilityCodes,
-    decimal EfficiencyRate = 1m);
+    decimal EfficiencyRate = 1m,
+    decimal UtilizationRate = 1m);
 
 public sealed record SchedulingProblemCalendarSnapshot(
     string Code,
@@ -552,7 +554,8 @@ public sealed class HttpSchedulingProblemMasterDataClient(
             detail.DefaultCalendarCode ?? throw new KnownException($"工作中心 '{workCenterCode}' 未配置默认日历，请先补充配置。"),
             Math.Max(1, detail.NumberOfCapacities ?? 1),
             [detail.Code],
-            detail.EfficiencyRate);
+            detail.EfficiencyRate,
+            detail.UtilizationRate);
     }
 
     public async Task<SchedulingProblemCalendarSnapshot> GetCalendarAsync(
@@ -802,7 +805,8 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         IReadOnlyCollection<WorkCalendarHolidayResponse>? Holidays = null,
         IReadOnlyCollection<WorkCalendarExceptionResponse>? Exceptions = null,
         int? NumberOfCapacities = null,
-        decimal EfficiencyRate = 1m);
+        decimal EfficiencyRate = 1m,
+        decimal UtilizationRate = 1m);
 
     private sealed record WorkCalendarWorkingTimeResponse(DayOfWeek DayOfWeek);
     private sealed record WorkCalendarHolidayResponse(DateOnly Date, string Name);

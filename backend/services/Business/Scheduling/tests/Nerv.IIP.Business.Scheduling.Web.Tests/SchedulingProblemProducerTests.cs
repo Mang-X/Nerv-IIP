@@ -34,7 +34,8 @@ public sealed class SchedulingProblemProducerTests
                     Code: "WC-MIX-01",
                     DefaultCalendarCode: "CAL-DAY",
                     NumberOfCapacities: 2,
-                    CapabilityCodes: ["mixing", "skill.operator"])
+                    CapabilityCodes: ["mixing", "skill.operator"],
+                    UtilizationRate: 0.8m)
             ],
             Calendars:
             [
@@ -96,6 +97,7 @@ public sealed class SchedulingProblemProducerTests
         Assert.Equal("DEV-MIX-01", resource.ResourceId);
         Assert.Equal("WC-MIX-01", resource.WorkCenterId);
         Assert.Equal(1, resource.CapacityUnits);
+        Assert.Equal(0.8m, resource.UtilizationRate);
         Assert.Contains("mixing", resource.CapabilityCodes);
         Assert.Contains("skill.operator", resource.CapabilityCodes);
         var calendar = Assert.Single(problem.Calendars);
@@ -225,7 +227,7 @@ public sealed class SchedulingProblemProducerTests
                 "resourceType": "work-center", "code": "WC-MIX-01", "displayName": "Mixing",
                 "active": true, "snapshotVersion": "1", "organizationId": "org-001",
                 "environmentId": "env-dev", "defaultCalendarCode": "CAL-DAY",
-                "numberOfCapacities": 1, "efficiencyRate": 1.2
+                "numberOfCapacities": 1, "efficiencyRate": 1.2, "utilizationRate": 0.8
               }, "success": true, "message": "", "code": 0 }
             """))) { BaseAddress = new Uri("http://master-data") };
 
@@ -233,6 +235,7 @@ public sealed class SchedulingProblemProducerTests
             .GetWorkCenterAsync("org-001", "env-dev", "WC-MIX-01", CancellationToken.None);
 
         Assert.Equal(1.2m, workCenter.EfficiencyRate);
+        Assert.Equal(0.8m, workCenter.UtilizationRate);
     }
 
     [Fact]

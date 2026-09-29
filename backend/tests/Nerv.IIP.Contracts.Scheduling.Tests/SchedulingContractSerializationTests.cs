@@ -31,6 +31,19 @@ public class SchedulingContractSerializationTests
     }
 
     [Fact]
+    public void Scheduling_resource_utilization_round_trips_and_old_input_defaults_to_one()
+    {
+        var resource = SchedulingContractSamples.CreateShockAbsorberProblem().Resources.First();
+        var rated = resource with { UtilizationRate = 0.8m };
+        var json = JsonSerializer.Serialize(rated, SchedulingJson.Options);
+
+        Assert.Equal(0.8m, JsonSerializer.Deserialize<SchedulingResourceContract>(json, SchedulingJson.Options)!.UtilizationRate);
+        var previousJson = JsonSerializer.Serialize(resource, SchedulingJson.Options);
+        previousJson = previousJson.Replace(",\"utilizationRate\":1", "", StringComparison.Ordinal);
+        Assert.Equal(1m, JsonSerializer.Deserialize<SchedulingResourceContract>(previousJson, SchedulingJson.Options)!.UtilizationRate);
+    }
+
+    [Fact]
     public void Schedule_plan_round_trips_assignments_conflicts_and_gantt_items()
     {
         var plan = SchedulingContractSamples.CreateExpectedShockAbsorberPlan();
