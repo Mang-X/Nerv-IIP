@@ -198,6 +198,32 @@ public sealed class GetBusinessConsoleSchedulingPlanGanttEndpoint(
 }
 
 [Tags("Business Console Scheduling")]
+[HttpGet("/api/business-console/v1/scheduling/plans/{planId}/overrides")]
+[BusinessGatewayOperationId("getBusinessConsoleSchedulingPlanOverrides")]
+public sealed class GetBusinessConsoleSchedulingPlanOverridesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleSchedulingPlanRequest, IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>>(
+        auth,
+        BusinessGatewayPermissions.SchedulingPlansRead)
+{
+    protected override string OrganizationId(BusinessConsoleSchedulingPlanRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleSchedulingPlanRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleSchedulingPlanRequest request) => "scheduling-plan";
+
+    protected override string? ResourceId(BusinessConsoleSchedulingPlanRequest request) => request.PlanId;
+
+    protected override Task<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>> ForwardAsync(
+        BusinessConsoleSchedulingPlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        scheduling.GetPlanOverridesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Scheduling")]
 [HttpPost("/api/business-console/v1/scheduling/plans/{planId}/release")]
 [BusinessGatewayOperationId("releaseBusinessConsoleSchedulingPlan")]
 public sealed class ReleaseBusinessConsoleSchedulingPlanEndpoint(

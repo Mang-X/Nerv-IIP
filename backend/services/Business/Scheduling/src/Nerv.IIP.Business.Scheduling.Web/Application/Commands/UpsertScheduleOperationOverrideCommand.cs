@@ -15,7 +15,7 @@ public sealed record UpsertScheduleOperationOverrideCommand(
 
 public sealed record ScheduleOperationOverrideResponse(
     string OperationId, string WorkOrderId, string ResourceId, string WorkCenterId,
-    DateTimeOffset StartUtc, DateTimeOffset EndUtc, string LockReasonCode);
+    DateTimeOffset StartUtc, DateTimeOffset EndUtc, string LockReasonCode, string? SourcePlanId = null);
 
 public sealed class UpsertScheduleOperationOverrideCommandValidator
     : AbstractValidator<UpsertScheduleOperationOverrideCommand>
@@ -110,7 +110,7 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
 
         return new ScheduleOperationOverrideResponse(
             fact.OperationId, fact.WorkOrderId, fact.ResourceId, fact.WorkCenterId,
-            fact.StartUtc, fact.EndUtc, fact.LockReasonCode);
+            fact.StartUtc, fact.EndUtc, fact.LockReasonCode, fact.SourcePlanId);
     }
 
     private static bool ContainsNull<T>(IEnumerable<T> values) =>

@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Auth;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -32,6 +33,62 @@ public sealed class SchedulingEndpointContractTests
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task Overrides_read_current_facts_for_snapshot_keys_and_keep_source_plan()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        async Task<SchedulePlanContract> CreatePlan(string problemId)
+        {
+            var response = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans",
+                new CreateSchedulePlanRequest(problem with { ProblemId = problemId }));
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options))!.Data!;
+        }
+        var p1 = await CreatePlan("problem-p1");
+        var p2 = await CreatePlan("problem-p2");
+        var order = problem.Orders.First();
+        var operation = order.Operations.First();
+        var resource = problem.Resources.First(x => operation.EligibleResourceIds.Contains(x.ResourceId));
+        var put = await client.PutAsJsonAsync(
+            $"/api/business/v1/scheduling/plans/{p1.PlanId}/operations/{operation.OperationId}/override",
+            new { problem.OrganizationId, problem.EnvironmentId, resource.ResourceId,
+                StartUtc = FixedNow.AddHours(1), EndUtc = FixedNow.AddHours(2) });
+        put.EnsureSuccessStatusCode();
+        var written = (await put.Content.ReadFromJsonAsync<ResponseData<ScheduleOperationOverrideResponse>>(SchedulingJson.Options))!.Data!;
+        Assert.Equal(p1.PlanId, written.SourcePlanId);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ScheduleOperationOverride Fact(string org, string env, string workOrder, string op) =>
+                ScheduleOperationOverride.Create(org, env, workOrder, op, 1, resource.ResourceId, resource.WorkCenterId,
+                    FixedNow, FixedNow.AddHours(1), "manual-override", "scheduling-api", null, "planner", FixedNow, FixedNow, p1.PlanId);
+            db.ScheduleOperationOverrides.AddRange(
+                Fact("other-org", problem.EnvironmentId, order.OrderId, operation.OperationId),
+                Fact(problem.OrganizationId, "other-env", order.OrderId, operation.OperationId),
+                Fact(problem.OrganizationId, problem.EnvironmentId, order.OrderId, "outside-snapshot"));
+            var remaining = problem.Orders.SelectMany(o => o.Operations.Select(op => (Order: o, Operation: op)))
+                .Where(x => x.Operation.OperationId != operation.OperationId).Take(2).ToArray();
+            db.ScheduleOperationOverrides.Add(Fact(problem.OrganizationId, problem.EnvironmentId, "other-order", remaining[0].Operation.OperationId));
+            db.ScheduleOperationOverrides.Add(ScheduleOperationOverride.CreateClearedMesDispatch(
+                problem.OrganizationId, problem.EnvironmentId, remaining[1].Order.OrderId, remaining[1].Operation.OperationId,
+                1, resource.ResourceId, resource.WorkCenterId, FixedNow, FixedNow.AddHours(1), "clear-event", "dispatcher",
+                2, FixedNow, "device-cleared", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var context = $"organizationId={problem.OrganizationId}&environmentId={problem.EnvironmentId}";
+        var read = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<ScheduleOperationOverrideResponse>>>(
+            $"/api/business/v1/scheduling/plans/{p2.PlanId}/overrides?{context}", SchedulingJson.Options);
+        Assert.Equal(written, Assert.Single(read!.Data!));
+        using var queryScope = factory.Services.CreateScope();
+        var query = new GetSchedulePlanOverridesQueryHandler(queryScope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        await Assert.ThrowsAsync<KnownException>(() => query.Handle(new(p2.PlanId, "other-org", problem.EnvironmentId), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => query.Handle(new(p2.PlanId, problem.OrganizationId, "other-env"), CancellationToken.None));
+    }
+
+    [Fact]
     public void Scheduling_endpoints_expose_issue_206_routes_permissions_policies_and_operation_ids()
     {
         var contracts = SchedulingEndpointContracts.All.ToArray();
@@ -42,7 +99,7 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(15, contracts.Length);
+        Assert.Equal(16, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingWorkbenchPlan");
@@ -58,6 +115,7 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/order-urgencies/{orderReference}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getOrderUrgency");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/scheduling/order-urgencies/{orderReference}/business-priority" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "setOrderUrgencyBusinessPriority");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/order-urgency-archives/restore" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "restoreOrderUrgencyArchive");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}/overrides" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlanOverrides");
         Assert.All(contracts, x => Assert.Contains(x.PermissionCode, allowedPermissions));
     }
 
@@ -70,6 +128,7 @@ public sealed class SchedulingEndpointContractTests
     [InlineData(typeof(ListSchedulePlansEndpoint))]
     [InlineData(typeof(GetSchedulePlanEndpoint))]
     [InlineData(typeof(GetSchedulePlanGanttEndpoint))]
+    [InlineData(typeof(GetSchedulePlanOverridesEndpoint))]
     [InlineData(typeof(ReleaseSchedulePlanEndpoint))]
     [InlineData(typeof(RevokeSchedulePlanEndpoint))]
     [InlineData(typeof(UpsertScheduleOperationOverrideEndpoint))]

@@ -6891,6 +6891,74 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/plans/{planId}/overrides": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleSchedulingPlanOverrides",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/{planId}/release": {
       "post": {
         "tags": [
@@ -41470,6 +41538,59 @@
           }
         ]
       },
+      "NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "workOrderId": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lockReasonCode": {
+            "type": "string"
+          },
+          "sourcePlanId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse": {
         "allOf": [
           {
@@ -41581,35 +41702,6 @@
             }
           }
         ]
-      },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "operationId": {
-            "type": "string"
-          },
-          "workOrderId": {
-            "type": "string"
-          },
-          "resourceId": {
-            "type": "string"
-          },
-          "workCenterId": {
-            "type": "string"
-          },
-          "startUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lockReasonCode": {
-            "type": "string"
-          }
-        }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest": {
         "type": "object",
