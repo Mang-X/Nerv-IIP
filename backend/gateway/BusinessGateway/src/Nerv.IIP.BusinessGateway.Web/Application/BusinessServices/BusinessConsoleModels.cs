@@ -3155,6 +3155,19 @@ public sealed record BusinessConsoleSchedulingContextRequest(
     int? PageIndex = null,
     int? PageSize = null);
 
+public sealed record BusinessConsoleSchedulingHistoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int PageIndex = 0,
+    int PageSize = 100,
+    Nerv.IIP.Contracts.Scheduling.SchedulePlanStatusContract? Status = null,
+    DateOnly? ReleasedOn = null,
+    bool? IsInvalidated = null);
+
+public sealed record BusinessConsoleSchedulingHistoryResponse(
+    IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse> Items,
+    int Total);
+
 public sealed record BusinessConsoleSchedulingPlanRequest(
     [property: RouteParam] string PlanId,
     [property: QueryParam] string OrganizationId,
@@ -3227,7 +3240,9 @@ public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     int UnscheduledOperationCount,
     bool IsInvalidated = false,
     string? LatestInvalidationReasonCode = null,
-    DateTimeOffset? LatestInvalidatedAtUtc = null);
+    DateTimeOffset? LatestInvalidatedAtUtc = null,
+    DateTimeOffset? HorizonStartUtc = null,
+    DateTimeOffset? HorizonEndUtc = null);
 
 public sealed record BusinessConsoleReleaseSchedulePlanResponse(
     string PlanId,

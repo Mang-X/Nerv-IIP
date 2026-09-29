@@ -1850,9 +1850,24 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     isInvalidated?: boolean;
     latestInvalidationReasonCode?: string | null;
     latestInvalidatedAtUtc?: string | null;
+    horizonStartUtc?: string | null;
+    horizonEndUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingContextRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryRequest = {
     [key: string]: never;
 };
 
@@ -12136,6 +12151,47 @@ export type CreateBusinessConsoleSchedulingPlanRevisionResponses = {
 };
 
 export type CreateBusinessConsoleSchedulingPlanRevisionResponse = CreateBusinessConsoleSchedulingPlanRevisionResponses[keyof CreateBusinessConsoleSchedulingPlanRevisionResponses];
+
+export type ListBusinessConsoleSchedulingPlanHistoryData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        pageIndex?: number;
+        pageSize?: number;
+        status?: NervIipContractsSchedulingSchedulePlanStatusContract | null;
+        releasedOn?: string | null;
+        isInvalidated?: boolean | null;
+    };
+    url: '/api/business-console/v1/scheduling/plans/history';
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryError = ListBusinessConsoleSchedulingPlanHistoryErrors[keyof ListBusinessConsoleSchedulingPlanHistoryErrors];
+
+export type ListBusinessConsoleSchedulingPlanHistoryResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse;
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryResponse = ListBusinessConsoleSchedulingPlanHistoryResponses[keyof ListBusinessConsoleSchedulingPlanHistoryResponses];
 
 export type GetBusinessConsoleSchedulingPlanData = {
     body?: never;
