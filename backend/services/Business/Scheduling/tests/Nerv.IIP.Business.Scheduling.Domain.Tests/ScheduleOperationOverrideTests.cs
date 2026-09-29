@@ -92,10 +92,11 @@ public sealed class ScheduleOperationOverrideTests
             At(8), At(9), "evt-clear", "user:planner", 2, At(2),
             "operation-cancelled", At(2));
 
-        fact.ReplaceManually("DEV-MANUAL", "WC-2", At(12), At(13), "user:scheduler", At(3));
+        fact.ReplaceManually("DEV-MANUAL", "WC-2", At(12), At(13), "user:scheduler", At(3), "plan-manual");
 
         Assert.True(fact.IsActive);
         Assert.Equal("scheduling-api", fact.SourceType);
+        Assert.Equal("plan-manual", fact.SourcePlanId);
         Assert.Null(fact.SourceRevision);
         Assert.Null(fact.ClearedReasonCode);
         Assert.Null(fact.ClearedAtUtc);

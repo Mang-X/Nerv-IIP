@@ -116,6 +116,7 @@ public sealed class SchedulingLockCommandTests
         db.ChangeTracker.Clear();
         var persisted = await db.ScheduleOperationOverrides.SingleAsync();
         Assert.Equal("scheduling-api", persisted.SourceType);
+        Assert.Equal(plan.PlanId, persisted.SourcePlanId);
         Assert.Equal("user:planner", persisted.Actor);
         Assert.Equal(problem.HorizonStartUtc, persisted.SourceOccurredAtUtc);
     }
