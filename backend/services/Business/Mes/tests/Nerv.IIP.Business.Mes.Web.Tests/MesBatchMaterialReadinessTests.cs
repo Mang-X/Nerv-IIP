@@ -35,7 +35,8 @@ public sealed class MesBatchMaterialReadinessTests
         foreach (var workOrderId in new[] { "WO-LATE", "WO-EARLY" })
         {
             db.MaterialRequirements.Add(MaterialRequirement.Capture(
-                "org-001", "env-dev", workOrderId, "OP-10", "MAT-001", null,
+                "org-001", "env-dev", workOrderId, "OP-10",
+                workOrderId == "WO-EARLY" ? "MAT-001" : "mat-001", null,
                 8m, 8m, 0m, "MBOM", $"{workOrderId}:MAT-001", capturedAt, [], "PCS"));
         }
         await db.SaveChangesAsync();

@@ -166,7 +166,18 @@ public sealed class GetBatchMaterialReadinessQueryHandler(
              string.Equals(x.MaterialLotId, line.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)))
             .Sum(x => x.ReceivedQuantity);
 
-    private sealed record MaterialKey(string MaterialId, string? MaterialLotId, string UomCode);
+    private sealed record MaterialKey(string MaterialId, string? MaterialLotId, string UomCode)
+    {
+        public bool Equals(MaterialKey? other) => other is not null &&
+            StringComparer.OrdinalIgnoreCase.Equals(MaterialId, other.MaterialId) &&
+            StringComparer.OrdinalIgnoreCase.Equals(MaterialLotId, other.MaterialLotId) &&
+            StringComparer.OrdinalIgnoreCase.Equals(UomCode, other.UomCode);
+
+        public override int GetHashCode() => HashCode.Combine(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(MaterialId),
+            MaterialLotId is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(MaterialLotId),
+            StringComparer.OrdinalIgnoreCase.GetHashCode(UomCode));
+    }
     private sealed record RequirementLine(string WorkOrderId, MaterialKey Key, decimal Required,
         decimal FrozenAvailable, decimal Staged, DateTimeOffset CapturedAtUtc,
         IReadOnlyCollection<string> SubstituteMaterialIds);
