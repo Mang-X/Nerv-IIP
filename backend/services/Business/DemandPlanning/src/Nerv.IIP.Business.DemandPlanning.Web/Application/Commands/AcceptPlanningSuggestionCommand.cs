@@ -94,8 +94,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         CancellationToken cancellationToken)
     {
         if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
-            (IsScheduledReceiptTarget(suggestion) && request.DownstreamService == "ScheduledReceipt"
-                || IsSameDownstreamTarget(suggestion, request)))
+            IsSameDownstreamTarget(suggestion, NormalizeScheduledReceiptTarget(suggestion, request)))
         {
             return new PlanningSuggestionDownstreamReference(
                 suggestion.AcceptedDownstreamService ?? request.DownstreamService,
@@ -151,6 +150,35 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 || IsScheduledReceiptTarget(suggestion)
                 || string.IsNullOrWhiteSpace(request.DownstreamDocumentId)
                 || string.Equals(suggestion.AcceptedDownstreamDocumentId, NormalizeOptional(request.DownstreamDocumentId), StringComparison.Ordinal));
+    }
+
+    private static AcceptPlanningSuggestionCommand NormalizeScheduledReceiptTarget(
+        PlanningSuggestion suggestion, AcceptPlanningSuggestionCommand request)
+    {
+        if (!IsScheduledReceiptTarget(suggestion)
+            || request.DownstreamService != "ScheduledReceipt"
+            || request.DownstreamDocumentType != "ScheduledReceipt"
+            || request.DownstreamDocumentId is not null)
+            return request;
+
+        var source = suggestion.PeggingLinks.Single(x => x.PeggingType == "scheduled-receipt").DemandSourceReference;
+        const string erpPrefix = "erp:purchase-order:";
+        const string mesPrefix = "mes:work-order:";
+        if (source.StartsWith(erpPrefix, StringComparison.OrdinalIgnoreCase))
+            return request with
+            {
+                DownstreamService = DemandPlanningDownstreamReferences.BusinessErp,
+                DownstreamDocumentType = "PurchaseOrderLine",
+                DownstreamDocumentId = source[erpPrefix.Length..],
+            };
+        if (source.StartsWith(mesPrefix, StringComparison.OrdinalIgnoreCase))
+            return request with
+            {
+                DownstreamService = DemandPlanningDownstreamReferences.BusinessMes,
+                DownstreamDocumentType = DemandPlanningDownstreamReferences.WorkOrder,
+                DownstreamDocumentId = source[mesPrefix.Length..],
+            };
+        return request;
     }
 
     private static bool IsErpPurchaseRequisitionTarget(AcceptPlanningSuggestionCommand request)

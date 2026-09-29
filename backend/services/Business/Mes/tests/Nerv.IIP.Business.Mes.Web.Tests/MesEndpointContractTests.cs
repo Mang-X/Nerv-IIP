@@ -3216,8 +3216,10 @@ public sealed class MesEndpointContractTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    [Fact]
-    public async Task Cancel_work_order_endpoint_executes_command_validator_and_rejects_empty_reason()
+    [Theory]
+    [InlineData("user:validation-test")]
+    [InlineData("service:demand-planning")]
+    public async Task Cancel_work_order_endpoint_executes_command_validator_and_rejects_empty_reason(string actor)
     {
         // Regression guard for the MES command-validation wiring (AddValidatorsFromAssembly +
         // AddKnownExceptionValidationBehavior in Program.cs). Reason is validated only by
@@ -3231,7 +3233,7 @@ public sealed class MesEndpointContractTests
         var client = factory.CreateClient();
         await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
-        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:validation-test");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", actor);
 
         var response = await client.PostAsJsonAsync(
             "/api/business/v1/mes/work-orders/WO-VALIDATION/cancel",

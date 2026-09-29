@@ -998,6 +998,29 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Accepted_scheduled_receipt_replay_requires_the_same_source_target()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()),
+            "cancel", "SKU-RM-1000", "pcs", "SITE-01", 2m, new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), "scheduled-receipt");
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-001:10", "SKU-RM-1000", null, 2m, null, null, null);
+        suggestion.Accept("BusinessErp", "PurchaseOrderLine", "PO-001:10");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext);
+
+        var replay = await handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", null), CancellationToken.None);
+        Assert.Equal("PO-001:10", replay.DownstreamDocumentId);
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "ScheduledReceipt", "OtherType", "other-id"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", "other-id"), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Suggestion_rejection_marks_open_suggestion_rejected_and_records_reason()
     {
         await using var provider = CreateInMemoryProvider();

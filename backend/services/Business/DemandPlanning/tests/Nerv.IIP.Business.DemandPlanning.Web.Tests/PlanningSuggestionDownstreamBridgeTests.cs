@@ -29,6 +29,8 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
         {
             Assert.Equal(expectedPath, request.RequestUri?.AbsolutePath);
             Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-internal-token"), request.Headers.Authorization);
+            if (type == "cancel" && expectedService == "BusinessMes")
+                Assert.Equal("service:demand-planning", request.Headers.GetValues("X-Authenticated-Actor").Single());
             using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
             var writeValue = document.RootElement.GetProperty(expectedField);
             if (expectedField == "promisedDate")

@@ -98,6 +98,8 @@ public sealed class HttpScheduledReceiptSuggestionDownstreamBridge(
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+        if (service == DemandPlanningDownstreamReferences.BusinessMes && suggestion.SuggestionType == "cancel")
+            httpRequest.Headers.TryAddWithoutValidation("X-Authenticated-Actor", "service:demand-planning");
         using var response = await client.SendAsync(httpRequest, cancellationToken);
         if (!response.IsSuccessStatusCode)
             throw new KnownException($"{service} 下游写回失败，计划建议仍未接受。");
