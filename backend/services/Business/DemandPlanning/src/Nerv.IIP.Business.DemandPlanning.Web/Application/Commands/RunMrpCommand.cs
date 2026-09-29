@@ -186,7 +186,8 @@ public sealed class ExecuteMrpRunCommandHandler(ApplicationDbContext dbContext, 
                     link.ManufacturingBomReference,
                     link.RoutingReference,
                     link.SourceType,
-                    link.GrossDemandQuantity);
+                    link.GrossDemandQuantity,
+                    link.SourceLineReference);
             }
 
             dbContext.PlanningSuggestions.Add(suggestion);

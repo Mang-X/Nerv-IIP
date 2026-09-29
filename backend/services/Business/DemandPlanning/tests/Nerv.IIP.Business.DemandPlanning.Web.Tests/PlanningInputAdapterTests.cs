@@ -21,6 +21,29 @@ public sealed class PlanningInputAdapterTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public async Task Upstream_adapter_keeps_sales_line_identity_for_identical_order_items()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        foreach (var line in new[] { "10", "20" })
+        {
+            dbContext.DemandSources.Add(DemandSource.CreateSalesOrderDemand(
+                "org-001", "env-dev", "sales-order-id-001", "SO-001", line, "CUST-001",
+                "SKU-FG-1000", "pcs", "SITE-01", 5m, new DateOnly(2026, 6, 1), 1));
+        }
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var snapshot = await new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext, new FakePlanningProductEngineeringClient(), new FakePlanningInventoryClient())
+            .GetSnapshotAsync("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30), CancellationToken.None);
+
+        Assert.Equal(new[] { "10", "20" }, snapshot.Demands
+            .Where(x => x.DemandSourceReference == "SO-001")
+            .Select(x => x.SourceLineReference).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
     public async Task Fixture_adapter_returns_snapshots_without_cross_service_table_access()
     {
         await using var provider = CreateInMemoryProvider();

@@ -8,6 +8,23 @@ public sealed class MrpCalculatorTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void Same_order_same_sku_and_due_date_keeps_separate_sales_line_pegging()
+    {
+        var suggestions = MrpCalculator.Calculate(NewInput(demands:
+        [
+            new DemandSnapshot("SO-001", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 1), "sales-order", "10"),
+            new DemandSnapshot("SO-001", "SKU-FG-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 1), "sales-order", "20"),
+        ]));
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        Assert.Equal(
+            new (string Order, string? Line, decimal Quantity)[] { ("SO-001", "10", 4m), ("SO-001", "20", 6m) },
+            workOrder.PeggingLinks.Where(x => x.PeggingType == "demand")
+                .Select(x => (x.DemandSourceReference, x.SourceLineReference, x.Quantity))
+                .OrderBy(x => x.SourceLineReference).ToArray());
+    }
+
+    [Fact]
     public void Sales_order_demand_keeps_so_demo_reference_on_production_suggestion_pegging()
     {
         var suggestions = MrpCalculator.Calculate(NewInput(demands:

@@ -419,6 +419,26 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Execute_mrp_run_persists_distinct_sales_lines_on_new_suggestion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var snapshotProvider = new FixedPlanningInputSnapshotProvider("fixture-inventory", [
+            new DemandSnapshot("SO-001", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 1), "sales-order", "10"),
+            new DemandSnapshot("SO-001", "SKU-FG-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 1), "sales-order", "20"),
+        ]);
+
+        var run = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        dbContext.ChangeTracker.Clear();
+        var suggestion = Assert.Single(await dbContext.PlanningSuggestions
+            .Include(x => x.PeggingLinks).Where(x => x.MrpRunId == run.RunId).ToArrayAsync());
+        Assert.Equal(new (string? Line, decimal Quantity)[] { ("10", 4m), ("20", 6m) }, suggestion.PeggingLinks
+            .OrderBy(x => x.SourceLineReference)
+            .Select(x => (x.SourceLineReference, x.Quantity)).ToArray());
+    }
+
+    [Fact]
     public async Task Execute_mrp_run_command_rejects_missing_and_non_queued_runs()
     {
         await using var provider = CreateInMemoryProvider();
