@@ -459,6 +459,67 @@ describe('PlanningWorkbench', () => {
     planningSpies.resetDemands()
   })
 
+  it('只在最近完成的 MRP 有后续需求变更时显示过期横幅', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'retrying', status: 'Running', demandChangeCount: 9 },
+      { runId: 'completed', status: 'Completed', demandChangeCount: 3 },
+      { runId: 'older', status: 'Completed', demandChangeCount: 7 },
+    ]
+    await nextTick()
+    expect(wrapper.get('[role="alert"]').text()).toContain('MRP 结果已过期（3 条需求变更）')
+
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'completed', status: 'Completed', demandChangeCount: 0 },
+    ]
+    await nextTick()
+    expect(wrapper.text()).not.toContain('MRP 结果已过期')
+
+    planningSpies.mrpRunsRef!.value = [{ runId: 'running', status: 'Running' }]
+    await nextTick()
+    expect(wrapper.text()).not.toContain('MRP 结果已过期')
+  })
+
+  it('窗外需求保留在需求池，但不算本次 MRP 的已覆盖需求', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-newer',
+        status: 'Completed',
+        horizonStart: '2026-07-01',
+        horizonEnd: '2026-07-31',
+      },
+      {
+        runId: 'run-001',
+        status: 'Completed',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      },
+    ]
+    planningSpies.demandsRef!.value = [
+      { ...planningSpies.demandsRef!.value[0], dueDate: '2026-06-30' },
+      { ...planningSpies.demandsRef!.value[1], skuCode: 'SKU-FG-1000', dueDate: '2026-07-01' },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      {
+        runId: 'run-001',
+        skuCode: 'SKU-FG-1000',
+        suggestionType: 'planned-work-order',
+        status: 'Open',
+      },
+    ]
+    await nextTick()
+
+    expect(wrapper.text()).toContain('SO-DEMO-001')
+    expect(wrapper.text()).toContain('FC-2026-08-A')
+    expect(
+      wrapper
+        .findAll('.cell-coverage')
+        .slice(0, 2)
+        .map((cell) => cell.text()),
+    ).toEqual(['已生成建议', '窗外'])
+  })
+
   it('建议页默认按运行顺序显示最近完成批次，切换历史后显示作废与继任关系', async () => {
     const wrapper = mount(PlanningWorkbench)
     planningSpies.mrpRunsRef!.value = [
@@ -976,16 +1037,38 @@ describe('PlanningWorkbench', () => {
     expect(planningSpies.toastSuccess).toHaveBeenCalledWith('MRP 计算完成，共生成 5 条计划建议。')
   })
 
+  it('MRP 自动重试期间不报最终失败，重试成功只通知完成', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.activeMrpRun.runId = 'run-retrying'
+    planningSpies.activeMrpRun.status = 'running'
+    await wrapper.vm.$nextTick()
+    expect(planningSpies.toastError).not.toHaveBeenCalled()
+
+    planningSpies.activeMrpRun.status = 'completed'
+    planningSpies.activeMrpRun.suggestionCount = 2
+    await wrapper.vm.$nextTick()
+    expect(planningSpies.toastSuccess).toHaveBeenCalledWith('MRP 计算完成，共生成 2 条计划建议。')
+    expect(planningSpies.toastError).not.toHaveBeenCalled()
+  })
+
   it('轮询到失败态时把 failureReason 走分层透传上屏', async () => {
     const wrapper = mount(PlanningWorkbench)
 
     planningSpies.activeMrpRun.runId = 'run-async-1'
     planningSpies.activeMrpRun.failureReason = 'MRP 计算失败：上游库存快照不可用。'
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-async-1',
+        status: 'Failed',
+        failureReason: planningSpies.activeMrpRun.failureReason,
+      },
+    ]
     planningSpies.activeMrpRun.status = 'failed'
     await wrapper.vm.$nextTick()
 
     // 后端前缀被去重：不出现「MRP 计算失败：MRP 计算失败：…」的叠层。
     expect(planningSpies.toastError).toHaveBeenCalledWith('MRP 计算失败：上游库存快照不可用。')
+    expect(wrapper.find('.cell-status').text()).toContain('MRP 计算失败：上游库存快照不可用。')
   })
 
   it('轮询超时只提醒去运行列表回看，不按失败处理', async () => {
