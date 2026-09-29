@@ -141,8 +141,10 @@ public sealed class MrpInputChangePersistenceTests
             Assert.Equal(3, sameReference.Count(x => x.DemandType == "manual"));
             Assert.Single(sameReference, x => x.DemandType == "safety-stock");
             Assert.Contains(sameReference, x => x.DemandType == "manual"
-                && x.Operation == MrpInputChangeOperation.Deleted && x.PreviousStartDate == newDate);
-            Assert.Empty(await db.DemandSources.Where(x => x.DemandType == "manual" && x.SourceReference == "SAME-1").ToListAsync());
+                && x.Operation == MrpInputChangeOperation.Updated && x.PreviousStartDate == newDate
+                && !x.CurrentlyEligible);
+            var cancelled = await db.DemandSources.SingleAsync(x => x.DemandType == "manual" && x.SourceReference == "SAME-1");
+            Assert.Equal("cancelled", cancelled.SourceStatus);
         }
         finally
         {
