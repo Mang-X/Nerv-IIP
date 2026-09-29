@@ -54,13 +54,51 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
-    // 列：工单/工序 · 资源 · 开始 · 结束 · 物料 · 设备状态 · 锁定 · 待排
+    // 列：工单/工序 · 实际排程段 · 资源 · 开始 · 结束 · 物料 · 设备状态 · 锁定 · 待排
     const cells = wrapper.findAll('tbody td')
-    expect(cells).toHaveLength(8)
-    expect((cells[2]!.find('input').element as HTMLInputElement).value).toBe('2026-07-24T08:00:00Z')
-    expect(cells[4]!.text()).toContain('齐套')
-    expect(cells[5]!.text()).toContain('正常')
-    expect(cells[7]!.text()).toContain('移回待排')
+    expect(cells).toHaveLength(9)
+    expect((cells[3]!.find('input').element as HTMLInputElement).value).toBe('2026-07-24T08:00:00Z')
+    expect(cells[5]!.text()).toContain('齐套')
+    expect(cells[6]!.text()).toContain('正常')
+    expect(cells[8]!.text()).toContain('移回待排')
+  })
+
+  it('shows real segments and keeps the operation lock available without collapsing the gaps (#4004)', async () => {
+    const operation = model.tasks[0]!
+    const wrapper = mount(SchedulingDraftBoard, {
+      props: {
+        model: {
+          ...model,
+          tasks: [
+            {
+              ...operation,
+              endUtc: '2026-07-25T09:00:00Z',
+              segments: [
+                { startUtc: operation.startUtc, endUtc: operation.endUtc },
+                { startUtc: '2026-07-25T08:00:00Z', endUtc: '2026-07-25T09:00:00Z' },
+              ],
+            },
+          ],
+        },
+      },
+      global: { stubs: { GanttChart: true, ResourceSchedulerBoard: true } },
+    })
+    const tab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('表格编辑'))!
+    await tab.trigger('focus')
+    await tab.trigger('mousedown')
+    await flushPromises()
+    const row = wrapper.find('tbody tr')
+    expect(row.text()).toContain('WO-001')
+    expect(row.text()).toContain('OP-10')
+    expect(row.text()).toContain('第 1 段')
+    expect(row.text()).toContain('第 2 段')
+    expect(row.findAll('input').every((input) => input.attributes('disabled') !== undefined)).toBe(
+      true,
+    )
+    const lock = row.findAll('button').find((button) => button.text() === '锁定')!
+    expect(lock.attributes('disabled')).toBeUndefined()
+    await lock.trigger('click')
+    expect(wrapper.emitted('lock')).toEqual([['assignment-001', true]])
   })
 
   // 产品裁决（#1291）：齐套是开工门槛不是排产门槛 —— 缺料工序照排，
@@ -102,7 +140,7 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
-    expect(wrapper.findAll('tbody td')[4]!.text()).toContain('缺料待备')
+    expect(wrapper.findAll('tbody td')[5]!.text()).toContain('缺料待备')
   })
 
   // #1320:设备「状态未知」是数据盲区,不是不可用 —— 横幅 + 表格列都要如实说明。
@@ -135,7 +173,7 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
-    expect(wrapper.findAll('tbody td')[5]!.text()).toContain('状态未知')
+    expect(wrapper.findAll('tbody td')[6]!.text()).toContain('状态未知')
   })
 
   it('emits persistOverride with the task id, which the page must map to operationId', async () => {

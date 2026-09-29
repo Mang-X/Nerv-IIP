@@ -43,3 +43,23 @@ describe('TaskDetailPanel 物料预计到料', () => {
     expect(risk.text()).not.toContain('预计到料')
   })
 })
+
+it('shows two real segments and excludes the overnight gap from work hours (#4004)', () => {
+  const operation = task()
+  const wrapper = mount(TaskDetailPanel, {
+    props: {
+      task: {
+        ...operation,
+        endUtc: '2026-09-30T10:00:00.000Z',
+        segments: [
+          { startUtc: operation.startUtc, endUtc: operation.endUtc },
+          { startUtc: '2026-09-30T08:00:00.000Z', endUtc: '2026-09-30T10:00:00.000Z' },
+        ],
+      },
+      readOnly: true,
+    },
+  })
+  expect(wrapper.text()).toContain('4 小时')
+  expect(wrapper.text()).toContain('第 1 段')
+  expect(wrapper.text()).toContain('第 2 段')
+})

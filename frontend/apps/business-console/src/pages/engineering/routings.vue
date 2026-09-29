@@ -16,6 +16,7 @@ import { useEngineeringRoutings, useStandardOperations } from '@/composables/use
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
+  NvCheckbox,
   NvDataTable,
   NvDatePicker,
   NvDialog,
@@ -223,6 +224,7 @@ interface Operation {
   workCenterCode: string
   operationCode: string
   standardMinutes: string | number
+  interruptible: boolean
 }
 interface RoutingForm {
   skuCode: string
@@ -234,7 +236,13 @@ function blankOperation(sequence: number): Operation {
   // 全厂只有一个工作中心时直接带出——没有选择余地的「选择」不该让用户做。
   const onlyWorkCenter =
     workCenterOptions.value.length === 1 ? (workCenterOptions.value[0]?.value ?? '') : ''
-  return { sequence, workCenterCode: onlyWorkCenter, operationCode: '', standardMinutes: '' }
+  return {
+    sequence,
+    workCenterCode: onlyWorkCenter,
+    operationCode: '',
+    standardMinutes: '',
+    interruptible: false,
+  }
 }
 function blankForm(): RoutingForm {
   return { skuCode: '', revision: '', effectiveDate: today(), operations: [blankOperation(10)] }
@@ -335,6 +343,7 @@ async function submitForm() {
       operationName:
         operationNameByCode.value.get(op.operationCode.trim()) ?? op.operationCode.trim(),
       standardMinutes: parseNumber(op.standardMinutes) ?? 0,
+      interruptible: op.interruptible,
     })),
   }
   try {
@@ -483,7 +492,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
                 <div
                   v-for="(op, index) in form.operations"
                   :key="index"
-                  class="grid grid-cols-[4.5rem_1fr_1fr_6rem_auto] items-end gap-2 rounded-md border p-2"
+                  class="grid sm:grid-cols-[4.5rem_1fr_1fr_6rem_10rem_auto] items-end gap-2 rounded-md border p-2"
                 >
                   <NvField :data-invalid="showErrors && !sequencesValid">
                     <NvFieldLabel :for="`rt-seq-${index}`"
@@ -540,6 +549,13 @@ async function openView(row: BusinessConsoleRoutingItem) {
                       min="0"
                       step="any"
                     />
+                  </NvField>
+                  <NvField>
+                    <NvFieldLabel :for="`rt-interruptible-${index}`">排程方式</NvFieldLabel>
+                    <label class="flex items-center gap-2 text-sm">
+                      <NvCheckbox :id="`rt-interruptible-${index}`" v-model="op.interruptible" />
+                      可中断（跨班次续排）
+                    </label>
                   </NvField>
                   <div class="flex gap-1">
                     <NvButton
@@ -709,6 +725,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
                   <th class="px-3 py-2 text-left font-medium">工作中心</th>
                   <th class="px-3 py-2 text-left font-medium">工序</th>
                   <th class="px-3 py-2 text-right font-medium">工时(分)</th>
+                  <th class="px-3 py-2 text-left font-medium">排程方式</th>
                 </tr>
               </thead>
               <tbody>
@@ -719,6 +736,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
                     {{ operationLabel(op.operationCode, op.operationName) }}
                   </td>
                   <td class="px-3 py-2 text-right tabular-nums">{{ op.standardMinutes ?? '—' }}</td>
+                  <td class="px-3 py-2">{{ op.interruptible ? '可中断' : '不可中断' }}</td>
                 </tr>
               </tbody>
             </table>

@@ -67,6 +67,8 @@ export interface ScheduleTask {
   dimensions?: Record<string, DimensionValue>
   startUtc: string
   endUtc: string
+  /** 后端实际生产段；缺省表示单段连续排程。 */
+  segments?: { startUtc: string; endUtc: string }[]
   /** 计划基线(与实际 start/end 对比;甘特画"计划 vs 实际"双层条)。 */
   plannedStartUtc?: string
   plannedEndUtc?: string

@@ -425,7 +425,7 @@
   }
   /* 冲突(仅工单甘特条):危险色描边 + 内环。资源排产板冲突改用内联 ⚠ 角标,卡片本身不加环,
    故此规则用 :not(:has(.nerv-card)) 排除资源卡,避免压住选中环(选中无效的根因)。 */
-  .nerv-gantt-dhx .gantt_task_line.nerv-conflict:not(:has(.nerv-card)) {
+  .nerv-gantt-dhx .gantt_task_line.nerv-conflict:not(.nerv-segmented):not(:has(.nerv-card)) {
     border-color: var(--destructive) !important;
     box-shadow: inset 0 0 0 1px var(--destructive) !important;
   }
@@ -1018,5 +1018,45 @@
     .nerv-gantt-dhx .gantt_task_link {
       animation: none !important;
     }
+  }
+}
+
+@layer nv-components {
+  /* 多段工序的整体包围盒只承载同一工序身份，生产底色仅出现在真实段上。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-segmented {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    pointer-events: none;
+  }
+  .nerv-gantt-dhx .nerv-segmented .gantt_task_content {
+    position: relative;
+    overflow: visible;
+    padding: 0;
+  }
+  .nerv-gantt-dhx .nerv-segmented .gantt_task_progress_wrapper,
+  .nerv-gantt-dhx .nerv-segmented .gantt_task_drag {
+    display: none !important;
+  }
+  .nerv-gantt-dhx .nerv-segment {
+    position: absolute;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1.5px solid var(--bar) !important;
+    border-radius: 7px;
+    background: color-mix(in oklch, var(--bar), transparent 84%);
+    pointer-events: auto;
+  }
+  .nerv-gantt-dhx .nerv-locked .nerv-segment {
+    border-style: dashed !important;
+  }
+  .nerv-gantt-dhx .nerv-segmented.nerv-conflict .nerv-segment:not(:has(.nerv-card)) {
+    border-color: var(--destructive) !important;
+    box-shadow: inset 0 0 0 1px var(--destructive);
+  }
+  .nerv-gantt-dhx .nerv-selected .nerv-segment,
+  .nerv-gantt-dhx .nerv-search-hit .nerv-segment {
+    box-shadow: inset 0 0 0 2px var(--bar);
   }
 }

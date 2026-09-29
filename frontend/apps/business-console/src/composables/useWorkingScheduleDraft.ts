@@ -123,7 +123,21 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
     mutate(() => {
       if (!model.value) return
       const tasks = model.value.tasks.map((task) =>
-        task.id === taskId ? { ...task, ...patch } : task,
+        task.id === taskId
+          ? {
+              ...task,
+              ...patch,
+              segments:
+                task.segments?.length === 1
+                  ? [
+                      {
+                        startUtc: patch.startUtc ?? task.startUtc,
+                        endUtc: patch.endUtc ?? task.endUtc,
+                      },
+                    ]
+                  : task.segments,
+            }
+          : task,
       )
       model.value = { ...model.value, tasks: recomputeOrderNodes(tasks) }
     })
@@ -279,6 +293,7 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
         startUtc: task.startUtc,
         endUtc: task.endUtc,
         lockReasonCode: 'planner-draft-lock',
+        segments: task.segments,
       })),
   )
 
