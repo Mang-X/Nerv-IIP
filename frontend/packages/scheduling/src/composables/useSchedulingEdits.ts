@@ -40,7 +40,14 @@ export function useSchedulingEdits(model: Ref<ScheduleModel>, deps: SchedulingEd
   function onTaskDragEnd(p: TaskDragPayload) {
     const tasks = model.value.tasks.map((t) =>
       t.id === p.taskId
-        ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc, resourceId: p.resourceId ?? t.resourceId }
+        ? {
+            ...t,
+            startUtc: p.startUtc,
+            endUtc: p.endUtc,
+            resourceId: p.resourceId ?? t.resourceId,
+            segments:
+              t.segments?.length === 1 ? [{ startUtc: p.startUtc, endUtc: p.endUtc }] : t.segments,
+          }
         : t,
     )
     model.value = { ...model.value, tasks }
