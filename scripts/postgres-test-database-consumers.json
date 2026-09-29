@@ -47,6 +47,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpInputChangePersistenceTests.cs",
+      "sourceSha256": "d1a511bf72b6435bdedae9a0c1fa9f6c6c7eb77985d3786ee72760e3655a37b2",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MRP input change persistence proof owns and drops its temporary PostgreSQL database."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
       "sourceSha256": "089aab2ca4a4790bb3a60dd473fbb018479791afa4bdb63ee3dbbe357f35d5d4",
       "factoryCallCount": 1,
