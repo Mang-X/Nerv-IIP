@@ -107,6 +107,8 @@ const {
   mpsBucketsError,
   mpsBucketsPending,
   mpsForm,
+  updateMpsBucket,
+  updateMpsBucketPending,
   releaseMpsBucket,
   releaseMpsBucketError,
   releaseMpsBucketPending,
@@ -278,6 +280,7 @@ const planningDataError = computed(
 
 const demandOpen = shallowRef(false)
 const mpsOpen = shallowRef(false)
+const mpsEditingId = shallowRef<string | null>(null)
 const mrpOpen = shallowRef(false)
 const acceptingSuggestionId = shallowRef<string | null>(null)
 const cancelTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
@@ -477,6 +480,7 @@ const suggestionTypeFilterOptions = [
   { label: '负可用', value: 'negative-availability' },
   { label: '超期在途', value: 'overdue-receipt' },
   { label: '取消计划收货', value: 'cancel' },
+  { label: '销售超出主计划', value: 'mps-sales-excess' },
 ]
 
 const demandColumns: NvDataTableColumn<BusinessConsoleDemandSourceItem>[] = [
@@ -544,11 +548,31 @@ async function submitDemand() {
 }
 async function submitMpsBucket() {
   try {
-    await createMpsBucket()
+    if (mpsEditingId.value) await updateMpsBucket(mpsEditingId.value)
+    else await createMpsBucket()
     mpsOpen.value = false
+    mpsEditingId.value = null
   } catch (error) {
     notifyOperationFailure('保存主计划行失败', error, '保存主计划行失败，请稍后重试。')
   }
+}
+function editMpsBucket(row: BusinessConsoleMpsBucketItem) {
+  if (!row.mpsId) return
+  mpsForm.skuCode = row.skuCode ?? ''
+  mpsForm.uomCode = row.uomCode ?? ''
+  mpsForm.siteCode = row.siteCode ?? ''
+  mpsForm.bucketDate = row.bucketDate ?? ''
+  mpsForm.quantity = row.quantity ?? 0
+  mpsEditingId.value = row.mpsId
+  mpsOpen.value = true
+}
+function newMpsBucket() {
+  mpsEditingId.value = null
+  mpsForm.skuCode = ''
+  mpsForm.uomCode = ''
+  mpsForm.siteCode = ''
+  mpsForm.bucketDate = new Date().toISOString().slice(0, 10)
+  mpsForm.quantity = 0
 }
 // 运行 MRP（#1306 异步任务模式）：提交只是「受理」，弹框显示计算中且全程可关闭，
 // 后台照跑；轮询到终态后统一 toast + 刷新读面（关没关弹框都一样）。
@@ -675,6 +699,7 @@ function suggestionTypeLabel(value?: string | null) {
         'negative-availability': '负可用',
         'overdue-receipt': '超期在途',
         cancel: '取消收货',
+        'mps-sales-excess': '销售超出主计划',
       } as Record<string, string>
     )[value ?? ''] ??
     (value || '未指定')
@@ -691,6 +716,7 @@ function suggestionTypeTone(value?: string | null): StatusTone {
   )
     return 'warning'
   if (value === 'negative-availability') return 'danger'
+  if (value === 'mps-sales-excess') return 'danger'
   if (value === 'cancel') return 'danger'
   return 'neutral'
 }
@@ -715,6 +741,7 @@ function reasonLabel(value?: string | null) {
     'lead-time-insufficient': '提前期不足，释放日已过',
     'negative-availability': '可用量为负',
     'scheduled-receipt-overdue': '在途已超期',
+    'sales-above-mps': '销售需求超出已发布主计划',
   }
   // 未知码一律降级为通用中文，绝不回显原始英文码。
   return map[value ?? ''] ?? '按计划规则形成'
@@ -996,14 +1023,14 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
       <NvDialog v-model:open="mpsOpen">
         <NvDialogTrigger as-child>
-          <NvButton size="sm" type="button" variant="outline">
+          <NvButton size="sm" type="button" variant="outline" @click="newMpsBucket">
             <PlusIcon aria-hidden="true" />
             新建 MPS
           </NvButton>
         </NvDialogTrigger>
         <NvDialogContent class="sm:max-w-2xl">
           <NvDialogHeader>
-            <NvDialogTitle>新建主计划行</NvDialogTitle>
+            <NvDialogTitle>{{ mpsEditingId ? '编辑主计划行' : '新建主计划行' }}</NvDialogTitle>
             <NvDialogDescription class="sr-only"
               >录入一个计划周期的主生产计划。</NvDialogDescription
             >
@@ -1067,8 +1094,8 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             </NvFieldGroup>
             <NvDialogFooter>
               <NvButton type="button" variant="outline" @click="mpsOpen = false">取消</NvButton>
-              <NvButton type="submit" :disabled="createMpsBucketPending || !canSubmitMps">
-                <Spinner v-if="createMpsBucketPending" aria-hidden="true" />
+              <NvButton type="submit" :disabled="createMpsBucketPending || updateMpsBucketPending || !canSubmitMps">
+                <Spinner v-if="createMpsBucketPending || updateMpsBucketPending" aria-hidden="true" />
                 保存主计划行
               </NvButton>
             </NvDialogFooter>
@@ -1402,6 +1429,14 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </template>
         <template #cell-actions="{ row }">
           <div class="flex justify-end gap-2">
+            <NvButton
+              v-if="row.status?.toLowerCase() !== 'released'"
+              size="sm"
+              type="button"
+              variant="outline"
+              :aria-label="`编辑主计划行 ${row.skuCode}`"
+              @click="editMpsBucket(row)"
+            >编辑</NvButton>
             <NvButton
               v-if="row.status?.toLowerCase() === 'draft'"
               size="sm"

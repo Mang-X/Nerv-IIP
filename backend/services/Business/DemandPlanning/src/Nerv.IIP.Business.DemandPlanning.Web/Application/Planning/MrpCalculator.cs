@@ -161,7 +161,18 @@ public static class MrpCalculator
             .GroupBy(x => x.ParentSkuCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
         var suggestions = new List<CalculatedPlanningSuggestion>();
+        suggestions.AddRange(input.Demands
+            .Where(x => x.SourceType == "mps-sales-excess")
+            .Select(x => new CalculatedPlanningSuggestion(
+                "mps-sales-excess", x.SkuCode, x.UomCode, x.SiteCode,
+                x.Quantity, x.DueDate, x.DueDate, "sales-above-mps",
+                new CalculatedNetRequirementExplanation(
+                    x.Quantity, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 0m, 1m,
+                    "mps-sales-excess", $"销售需求超出已发布主计划 {x.Quantity:g29}", [], []),
+                [new CalculatedPeggingLink("demand", x.DemandSourceReference, x.SkuCode, null,
+                    x.Quantity, null, null, null, "mps-sales-excess", x.Quantity, x.SourceLineReference)])));
         var normalizedDemands = input.Demands
+            .Where(x => x.SourceType != "mps-sales-excess")
             .Where(x => x.DueDate >= input.HorizonStart && x.DueDate <= input.HorizonEnd)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)

@@ -55,6 +55,7 @@ const planningSpies = vi.hoisted(() => ({
   suggestionsRef: null as { value: Array<Record<string, unknown>> } | null,
   resetDemands: () => {},
   runMrp: vi.fn(async () => undefined),
+  updateMpsBucket: vi.fn(async () => undefined),
   acceptSuggestion: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -170,6 +171,9 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       reviewMpsBucket: vi.fn(),
       reviewMpsBucketError: shallowRef(null),
       reviewMpsBucketPending: shallowRef(false),
+      updateMpsBucket: planningSpies.updateMpsBucket,
+      updateMpsBucketError: shallowRef(null),
+      updateMpsBucketPending: shallowRef(false),
       pegging: shallowRef([
         {
           suggestionId: 'suggestion-001',
@@ -603,6 +607,21 @@ describe('PlanningWorkbench', () => {
     expect(text).toContain('评审 张伟')
     expect(text).toContain('发布 —')
     expect(text).not.toContain('user-')
+  })
+
+  it('编辑草稿主计划行后保存更新同一行', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mpsBucketsRef!.value = [{
+      mpsId: 'mps-001', skuCode: 'SKU-FG-1000', uomCode: 'pcs', siteCode: 'SITE-01',
+      bucketDate: '2026-06-15', quantity: 10, status: 'Draft',
+    }]
+    await flushPromises()
+
+    await wrapper.get('[aria-label="编辑主计划行 SKU-FG-1000"]').trigger('click')
+    expect(wrapper.text()).toContain('编辑主计划行')
+    await wrapper.findAll('form').find((form) => form.find('#mps-qty').exists())!.trigger('submit')
+
+    expect(planningSpies.updateMpsBucket).toHaveBeenCalledWith('mps-001')
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
