@@ -16,6 +16,18 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure;
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        MrpInputChangeCollector.Record(this);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        MrpInputChangeCollector.Record(this);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     public DbSet<DemandSource> DemandSources => Set<DemandSource>();
     public DbSet<ForecastInput> ForecastInputs => Set<ForecastInput>();
     public DbSet<MasterProductionSchedule> MasterProductionSchedules => Set<MasterProductionSchedule>();

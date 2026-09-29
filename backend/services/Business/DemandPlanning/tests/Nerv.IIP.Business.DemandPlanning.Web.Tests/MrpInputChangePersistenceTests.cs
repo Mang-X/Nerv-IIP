@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpInputChangeAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
@@ -69,6 +70,19 @@ public sealed class MrpInputChangePersistenceTests
                 newHorizon.Select(x => x.Operation).ToArray());
             Assert.False(newHorizon[^1].CurrentlyEligible);
             Assert.Null(newHorizon[^1].CurrentStartDate);
+
+            await using (var transaction = await db.Database.BeginTransactionAsync())
+            {
+                await new CreateOrUpdateDemandSourceCommandHandler(db).Handle(
+                    new("org-a", "env-a", "manual", "ROLLBACK-1", "SKU", "pcs", "SITE", 10, oldDate), default);
+                await db.SaveChangesAsync();
+                Assert.Single(await db.MrpInputChanges.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
+                await transaction.RollbackAsync();
+            }
+
+            db.ChangeTracker.Clear();
+            Assert.Empty(await db.DemandSources.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
+            Assert.Empty(await db.MrpInputChanges.Where(x => x.SourceReference == "ROLLBACK-1").ToListAsync());
         }
         finally
         {

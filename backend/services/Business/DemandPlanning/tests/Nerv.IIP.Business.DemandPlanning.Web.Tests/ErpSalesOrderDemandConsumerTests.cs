@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpInputChangeAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.DomainEvents;
 using Nerv.IIP.Contracts.DemandPlanning;
@@ -34,6 +35,45 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpSalesOrderDemandConsumerTests
 {
+    [Fact]
+    public async Task Sales_order_consumer_records_line_move_and_cancellation_with_old_interval()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(db);
+        var originalDate = new DateOnly(2026, 8, 15);
+        var movedDate = new DateOnly(2026, 11, 15);
+        await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(db, deadLetters)
+            .HandleAsync(Released(1, 8m, "10"), default);
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(db, deadLetters)
+            .HandleAsync(Changed(2, 8m, "10") with
+            {
+                Payload = Payload(2, "released", 8m, "10") with
+                {
+                    Lines = [new SalesOrderLineSnapshot("10", "SKU-FG-A", 8m, "EA", movedDate, false)],
+                },
+            }, default);
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(db, deadLetters)
+            .HandleAsync(Changed(3, 8m, "10") with
+            {
+                Payload = Payload(3, "released", 8m, "10") with
+                {
+                    Lines = [new SalesOrderLineSnapshot("10", "SKU-FG-A", 8m, "EA", movedDate, false)],
+                },
+            }, default);
+        await new SalesOrderCancelledIntegrationEventHandlerForProjectDemandSource(db, deadLetters)
+            .HandleAsync(Cancelled(4), default);
+
+        var facts = await db.MrpInputChanges.Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev")
+            .ToListAsync();
+        Assert.Equal(3, facts.Count);
+        Assert.Contains(facts, x => x.Operation == MrpInputChangeOperation.Updated
+            && x.SourceReference == "SO-DEMO-001" && x.SourceLineReference == "10"
+            && x.PreviousStartDate == originalDate && x.CurrentStartDate == movedDate);
+        Assert.Contains(facts, x => x.PreviouslyEligible && !x.CurrentlyEligible && x.PreviousStartDate == movedDate);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
