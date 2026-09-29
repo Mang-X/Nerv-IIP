@@ -335,7 +335,7 @@ describe('SchedulingDraftBoard', () => {
           calendarId: 'CAL-1',
           resourceIds: ['RES-1'],
           workCenterIds: [],
-          shiftWindows: [{ startUtc: start, endUtc: end }],
+          shiftWindows: [{ shiftCode: 'DAY', startUtc: start, endUtc: end }],
         },
       ],
     }
