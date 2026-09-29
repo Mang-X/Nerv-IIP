@@ -246,6 +246,18 @@ public sealed class GetSchedulePlanGanttEndpoint(ISender sender)
     }
 }
 
+public sealed class GetSchedulePlanOverridesEndpoint(ISender sender)
+    : SchedulingEndpoint<GetSchedulePlanRequest, ResponseData<IReadOnlyCollection<ScheduleOperationOverrideResponse>>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<GetSchedulePlanOverridesEndpoint>());
+
+    public override async Task HandleAsync(GetSchedulePlanRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetSchedulePlanOverridesQuery(req.PlanId, req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ReleaseSchedulePlanEndpoint(ISender sender)
     : SchedulingEndpoint<ReleaseSchedulePlanRequest, ResponseData<ReleaseSchedulePlanResponse>>
 {
@@ -525,6 +537,7 @@ public static class SchedulingEndpointContracts
         new(typeof(GetSchedulePlanGanttEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/gantt", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanGantt"),
         new(typeof(ReleaseSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/release", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "releaseSchedulingPlan"),
         new(typeof(RevokeSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revoke", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "revokeSchedulingPlan"),
+        new(typeof(GetSchedulePlanOverridesEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/overrides", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanOverrides"),
         new(typeof(UpsertScheduleOperationOverrideEndpoint), "PUT", "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "upsertSchedulingOperationOverride"),
         new(typeof(ListOrderUrgenciesEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listOrderUrgencies"),
         new(typeof(GetOrderUrgencyEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies/{orderReference}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getOrderUrgency"),

@@ -9078,6 +9078,35 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("explicit", revokeDocument.RootElement.GetProperty("data").GetProperty("reason").GetString());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Scheduling_overrides_facade_enforces_read_permission_and_preserves_provenance(bool allowed)
+    {
+        var scheduling = new RecordingSchedulingClient();
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-002/overrides?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(allowed ? 1 : 0, scheduling.GetPlanOverridesCallCount);
+        if (allowed)
+        {
+            Assert.Equal("internal-test-token", scheduling.LastInternalToken);
+            Assert.Equal(new BusinessConsoleSchedulingPlanRequest("plan-002", "org-001", "env-dev"), scheduling.LastPlanRequest);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("plan-001", body.RootElement.GetProperty("data")[0].GetProperty("sourcePlanId").GetString());
+            Assert.Equal(BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+        }
+    }
+
     [Fact]
     public async Task Scheduling_override_facade_forwards_the_authorized_principal_as_actor()
     {
@@ -9105,6 +9134,8 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user:user-admin", scheduling.LastOverrideActor);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("plan-001", body.RootElement.GetProperty("data").GetProperty("sourcePlanId").GetString());
     }
 
     [Fact]
@@ -10064,6 +10095,10 @@ public sealed class BusinessGatewayProxyTests
         await client.CreatePlanRevisionAsync("internal-token-001", new(
             "plan-001", "org-001", "env-dev", ["WO-001"], []), CancellationToken.None);
 
+        await client.GetPlanOverridesAsync("internal-token-001", planRequest, CancellationToken.None);
+        Assert.Equal(HttpMethod.Get, handler.Requests[9].Method);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/overrides", handler.Requests[9].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[9].RequestUri!.Query.TrimStart('?'));
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
         Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
@@ -15775,6 +15810,10 @@ public sealed class BusinessGatewayProxyTests
     private static object SchedulingResponseFor(HttpRequestMessage request)
     {
         var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/overrides", StringComparison.Ordinal))
+        {
+            return new { data = Array.Empty<BusinessConsoleScheduleOperationOverrideResponse>(), success = true, message = string.Empty, code = 0 };
+        }
         if (path.EndsWith("/gantt", StringComparison.Ordinal))
         {
             return new
@@ -20245,6 +20284,19 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
             null));
     }
 
+    public int GetPlanOverridesCallCount { get; private set; }
+
+    public Task<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>> GetPlanOverridesAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken)
+    {
+        GetPlanOverridesCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastPlanRequest = request;
+        var start = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        return Task.FromResult<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>>([
+            new("op-001", "WO-001", "RES-001", "WC-001", start, start.AddHours(1), "manual-override", "plan-001")]);
+    }
+
     public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,
         BusinessConsoleScheduleOperationOverrideRequest request,
@@ -20256,7 +20308,7 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         LastOverrideActor = actor;
         return Task.FromResult(new BusinessConsoleScheduleOperationOverrideResponse(
             request.OperationId, "WO-001", request.ResourceId, "WC-001",
-            request.StartUtc, request.EndUtc, "manual-override"));
+            request.StartUtc, request.EndUtc, "manual-override", request.PlanId));
     }
 
     public Task<IReadOnlyCollection<OrderUrgencyContract>> ListOrderUrgenciesAsync(

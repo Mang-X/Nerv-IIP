@@ -3213,7 +3213,8 @@ public sealed record BusinessConsoleScheduleOperationOverrideResponse(
     string WorkCenterId,
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
-    string LockReasonCode);
+    string LockReasonCode,
+    string? SourcePlanId = null);
 
 public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     string PlanId,
