@@ -7116,6 +7116,7 @@ public sealed class BusinessGatewayProxyTests
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.True(item.GetProperty("hasInputDegradation").GetBoolean());
         Assert.Equal("scheduled-receipts", item.GetProperty("inputDegradationSources")[0].GetString());
+        Assert.Equal(3, item.GetProperty("demandChangeCount").GetInt32());
     }
 
     [Fact]
@@ -18998,7 +18999,8 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
                 ["mps", "sales-order"],
                 new DateOnly(2026, 6, 1),
                 new DateOnly(2026, 6, 30),
-                null),
+                null,
+                3),
         ]));
     }
 
