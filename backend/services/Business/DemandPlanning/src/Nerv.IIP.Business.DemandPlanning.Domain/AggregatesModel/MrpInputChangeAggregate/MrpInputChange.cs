@@ -15,7 +15,7 @@ public sealed class MrpInputChange : Entity<MrpInputChangeId>, IAggregateRoot
     private MrpInputChange() { }
 
     private MrpInputChange(
-        string organizationId, string environmentId, string inputType,
+        string organizationId, string environmentId, string inputType, string? demandType,
         string sourceReference, string sourceLineReference,
         DateTimeOffset occurredAtUtc, MrpInputChangeOperation operation,
         DateOnly? previousStartDate, DateOnly? previousEndDate, bool previouslyEligible,
@@ -24,6 +24,9 @@ public sealed class MrpInputChange : Entity<MrpInputChangeId>, IAggregateRoot
         OrganizationId = DemandPlanningText.Required(organizationId, nameof(organizationId));
         EnvironmentId = DemandPlanningText.Required(environmentId, nameof(environmentId));
         InputType = DemandPlanningText.Required(inputType, nameof(inputType));
+        DemandType = inputType == "demand"
+            ? DemandPlanningText.Required(demandType ?? string.Empty, nameof(demandType))
+            : demandType;
         SourceReference = DemandPlanningText.Required(sourceReference, nameof(sourceReference));
         SourceLineReference = sourceLineReference ?? throw new ArgumentNullException(nameof(sourceLineReference));
         if (occurredAtUtc.Offset != TimeSpan.Zero)
@@ -50,6 +53,7 @@ public sealed class MrpInputChange : Entity<MrpInputChangeId>, IAggregateRoot
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string InputType { get; private set; } = string.Empty;
+    public string? DemandType { get; private set; }
     public string SourceReference { get; private set; } = string.Empty;
     public string SourceLineReference { get; private set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; private set; }
@@ -62,12 +66,12 @@ public sealed class MrpInputChange : Entity<MrpInputChangeId>, IAggregateRoot
     public bool CurrentlyEligible { get; private set; }
 
     public static MrpInputChange Record(
-        string organizationId, string environmentId, string inputType,
+        string organizationId, string environmentId, string inputType, string? demandType,
         string sourceReference, string sourceLineReference,
         DateTimeOffset occurredAtUtc, MrpInputChangeOperation operation,
         DateOnly? previousStartDate, DateOnly? previousEndDate, bool previouslyEligible,
         DateOnly? currentStartDate, DateOnly? currentEndDate, bool currentlyEligible)
-        => new(organizationId, environmentId, inputType, sourceReference, sourceLineReference,
+        => new(organizationId, environmentId, inputType, demandType, sourceReference, sourceLineReference,
             occurredAtUtc, operation, previousStartDate, previousEndDate, previouslyEligible,
             currentStartDate, currentEndDate, currentlyEligible);
 }

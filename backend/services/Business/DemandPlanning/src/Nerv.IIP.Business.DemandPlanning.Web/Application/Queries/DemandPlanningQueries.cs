@@ -235,7 +235,8 @@ public sealed record MrpRunResponse(
     IReadOnlyCollection<string> InputSources,
     DateOnly? InputCoverageStart,
     DateOnly? InputCoverageEnd,
-    string? FailureReason);
+    string? FailureReason,
+    int DemandChangeCount);
 
 public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpRunsQuery, IReadOnlyCollection<MrpRunResponse>>
@@ -246,6 +247,27 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+        var latestCompleted = runs
+            .Where(x => x.Status == MrpRunStatus.Completed)
+            .OrderByDescending(x => x.CompletedAtUtc)
+            .FirstOrDefault();
+        var demandChangeCount = 0;
+        if (latestCompleted is not null)
+        {
+            var completedAt = latestCompleted.CompletedAtUtc!.Value;
+            var horizonStart = latestCompleted.HorizonStart;
+            var horizonEnd = latestCompleted.HorizonEnd;
+            demandChangeCount = await dbContext.MrpInputChanges.AsNoTracking()
+                .Where(x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.OccurredAtUtc > completedAt
+                    && (x.PreviouslyEligible && x.PreviousStartDate <= horizonEnd && x.PreviousEndDate >= horizonStart
+                        || x.CurrentlyEligible && x.CurrentStartDate <= horizonEnd && x.CurrentEndDate >= horizonStart))
+                .Select(x => new { x.InputType, x.DemandType, x.SourceReference, x.SourceLineReference })
+                .Distinct()
+                .CountAsync(cancellationToken);
+        }
 
         return runs.Select(x => new MrpRunResponse(
             x.Id,
@@ -262,7 +284,8 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
             x.InputSources,
             x.InputCoverageStart,
             x.InputCoverageEnd,
-            x.FailureReason)).ToList();
+            x.FailureReason,
+            x.Id == latestCompleted?.Id ? demandChangeCount : 0)).ToList();
     }
 }
 

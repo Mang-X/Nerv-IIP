@@ -564,7 +564,7 @@
       "status": "active",
       "databaseOwnership": "test-owned",
       "project": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres|FullyQualifiedName~Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Migration_preserves_legacy_fact_with_unknown_demand_type_on_postgres",
       "databasePrefix": "nerv_iip_demandplanning",
       "diagnosticSchemas": [
         "demand_planning"
@@ -574,7 +574,8 @@
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability",
-        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres"
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Migration_preserves_legacy_fact_with_unknown_demand_type_on_postgres"
       ]
     },
     {
