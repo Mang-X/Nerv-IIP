@@ -6,6 +6,7 @@ import type {
   BusinessConsoleSchedulingResourceLoad,
   BusinessConsoleSchedulingUnscheduledOperation,
   BusinessConsoleSchedulingPlanRevision,
+  BusinessConsoleSchedulePlan,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { formatDateTime } from '@/utils/format'
@@ -105,6 +106,8 @@ const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlan
 const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPlansRelease))
 const workbench = useSchedulingWorkbench()
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
+const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
+const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
 const route = useRoute()
 const orderUrgencies = useOrderUrgencies(
@@ -333,6 +336,7 @@ async function generateWorkbenchPlan() {
         isRush: order.isRush,
       })),
     })
+    persistedDraftPlan.value = plan
     draft.loadPlan(plan)
     detailSelection.planId = plan.planId ?? ''
     revisionResult.value = undefined
@@ -353,8 +357,10 @@ async function repreviewLockedDraft() {
       includedOrderIds: draft.includedOrders.value.map((order) => order.workOrderId),
       lockedAssignments: draft.lockedAssignments.value,
     })
+    revisionBasePlan.value = persistedDraftPlan.value
     revisionResult.value = revision
     if (revision.candidate) {
+      persistedDraftPlan.value = revision.candidate
       draft.loadPlan(revision.candidate, revision.impact)
       detailSelection.planId = revision.candidate.planId ?? ''
     }
@@ -734,7 +740,7 @@ function reasonLabel(reason?: string | null) {
           @move-to-pending="draft.moveTaskToPending"
           @restore-pending="draft.restorePendingTask"
         />
-        <ScheduleRevisionReview :revision="revisionResult" />
+        <ScheduleRevisionReview :revision="revisionResult" :base-plan="revisionBasePlan" />
       </NvTabsContent>
 
       <NvTabsContent value="table" class="grid gap-4">
