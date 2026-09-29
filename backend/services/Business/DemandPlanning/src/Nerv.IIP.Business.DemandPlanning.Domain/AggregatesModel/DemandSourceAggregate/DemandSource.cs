@@ -33,7 +33,6 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
         DueDate = dueDate;
         CreatedAtUtc = DateTimeOffset.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
-        this.AddDomainEvent(new DemandSourceCreatedDomainEvent(this));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -69,7 +68,9 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
             throw new InvalidOperationException("Demand type 'sales-order' is integration-owned and cannot be created manually.");
         }
 
-        return new DemandSource(organizationId, environmentId, demandType, sourceReference, skuCode, uomCode, siteCode, quantity, dueDate);
+        var demand = new DemandSource(organizationId, environmentId, demandType, sourceReference, skuCode, uomCode, siteCode, quantity, dueDate);
+        demand.AddDomainEvent(new DemandSourceCreatedDomainEvent(demand));
+        return demand;
     }
 
     public static string NormalizeDemandType(string demandType) =>

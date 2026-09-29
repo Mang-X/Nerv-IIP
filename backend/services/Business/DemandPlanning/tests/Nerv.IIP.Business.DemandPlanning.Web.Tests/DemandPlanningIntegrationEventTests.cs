@@ -69,6 +69,26 @@ public sealed class DemandPlanningIntegrationEventTests
         Assert.Equal(["SO-2026-00001", "SO-20260730-000005"], integrationEvent.Payload.DemandSourceReferences);
     }
 
+    [Fact]
+    public void Accepted_work_order_demand_change_signal_identifies_the_affected_order_and_work_order()
+    {
+        var suggestion = NewSuggestion("planned-work-order");
+        suggestion.AddPeggingLink("demand", "SO-001", "SKU-FG-1000", null, 9m, null, null, null);
+        suggestion.AddPeggingLink("demand", "SO-002", "SKU-FG-1000", null, 10m, null, null, null);
+        suggestion.Accept("BusinessMes", "WorkOrder", "WO-001");
+        suggestion.NotifySalesOrderDemandChanged("SO-001", "sales-order-id-001", 2, true);
+
+        var domainEvent = Assert.Single(suggestion.GetDomainEvents().OfType<SalesOrderDemandChangedForWorkOrderDomainEvent>());
+        var integrationEvent = new SalesOrderDemandChangedForWorkOrderIntegrationEventConverter().Convert(domainEvent);
+
+        Assert.Equal("demandPlanning.SalesOrderDemandChangedForWorkOrder", integrationEvent.EventType);
+        Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
+        Assert.Equal("SO-001", integrationEvent.Payload.DemandSourceReference);
+        Assert.Equal("sales-order-id-001", integrationEvent.Payload.SalesOrderId);
+        Assert.Equal(2, integrationEvent.Payload.OrderVersion);
+        Assert.True(integrationEvent.Payload.Cancelled);
+    }
+
     private static PlanningSuggestion NewSuggestion(string suggestionType)
     {
         return PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), suggestionType, "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");

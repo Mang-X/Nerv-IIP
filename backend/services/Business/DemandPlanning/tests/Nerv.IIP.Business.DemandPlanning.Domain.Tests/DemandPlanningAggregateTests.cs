@@ -53,6 +53,16 @@ public sealed class DemandPlanningAggregateTests
     }
 
     [Fact]
+    public void Sales_order_demand_does_not_emit_a_manual_demand_created_event()
+    {
+        var demand = DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-001", "SO-DEMO-001", "10", "CUST-001",
+            "SKU-FG-1000", "EA", "SITE-001", 2m, new DateOnly(2026, 8, 15), 1);
+
+        Assert.DoesNotContain(demand.GetDomainEvents(), x => x is DemandSourceCreatedDomainEvent);
+    }
+
+    [Fact]
     public void Demand_source_creation_requires_planning_dimensions()
     {
         Assert.Throws<ArgumentException>(() => DemandSource.Create(
@@ -286,6 +296,32 @@ public sealed class DemandPlanningAggregateTests
     public void Primary_demand_source_reference_is_null_without_any_pegging()
     {
         Assert.Null(NewSuggestion().GetPrimaryDemandSourceReference());
+    }
+
+    [Fact]
+    public void Changed_sales_demand_removes_only_its_share_of_a_mixed_open_suggestion()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("demand", "SO-001", "SKU-FG-1000", "SKU-RM-1000", 8m, null, null, null);
+        suggestion.AddPeggingLink("demand", "SO-002", "SKU-FG-1000", "SKU-RM-1000", 12m, null, null, null);
+
+        suggestion.InvalidateDemandLines("SO-001", [null]);
+
+        Assert.Equal(PlanningSuggestionStatus.Open, suggestion.Status);
+        Assert.Equal(11.4m, suggestion.Quantity);
+        Assert.Equal("SO-002", Assert.Single(suggestion.PeggingLinks).DemandSourceReference);
+    }
+
+    [Fact]
+    public void Cancelled_sales_demand_closes_an_open_suggestion_when_no_other_demand_remains()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("demand", "SO-001", "SKU-FG-1000", "SKU-RM-1000", 19m, null, null, null);
+
+        suggestion.InvalidateDemandLines("SO-001", [null]);
+
+        Assert.Equal(PlanningSuggestionStatus.Closed, suggestion.Status);
+        Assert.Equal(19m, suggestion.Quantity);
     }
 
     private static DemandSource NewDemand()
