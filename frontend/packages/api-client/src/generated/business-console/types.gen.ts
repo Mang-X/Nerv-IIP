@@ -1711,9 +1711,17 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     requiredSkillCodes?: Array<string> | null;
     requiredToolingIds?: Array<string> | null;
     toolingAvailable?: boolean;
+    changeovers?: Array<NervIipContractsSchedulingSchedulingChangeoverContract> | null;
 };
 
 export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable' | 'interruptible';
+
+export type NervIipContractsSchedulingSchedulingChangeoverContract = {
+    fromSkuCode?: string;
+    setupMinutes?: number;
+    requiredToolingIds?: Array<string>;
+    toolingAvailable?: boolean;
+};
 
 export type NervIipContractsSchedulingSchedulingResourceContract = {
     resourceId?: string;
