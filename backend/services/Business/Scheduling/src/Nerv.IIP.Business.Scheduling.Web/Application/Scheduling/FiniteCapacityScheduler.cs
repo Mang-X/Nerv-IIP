@@ -313,6 +313,10 @@ internal static class SchedulingProblemNormalizer
             RequireNonEmpty(resource.ResourceId, "resourceId", nameof(problem));
             RequireNonEmpty(resource.CalendarId, "resource calendarId", nameof(problem));
             RequireCollection(resource.CapabilityCodes, "CapabilityCodes", nameof(problem));
+            if (resource.UtilizationRate <= 0m || resource.UtilizationRate > 1m)
+            {
+                throw new ArgumentException("Resource UtilizationRate must be in (0, 1].", nameof(problem));
+            }
         }
 
         foreach (var order in problem.Orders)
@@ -505,11 +509,16 @@ file sealed class SchedulerState
                      .ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
             var hasResource = resources.TryGetValue(locked.ResourceId, out var resource);
+            var reservedEndUtc = hasResource
+                ? locked.StartUtc + TimeSpan.FromMinutes(ReservedMinutes(
+                    (int)(locked.EndUtc - locked.StartUtc).TotalMinutes,
+                    resource!.UtilizationRate))
+                : locked.EndUtc;
             var invalidLock = !hasResource
                 || locked.StartUtc < problem.HorizonStartUtc
-                || locked.EndUtc > problem.HorizonEndUtc
-                || !IsInsideCalendar(resource!, locked.StartUtc, locked.EndUtc)
-                || IsUnavailable(resource!, locked.StartUtc, locked.EndUtc);
+                || reservedEndUtc > problem.HorizonEndUtc
+                || !IsInsideCalendar(resource!, locked.StartUtc, reservedEndUtc)
+                || IsUnavailable(resource!, locked.StartUtc, reservedEndUtc);
 
             var assignment = new ScheduleAssignmentContract(
                 AssignmentId: locked.AssignmentId,
@@ -1022,6 +1031,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
+        var reservedDuration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
         var setup = TimeSpan.FromMinutes(Math.Max(0, item.Operation.SetupMinutes));
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
@@ -1029,7 +1039,7 @@ file sealed class SchedulerState
             var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
             var latestEnd = Min(shift.EndUtc, problem.HorizonEndUtc);
 
-            while (candidate + duration <= latestEnd)
+            while (candidate + reservedDuration <= latestEnd)
             {
                 var setupAdjustedCandidate = ApplySetupGap(resource, candidate, setup);
                 if (setupAdjustedCandidate > candidate)
@@ -1047,7 +1057,7 @@ file sealed class SchedulerState
                     continue;
                 }
 
-                var blockingEnd = BlockingEnd(resource, item.Operation, resourceQualityBlocks, occupiedStart, end);
+                var blockingEnd = BlockingEnd(resource, item.Operation, resourceQualityBlocks, occupiedStart, candidate + reservedDuration);
                 if (blockingEnd is null)
                 {
                     return (candidate, end);
@@ -1059,6 +1069,9 @@ file sealed class SchedulerState
 
         return null;
     }
+
+    private static int ReservedMinutes(int durationMinutes, decimal utilizationRate) =>
+        (int)Math.Ceiling(durationMinutes / utilizationRate);
 
     private DateTimeOffset ApplySetupGap(
         SchedulingResourceContract resource,
@@ -1173,6 +1186,8 @@ file sealed class SchedulerState
         {
             var resourceLocks = lockedAssignments
                 .Where(x => x.ResourceId == resource.ResourceId)
+                .Select(x => (Assignment: x, ReservedEndUtc: x.StartUtc + TimeSpan.FromMinutes(
+                    ReservedMinutes((int)(x.EndUtc - x.StartUtc).TotalMinutes, resource.UtilizationRate))))
                 .ToList();
             if (resourceLocks.Count <= Math.Max(1, resource.CapacityUnits))
             {
@@ -1181,7 +1196,7 @@ file sealed class SchedulerState
 
             var capacity = Math.Max(1, resource.CapacityUnits);
             var boundaries = resourceLocks
-                .SelectMany(x => new[] { x.StartUtc, x.EndUtc })
+                .SelectMany(x => new[] { x.Assignment.StartUtc, x.ReservedEndUtc })
                 .Distinct()
                 .OrderBy(x => x)
                 .ToList();
@@ -1196,7 +1211,7 @@ file sealed class SchedulerState
                 }
 
                 var concurrentLocks = resourceLocks
-                    .Where(x => x.StartUtc < segmentEnd && x.EndUtc > segmentStart)
+                    .Where(x => x.Assignment.StartUtc < segmentEnd && x.ReservedEndUtc > segmentStart)
                     .ToList();
                 if (concurrentLocks.Count <= capacity)
                 {
@@ -1205,7 +1220,7 @@ file sealed class SchedulerState
 
                 foreach (var locked in concurrentLocks)
                 {
-                    overbookedAssignmentIds.Add(locked.AssignmentId);
+                    overbookedAssignmentIds.Add(locked.Assignment.AssignmentId);
                 }
             }
         }
@@ -1233,7 +1248,7 @@ file sealed class SchedulerState
         int capacity)
     {
         var overlappingOccupancies = occupancies
-            .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
+            .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.ReservedEndUtc))
             .ToList();
         if (overlappingOccupancies.Count < capacity)
         {
@@ -1244,7 +1259,7 @@ file sealed class SchedulerState
             .SelectMany(x => new[]
             {
                 Max(startUtc, x.StartUtc),
-                Min(endUtc, x.EndUtc)
+                Min(endUtc, x.ReservedEndUtc)
             })
             .Append(startUtc)
             .Append(endUtc)
@@ -1262,7 +1277,7 @@ file sealed class SchedulerState
             }
 
             var concurrentAssignments = overlappingOccupancies.Count(x =>
-                x.StartUtc < segmentEnd && x.EndUtc > segmentStart);
+                x.StartUtc < segmentEnd && x.ReservedEndUtc > segmentStart);
             if (concurrentAssignments >= capacity)
             {
                 return segmentEnd;
@@ -1366,7 +1381,7 @@ file sealed class SchedulerState
     private bool HasToolingSlot(SchedulingResourceContract resource, SchedulingOperationContract operation, DateTimeOffset earliestStart)
     {
         if (!calendars.TryGetValue(resource.CalendarId, out var calendar)) return false;
-        var duration = TimeSpan.FromMinutes(operation.DurationMinutes);
+        var duration = TimeSpan.FromMinutes(ReservedMinutes(operation.DurationMinutes, resource.UtilizationRate));
         foreach (var shift in ContinuousWindows(calendar).Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
             var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
@@ -1391,7 +1406,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(durationMinutes);
+        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
         return ContinuousWindows(calendar)
             .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc)
             .Any(shift =>
@@ -1412,7 +1427,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(durationMinutes);
+        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
         return ContinuousWindows(calendar)
             .Where(x => x.EndUtc > earliestStart)
             .Any(shift =>
@@ -1439,7 +1454,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(durationMinutes);
+        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
@@ -1479,7 +1494,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(durationMinutes);
+        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
@@ -1614,7 +1629,12 @@ file sealed class SchedulerState
                 assignment.ResourceId,
                 assignment.WorkCenterId,
                 startUtc,
-                assignment.EndUtc));
+                assignment.EndUtc,
+                resources.TryGetValue(assignment.ResourceId, out var resource)
+                    ? assignment.StartUtc + TimeSpan.FromMinutes(ReservedMinutes(
+                        (int)(assignment.EndUtc - assignment.StartUtc).TotalMinutes,
+                        resource.UtilizationRate))
+                    : assignment.EndUtc));
             if (!earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out earliestEnd)
                 || assignment.EndUtc < earliestEnd)
             {
@@ -1645,7 +1665,8 @@ file sealed class SchedulerState
                     var unavailableMinutes = MergedUnavailableMinutes(resource, shift.StartUtc, shift.EndUtc);
                     var capacity = Math.Max(1, resource.CapacityUnits);
                     var shiftMinutes = (int)(shift.EndUtc - shift.StartUtc).TotalMinutes;
-                    var availableMinutes = Math.Max(0, (shiftMinutes - unavailableMinutes) * capacity);
+                    var availableMinutes = (int)Math.Floor(
+                        Math.Max(0, shiftMinutes - unavailableMinutes) * resource.UtilizationRate * capacity);
 
                     return new ScheduleResourceLoadContract(
                         ResourceId: resource.ResourceId,
@@ -2037,5 +2058,6 @@ file sealed class SchedulerState
         string ResourceId,
         string WorkCenterId,
         DateTimeOffset StartUtc,
-        DateTimeOffset EndUtc);
+        DateTimeOffset EndUtc,
+        DateTimeOffset ReservedEndUtc);
 }

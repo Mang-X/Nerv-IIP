@@ -1701,6 +1701,7 @@ export type NervIipContractsSchedulingSchedulingResourceContract = {
     capacityUnits?: number;
     calendarId?: string;
     sortKey?: string;
+    utilizationRate?: number;
 };
 
 export type NervIipContractsSchedulingSchedulingCalendarContract = {
