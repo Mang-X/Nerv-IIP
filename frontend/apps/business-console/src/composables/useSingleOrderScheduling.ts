@@ -9,7 +9,10 @@ import { useAuthStore } from '@/stores/auth'
 import { bindBusinessContext, hasBusinessContext } from './businessContextBinding'
 import { isSchedulingWorkbenchQuery } from './useSchedulingWorkbench'
 
-const SCHEDULING_IDS = ['listBusinessConsoleSchedulingPlans', 'getBusinessConsoleSchedulingPlan']
+const SCHEDULING_IDS = [
+  'listBusinessConsoleSchedulingPlanHistory',
+  'getBusinessConsoleSchedulingPlan',
+]
 
 /** 单单排产入口缺权限时的统一说明（三处入口 + 弹窗共用一句话）。 */
 export const SINGLE_ORDER_SCHEDULING_DENIED_REASON = '当前账号没有排产管理权限。'
