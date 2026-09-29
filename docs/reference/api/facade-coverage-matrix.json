@@ -4917,6 +4917,14 @@
     {
       "service": "Scheduling",
       "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/history",
+      "operationId": "listSchedulingPlanHistory",
+      "classification": "deferred",
+      "followUp": "#4049：交付历史方案 Gateway facade、OpenAPI 与生成客户端"
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
       "route": "/api/business/v1/scheduling/order-urgencies",
       "operationId": "listOrderUrgencies",
       "classification": "exposed",
