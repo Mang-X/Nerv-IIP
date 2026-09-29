@@ -349,7 +349,10 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                       第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
                       {{ formatDateTime(segment.endUtc) }}
                     </p>
-                    <p v-if="(task.segments?.length ?? 0) > 1" class="text-xs text-muted-foreground">
+                    <p
+                      v-if="(task.segments?.length ?? 0) > 1"
+                      class="text-xs text-muted-foreground"
+                    >
                       分段时间由重新排程确定；可使用草案锁定保留各段。
                     </p>
                     <span v-else class="text-xs text-muted-foreground">连续排程</span>
@@ -433,7 +436,9 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                         >持久锁定</NvButton
                       >
                       <NvStatusBadge
-                        v-if="persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)"
+                        v-if="
+                          persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)
+                        "
                         label="已持久锁定"
                         tone="success"
                         title="该工序的资源与起止时间已固定，之后重新排程也保持不变。刷新页面后此标记不再显示，但锁定仍然有效。"
