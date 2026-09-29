@@ -1534,7 +1534,7 @@ internal sealed class DemandPlanningRealPostgresFactAttribute : FactAttribute
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
         {
-            Skip = "Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof.";
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL DemandPlanning persistence tests.";
         }
     }
 }

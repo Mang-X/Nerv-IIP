@@ -53,7 +53,7 @@
       "id": "demandplanning-postgres",
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
       "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof\\.\";$"
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL DemandPlanning persistence tests\\.\";$"
     },
     {
       "id": "demandplanning-postgres-redis",
@@ -720,8 +720,8 @@
       "id": "demandplanning-postgres",
       "sourceId": "demandplanning-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.ErpSalesOrderDemandConsumerTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof\\.$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.(?:ErpSalesOrderDemandConsumerTests|MrpInputChangePersistenceTests)\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL DemandPlanning persistence tests\\.$",
       "allowedLanes": [
         "backend"
       ],
@@ -734,9 +734,10 @@
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line",
-        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability"
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres"
       ],
-      "expectedRuntimeTestCount": 4
+      "expectedRuntimeTestCount": 5
     },
     {
       "id": "demandplanning-postgres-redis",
