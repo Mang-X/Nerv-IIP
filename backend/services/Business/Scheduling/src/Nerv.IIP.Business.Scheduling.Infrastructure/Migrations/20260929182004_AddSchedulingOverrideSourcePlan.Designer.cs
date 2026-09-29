@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260929175415_AddSchedulingOverrideSourcePlan")]
+    [Migration("20260929182004_AddSchedulingOverrideSourcePlan")]
     partial class AddSchedulingOverrideSourcePlan
     {
         /// <inheritdoc />
@@ -900,6 +900,44 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.ToTable("schedule_plan_assignments", "scheduling", t =>
                         {
                             t.HasComment("BusinessScheduling operation assignments in a schedule plan.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignmentSegment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Schedule assignment segment row id.");
+
+                    b.Property<DateTimeOffset>("EndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("end_utc")
+                        .HasComment("Actual segment end timestamp in UTC.");
+
+                    b.Property<Guid>("SchedulePlanAssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schedule_plan_assignment_id")
+                        .HasComment("Owning schedule assignment row id.");
+
+                    b.Property<int>("SegmentIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("segment_index")
+                        .HasComment("Zero-based order of the production interval within its assignment.");
+
+                    b.Property<DateTimeOffset>("StartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("start_utc")
+                        .HasComment("Actual segment start timestamp in UTC.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchedulePlanAssignmentId", "SegmentIndex")
+                        .IsUnique();
+
+                    b.ToTable("schedule_plan_assignment_segments", "scheduling", t =>
+                        {
+                            t.HasComment("Actual production intervals within an interruptible schedule assignment.");
                         });
                 });
 
@@ -1901,6 +1939,15 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignmentSegment", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignment", null)
+                        .WithMany("Segments")
+                        .HasForeignKey("SchedulePlanAssignmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanConflict", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlan", null)
@@ -1951,6 +1998,11 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Navigation("ResourceLoads");
 
                     b.Navigation("UnscheduledOperations");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignment", b =>
+                {
+                    b.Navigation("Segments");
                 });
 #pragma warning restore 612, 618
         }
