@@ -16177,6 +16177,103 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/work-orders/{workOrderId}/priority": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "adjustBusinessConsoleMesWorkOrderPriority",
+        "parameters": [
+          {
+            "name": "workOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scopeKind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "scopeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMesAdjustWorkOrderPriorityRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/work-orders/{workOrderId}/release": {
       "post": {
         "tags": [
@@ -49992,6 +50089,9 @@
           },
           "hasCancelledDemand": {
             "type": "boolean"
+          },
+          "isRush": {
+            "type": "boolean"
           }
         }
       },
@@ -50167,6 +50267,13 @@
           "sourceNcrCode": {
             "type": "string",
             "nullable": true
+          },
+          "isRush": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -50405,6 +50512,24 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderDetailRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "isRush": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "changedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest": {
         "type": "object",
