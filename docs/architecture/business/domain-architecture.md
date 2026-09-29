@@ -118,6 +118,8 @@ CRM-lite 与 OMS-lite 属于 ERP Sales / WMS fulfillment 子域；多渠道拆�
 
 MES 拥有工单、工序和报工；Scheduling 拥有排程；Inventory 拥有库存过账；ERP Finance 消费报工、消耗和库存结果形成成本事实。MES 持久化的 `OperationTaskId` 是工序跨服务身份，Scheduling 工作台生成排程问题时原样用作 `OperationId`；`OperationSequence` 只保留同一工单内的路线顺序，不参与另造工序 ID。
 
+Scheduling 工作台从 MES 读取已保存的 `IsRush` 和 `Priority`，并复用 Scheduling 的 `order-urgency-v1` 结果。统一紧急度等级与 MES 业务优先级组成有序对，在本次工单集合中压成稠密排名，映射到既有工序 `Priority` 槽位；订单业务 `Priority` 保持原值。锁定/已开工任务先占产能，其余任务按急单、统一紧急度等级、业务优先级、交期及既有确定性顺序竞争。
+
 ### 设备到维护到产能
 
 ```text

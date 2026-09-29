@@ -47,7 +47,7 @@ public sealed partial class SchedulingWorkbenchTests
         var sender = new CapturingPlanSender(problem.HorizonStartUtc);
         var handler = new CreateSchedulingWorkbenchPlanCommandHandler(
             new SchedulingWorkbenchPlanAssembler(db, new StaticWorkbenchSourceProvider(order),
-                new StaticWorkbenchProblemProducer(problem)), sender);
+                new StaticWorkbenchProblemProducer(problem), new OrderUrgencyService(db, TimeProvider.System)), sender);
 
         var plan = await handler.Handle(new CreateSchedulingWorkbenchPlanCommand(
             problem.OrganizationId, problem.EnvironmentId, problem.HorizonStartUtc, problem.HorizonEndUtc,
@@ -151,7 +151,8 @@ public sealed partial class SchedulingWorkbenchTests
             skuCode = "SKU-001",
             productionVersionId = "pv-001",
             quantity = 10,
-            priority = 10,
+            priority = 12345,
+            isRush = false,
             dueUtc = start.AddDays(2),
             status = "released",
             workOrderNo = $"MO-{index:000}",
@@ -174,7 +175,8 @@ public sealed partial class SchedulingWorkbenchTests
             SchedulingWorkbenchLimits.MaxOrderCount,
             result.Select(x => x.Order.OrderId).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal("ROUTE-001:A", result.First().Order.RoutingVersionId);
-        Assert.True(result.First().Order.IsRush);
+        Assert.False(result.First().Order.IsRush);
+        Assert.Equal(12345, result.First().Order.Priority);
     }
 
     [Fact]
