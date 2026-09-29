@@ -136,6 +136,24 @@ public sealed class ProductEngineeringReleaseApiContractTests
             },
             CancellationToken.None));
         Assert.Contains("conflicts", conflict.Message, StringComparison.OrdinalIgnoreCase);
+
+        var skillConflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with
+            {
+                Operations =
+                [
+                    new RoutingOperationCommand(
+                        10,
+                        "WC-IGNORED",
+                        "cnc-turning",
+                        "Ignored",
+                        1,
+                        RequiredSkillCode: "grinding",
+                        Interruptible: true)
+                ]
+            },
+            CancellationToken.None));
+        Assert.Contains("conflicts", skillConflict.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
