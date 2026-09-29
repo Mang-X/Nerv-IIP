@@ -2,6 +2,12 @@
 import {
   GanttChart,
   ResourceSchedulerBoard,
+  SchedulingToolbar,
+  SchedulingLegend,
+  TaskDetailPanel,
+  resolveTimeScale,
+  type EngineCommand,
+  type TimeScale,
   type ScheduleModel,
   type TaskDragPayload,
 } from '@nerv-iip/scheduling'
@@ -18,8 +24,9 @@ import {
   NvTabsList,
   NvTabsTrigger,
 } from '@nerv-iip/ui'
-import { computed, shallowRef } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
+import { WORK_CENTER_FAMILY_LIST } from '@/data/workCenterFamilies'
 
 const props = defineProps<{
   model?: ScheduleModel
@@ -44,6 +51,104 @@ const emit = defineEmits<{
   persistOverride: [taskId: string]
 }>()
 const view = shallowRef('gantt')
+const scale = shallowRef<TimeScale>('auto')
+const ganttRef = shallowRef<InstanceType<typeof GanttChart>>()
+const resourceRef = shallowRef<InstanceType<typeof ResourceSchedulerBoard>>()
+const activeBoard = computed(() => (view.value === 'gantt' ? ganttRef.value : resourceRef.value))
+const selectedTaskId = shallowRef('')
+const selectedTask = computed(() =>
+  props.model?.tasks.find((task) => task.id === selectedTaskId.value),
+)
+const detailTitle = computed(() =>
+  selectedTask.value?.blockKind
+    ? '资源时间块详情'
+    : selectedTask.value?.type === 'order'
+      ? '工单详情'
+      : '工序详情',
+)
+const search = shallowRef('')
+const matchCursor = shallowRef(0)
+const searchMatches = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  if (!query) return []
+  return (props.model?.tasks ?? []).filter(
+    (task) =>
+      task.type === 'operation' &&
+      !task.blockKind &&
+      [
+        task.orderId,
+        task.operationId,
+        task.text,
+        task.resourceId,
+        task.workCenterId,
+        task.dimensions?.workCenter?.label,
+        task.product,
+      ].some((value) => value?.toLowerCase().includes(query)),
+  )
+})
+const legendCategories = computed(() => {
+  const used = new Set(
+    (props.model?.tasks ?? [])
+      .filter((task) => task.type === 'operation')
+      .map((task) => task.colorKey),
+  )
+  return WORK_CENTER_FAMILY_LIST.filter((family) => used.has(family.key)).map(({ key, label }) => ({
+    key,
+    label,
+  }))
+})
+function sendCommand(command: EngineCommand) {
+  activeBoard.value?.command(command)
+}
+function setScale(value: TimeScale) {
+  scale.value = value
+  sendCommand({ kind: 'scaleTo', scale: value })
+}
+function zoom(direction: -1 | 1) {
+  const scales: TimeScale[] = ['hour', 'day', 'week', 'month']
+  const current = resolveTimeScale(scale.value, props.model?.horizon)
+  setScale(scales[Math.max(0, Math.min(scales.length - 1, scales.indexOf(current) + direction))])
+}
+function revealMatch(index: number) {
+  const matches = searchMatches.value
+  if (!matches.length) return
+  const next = ((index % matches.length) + matches.length) % matches.length
+  matchCursor.value = next + 1
+  selectedTaskId.value = matches[next].id
+  sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
+  sendCommand({ kind: 'selectTask', taskId: selectedTaskId.value })
+}
+// 图面在页签切换后重新挂载：重新应用查阅状态，草案本身始终来自父页面。
+watch(
+  [activeBoard, searchMatches],
+  () => {
+    sendCommand({ kind: 'setSearchHighlight', taskIds: searchMatches.value.map((task) => task.id) })
+    matchCursor.value = 0
+    if (searchMatches.value.length) {
+      const selectedIndex = searchMatches.value.findIndex(
+        (task) => task.id === selectedTaskId.value,
+      )
+      revealMatch(selectedIndex < 0 ? 0 : selectedIndex)
+    } else if (selectedTask.value) {
+      sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
+      sendCommand({ kind: 'selectTask', taskId: selectedTaskId.value })
+    }
+  },
+  { flush: 'post' },
+)
+watch(
+  () => props.model,
+  () => {
+    if (!selectedTask.value) selectedTaskId.value = ''
+  },
+)
+watch(
+  () => props.model?.meta.planId,
+  () => {
+    search.value = ''
+    selectedTaskId.value = ''
+  },
+)
 // 物料风险（软约束）：已排但缺料的工序，开工前必须先备料。
 const materialRisks = computed(() => props.model?.materialRisks ?? [])
 // 设备数据风险（软约束）：排在状态未知设备上的工序，开工前需人工确认设备可用。
@@ -163,23 +268,55 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
         <NvTabsTrigger value="resource">资源排产板</NvTabsTrigger>
         <NvTabsTrigger value="table">表格编辑</NvTabsTrigger>
       </NvTabsList>
-      <NvTabsContent value="gantt" class="h-[34rem] overflow-hidden rounded-md border">
-        <GanttChart
-          :model="model"
-          :read-only="readOnly"
-          @task-drag-end="emit('move', $event)"
-          @locked-drag-attempt="emit('lockedAttempt', $event)"
-        />
-      </NvTabsContent>
-      <NvTabsContent value="resource" class="h-[34rem] overflow-hidden rounded-md border">
-        <ResourceSchedulerBoard
-          :model="model"
-          :read-only="readOnly"
-          @task-drag-end="emit('move', $event)"
-          @locked-drag-attempt="emit('lockedAttempt', $event)"
-        />
-      </NvTabsContent>
-      <NvTabsContent value="table" class="max-h-[34rem] overflow-auto rounded-md border">
+      <SchedulingToolbar
+        v-if="view !== 'table'"
+        :scale="scale"
+        :read-only="Boolean(readOnly)"
+        :can-undo="false"
+        :can-redo="false"
+        :dirty="false"
+        :busy="false"
+        :can-edit="false"
+        :can-repreview="false"
+        :can-release="false"
+        searchable
+        :search="search"
+        :match-count="searchMatches.length"
+        :match-index="matchCursor"
+        @scale-change="setScale"
+        @zoom-in="zoom(-1)"
+        @zoom-out="zoom(1)"
+        @today="sendCommand({ kind: 'scrollToToday' })"
+        @fit="sendCommand({ kind: 'fitToScreen' })"
+        @update:search="search = $event"
+        @search-prev="revealMatch(matchCursor - 2)"
+        @search-next="revealMatch(matchCursor)"
+      />
+      <div class="flex flex-col gap-3 xl:flex-row">
+        <div class="min-w-0 flex-1">
+          <NvTabsContent value="gantt" class="h-[34rem] overflow-hidden rounded-md border">
+            <GanttChart
+              ref="ganttRef"
+              :scale="scale"
+              :model="model"
+              @task-select="selectedTaskId = $event"
+              :read-only="readOnly"
+              @task-drag-end="emit('move', $event)"
+              @locked-drag-attempt="emit('lockedAttempt', $event)"
+            />
+          </NvTabsContent>
+          <NvTabsContent value="resource" class="h-[34rem] overflow-hidden rounded-md border">
+            <ResourceSchedulerBoard
+              ref="resourceRef"
+              :scale="scale"
+              :model="model"
+              @task-select="selectedTaskId = $event"
+              :read-only="readOnly"
+              @task-drag-end="emit('move', $event)"
+              @locked-drag-attempt="emit('lockedAttempt', $event)"
+            />
+          </NvTabsContent>
+          <NvTabsContent value="table" class="max-h-[34rem] overflow-auto rounded-md border">
         <table class="w-full text-sm">
           <thead class="sticky top-0 z-10 bg-muted text-left [&_th]:whitespace-nowrap">
             <tr>
@@ -317,6 +454,39 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
           </tbody>
         </table>
       </NvTabsContent>
+        </div>
+        <aside
+          v-if="selectedTask"
+          class="max-h-[34rem] overflow-y-auto rounded-md border xl:w-[21rem] xl:flex-none"
+          data-testid="scheduling-draft-task-detail"
+          :aria-label="detailTitle"
+        >
+          <div class="flex items-center justify-between gap-2 px-4 pt-3">
+            <h3 class="text-sm font-semibold">{{ detailTitle }}</h3>
+            <NvButton
+              size="sm"
+              variant="ghost"
+              type="button"
+              :aria-label="`关闭${detailTitle}`"
+              @click="selectedTaskId = ''"
+              >关闭</NvButton
+            >
+          </div>
+          <TaskDetailPanel
+            :task="selectedTask"
+            :read-only="readOnly"
+            @toggle-lock="(taskId, locked) => emit('lock', taskId, locked)"
+          />
+        </aside>
+      </div>
+      <SchedulingLegend
+        v-if="view !== 'table'"
+        :model="model"
+        :scale="scale"
+        :view="view === 'gantt' ? 'order' : 'resource'"
+        :categories="legendCategories"
+      />
+
     </NvTabs>
   </section>
 </template>
