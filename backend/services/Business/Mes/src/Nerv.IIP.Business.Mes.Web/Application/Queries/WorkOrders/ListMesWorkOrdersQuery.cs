@@ -46,7 +46,9 @@ public sealed record MesWorkOrderExecutionFact(
     string WorkOrderType = WorkOrder.StandardType,
     string? SourceWorkOrderId = null,
     string? SourceNcrId = null,
-    string? SourceNcrCode = null);
+    string? SourceNcrCode = null,
+    bool HasChangedDemand = false,
+    bool HasCancelledDemand = false);
 
 /// <summary>
 /// MES 工单列表公开的工序执行事实。<paramref name="OperationTaskId"/> 是 MES 持久化工序身份，
@@ -210,6 +212,19 @@ public sealed class ListMesWorkOrdersQueryHandler(
             .ToListAsync(cancellationToken);
         var heldWorkOrderIdSet = heldWorkOrderIds.ToHashSet(StringComparer.Ordinal);
 
+        var demandChanges = await dbContext.WorkOrderDemandChanges
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
+                workOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new { x.WorkOrderId, x.Cancelled })
+            .ToListAsync(cancellationToken);
+        var changedDemandIds = demandChanges.Where(x => !x.Cancelled)
+            .Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal);
+        var cancelledDemandIds = demandChanges.Where(x => x.Cancelled)
+            .Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal);
+
         var tasksByWorkOrder = tasks
             .GroupBy(x => x.WorkOrderId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
@@ -254,7 +269,9 @@ public sealed class ListMesWorkOrdersQueryHandler(
             x.WorkOrderType,
             x.SourceWorkOrderId,
             x.SourceNcrId,
-            x.SourceNcrCode)).ToArray();
+            x.SourceNcrCode,
+            changedDemandIds.Contains(x.WorkOrderIdValue),
+            cancelledDemandIds.Contains(x.WorkOrderIdValue))).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }

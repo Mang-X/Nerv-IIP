@@ -127,3 +127,44 @@ describe('SchedulingOrderPool 搜索 (#1399 M5)', () => {
     expect(wrapper.emitted('include')?.at(-1)).toEqual([['wo-1'], true])
   })
 })
+
+describe('待排池需求变更标记', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('按 MES 工单字段显示变更、取消与无标记', () => {
+    const pinia = createPinia()
+    const wrapper = mount(SchedulingOrderPool, {
+      global: { plugins: [pinia] },
+      props: {
+        draftOrders: [],
+        candidates: [
+          {
+            workOrderId: 'WO-CHANGED',
+            skuId: 'SKU-A',
+            hasChangedDemand: true,
+            hasCancelledDemand: false,
+          },
+          {
+            workOrderId: 'WO-CANCELLED',
+            skuId: 'SKU-A',
+            hasChangedDemand: false,
+            hasCancelledDemand: true,
+          },
+          {
+            workOrderId: 'WO-PLAIN',
+            skuId: 'SKU-A',
+            hasChangedDemand: false,
+            hasCancelledDemand: false,
+          },
+        ],
+      },
+    })
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0].text()).toContain('需求已变更')
+    expect(rows[0].text()).not.toContain('需求已取消')
+    expect(rows[1].text()).toContain('需求已取消')
+    expect(rows[1].text()).not.toContain('需求已变更')
+    expect(rows[2].text()).not.toContain('需求已变更')
+    expect(rows[2].text()).not.toContain('需求已取消')
+  })
+})

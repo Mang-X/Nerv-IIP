@@ -49557,6 +49557,12 @@
           "sourceNcrCode": {
             "type": "string",
             "nullable": true
+          },
+          "hasChangedDemand": {
+            "type": "boolean"
+          },
+          "hasCancelledDemand": {
+            "type": "boolean"
           }
         }
       },

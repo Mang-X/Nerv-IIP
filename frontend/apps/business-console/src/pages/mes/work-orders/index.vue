@@ -41,6 +41,7 @@ import {
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
+import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
@@ -837,6 +838,10 @@ function isNonEmpty(value: string) {
       <template #cell-status="{ row }">
         <div class="flex items-center gap-1.5">
           <NvStatusBadge :value="row.status" />
+          <WorkOrderDemandChangeBadges
+            :has-changed-demand="row.hasChangedDemand"
+            :has-cancelled-demand="row.hasCancelledDemand"
+          />
           <!-- 质量保留锁定标记：与工单生命周期状态无关，来源为活跃 quality hold（#886）。 -->
           <LockIcon
             v-if="row.hasActiveQualityHold"

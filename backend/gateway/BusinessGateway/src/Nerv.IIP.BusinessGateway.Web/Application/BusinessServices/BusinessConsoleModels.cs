@@ -4876,7 +4876,9 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     string WorkOrderType = "standard",
     string? SourceWorkOrderId = null,
     string? SourceNcrId = null,
-    string? SourceNcrCode = null);
+    string? SourceNcrCode = null,
+    bool HasChangedDemand = false,
+    bool HasCancelledDemand = false);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,

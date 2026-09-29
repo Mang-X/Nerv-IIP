@@ -172,7 +172,7 @@ function mountList() {
         NvDataTable: {
           props: ['rows', 'columns'],
           template:
-            '<div><div v-for="(row, i) in rows" :key="i" data-testid="work-order-row" :data-status="row.status"><slot name="cell-urgency" :row="row" /></div></div>',
+            '<div><div v-for="(row, i) in rows" :key="i" data-testid="work-order-row" :data-status="row.status"><slot name="cell-status" :row="row" /><slot name="cell-urgency" :row="row" /></div></div>',
         },
         NvStatusBadge: { props: ['value', 'label'], template: '<span>{{ label ?? value }}</span>' },
         NvButton: { template: '<button><slot /></button>' },
@@ -223,5 +223,43 @@ describe('work-order list — shared urgency reference mapping', () => {
       expect(row.find('[data-testid="order-urgency"]').exists()).toBe(false)
       expect(row.text()).toContain('已结束')
     }
+  })
+})
+
+describe('工单列表需求变更标记', () => {
+  it('只给对应工单显示 MES 返回的变更与取消标记', () => {
+    workOrders.items = [
+      {
+        workOrderId: 'WO-CHANGED',
+        skuId: 'SKU-A',
+        status: 'released',
+        operationTasks: [],
+        hasChangedDemand: true,
+        hasCancelledDemand: false,
+      },
+      {
+        workOrderId: 'WO-CANCELLED',
+        skuId: 'SKU-A',
+        status: 'released',
+        operationTasks: [],
+        hasChangedDemand: false,
+        hasCancelledDemand: true,
+      },
+      {
+        workOrderId: 'WO-PLAIN',
+        skuId: 'SKU-A',
+        status: 'released',
+        operationTasks: [],
+        hasChangedDemand: false,
+        hasCancelledDemand: false,
+      },
+    ]
+    const rows = mountList().findAll('[data-testid="work-order-row"]')
+    expect(rows[0].text()).toContain('需求已变更')
+    expect(rows[0].text()).not.toContain('需求已取消')
+    expect(rows[1].text()).toContain('需求已取消')
+    expect(rows[1].text()).not.toContain('需求已变更')
+    expect(rows[2].text()).not.toContain('需求已变更')
+    expect(rows[2].text()).not.toContain('需求已取消')
   })
 })
