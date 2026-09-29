@@ -14,6 +14,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         $"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs",
         $"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs",
+        $"{SchedulingWebRoot}/Application/Queries/GetSchedulePlanOverridesQuery.cs",
         $"{SchedulingWebRoot}/Application/IntegrationEventConverters/SchedulingIntegrationEventConverters.cs",
         $"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs",
         $"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs",
@@ -31,6 +32,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Target($"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs", "RevokeSchedulePlanCommandHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs", "CreateSchedulePlanCommandHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs", "GetSchedulePlanDetailQueryHandler", "Handle", 1),
+        Target($"{SchedulingWebRoot}/Application/Queries/GetSchedulePlanOverridesQuery.cs", "GetSchedulePlanOverridesQueryHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs", "GetSchedulePlanGanttQueryHandler", "Handle", 1),
         Target($"{SchedulingWebRoot}/Application/IntegrationEventConverters/SchedulingIntegrationEventConverters.cs", "HttpSchedulingIntegrationEventContextAccessor", "ResolveActor", 1),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs", "HttpSchedulingWorkbenchSourceProvider", "ResolveOrdersAsync", 5),
@@ -66,7 +68,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(42, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
+        Assert.Equal(44, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(3, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
