@@ -22,5 +22,22 @@ public sealed class SchedulePlanAssignmentEntityTypeConfiguration : IEntityTypeC
         builder.Property(x => x.IsLocked).HasColumnName("is_locked").HasComment("Whether this assignment came from a locked input.");
         builder.Property(x => x.ExplanationCode).HasColumnName("explanation_code").HasMaxLength(96).IsRequired().HasComment("Scheduling explanation code.");
         builder.HasIndex(x => new { x.SchedulePlanId, x.AssignmentId }).IsUnique();
+        builder.HasMany(x => x.Segments).WithOne().HasForeignKey(x => x.SchedulePlanAssignmentId).OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Segments).AutoInclude();
+    }
+}
+
+public sealed class SchedulePlanAssignmentSegmentEntityTypeConfiguration : IEntityTypeConfiguration<SchedulePlanAssignmentSegment>
+{
+    public void Configure(EntityTypeBuilder<SchedulePlanAssignmentSegment> builder)
+    {
+        builder.ToTable("schedule_plan_assignment_segments", table => table.HasComment("Actual production intervals within an interruptible schedule assignment."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Schedule assignment segment row id.");
+        builder.Property(x => x.SchedulePlanAssignmentId).HasColumnName("schedule_plan_assignment_id").HasComment("Owning schedule assignment row id.");
+        builder.Property(x => x.SegmentIndex).HasColumnName("segment_index").HasComment("Zero-based order of the production interval within its assignment.");
+        builder.Property(x => x.StartUtc).HasColumnName("start_utc").HasComment("Actual segment start timestamp in UTC.");
+        builder.Property(x => x.EndUtc).HasColumnName("end_utc").HasComment("Actual segment end timestamp in UTC.");
+        builder.HasIndex(x => new { x.SchedulePlanAssignmentId, x.SegmentIndex }).IsUnique();
     }
 }
