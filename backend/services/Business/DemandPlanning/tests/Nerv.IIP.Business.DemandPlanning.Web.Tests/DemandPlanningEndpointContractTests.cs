@@ -117,7 +117,7 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
-    public async Task Cancel_demand_source_command_removes_source_from_planning_input()
+    public async Task Cancel_demand_source_command_keeps_cancelled_source_for_traceability()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -132,7 +132,28 @@ public sealed class DemandPlanningEndpointContractTests
 
         var demands = await new ListDemandSourcesQueryHandler(dbContext)
             .Handle(new ListDemandSourcesQuery("org-001", "env-dev"), CancellationToken.None);
-        Assert.Empty(demands);
+        var demand = Assert.Single(demands);
+        Assert.Equal("cancelled", demand.SourceStatus);
+    }
+
+    [Fact]
+    public async Task Cancel_demand_source_command_rejects_erp_owned_sales_order_projection()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var demand = DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-1001", "SO-1001", "10", "CUST-001",
+            "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), 1);
+        dbContext.DemandSources.Add(demand);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new CancelDemandSourceCommandHandler(dbContext).Handle(
+            new CancelDemandSourceCommand("org-001", "env-dev", demand.Id), CancellationToken.None));
+
+        Assert.Equal("active", demand.SourceStatus);
+        Assert.Equal(10m, demand.Quantity);
+        Assert.Equal(1, demand.SourceVersion);
     }
 
     [Fact]

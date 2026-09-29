@@ -13,6 +13,7 @@ describe('PlanningWorkbench', () => {
     setActivePinia(createPinia())
     planningSpies.runMrp = vi.fn(async () => undefined)
     planningSpies.acceptSuggestion.mockReset()
+    planningSpies.cancelDemand.mockReset()
     routerPush.mockReset()
     planningSpies.toastError.mockReset()
     planningSpies.toastSuccess.mockReset()
@@ -22,6 +23,68 @@ describe('PlanningWorkbench', () => {
     planningSpies.activeMrpRun.failureReason = ''
     planningSpies.activeMrpRun.suggestionCount = null
     planningSpies.resetDemands()
+  })
+
+  it('作废手工需求后保留页面追溯入口', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    await wrapper
+      .findAll('.cell-actions button')
+      .find((button) => button.text() === '作废')!
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '确认作废')!
+      .trigger('click')
+    await flushPromises()
+    expect(planningSpies.cancelDemand).toHaveBeenCalledWith('demand-002')
+  })
+
+  it('pegging 与建议行页内互定位并显示承接单据状态', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.peggingRef!.value = [
+      ...planningSpies.peggingRef!.value,
+      { suggestionId: 'suggestion-002', demandSourceReference: 'SO-OTHER', peggingType: 'demand' },
+    ]
+    await nextTick()
+    expect(wrapper.text()).toContain('已下达')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '定位建议')!
+      .trigger('click')
+    const focusedSuggestion = wrapper.findAll('.cell-skuCode.bg-primary\\/10')
+    expect(focusedSuggestion).toHaveLength(1)
+    expect(focusedSuggestion[0]!.text()).toContain('FG-SHOCK')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '定位追溯')!
+      .trigger('click')
+    expect(
+      wrapper.findAll('.cell-demandSourceReference.bg-primary\\/10').map((cell) => cell.text()),
+    ).toEqual(expect.arrayContaining(['SO-1001']))
+    expect(wrapper.findAll('.cell-demandSourceReference.bg-primary\\/10')).toHaveLength(1)
+  })
+
+  it('建议被状态筛选暂时隐藏时从 pegging 仍可定位', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = planningSpies.suggestionsRef!.value.filter(
+      (row) => row.suggestionId !== 'suggestion-001',
+    )
+    planningSpies.suggestionFiltersRef!.status = 'open'
+    await nextTick()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '定位建议')!
+      .trigger('click')
+    expect(planningSpies.suggestionFiltersRef!.status).toBe('all')
+    planningSpies.suggestionsRef!.value = [
+      ...planningSpies.suggestionsRef!.value,
+      { suggestionId: 'suggestion-001', runId: 'run-001', skuCode: 'FG-SHOCK', status: 'Accepted' },
+    ]
+    await nextTick()
+    const focusedSuggestion = wrapper.findAll('.cell-skuCode.bg-primary\\/10')
+    expect(focusedSuggestion).toHaveLength(1)
+    expect(focusedSuggestion[0]!.text()).toContain('FG-SHOCK')
   })
 
   it('只在最近完成的 MRP 有后续需求变更时显示过期横幅', async () => {
@@ -196,7 +259,8 @@ describe('PlanningWorkbench', () => {
     const supersededActions = supersededRow.querySelector('.cell-actions')!
     expect(supersededActions.textContent).not.toContain('接受')
     expect(supersededActions.textContent).not.toContain('拒绝')
-    expect(supersededActions.querySelectorAll('button')).toHaveLength(0)
+    expect(supersededActions.querySelectorAll('button')).toHaveLength(1)
+    expect(supersededActions.textContent).toContain('定位追溯')
     expect(wrapper.text()).toContain('SKU-ACCEPTED')
     expect(wrapper.text()).toContain('SKU-REJECTED')
   })

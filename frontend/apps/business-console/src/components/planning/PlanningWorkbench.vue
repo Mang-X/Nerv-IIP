@@ -96,6 +96,8 @@ const {
   createDemandError,
   createDemandPending,
   createOrUpdateDemand,
+  cancelDemand,
+  cancelDemandPending,
   demandForm,
   demands,
   demandsError,
@@ -131,6 +133,7 @@ const {
   suggestions,
   suggestionsError,
   suggestionsPending,
+  downstreamStatuses,
 } = useBusinessPlanning()
 const router = useRouter()
 const orderUrgencies = useOrderUrgencies(
@@ -279,6 +282,9 @@ const planningDataError = computed(
 )
 
 const demandOpen = shallowRef(false)
+const activeTab = shallowRef('demands')
+const focusedSuggestionId = shallowRef('')
+const demandCancelTarget = shallowRef<BusinessConsoleDemandSourceItem | null>(null)
 const mpsOpen = shallowRef(false)
 const mpsEditingId = shallowRef<string | null>(null)
 const mrpOpen = shallowRef(false)
@@ -409,6 +415,31 @@ const suggestionRun = computed(() =>
 const scopedSuggestions = computed(() =>
   suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
 )
+function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
+  if (!row.suggestionId) return
+  suggestionRunChoice.value = runSelection.runId
+  suggestionFilters.status = 'all'
+  suggestionTypeFilter.type = 'all'
+  focusedSuggestionId.value = row.suggestionId
+  activeTab.value = 'suggestions'
+}
+function focusPegging(row: BusinessConsolePlanningSuggestionItem) {
+  if (!row.suggestionId || !row.runId) return
+  runSelection.runId = row.runId
+  focusedSuggestionId.value = row.suggestionId
+  activeTab.value = 'runs'
+}
+async function confirmCancelDemand() {
+  const target = demandCancelTarget.value
+  if (!target?.demandSourceId) return
+  try {
+    await cancelDemand(target.demandSourceId)
+    notifySuccess('需求已作废，追溯记录仍保留。')
+    demandCancelTarget.value = null
+  } catch (error) {
+    notifyOperationFailure('作废需求失败', error, '作废需求失败，请稍后重试。')
+  }
+}
 function runChoiceLabel(run: BusinessConsoleMrpRunItem): string {
   return `第 ${mrpRuns.value.length - mrpRuns.value.indexOf(run)} 次 · ${runHorizonLabel(run)}`
 }
@@ -516,6 +547,7 @@ const demandColumns: NvDataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'dueDate', header: '需求日', width: 'w-32' },
   { key: 'urgency', header: '紧迫度', width: 'w-28' },
   { key: 'coverage', header: '覆盖', width: 'w-28' },
+  { key: 'actions', header: '', align: 'end', width: 'w-20' },
 ]
 const mpsColumns: NvDataTableColumn<BusinessConsoleMpsBucketItem>[] = [
   { key: 'bucketDate', header: '计划周期', cellClass: 'font-medium', width: 'w-32' },
@@ -546,6 +578,7 @@ const peggingColumns: NvDataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
   { key: 'sku', header: '物料层级' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
   { key: 'engineeringRef', header: '工程引用' },
+  { key: 'suggestion', header: '建议', width: 'w-24' },
 ]
 const suggestionColumns: NvDataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
   // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
@@ -802,6 +835,36 @@ function downstreamLabel(service?: string | null, type?: string | null) {
   )
     return 'ERP 采购单行'
   return '下游单据'
+}
+function downstreamStatus(status?: string): { label: string; tone: StatusTone } {
+  const names: Record<string, string> = {
+    created: '新建',
+    queued: '排队中',
+    ready: '可开工',
+    released: '已下达',
+    started: '已开工',
+    inprogress: '执行中',
+    running: '执行中',
+    hold: '暂停',
+    blocked: '阻塞',
+    completed: '已完成',
+    closed: '已关闭',
+    cancelled: '已取消',
+    open: '待处理',
+    converted: '已转采购单',
+    unavailable: '状态读取失败',
+    unknown: '状态未知',
+  }
+  const key = (status ?? 'unknown').toLowerCase()
+  return {
+    label: names[key] ?? status ?? '状态未知',
+    tone:
+      key === 'cancelled' || key === 'blocked' || key === 'unavailable'
+        ? 'danger'
+        : key === 'completed' || key === 'closed' || key === 'converted'
+          ? 'success'
+          : 'neutral',
+  }
 }
 // —— 计划建议行的「对该单排产」（MAN-694 / #1262）——
 // 排程的最小单位是 MES 工单。生产建议只有**被接受、承接成 MES 工单之后**才有可排的单，
@@ -1301,7 +1364,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-  <NvTabs default-value="demands">
+  <NvTabs v-model="activeTab">
     <NvTabsList>
       <!-- 筛选生效时页签显「筛出数/总数」，别让人以为需求池整个缩水了。 -->
       <NvTabsTrigger value="demands"
@@ -1377,6 +1440,16 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             :label="row.sourceStatus === 'cancelled' ? '已取消' : '有效'"
             :tone="row.sourceStatus === 'cancelled' ? 'neutral' : 'success'"
           />
+        </template>
+        <template #cell-actions="{ row }">
+          <NvButton
+            v-if="row.demandType !== 'sales-order' && row.sourceStatus === 'active'"
+            type="button"
+            size="sm"
+            variant="ghost"
+            @click="demandCancelTarget = row"
+            >作废</NvButton
+          >
         </template>
         <template #cell-skuCode="{ row }">
           <div class="flex flex-col gap-0.5">
@@ -1594,6 +1667,10 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <NvDataTable
           :columns="peggingColumns"
           :rows="pegging"
+          :row-class="
+            (row: BusinessConsoleMrpPeggingItem) =>
+              row.suggestionId === focusedSuggestionId ? 'bg-primary/10' : ''
+          "
           :row-key="(r) => `${r.suggestionId}:${r.componentSkuCode}`"
           :loading="peggingPending"
           :searchable="false"
@@ -1616,6 +1693,16 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 <ExternalLinkIcon aria-hidden="true" />
               </NvButton>
             </div>
+          </template>
+          <template #cell-suggestion="{ row }">
+            <NvButton
+              v-if="row.suggestionId"
+              size="sm"
+              type="button"
+              variant="ghost"
+              @click="focusSuggestion(row)"
+              >定位建议</NvButton
+            >
           </template>
           <template #cell-sku="{ row }">
             <div
@@ -1721,6 +1808,10 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       <NvDataTable
         :columns="suggestionColumns"
         :rows="visibleSuggestions"
+        :row-class="
+          (row: BusinessConsolePlanningSuggestionItem) =>
+            row.suggestionId === focusedSuggestionId ? 'bg-primary/10' : ''
+        "
         row-key="suggestionId"
         :loading="suggestionsPending"
         :searchable="false"
@@ -1806,10 +1897,28 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           </div>
         </template>
         <template #cell-downstream="{ row }">
-          <span v-if="row.downstreamDocumentId" class="text-sm">
-            {{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·
-            {{ row.downstreamDocumentId }}
-          </span>
+          <div v-if="row.downstreamDocumentId" class="grid gap-1 text-sm">
+            <span
+              >{{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·
+              {{ row.downstreamDocumentId }}</span
+            >
+            <NvStatusBadge
+              v-if="
+                row.suggestionType === 'planned-work-order' ||
+                row.suggestionType === 'planned-purchase'
+              "
+              :label="
+                row.suggestionId && downstreamStatuses[row.suggestionId]
+                  ? downstreamStatus(downstreamStatuses[row.suggestionId]).label
+                  : '状态读取中'
+              "
+              :tone="
+                downstreamStatus(
+                  row.suggestionId ? downstreamStatuses[row.suggestionId] : undefined,
+                ).tone
+              "
+            />
+          </div>
           <span v-else class="text-sm text-muted-foreground">未承接</span>
         </template>
         <template #cell-status="{ row }"
@@ -1825,6 +1934,14 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           </div></template
         >
         <template #cell-actions="{ row }">
+          <NvButton
+            v-if="row.suggestionId"
+            size="sm"
+            type="button"
+            variant="ghost"
+            @click="focusPegging(row)"
+            >定位追溯</NvButton
+          >
           <div v-if="isOpen(row.status)" class="flex items-center justify-end gap-2">
             <NvButton
               v-if="isAcceptableSuggestion(row.suggestionType)"
@@ -1959,4 +2076,28 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       </NvDialog>
     </NvTabsContent>
   </NvTabs>
+  <NvDialog
+    :open="!!demandCancelTarget"
+    @update:open="
+      (open) => {
+        if (!open) demandCancelTarget = null
+      }
+    "
+  >
+    <NvDialogContent>
+      <NvDialogHeader>
+        <NvDialogTitle>作废计划需求</NvDialogTitle>
+        <NvDialogDescription
+          >确认作废 {{ demandCancelTarget?.sourceReference }}？需求将退出后续 MRP
+          输入，追溯记录保留。</NvDialogDescription
+        >
+      </NvDialogHeader>
+      <NvDialogFooter>
+        <NvButton type="button" variant="outline" @click="demandCancelTarget = null">返回</NvButton>
+        <NvButton type="button" :disabled="cancelDemandPending" @click="confirmCancelDemand"
+          >确认作废</NvButton
+        >
+      </NvDialogFooter>
+    </NvDialogContent>
+  </NvDialog>
 </template>

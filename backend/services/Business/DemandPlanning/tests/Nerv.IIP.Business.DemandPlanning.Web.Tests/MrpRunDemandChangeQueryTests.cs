@@ -40,7 +40,7 @@ public sealed class MrpRunDemandChangeQueryTests
     }
 
     [Fact]
-    public async Task Moving_inputs_out_and_physically_deleting_demand_still_counts_each_source()
+    public async Task Moving_inputs_out_and_cancelling_demand_still_counts_each_source()
     {
         await using var provider = CreateProvider();
         using var scope = provider.CreateScope();
@@ -69,9 +69,10 @@ public sealed class MrpRunDemandChangeQueryTests
         await demands.Handle(new("org-001", "env-dev", "manual", "D-NEW", "SKU", "pcs", "SITE", 10, start), default);
         await db.SaveChangesAsync();
 
-        Assert.Equal(2, await db.DemandSources.CountAsync());
+        Assert.Equal(3, await db.DemandSources.CountAsync());
+        Assert.Equal("cancelled", (await db.DemandSources.SingleAsync(x => x.SourceReference == "D-DELETE")).SourceStatus);
         Assert.Contains(await db.MrpInputChanges.ToListAsync(), x =>
-            x.SourceReference == "D-DELETE" && x.Operation == MrpInputChangeOperation.Deleted);
+            x.SourceReference == "D-DELETE" && x.Operation == MrpInputChangeOperation.Updated && !x.CurrentlyEligible);
         var result = Assert.Single(await new ListMrpRunsQueryHandler(db)
             .Handle(new ListMrpRunsQuery("org-001", "env-dev"), default));
         Assert.Equal(4, result.DemandChangeCount);

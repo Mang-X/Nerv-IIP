@@ -47,11 +47,14 @@ const planningSpies = vi.hoisted(() => ({
   mpsBucketsRef: null as { value: Array<Record<string, unknown>> } | null,
   mpsFormRef: null as { quantity: number } | null,
   mrpRunsRef: null as { value: Array<Record<string, unknown>> } | null,
+  peggingRef: null as { value: Array<Record<string, unknown>> } | null,
+  suggestionFiltersRef: null as { status: string } | null,
   suggestionsRef: null as { value: Array<Record<string, unknown>> } | null,
   resetDemands: () => {},
   runMrp: vi.fn(async () => undefined),
   updateMpsBucket: vi.fn(async () => undefined),
   acceptSuggestion: vi.fn(),
+  cancelDemand: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   toastWarning: vi.fn(),
@@ -118,6 +121,8 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       createDemandError: shallowRef(null),
       createDemandPending: shallowRef(false),
       createOrUpdateDemand: vi.fn(),
+      cancelDemand: planningSpies.cancelDemand,
+      cancelDemandPending: shallowRef(false),
       demandForm: reactive({
         organizationId: 'org-001',
         environmentId: 'env-dev',
@@ -169,7 +174,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       updateMpsBucket: planningSpies.updateMpsBucket,
       updateMpsBucketError: shallowRef(null),
       updateMpsBucketPending: shallowRef(false),
-      pegging: shallowRef([
+      pegging: (planningSpies.peggingRef = shallowRef([
         {
           suggestionId: 'suggestion-001',
           peggingType: 'demand',
@@ -183,7 +188,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
           manufacturingBomReference: 'MBOM-FG:001',
           routingReference: 'ROUTING-FG',
         },
-      ]),
+      ])),
       peggingPending: shallowRef(false),
       refreshPlanning: vi.fn(),
       rejectSuggestion: vi.fn(),
@@ -199,11 +204,11 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
         horizonEnd: '2026-06-30',
       }),
       runSelection: reactive({ runId: 'run-001' }),
-      suggestionFilters: reactive({
+      suggestionFilters: (planningSpies.suggestionFiltersRef = reactive({
         organizationId: 'org-001',
         environmentId: 'env-dev',
         status: 'open',
-      }),
+      })),
       suggestionTypeFilter: reactive({ type: 'all' }),
       suggestions: (planningSpies.suggestionsRef = shallowRef([
         {
@@ -297,6 +302,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       ])),
       suggestionsError: shallowRef(null),
       suggestionsPending: shallowRef(false),
+      downstreamStatuses: shallowRef({ 'suggestion-004': 'released' }),
     }),
   }
 })
@@ -363,6 +369,7 @@ vi.mock('@nerv-iip/ui', async () => {
     props: {
       columns: { type: Array, default: () => [] },
       rows: { type: Array, default: () => [] },
+      rowClass: { type: Function, default: undefined },
     },
     setup(props, { slots }) {
       return () =>
@@ -373,7 +380,7 @@ vi.mock('@nerv-iip/ui', async () => {
               const slot = slots[`cell-${column.key}`]
               return h(
                 'div',
-                { class: `cell-${column.key}` },
+                { class: `cell-${column.key} ${props.rowClass?.(row) ?? ''}` },
                 slot ? slot({ row }) : String(row[column.key] ?? ''),
               )
             }),
