@@ -37,6 +37,73 @@ public sealed class ErpSalesOrderDemandConsumerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task Legacy_unknown_line_pegging_invalidates_after_the_last_remaining_line_changes(bool deliveredEarlier)
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var line10 = new SalesOrderLineSnapshot("10", "SKU-FG-A", 8m, "EA", new DateOnly(2026, 8, 15), false);
+        var line20 = new SalesOrderLineSnapshot("20", "SKU-FG-A", 6m, "EA", new DateOnly(2026, 8, 15), false);
+        await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Released(1, 8m, "10") with
+            {
+                Payload = Payload(1, "released", 8m, "10") with { Lines = [line10, line20] },
+            }, CancellationToken.None);
+
+        var runId = new MrpRunId(Guid.CreateVersion7());
+        var open = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        var accepted = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        accepted.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        accepted.Accept("BusinessMes", "WorkOrder", "WO-LEGACY");
+        open.ClearDomainEvents();
+        accepted.ClearDomainEvents();
+        dbContext.PlanningSuggestions.AddRange(open, accepted);
+        await dbContext.SaveChangesAsync();
+
+        var retiredLine20 = deliveredEarlier
+            ? line20 with { DeliveredQuantity = 6m }
+            : line20 with { Cancelled = true };
+        if (deliveredEarlier)
+        {
+            await new SalesOrderDeliveryRegisteredIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+                .HandleAsync(Delivered(2, 8m, 0m) with
+                {
+                    Payload = Payload(2, "released", 8m, "10") with { Lines = [line10, retiredLine20] },
+                }, CancellationToken.None);
+        }
+        else
+        {
+            await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+                .HandleAsync(Changed(2, 8m, "10") with
+                {
+                    Payload = Payload(2, "released", 8m, "10") with { Lines = [line10, retiredLine20] },
+                }, CancellationToken.None);
+        }
+
+        Assert.Equal(PlanningSuggestionStatus.Open, open.Status);
+        Assert.Empty(provider.GetRequiredService<RecordingIntegrationEventPublisher>().Events
+            .OfType<SalesOrderDemandChangedForWorkOrderIntegrationEvent>());
+
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Changed(3, 4m, "10") with
+            {
+                Payload = Payload(3, "released", 4m, "10") with { Lines = [line10 with { Quantity = 4m }, retiredLine20] },
+            }, CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Closed, open.Status);
+        Assert.Equal(PlanningSuggestionStatus.Accepted, accepted.Status);
+        var signal = Assert.Single(provider.GetRequiredService<RecordingIntegrationEventPublisher>().Events
+            .OfType<SalesOrderDemandChangedForWorkOrderIntegrationEvent>());
+        Assert.Equal("WO-LEGACY", signal.Payload.WorkOrderId);
+        Assert.Equal(3, signal.Payload.OrderVersion);
+        Assert.False(signal.Payload.Cancelled);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task Legacy_unknown_line_pegging_invalidates_when_every_existing_order_line_changes(bool multipleLines)
     {
         await using var provider = CreateProvider();
