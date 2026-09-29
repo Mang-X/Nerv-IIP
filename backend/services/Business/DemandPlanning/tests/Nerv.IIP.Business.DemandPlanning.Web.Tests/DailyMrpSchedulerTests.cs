@@ -21,8 +21,12 @@ public sealed class DailyMrpSchedulerTests
         await using (var scope = services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            db.MrpRuns.Add(CompletedRun("org-001", "env-dev", new DateOnly(2026, 9, 28), new DateOnly(2026, 10, 5)));
-            db.MrpRuns.Add(CompletedRun("org-002", "env-prod", new DateOnly(2026, 9, 25), new DateOnly(2026, 10, 9)));
+            var older = CompletedRun("org-001", "env-dev", new DateOnly(2026, 9, 20), new DateOnly(2026, 9, 21));
+            var latest = CompletedRun("org-001", "env-dev", new DateOnly(2026, 9, 28), new DateOnly(2026, 10, 5));
+            db.MrpRuns.AddRange(older, latest,
+                CompletedRun("org-002", "env-prod", new DateOnly(2026, 9, 25), new DateOnly(2026, 10, 9)));
+            db.Entry(older).Property(run => run.CreatedAtUtc).CurrentValue = new DateTimeOffset(2026, 9, 20, 0, 0, 0, TimeSpan.Zero);
+            db.Entry(latest).Property(run => run.CreatedAtUtc).CurrentValue = new DateTimeOffset(2026, 9, 28, 0, 0, 0, TimeSpan.Zero);
             await db.SaveChangesAsync();
         }
 
@@ -31,13 +35,13 @@ public sealed class DailyMrpSchedulerTests
         try
         {
             await clock.WaitForFirstTimerAsync();
-            Assert.Equal(2, await RunCountAsync(services));
+            Assert.Equal(3, await RunCountAsync(services));
 
             clock.Advance(TimeSpan.FromMinutes(1)); // 10:00 Asia/Shanghai
             await Eventually.WaitAsync(
                 "both scopes receive a persisted daily MRP run",
                 async _ => await RunCountAsync(services),
-                count => count == 4,
+                count => count == 5,
                 count => $"runs={count}",
                 new EventuallyOptions(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(50), []));
 
@@ -68,7 +72,7 @@ public sealed class DailyMrpSchedulerTests
             await Eventually.WaitAsync(
                 "both scopes receive the next day's MRP run",
                 async _ => await RunCountAsync(services),
-                count => count == 6,
+                count => count == 7,
                 count => $"runs={count}",
                 new EventuallyOptions(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(50), []));
 
@@ -83,12 +87,15 @@ public sealed class DailyMrpSchedulerTests
         }
 
         // A restart on the same schedule day must reuse persisted daily runs.
+        var timersBeforeRestart = clock.TimersCreated;
         var restarted = CreateScheduler(services, clock);
         await restarted.StartAsync(CancellationToken.None);
         try
         {
-            await clock.WaitForTimerCountAsync(3);
-            Assert.Equal(6, await RunCountAsync(services));
+            // The prior scheduler is stopped; its timer registrations cannot satisfy this barrier.
+            // The new scheduler registers its next-day timer only after today's pass is complete.
+            await clock.WaitForTimerCountAsync(timersBeforeRestart + 1);
+            Assert.Equal(7, await RunCountAsync(services));
         }
         finally
         {
