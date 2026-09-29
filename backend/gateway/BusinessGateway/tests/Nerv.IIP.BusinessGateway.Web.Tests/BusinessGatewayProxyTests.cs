@@ -10104,6 +10104,58 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("alarm-event-001", document.RootElement.GetProperty("data").GetProperty("alarmEventId").GetString());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Scheduling_history_facade_forwards_filters_and_preserves_total_and_horizon(bool allowed)
+    {
+        // #4049 / A-layer contract: total is not the current page count; horizon is owner data.
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = new
+            {
+                items = new[] { new { planId = "plan-history", problemId = "problem-history", status = "released",
+                    generatedAtUtc = "2026-06-01T08:00:00Z", releasedAtUtc = "2026-06-02T09:00:00Z",
+                    assignmentCount = 1, conflictCount = 0, unscheduledOperationCount = 0,
+                    isInvalidated = true, horizonStartUtc = "2026-06-01T06:00:00Z", horizonEndUtc = "2026-06-05T18:00:00Z" } },
+                total = 37,
+            },
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync("/api/business-console/v1/scheduling/plans/history?organizationId=org-001&environmentId=env-dev&pageIndex=2&pageSize=50&status=released&releasedOn=2026-06-02&isInvalidated=true");
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(allowed ? 1 : 0, handler.Requests.Count);
+        if (allowed)
+        {
+            var request = Assert.Single(handler.Requests);
+            Assert.Equal("/api/business/v1/scheduling/plans/history", request.RequestUri!.AbsolutePath);
+            Assert.Equal("organizationId=org-001&environmentId=env-dev&pageIndex=2&pageSize=50&status=released&releasedOn=2026-06-02&isInvalidated=true", request.RequestUri.Query.TrimStart('?'));
+            Assert.Equal("internal-test-token", request.Headers.Authorization!.Parameter);
+            Assert.Equal(BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+            Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+            Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = body.RootElement.GetProperty("data");
+            Assert.Equal(37, data.GetProperty("total").GetInt32());
+            var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+            Assert.Equal("released", item.GetProperty("status").GetString());
+            Assert.True(item.GetProperty("isInvalidated").GetBoolean());
+            Assert.Equal(DateTimeOffset.Parse("2026-06-01T06:00:00Z", CultureInfo.InvariantCulture), item.GetProperty("horizonStartUtc").GetDateTimeOffset());
+            Assert.Equal(DateTimeOffset.Parse("2026-06-05T18:00:00Z", CultureInfo.InvariantCulture), item.GetProperty("horizonEndUtc").GetDateTimeOffset());
+        }
+    }
+
     [Fact]
     public async Task Scheduling_http_client_sends_internal_token_and_downstream_routes()
     {
@@ -20253,6 +20305,11 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         LastProblem = problem;
         return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan(SchedulePlanStatusContract.Generated));
     }
+
+    public Task<BusinessConsoleSchedulingHistoryResponse> ListPlanHistoryAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingHistoryRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse>> ListPlansAsync(
         string internalBearerToken,
