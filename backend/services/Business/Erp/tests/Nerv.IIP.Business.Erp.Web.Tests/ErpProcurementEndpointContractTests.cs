@@ -29,7 +29,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(18, contracts.Length);
+        Assert.Equal(20, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -63,6 +63,14 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes" && x.OperationId == "requestErpPurchaseOrderChange");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery" && x.OperationId == "closeErpPurchaseOrderLineFinalDelivery");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel" && x.OperationId == "cancelErpPurchaseOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/reschedule"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "rescheduleErpPurchaseOrderLine");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/cancel"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "cancelErpPurchaseOrderLine");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-receipts"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -405,6 +413,41 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Single(response.Items);
         Assert.Equal("PO-001", response.Items.Single().PurchaseOrderNo);
         Assert.Equal(36m, response.Items.Single().TotalAmount);
+    }
+
+    [Fact]
+    public async Task Purchase_order_line_commands_persist_results_visible_in_procurement_query()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-3970", "SUP-001", "SITE-01",
+            [new PurchaseOrderLineDraft("10", "SKU-001", "kg", 3m, 12m, new DateOnly(2026, 6, 5)),
+             new PurchaseOrderLineDraft("20", "SKU-002", "kg", 4m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-3970");
+        order.ReleaseAfterApproval("approval-3970");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var promisedDate = new DateOnly(2026, 7, 1);
+        await new ReschedulePurchaseOrderLineCommandHandler(dbContext).Handle(
+            new ReschedulePurchaseOrderLineCommand("org-001", "env-dev", "PO-3970", "10", promisedDate), CancellationToken.None);
+        await new CancelPurchaseOrderLineCommandHandler(dbContext).Handle(
+            new CancelPurchaseOrderLineCommand("org-001", "env-dev", "PO-3970", "20", "plan cancelled"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        await new CancelPurchaseOrderLineCommandHandler(dbContext).Handle(
+            new CancelPurchaseOrderLineCommand("org-001", "env-dev", "PO-3970", "20", "plan cancelled"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var response = await new ListPurchaseOrdersQueryHandler(dbContext).Handle(
+            new ListPurchaseOrdersQuery("org-001", "env-dev"), CancellationToken.None);
+        var lines = Assert.Single(response.Items).Lines;
+        Assert.Equal(promisedDate, lines.Single(x => x.LineNo == "10").PromisedDate);
+        Assert.Equal(0m, lines.Single(x => x.LineNo == "20").OpenQuantity);
+        Assert.True(lines.Single(x => x.LineNo == "20").FinalDelivery);
     }
 
     [Fact]
