@@ -3,6 +3,10 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Testing;
@@ -16,6 +20,74 @@ namespace Nerv.IIP.Iam.Web.Tests;
 /// </summary>
 public sealed class IamMemberAccountDirectoryPostgresTests
 {
+    [IamMemberAccountPostgresFact]
+    public async Task Production_planner_query_filters_role_scope_and_active_accounts_on_postgres()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "nerv_iam_member_accounts");
+        await using var globalState = await GlobalTestStateScope.CaptureAsync();
+        globalState
+            .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
+            .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
+            .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
+            .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
+        await using var factory = new WebApplicationFactory<Program>();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            database.AssertOwns(db.Database.GetConnectionString());
+            await scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>().MigrateAsync();
+            await scope.ServiceProvider.GetRequiredService<IamSeedService>().SeedAsync(CancellationToken.None);
+        }
+
+        var client = factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
+        login.EnsureSuccessStatusCode();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", (await ReadAsync<AuthResponse>(login)).AccessToken);
+
+        var planner = await CreateAsync(client, "planner-valid", member: true, roleId: "role-production-planner");
+        var secondPlanner = await CreateAsync(client, "planner-valid-second", member: true, roleId: "role-production-planner");
+        await CreateAsync(client, "planner-nonmember", member: true);
+        var otherEnvironmentPlanner = await CreateAsync(client, "planner-other-environment", member: false);
+        var disabled = await CreateAsync(client, "planner-disabled", member: true, roleId: "role-production-planner");
+        await CreateAsync(client, "planner-expired", member: true, roleId: "role-production-planner", expiresAt: DateTimeOffset.UtcNow.AddDays(-1));
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync($"/api/iam/v1/users/{disabled}/disable", null)).StatusCode);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Environments.Add(new IamEnvironment(new IamEnvironmentId("env-other"), new OrganizationId("org-001"), "Other", "active"));
+            db.Memberships.Add(new Membership(
+                new MembershipId("membership-other-environment-planner"),
+                new UserId(otherEnvironmentPlanner),
+                new OrganizationId("org-001"),
+                new IamEnvironmentId("env-other"),
+                [new RoleId("role-production-planner")]));
+            await db.SaveChangesAsync();
+        }
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "local-internal-service-token");
+
+        var firstPage = await ReadAsync<MemberIdsPage>(await client.GetAsync(
+            "/internal/iam/v1/production-planner-members?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=1"));
+        var secondPage = await ReadAsync<MemberIdsPage>(await client.GetAsync(
+            "/internal/iam/v1/production-planner-members?organizationId=org-001&environmentId=env-dev&pageIndex=2&pageSize=1"));
+        var expected = new[] { planner, secondPlanner }.Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(2, firstPage.TotalCount);
+        Assert.Equal(2, secondPage.TotalCount);
+        Assert.Equal([expected[0]], firstPage.Items);
+        Assert.Equal([expected[1]], secondPage.Items);
+
+        var otherScope = await ReadAsync<MemberIdsPage>(await client.GetAsync(
+            "/internal/iam/v1/production-planner-members?organizationId=org-other&environmentId=env-dev"));
+        Assert.Empty(otherScope.Items);
+
+        var otherEnvironment = await ReadAsync<MemberIdsPage>(await client.GetAsync(
+            "/internal/iam/v1/production-planner-members?organizationId=org-001&environmentId=env-other"));
+        Assert.Equal([otherEnvironmentPlanner], otherEnvironment.Items);
+    }
+
     [IamMemberAccountPostgresFact]
     public async Task Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres()
     {
@@ -72,16 +144,21 @@ public sealed class IamMemberAccountDirectoryPostgresTests
         }
     }
 
-    private static async Task<string> CreateAsync(HttpClient client, string loginName, bool member)
+    private static async Task<string> CreateAsync(
+        HttpClient client,
+        string loginName,
+        bool member,
+        string roleId = "role-erp-sales",
+        DateTimeOffset? expiresAt = null)
     {
         var create = await client.PostAsJsonAsync(
             "/api/iam/v1/users",
-            new { loginName, email = $"{loginName}@nerv-iip.local", password = "Operator123!" });
+            new { loginName, email = $"{loginName}@nerv-iip.local", password = "Operator123!", accountExpiresAtUtc = expiresAt });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var userId = (await ReadAsync<CreatedUser>(create)).UserId;
         if (member)
         {
-            var assign = await client.PutAsJsonAsync($"/api/iam/v1/users/{userId}/membership", new { roleIds = new[] { "role-erp-sales" } });
+            var assign = await client.PutAsJsonAsync($"/api/iam/v1/users/{userId}/membership", new { roleIds = new[] { roleId } });
             assign.EnsureSuccessStatusCode();
         }
 
@@ -108,6 +185,7 @@ public sealed class IamMemberAccountDirectoryPostgresTests
     private sealed record CreatedUser(string UserId);
     private sealed record MemberAccount(string UserId, string LoginName, string? DisplayName, bool Enabled);
     private sealed record MemberAccountPage(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<MemberAccount> Items);
+    private sealed record MemberIdsPage(int PageIndex, int PageSize, int TotalCount, IReadOnlyList<string> Items);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }
 
