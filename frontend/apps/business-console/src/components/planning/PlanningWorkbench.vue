@@ -345,11 +345,7 @@ const reviewKpiHint = computed(
 // 卡2：需求 SKU 数 / 已被建议覆盖的 SKU 数（去重）。
 // 需求池保留窗外行，但当前展示的已完成 MRP 没有处理这些行。
 function isOutsideCompletedHorizon(demand: BusinessConsoleDemandSourceItem): boolean {
-  const run = timePhasedRun.value
-  const horizonEnd =
-    run?.status?.toLowerCase() === 'completed'
-      ? run.horizonEnd
-      : latestCompletedRun.value?.horizonEnd
+  const horizonEnd = timePhasedRun.value?.horizonEnd
   return !!horizonEnd && !!demand.dueDate && demand.dueDate > horizonEnd
 }
 const demandSkuCodes = computed(
@@ -452,9 +448,13 @@ function runHorizonLabel(run?: BusinessConsoleMrpRunItem | null): string {
 const selectedRun = computed(
   () => mrpRuns.value.find((r) => r.runId === runSelection.runId) ?? null,
 )
-// 时段视图建议序列的运行口径：用户在「MRP 运行」里选中的那次，否则最近一次。
+// 时段视图与覆盖统计只看已完成运行：选中已完成批次时使用它，否则使用最近完成批次。
 // 后端 RunMrp 不关闭历史 Open 建议，跨运行求和会重复计数，必须锁单次运行。
-const timePhasedRun = computed(() => selectedRun.value ?? latestRun.value)
+const timePhasedRun = computed(() =>
+  selectedRun.value?.status?.toLowerCase() === 'completed'
+    ? selectedRun.value
+    : latestCompletedRun.value,
+)
 // 覆盖统计锁定的运行 = 时段视图那一次；两图与 KPI 共用，口径不再分叉。
 const coverageRunId = computed(() => timePhasedRun.value?.runId ?? '')
 
