@@ -25,7 +25,8 @@ public sealed record PlannedWorkOrder(
     string? ProductionVersionId,
     decimal Quantity,
     int Priority,
-    DateTimeOffset DueUtc);
+    DateTimeOffset DueUtc,
+    bool IsRush = false);
 
 public sealed record PlannedOperationTask(
     string WorkOrderId,

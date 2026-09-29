@@ -50,7 +50,8 @@ public sealed record MesWorkOrderExecutionFact(
     string? SourceNcrCode = null,
     bool HasChangedDemand = false,
     bool HasCancelledDemand = false,
-    IReadOnlyCollection<string>? AssemblyParentWorkOrderIds = null);
+    IReadOnlyCollection<string>? AssemblyParentWorkOrderIds = null,
+    bool IsRush = false);
 
 /// <summary>
 /// MES 工单列表公开的工序执行事实。<paramref name="OperationTaskId"/> 是 MES 持久化工序身份，
@@ -167,6 +168,7 @@ public sealed class ListMesWorkOrdersQueryHandler(
                 x.UomCode,
                 x.CompletedQuantity,
                 x.Priority,
+                x.IsRush,
                 x.DueUtc,
                 x.Status,
                 x.WorkOrderType,
@@ -296,7 +298,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
             (x.SourcePlanReference?.AssemblyParentSuggestionIds ?? [])
                 .SelectMany(id => parentIdsBySuggestion.GetValueOrDefault(id, []))
                 .Distinct(StringComparer.Ordinal)
-                .ToArray())).ToArray();
+                .ToArray(),
+            x.IsRush)).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }

@@ -3828,6 +3828,14 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/priority",
+      "operationId": "adjustBusinessMesWorkOrderPriority",
+      "classification": "deferred",
+      "followUp": "#4034"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/due-utc",
       "operationId": "adjustBusinessMesWorkOrderDueUtc",
       "classification": "deferred",

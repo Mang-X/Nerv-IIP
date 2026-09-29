@@ -24,7 +24,8 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.ProductionVersionId).HasColumnName("production_version_id").HasMaxLength(100).HasComment("ProductEngineering production version public id; MES does not duplicate engineering facts.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Unit of measure copied from the source production plan when the work order is converted from DemandPlanning.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).IsRequired().HasComment("Planned production quantity.");
-        builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasComment("Scheduling priority; rush work orders use a high priority value.");
+        builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasComment("Business priority, independent of the rush work order flag.");
+        builder.Property(x => x.IsRush).HasColumnName("is_rush").HasDefaultValue(false).IsRequired().HasComment("Explicit rush work order flag; not inferred from business priority.");
         builder.Property(x => x.DueUtc).HasColumnName("due_utc").IsRequired().HasComment("UTC due time used by the deterministic rule scheduler.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("MES work order lifecycle status.");
         builder.Property(x => x.Version).HasColumnName("version").HasDefaultValue(1L).IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for every work-order lifecycle or execution mutation.");

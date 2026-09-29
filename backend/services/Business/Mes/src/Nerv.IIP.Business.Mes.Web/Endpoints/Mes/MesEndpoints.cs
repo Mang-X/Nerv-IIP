@@ -320,6 +320,24 @@ public sealed record ReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,
     DateTimeOffset? ReleasedAtUtc);
 
+public sealed record AdjustWorkOrderPriorityRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    bool IsRush,
+    int Priority,
+    DateTimeOffset? ChangedAtUtc);
+
+public sealed class AdjustWorkOrderPriorityRequestValidator : Validator<AdjustWorkOrderPriorityRequest>
+{
+    public AdjustWorkOrderPriorityRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+    }
+}
+
 public sealed record AdjustWorkOrderDueUtcRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1013,6 +1031,26 @@ public sealed class HoldWorkOrderEndpoint(ISender sender, TimeProvider timeProvi
             req.EnvironmentId,
             req.WorkOrderId,
             req.Reason,
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class AdjustWorkOrderPriorityEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<AdjustWorkOrderPriorityRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<AdjustWorkOrderPriorityEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(AdjustWorkOrderPriorityRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new AdjustWorkOrderPriorityCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.IsRush,
+            req.Priority,
             req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
     }
@@ -2035,6 +2073,7 @@ public static class MesEndpointContracts
         new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
         new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
+        new(typeof(AdjustWorkOrderPriorityEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/priority", MesPermissionCodes.WorkOrdersManage, "adjustBusinessMesWorkOrderPriority"),
         new(typeof(AdjustWorkOrderDueUtcEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/due-utc", MesPermissionCodes.WorkOrdersManage, "adjustBusinessMesWorkOrderDueUtc"),
         new(typeof(RecordEngineeringChangeDecisionEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesEngineeringChangeDecision"),
         new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),

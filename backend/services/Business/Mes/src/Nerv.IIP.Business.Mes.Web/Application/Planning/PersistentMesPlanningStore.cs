@@ -20,7 +20,8 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             workOrder.ProductionVersionId,
             workOrder.Quantity,
             workOrder.Priority,
-            workOrder.DueUtc));
+            workOrder.DueUtc,
+            isRush: workOrder.IsRush));
     }
 
     public void AddOperationTask(PlannedOperationTask operationTask)
@@ -82,7 +83,8 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
                 x.ProductionVersionId,
                 x.Quantity,
                 x.Priority,
-                x.DueUtc))
+                x.DueUtc,
+                x.IsRush))
             .ToListAsync(cancellationToken);
     }
 
