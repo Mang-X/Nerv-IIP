@@ -15,6 +15,68 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed class SchedulingLockCommandTests
 {
     [Fact]
+    public async Task Assemble_preserves_persisted_segments_when_locking_a_base_plan_operation()
+    {
+        await using var db = CreateDbContext();
+        var template = ShockAbsorberSchedulingFixture.CreateProblem();
+        var start = template.HorizonStartUtc;
+        var sourceOrder = template.Orders.First();
+        var sourceOperation = sourceOrder.Operations.First();
+        var resource = template.Resources.Single(x => x.ResourceId == sourceOperation.PrimaryResourceId);
+        var problem = template with
+        {
+            HorizonEndUtc = start.AddHours(12),
+            Orders = [sourceOrder with
+            {
+                Operations = [sourceOperation with
+                {
+                    PredecessorOperationIds = [],
+                    DurationMinutes = 120,
+                    SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+                    EligibleResourceIds = [resource.ResourceId],
+                    EarliestStartUtc = start,
+                    QualityBlockReason = null
+                }]
+            }],
+            Resources = [resource],
+            Calendars = [new SchedulingCalendarContract(resource.CalendarId, [
+                new SchedulingTimeWindowContract(start, start.AddHours(1), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(11), "second")])],
+            UnavailabilityWindows = [],
+            MaterialReadiness = [],
+            QualityBlocks = [],
+            LockedAssignments = []
+        };
+        var basePlan = new FiniteCapacityScheduler().Schedule(problem, "split-base-plan", start);
+        var baseAssignment = Assert.Single(basePlan.Assignments);
+        Assert.Equal(2, baseAssignment.Segments!.Count);
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
+            problem.OrganizationId, problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var request = new AssembleSchedulingProblemRequest(
+            "split-repreview", problem.OrganizationId, problem.EnvironmentId,
+            problem.HorizonStartUtc, problem.HorizonEndUtc,
+            [new SchedulingProblemSourceOrder(sourceOrder.OrderId, sourceOrder.SkuCode, sourceOrder.Quantity,
+                sourceOrder.DueUtc, sourceOrder.Priority, sourceOrder.IsRush, start, "routing")],
+            BasePlanId: basePlan.PlanId,
+            LockedOperationIds: [baseAssignment.OperationId]);
+        var handler = new AssembleSchedulingProblemCommandHandler(
+            new CapturingProducer(problem), db, new SchedulingOperationOverrideOverlay(db));
+
+        var assembled = await handler.Handle(new AssembleSchedulingProblemCommand(request), CancellationToken.None);
+        var locked = Assert.Single(assembled.LockedAssignments);
+        Assert.Equal(baseAssignment.Segments, locked.Segments);
+        var repreview = new FiniteCapacityScheduler().Schedule(assembled, "split-repreview-plan", start);
+        var preserved = Assert.Single(repreview.Assignments);
+        Assert.True(preserved.IsLocked);
+        Assert.Equal(baseAssignment.Segments, preserved.Segments);
+        Assert.DoesNotContain(repreview.Conflicts,
+            x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment);
+    }
+
+    [Fact]
     public async Task Manual_override_replaces_a_mes_override_even_when_its_source_timestamp_is_in_the_future()
     {
         await using var db = CreateDbContext();
