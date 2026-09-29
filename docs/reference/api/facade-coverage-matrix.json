@@ -3804,6 +3804,14 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/due-utc",
+      "operationId": "adjustBusinessMesWorkOrderDueUtc",
+      "classification": "deferred",
+      "followUp": "#3972"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/close",
       "operationId": "closeBusinessMesWorkOrder",
       "classification": "exposed",

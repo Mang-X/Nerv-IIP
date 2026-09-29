@@ -580,6 +580,22 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         AdvanceVersion();
     }
 
+    public void AdjustDueUtc(DateTimeOffset dueUtc)
+    {
+        if (TerminalStatuses.Contains(Status))
+        {
+            throw new InvalidOperationException("Terminal work orders cannot have their due time adjusted.");
+        }
+
+        if (DueUtc == dueUtc)
+        {
+            return;
+        }
+
+        DueUtc = dueUtc;
+        AdvanceVersion();
+    }
+
     public void ResolveEngineeringChangeHold(string statusBeforeHold)
     {
         var normalizedStatus = DomainGuard.Required(statusBeforeHold, nameof(statusBeforeHold));
