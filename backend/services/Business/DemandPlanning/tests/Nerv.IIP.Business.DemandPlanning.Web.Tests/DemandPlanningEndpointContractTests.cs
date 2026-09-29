@@ -35,8 +35,11 @@ public sealed class DemandPlanningEndpointContractTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    [Fact]
-    public async Task Accepting_component_suggestion_carries_only_pegged_parent_suggestions()
+    [Theory]
+    [InlineData("demand")]
+    [InlineData("safety-stock")]
+    [InlineData("negative-availability")]
+    public async Task Accepting_component_suggestion_carries_only_pegged_parent_suggestions(string peggingType)
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -48,13 +51,13 @@ public sealed class DemandPlanningEndpointContractTests
             requiredDate, requiredDate.AddDays(-2), "net-requirement");
 
         var parent = NewSuggestion(runId, "SKU-ASSEMBLY");
-        parent.AddPeggingLink("demand", "SO-1", "SKU-ASSEMBLY", null, 10m, null, null, null,
+        parent.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", null, 10m, null, null, null,
             sourceLineReference: "10");
         var unrelated = NewSuggestion(runId, "SKU-ASSEMBLY");
-        unrelated.AddPeggingLink("demand", "SO-2", "SKU-ASSEMBLY", null, 10m, null, null, null,
+        unrelated.AddPeggingLink(peggingType, "SO-2", "SKU-ASSEMBLY", null, 10m, null, null, null,
             sourceLineReference: "20");
         var child = NewSuggestion(runId, "SKU-COMPONENT");
-        child.AddPeggingLink("demand", "SO-1", "SKU-ASSEMBLY", "SKU-COMPONENT", 10m, null, null, null,
+        child.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", "SKU-COMPONENT", 10m, null, null, null,
             sourceLineReference: "10");
         dbContext.PlanningSuggestions.AddRange(parent, unrelated, child);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -64,7 +67,7 @@ public sealed class DemandPlanningEndpointContractTests
             new AcceptPlanningSuggestionCommand(child.Id, "BusinessMes", "WorkOrder", null),
             CancellationToken.None);
 
-        Assert.Equal([parent.Id.ToString()], bridge.LastRequest!.AssemblyParentSuggestionIds);
+        Assert.Equal(1, bridge.CreateCount);
         var accepted = Assert.Single(child.GetDomainEvents().OfType<PlanningSuggestionAcceptedDomainEvent>());
         Assert.Equal([parent.Id.ToString()], accepted.AssemblyParentSuggestionIds);
         Assert.Equal([parent.Id.ToString()],
@@ -1423,7 +1426,6 @@ public sealed class DemandPlanningEndpointContractTests
     private sealed class CountingPlanningSuggestionDownstreamBridge : IPlanningSuggestionDownstreamBridge
     {
         public int CreateCount { get; private set; }
-        public PlanningSuggestionDownstreamRequest? LastRequest { get; private set; }
 
         public Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
             PlanningSuggestion suggestion,
@@ -1431,7 +1433,6 @@ public sealed class DemandPlanningEndpointContractTests
             CancellationToken cancellationToken)
         {
             CreateCount++;
-            LastRequest = request;
             var referenceId = string.Equals(request.DownstreamService, "BusinessErp", StringComparison.OrdinalIgnoreCase)
                 ? "PR-SHOULD-BE-CREATED"
                 : "WO-SHOULD-NOT-BE-CREATED";

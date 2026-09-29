@@ -33,8 +33,7 @@ public sealed record PlanningSuggestionDownstreamRequest(
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId,
-    string IdempotencyKey,
-    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null);
+    string IdempotencyKey);
 
 public sealed record PlanningSuggestionDownstreamReference(
     string DownstreamService,
@@ -72,7 +71,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
             .SingleOrDefaultAsync(x => x.Id == request.SuggestionId, cancellationToken)
             ?? throw new KnownException($"计划建议不存在：{request.SuggestionId}");
         var assemblyParentSuggestionIds = await GetAssemblyParentSuggestionIdsAsync(suggestion, cancellationToken);
-        var downstreamReference = await ResolveDownstreamReferenceAsync(suggestion, request, assemblyParentSuggestionIds, cancellationToken);
+        var downstreamReference = await ResolveDownstreamReferenceAsync(suggestion, request, cancellationToken);
         try
         {
             suggestion.Accept(
@@ -94,7 +93,6 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
     private async Task<PlanningSuggestionDownstreamReference> ResolveDownstreamReferenceAsync(
         PlanningSuggestion suggestion,
         AcceptPlanningSuggestionCommand request,
-        IReadOnlyCollection<string> assemblyParentSuggestionIds,
         CancellationToken cancellationToken)
     {
         if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
@@ -114,7 +112,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         EnsureCanCreateDownstreamReference(suggestion);
         if (IsBridgeManagedDownstreamTarget(suggestion, request))
         {
-            return await CreateDownstreamReferenceAsync(suggestion, request, assemblyParentSuggestionIds, cancellationToken);
+            return await CreateDownstreamReferenceAsync(suggestion, request, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(request.DownstreamDocumentId))
@@ -125,13 +123,12 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 request.DownstreamDocumentId.Trim());
         }
 
-        return await CreateDownstreamReferenceAsync(suggestion, request, assemblyParentSuggestionIds, cancellationToken);
+        return await CreateDownstreamReferenceAsync(suggestion, request, cancellationToken);
     }
 
     private Task<PlanningSuggestionDownstreamReference> CreateDownstreamReferenceAsync(
         PlanningSuggestion suggestion,
         AcceptPlanningSuggestionCommand request,
-        IReadOnlyCollection<string> assemblyParentSuggestionIds,
         CancellationToken cancellationToken)
     {
         var bridge = downstreamBridge ?? new UnsupportedPlanningSuggestionDownstreamBridge();
@@ -143,8 +140,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 request.DownstreamDocumentId,
                 string.IsNullOrWhiteSpace(request.IdempotencyKey)
                     ? $"demand-planning:accept:{suggestion.OrganizationId}:{suggestion.EnvironmentId}:{suggestion.Id}"
-                    : request.IdempotencyKey.Trim(),
-                assemblyParentSuggestionIds),
+                    : request.IdempotencyKey.Trim()),
             cancellationToken);
     }
 
@@ -158,7 +154,8 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         }
 
         var componentLinks = suggestion.PeggingLinks
-            .Where(x => x.PeggingType == "demand" && x.ComponentSkuCode == suggestion.SkuCode)
+            .Where(x => x.PeggingType is "demand" or "safety-stock" or "negative-availability"
+                && x.ComponentSkuCode == suggestion.SkuCode)
             .ToArray();
         if (componentLinks.Length == 0)
         {
@@ -180,7 +177,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         return candidates
             .Where(parent => parent.Id != suggestion.Id && componentLinks.Any(link =>
                 link.ParentSkuCode == parent.SkuCode &&
-                parent.PeggingLinks.Any(parentLink => parentLink.PeggingType == "demand" &&
+                parent.PeggingLinks.Any(parentLink => parentLink.PeggingType == link.PeggingType &&
                     parentLink.DemandSourceReference == link.DemandSourceReference &&
                     parentLink.SourceLineReference == link.SourceLineReference)))
             .Select(x => x.Id.ToString())

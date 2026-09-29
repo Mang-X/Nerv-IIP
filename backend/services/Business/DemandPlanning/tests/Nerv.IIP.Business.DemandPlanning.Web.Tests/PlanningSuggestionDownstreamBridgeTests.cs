@@ -111,8 +111,6 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
                 ["DEMAND-001"],
                 root.GetProperty("sourceDemandReferences").EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray());
             Assert.Equal("idem-001", root.GetProperty("idempotencyKey").GetString());
-            Assert.Equal(["SUG-PARENT"], root.GetProperty("assemblyParentSuggestionIds")
-                .EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray());
 
             return JsonResponse("""
                 {
@@ -130,7 +128,7 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
 
         var reference = await bridge.CreateDownstreamAsync(
             suggestion,
-            new PlanningSuggestionDownstreamRequest("BusinessMes", "WorkOrder", null, "idem-001", ["SUG-PARENT"]),
+            new PlanningSuggestionDownstreamRequest("BusinessMes", "WorkOrder", null, "idem-001"),
             CancellationToken.None);
 
         Assert.Equal("BusinessMes", reference.DownstreamService);
