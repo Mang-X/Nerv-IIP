@@ -90,6 +90,10 @@ describe('PlanningWorkbench', () => {
       { runId: 'run-001', status: 'Completed', horizonEnd: '2026-06-30' },
     ]
     await nextTick()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '查看追溯')!
+      .trigger('click')
     expect(wrapper.get('[label="需求覆盖率"]').attributes('value')).toBe('100')
     expect(wrapper.get('[data-testid="time-phased-panel"]').attributes('data-run-id')).toBe(
       'run-001',
