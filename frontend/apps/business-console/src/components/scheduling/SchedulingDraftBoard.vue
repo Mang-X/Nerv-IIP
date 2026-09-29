@@ -294,12 +294,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
       />
       <div class="flex flex-col gap-3 xl:flex-row">
         <div class="min-w-0 flex-1">
-          <NvTabsContent
-            value="gantt"
-            force-mount
-            v-show="view === 'gantt'"
-            class="h-[34rem] overflow-hidden rounded-md border"
-          >
+          <NvTabsContent value="gantt" class="h-[34rem] overflow-hidden rounded-md border">
             <GanttChart
               ref="ganttRef"
               :scale="scale"
@@ -310,12 +305,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
               @locked-drag-attempt="emit('lockedAttempt', $event)"
             />
           </NvTabsContent>
-          <NvTabsContent
-            value="resource"
-            force-mount
-            v-show="view === 'resource'"
-            class="h-[34rem] overflow-hidden rounded-md border"
-          >
+          <NvTabsContent value="resource" class="h-[34rem] overflow-hidden rounded-md border">
             <ResourceSchedulerBoard
               ref="resourceRef"
               :scale="scale"
@@ -327,143 +317,143 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
             />
           </NvTabsContent>
           <NvTabsContent value="table" class="max-h-[34rem] overflow-auto rounded-md border">
-        <table class="w-full text-sm">
-          <thead class="sticky top-0 z-10 bg-muted text-left [&_th]:whitespace-nowrap">
-            <tr>
-              <th class="p-2">工单 / 工序</th>
-              <th class="p-2">实际排程段</th>
-              <th class="p-2">资源</th>
-              <th class="p-2">开始</th>
-              <th class="p-2">结束</th>
-              <th class="p-2">物料</th>
-              <th class="p-2">设备状态</th>
-              <th class="p-2">锁定</th>
-              <th class="p-2">待排</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="task in model.tasks.filter(
-                (item) => item.type === 'operation' && !item.blockKind,
-              )"
-              :key="task.id"
-              class="border-t"
-            >
-              <td class="p-2 font-medium">{{ task.orderId }} · {{ task.operationId }}</td>
-              <td class="p-2">
-                <p
-                  v-for="(segment, index) in task.segments"
-                  :key="index"
-                  class="whitespace-nowrap text-xs"
+            <table class="w-full text-sm">
+              <thead class="sticky top-0 z-10 bg-muted text-left [&_th]:whitespace-nowrap">
+                <tr>
+                  <th class="p-2">工单 / 工序</th>
+                  <th class="p-2">实际排程段</th>
+                  <th class="p-2">资源</th>
+                  <th class="p-2">开始</th>
+                  <th class="p-2">结束</th>
+                  <th class="p-2">物料</th>
+                  <th class="p-2">设备状态</th>
+                  <th class="p-2">锁定</th>
+                  <th class="p-2">待排</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="task in model.tasks.filter(
+                    (item) => item.type === 'operation' && !item.blockKind,
+                  )"
+                  :key="task.id"
+                  class="border-t"
                 >
-                  第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
-                  {{ formatDateTime(segment.endUtc) }}
-                </p>
-                <p v-if="(task.segments?.length ?? 0) > 1" class="text-xs text-muted-foreground">
-                  分段时间由重新排程确定；可使用草案锁定保留各段。
-                </p>
-                <span v-else class="text-xs text-muted-foreground">连续排程</span>
-              </td>
-              <td class="p-2">
-                <NvEntityPicker
-                  class="min-w-40"
-                  :disabled="readOnly || task.locked"
-                  :model-value="task.resourceId"
-                  :options="resourceOptions"
-                  title="选择资源"
-                  placeholder="选择资源"
-                  empty-text="本排程没有可用资源"
-                  :show-code="false"
-                  :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
-                  @update:model-value="emit('update', task.id, { resourceId: $event })"
-                />
-              </td>
-              <td class="p-2">
-                <NvInput
-                  class="h-8 min-w-48"
-                  :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
-                  :model-value="task.startUtc"
-                  @update:model-value="emit('update', task.id, { startUtc: String($event) })"
-                />
-              </td>
-              <td class="p-2">
-                <NvInput
-                  class="h-8 min-w-48"
-                  :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
-                  :model-value="task.endUtc"
-                  @update:model-value="emit('update', task.id, { endUtc: String($event) })"
-                />
-              </td>
-              <td class="p-2">
-                <span
-                  v-if="task.materialRisk"
-                  class="inline-flex items-center rounded border border-warning/50 bg-warning/10 px-1.5 text-xs font-semibold text-warning"
-                  :title="task.materialRisk.message"
-                  >缺料待备</span
-                >
-                <span v-else class="text-xs text-muted-foreground">齐套</span>
-              </td>
-              <td class="p-2">
-                <span
-                  v-if="task.equipmentRisk"
-                  class="inline-flex items-center rounded border border-border bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
-                  :title="task.equipmentRisk.message"
-                  >状态未知</span
-                >
-                <span v-else class="text-xs text-muted-foreground">正常</span>
-              </td>
-              <td class="p-2">
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <NvButton
-                    size="sm"
-                    :variant="task.locked ? 'secondary' : 'outline'"
-                    type="button"
-                    :disabled="readOnly"
-                    @click="emit('lock', task.id, !task.locked)"
-                    >{{ task.locked ? '解锁' : '锁定' }}</NvButton
-                  >
-                  <NvButton
-                    size="sm"
-                    variant="outline"
-                    type="button"
-                    :disabled="
-                      readOnly ||
-                      persistPending ||
-                      !task.resourceId ||
-                      (task.segments?.length ?? 0) > 1
-                    "
-                    :title="
-                      (task.segments?.length ?? 0) > 1
-                        ? '多段工序请使用草案锁定保留各段；暂不支持持久锁定'
-                        : task.resourceId
-                          ? '固定该工序的资源与起止时间，之后重新排程也保持不变'
-                          : '该工序未分配资源，先指定资源再持久锁定'
-                    "
-                    @click="emit('persistOverride', task.id)"
-                    >持久锁定</NvButton
-                  >
-                  <NvStatusBadge
-                    v-if="persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)"
-                    label="已持久锁定"
-                    tone="success"
-                    title="该工序的资源与起止时间已固定，之后重新排程也保持不变。刷新页面后此标记不再显示，但锁定仍然有效。"
-                  />
-                </div>
-              </td>
-              <td class="p-2">
-                <NvButton
-                  size="sm"
-                  variant="ghost"
-                  type="button"
-                  :disabled="readOnly || task.locked"
-                  @click="emit('moveToPending', task.id)"
-                  >移回待排</NvButton
-                >
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </NvTabsContent>
+                  <td class="p-2 font-medium">{{ task.orderId }} · {{ task.operationId }}</td>
+                  <td class="p-2">
+                    <p
+                      v-for="(segment, index) in task.segments"
+                      :key="index"
+                      class="whitespace-nowrap text-xs"
+                    >
+                      第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
+                      {{ formatDateTime(segment.endUtc) }}
+                    </p>
+                    <p v-if="(task.segments?.length ?? 0) > 1" class="text-xs text-muted-foreground">
+                      分段时间由重新排程确定；可使用草案锁定保留各段。
+                    </p>
+                    <span v-else class="text-xs text-muted-foreground">连续排程</span>
+                  </td>
+                  <td class="p-2">
+                    <NvEntityPicker
+                      class="min-w-40"
+                      :disabled="readOnly || task.locked"
+                      :model-value="task.resourceId"
+                      :options="resourceOptions"
+                      title="选择资源"
+                      placeholder="选择资源"
+                      empty-text="本排程没有可用资源"
+                      :show-code="false"
+                      :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
+                      @update:model-value="emit('update', task.id, { resourceId: $event })"
+                    />
+                  </td>
+                  <td class="p-2">
+                    <NvInput
+                      class="h-8 min-w-48"
+                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
+                      :model-value="task.startUtc"
+                      @update:model-value="emit('update', task.id, { startUtc: String($event) })"
+                    />
+                  </td>
+                  <td class="p-2">
+                    <NvInput
+                      class="h-8 min-w-48"
+                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
+                      :model-value="task.endUtc"
+                      @update:model-value="emit('update', task.id, { endUtc: String($event) })"
+                    />
+                  </td>
+                  <td class="p-2">
+                    <span
+                      v-if="task.materialRisk"
+                      class="inline-flex items-center rounded border border-warning/50 bg-warning/10 px-1.5 text-xs font-semibold text-warning"
+                      :title="task.materialRisk.message"
+                      >缺料待备</span
+                    >
+                    <span v-else class="text-xs text-muted-foreground">齐套</span>
+                  </td>
+                  <td class="p-2">
+                    <span
+                      v-if="task.equipmentRisk"
+                      class="inline-flex items-center rounded border border-border bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
+                      :title="task.equipmentRisk.message"
+                      >状态未知</span
+                    >
+                    <span v-else class="text-xs text-muted-foreground">正常</span>
+                  </td>
+                  <td class="p-2">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <NvButton
+                        size="sm"
+                        :variant="task.locked ? 'secondary' : 'outline'"
+                        type="button"
+                        :disabled="readOnly"
+                        @click="emit('lock', task.id, !task.locked)"
+                        >{{ task.locked ? '解锁' : '锁定' }}</NvButton
+                      >
+                      <NvButton
+                        size="sm"
+                        variant="outline"
+                        type="button"
+                        :disabled="
+                          readOnly ||
+                          persistPending ||
+                          !task.resourceId ||
+                          (task.segments?.length ?? 0) > 1
+                        "
+                        :title="
+                          (task.segments?.length ?? 0) > 1
+                            ? '多段工序请使用草案锁定保留各段；暂不支持持久锁定'
+                            : task.resourceId
+                              ? '固定该工序的资源与起止时间，之后重新排程也保持不变'
+                              : '该工序未分配资源，先指定资源再持久锁定'
+                        "
+                        @click="emit('persistOverride', task.id)"
+                        >持久锁定</NvButton
+                      >
+                      <NvStatusBadge
+                        v-if="persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)"
+                        label="已持久锁定"
+                        tone="success"
+                        title="该工序的资源与起止时间已固定，之后重新排程也保持不变。刷新页面后此标记不再显示，但锁定仍然有效。"
+                      />
+                    </div>
+                  </td>
+                  <td class="p-2">
+                    <NvButton
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                      :disabled="readOnly || task.locked"
+                      @click="emit('moveToPending', task.id)"
+                      >移回待排</NvButton
+                    >
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </NvTabsContent>
         </div>
         <aside
           v-if="selectedTask"
@@ -496,7 +486,6 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
         :view="view === 'gantt' ? 'order' : 'resource'"
         :categories="legendCategories"
       />
-
     </NvTabs>
   </section>
 </template>
