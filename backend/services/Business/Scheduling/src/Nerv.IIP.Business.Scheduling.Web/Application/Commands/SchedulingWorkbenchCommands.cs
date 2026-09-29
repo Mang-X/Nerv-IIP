@@ -315,7 +315,8 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         var moved = candidate.Assignments.Count(x =>
             !string.Equals(x.ExplanationCode, "in-progress", StringComparison.Ordinal) &&
             baseAssignments.TryGetValue((x.OrderId, x.OperationId), out var previous) &&
-            (previous.ResourceId != x.ResourceId || previous.StartUtc != x.StartUtc || previous.EndUtc != x.EndUtc));
+            (previous.ResourceId != x.ResourceId || previous.StartUtc != x.StartUtc || previous.EndUtc != x.EndUtc
+                || !(previous.Segments ?? []).SequenceEqual(x.Segments ?? [])));
         return new(
             basePlan.PlanId,
             candidate.PlanId,
