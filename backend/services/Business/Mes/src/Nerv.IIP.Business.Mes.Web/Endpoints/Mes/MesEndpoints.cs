@@ -303,6 +303,24 @@ public sealed record ReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,
     DateTimeOffset? ReleasedAtUtc);
 
+public sealed record AdjustWorkOrderDueUtcRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    DateTimeOffset? DueUtc,
+    DateTimeOffset? ChangedAtUtc);
+
+public sealed class AdjustWorkOrderDueUtcRequestValidator : Validator<AdjustWorkOrderDueUtcRequest>
+{
+    public AdjustWorkOrderDueUtcRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DueUtc).NotNull();
+    }
+}
+
 public sealed record ForceReleaseQualityHoldRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -965,6 +983,25 @@ public sealed class HoldWorkOrderEndpoint(ISender sender, TimeProvider timeProvi
             req.EnvironmentId,
             req.WorkOrderId,
             req.Reason,
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class AdjustWorkOrderDueUtcEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<AdjustWorkOrderDueUtcRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<AdjustWorkOrderDueUtcEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(AdjustWorkOrderDueUtcRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new AdjustWorkOrderDueUtcCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.DueUtc.GetValueOrDefault(),
             req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
     }
@@ -1954,6 +1991,7 @@ public static class MesEndpointContracts
         new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
         new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
+        new(typeof(AdjustWorkOrderDueUtcEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/due-utc", MesPermissionCodes.WorkOrdersManage, "adjustBusinessMesWorkOrderDueUtc"),
         new(typeof(RecordEngineeringChangeDecisionEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesEngineeringChangeDecision"),
         new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
         new(typeof(GetQualityHoldTimelineEndpoint), "GET", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline", MesPermissionCodes.QualityRead, "getBusinessMesQualityHoldTimeline"),
