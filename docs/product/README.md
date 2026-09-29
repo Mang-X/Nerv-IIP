@@ -10,6 +10,7 @@
 | 基础数据 | [`master-data/design.md`](master-data/design.md) |
 | 条码标签 | [`barcode/design.md`](barcode/design.md) |
 | 产品工程 | [`product-engineering/design.md`](product-engineering/design.md) |
+| 需求与计划 | [`demand-planning/design.md`](demand-planning/design.md) |
 | MES | [`mes/design.md`](mes/design.md) |
 | ERP 财务成本 | [`erp/design.md`](erp/design.md) |
 | 库存与 WMS | [`inventory/design.md`](inventory/design.md) |
