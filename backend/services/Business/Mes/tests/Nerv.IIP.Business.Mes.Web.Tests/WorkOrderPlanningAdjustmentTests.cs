@@ -88,6 +88,48 @@ public sealed class WorkOrderPlanningAdjustmentTests
         Assert.Equal(Now.AddDays(1), workOrder.DueUtc);
     }
 
+    [Theory]
+    [InlineData(WorkOrder.CreatedStatus)]
+    [InlineData(WorkOrder.ReleasedStatus)]
+    [InlineData(WorkOrder.StartedStatus)]
+    [InlineData(WorkOrder.HoldStatus)]
+    public async Task Priority_adjustment_preserves_lifecycle_and_replay_version(string status)
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrder = CreateWorkOrder(status);
+        db.WorkOrders.Add(workOrder);
+        await db.SaveChangesAsync();
+        var initialVersion = workOrder.Version;
+        var command = new AdjustWorkOrderPriorityCommand("org-001", "env-dev", workOrder.WorkOrderId, true, 7, Now);
+        var handler = new AdjustWorkOrderPriorityCommandHandler(db);
+        await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
+        Assert.Equal(initialVersion + 1, workOrder.Version);
+        Assert.Equal(status, workOrder.Status);
+        Assert.True(workOrder.IsRush);
+        Assert.Equal(7, workOrder.Priority);
+    }
+
+    [Fact]
+    public async Task Cancelled_work_order_rejects_priority_adjustment()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var workOrder = CreateWorkOrder();
+        workOrder.Cancel("计划取消", Now);
+        db.WorkOrders.Add(workOrder);
+        await db.SaveChangesAsync();
+        await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
+            new AdjustWorkOrderPriorityCommandHandler(db).Handle(
+                new AdjustWorkOrderPriorityCommand("org-001", "env-dev", workOrder.WorkOrderId, true, 7, Now),
+                CancellationToken.None));
+        Assert.False(workOrder.IsRush);
+        Assert.Equal(1, workOrder.Priority);
+    }
+
     [Fact]
     public async Task Cancel_command_persists_status_and_replay_keeps_original_reason()
     {

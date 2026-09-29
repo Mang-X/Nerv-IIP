@@ -240,6 +240,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string? UomCode { get; private set; }
     public decimal Quantity { get; private set; }
     public int Priority { get; private set; }
+    public bool IsRush { get; private set; }
     public DateTimeOffset DueUtc { get; private set; }
     public SourcePlanReference? SourcePlanReference { get; private set; }
     public string Status { get; private set; } = string.Empty;
@@ -286,7 +287,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         DateTimeOffset dueUtc,
         string? uomCode = null,
         SourcePlanReference? sourcePlanReference = null,
-        decimal overReceiptTolerancePercent = 0m)
+        decimal overReceiptTolerancePercent = 0m,
+        bool isRush = false)
     {
         var workOrder = new WorkOrder(
             organizationId,
@@ -301,6 +303,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             sourcePlanReference,
             overReceiptTolerancePercent,
             StandardType);
+        workOrder.IsRush = isRush;
         workOrder.AddDomainEvent(new WorkOrderCreatedDomainEvent(workOrder));
         return workOrder;
     }
@@ -593,6 +596,23 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         HoldReason = DomainGuard.Required(reason, nameof(reason));
         Status = HoldStatus;
+        AdvanceVersion();
+    }
+
+    public void AdjustPriority(bool isRush, int priority)
+    {
+        if (TerminalStatuses.Contains(Status))
+        {
+            throw new InvalidOperationException("Terminal work orders cannot have their priority adjusted.");
+        }
+
+        if (IsRush == isRush && Priority == priority)
+        {
+            return;
+        }
+
+        IsRush = isRush;
+        Priority = priority;
         AdvanceVersion();
     }
 
