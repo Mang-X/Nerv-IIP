@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
@@ -64,6 +65,12 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
             .CountAsync());
         Assert.Equal(2, await assertion.WorkOrders.CountAsync(
             x => x.WorkOrderIdValue.StartsWith("WO-CONCURRENT-REPLAY-CHILD-")));
+        Assert.Equal(OperationTaskLifecycleStatus.Cancelled,
+            (await assertion.OperationTasks.SingleAsync(x => x.WorkOrderId == source.WorkOrderIdValue)).Status);
+        var targetOperations = await assertion.OperationTasks.Where(x => x.WorkOrderId != source.WorkOrderIdValue).ToArrayAsync();
+        Assert.Equal(2, targetOperations.Length);
+        Assert.Equal(10m, targetOperations.Sum(x => x.PlannedQuantity));
+        Assert.All(targetOperations, operation => Assert.Equal(OperationTaskLifecycleStatus.Queued, operation.Status));
         Assert.Equal(WorkOrder.SplitStatus, source.Status);
         Assert.Equal(2, source.Version);
     }
@@ -119,6 +126,12 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
         Assert.Equal(2, await assertion.WorkOrderTransformations.SelectMany(x => x.Lines).CountAsync());
         Assert.Equal(2, await assertion.WorkOrders.CountAsync(
             x => x.WorkOrderIdValue.StartsWith("WO-CONCURRENT-VERSION-CHILD-")));
+        Assert.Equal(OperationTaskLifecycleStatus.Cancelled,
+            (await assertion.OperationTasks.SingleAsync(x => x.WorkOrderId == source.WorkOrderIdValue)).Status);
+        var targetOperations = await assertion.OperationTasks.Where(x => x.WorkOrderId != source.WorkOrderIdValue).ToArrayAsync();
+        Assert.Equal(2, targetOperations.Length);
+        Assert.Equal(10m, targetOperations.Sum(x => x.PlannedQuantity));
+        Assert.All(targetOperations, operation => Assert.Equal(OperationTaskLifecycleStatus.Queued, operation.Status));
         Assert.Equal(WorkOrder.SplitStatus, source.Status);
         Assert.Equal(2, source.Version);
         var firstTargetIds = firstCommand.Targets.Select(target => target.WorkOrderId).ToArray();
@@ -181,6 +194,9 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
         using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Queue(workOrder.OrganizationId, workOrder.EnvironmentId,
+            workOrder.WorkOrderIdValue, "SOURCE-OP", 10, "WC-1", [], workOrder.DueUtc,
+            TimeSpan.FromMinutes(20), workOrder.SkuId, workOrder.UomCode, workOrder.Quantity));
         await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 
