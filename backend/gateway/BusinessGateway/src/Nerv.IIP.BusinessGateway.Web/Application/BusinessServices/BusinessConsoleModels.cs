@@ -3068,7 +3068,8 @@ public sealed record BusinessConsoleMrpRunItem(
     IReadOnlyCollection<string> InputSources,
     DateOnly? InputCoverageStart,
     DateOnly? InputCoverageEnd,
-    string? FailureReason);
+    string? FailureReason,
+    int DemandChangeCount);
 
 public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
 

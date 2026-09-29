@@ -3749,6 +3749,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inputCoverageStart?: string | null;
     inputCoverageEnd?: string | null;
     failureReason?: string | null;
+    demandChangeCount?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
