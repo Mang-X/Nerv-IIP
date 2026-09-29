@@ -12410,7 +12410,7 @@ public sealed class BusinessGatewayProxyTests
         await client.GetRoutingAsync("internal-token-001", "RTG-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         var releasedRouting = await client.ReleaseRoutingAsync(
             "internal-token-001",
-            new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15)]),
+            new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15, Interruptible: true)]),
             CancellationToken.None);
         await client.ListStandardOperationsAsync(
             "internal-token-001",
@@ -12502,6 +12502,11 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", archiveProductionVersionDocument.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", archiveProductionVersionDocument.RootElement.GetProperty("environmentId").GetString());
         Assert.Equal("pv-001", archiveProductionVersionDocument.RootElement.GetProperty("productionVersionId").GetString());
+
+        var releaseRoutingRequestIndex = handler.Requests.FindIndex(request =>
+            request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/routings/release", StringComparison.Ordinal));
+        using var releaseRoutingDocument = JsonDocument.Parse(handler.RequestBodies[releaseRoutingRequestIndex]!);
+        Assert.True(releaseRoutingDocument.RootElement.GetProperty("operations")[0].GetProperty("interruptible").GetBoolean());
 
         var createProductionVersionRequestIndex = handler.Requests.FindIndex(request =>
             request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/production-versions", StringComparison.Ordinal));

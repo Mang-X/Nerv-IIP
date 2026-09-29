@@ -515,7 +515,8 @@ public sealed record RoutingOperationCommand(
     string OperationCode,
     string? OperationName,
     int StandardMinutes = 0,
-    string? RequiredSkillCode = null);
+    string? RequiredSkillCode = null,
+    bool Interruptible = false);
 
 public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRoutingCommand>
 {
@@ -618,7 +619,8 @@ public sealed class ReleaseRoutingCommandHandler(
                     standardOperation.RequiresReporting,
                     standardOperation.RequiresQualityInspection,
                     standardOperation.IsOutsourced,
-                    operation.RequiredSkillCode);
+                    operation.RequiredSkillCode,
+                    operation.Interruptible);
             }
 
             draft.Release(request.EffectiveDate);
@@ -630,7 +632,7 @@ public sealed class ReleaseRoutingCommandHandler(
 
     private static string RoutingPayloadFingerprint(ReleaseRoutingCommand request)
     {
-        if (request.Operations.All(operation => string.IsNullOrWhiteSpace(operation.RequiredSkillCode)))
+        if (request.Operations.All(operation => string.IsNullOrWhiteSpace(operation.RequiredSkillCode) && !operation.Interruptible))
         {
             return ProductEngineeringCodingService.Fingerprint(
                 request.Revision,
@@ -639,7 +641,25 @@ public sealed class ReleaseRoutingCommandHandler(
                 request.Operations.Select(operation => $"{operation.Sequence}:{operation.OperationCode}"));
         }
 
-        var canonicalPayload = JsonSerializer.Serialize(new
+        var hasInterruptible = request.Operations.Any(operation => operation.Interruptible);
+        var canonicalPayload = hasInterruptible ? JsonSerializer.Serialize(new
+        {
+            version = 3,
+            revision = request.Revision,
+            skuCode = request.SkuCode,
+            effectiveDate = request.EffectiveDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            operations = request.Operations
+                .OrderBy(operation => operation.Sequence)
+                .Select(operation => new
+                {
+                    sequence = operation.Sequence,
+                    operationCode = operation.OperationCode,
+                    requiredSkillCode = string.IsNullOrWhiteSpace(operation.RequiredSkillCode)
+                        ? null
+                        : operation.RequiredSkillCode.Trim(),
+                    interruptible = operation.Interruptible,
+                }),
+        }) : JsonSerializer.Serialize(new
         {
             version = 2,
             revision = request.Revision,
@@ -657,7 +677,7 @@ public sealed class ReleaseRoutingCommandHandler(
                 }),
         });
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalPayload));
-        return $"routing:v2:sha256:{Convert.ToHexStringLower(digest)}";
+        return $"routing:v{(hasInterruptible ? 3 : 2)}:sha256:{Convert.ToHexStringLower(digest)}";
     }
 }
 

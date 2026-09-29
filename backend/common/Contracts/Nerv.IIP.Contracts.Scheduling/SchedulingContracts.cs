@@ -530,7 +530,8 @@ public sealed record SchedulePlanAffectedOperationPayload(
 
 public enum ScheduleSplitPolicyContract
 {
-    NonSplittable = 0
+    NonSplittable = 0,
+    Interruptible = 1
 }
 
 public enum SchedulePlanStatusContract

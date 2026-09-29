@@ -114,6 +114,47 @@ public sealed class SchedulingProblemProducerTests
     }
 
     [Fact]
+    public async Task Producer_maps_interruptible_and_legacy_routing_operations_to_split_policy()
+    {
+        var producer = new SchedulingProblemProducer(
+            new StubSchedulingProblemProductEngineeringClient(
+                new SchedulingProblemRoutingSnapshot("ROUTE-MIX", "A", "SKU-FG-1000",
+                [
+                    new SchedulingProblemRoutingOperationSnapshot(10, "WC-MIX-01", "mixing", "Mixing", 0, 30, 0, Interruptible: true),
+                    new SchedulingProblemRoutingOperationSnapshot(20, "WC-MIX-01", "packing", "Packing", 0, 30, 0)
+                ])),
+            MasterDataForWorkCenter(new SchedulingProblemWorkCenterSnapshot(
+                "WC-MIX-01", "CAL-DAY", 1, ["mixing", "packing"])));
+        var problem = await producer.AssembleAsync(RequestFor(new SchedulingProblemSourceOrder(
+            "WO-MIX-001", "SKU-FG-1000", 1, HorizonEnd, 10, false, HorizonStart, "ROUTE-MIX:A")), CancellationToken.None);
+
+        var operations = problem.Orders.Single().Operations.OrderBy(x => x.OperationSequence).ToArray();
+        Assert.Equal(ScheduleSplitPolicyContract.Interruptible, operations[0].SplitPolicy);
+        Assert.Equal(ScheduleSplitPolicyContract.NonSplittable, operations[1].SplitPolicy);
+    }
+
+    [Fact]
+    public async Task Product_engineering_client_reads_interruptible_and_missing_legacy_flag()
+    {
+        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
+            {
+              "data": {
+                "routingCode": "ROUTE-MIX", "revision": "A", "skuCode": "SKU-FG-1000", "status": "Published",
+                "operations": [
+                  { "sequence": 10, "workCenterCode": "WC-MIX-01", "operationCode": "mixing", "operationName": "Mixing", "standardMinutes": 30, "setupMinutes": 0, "runMinutes": 30, "teardownMinutes": 0, "controlKey": "standard", "requiresReporting": true, "requiresQualityInspection": false, "isOutsourced": false, "interruptible": true },
+                  { "sequence": 20, "workCenterCode": "WC-MIX-01", "operationCode": "packing", "operationName": "Packing", "standardMinutes": 30, "setupMinutes": 0, "runMinutes": 30, "teardownMinutes": 0, "controlKey": "standard", "requiresReporting": true, "requiresQualityInspection": false, "isOutsourced": false }
+                ]
+              }, "success": true, "message": "", "code": 0
+            }
+            """))) { BaseAddress = new Uri("http://product-engineering") };
+        var routing = await new HttpSchedulingProblemProductEngineeringClient(httpClient)
+            .GetRoutingAsync("org-001", "env-dev", "ROUTE-MIX:A", CancellationToken.None);
+
+        Assert.True(routing.Operations.Single(x => x.Sequence == 10).Interruptible);
+        Assert.False(routing.Operations.Single(x => x.Sequence == 20).Interruptible);
+    }
+
+    [Fact]
     public async Task Producer_scales_operation_run_minutes_by_order_quantity()
     {
         var producer = new SchedulingProblemProducer(

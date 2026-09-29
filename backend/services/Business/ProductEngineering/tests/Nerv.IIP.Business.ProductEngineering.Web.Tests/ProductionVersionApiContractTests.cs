@@ -403,7 +403,8 @@ public sealed class ProductionVersionApiContractTests
                 "A",
                 "SKU-FG-1000",
                 new DateOnly(2026, 1, 1),
-                requiredSkillCode: "cnc-operation"),
+                requiredSkillCode: "cnc-operation",
+                interruptible: true),
             ReleasedRouting("ROUTE-CURRENT", "A", "SKU-FG-1000", new DateOnly(2026, 1, 1)));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -424,6 +425,7 @@ public sealed class ProductionVersionApiContractTests
         var operation = Assert.Single(response.Operations);
         Assert.Equal("mixing", operation.OperationCode);
         Assert.Equal("cnc-operation", operation.RequiredSkillCode);
+        Assert.True(operation.Interruptible);
     }
 
     [Fact]
@@ -510,10 +512,11 @@ public sealed class ProductionVersionApiContractTests
         string skuCode,
         DateOnly effectiveDate,
         string organizationId = "org-001",
-        string? requiredSkillCode = null)
+        string? requiredSkillCode = null,
+        bool interruptible = false)
     {
         var routing = Routing.CreateDraft(organizationId, "env-dev", routingCode, revision, skuCode)
-            .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30, requiredSkillCode);
+            .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30, requiredSkillCode, interruptible);
         routing.Release(effectiveDate);
         return routing;
     }

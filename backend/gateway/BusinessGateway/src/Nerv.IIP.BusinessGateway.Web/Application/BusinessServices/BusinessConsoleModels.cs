@@ -2657,7 +2657,8 @@ public sealed record BusinessConsoleRoutingOperationItem(
     string WorkCenterCode,
     string OperationCode,
     string OperationName,
-    int StandardMinutes);
+    int StandardMinutes,
+    bool Interruptible = false);
 
 public sealed record BusinessConsoleReleaseRoutingRequest(
     string OrganizationId,
@@ -2674,7 +2675,8 @@ public sealed record BusinessConsoleRoutingOperationRequest(
     string WorkCenterCode,
     string OperationCode,
     string OperationName,
-    int StandardMinutes);
+    int StandardMinutes,
+    bool Interruptible = false);
 
 public sealed record BusinessConsoleListStandardOperationsRequest(
     string OrganizationId,

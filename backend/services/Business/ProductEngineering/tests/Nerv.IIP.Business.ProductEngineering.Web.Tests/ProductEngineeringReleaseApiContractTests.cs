@@ -53,7 +53,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
               "operationCode": "cnc-turning",
               "operationName": "CNC 精车",
               "standardMinutes": 30,
-              "requiredSkillCode": "cnc-operation"
+              "requiredSkillCode": "cnc-operation",
+              "interruptible": true
             }
             """;
 
@@ -63,6 +64,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         Assert.NotNull(operation);
         Assert.Equal("cnc-operation", operation.RequiredSkillCode);
+        Assert.True(operation.Interruptible);
     }
 
     [Fact]
@@ -103,7 +105,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 "cnc-turning",
                 "Ignored",
                 1,
-                RequiredSkillCode: " cnc-operation ")],
+                RequiredSkillCode: " cnc-operation ",
+                Interruptible: true)],
             "routing-skill-release");
         await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -114,6 +117,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         var operation = Assert.Single(response.Operations);
         Assert.Equal("cnc-operation", operation.RequiredSkillCode);
+        Assert.True(operation.Interruptible);
 
         var conflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             command with
@@ -126,11 +130,30 @@ public sealed class ProductEngineeringReleaseApiContractTests
                         "cnc-turning",
                         "Ignored",
                         1,
-                        RequiredSkillCode: "grinding")
+                        RequiredSkillCode: " cnc-operation ",
+                        Interruptible: false)
                 ]
             },
             CancellationToken.None));
         Assert.Contains("conflicts", conflict.Message, StringComparison.OrdinalIgnoreCase);
+
+        var skillConflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with
+            {
+                Operations =
+                [
+                    new RoutingOperationCommand(
+                        10,
+                        "WC-IGNORED",
+                        "cnc-turning",
+                        "Ignored",
+                        1,
+                        RequiredSkillCode: "grinding",
+                        Interruptible: true)
+                ]
+            },
+            CancellationToken.None));
+        Assert.Contains("conflicts", skillConflict.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -1862,6 +1885,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal(38, operation.StandardMinutes);
         Assert.Equal("MIX-QA", operation.ControlKey);
         Assert.True(operation.RequiresQualityInspection);
+        Assert.False(operation.Interruptible);
     }
 
     [Fact]

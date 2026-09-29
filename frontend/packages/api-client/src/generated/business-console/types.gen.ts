@@ -1692,7 +1692,7 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     toolingAvailable?: boolean;
 };
 
-export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
+export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable' | 'interruptible';
 
 export type NervIipContractsSchedulingSchedulingResourceContract = {
     resourceId?: string;
@@ -3139,6 +3139,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     operationCode?: string;
     operationName?: string;
     standardMinutes?: number;
+    interruptible?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListRoutingsRequest = {
@@ -3170,6 +3171,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     operationCode?: string;
     operationName?: string;
     standardMinutes?: number;
+    interruptible?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationListResponse = NetCorePalExtensionsDtoResponseData & {
