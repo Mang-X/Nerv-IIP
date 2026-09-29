@@ -2,7 +2,7 @@
 import { Skeleton } from '@nerv-iip/ui'
 import { CalendarClockIcon } from '@lucide/vue'
 import { computed, ref, toRef } from 'vue'
-import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
+import type { TaskDragPayload, TimeScale } from '../engine/engine'
 import type { LaneOrder, ScheduleModel } from '../model/types'
 import ReadonlyScheduleTimeline from './ReadonlyScheduleTimeline.vue'
 import { useEngine } from './useEngine'
@@ -33,7 +33,7 @@ const emit = defineEmits<{
 const container = ref<HTMLElement>()
 const isEmpty = computed(() => props.model != null && props.model.tasks.length === 0)
 
-const { engine, engineName } = useEngine({
+const { command, engineName } = useEngine({
   container,
   model: toRef(props, 'model'),
   view: props.view,
@@ -51,9 +51,6 @@ const { engine, engineName } = useEngine({
 })
 
 /** 供父组件(工作台)下发命令,如缩放/定位/选中。 */
-function command(cmd: EngineCommand) {
-  engine.value?.applyCommand(cmd)
-}
 defineExpose({ command, engineName })
 </script>
 
