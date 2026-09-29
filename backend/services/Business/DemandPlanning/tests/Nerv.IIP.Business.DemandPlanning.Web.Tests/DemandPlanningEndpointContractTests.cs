@@ -46,32 +46,43 @@ public sealed class DemandPlanningEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var runId = new MrpRunId(Guid.CreateVersion7());
         var requiredDate = new DateOnly(2026, 10, 10);
-        PlanningSuggestion NewSuggestion(MrpRunId run, string sku) => PlanningSuggestion.Create(
+        PlanningSuggestion NewSuggestion(MrpRunId run, string sku, DateOnly dueDate) => PlanningSuggestion.Create(
             "org-001", "env-dev", run, "planned-work-order", sku, "EA", "SITE-01", 10m,
-            requiredDate, requiredDate.AddDays(-2), "net-requirement");
+            dueDate, dueDate.AddDays(-2), "net-requirement");
 
-        var parent = NewSuggestion(runId, "SKU-ASSEMBLY");
+        var parent = NewSuggestion(runId, "SKU-ASSEMBLY", requiredDate);
         parent.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", null, 10m, null, null, null,
             sourceLineReference: "10");
-        var unrelated = NewSuggestion(runId, "SKU-ASSEMBLY");
+        var otherPathParent = NewSuggestion(runId, "SKU-ASSEMBLY", requiredDate.AddDays(-1));
+        otherPathParent.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", null, 10m, null, null, null,
+            sourceLineReference: "10");
+        var unrelated = NewSuggestion(runId, "SKU-ASSEMBLY", requiredDate);
         unrelated.AddPeggingLink(peggingType, "SO-2", "SKU-ASSEMBLY", null, 10m, null, null, null,
             sourceLineReference: "20");
-        var child = NewSuggestion(runId, "SKU-COMPONENT");
+        var child = NewSuggestion(runId, "SKU-COMPONENT", parent.ReleaseDate);
         child.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", "SKU-COMPONENT", 10m, null, null, null,
             sourceLineReference: "10");
-        dbContext.PlanningSuggestions.AddRange(parent, unrelated, child);
+        var otherPathChild = NewSuggestion(runId, "SKU-COMPONENT", otherPathParent.ReleaseDate);
+        otherPathChild.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", "SKU-COMPONENT", 10m, null, null, null,
+            sourceLineReference: "10");
+        dbContext.PlanningSuggestions.AddRange(parent, otherPathParent, unrelated, child, otherPathChild);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var bridge = new CountingPlanningSuggestionDownstreamBridge();
         await new AcceptPlanningSuggestionCommandHandler(dbContext, bridge).Handle(
             new AcceptPlanningSuggestionCommand(child.Id, "BusinessMes", "WorkOrder", null),
             CancellationToken.None);
+        await new AcceptPlanningSuggestionCommandHandler(dbContext, bridge).Handle(
+            new AcceptPlanningSuggestionCommand(otherPathChild.Id, "BusinessMes", "WorkOrder", null),
+            CancellationToken.None);
 
-        Assert.Equal(1, bridge.CreateCount);
+        Assert.Equal(2, bridge.CreateCount);
         var accepted = Assert.Single(child.GetDomainEvents().OfType<PlanningSuggestionAcceptedDomainEvent>());
         Assert.Equal([parent.Id.ToString()], accepted.AssemblyParentSuggestionIds);
         Assert.Equal([parent.Id.ToString()],
             new PlanningSuggestionAcceptedIntegrationEventConverter().Convert(accepted).Payload.AssemblyParentSuggestionIds);
+        var otherAccepted = Assert.Single(otherPathChild.GetDomainEvents().OfType<PlanningSuggestionAcceptedDomainEvent>());
+        Assert.Equal([otherPathParent.Id.ToString()], otherAccepted.AssemblyParentSuggestionIds);
     }
 
     [Fact]

@@ -175,7 +175,8 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
             .ToListAsync(cancellationToken);
 
         return candidates
-            .Where(parent => parent.Id != suggestion.Id && componentLinks.Any(link =>
+            .Where(parent => parent.Id != suggestion.Id &&
+                parent.ReleaseDate == suggestion.RequiredDate && componentLinks.Any(link =>
                 link.ParentSkuCode == parent.SkuCode &&
                 parent.PeggingLinks.Any(parentLink => parentLink.PeggingType == link.PeggingType &&
                     parentLink.DemandSourceReference == link.DemandSourceReference &&
