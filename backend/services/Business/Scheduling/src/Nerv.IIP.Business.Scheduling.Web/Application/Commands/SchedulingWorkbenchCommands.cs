@@ -36,54 +36,56 @@ public sealed class CreateSchedulingWorkbenchPlanCommandValidator
 }
 
 public sealed class CreateSchedulingWorkbenchPlanCommandHandler(
-    ApplicationDbContext dbContext,
-    ISchedulingWorkbenchSourceProvider sourceProvider,
-    ISchedulingProblemProducer problemProducer,
+    SchedulingWorkbenchPlanAssembler assembler,
     ISender sender) : ICommandHandler<CreateSchedulingWorkbenchPlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(
         CreateSchedulingWorkbenchPlanCommand request,
         CancellationToken cancellationToken)
     {
-        var orders = await sourceProvider.ResolveOrdersAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.HorizonStartUtc,
-            request.Orders,
-            cancellationToken);
-        var problem = await problemProducer.AssembleWorkbenchAsync(
-            new AssembleSchedulingWorkbenchProblemRequest(
-                $"workbench-{Guid.CreateVersion7():N}",
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.HorizonStartUtc,
-                request.HorizonEndUtc,
-                orders),
-            cancellationToken);
-        var orderIds = orders.Select(x => x.Order.OrderId).ToArray();
-        var projections = await dbContext.OperationExecutionProjections.AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                orderIds.Contains(x.WorkOrderId) &&
-                x.ActualStartedAtUtc != null)
-            .ToArrayAsync(cancellationToken);
-        var operations = problem.Orders
-            .SelectMany(order => order.Operations.Select(operation => new { order.OrderId, Operation = operation }))
-            .ToDictionary(x => (x.OrderId, x.Operation.OperationId), x => x.Operation);
-        var fixedReservations = projections
-            .Where(x => operations.ContainsKey((x.WorkOrderId, x.OperationId)))
-            .Select(x => new FixedWorkCenterReservation(
-                x.WorkOrderId,
-                x.OperationId,
-                operations[(x.WorkOrderId, x.OperationId)].OperationSequence,
-                x.WorkCenterId ?? problem.Resources.First(resource =>
-                    operations[(x.WorkOrderId, x.OperationId)].EligibleResourceIds.Contains(
-                        resource.ResourceId, StringComparer.Ordinal)).WorkCenterId,
-                x.ActualStartedAtUtc!.Value,
-                x.ActualCompletedAtUtc ?? request.HorizonEndUtc,
-                null))
-            .ToArray();
-        return await sender.Send(new CreateSchedulePlanCommand(problem, fixedReservations), cancellationToken);
+        var input = await assembler.AssembleAsync(request.OrganizationId, request.EnvironmentId,
+            request.HorizonStartUtc, request.HorizonEndUtc, request.Orders, cancellationToken);
+        return await sender.Send(new CreateSchedulePlanCommand(input.Problem, input.FixedReservations), cancellationToken);
+    }
+}
+
+public sealed record PreviewSchedulingWorkbenchPlanCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset HorizonStartUtc,
+    DateTimeOffset HorizonEndUtc,
+    IReadOnlyCollection<SchedulingWorkbenchOrderSelection> Orders) : ICommand<SchedulePlanContract>;
+
+public sealed class PreviewSchedulingWorkbenchPlanCommandValidator
+    : AbstractValidator<PreviewSchedulingWorkbenchPlanCommand>
+{
+    public PreviewSchedulingWorkbenchPlanCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.HorizonEndUtc).GreaterThan(x => x.HorizonStartUtc);
+        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
+        RuleForEach(x => x.Orders).ChildRules(order =>
+        {
+            order.RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(128);
+            order.RuleFor(x => x.Priority).InclusiveBetween(0, 9999);
+        });
+        RuleFor(x => x.Orders).Must(x => x.Select(y => y.WorkOrderId).Distinct(StringComparer.Ordinal).Count() == x.Count)
+            .WithMessage("Work-order selections must be distinct.");
+    }
+}
+
+public sealed class PreviewSchedulingWorkbenchPlanCommandHandler(
+    SchedulingWorkbenchPlanAssembler assembler,
+    ISender sender) : ICommandHandler<PreviewSchedulingWorkbenchPlanCommand, SchedulePlanContract>
+{
+    public async Task<SchedulePlanContract> Handle(
+        PreviewSchedulingWorkbenchPlanCommand request,
+        CancellationToken cancellationToken)
+    {
+        var input = await assembler.AssembleAsync(request.OrganizationId, request.EnvironmentId,
+            request.HorizonStartUtc, request.HorizonEndUtc, request.Orders, cancellationToken);
+        return await sender.Send(new PreviewSchedulePlanCommand(input.Problem, input.FixedReservations), cancellationToken);
     }
 }
 

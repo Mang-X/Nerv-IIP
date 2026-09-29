@@ -40,9 +40,9 @@
 | Mes | 80 | 73 | 3 | 4 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 49 | 36 | 12 | 1 |
-| Scheduling | 23 | 20 | 2 | 1 |
+| Scheduling | 24 | 21 | 2 | 1 |
 | Wms | 57 | 47 | 5 | 5 |
-| **Total** | **525** | **446** | **43** | **36** |
+| **Total** | **526** | **447** | **43** | **36** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 

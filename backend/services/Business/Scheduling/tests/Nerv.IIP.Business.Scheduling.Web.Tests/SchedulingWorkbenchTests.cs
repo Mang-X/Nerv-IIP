@@ -46,10 +46,8 @@ public sealed partial class SchedulingWorkbenchTests
         await db.SaveChangesAsync();
         var sender = new CapturingPlanSender(problem.HorizonStartUtc);
         var handler = new CreateSchedulingWorkbenchPlanCommandHandler(
-            db,
-            new StaticWorkbenchSourceProvider(order),
-            new StaticWorkbenchProblemProducer(problem),
-            sender);
+            new SchedulingWorkbenchPlanAssembler(db, new StaticWorkbenchSourceProvider(order),
+                new StaticWorkbenchProblemProducer(problem)), sender);
 
         var plan = await handler.Handle(new CreateSchedulingWorkbenchPlanCommand(
             problem.OrganizationId, problem.EnvironmentId, problem.HorizonStartUtc, problem.HorizonEndUtc,

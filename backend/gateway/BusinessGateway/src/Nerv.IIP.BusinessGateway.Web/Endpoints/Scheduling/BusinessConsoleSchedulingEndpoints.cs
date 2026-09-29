@@ -102,6 +102,26 @@ public sealed class CreateBusinessConsoleSchedulingWorkbenchPlanEndpoint(
 }
 
 [Tags("Business Console Scheduling")]
+[HttpPost("/api/business-console/v1/scheduling/workbench/plans/preview")]
+[BusinessGatewayOperationId("previewBusinessConsoleSchedulingWorkbenchPlan")]
+public sealed class PreviewBusinessConsoleSchedulingWorkbenchPlanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleCreateSchedulingWorkbenchPlanRequest, SchedulePlanContract>(
+        auth,
+        BusinessGatewayPermissions.SchedulingPlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateSchedulingWorkbenchPlanRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleCreateSchedulingWorkbenchPlanRequest request) => request.EnvironmentId;
+    protected override Task<SchedulePlanContract> ForwardAsync(
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        scheduling.PreviewWorkbenchPlanAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Scheduling")]
 [HttpPost("/api/business-console/v1/scheduling/plans/{planId}/revisions")]
 [BusinessGatewayOperationId("createBusinessConsoleSchedulingPlanRevision")]
 public sealed class CreateBusinessConsoleSchedulingPlanRevisionEndpoint(
