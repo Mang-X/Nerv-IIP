@@ -3894,6 +3894,14 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/material-readiness/batch",
+      "operationId": "getBusinessMesBatchMaterialReadiness",
+      "classification": "internal",
+      "rationale": "#3994 为 Scheduling 批量齐套计算提供服务间端点；不面向 BusinessGateway 页面公开。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/release",
       "operationId": "releaseBusinessMesWorkOrder",
       "classification": "exposed",

@@ -103,6 +103,7 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.CreateMaterialIssueRequestCommandHandler.ResolveFrozenMaterialSelectionAsync",
             "Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench.GetMesOverviewQueryHandler.CountReleasedWorkOrdersWithMaterialShortageAsync",
             "Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench.GetMaterialReadinessQueryHandler.Handle",
+            "Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench.GetBatchMaterialReadinessQueryHandler.Handle",
             "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.MaterialReadinessGuards.EnsureRequirementSnapshotsAsync",
             "Nerv.IIP.Business.Mes.Web.Application.Readiness.MesOperationTaskActionReadinessEvaluator.EvaluateManyAsync",
             "Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.MaterialReadinessGuards.GetShortageReasonsAsync",

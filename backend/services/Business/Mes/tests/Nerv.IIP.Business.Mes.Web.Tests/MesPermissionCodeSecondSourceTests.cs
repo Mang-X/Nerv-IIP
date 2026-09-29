@@ -53,6 +53,7 @@ public sealed class MesPermissionCodeSecondSourceTests
             ["forceReleaseBusinessMesQualityHold"] = "business.mes.quality.write", // POST /api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release
             ["getBusinessMesQualityHoldTimeline"] = "business.mes.quality.read", // GET /api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline
             ["getBusinessMesMaterialReadiness"] = "business.mes.materials.read", // GET /api/business/v1/mes/work-orders/{workOrderId}/material-readiness
+            ["getBusinessMesBatchMaterialReadiness"] = "business.mes.materials.read", // POST /api/business/v1/mes/work-orders/material-readiness/batch
             ["createBusinessMesMaterialIssueRequest"] = "business.mes.materials.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests
             ["listBusinessMesMaterialIssueRequests"] = "business.mes.materials.read", // GET /api/business/v1/mes/material-issue-requests
             ["getBusinessMesMaterialIssueRequest"] = "business.mes.materials.read", // GET /api/business/v1/mes/material-issue-requests/{requestId}

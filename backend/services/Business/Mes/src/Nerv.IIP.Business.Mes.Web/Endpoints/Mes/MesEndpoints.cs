@@ -249,6 +249,23 @@ public sealed record WorkOrderContextRequest(
     string EnvironmentId,
     [property: RouteParam] string WorkOrderId);
 
+public sealed record BatchMaterialReadinessRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> WorkOrderIds);
+
+public sealed class BatchMaterialReadinessRequestValidator : Validator<BatchMaterialReadinessRequest>
+{
+    public BatchMaterialReadinessRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
+        RuleFor(x => x.WorkOrderIds).NotNull().Must(x => x is { Count: > 0 and <= 500 })
+            .WithMessage("工单数量须在 1 到 500 之间");
+        RuleForEach(x => x.WorkOrderIds).NotEmpty();
+    }
+}
+
 public sealed record ProductionPlanContextRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1054,6 +1071,19 @@ public sealed class GetMaterialReadinessEndpoint(ISender sender)
     public override async Task HandleAsync(WorkOrderContextRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetMaterialReadinessQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class GetBatchMaterialReadinessEndpoint(ISender sender)
+    : MesEndpoint<BatchMaterialReadinessRequest, MesMaterialReadinessBatchResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetBatchMaterialReadinessEndpoint>());
+
+    public override async Task HandleAsync(BatchMaterialReadinessRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetBatchMaterialReadinessQuery(
+            req.OrganizationId, req.EnvironmentId, req.WorkOrderIds), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1996,6 +2026,7 @@ public static class MesEndpointContracts
         new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
         new(typeof(GetQualityHoldTimelineEndpoint), "GET", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline", MesPermissionCodes.QualityRead, "getBusinessMesQualityHoldTimeline"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
+        new(typeof(GetBatchMaterialReadinessEndpoint), "POST", "/api/business/v1/mes/work-orders/material-readiness/batch", MesPermissionCodes.MaterialsRead, "getBusinessMesBatchMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),
         new(typeof(GetMaterialIssueRequestEndpoint), "GET", "/api/business/v1/mes/material-issue-requests/{requestId}", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialIssueRequest"),
