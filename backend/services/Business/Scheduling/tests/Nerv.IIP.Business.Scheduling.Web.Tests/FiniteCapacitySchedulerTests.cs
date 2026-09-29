@@ -950,6 +950,51 @@ public class FiniteCapacitySchedulerTests
         ], Assignment(plan, "B", "OP-B").Segments);
     }
 
+    [Theory]
+    [InlineData(ScheduleSplitPolicyContract.NonSplittable)]
+    [InlineData(ScheduleSplitPolicyContract.Interruptible)]
+    public void Unavailable_transition_advances_to_predecessor_segment_end(ScheduleSplitPolicyContract splitPolicy)
+    {
+        var problem = CreateSingleOperationProblemWithAlternateResource();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var r1 = problem.Resources.First().ResourceId;
+        var r2 = problem.Resources.Last().ResourceId;
+        SchedulingOrderContract Order(string sku, string resource, int priority, int earliest, int duration,
+            ScheduleSplitPolicyContract policy, IReadOnlyCollection<SchedulingChangeoverContract> changes) => template with
+            {
+                OrderId = sku, SkuCode = sku,
+                Operations = [operation with
+                {
+                    OperationId = $"OP-{sku}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliest), DurationMinutes = duration,
+                    PrimaryResourceId = resource, EligibleResourceIds = [resource], SplitPolicy = policy,
+                    Changeovers = changes
+                }]
+            };
+        problem = problem with
+        {
+            HorizonEndUtc = problem.HorizonStartUtc.AddHours(4),
+            Orders =
+            [
+                Order("C", r2, 30, 60, 120, ScheduleSplitPolicyContract.NonSplittable,
+                    [new("C", 0, ["T"], true)]),
+                Order("A", r1, 20, 0, 120, ScheduleSplitPolicyContract.Interruptible,
+                    [new("A", 0, ["T"], true), new("B", 0, ["T"], true)]),
+                Order("B", r1, 10, 0, 60, splitPolicy,
+                    [new("B", 0, [], false), new("A", 0, [], true)])
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-segment-predecessor-advance", GeneratedAtUtc);
+
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(problem.HorizonStartUtc.AddHours(3), problem.HorizonStartUtc.AddHours(4))
+        ], Assignment(plan, "A", "OP-A").Segments);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(1), Assignment(plan, "B", "OP-B").StartUtc);
+    }
+
     [Fact]
     public void Interruptible_operation_uses_actual_predecessor_changeover_on_first_segment()
     {

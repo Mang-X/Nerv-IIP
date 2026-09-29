@@ -1094,10 +1094,7 @@ file sealed class SchedulerState
                 var effectiveOperation = EffectiveOperation(item, resource, candidate);
                 if (!effectiveOperation.ToolingAvailable)
                 {
-                    var nextEnd = assignments
-                        .Where(x => x.ResourceId == resource.ResourceId && x.EndUtc > candidate)
-                        .Select(x => (DateTimeOffset?)x.EndUtc)
-                        .Min();
+                    var nextEnd = NextResourceSegmentEnd(resource, candidate);
                     if (!nextEnd.HasValue) break;
                     candidate = nextEnd.Value;
                     continue;
@@ -1177,9 +1174,7 @@ file sealed class SchedulerState
                 }
             }
 
-            var nextEnd = assignments
-                .Where(x => x.ResourceId == resource.ResourceId && x.EndUtc > searchStart)
-                .Select(x => (DateTimeOffset?)x.EndUtc).Min();
+            var nextEnd = NextResourceSegmentEnd(resource, searchStart);
             if (!nextEnd.HasValue) return null;
             searchStart = nextEnd.Value;
         }
@@ -1369,6 +1364,12 @@ file sealed class SchedulerState
             : TimeSpan.FromMinutes((double)Math.Ceiling(
                 (decimal)duration.Ticks / TimeSpan.TicksPerMinute / utilizationRate));
 
+    private DateTimeOffset? NextResourceSegmentEnd(SchedulingResourceContract resource, DateTimeOffset after) =>
+        assignments.Where(x => x.ResourceId == resource.ResourceId)
+            .SelectMany(AssignmentSegments)
+            .Where(x => x.EndUtc > after)
+            .Select(x => (DateTimeOffset?)x.EndUtc).Min();
+
     private DateTimeOffset ApplySetupGap(
         SchedulingResourceContract resource,
         DateTimeOffset candidate,
@@ -1381,9 +1382,9 @@ file sealed class SchedulerState
 
         var previousEnd = assignments
             .Where(x => x.ResourceId == resource.ResourceId)
+            .SelectMany(AssignmentSegments)
             .Where(x => x.EndUtc <= candidate)
-            .Select(x => (DateTimeOffset?)x.EndUtc)
-            .Max();
+            .Select(x => (DateTimeOffset?)x.EndUtc).Max();
         if (!previousEnd.HasValue)
         {
             return candidate;
@@ -1404,7 +1405,9 @@ file sealed class SchedulerState
         }
 
         var hasPreviousAssignment = assignments
-            .Any(x => x.ResourceId == resource.ResourceId && x.EndUtc <= candidate);
+            .Where(x => x.ResourceId == resource.ResourceId)
+            .SelectMany(AssignmentSegments)
+            .Any(x => x.EndUtc <= candidate);
         return hasPreviousAssignment ? candidate - setup : candidate;
     }
 
@@ -1415,7 +1418,8 @@ file sealed class SchedulerState
         DateTimeOffset blockingEnd)
     {
         var hasPreviousAssignment = setup > TimeSpan.Zero
-            && assignments.Any(x => x.ResourceId == resource.ResourceId && x.EndUtc <= candidate);
+            && assignments.Where(x => x.ResourceId == resource.ResourceId)
+                .SelectMany(AssignmentSegments).Any(x => x.EndUtc <= candidate);
         return hasPreviousAssignment ? blockingEnd + setup : blockingEnd;
     }
 
