@@ -210,6 +210,41 @@ public sealed class ListSchedulePlansEndpoint(ISender sender)
     }
 }
 
+public sealed record ListSchedulePlanHistoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int PageIndex = 0,
+    int PageSize = 100,
+    SchedulePlanStatusContract? Status = null,
+    DateOnly? ReleasedOn = null,
+    bool? IsInvalidated = null);
+
+public sealed class ListSchedulePlanHistoryEndpoint(ISender sender)
+    : SchedulingEndpoint<ListSchedulePlanHistoryRequest, ResponseData<SchedulePlanHistoryResponse>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<ListSchedulePlanHistoryEndpoint>());
+
+    public override async Task HandleAsync(ListSchedulePlanHistoryRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListSchedulePlanHistoryQuery(req.OrganizationId, req.EnvironmentId,
+            req.PageIndex, req.PageSize, req.Status, req.ReleasedOn, req.IsInvalidated), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListSchedulePlanHistoryRequestValidator : Validator<ListSchedulePlanHistoryRequest>
+{
+    public ListSchedulePlanHistoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.PageIndex).InclusiveBetween(0, int.MaxValue / ListSchedulePlansQueryHandler.MaxPageSize);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, ListSchedulePlansQueryHandler.MaxPageSize);
+        RuleFor(x => x.Status).Must(status => status is null or SchedulePlanStatusContract.Generated or
+            SchedulePlanStatusContract.Released or SchedulePlanStatusContract.Superseded or SchedulePlanStatusContract.Revoked);
+    }
+}
+
 public sealed class GetSchedulePlanEndpoint(ISender sender)
     : SchedulingEndpoint<GetSchedulePlanRequest, ResponseData<SchedulePlanContract>>
 {
@@ -532,6 +567,7 @@ public static class SchedulingEndpointContracts
         new(typeof(CreateSchedulingWorkbenchPlanEndpoint), "POST", "/api/business/v1/scheduling/workbench/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingWorkbenchPlan"),
         new(typeof(CreateSchedulePlanRevisionEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revisions", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlanRevision"),
         new(typeof(AssembleSchedulingProblemEndpoint), "POST", "/api/business/v1/scheduling/problems/assemble", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "assembleSchedulingProblem"),
+        new(typeof(ListSchedulePlanHistoryEndpoint), "GET", "/api/business/v1/scheduling/plans/history", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlanHistory"),
         new(typeof(ListSchedulePlansEndpoint), "GET", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlans"),
         new(typeof(GetSchedulePlanEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlan"),
         new(typeof(GetSchedulePlanGanttEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/gantt", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanGantt"),
