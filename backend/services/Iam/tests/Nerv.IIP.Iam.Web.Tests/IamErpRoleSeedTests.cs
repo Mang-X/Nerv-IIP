@@ -19,7 +19,7 @@ namespace Nerv.IIP.Iam.Web.Tests;
 public sealed class IamErpRoleSeedTests
 {
     [Fact]
-    public async Task Bootstrap_creates_assignable_planner_role_without_overwriting_operator_permissions()
+    public async Task Bootstrap_creates_planner_role_with_workbench_read_permissions()
     {
         await using var dbContext = CreateDbContext();
         var seed = CreateSeed(dbContext);
@@ -32,18 +32,56 @@ public sealed class IamErpRoleSeedTests
         Assert.Equal("生产计划员", role.RoleName);
         Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.planning.mps.release");
         Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.scheduling.plans.manage");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.mes.work-orders.read");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "notifications.messages.read");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "notifications.tasks.read");
         var scope = Assert.Single(role.DataScopes);
         Assert.Equal(DataScopeBinding.Organization, scope.ScopeType);
         Assert.Equal("org-001", scope.ScopeCode);
+    }
 
-        role.ReplacePermissions(["business.planning.mps.read"]);
-        await dbContext.SaveChangesAsync();
+    [Fact]
+    public async Task Bootstrap_upgrades_only_the_fixed_planner_role_and_preserves_custom_permissions_and_members()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
         await seed.BootstrapAsync();
+
+        var plannerRoleId = new RoleId("role-production-planner");
+        var planner = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == plannerRoleId);
+        planner.ReplacePermissions(["business.planning.mps.read", "business.masterdata.products.read"]);
+        planner.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Site, "SITE-CUSTOM")]);
+        dbContext.Roles.Add(new Role(new RoleId("role-custom-planner"), "计划员自定义", ["business.planning.mps.read"]));
+        var membership = await dbContext.Memberships.Include(item => item.Roles).SingleAsync();
+        membership.ReplaceRoles([new RoleId("role-platform-admin"), plannerRoleId]);
+        await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
-        var preserved = await dbContext.Roles.Include(candidate => candidate.Permissions)
-            .SingleAsync(candidate => candidate.Id == new RoleId(Nerv.IIP.Iam.Domain.NervIipSeedRoles.ProductionPlannerRoleId));
-        Assert.Equal(["business.planning.mps.read"], preserved.Permissions.Select(permission => permission.PermissionCode));
+        await seed.BootstrapAsync();
+        await seed.BootstrapAsync();
+        await seed.SeedAsync();
+        dbContext.ChangeTracker.Clear();
+
+        planner = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == plannerRoleId);
+        Assert.Equal(
+            ["business.masterdata.products.read", "business.mes.work-orders.read", "business.planning.mps.read", "notifications.messages.read", "notifications.tasks.read"],
+            planner.Permissions.Select(permission => permission.PermissionCode).Order(StringComparer.Ordinal));
+        var custom = await dbContext.Roles.Include(role => role.Permissions)
+            .SingleAsync(role => role.Id == new RoleId("role-custom-planner"));
+        Assert.Equal("计划员自定义", custom.RoleName);
+        Assert.Equal(["business.planning.mps.read"], custom.Permissions.Select(permission => permission.PermissionCode));
+        Assert.Equal([new DataScopeBinding(DataScopeBinding.Site, "SITE-CUSTOM")],
+            planner.DataScopes.Select(scope => new DataScopeBinding(scope.ScopeType, scope.ScopeCode)));
+        membership = await dbContext.Memberships.Include(item => item.Roles).SingleAsync();
+        Assert.Equal(
+            ["role-platform-admin", "role-production-planner"],
+            membership.Roles.Select(role => role.RoleId.Id).Order(StringComparer.Ordinal));
     }
 
     [Fact]

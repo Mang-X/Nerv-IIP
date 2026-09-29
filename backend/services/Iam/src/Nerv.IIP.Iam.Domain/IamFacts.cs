@@ -48,6 +48,7 @@ public static class NervIipSeedRoles
         ProductionPlannerRoleId,
         "生产计划员",
         [
+            "business.mes.work-orders.read",
             "business.planning.demands.read",
             "business.planning.demands.manage",
             "business.planning.mps.read",
@@ -59,6 +60,8 @@ public static class NervIipSeedRoles
             "business.scheduling.plans.read",
             "business.scheduling.plans.manage",
             "business.scheduling.plans.release",
+            "notifications.messages.read",
+            "notifications.tasks.read",
         ]);
 
     public static readonly SeedRoleDefinition[] ErpJobRoles =
