@@ -378,7 +378,8 @@ public sealed class DeviceStateChangedIntegrationEventHandlerForInvalidateSchedu
 public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ISender sender)
+    ISender sender,
+    ILogger<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<StockAvailabilityChangedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.stock-availability-changed";
@@ -409,11 +410,13 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
             return;
         }
 
-        await SchedulingPlanInvalidationService.InvalidateAllGeneratedPlansAsync(
+        await SchedulingPlanInvalidationService.InvalidateMatchingSnapshotAsync(
             sender,
             integrationEvent,
             SchedulingPlanInvalidationReasons.MaterialReadinessChanged,
+            SchedulePlanInvalidationScope.SnapshotMaterial,
             affectedSkuCode: integrationEvent.Payload.SkuCode,
+            logger: logger,
             cancellationToken: cancellationToken);
     }
 }
@@ -579,7 +582,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
 public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ISender sender)
+    ISender sender,
+    ILogger<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<WorkOrderReleasedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.work-order-released";
@@ -610,18 +614,46 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedul
             return;
         }
 
-        await SchedulingPlanInvalidationService.InvalidateAllGeneratedPlansAsync(
+        await SchedulingPlanInvalidationService.InvalidateMatchingSnapshotAsync(
             sender,
             integrationEvent,
             SchedulingPlanInvalidationReasons.WorkOrderReleased,
+            SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku,
             affectedWorkOrderId: integrationEvent.Payload.WorkOrderId,
             affectedSkuCode: integrationEvent.Payload.SkuCode,
+            logger: logger,
             cancellationToken: cancellationToken);
     }
 }
 
 internal static class SchedulingPlanInvalidationService
 {
+    public static async Task InvalidateMatchingSnapshotAsync<TIntegrationEvent>(
+        ISender sender,
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        SchedulePlanInvalidationScope scope,
+        ILogger logger,
+        string? affectedWorkOrderId = null,
+        string? affectedSkuCode = null,
+        CancellationToken cancellationToken = default)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        var result = await sender.Send(
+            ToCommand(integrationEvent, reasonCode, scope, null, affectedWorkOrderId, affectedSkuCode),
+            cancellationToken);
+        if (result.MatchedPlanCount == 0)
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for work order {AffectedWorkOrderId} and SKU {AffectedSkuCode} matched no schedule plan in {OrganizationId}/{EnvironmentId}.",
+                integrationEvent.EventType,
+                affectedWorkOrderId,
+                affectedSkuCode,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+        }
+    }
+
     public static async Task InvalidateExecutionDeviationAsync<TIntegrationEvent>(
         ApplicationDbContext dbContext,
         TimeProvider timeProvider,
