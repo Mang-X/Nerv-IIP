@@ -391,7 +391,7 @@ public static class MrpCalculator
                 -x.Value.AvailableQuantity, input.HorizonStart, input.HorizonStart,
                 "negative-availability", new CalculatedNetRequirementExplanation(
                     0m, x.Value.OnHandQuantity, x.Value.ReservedQuantity, 0m, 0m, 0m,
-                    -x.Value.AvailableQuantity, 0m, 0m, 1m, "inventory",
+                    -x.Value.AvailableQuantity, 0m, 0m, 1m, "negative-availability",
                     $"可用量 {x.Value.AvailableQuantity:g29} 低于 0", [], []), [])));
 
         suggestions.AddRange(scheduledReceipts

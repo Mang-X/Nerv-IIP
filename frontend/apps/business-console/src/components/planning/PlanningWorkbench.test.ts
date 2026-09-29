@@ -742,7 +742,10 @@ describe('PlanningWorkbench', () => {
         requiredDate: '2026-06-01',
         status: 'Open',
         reasonCode: 'negative-availability',
-        netRequirementExplanation: { formula: '可用量 -3 低于 0', primarySourceType: 'inventory' },
+        netRequirementExplanation: {
+          formula: '可用量 -3 低于 0',
+          primarySourceType: 'negative-availability',
+        },
       },
       {
         suggestionId: 'overdue',
@@ -781,7 +784,7 @@ describe('PlanningWorkbench', () => {
     expect(typeLabels).toContain('超期在途')
     expect(wrapper.text()).toContain('提前期不足')
     expect(wrapper.text()).toContain('可用量 -3 低于 0')
-    expect(wrapper.text()).toContain('库存来源')
+    expect(wrapper.text()).toContain('负可用来源')
     expect(wrapper.text()).toContain('在途 5 应于 2026-05-20 到货')
     expect(wrapper.text()).toContain('例外说明')
     expect(wrapper.text()).toContain('安全库存低于下限，建议补货')

@@ -727,7 +727,6 @@ function sourceTypeLabel(value?: string | null) {
     component: '组件展开',
     demand: '需求来源',
     'scheduled-receipt': '在途来源',
-    inventory: '库存来源',
     'negative-availability': '负可用来源',
   }
   return map[(value ?? '').toLowerCase()] ?? '来源未分类'
