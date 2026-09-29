@@ -858,6 +858,121 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_fixed_work_center_occupancy_limits_parallel_devices_without_assigning_an_unknown_device()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources =
+            [
+                problem.Resources.Single() with { CapacityUnits = 1 },
+                problem.Resources.Single() with { ResourceId = "DEV-PARALLEL-02", CapacityUnits = 1, SortKey = "002" }
+            ],
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations =
+                    [
+                        problem.Orders.Single().Operations.Single() with
+                        {
+                            DurationMinutes = 60,
+                            EligibleResourceIds = ["DEV-PARALLEL-01", "DEV-PARALLEL-02"]
+                        },
+                        problem.Orders.Single().Operations.Single() with
+                        {
+                            OperationId = "OP-SECOND",
+                            OperationSequence = 20,
+                            DurationMinutes = 60,
+                            EligibleResourceIds = ["DEV-PARALLEL-01", "DEV-PARALLEL-02"]
+                        }
+                    ]
+                }
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation("WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), null);
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-fixed", GeneratedAtUtc, [frozen]);
+
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.True(fixedAssignment.IsLocked);
+        Assert.Equal(start, fixedAssignment.StartUtc);
+        Assert.Equal(start.AddHours(1), fixedAssignment.EndUtc);
+        Assert.Equal(string.Empty, fixedAssignment.ResourceId);
+        var open = plan.Assignments.Where(x => !x.IsLocked).OrderBy(x => x.StartUtc).ToArray();
+        Assert.Equal(2, open.Length);
+        Assert.Equal(start, open[0].StartUtc);
+        Assert.Equal(start.AddHours(1), open[1].StartUtc);
+        Assert.Equal("DEV-PARALLEL-01", open[0].ResourceId);
+        Assert.Equal("DEV-PARALLEL-01", open[1].ResourceId);
+    }
+
+    [Fact]
+    public void Schedule_fixed_occupancy_crossing_horizon_still_blocks_available_capacity()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1 }],
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [problem.Orders.Single().Operations.Single() with { DurationMinutes = 60 }]
+                }
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation("WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start.AddHours(-1), start.AddHours(1), null);
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-cross-horizon", GeneratedAtUtc, [frozen]);
+
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.Equal(start.AddHours(-1), fixedAssignment.StartUtc);
+        Assert.Equal(start.AddHours(1), fixedAssignment.EndUtc);
+        Assert.Equal(start.AddHours(1), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+    }
+
+    [Fact]
+    public void Schedule_fixed_occupancy_on_known_device_keeps_other_device_available()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources =
+            [
+                problem.Resources.Single() with { CapacityUnits = 1 },
+                problem.Resources.Single() with { ResourceId = "DEV-PARALLEL-02", CapacityUnits = 1, SortKey = "002" }
+            ],
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations =
+                    [
+                        problem.Orders.Single().Operations.Single() with
+                        {
+                            DurationMinutes = 60,
+                            EligibleResourceIds = ["DEV-PARALLEL-01", "DEV-PARALLEL-02"]
+                        }
+                    ]
+                }
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation("WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-known-device", GeneratedAtUtc, [frozen]);
+
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.Equal("DEV-PARALLEL-01", fixedAssignment.ResourceId);
+        var open = Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY");
+        Assert.Equal(start, open.StartUtc);
+        Assert.Equal("DEV-PARALLEL-02", open.ResourceId);
+    }
+
+    [Fact]
     public void Schedule_resource_load_available_minutes_reflect_capacity_units()
     {
         var problem = CreateParallelCapacityProblem() with

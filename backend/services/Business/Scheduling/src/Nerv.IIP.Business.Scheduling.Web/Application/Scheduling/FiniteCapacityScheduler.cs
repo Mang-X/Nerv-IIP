@@ -114,6 +114,15 @@ public static class SchedulingQualityConstraintModeResolver
 /// 由 MES 侧的线边齐套硬门在开工时拦截。<see cref="SchedulingMaterialConstraintModeContract.Hard"/>
 /// 保留旧的「缺料即不可排」行为,供需要严格口径的环境按配置切回。
 /// </summary>
+internal sealed record FixedWorkCenterReservation(
+    string OrderId,
+    string OperationId,
+    int OperationSequence,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string? ResourceId);
+
 public sealed class FiniteCapacityScheduler(
     SchedulingMaterialConstraintModeContract materialConstraintMode = SchedulingMaterialConstraintModeContract.Soft,
     SchedulingQualityConstraintModeContract qualityConstraintMode = SchedulingQualityConstraintModeContract.Soft)
@@ -137,15 +146,24 @@ public sealed class FiniteCapacityScheduler(
     internal SchedulePlanContract ScheduleNormalized(
         SchedulingProblemContract normalizedProblem,
         string planId,
-        DateTimeOffset generatedAtUtc)
+        DateTimeOffset generatedAtUtc,
+        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null)
     {
         ArgumentNullException.ThrowIfNull(normalizedProblem);
 
-        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode);
+        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode, fixedReservations ?? []);
+        state.ReserveFixedWorkCenterOccupancy();
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
         return state.ToPlan();
     }
+
+    internal SchedulePlanContract ScheduleWithFixedReservations(
+        SchedulingProblemContract problem,
+        string planId,
+        DateTimeOffset generatedAtUtc,
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations) =>
+        ScheduleNormalized(SchedulingProblemNormalizer.Normalize(problem), planId, generatedAtUtc, fixedReservations);
 }
 
 internal static class SchedulingProblemNormalizer
@@ -399,6 +417,8 @@ file sealed class SchedulerState
     private readonly List<SchedulePlanEquipmentRiskContract> equipmentRisks = [];
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private readonly SchedulingQualityConstraintModeContract qualityConstraintMode;
+    private readonly IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations;
+    private readonly Dictionary<string, int> workCenterCapacity;
     private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
 
@@ -407,14 +427,19 @@ file sealed class SchedulerState
         string planId,
         DateTimeOffset generatedAtUtc,
         SchedulingMaterialConstraintModeContract materialConstraintMode,
-        SchedulingQualityConstraintModeContract qualityConstraintMode)
+        SchedulingQualityConstraintModeContract qualityConstraintMode,
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations)
     {
         this.problem = problem;
         this.planId = planId;
         this.generatedAtUtc = generatedAtUtc;
         this.materialConstraintMode = materialConstraintMode;
         this.qualityConstraintMode = qualityConstraintMode;
+        this.fixedReservations = fixedReservations;
         resources = problem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
+        workCenterCapacity = problem.Resources
+            .GroupBy(x => x.WorkCenterId, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Sum(resource => Math.Max(1, resource.CapacityUnits)), StringComparer.Ordinal);
         calendars = problem.Calendars.ToDictionary(x => x.CalendarId, StringComparer.Ordinal);
         operationByKey = problem.Orders
             .SelectMany(order => order.Operations.Select(operation => (
@@ -428,9 +453,37 @@ file sealed class SchedulerState
         string planId,
         DateTimeOffset generatedAtUtc,
         SchedulingMaterialConstraintModeContract materialConstraintMode,
-        SchedulingQualityConstraintModeContract qualityConstraintMode)
+        SchedulingQualityConstraintModeContract qualityConstraintMode,
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations)
     {
-        return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode, qualityConstraintMode);
+        return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode, qualityConstraintMode, fixedReservations);
+    }
+
+    public void ReserveFixedWorkCenterOccupancy()
+    {
+        foreach (var fixedReservation in fixedReservations
+                     .OrderBy(x => x.StartUtc)
+                     .ThenBy(x => x.WorkCenterId, StringComparer.Ordinal)
+                     .ThenBy(x => x.OrderId, StringComparer.Ordinal)
+                     .ThenBy(x => x.OperationId, StringComparer.Ordinal))
+        {
+            AddAssignment(new ScheduleAssignmentContract(
+                AssignmentId: $"fixed-{fixedReservation.OrderId}-{fixedReservation.OperationId}",
+                OrderId: fixedReservation.OrderId,
+                OperationId: fixedReservation.OperationId,
+                OperationSequence: fixedReservation.OperationSequence,
+                ResourceId: fixedReservation.ResourceId ?? string.Empty,
+                WorkCenterId: fixedReservation.WorkCenterId,
+                StartUtc: fixedReservation.StartUtc,
+                EndUtc: fixedReservation.EndUtc,
+                IsLocked: true,
+                ExplanationCode: "in-progress"));
+            changeSummary.Add(new ScheduleChangeContract(
+                fixedReservation.OrderId,
+                fixedReservation.OperationId,
+                ScheduleChangeTypeContract.Preserved,
+                "已执行工序按实际时间保留，未参与本次重排。"));
+        }
     }
 
     public void ReserveLockedAssignments()
@@ -1089,7 +1142,13 @@ file sealed class SchedulerState
         if (toolingEnd.HasValue) return toolingEnd;
 
         var capacity = Math.Max(1, resource.CapacityUnits);
-        return CapacityBlockEnd(resource, startUtc, endUtc, capacity);
+        var occupancies = GetResourceOccupancies(assignments);
+        return new[]
+        {
+            CapacityBlockEnd(occupancies.Where(x => x.ResourceId == resource.ResourceId), startUtc, endUtc, capacity),
+            CapacityBlockEnd(occupancies.Where(x => x.WorkCenterId == resource.WorkCenterId),
+                startUtc, endUtc, workCenterCapacity[resource.WorkCenterId])
+        }.Min();
     }
 
     private void ReportLockedCapacityConflicts()
@@ -1156,14 +1215,13 @@ file sealed class SchedulerState
         }
     }
 
-    private DateTimeOffset? CapacityBlockEnd(
-        SchedulingResourceContract resource,
+    private static DateTimeOffset? CapacityBlockEnd(
+        IEnumerable<ResourceOccupancy> occupancies,
         DateTimeOffset startUtc,
         DateTimeOffset endUtc,
         int capacity)
     {
-        var overlappingOccupancies = GetResourceOccupancies(assignments)
-            .Where(x => x.ResourceId == resource.ResourceId)
+        var overlappingOccupancies = occupancies
             .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
             .ToList();
         if (overlappingOccupancies.Count < capacity)
@@ -1522,7 +1580,8 @@ file sealed class SchedulerState
                      .ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
             var startUtc = assignment.StartUtc;
-            if (operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
+            if (!string.IsNullOrEmpty(assignment.ResourceId)
+                && operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
                 && operation.SetupMinutes > 0
                 && earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out var earliestEnd)
                 && earliestEnd <= assignment.StartUtc)
@@ -1533,6 +1592,7 @@ file sealed class SchedulerState
 
             resourceOccupancies.Add(new ResourceOccupancy(
                 assignment.ResourceId,
+                assignment.WorkCenterId,
                 startUtc,
                 assignment.EndUtc));
             if (!earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out earliestEnd)
@@ -1955,6 +2015,7 @@ file sealed class SchedulerState
 
     private sealed record ResourceOccupancy(
         string ResourceId,
+        string WorkCenterId,
         DateTimeOffset StartUtc,
         DateTimeOffset EndUtc);
 }
