@@ -1602,7 +1602,8 @@ file sealed class SchedulerState
         IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments) =>
         BuildResourceOccupancies(orderedAssignments)
             .Concat(externalReservations
-                .Select(x => new ResourceOccupancy(x.ResourceId ?? string.Empty, x.WorkCenterId, x.StartUtc, x.EndUtc)))
+                .Select(x => new ResourceOccupancy(
+                    x.ResourceId ?? string.Empty, x.WorkCenterId, x.StartUtc, x.EndUtc, x.EndUtc)))
             .ToArray();
 
     private IReadOnlyCollection<ResourceOccupancy> BuildResourceOccupancies(

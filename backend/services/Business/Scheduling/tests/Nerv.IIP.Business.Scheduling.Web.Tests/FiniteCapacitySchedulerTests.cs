@@ -994,6 +994,30 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_external_fixed_actual_interval_is_not_extended_by_resource_utilization()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1, UtilizationRate = 0.8m }],
+            Orders = [problem.Orders.Single() with
+            {
+                Operations = [problem.Orders.Single().Operations.Single() with { DurationMinutes = 30 }]
+            }]
+        };
+        var frozen = new FixedWorkCenterReservation(
+            "WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleNormalized(
+            SchedulingProblemNormalizer.Normalize(problem), "plan-external-utilization", GeneratedAtUtc,
+            externalReservations: [frozen]);
+
+        Assert.Equal(start.AddHours(1), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+        Assert.DoesNotContain(plan.Assignments, x => x.OperationId == "OP-FIXED");
+    }
+
+    [Fact]
     public void Schedule_fixed_actual_interval_does_not_reserve_setup_time_before_actual_start()
     {
         var problem = CreateParallelCapacityProblem();
