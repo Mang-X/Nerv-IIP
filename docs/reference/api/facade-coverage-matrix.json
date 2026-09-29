@@ -5029,6 +5029,19 @@
     {
       "service": "Scheduling",
       "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/plans/preview",
+      "operationId": "previewSchedulingWorkbenchPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "previewBusinessConsoleSchedulingWorkbenchPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
       "route": "/api/business/v1/scheduling/plans/{planId}/revisions",
       "operationId": "createSchedulingPlanRevision",
       "classification": "exposed",

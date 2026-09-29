@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Auth;
@@ -31,6 +32,107 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed class SchedulingEndpointContractTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Workbench_preview_http_freezes_execution_and_preserves_business_records()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ISchedulingWorkbenchSourceProvider>();
+            services.RemoveAll<ISchedulingProblemProducer>();
+            var source = new PreviewWorkbenchSource(problem);
+            services.AddSingleton<ISchedulingWorkbenchSourceProvider>(source);
+            services.AddSingleton<ISchedulingProblemProducer>(source);
+        }));
+        using var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var seedResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(problem), SchedulingJson.Options);
+        seedResponse.EnsureSuccessStatusCode();
+        var order = problem.Orders.First();
+        var operation = order.Operations.First();
+        var resource = problem.Resources.Single(x => x.ResourceId == operation.PrimaryResourceId);
+        var overriddenOperation = order.Operations.Last();
+        var overriddenResource = problem.Resources.Single(x => x.ResourceId == overriddenOperation.PrimaryResourceId);
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var projection = OperationExecutionProjection.Create(problem.OrganizationId, problem.EnvironmentId,
+                order.OrderId, operation.OperationId, operation.OperationSequence, resource.WorkCenterId,
+                problem.HorizonStartUtc, "preview-created");
+            projection.ApplyStarted(problem.HorizonStartUtc, "preview-started");
+            db.OperationExecutionProjections.Add(projection);
+            db.ScheduleOperationOverrides.Add(ScheduleOperationOverride.Create(
+                problem.OrganizationId, problem.EnvironmentId, order.OrderId, overriddenOperation.OperationId,
+                overriddenOperation.OperationSequence, overriddenResource.ResourceId, overriddenResource.WorkCenterId,
+                problem.HorizonStartUtc.AddMinutes(5), problem.HorizonStartUtc.AddHours(1),
+                ScheduleOperationOverrideLockReasonCodes.ManualOverride,
+                ScheduleOperationOverrideSourceTypes.SchedulingApi, "preview-override", "planner",
+                FixedNow, FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var before = await ReadPreviewBusinessRecordsAsync(app.Services);
+        var request = new CreateSchedulingWorkbenchPlanRequest(problem.OrganizationId, problem.EnvironmentId,
+            problem.HorizonStartUtc, problem.HorizonEndUtc,
+            problem.Orders.Select(x => new SchedulingWorkbenchOrderSelection(x.OrderId, x.Priority, x.IsRush)).ToArray());
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/scheduling/workbench/plans/preview", request, SchedulingJson.Options);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options);
+        var preview = Assert.IsType<SchedulePlanContract>(envelope?.Data);
+        Assert.Equal(SchedulePlanStatusContract.Preview, preview.Status);
+        Assert.NotEmpty(preview.Assignments);
+        Assert.NotNull(preview.Metrics);
+        var frozen = Assert.Single(preview.Assignments, x => x.OrderId == order.OrderId && x.OperationId == operation.OperationId);
+        Assert.True(frozen.IsLocked);
+        Assert.Equal("in-progress", frozen.ExplanationCode);
+        Assert.Equal(problem.HorizonStartUtc, frozen.StartUtc);
+        Assert.Equal(problem.HorizonEndUtc, frozen.EndUtc);
+        Assert.Equal(before, await ReadPreviewBusinessRecordsAsync(app.Services));
+
+        using var createResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/workbench/plans", request, SchedulingJson.Options);
+        createResponse.EnsureSuccessStatusCode();
+        var created = (await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options))!.Data!;
+        Assert.Equal(preview.Metrics, created.Metrics);
+        Assert.Equal(preview.Assignments.Select(x => (x.OrderId, x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc, x.IsLocked)),
+            created.Assignments.Select(x => (x.OrderId, x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc, x.IsLocked)));
+    }
+
+    private static async Task<string> ReadPreviewBusinessRecordsAsync(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return JsonSerializer.Serialize(new
+        {
+            Plans = await db.SchedulePlans.Include(x => x.Assignments).Include(x => x.ResourceLoads)
+                .Include(x => x.Conflicts).Include(x => x.UnscheduledOperations).ToArrayAsync(),
+            Problems = await db.ScheduleProblems.ToArrayAsync(),
+            Urgencies = await db.OrderUrgencySnapshots.ToArrayAsync(),
+            Overrides = await db.ScheduleOperationOverrides.ToArrayAsync(),
+            Execution = await db.OperationExecutionProjections.ToArrayAsync(),
+        }, SchedulingJson.Options);
+    }
+
+    private sealed class PreviewWorkbenchSource(SchedulingProblemContract problem)
+        : ISchedulingWorkbenchSourceProvider, ISchedulingProblemProducer
+    {
+        public Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(
+            string organizationId, string environmentId, DateTimeOffset earliestStartFallbackUtc,
+            IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>>(problem.Orders.Select(order =>
+                new SchedulingWorkbenchProblemSourceOrder(new SchedulingProblemSourceOrder(
+                    order.OrderId, order.SkuCode, order.Quantity, order.DueUtc, order.Priority, order.IsRush,
+                    earliestStartFallbackUtc, "routing"), order.Operations.Select(operation =>
+                        new SchedulingWorkbenchOperationSource(operation.OperationId, operation.OperationSequence)).ToArray())).ToArray());
+
+        public Task<SchedulingProblemContract> AssembleWorkbenchAsync(AssembleSchedulingWorkbenchProblemRequest request,
+            CancellationToken cancellationToken) => Task.FromResult(problem with { ProblemId = request.ProblemId });
+
+        public Task<SchedulingProblemContract> AssembleAsync(AssembleSchedulingProblemRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
 
     [Fact]
     public async Task Overrides_read_current_facts_for_snapshot_keys_and_keep_source_plan()
@@ -123,6 +225,7 @@ public sealed class SchedulingEndpointContractTests
     [InlineData(typeof(PreviewSchedulePlanEndpoint))]
     [InlineData(typeof(CreateSchedulePlanEndpoint))]
     [InlineData(typeof(CreateSchedulingWorkbenchPlanEndpoint))]
+    [InlineData(typeof(PreviewSchedulingWorkbenchPlanEndpoint))]
     [InlineData(typeof(CreateSchedulePlanRevisionEndpoint))]
     [InlineData(typeof(AssembleSchedulingProblemEndpoint))]
     [InlineData(typeof(ListSchedulePlansEndpoint))]
@@ -880,6 +983,8 @@ public sealed class SchedulingEndpointContractTests
 
     public static IEnumerable<object[]> AnonymousEndpointRequests()
     {
+        yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/workbench/plans/preview",
+            new CreateSchedulingWorkbenchPlanRequest("org-001", "prod", FixedNow, FixedNow.AddDays(1), [new("WO-001", 10, false)]))];
         yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/plans/preview", new PreviewSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()))];
         yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()))];
         yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans?organizationId=org-001&environmentId=prod")];

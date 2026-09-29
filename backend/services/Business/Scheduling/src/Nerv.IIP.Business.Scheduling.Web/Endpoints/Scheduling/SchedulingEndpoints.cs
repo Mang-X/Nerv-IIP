@@ -162,6 +162,24 @@ public sealed class CreateSchedulingWorkbenchPlanEndpoint(ISender sender)
     }
 }
 
+public sealed class PreviewSchedulingWorkbenchPlanEndpoint(ISender sender)
+    : SchedulingEndpoint<CreateSchedulingWorkbenchPlanRequest, ResponseData<SchedulePlanContract>>
+{
+    public override void Configure() =>
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<PreviewSchedulingWorkbenchPlanEndpoint>());
+
+    public override async Task HandleAsync(CreateSchedulingWorkbenchPlanRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new PreviewSchedulingWorkbenchPlanCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.HorizonStartUtc,
+            req.HorizonEndUtc,
+            req.Orders), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CreateSchedulePlanRevisionEndpoint(ISender sender)
     : SchedulingEndpoint<CreateSchedulePlanRevisionRequest, ResponseData<SchedulePlanRevisionContract>>
 {
@@ -530,6 +548,7 @@ public static class SchedulingEndpointContracts
         new(typeof(PreviewSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingPlan"),
         new(typeof(CreateSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlan"),
         new(typeof(CreateSchedulingWorkbenchPlanEndpoint), "POST", "/api/business/v1/scheduling/workbench/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingWorkbenchPlan"),
+        new(typeof(PreviewSchedulingWorkbenchPlanEndpoint), "POST", "/api/business/v1/scheduling/workbench/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingWorkbenchPlan"),
         new(typeof(CreateSchedulePlanRevisionEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revisions", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlanRevision"),
         new(typeof(AssembleSchedulingProblemEndpoint), "POST", "/api/business/v1/scheduling/problems/assemble", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "assembleSchedulingProblem"),
         new(typeof(ListSchedulePlansEndpoint), "GET", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlans"),
