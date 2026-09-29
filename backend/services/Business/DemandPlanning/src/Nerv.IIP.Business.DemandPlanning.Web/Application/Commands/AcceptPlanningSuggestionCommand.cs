@@ -94,7 +94,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         CancellationToken cancellationToken)
     {
         if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
-            IsSameDownstreamTarget(suggestion, request))
+            IsSameDownstreamTarget(suggestion, NormalizeScheduledReceiptTarget(suggestion, request)))
         {
             return new PlanningSuggestionDownstreamReference(
                 suggestion.AcceptedDownstreamService ?? request.DownstreamService,
@@ -147,8 +147,37 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         return string.Equals(suggestion.AcceptedDownstreamService, request.DownstreamService, StringComparison.OrdinalIgnoreCase)
             && string.Equals(suggestion.AcceptedDownstreamDocumentType, request.DownstreamDocumentType, StringComparison.OrdinalIgnoreCase)
             && (IsErpPurchaseRequisitionTarget(request)
-                || string.IsNullOrWhiteSpace(request.DownstreamDocumentId)
+                || (!IsScheduledReceiptTarget(suggestion) && string.IsNullOrWhiteSpace(request.DownstreamDocumentId))
                 || string.Equals(suggestion.AcceptedDownstreamDocumentId, NormalizeOptional(request.DownstreamDocumentId), StringComparison.Ordinal));
+    }
+
+    private static AcceptPlanningSuggestionCommand NormalizeScheduledReceiptTarget(
+        PlanningSuggestion suggestion, AcceptPlanningSuggestionCommand request)
+    {
+        if (!IsScheduledReceiptTarget(suggestion)
+            || request.DownstreamService != "ScheduledReceipt"
+            || request.DownstreamDocumentType != "ScheduledReceipt"
+            || request.DownstreamDocumentId is not null)
+            return request;
+
+        var source = suggestion.PeggingLinks.Single(x => x.PeggingType == "scheduled-receipt").DemandSourceReference;
+        const string erpPrefix = "erp:purchase-order:";
+        const string mesPrefix = "mes:work-order:";
+        if (source.StartsWith(erpPrefix, StringComparison.OrdinalIgnoreCase))
+            return request with
+            {
+                DownstreamService = DemandPlanningDownstreamReferences.BusinessErp,
+                DownstreamDocumentType = "PurchaseOrderLine",
+                DownstreamDocumentId = source[erpPrefix.Length..],
+            };
+        if (source.StartsWith(mesPrefix, StringComparison.OrdinalIgnoreCase))
+            return request with
+            {
+                DownstreamService = DemandPlanningDownstreamReferences.BusinessMes,
+                DownstreamDocumentType = DemandPlanningDownstreamReferences.WorkOrder,
+                DownstreamDocumentId = source[mesPrefix.Length..],
+            };
+        return request;
     }
 
     private static bool IsErpPurchaseRequisitionTarget(AcceptPlanningSuggestionCommand request)
@@ -159,12 +188,16 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
 
     private static bool IsBridgeManagedDownstreamTarget(PlanningSuggestion suggestion, AcceptPlanningSuggestionCommand request)
     {
-        return (string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedPurchase, StringComparison.OrdinalIgnoreCase)
+        return IsScheduledReceiptTarget(suggestion)
+            || (string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedPurchase, StringComparison.OrdinalIgnoreCase)
                 && IsErpPurchaseRequisitionTarget(request))
             || (string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedWorkOrder, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessMes, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.WorkOrder, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool IsScheduledReceiptTarget(PlanningSuggestion suggestion) =>
+        suggestion.SuggestionType is "reschedule-in" or "reschedule-out" or "cancel";
 
     private static string? NormalizeOptional(string? value)
     {

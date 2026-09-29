@@ -461,6 +461,9 @@ export function useBusinessPlanning() {
   })
 
   function downstreamTargetForSuggestion(suggestionType: string) {
+    if (['reschedule-in', 'reschedule-out', 'cancel'].includes(suggestionType)) {
+      return { downstreamService: 'ScheduledReceipt', downstreamDocumentType: 'ScheduledReceipt' }
+    }
     if (suggestionType === 'planned-work-order') {
       return {
         downstreamService: 'BusinessMes',
