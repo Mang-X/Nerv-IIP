@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -86,7 +87,9 @@ public sealed class CreateSchedulePlanCommandHandler(
                         x.ProblemId == request.Problem.ProblemId,
                     cancellationToken)
                 ?? throw new KnownException($"排程问题快照已存在但未找到生成方案，请重新生成，问题 ID = {request.Problem.ProblemId}");
-            var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan, schedulingProblem);
+            var persistedProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(existingSnapshot.ProblemJson, SchedulingJson.Options);
+            var existingPlanContract = SchedulePlanContractMapper.ToContract(
+                existingPlan, persistedProblem, SchedulingFrozenOccupancy.ReadSnapshot(existingSnapshot.ProblemJson));
             await urgencyService.CapturePlanAsync(
                 schedulingProblem,
                 existingPlanContract,
@@ -100,7 +103,9 @@ public sealed class CreateSchedulePlanCommandHandler(
         var preview = scheduler.ScheduleNormalized(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc,
                 planReservations, externalReservations)
             with { ProblemFingerprint = problemFingerprint };
-        var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
+        var generated = SchedulePlanValidationContextProjector.Attach(
+            SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated),
+            schedulingProblem, fixedReservations);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             overlaidProblem.ProblemId,
             overlaidProblem.ContractVersion,

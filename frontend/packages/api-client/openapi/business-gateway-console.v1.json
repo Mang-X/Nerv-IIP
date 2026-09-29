@@ -40533,6 +40533,14 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMaterialShortageSummaryContract"
             }
+          },
+          "validationContext": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanValidationContextContract"
+              }
+            ]
           }
         }
       },
@@ -41053,6 +41061,121 @@
           },
           "operationId": {
             "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanValidationContextContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "horizonStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "horizonEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanResourceContextContract"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanOperationContextContract"
+            }
+          },
+          "fixedReservations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFixedReservationContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanResourceContextContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "capacityUnits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "utilizationRate": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanOperationContextContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "predecessorOperationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dueUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "setupMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isFixed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanFixedReservationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resourceId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -1502,6 +1502,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     materialRisks?: Array<NervIipContractsSchedulingSchedulePlanMaterialRiskContract> | null;
     equipmentRisks?: Array<NervIipContractsSchedulingSchedulePlanEquipmentRiskContract> | null;
     materialShortageSummary?: Array<NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract> | null;
+    validationContext?: NervIipContractsSchedulingSchedulePlanValidationContextContract | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1657,6 +1658,41 @@ export type NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContrac
 export type NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract = {
     orderId?: string;
     operationId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanValidationContextContract = {
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    resources?: Array<NervIipContractsSchedulingSchedulePlanResourceContextContract>;
+    operations?: Array<NervIipContractsSchedulingSchedulePlanOperationContextContract>;
+    fixedReservations?: Array<NervIipContractsSchedulingSchedulePlanFixedReservationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanResourceContextContract = {
+    resourceId?: string;
+    workCenterId?: string;
+    calendarId?: string;
+    capacityUnits?: number;
+    utilizationRate?: number;
+};
+
+export type NervIipContractsSchedulingSchedulePlanOperationContextContract = {
+    orderId?: string;
+    operationId?: string;
+    predecessorOperationIds?: Array<string>;
+    dueUtc?: string;
+    durationMinutes?: number;
+    setupMinutes?: number;
+    isFixed?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFixedReservationContract = {
+    orderId?: string;
+    operationId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    resourceId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
