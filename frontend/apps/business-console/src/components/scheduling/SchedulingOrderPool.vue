@@ -2,6 +2,7 @@
 import type { BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
 import type { WorkingScheduleOrder } from '@/composables/useWorkingScheduleDraft'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/useUrgencyDisplayMode'
@@ -277,7 +278,15 @@ function setPriority(workOrderId: string, value: string | number) {
                 "
               />
             </td>
-            <td class="p-2 font-medium">{{ candidate.workOrderNo || candidate.workOrderId }}</td>
+            <td class="p-2 font-medium">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span>{{ candidate.workOrderNo || candidate.workOrderId }}</span>
+                <WorkOrderDemandChangeBadges
+                  :has-changed-demand="candidate.hasChangedDemand"
+                  :has-cancelled-demand="candidate.hasCancelledDemand"
+                />
+              </div>
+            </td>
             <td class="p-2">
               <CodeWithNameCell
                 :code="candidate.skuCode || candidate.skuId"
