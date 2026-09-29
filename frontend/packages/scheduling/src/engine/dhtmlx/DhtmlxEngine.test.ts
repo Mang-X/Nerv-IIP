@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { toModel } from '../../model/aps-mapper'
 import { samplePlan, samplePlanWithCalendar } from '../../model/fixtures'
 import type { SchedulingEngineOptions } from '../engine'
@@ -75,6 +75,100 @@ const options = (): SchedulingEngineOptions => ({
 })
 
 describe('DhtmlxEngine (fake factory)', () => {
+  it('resource endpoints resize without starting the custom move, including read-only changes (#4041)', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const root = el()
+    engine.mount(root, { ...options(), view: 'resource' })
+    engine.setData(toModel(samplePlan))
+    root.insertAdjacentHTML(
+      'beforeend',
+      '<div class="gantt_task_line" task_id="a1"><div class="nerv-card"></div><div class="gantt_task_drag task_left"></div></div>',
+    )
+    expect(fake.state.config.drag_move).toBe(false)
+    expect(fake.state.config.drag_resize).toBe(true)
+    root
+      .querySelector('.gantt_task_drag')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 20, clientY: 20 }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 20 }))
+    expect(root.querySelector('.gantt_task_line')!.classList.contains('nerv-drag-source')).toBe(
+      false,
+    )
+    expect(root.querySelector<HTMLElement>('.nerv-drop-cancel')!.style.display).toBe('none')
+    document.dispatchEvent(new MouseEvent('mouseup'))
+    engine.applyCommand({ kind: 'setReadOnly', readOnly: true })
+    expect(fake.state.config.drag_resize).toBe(false)
+    root.querySelector('.nerv-card')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 20 }))
+    expect(root.querySelector('.gantt_task_line')!.classList.contains('nerv-drag-source')).toBe(
+      false,
+    )
+    engine.applyCommand({ kind: 'setReadOnly', readOnly: false })
+    expect(fake.state.config.drag_resize).toBe(true)
+    expect(fake.state.config.drag_move).toBe(false)
+    engine.destroy()
+  })
+
+  it('rejects locked resource resize through the existing feedback event (#4041)', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const root = el()
+    engine.mount(root, { ...options(), view: 'resource' })
+    const model = toModel(samplePlan)
+    model.tasks.find((task) => task.id === 'a1')!.locked = true
+    engine.setData(model)
+    root.insertAdjacentHTML(
+      'beforeend',
+      '<div class="gantt_task_line" task_id="a1"><div class="nerv-card"></div><div class="gantt_task_drag task_right"></div></div>',
+    )
+    const attempts: string[] = []
+    engine.on('lockedDragAttempt', ({ taskId }) => attempts.push(taskId))
+    expect(fake.fire('onBeforeTaskDrag', 'a1', 'resize')).toBe(false)
+    root
+      .querySelector('.gantt_task_drag')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(attempts).toEqual(['a1'])
+    engine.destroy()
+  })
+
+  it.each(['start_date', 'end_date'] as const)(
+    'reports %s resize once after the native callback, retaining the resource (#4041)',
+    async (endpoint) => {
+      vi.useFakeTimers()
+      const fake = makeFakeGantt()
+      const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+      const model = toModel(samplePlan)
+      engine.mount(el(), { ...options(), view: 'resource' })
+      engine.setData(model)
+      const task = fake.gantt.getTask('a1')!
+      task[endpoint] = new Date(
+        endpoint === 'start_date' ? '2026-06-10T07:00:00Z' : '2026-06-10T11:00:00Z',
+      )
+      const received: unknown[] = []
+      engine.on('taskDragEnd', (payload) => {
+        received.push(payload)
+        engine.setData(model)
+      })
+      fake.fire('onAfterTaskDrag', 'a1', 'resize')
+      expect(received).toEqual([])
+      await vi.runAllTimersAsync()
+      expect(received).toEqual([
+        {
+          taskId: 'a1',
+          operationId: 'op-10',
+          resourceId: 'WC-001',
+          kind: 'resize',
+          startUtc:
+            endpoint === 'start_date' ? '2026-06-10T07:00:00.000Z' : '2026-06-10T08:00:00.000Z',
+          endUtc: endpoint === 'end_date' ? '2026-06-10T11:00:00.000Z' : '2026-06-10T10:00:00.000Z',
+        },
+      ])
+      expect(fake.gantt.getTask('a1')).toBeDefined()
+      engine.destroy()
+      vi.useRealTimers()
+    },
+  )
+
   it.each(['order', 'resource'] as const)(
     'renders real segments with an empty overnight gap in %s view (#4004)',
     (view) => {

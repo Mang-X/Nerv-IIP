@@ -557,7 +557,9 @@ export class DhtmlxEngine implements SchedulingEngine {
       let downX = 0
       let downY = 0
       this.pointerDown = (e: MouseEvent) => {
-        if (e.button !== 0) return
+        if (e.button !== 0 || this.options.readOnly) return
+        // 端点交给原生 resize;整条移动仍走虚影与跨泳道改派。
+        if ((e.target as HTMLElement)?.closest?.('.gantt_task_drag')) return
         const bar = (e.target as HTMLElement)?.closest?.('.gantt_task_line') as HTMLElement | null
         if (!bar || !bar.querySelector('.nerv-card')) return
         const id = bar.getAttribute('task_id')
@@ -699,7 +701,7 @@ export class DhtmlxEngine implements SchedulingEngine {
           const nativeDrag = !command.readOnly && this.options.view !== 'resource'
           g.config.readonly = command.readOnly
           g.config.drag_move = nativeDrag
-          g.config.drag_resize = nativeDrag
+          g.config.drag_resize = !command.readOnly
           g.config.drag_links = !command.readOnly && this.options.view === 'order'
           g.render()
         }
@@ -851,10 +853,10 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 会被 DHTMLX 弹成右上角红条堆叠;我们已在调用处按容器/存在性守卫,这里再兜底禁用其错误 UI。
     c.show_errors = false
     c.readonly = options.readOnly
-    // 资源排产板用自定义拖拽(原块静止 + 虚影随指针);关闭 DHTMLX 原生 move/resize 以免冲突。
+    // 资源排产板整条移动走自定义虚影;端点拉伸沿用 DHTMLX 原生 resize。
     const nativeDrag = !options.readOnly && options.view !== 'resource'
     c.drag_move = nativeDrag
-    c.drag_resize = nativeDrag
+    c.drag_resize = !options.readOnly
     c.drag_links = !options.readOnly && options.view === 'order'
     c.drag_progress = false
     // 网格内拖拽换分支暂时关闭(onAfterTaskMove 易误触、破坏拖拽);改派后续用时间线跨行拖拽实现。
@@ -1006,10 +1008,28 @@ export class DhtmlxEngine implements SchedulingEngine {
       }),
     )
     this.eventIds.push(
-      inst.attachEvent(
-        'onBeforeTaskDrag',
-        (id) => (inst.getTask(String(id))?.nerv?.segments?.length ?? 0) <= 1,
-      ),
+      inst.attachEvent('onBeforeTaskDrag', (id, mode) => {
+        const taskId = String(id)
+        const task = inst.getTask(taskId)?.nerv
+        if ((task?.segments?.length ?? 0) > 1) return false
+        if (this.options.view === 'resource') {
+          if (
+            this.options.readOnly ||
+            mode !== 'resize' ||
+            task?.type !== 'operation' ||
+            task.blockKind
+          )
+            return false
+          if (task.locked) {
+            const bar = this.barEl(taskId)
+            if (bar) this.signalLockedDrag(taskId, bar)
+            return false
+          }
+          this.hideTip()
+          this.suppressNextClick = true
+        }
+        return true
+      }),
     )
     this.eventIds.push(
       inst.attachEvent('onAfterTaskDrag', (id, mode) =>
@@ -1019,7 +1039,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.eventIds.push(
       inst.attachEvent('onAfterTaskMove', (id) => this.emitDrag(inst, String(id), 'move')),
     )
-    // 资源视图拖拽走自定义实现(见 mount 的 pointerDown/Move/Up);此处不接 DHTMLX 原生拖拽。
+    // 资源视图整条移动走自定义实现;端点拉伸由上述原生事件归一化。
     this.eventIds.push(inst.attachEvent('onGanttRender', () => this.mirrorTaskIds()))
   }
 
