@@ -23,7 +23,9 @@ public sealed record SchedulePlanSummaryResponse(
     int UnscheduledOperationCount,
     bool IsInvalidated = false,
     string? LatestInvalidationReasonCode = null,
-    DateTimeOffset? LatestInvalidatedAtUtc = null);
+    DateTimeOffset? LatestInvalidatedAtUtc = null,
+    DateTimeOffset? HorizonStartUtc = null,
+    DateTimeOffset? HorizonEndUtc = null);
 
 public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListSchedulePlansQuery, IReadOnlyCollection<SchedulePlanSummaryResponse>>
@@ -52,6 +54,16 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
                 x.UnscheduledOperations.Count))
             .ToListAsync(cancellationToken);
 
+        return await EnrichInvalidationsAsync(dbContext, request.OrganizationId, request.EnvironmentId, plans, cancellationToken);
+    }
+
+    internal static async Task<IReadOnlyCollection<SchedulePlanSummaryResponse>> EnrichInvalidationsAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<SchedulePlanSummaryResponse> plans,
+        CancellationToken cancellationToken)
+    {
         if (plans.Count == 0)
         {
             return plans;
@@ -72,8 +84,8 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
         var planIds = plans.Select(x => x.PlanId).ToArray();
         var latest = await dbContext.SchedulePlanInvalidations.AsNoTracking()
             .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
                 planIds.Contains(x.PlanId))
             .GroupBy(x => x.PlanId)
             .Select(group => group

@@ -60,6 +60,35 @@ public sealed class SchedulingListPlansPostgresProfileTests
         Assert.True(invalid.IsInvalidated);
         Assert.Equal(SchedulingPlanInvalidationReasons.EquipmentUnavailable, invalid.LatestInvalidationReasonCode);
         Assert.Equal(new DateTimeOffset(2026, 6, 1, 11, 30, 0, TimeSpan.Zero), invalid.LatestInvalidatedAtUtc);
+
+        var releasedAt = new DateTimeOffset(2026, 6, 2, 0, 0, 0, TimeSpan.Zero);
+        for (var index = 0; index < 105; index++)
+        {
+            var plan = CreatePlan($"history-{index:000}");
+            plan.Release(releasedAt.AddMinutes(index), index + 1);
+            plan.Revoke(releasedAt.AddDays(1));
+            dbContext.SchedulePlans.Add(plan);
+            dbContext.SchedulePlanInvalidations.Add(CreateInvalidation(plan.PlanId, "older", releasedAt, releasedAt));
+            dbContext.SchedulePlanInvalidations.Add(CreateInvalidation(plan.PlanId, "newer", releasedAt.AddMinutes(1), releasedAt.AddMinutes(1)));
+        }
+        dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot("problem-001", 1, "org-001", "env-dev", "test", "{}",
+            releasedAt.AddDays(-3), releasedAt.AddDays(5), releasedAt));
+        await dbContext.SaveChangesAsync();
+        var historyHandler = new ListSchedulePlanHistoryQueryHandler(dbContext);
+        var history = await historyHandler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", 1, 100,
+            SchedulePlanStatusContract.Revoked, new DateOnly(2026, 6, 2), true), CancellationToken.None);
+        Assert.Equal(105, history.Total);
+        Assert.Equal(new[] { "history-004", "history-003", "history-002", "history-001", "history-000" }, history.Items.Select(x => x.PlanId));
+        Assert.All(history.Items, item =>
+        {
+            Assert.True(item.IsInvalidated);
+            Assert.Equal("newer", item.LatestInvalidationReasonCode);
+            Assert.Equal(releasedAt.AddDays(-3), item.HorizonStartUtc);
+            Assert.Equal(releasedAt.AddDays(5), item.HorizonEndUtc);
+        });
+        var cleanHistory = await historyHandler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", IsInvalidated: false), CancellationToken.None);
+        Assert.Equal(1, cleanHistory.Total);
+        Assert.Equal("plan-clean", Assert.Single(cleanHistory.Items).PlanId);
     }
 
     [Fact]
