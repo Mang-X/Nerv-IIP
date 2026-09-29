@@ -145,6 +145,7 @@ public sealed class SchedulingProblemProducer(
                 .Select(order => ToOrder(
                     order,
                     routingsByVersion[order.RoutingVersionId],
+                    workCenters,
                     resources,
                     toolingFactsByOperation,
                     operationId))
@@ -165,6 +166,7 @@ public sealed class SchedulingProblemProducer(
     private static SchedulingOrderContract ToOrder(
         SchedulingProblemSourceOrder order,
         SchedulingProblemRoutingSnapshot routing,
+        IReadOnlyDictionary<string, SchedulingProblemWorkCenterSnapshot> workCenters,
         IReadOnlyDictionary<string, SchedulingResourceContract> resources,
         IReadOnlyDictionary<string, SchedulingProblemToolingFactSnapshot> toolingFacts,
         Func<SchedulingProblemSourceOrder, SchedulingProblemRoutingOperationSnapshot, string> operationId)
@@ -188,7 +190,7 @@ public sealed class SchedulingProblemProducer(
                 OperationId: resolvedOperationId,
                 OperationSequence: operation.Sequence,
                 PredecessorOperationIds: previousOperationIds.ToArray(),
-                DurationMinutes: CalculateDurationMinutes(operation, order.Quantity),
+                DurationMinutes: CalculateDurationMinutes(operation, order.Quantity, workCenters[operation.WorkCenterCode].EfficiencyRate),
                 RequiredCapabilityCode: operation.OperationCode,
                 EligibleResourceIds: eligibleResources,
                 PrimaryResourceId: eligibleResources.FirstOrDefault(),
@@ -318,11 +320,11 @@ public sealed class SchedulingProblemProducer(
         return resources;
     }
 
-    private static int CalculateDurationMinutes(SchedulingProblemRoutingOperationSnapshot operation, decimal quantity)
+    private static int CalculateDurationMinutes(SchedulingProblemRoutingOperationSnapshot operation, decimal quantity, decimal efficiencyRate)
     {
         var runMinutes = Math.Max(0, operation.RunMinutes);
         var effectiveQuantity = Math.Max(0m, quantity);
-        var totalRunMinutes = (int)Math.Ceiling(runMinutes * effectiveQuantity);
+        var totalRunMinutes = (int)Math.Ceiling(runMinutes * effectiveQuantity / efficiencyRate);
         return Math.Max(1, totalRunMinutes + Math.Max(0, operation.TeardownMinutes));
     }
 
@@ -408,7 +410,8 @@ public sealed record SchedulingProblemWorkCenterSnapshot(
     string Code,
     string DefaultCalendarCode,
     int NumberOfCapacities,
-    IReadOnlyCollection<string> CapabilityCodes);
+    IReadOnlyCollection<string> CapabilityCodes,
+    decimal EfficiencyRate = 1m);
 
 public sealed record SchedulingProblemCalendarSnapshot(
     string Code,
@@ -545,7 +548,8 @@ public sealed class HttpSchedulingProblemMasterDataClient(
             detail.Code,
             detail.DefaultCalendarCode ?? throw new KnownException($"工作中心 '{workCenterCode}' 未配置默认日历，请先补充配置。"),
             Math.Max(1, detail.NumberOfCapacities ?? 1),
-            [detail.Code]);
+            [detail.Code],
+            detail.EfficiencyRate);
     }
 
     public async Task<SchedulingProblemCalendarSnapshot> GetCalendarAsync(
@@ -794,7 +798,8 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         IReadOnlyCollection<WorkCalendarWorkingTimeResponse>? WorkingTimes = null,
         IReadOnlyCollection<WorkCalendarHolidayResponse>? Holidays = null,
         IReadOnlyCollection<WorkCalendarExceptionResponse>? Exceptions = null,
-        int? NumberOfCapacities = null);
+        int? NumberOfCapacities = null,
+        decimal EfficiencyRate = 1m);
 
     private sealed record WorkCalendarWorkingTimeResponse(DayOfWeek DayOfWeek);
     private sealed record WorkCalendarHolidayResponse(DateOnly Date, string Name);
