@@ -354,7 +354,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.InputSources ?? [],
             x.InputCoverageStart,
             x.InputCoverageEnd,
-            x.FailureReason)).ToArray());
+            x.FailureReason,
+            x.DemandChangeCount)).ToArray());
     }
 
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
@@ -559,7 +560,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         IReadOnlyCollection<string>? InputSources,
         DateOnly? InputCoverageStart,
         DateOnly? InputCoverageEnd,
-        string? FailureReason);
+        string? FailureReason,
+        int DemandChangeCount);
 
     private sealed record DownstreamPlanningSuggestionItem(
         string SuggestionId,

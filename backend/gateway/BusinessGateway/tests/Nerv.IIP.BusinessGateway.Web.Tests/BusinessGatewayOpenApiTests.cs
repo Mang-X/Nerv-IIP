@@ -430,6 +430,7 @@ public sealed class BusinessGatewayOpenApiTests
             128);
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "post", "runBusinessConsolePlanningMrp");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "get", "listBusinessConsolePlanningMrpRuns");
+        AssertSchemaProperties(document, "BusinessConsoleMrpRunItem", "demandChangeCount", "horizonStart", "horizonEnd", "status", "failureReason");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs/{runId}/pegging", "get", "getBusinessConsolePlanningMrpPegging");
         AssertOperationId(paths, "/api/business-console/v1/planning/suggestions", "get", "listBusinessConsolePlanningSuggestions");
         AssertSchemaProperties(document, "BusinessConsolePlanningSuggestionItem", "supersededByRunId");

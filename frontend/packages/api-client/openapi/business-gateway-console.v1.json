@@ -48234,6 +48234,10 @@
           "failureReason": {
             "type": "string",
             "nullable": true
+          },
+          "demandChangeCount": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

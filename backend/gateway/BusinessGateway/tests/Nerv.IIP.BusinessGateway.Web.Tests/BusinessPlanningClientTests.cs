@@ -81,6 +81,39 @@ public sealed class BusinessPlanningClientTests
     }
 
     [Fact]
+    public async Task List_mrp_runs_preserves_latest_completed_demand_change_count_and_existing_run_facts()
+    {
+        var client = PlanningClient(new StubHandler("""
+            {"data":[
+              {"runId":"latest","horizonStart":"2026-10-01","horizonEnd":"2026-10-31","status":2,"demandChangeCount":3,"failureReason":null},
+              {"runId":"failed","horizonStart":"2026-09-01","horizonEnd":"2026-09-30","status":3,"demandChangeCount":0,"failureReason":"upstream failure"}
+            ]}
+            """));
+
+        var response = await client.ListMrpRunsAsync(
+            "internal-token",
+            new BusinessConsolePlanningContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Collection(response.Items,
+            run =>
+            {
+                Assert.Equal("latest", run.RunId);
+                Assert.Equal("Completed", run.Status);
+                Assert.Equal(new DateOnly(2026, 10, 1), run.HorizonStart);
+                Assert.Equal(new DateOnly(2026, 10, 31), run.HorizonEnd);
+                Assert.Equal(3, run.DemandChangeCount);
+            },
+            run =>
+            {
+                Assert.Equal("failed", run.RunId);
+                Assert.Equal("Failed", run.Status);
+                Assert.Equal(0, run.DemandChangeCount);
+                Assert.Equal("upstream failure", run.FailureReason);
+            });
+    }
+
+    [Fact]
     public async Task Mps_review_and_release_forward_the_gateway_supplied_actor_to_demand_planning()
     {
         const string trustedActor = "trusted-client-actor-77";
