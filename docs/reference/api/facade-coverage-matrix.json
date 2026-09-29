@@ -3767,6 +3767,14 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/assembly-children",
+      "operationId": "getBusinessMesAssemblyChildWorkOrders",
+      "classification": "internal",
+      "rationale": "#4026 为 Scheduling 按母工单读取全部装配子件提供服务间查询；不面向 BusinessGateway 页面公开。"
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/split",
       "operationId": "splitBusinessMesWorkOrder",

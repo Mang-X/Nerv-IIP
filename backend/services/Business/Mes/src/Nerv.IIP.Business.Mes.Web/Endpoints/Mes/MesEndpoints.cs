@@ -861,6 +861,19 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
     }
 }
 
+public sealed class GetAssemblyChildWorkOrdersEndpoint(ISender sender)
+    : MesEndpoint<WorkOrderContextRequest, AssemblyChildWorkOrdersResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetAssemblyChildWorkOrdersEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderContextRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetAssemblyChildWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetMesWorkOrderDetailEndpoint(ISender sender)
     : MesEndpoint<WorkOrderContextRequest, MesWorkOrderDetailResponse>
 {
@@ -2014,6 +2027,7 @@ public static class MesEndpointContracts
         new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", MesPermissionCodes.WorkOrdersManage, "createBusinessMesRushWorkOrder"),
         new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
         new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
+        new(typeof(GetAssemblyChildWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/assembly-children", MesPermissionCodes.WorkOrdersRead, "getBusinessMesAssemblyChildWorkOrders"),
         new(typeof(SplitWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/split", MesPermissionCodes.WorkOrdersManage, "splitBusinessMesWorkOrder"),
         new(typeof(MergeWorkOrdersEndpoint), "POST", "/api/business/v1/mes/work-orders/merge", MesPermissionCodes.WorkOrdersManage, "mergeBusinessMesWorkOrders"),
         new(typeof(GetWorkOrderTransformationEndpoint), "GET", "/api/business/v1/mes/work-order-transformations/{transformationId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderTransformation"),
