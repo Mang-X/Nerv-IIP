@@ -872,6 +872,82 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Interruptible_operation_uses_actual_predecessor_changeover_on_first_segment()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        problem = problem with
+        {
+            Calendars = [problem.Calendars.Single() with
+            {
+                ShiftWindows =
+                [
+                    new(problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(2), "early"),
+                    new(problem.HorizonStartUtc.AddHours(3), problem.HorizonStartUtc.AddHours(5), "middle"),
+                    new(problem.HorizonStartUtc.AddHours(6), problem.HorizonStartUtc.AddHours(8), "late")
+                ]
+            }],
+            Orders =
+            [
+                template with { OrderId = "A", SkuCode = "A", Operations = [operation with
+                {
+                    OperationId = "OP-A", Priority = 20,
+                    Changeovers = [new("A", 0, [], true)]
+                }] },
+                template with { OrderId = "B", SkuCode = "B", Operations = [operation with
+                {
+                    OperationId = "OP-B", Priority = 10,
+                    SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+                    DurationMinutes = 180,
+                    Changeovers = [new("A", 20, [], true), new("B", 0, [], true)]
+                }] }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-split-changeover", GeneratedAtUtc);
+
+        var assignment = Assignment(plan, "B", "OP-B");
+        Assert.Equal(problem.HorizonStartUtc.AddMinutes(80), assignment.Segments!.First().StartUtc);
+        Assert.Equal(260, plan.ResourceLoads.Sum(x => x.AssignedMinutes));
+    }
+
+    [Fact]
+    public void Schedule_does_not_insert_before_successor_when_new_setup_falls_outside_shift()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        problem = problem with
+        {
+            Calendars = [problem.Calendars.Single() with
+            {
+                ShiftWindows = [new(problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1), "early"),
+                    new(problem.HorizonStartUtc.AddHours(2), problem.HorizonStartUtc.AddHours(4), "late")]
+            }],
+            Orders =
+            [
+                template with { OrderId = "B", SkuCode = "B", Operations = [operation with
+                {
+                    OperationId = "OP-B", Priority = 20,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddHours(2),
+                    Changeovers = [new("B", 0, [], true), new("A", 30, [], true)]
+                }] },
+                template with { OrderId = "A", SkuCode = "A", Operations = [operation with
+                {
+                    OperationId = "OP-A", Priority = 10,
+                    Changeovers = [new("A", 0, [], true), new("B", 0, [], true)]
+                }] }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-successor-shift", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3), Assignment(plan, "A", "OP-A").StartUtc);
+    }
+
+    [Fact]
     public void Schedule_preserves_setup_space_before_locked_successor()
     {
         var problem = CreateSingleOperationProblem();
