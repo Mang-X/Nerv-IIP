@@ -169,8 +169,19 @@ public static class MrpCalculator
             .ThenBy(x => x.SourceLineReference, StringComparer.Ordinal)
             .Select(x => NormalizeDemand(x, planningParameters, converter))
             .ToList();
+        var reserveTargets = planningParameters.Values
+            .Where(x => x.SafetyStockQuantity > 0m)
+            .ToDictionary(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode), x => x.SafetyStockQuantity);
+        foreach (var key in availability.Where(x => x.Value.AvailableQuantity < 0m).Select(x => x.Key))
+        {
+            reserveTargets.TryAdd(key, 0m);
+        }
+        var reserveRoots = reserveTargets.Select(x => new Requirement(
+            x.Key.SkuCode, x.Key.UomCode, x.Key.SiteCode, 0m, input.HorizonEnd,
+            [], [Normalize(x.Key.SkuCode)], x.Value > 0m ? "safety-stock" : "negative-availability",
+            0m, 1m, Array.Empty<string>())).ToArray();
         var lowLevelCodes = CalculateLowLevelCodes(
-            normalizedDemands,
+            [.. normalizedDemands, .. reserveRoots],
             planningParameters,
             productionVersions,
             componentsByParent);
@@ -180,8 +191,29 @@ public static class MrpCalculator
             AddPendingRequirement(pendingByLowLevel, lowLevelCodes, demand);
         }
 
-        while (pendingByLowLevel.Count > 0)
+        var reservePhase = false;
+        while (pendingByLowLevel.Count > 0 || !reservePhase)
         {
+            if (pendingByLowLevel.Count == 0)
+            {
+                reservePhase = true;
+                foreach (var root in reserveRoots)
+                {
+                    var key = ItemKey.Create(root.SkuCode, root.UomCode, root.SiteCode);
+                    var availableQuantity = availability.TryGetValue(key, out var state) ? state.AvailableQuantity : 0m;
+                    var deficit = Math.Max(0m, reserveTargets[key] - availableQuantity);
+                    if (deficit > 0m)
+                    {
+                        AddPendingRequirement(pendingByLowLevel, lowLevelCodes, root with
+                        {
+                            Quantity = deficit,
+                            DemandPegging = [new DemandPegging(root.SkuCode, null, root.SkuCode, null, root.RequirementType, deficit)],
+                        });
+                    }
+                }
+                continue;
+            }
+
             var currentLevel = pendingByLowLevel.First();
             pendingByLowLevel.Remove(currentLevel.Key);
             var current = currentLevel.Value;
@@ -206,13 +238,15 @@ public static class MrpCalculator
                     .ToArray();
                 planningParameters.TryGetValue(SkuSiteKey.Create(first.SkuCode, first.SiteCode), out var planningParameter);
                 productionVersions.TryGetValue(first.SkuCode, out var version);
+                var isReserveRequirement = first.RequirementType is "safety-stock" or "negative-availability";
                 var supply = ConsumeSupply(
                     key,
                     grossRequirement,
                     group.Key.RequiredDate,
                     Math.Max(0, planningParameter?.SafetyStockQuantity ?? 0m),
                     availability,
-                    scheduledReceipts);
+                    scheduledReceipts,
+                    isReserveRequirement);
                 suggestions.AddRange(supply.ExceptionReceipts.Select(x => BuildScheduledReceiptExceptionSuggestion(
                     x,
                     first,
@@ -239,11 +273,13 @@ public static class MrpCalculator
                 var suggestionType = isMakeItem
                     ? DemandPlanningSuggestionTypes.PlannedWorkOrder
                     : DemandPlanningSuggestionTypes.PlannedPurchase;
-                var reasonCode = isMakeItem ? "net-requirement" : "component-net-requirement";
+                var reasonCode = isReserveRequirement
+                    ? first.RequirementType == "safety-stock" ? "safety-stock-replenishment" : "negative-availability"
+                    : isMakeItem ? "net-requirement" : "component-net-requirement";
                 var peggingVersion = isMakeItem ? version : null;
                 var peggingLinks = demandPegging
                     .Select(x => new CalculatedPeggingLink(
-                        "demand",
+                        x.SourceType is "safety-stock" or "negative-availability" ? x.SourceType : "demand",
                         x.DemandSourceReference,
                         x.ParentSkuCode,
                         x.ComponentSkuCode,
@@ -292,6 +328,13 @@ public static class MrpCalculator
                     reasonCode,
                     explanation with { PlannedQuantity = quantity },
                     peggingLinks)));
+                if (releaseDate < input.HorizonStart)
+                {
+                    suggestions.Add(new CalculatedPlanningSuggestion(
+                        "release-date-past", first.SkuCode, first.UomCode, first.SiteCode,
+                        plannedQuantity, group.Key.RequiredDate, releaseDate, "lead-time-insufficient",
+                        explanation, peggingLinks));
+                }
 
                 if (!isMakeItem || !componentsByParent.TryGetValue(first.SkuCode, out var components))
                 {
@@ -341,7 +384,30 @@ public static class MrpCalculator
             }
         }
 
-        ProtectSafetyStockWithRemainingReceipts(planningParameters, availability, scheduledReceipts);
+        suggestions.AddRange(availability
+            .Where(x => x.Value.AvailableQuantity < 0m)
+            .Select(x => new CalculatedPlanningSuggestion(
+                "negative-availability", x.Key.SkuCode, x.Key.UomCode, x.Key.SiteCode,
+                -x.Value.AvailableQuantity, input.HorizonStart, input.HorizonStart,
+                "negative-availability", new CalculatedNetRequirementExplanation(
+                    0m, x.Value.OnHandQuantity, x.Value.ReservedQuantity, 0m, 0m, 0m,
+                    -x.Value.AvailableQuantity, 0m, 0m, 1m, "negative-availability",
+                    $"可用量 {x.Value.AvailableQuantity:g29} 低于 0", [], []), [])));
+
+        suggestions.AddRange(scheduledReceipts
+            .SelectMany(x => x.Value.Where(y => y.ExpectedReceiptDate < input.HorizonStart)
+                .Select(y => new { Key = x.Key, Receipt = y }))
+            .Select(x => new CalculatedPlanningSuggestion(
+                "overdue-receipt", x.Key.SkuCode, x.Key.UomCode, x.Key.SiteCode,
+                x.Receipt.OriginalQuantity, input.HorizonStart, x.Receipt.ExpectedReceiptDate,
+                "scheduled-receipt-overdue", new CalculatedNetRequirementExplanation(
+                    0m, 0m, 0m, 0m, x.Receipt.OriginalQuantity, 0m, 0m,
+                    x.Receipt.OriginalQuantity, 0m, 1m, "scheduled-receipt",
+                    $"在途 {x.Receipt.OriginalQuantity:g29} 应于 {x.Receipt.ExpectedReceiptDate:O} 到货，已早于计划开始日 {input.HorizonStart:O}", [], []),
+                [new CalculatedPeggingLink("scheduled-receipt",
+                    $"{x.Receipt.SourceSystem}:{x.Receipt.SourceDocumentType}:{x.Receipt.SourceDocumentId}",
+                    x.Key.SkuCode, null, x.Receipt.OriginalQuantity, null, null, null,
+                    "scheduled-receipt", x.Receipt.OriginalQuantity)])));
 
         suggestions.AddRange(scheduledReceipts
             .SelectMany(x => x.Value.Select(y => new { Key = x.Key, Receipt = y }))
@@ -548,7 +614,8 @@ public static class MrpCalculator
         DateOnly requiredDate,
         decimal safetyStockQuantity,
         IDictionary<ItemKey, InventoryAvailabilityState> availability,
-        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
+        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts,
+        bool isReserveRequirement)
     {
         var remainingRequirement = requiredQuantity;
         var availableState = availability.TryGetValue(key, out var state)
@@ -584,15 +651,15 @@ public static class MrpCalculator
                     receipt.SourceDocumentId,
                     receipt.ExpectedReceiptDate,
                     used,
-                    receipt.ExpectedReceiptDate < requiredDate ? "reschedule-out" : null,
-                    receipt.ExpectedReceiptDate < requiredDate ? "scheduled-receipt-early" : null));
+                    !isReserveRequirement && receipt.ExpectedReceiptDate < requiredDate ? "reschedule-out" : null,
+                    !isReserveRequirement && receipt.ExpectedReceiptDate < requiredDate ? "scheduled-receipt-early" : null));
                 if (remainingRequirement <= 0)
                 {
                     break;
                 }
             }
 
-            foreach (var receipt in receipts.Where(x => x.ExpectedReceiptDate > requiredDate && x.RemainingQuantity > 0))
+            foreach (var receipt in receipts.Where(x => !isReserveRequirement && x.ExpectedReceiptDate > requiredDate && x.RemainingQuantity > 0))
             {
                 if (remainingRequirement <= 0)
                 {
@@ -636,51 +703,6 @@ public static class MrpCalculator
                     x.Quantity,
                     x.ReasonCode!))
                 .ToArray());
-    }
-
-    private static void ProtectSafetyStockWithRemainingReceipts(
-        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        IDictionary<ItemKey, InventoryAvailabilityState> availability,
-        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
-    {
-        foreach (var (key, receipts) in scheduledReceipts.OrderBy(x => x.Key.SkuCode, StringComparer.OrdinalIgnoreCase))
-        {
-            if (!planningParameters.TryGetValue(SkuSiteKey.Create(key.SkuCode, key.SiteCode), out var parameter)
-                || parameter.SafetyStockQuantity <= 0m)
-            {
-                continue;
-            }
-
-            var availableQuantity = availability.TryGetValue(key, out var state)
-                ? state.AvailableQuantity
-                : 0m;
-            var safetyDeficit = Math.Max(0m, parameter.SafetyStockQuantity - availableQuantity);
-            if (safetyDeficit <= 0m)
-            {
-                continue;
-            }
-
-            foreach (var receipt in receipts
-                .Where(x => x.RemainingQuantity > 0m)
-                .OrderBy(x => x.ExpectedReceiptDate)
-                .ThenBy(x => x.SourceSystem, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(x => x.SourceDocumentType, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(x => x.SourceDocumentId, StringComparer.OrdinalIgnoreCase))
-            {
-                var protectedQuantity = Math.Min(receipt.RemainingQuantity, safetyDeficit);
-                if (protectedQuantity <= 0m)
-                {
-                    continue;
-                }
-
-                receipt.RemainingQuantity -= protectedQuantity;
-                safetyDeficit -= protectedQuantity;
-                if (safetyDeficit <= 0m)
-                {
-                    break;
-                }
-            }
-        }
     }
 
     private static IReadOnlyCollection<decimal> ApplyLotSizing(
@@ -918,6 +940,7 @@ public static class MrpCalculator
 
     private sealed class ScheduledReceiptState(ScheduledReceiptSnapshot snapshot)
     {
+        public decimal OriginalQuantity { get; } = snapshot.Quantity;
         public DateOnly ExpectedReceiptDate { get; } = snapshot.ExpectedReceiptDate;
         public string SourceSystem { get; } = snapshot.SourceSystem;
         public string SourceDocumentType { get; } = snapshot.SourceDocumentType;

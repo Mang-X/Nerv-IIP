@@ -83,7 +83,7 @@ public sealed class MrpCalculatorTests
 
         var suggestions = MrpCalculator.Calculate(input);
 
-        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order" && x.ReasonCode == "net-requirement");
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(workOrder, JsonOptions));
         var explanation = document.RootElement.GetProperty("netRequirementExplanation");
         Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
@@ -315,6 +315,90 @@ public sealed class MrpCalculatorTests
         Assert.Equal("scheduled-receipt-unneeded", exception.ReasonCode);
         var receipt = Assert.Single(exception.PeggingLinks);
         Assert.Equal(3m, receipt.Quantity);
+    }
+
+    [Theory]
+    [InlineData(2, 2, 1)]
+    [InlineData(2, 0, 3)]
+    public void Safety_stock_shortfall_nets_remaining_receipts_before_replenishment(
+        int available, int incoming, int expectedReplenishment)
+    {
+        var suggestions = MrpCalculator.Calculate(NewInput(
+            demands: [],
+            availability: [new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", available)],
+            productionVersions: [],
+            bomComponents: [],
+            scheduledReceipts: incoming == 0 ? [] :
+            [new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", incoming, new DateOnly(2026, 6, 10), "erp", "purchase-order", "PO-2001")],
+            planningParameters: [new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 2, 5m, null, null, null, ProcurementType: "buy")]));
+
+        var replenishment = Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase");
+        Assert.Equal(expectedReplenishment, replenishment.Quantity);
+        Assert.Equal("safety-stock-replenishment", replenishment.ReasonCode);
+        Assert.Equal("safety-stock", replenishment.NetRequirementExplanation.PrimarySourceType);
+        Assert.DoesNotContain(suggestions, x => x.SuggestionType == "cancel");
+    }
+
+    [Fact]
+    public void Receipt_used_for_demand_is_not_counted_again_for_safety_stock()
+    {
+        var suggestions = MrpCalculator.Calculate(NewInput(
+            demands: [new DemandSnapshot("SO-1001", "SKU-RM-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1))],
+            availability: [new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", 2m)],
+            productionVersions: [],
+            bomComponents: [],
+            scheduledReceipts: [new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 12m, new DateOnly(2026, 6, 1), "erp", "purchase-order", "PO-2001")],
+            planningParameters: [new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 0, 5m, null, null, null, ProcurementType: "buy")]));
+
+        Assert.Equal(1m, Assert.Single(suggestions, x => x.ReasonCode == "safety-stock-replenishment").Quantity);
+        Assert.DoesNotContain(suggestions, x => x.SuggestionType == "cancel");
+    }
+
+    [Fact]
+    public void Safety_stock_work_order_keeps_the_production_version_for_existing_mes_bridge()
+    {
+        var suggestions = MrpCalculator.Calculate(NewInput(
+            demands: [],
+            availability: [new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 2m)],
+            bomComponents: [new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 2m)],
+            planningParameters: [new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 5m, null, null, null, ProcurementType: "make")]));
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        Assert.Equal(3m, workOrder.Quantity);
+        Assert.Equal("PV-001", Assert.Single(workOrder.PeggingLinks).ProductionVersionReference);
+        Assert.Equal(6m, Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase").Quantity);
+    }
+
+    [Fact]
+    public void Release_before_horizon_start_creates_lead_time_exception()
+    {
+        var suggestions = MrpCalculator.Calculate(NewInput(
+            planningParameters: [new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 10, 0m, null, null, null)]));
+
+        var exception = Assert.Single(suggestions, x => x.SuggestionType == "release-date-past" && x.SkuCode == "SKU-FG-1000");
+        Assert.Equal("lead-time-insufficient", exception.ReasonCode);
+        Assert.Equal(new DateOnly(2026, 5, 22), exception.ReleaseDate);
+        Assert.Equal(8m, exception.Quantity);
+    }
+
+    [Fact]
+    public void Negative_available_quantity_and_overdue_receipt_have_distinct_exceptions()
+    {
+        var suggestions = MrpCalculator.Calculate(NewInput(
+            demands: [],
+            availability: [new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", -3m)],
+            productionVersions: [],
+            bomComponents: [],
+            scheduledReceipts: [new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 5, 20), "erp", "purchase-order", "PO-2001")],
+            planningParameters: []));
+
+        var negative = Assert.Single(suggestions, x => x.SuggestionType == "negative-availability");
+        var overdue = Assert.Single(suggestions, x => x.SuggestionType == "overdue-receipt");
+        Assert.Equal(3m, negative.Quantity);
+        Assert.Contains("可用量 -3 低于 0", negative.NetRequirementExplanation.Formula);
+        Assert.Equal(4m, overdue.Quantity);
+        Assert.Contains("在途 4 应于 2026-05-20 到货", overdue.NetRequirementExplanation.Formula);
+        Assert.Equal(1m, Assert.Single(suggestions, x => x.SuggestionType == "cancel").Quantity);
     }
 
     [Fact]
