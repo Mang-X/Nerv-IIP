@@ -2304,6 +2304,8 @@ try {
         Cap__FailedRetryInterval = '2'
         Cap__FallbackWindowLookbackSeconds = '30'
         InternalService__BearerToken = $internalToken
+        Planning__DailyMrp__TimeOfDay = '02:00:00'
+        Planning__DailyMrp__TimeZoneId = 'Asia/Shanghai'
     }
     $headers = @{
         Authorization = "Bearer $internalToken"
