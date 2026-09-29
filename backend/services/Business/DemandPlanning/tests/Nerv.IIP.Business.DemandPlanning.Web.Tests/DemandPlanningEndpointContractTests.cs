@@ -117,7 +117,7 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
-    public async Task Cancel_demand_source_command_removes_source_from_planning_input()
+    public async Task Cancel_demand_source_command_keeps_cancelled_source_for_traceability()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -132,7 +132,8 @@ public sealed class DemandPlanningEndpointContractTests
 
         var demands = await new ListDemandSourcesQueryHandler(dbContext)
             .Handle(new ListDemandSourcesQuery("org-001", "env-dev"), CancellationToken.None);
-        Assert.Empty(demands);
+        var demand = Assert.Single(demands);
+        Assert.Equal("cancelled", demand.SourceStatus);
     }
 
     [Fact]

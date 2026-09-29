@@ -7,6 +7,9 @@ import {
   rejectBusinessConsolePlanningSuggestionMutationOptions,
   createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
+  cancelBusinessConsolePlanningDemandMutationOptions,
+  getBusinessConsoleMesWorkOrderDetail,
+  listBusinessConsoleErpPurchaseRequisitions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
   listBusinessConsolePlanningMpsBucketsQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
@@ -59,6 +62,20 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   createOrUpdateBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars.body })),
+  })),
+  cancelBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async () => ({ success: true })),
+  })),
+  getBusinessConsoleMesWorkOrderDetail: vi.fn(async () => ({
+    data: { success: true, data: { status: 'Released' } },
+  })),
+  listBusinessConsoleErpPurchaseRequisitions: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: {
+        items: [{ suggestionId: 'suggestion-erp', requisitionNo: 'PR-1', status: 'Approved' }],
+      },
+    },
   })),
   getBusinessConsolePlanningMrpPeggingQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsolePlanningMrpPegging' }],
@@ -151,6 +168,56 @@ describe('business planning composable', () => {
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
     coladaState.refetchById.clear()
+  })
+
+  it('从 MES 和 ERP 当前读面匹配已承接建议的状态', async () => {
+    coladaState.queryDataById.set('listBusinessConsolePlanningSuggestions', {
+      success: true,
+      data: {
+        items: [
+          {
+            suggestionId: 'suggestion-mes',
+            suggestionType: 'planned-work-order',
+            downstreamDocumentId: 'WO-1',
+          },
+          {
+            suggestionId: 'suggestion-erp',
+            suggestionType: 'planned-purchase',
+            downstreamDocumentId: 'PR-1',
+          },
+        ],
+      },
+    })
+    useBusinessPlanning()
+    const query = coladaState.queryOptionsById.get('') as {
+      query: () => Promise<Record<string, string>>
+    }
+    expect(await query.query()).toEqual({
+      'suggestion-mes': 'Released',
+      'suggestion-erp': 'Approved',
+    })
+    expect(getBusinessConsoleMesWorkOrderDetail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1' },
+      }),
+    )
+    expect(listBusinessConsoleErpPurchaseRequisitions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ keyword: 'suggestion-erp' }),
+      }),
+    )
+  })
+
+  it('作废需求经现有网关命令提交并刷新计划读面', async () => {
+    const { cancelDemand } = useBusinessPlanning()
+    await cancelDemand('demand-1')
+    expect(
+      vi.mocked(cancelBusinessConsolePlanningDemandMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { demandSourceId: 'demand-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
 
   it('loads demands, MRP runs, suggestions, and pegging with the current business context', () => {

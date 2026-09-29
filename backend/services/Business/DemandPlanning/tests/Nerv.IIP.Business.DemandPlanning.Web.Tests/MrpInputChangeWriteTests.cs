@@ -10,7 +10,7 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 public sealed class MrpInputChangeWriteTests
 {
     [Fact]
-    public async Task Manual_demand_move_and_physical_delete_record_old_date_and_identity()
+    public async Task Manual_demand_move_and_cancel_record_old_date_and_identity()
     {
         await using var provider = CreateProvider();
         using var scope = provider.CreateScope();
@@ -29,14 +29,14 @@ public sealed class MrpInputChangeWriteTests
         await create.Handle(new("org-a", "env-a", "manual", "D-2", "SKU", "pcs", "SITE", 10, oldDate), default);
         await db.SaveChangesAsync();
 
-        Assert.Equal(0, await db.DemandSources.CountAsync(x => x.SourceReference == "D-1" && x.DemandType == "manual"));
+        Assert.Equal("cancelled", (await db.DemandSources.SingleAsync(x => x.SourceReference == "D-1" && x.DemandType == "manual")).SourceStatus);
         var facts = await db.MrpInputChanges.OrderBy(x => x.OccurredAtUtc).ToListAsync();
         Assert.Equal(5, facts.Count);
         Assert.Single(facts, x => x.SourceReference == "D-1" && x.DemandType == "safety-stock");
         Assert.Equal(3, facts.Count(x => x.SourceReference == "D-1" && x.DemandType == "manual"));
         Assert.Contains(facts, x => x.SourceReference == "D-1" && x.DemandType == "manual" && x.Operation == MrpInputChangeOperation.Updated
             && x.PreviousStartDate == oldDate && x.CurrentStartDate == newDate);
-        Assert.Contains(facts, x => x.SourceReference == "D-1" && x.DemandType == "manual" && x.Operation == MrpInputChangeOperation.Deleted
+        Assert.Contains(facts, x => x.SourceReference == "D-1" && x.DemandType == "manual" && x.Operation == MrpInputChangeOperation.Updated
             && x.PreviousStartDate == newDate && !x.CurrentlyEligible);
         Assert.Contains(facts, x => x.SourceReference == "D-2" && x.Operation == MrpInputChangeOperation.Created);
     }

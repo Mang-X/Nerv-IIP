@@ -124,6 +124,12 @@ public sealed class DemandSource : Entity<DemandSourceId>, IAggregateRoot
         UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
+    public void Cancel()
+    {
+        SourceStatus = "cancelled";
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
     public bool ApplySalesOrderSnapshot(decimal quantity, DateOnly dueDate, int sourceVersion)
     {
         if (sourceVersion <= SourceVersion)

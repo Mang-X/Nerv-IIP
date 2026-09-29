@@ -31,6 +31,6 @@ public sealed class CancelDemandSourceCommandHandler(ApplicationDbContext dbCont
             cancellationToken)
             ?? throw new KnownException($"需求来源不存在：{request.DemandSourceId}");
 
-        dbContext.DemandSources.Remove(demand);
+        demand.Cancel();
     }
 }
