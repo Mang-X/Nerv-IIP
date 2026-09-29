@@ -264,6 +264,47 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task Hard_material_block_remains_in_saved_plan_summary_after_reload()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = CreateSingleOperationProblem();
+        var clock = new FixedTimeProvider(FixedNow);
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard),
+            clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            new StubSchedulingMaterialReadinessProvider(
+            [
+                new SchedulingMaterialReadinessContract("order", "WO-SNAPSHOT-001", null, false,
+                    ["material.shortage"],
+                    [new SchedulingMaterialShortageContract("RM-1", null, 10m, 6m, 4m, "KG")])
+            ]),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var detail = await new GetSchedulePlanDetailQueryHandler(
+                dbContext, NullLogger<GetSchedulePlanDetailQueryHandler>.Instance)
+            .Handle(new GetSchedulePlanDetailQuery(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+                CancellationToken.None);
+
+        Assert.Empty(created.MaterialRisks ?? []);
+        Assert.Empty(detail.MaterialRisks ?? []);
+        var summary = Assert.Single(detail.MaterialShortageSummary ?? []);
+        Assert.Equal(4m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x => x.OrderId == "WO-SNAPSHOT-001" &&
+            x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.Equal(
+            JsonSerializer.Serialize(created.MaterialShortageSummary, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.MaterialShortageSummary, SchedulingJson.Options));
+    }
+
+    [Fact]
     public async Task Create_rejects_same_problem_id_when_provider_material_readiness_changes()
     {
         await using var provider = CreateInMemoryProvider();

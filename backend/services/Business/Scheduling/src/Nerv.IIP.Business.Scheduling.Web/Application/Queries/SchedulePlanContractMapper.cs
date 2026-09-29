@@ -137,7 +137,9 @@ public static class SchedulePlanContractMapper
             }).ToArray(),
             MaterialRisks: materialRisks,
             EquipmentRisks: equipmentRisks,
-            MaterialShortageSummary: SchedulePlanMaterialShortageSummary.Project(materialRisks));
+            MaterialShortageSummary: problem is null
+                ? SchedulePlanMaterialShortageSummary.Project(materialRisks)
+                : SchedulePlanMaterialShortageSummary.Project(problem));
 
         // 日历仍从问题快照投影(它在适配前后一致);设备不可用窗口必须用随方案落库的那份——
         // 问题快照里的 UnavailabilityWindows 恒为空(适配发生在落库之后),#1409。

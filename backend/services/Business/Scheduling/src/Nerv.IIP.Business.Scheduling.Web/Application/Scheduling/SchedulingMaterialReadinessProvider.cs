@@ -206,21 +206,13 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
         ];
     }
 
-    private static IReadOnlyCollection<SchedulingMaterialReadinessContract> SourceUnavailable(string workOrderId)
-    {
-        return
-        [
-            new SchedulingMaterialReadinessContract(
-                ScopeType: "order",
-                ScopeId: workOrderId,
-                MaterialReadyUtc: null,
-                IsReady: false,
-                ReasonCodes: [SourceUnavailableReasonCode])
-        ];
-    }
-
     private static IReadOnlyCollection<SchedulingMaterialReadinessContract> SourceUnavailable(IEnumerable<string> workOrderIds) =>
-        workOrderIds.SelectMany(SourceUnavailable).ToArray();
+        workOrderIds.Select(workOrderId => new SchedulingMaterialReadinessContract(
+            ScopeType: "order",
+            ScopeId: workOrderId,
+            MaterialReadyUtc: null,
+            IsReady: false,
+            ReasonCodes: [SourceUnavailableReasonCode])).ToArray();
 
     private sealed record BatchMaterialReadinessRequest(
         string OrganizationId, string EnvironmentId, IReadOnlyCollection<string> WorkOrderIds);

@@ -809,7 +809,7 @@ file sealed class SchedulerState
             MaterialRisks: orderedMaterialRisks,
             // 设备软约束的产物:这些工序排在状态未知的设备上,开工前需人工确认设备可用。
             EquipmentRisks: orderedEquipmentRisks,
-            MaterialShortageSummary: SchedulePlanMaterialShortageSummary.Project(orderedMaterialRisks));
+            MaterialShortageSummary: SchedulePlanMaterialShortageSummary.Project(problem));
     }
 
     private SchedulePlanMetricsContract BuildMetrics(

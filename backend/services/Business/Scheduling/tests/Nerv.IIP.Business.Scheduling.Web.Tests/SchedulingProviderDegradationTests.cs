@@ -97,6 +97,31 @@ public sealed class SchedulingProviderDegradationTests
     }
 
     [Fact]
+    public async Task MaterialReadinessProvider_KeepsEveryOrderAtRiskWhenBatchOmitsOneRequestedOrder()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                { "items": [
+                  { "workOrderId": "WO-SNAPSHOT-001", "readinessStatus": "Ready", "blockingReasons": [], "items": [] }
+                ] }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+        var problem = CreateSingleOperationProblem();
+        var secondOrder = problem.Orders.Single() with { OrderId = "WO-SNAPSHOT-002" };
+
+        var readiness = await provider.QueryAsync(problem with
+        {
+            Orders = [problem.Orders.Single(), secondOrder]
+        }, CancellationToken.None);
+
+        Assert.Equal(["WO-SNAPSHOT-001", "WO-SNAPSHOT-002"], readiness.Select(x => x.ScopeId));
+        Assert.All(readiness, risk =>
+            Assert.Contains("mes.materialReadinessSourceUnavailable", risk.ReasonCodes));
+    }
+
+    [Fact]
     public async Task MaterialReadinessProvider_AcceptsSuccessfulResponseDataEnvelope()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
