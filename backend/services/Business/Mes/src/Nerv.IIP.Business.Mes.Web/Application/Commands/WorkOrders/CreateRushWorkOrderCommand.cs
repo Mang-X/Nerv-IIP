@@ -150,7 +150,8 @@ public sealed class CreateRushWorkOrderCommandHandler
             request.ProductionVersionId,
             request.Quantity,
             RushPriority,
-            request.DueUtc));
+            request.DueUtc,
+            IsRush: true));
         store.AddOperationTask(new PlannedOperationTask(
             workOrderId,
             operationTaskId,

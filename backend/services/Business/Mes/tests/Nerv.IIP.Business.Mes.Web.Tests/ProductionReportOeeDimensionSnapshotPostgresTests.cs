@@ -92,7 +92,8 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
     private static Task AddCurrentProductionReportModelCompatibilityAsync(ApplicationDbContext context) =>
         context.Database.ExecuteSqlRawAsync("""
             ALTER TABLE mes.production_reports
-            ADD COLUMN report_intent_fingerprint character varying(256) NULL
+            ADD COLUMN report_intent_fingerprint character varying(256) NULL;
+            ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE
             """);
 
     private static async Task CloneLegacyReportAtPriorSchemaAsync(NpgsqlConnection connection)

@@ -105,7 +105,8 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
             ADD COLUMN report_intent_fingerprint character varying(256) NULL;
             ALTER TABLE mes.material_issue_requests
             ADD COLUMN pending_receipt_intent_sent boolean NOT NULL DEFAULT FALSE,
-            ADD COLUMN receipt_uses_actual_issue_value boolean NOT NULL DEFAULT FALSE
+            ADD COLUMN receipt_uses_actual_issue_value boolean NOT NULL DEFAULT FALSE;
+            ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE
             """);
 
     private static Task RemoveCurrentModelCompatibilityAsync(ApplicationDbContext context) =>
@@ -114,7 +115,8 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
             DROP COLUMN report_intent_fingerprint;
             ALTER TABLE mes.material_issue_requests
             DROP COLUMN pending_receipt_intent_sent,
-            DROP COLUMN receipt_uses_actual_issue_value
+            DROP COLUMN receipt_uses_actual_issue_value;
+            ALTER TABLE mes.work_orders DROP COLUMN is_rush
             """);
 
     private static MaterialIssueRequest CreateIssue(string requestNo, MaterialTransferAllocation allocation)
