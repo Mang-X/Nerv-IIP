@@ -510,9 +510,7 @@ file sealed class SchedulerState
         {
             var hasResource = resources.TryGetValue(locked.ResourceId, out var resource);
             var reservedEndUtc = hasResource
-                ? locked.StartUtc + TimeSpan.FromMinutes(ReservedMinutes(
-                    (int)(locked.EndUtc - locked.StartUtc).TotalMinutes,
-                    resource!.UtilizationRate))
+                ? locked.StartUtc + ReservedDuration(locked.EndUtc - locked.StartUtc, resource!.UtilizationRate)
                 : locked.EndUtc;
             var invalidLock = !hasResource
                 || locked.StartUtc < problem.HorizonStartUtc
@@ -1031,7 +1029,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
-        var reservedDuration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
+        var reservedDuration = ReservedDuration(duration, resource.UtilizationRate);
         var setup = TimeSpan.FromMinutes(Math.Max(0, item.Operation.SetupMinutes));
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
@@ -1070,8 +1068,11 @@ file sealed class SchedulerState
         return null;
     }
 
-    private static int ReservedMinutes(int durationMinutes, decimal utilizationRate) =>
-        (int)Math.Ceiling(durationMinutes / utilizationRate);
+    private static TimeSpan ReservedDuration(TimeSpan duration, decimal utilizationRate) =>
+        utilizationRate == 1m
+            ? duration
+            : TimeSpan.FromMinutes((double)Math.Ceiling(
+                (decimal)duration.Ticks / TimeSpan.TicksPerMinute / utilizationRate));
 
     private DateTimeOffset ApplySetupGap(
         SchedulingResourceContract resource,
@@ -1186,8 +1187,8 @@ file sealed class SchedulerState
         {
             var resourceLocks = lockedAssignments
                 .Where(x => x.ResourceId == resource.ResourceId)
-                .Select(x => (Assignment: x, ReservedEndUtc: x.StartUtc + TimeSpan.FromMinutes(
-                    ReservedMinutes((int)(x.EndUtc - x.StartUtc).TotalMinutes, resource.UtilizationRate))))
+                .Select(x => (Assignment: x, ReservedEndUtc: x.StartUtc +
+                    ReservedDuration(x.EndUtc - x.StartUtc, resource.UtilizationRate)))
                 .ToList();
             if (resourceLocks.Count <= Math.Max(1, resource.CapacityUnits))
             {
@@ -1381,7 +1382,7 @@ file sealed class SchedulerState
     private bool HasToolingSlot(SchedulingResourceContract resource, SchedulingOperationContract operation, DateTimeOffset earliestStart)
     {
         if (!calendars.TryGetValue(resource.CalendarId, out var calendar)) return false;
-        var duration = TimeSpan.FromMinutes(ReservedMinutes(operation.DurationMinutes, resource.UtilizationRate));
+        var duration = ReservedDuration(TimeSpan.FromMinutes(operation.DurationMinutes), resource.UtilizationRate);
         foreach (var shift in ContinuousWindows(calendar).Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
             var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
@@ -1406,7 +1407,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
+        var duration = ReservedDuration(TimeSpan.FromMinutes(durationMinutes), resource.UtilizationRate);
         return ContinuousWindows(calendar)
             .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc)
             .Any(shift =>
@@ -1427,7 +1428,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
+        var duration = ReservedDuration(TimeSpan.FromMinutes(durationMinutes), resource.UtilizationRate);
         return ContinuousWindows(calendar)
             .Where(x => x.EndUtc > earliestStart)
             .Any(shift =>
@@ -1454,7 +1455,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
+        var duration = ReservedDuration(TimeSpan.FromMinutes(durationMinutes), resource.UtilizationRate);
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
@@ -1494,7 +1495,7 @@ file sealed class SchedulerState
             return false;
         }
 
-        var duration = TimeSpan.FromMinutes(ReservedMinutes(durationMinutes, resource.UtilizationRate));
+        var duration = ReservedDuration(TimeSpan.FromMinutes(durationMinutes), resource.UtilizationRate);
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
@@ -1631,9 +1632,8 @@ file sealed class SchedulerState
                 startUtc,
                 assignment.EndUtc,
                 resources.TryGetValue(assignment.ResourceId, out var resource)
-                    ? assignment.StartUtc + TimeSpan.FromMinutes(ReservedMinutes(
-                        (int)(assignment.EndUtc - assignment.StartUtc).TotalMinutes,
-                        resource.UtilizationRate))
+                    ? assignment.StartUtc + ReservedDuration(
+                        assignment.EndUtc - assignment.StartUtc, resource.UtilizationRate)
                     : assignment.EndUtc));
             if (!earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out earliestEnd)
                 || assignment.EndUtc < earliestEnd)

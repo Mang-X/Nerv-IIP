@@ -104,6 +104,25 @@ public sealed class SchedulingCapacityFillTests
             && x.ResourceId == "DEV-FILL-01");
     }
 
+    [Fact]
+    public void Subminute_locked_operation_reserves_capacity_before_open_operation()
+    {
+        var problem = ProblemWith(60, [new(Day.AddHours(8), Day.AddHours(10), "day")]);
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { UtilizationRate = 0.8m }],
+            LockedAssignments =
+            [
+                new("lock-half-minute", "WO-LOCK", "OP-LOCK", 10, "DEV-FILL-01", "WC-FILL",
+                    Day.AddHours(8), Day.AddHours(8).AddSeconds(30), "manual")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-rated-subminute-lock", Day);
+
+        Assert.Equal(Day.AddHours(8).AddMinutes(1), Assert.Single(plan.Assignments, x => !x.IsLocked).StartUtc);
+    }
+
     // ---------- 班次窗口合并 ----------
 
     /// <summary>
