@@ -702,11 +702,11 @@ try {
     Assert-Contract ($masterDataOwnership.Count -eq 1 -and [string]::Equals([string]$masterDataOwnership[0].databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'MasterData must stay runner-owned; it is the decision''s worked example for keeping failure diagnostics.'
 
     # 第八批三成员：DemandPlanning 走 2026-08-13 裁决的默认归属（test-owned，NERV-822 的 #1565 已把
-    # 该文件三条用例与 redis-cap 用例一并收敛到共享 PostgreSqlTestDatabase）；ERP 与跨业务 Acceptance
+    # 该文件 PostgreSQL 用例与 redis-cap 用例一并收敛到共享 PostgreSqlTestDatabase）；ERP 与跨业务 Acceptance
     # 按裁决的例外判据保持 runner——判据是失败诊断价值：Acceptance 的终局跨四个 schema，必须能在成员
     # 数据库里看到。ERP 本就没有手写建库；Acceptance 的手写建库（内嵌 TemporaryPostgresDatabase）由本批删除。
     $demandPlanningMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'demandplanning-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($demandPlanningMember.expectedTestIdentities).Count -eq 3) 'The DemandPlanning member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract (@($demandPlanningMember.expectedTestIdentities).Count -eq 4) 'The DemandPlanning member must freeze exactly its four PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$demandPlanningMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'DemandPlanning runs on governed temporary databases, so the member must be test-owned.'
     Assert-MethodScopedFilter -Member $demandPlanningMember
     $demandPlanningSourcePath = Join-Path $repoRoot 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'

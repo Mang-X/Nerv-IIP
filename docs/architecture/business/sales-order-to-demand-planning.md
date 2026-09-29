@@ -28,7 +28,7 @@ DemandPlanning 只消费公开 contract，不引用 ERP Domain/Web/Infrastructur
 3. cancelled 将订单下既有需求行归零并推进订单水位；低版本 release/change/delivery-registered 不能复活已取消需求。
 4. 相同 consumer + idempotency key 只执行一次；合法但低版本的不同事件可以留下 inbox 审计，但不回滚投影。
 5. 合法业务拒绝与 poison message 进入受控 DLQ/诊断路径；数据库或 transport 瞬态失败由消息基础设施重试，handler 不吞掉失败伪造成功。
-6. MRP 只消费有效、正数量的需求投影；pegging/计划建议继续携带稳定 `source_reference`，因此可追溯 ERP 订单而无需复制订单详情。
+6. MRP 只消费有效、正数量的需求投影；pegging 继续携带订单级 `source_reference`，并为新生成的销售需求 pegging 保留 `source_line_reference`，因此同单相同 SKU/交期的行仍可区分。旧 pegging 的行身份保持未知，不凭 SKU/交期推定归属。
 
 ## 预测与订单冲减
 

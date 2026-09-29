@@ -435,7 +435,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.Quantity > 0m
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType, x.SourceLineReference == "" ? null : x.SourceLineReference))
             .ToListAsync(cancellationToken);
         var forecastInputs = await dbContext.ForecastInputs
             .AsNoTracking()
@@ -532,7 +532,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.Quantity > 0m
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType, x.SourceLineReference == "" ? null : x.SourceLineReference))
             .ToListAsync(cancellationToken);
         var forecastInputs = await dbContext.ForecastInputs
             .AsNoTracking()
@@ -1481,7 +1481,7 @@ public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbCont
                 && x.DueDate <= horizonEnd)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType, x.SourceLineReference == "" ? null : x.SourceLineReference))
             .ToListAsync(cancellationToken);
 
         return new PlanningInputSnapshotResult(

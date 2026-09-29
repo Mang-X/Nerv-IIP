@@ -22,7 +22,8 @@ public sealed record DemandSnapshot(
     string SiteCode,
     decimal Quantity,
     DateOnly DueDate,
-    string SourceType = "demand-source");
+    string SourceType = "demand-source",
+    string? SourceLineReference = null);
 
 public sealed record InventoryAvailabilitySnapshot(
     string SkuCode,
@@ -106,7 +107,8 @@ public sealed record CalculatedPeggingLink(
     string? ManufacturingBomReference,
     string? RoutingReference,
     string SourceType,
-    decimal GrossDemandQuantity);
+    decimal GrossDemandQuantity,
+    string? SourceLineReference = null);
 
 public sealed record CalculatedNetRequirementExplanation(
     decimal GrossDemandQuantity,
@@ -164,6 +166,7 @@ public static class MrpCalculator
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.DemandSourceReference, StringComparer.Ordinal)
+            .ThenBy(x => x.SourceLineReference, StringComparer.Ordinal)
             .Select(x => NormalizeDemand(x, planningParameters, converter))
             .ToList();
         var lowLevelCodes = CalculateLowLevelCodes(
@@ -192,9 +195,10 @@ public static class MrpCalculator
                 var grossRequirement = group.Sum(x => x.Quantity);
                 var demandPegging = group
                     .SelectMany(x => x.DemandPegging)
-                    .GroupBy(x => $"{x.DemandSourceReference}\u001f{x.ParentSkuCode}\u001f{x.ComponentSkuCode}", StringComparer.Ordinal)
+                    .GroupBy(x => $"{x.DemandSourceReference}\u001f{x.SourceLineReference}\u001f{x.ParentSkuCode}\u001f{x.ComponentSkuCode}", StringComparer.Ordinal)
                     .Select(x => new DemandPegging(
                         x.First().DemandSourceReference,
+                        x.First().SourceLineReference,
                         x.First().ParentSkuCode,
                         x.First().ComponentSkuCode,
                         x.First().SourceType,
@@ -248,7 +252,8 @@ public static class MrpCalculator
                         peggingVersion?.ManufacturingBomReference,
                         peggingVersion?.RoutingReference,
                         x.SourceType,
-                        x.Quantity))
+                        x.Quantity,
+                        x.SourceLineReference))
                     .Concat(supply.UsedReceipts.Select(x => new CalculatedPeggingLink(
                         "scheduled-receipt",
                         $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
@@ -382,7 +387,8 @@ public static class MrpCalculator
                 peggingVersion?.ManufacturingBomReference,
                 peggingVersion?.RoutingReference,
                 x.SourceType,
-                x.Quantity))
+                x.Quantity,
+                x.SourceLineReference))
             .Append(receiptLink)
             .ToArray();
 
@@ -468,7 +474,7 @@ public static class MrpCalculator
             demand.SiteCode,
             conversion.Quantity,
             demand.DueDate,
-            [new DemandPegging(demand.DemandSourceReference, demand.SkuCode, null, SourceTypeFromDemandType(demand.SourceType), conversion.Quantity)],
+            [new DemandPegging(demand.DemandSourceReference, demand.SourceLineReference, demand.SkuCode, null, SourceTypeFromDemandType(demand.SourceType), conversion.Quantity)],
             [Normalize(demand.SkuCode)],
             "demand",
             0m,
@@ -895,7 +901,7 @@ public static class MrpCalculator
 
     private sealed record RequirementBucket(ItemKey Key, DateOnly RequiredDate);
 
-    private sealed record DemandPegging(string DemandSourceReference, string ParentSkuCode, string? ComponentSkuCode, string SourceType, decimal Quantity);
+    private sealed record DemandPegging(string DemandSourceReference, string? SourceLineReference, string ParentSkuCode, string? ComponentSkuCode, string SourceType, decimal Quantity);
 
     private sealed record Requirement(
         string SkuCode,

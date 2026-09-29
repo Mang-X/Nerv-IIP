@@ -28,12 +28,12 @@
     },
     {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
-      "sourceSha256": "839636ce387940e27532477477fa173990cb957815c23ebd79716fbb4a394ff5",
-      "factoryCallCount": 4,
+      "sourceSha256": "0dc48e0471e3e3207b8042cd921a9eabbd040f46fddf534021186a869c643e13",
+      "factoryCallCount": 5,
       "ownerships": [
         {
           "strategy": "explicit-drop-finally",
-          "factoryCallCount": 3,
+          "factoryCallCount": 4,
           "ownerVariable": "database",
           "reason": "The real PostgreSQL demand proofs must surface cleanup failure after every direct-owner exit."
         },

@@ -166,7 +166,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         string? manufacturingBomReference,
         string? routingReference,
         string? sourceType = null,
-        decimal grossDemandQuantity = 0m)
+        decimal grossDemandQuantity = 0m,
+        string? sourceLineReference = null)
     {
         peggingLinks.Add(new PeggingLink(
             peggingType,
@@ -178,7 +179,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             manufacturingBomReference,
             routingReference,
             sourceType,
-            grossDemandQuantity));
+            grossDemandQuantity,
+            sourceLineReference));
     }
 
     /// <summary>
@@ -292,7 +294,8 @@ public sealed class PeggingLink : Entity<PeggingLinkId>
         string? manufacturingBomReference,
         string? routingReference,
         string? sourceType = null,
-        decimal grossDemandQuantity = 0m)
+        decimal grossDemandQuantity = 0m,
+        string? sourceLineReference = null)
     {
         PeggingType = DemandPlanningText.Required(peggingType, nameof(peggingType));
         DemandSourceReference = DemandPlanningText.Required(demandSourceReference, nameof(demandSourceReference));
@@ -304,11 +307,13 @@ public sealed class PeggingLink : Entity<PeggingLinkId>
         RoutingReference = DemandPlanningText.Optional(routingReference);
         SourceType = DemandPlanningText.Optional(sourceType) ?? "unknown";
         GrossDemandQuantity = Math.Max(0m, grossDemandQuantity);
+        SourceLineReference = DemandPlanningText.Optional(sourceLineReference);
     }
 
     public PlanningSuggestionId PlanningSuggestionId { get; private set; } = default!;
     public string PeggingType { get; private set; } = string.Empty;
     public string DemandSourceReference { get; private set; } = string.Empty;
+    public string? SourceLineReference { get; private set; }
     public string ParentSkuCode { get; private set; } = string.Empty;
     public string? ComponentSkuCode { get; private set; }
     public decimal Quantity { get; private set; }

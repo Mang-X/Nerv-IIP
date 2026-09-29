@@ -12,6 +12,8 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Nerv.IIP.Business.DemandPlanning.Domain;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
@@ -27,6 +29,60 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpSalesOrderDemandConsumerTests
 {
+    [DemandPlanningRealPostgresFact]
+    public async Task PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line()
+    {
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!, "nerv_dp_pegging_line");
+        try
+        {
+            await using var provider = CreatePostgresProvider(database.ConnectionString);
+            using var scope = provider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var migrator = dbContext.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260928142520_AddPlanningSuggestionSupersession");
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                INSERT INTO demand_planning.planning_suggestions
+                  (id, organization_id, environment_id, mrp_run_id, suggestion_type, sku_code, uom_code, site_code,
+                   quantity, required_date, release_date, reason_code, status, created_at_utc,
+                   primary_source_type, formula, uom_conversion_summary)
+                VALUES
+                  ('01900000-0000-7000-8000-000000000011', 'org-001', 'env-dev', '01900000-0000-7000-8000-000000000012',
+                   'planned-work-order', 'SKU-FG', 'pcs', 'SITE-01', 5, DATE '2026-06-01', DATE '2026-06-01',
+                   'net-requirement', 'Open', NOW(), 'sales', '5 - 0 = 5', '');
+                INSERT INTO demand_planning.mrp_pegging_links
+                  (id, planning_suggestion_id, pegging_type, demand_source_reference, parent_sku_code,
+                   quantity, source_type, gross_demand_quantity)
+                VALUES
+                  ('01900000-0000-7000-8000-000000000013', '01900000-0000-7000-8000-000000000011',
+                   'demand', 'SO-001', 'SKU-FG', 5, 'sales', 5);
+                """);
+
+            await migrator.MigrateAsync();
+            dbContext.ChangeTracker.Clear();
+            var legacy = await dbContext.PlanningSuggestions.Include(x => x.PeggingLinks)
+                .SingleAsync(x => x.Id == new PlanningSuggestionId(Guid.Parse("01900000-0000-7000-8000-000000000011")));
+            Assert.Null(Assert.Single(legacy.PeggingLinks).SourceLineReference);
+
+            var current = PlanningSuggestion.Create(
+                "org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()), "planned-work-order",
+                "SKU-FG", "pcs", "SITE-01", 5m, new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 1), "net-requirement");
+            current.AddPeggingLink("demand", "SO-001", "SKU-FG", null, 5m, null, null, null,
+                "sales", 5m, "10");
+            dbContext.PlanningSuggestions.Add(current);
+            await dbContext.SaveChangesAsync();
+            dbContext.ChangeTracker.Clear();
+            var saved = await dbContext.PlanningSuggestions.Include(x => x.PeggingLinks)
+                .SingleAsync(x => x.Id == current.Id);
+            Assert.Equal("10", Assert.Single(saved.PeggingLinks).SourceLineReference);
+        }
+        finally
+        {
+            await database.DropAsync();
+        }
+    }
+
     [Fact]
     public async Task Delivery_exceeding_order_quantity_is_rejected_without_negative_demand()
     {
