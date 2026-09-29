@@ -126,7 +126,7 @@ public sealed class WorkOrderTransformationHttpContractTests
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-SPLIT-PARENT", "SKU-HTTP", "PV-HTTP", 10m, 10, dueUtc, "PCS"),
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-MERGE-A", "SKU-HTTP", "PV-HTTP", 4m, 10, dueUtc, "PCS"),
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-MERGE-B", "SKU-HTTP", "PV-HTTP", 6m, 10, dueUtc, "PCS"));
-            foreach (var order in dbContext.WorkOrders.Local)
+            foreach (var order in dbContext.WorkOrders.Local.ToArray())
             {
                 dbContext.OperationTasks.Add(OperationTask.Queue(order.OrganizationId, order.EnvironmentId,
                     order.WorkOrderIdValue, $"{order.WorkOrderIdValue}-OP", 10, "WC-1", [], dueUtc,
