@@ -3198,6 +3198,62 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_work_order_priority_rejects_a_known_id_outside_the_selected_self_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesWorkOrdersManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-OTHER",
+                    "SKU-001",
+                    null,
+                    10,
+                    0,
+                    DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                    "released",
+                    []),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-FOREIGN/priority?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin", new { isRush = true, priority = 1000 });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastAdjustPriorityRequest);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
     public async Task Mes_work_order_detail_rejects_a_known_id_outside_the_selected_self_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
@@ -5942,6 +5998,48 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("EQUIPMENT_MAINTENANCE_CONFLICT", document.RootElement.GetProperty("message").GetString());
+    }
+
+    // #4034：Gateway 写入后列表/详情必须读回同一 MES 值；不限制负优先级。
+    [Theory]
+    [InlineData(true, -7)]
+    [InlineData(false, 1000)]
+    public async Task Mes_work_order_priority_write_reads_back_same_values(bool isRush, int priority)
+    {
+        var mes = new RecordingMesClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [new AuthorizationScopeGrant("role", "role-platform-admin", "organization", "org-001", [BusinessGatewayPermissions.MesWorkOrdersManage, BusinessGatewayPermissions.MesWorkOrdersRead], OrganizationWide: true)]);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var changedAtUtc = DateTimeOffset.Parse("2026-09-30T00:00:00Z");
+        const string context = "?organizationId=org-001&environmentId=env-dev";
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/mes/work-orders/WO-001/priority" + context,
+            new { isRush, priority, changedAtUtc });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal("WO-001", mes.LastAdjustPriorityRequest!.WorkOrderId);
+        Assert.Equal("org-001", mes.LastAdjustPriorityRequest.OrganizationId);
+        Assert.Equal("env-dev", mes.LastAdjustPriorityRequest.EnvironmentId);
+        Assert.Equal(changedAtUtc, mes.LastAdjustPriorityRequest.ChangedAtUtc);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        foreach (var route in new[] { "/api/business-console/v1/mes/work-orders", "/api/business-console/v1/mes/work-orders/WO-001" })
+        {
+            var read = await client.GetAsync(route + context);
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+            using var document = JsonDocument.Parse(await read.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            if (data.TryGetProperty("items", out var items)) data = items[0];
+            Assert.Equal(isRush, data.GetProperty("isRush").GetBoolean());
+            Assert.Equal(priority, data.GetProperty("priority").GetInt32());
+        }
     }
 
     [Fact]
@@ -21328,7 +21426,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesMaterialReadinessResponse? MaterialReadinessResponse { get; init; }
 
-    public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; init; }
+    public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; set; }
 
     public int? WorkOrdersTotal { get; init; }
 
@@ -21550,7 +21648,9 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             "released",
             "Ready",
             [],
-            []));
+            [],
+            IsRush: LastAdjustPriorityRequest?.IsRush ?? false,
+            Priority: LastAdjustPriorityRequest?.Priority ?? 0));
     }
 
     public Task<BusinessConsoleAcceptedResponse> ReleaseWorkOrderAsync(
@@ -21566,6 +21666,20 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             throw ReleaseFailure;
         }
 
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public BusinessConsoleMesAdjustWorkOrderPriorityRequest? LastAdjustPriorityRequest { get; private set; }
+
+    public Task<BusinessConsoleAcceptedResponse> AdjustWorkOrderPriorityAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesAdjustWorkOrderPriorityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAdjustPriorityRequest = request;
+        WorkOrders = [new(workOrderId, "SKU-001", null, 10, request.Priority, DateTimeOffset.Parse("2026-05-24T00:00:00Z"), "released", [], IsRush: request.IsRush)];
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 

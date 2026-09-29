@@ -4180,6 +4180,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceNcrCode?: string | null;
     hasChangedDemand?: boolean;
     hasCancelledDemand?: boolean;
+    isRush?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
@@ -4223,6 +4224,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceWorkOrderId?: string | null;
     sourceNcrId?: string | null;
     sourceNcrCode?: string | null;
+    isRush?: boolean;
+    priority?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
@@ -4293,6 +4296,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderDetailRequest = {
     [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest = {
+    isRush?: boolean;
+    priority?: number;
+    changedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest = {
@@ -16395,6 +16404,43 @@ export type GetBusinessConsoleMesWorkOrderDetailResponses = {
 };
 
 export type GetBusinessConsoleMesWorkOrderDetailResponse = GetBusinessConsoleMesWorkOrderDetailResponses[keyof GetBusinessConsoleMesWorkOrderDetailResponses];
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/priority';
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityError = AdjustBusinessConsoleMesWorkOrderPriorityErrors[keyof AdjustBusinessConsoleMesWorkOrderPriorityErrors];
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityResponse = AdjustBusinessConsoleMesWorkOrderPriorityResponses[keyof AdjustBusinessConsoleMesWorkOrderPriorityResponses];
 
 export type ReleaseBusinessConsoleMesWorkOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest;

@@ -1,4 +1,16 @@
 export {
+  adjustBusinessConsoleMesWorkOrderPriority,
+  adjustBusinessConsoleMesWorkOrderPriorityMutationOptions,
+} from './generated/business-console'
+
+export type {
+  AdjustBusinessConsoleMesWorkOrderPriorityData,
+  AdjustBusinessConsoleMesWorkOrderPriorityErrors,
+  AdjustBusinessConsoleMesWorkOrderPriorityResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest as BusinessConsoleMesAdjustWorkOrderPriorityRequest,
+} from './generated/business-console'
+
+export {
   raiseBusinessConsoleMesAndonCall,
   raiseBusinessConsoleMesAndonCallMutationOptions,
   claimBusinessConsoleMesAndonCall,
