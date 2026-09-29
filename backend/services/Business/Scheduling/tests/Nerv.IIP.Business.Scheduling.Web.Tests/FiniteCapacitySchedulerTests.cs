@@ -41,6 +41,33 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Interruptible_operation_does_not_repeat_setup_between_its_own_segments()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(12),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(1), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(11), "second")])]
+        }, x => x with
+        {
+            SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+            DurationMinutes = 120,
+            SetupMinutes = 15
+        });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "setup-split-plan", GeneratedAtUtc);
+
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11))
+        ], Assert.Single(plan.Assignments).Segments);
+        Assert.Equal(120, plan.Metrics.AssignedMinutes);
+    }
+
+    [Fact]
     public void Interruptible_operation_avoids_unavailability_and_locked_segment_occupancy()
     {
         var template = CreateSingleOperationProblem();
@@ -118,6 +145,50 @@ public class FiniteCapacitySchedulerTests
             new ScheduleAssignmentSegmentContract(start.AddHours(1), start.AddHours(2)),
             new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11).AddMinutes(30))
         ], assignment.Segments);
+    }
+
+    [Fact]
+    public void Interruptible_segments_wait_for_shared_tooling_in_later_shift()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var target = template.Orders.Single().Operations.Single() with
+        {
+            SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+            DurationMinutes = 120,
+            RequiredToolingIds = ["TOOL-1"]
+        };
+        var toolingUser = target with
+        {
+            OperationId = "TOOLING-USER",
+            OperationSequence = 20,
+            SplitPolicy = ScheduleSplitPolicyContract.NonSplittable,
+            DurationMinutes = 60,
+            Priority = 2,
+            EligibleResourceIds = ["DEV-SNAPSHOT-02"],
+            PrimaryResourceId = "DEV-SNAPSHOT-02",
+            EarliestStartUtc = start.AddHours(10)
+        };
+        var problem = template with
+        {
+            HorizonEndUtc = start.AddHours(13),
+            Orders = [template.Orders.Single() with { Operations = [target, toolingUser] }],
+            Resources = [template.Resources.Single(), template.Resources.Single() with
+            {
+                ResourceId = "DEV-SNAPSHOT-02", SortKey = "002"
+            }],
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(1), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "tooling-split-plan", GeneratedAtUtc);
+
+        Assert.Equal(start.AddHours(10), Assignment(plan, "TOOLING-USER").StartUtc);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(11), start.AddHours(12))
+        ], Assignment(plan, target.OperationId).Segments);
     }
 
     [Fact]

@@ -1165,9 +1165,8 @@ file sealed class SchedulerState
                 var previousEnd = occupancies
                     .Where(x => x.EndUtc <= interval.StartUtc)
                     .Select(x => (DateTimeOffset?)x.EndUtc)
-                    .Append(segments.Count > 0 ? segments[^1].EndUtc : null)
                     .Max();
-                var start = previousEnd.HasValue
+                var start = segments.Count == 0 && previousEnd.HasValue
                     ? Max(interval.StartUtc + setup, previousEnd.Value + setup)
                     : interval.StartUtc;
                 if (start >= interval.EndUtc) continue;
@@ -1761,10 +1760,12 @@ file sealed class SchedulerState
                      .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
                      .ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
+            var segmentIndex = 0;
             foreach (var segment in AssignmentSegments(assignment))
             {
                 var startUtc = segment.StartUtc;
-                if (!fixedOperationKeys.Contains(OperationKey.From(assignment))
+                if (segmentIndex == 0
+                    && !fixedOperationKeys.Contains(OperationKey.From(assignment))
                     && !string.IsNullOrEmpty(assignment.ResourceId)
                     && operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
                     && operation.SetupMinutes > 0
@@ -1784,6 +1785,7 @@ file sealed class SchedulerState
                 {
                     earliestOccupancyEndByResource[assignment.ResourceId] = segment.EndUtc;
                 }
+                segmentIndex++;
             }
         }
 
