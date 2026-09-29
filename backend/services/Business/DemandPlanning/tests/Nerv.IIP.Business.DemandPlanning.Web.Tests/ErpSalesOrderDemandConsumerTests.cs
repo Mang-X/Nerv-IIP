@@ -575,8 +575,8 @@ public sealed class ErpSalesOrderDemandConsumerTests
         using var client = factory.CreateClient();
         using var peerClient = peerFactory.CreateClient();
         await Task.WhenAll(
-            InitializeRedisCapFactoryAsync(factory),
-            InitializeRedisCapFactoryAsync(peerFactory));
+            CapTestHost.WaitForCapBootstrapAsync(factory.Services).AsTask(),
+            CapTestHost.WaitForCapBootstrapAsync(peerFactory.Services).AsTask());
 
         await AssertRedisLocksAreIsolatedThroughRegistrationAsync(
             redisConnectionString,
@@ -1036,13 +1036,6 @@ public sealed class ErpSalesOrderDemandConsumerTests
 
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
         });
-    }
-
-    private static async Task InitializeRedisCapFactoryAsync(WebApplicationFactory<Program> factory)
-    {
-        using var scope = factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
-        await scope.ServiceProvider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
     }
 
     private static async Task PublishAsync(
