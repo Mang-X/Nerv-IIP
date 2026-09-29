@@ -635,7 +635,9 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
         WorkOrderId = Required(contract.OrderId, nameof(contract.OrderId));
         OperationId = Required(contract.OperationId, nameof(contract.OperationId));
         OperationSequence = contract.OperationSequence;
-        ResourceId = Required(contract.ResourceId, nameof(contract.ResourceId));
+        ResourceId = contract.IsLocked && contract.ExplanationCode == "in-progress" && contract.ResourceId.Length == 0
+            ? string.Empty
+            : Required(contract.ResourceId, nameof(contract.ResourceId));
         WorkCenterId = Required(contract.WorkCenterId, nameof(contract.WorkCenterId));
         StartUtc = contract.StartUtc;
         EndUtc = contract.EndUtc;
