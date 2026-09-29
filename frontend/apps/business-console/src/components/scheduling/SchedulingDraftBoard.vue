@@ -118,7 +118,7 @@ function revealMatch(index: number) {
   sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
   sendCommand({ kind: 'selectTask', taskId: selectedTaskId.value })
 }
-// 图面在页签切换后重新挂载：重新应用查阅状态，草案本身始终来自父页面。
+// 切换图面时应用当前查阅状态，草案本身始终来自父页面。
 watch(
   [activeBoard, searchMatches],
   () => {
@@ -294,7 +294,12 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
       />
       <div class="flex flex-col gap-3 xl:flex-row">
         <div class="min-w-0 flex-1">
-          <NvTabsContent value="gantt" class="h-[34rem] overflow-hidden rounded-md border">
+          <NvTabsContent
+            value="gantt"
+            force-mount
+            v-show="view === 'gantt'"
+            class="h-[34rem] overflow-hidden rounded-md border"
+          >
             <GanttChart
               ref="ganttRef"
               :scale="scale"
@@ -305,7 +310,12 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
               @locked-drag-attempt="emit('lockedAttempt', $event)"
             />
           </NvTabsContent>
-          <NvTabsContent value="resource" class="h-[34rem] overflow-hidden rounded-md border">
+          <NvTabsContent
+            value="resource"
+            force-mount
+            v-show="view === 'resource'"
+            class="h-[34rem] overflow-hidden rounded-md border"
+          >
             <ResourceSchedulerBoard
               ref="resourceRef"
               :scale="scale"
