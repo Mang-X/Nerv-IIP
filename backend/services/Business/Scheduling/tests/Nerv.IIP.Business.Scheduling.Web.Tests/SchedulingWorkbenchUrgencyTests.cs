@@ -24,7 +24,7 @@ public sealed partial class SchedulingWorkbenchTests
             new("CRITICAL", int.MinValue, false, due.AddDays(1), BusinessPriorityLevel.P0),
             new("URGENT", int.MinValue, false, due.AddDays(1), BusinessPriorityLevel.P1),
             new("MAX", int.MaxValue, false, due.AddDays(1), BusinessPriorityLevel.P3),
-            new("EARLY", 12345, false, due, BusinessPriorityLevel.P3),
+            new("Z-EARLY", 12345, false, due, BusinessPriorityLevel.P3),
             new("TIE-A", 12345, false, due.AddDays(1), BusinessPriorityLevel.P3),
             new("TIE-B", 12345, false, due.AddDays(1), BusinessPriorityLevel.P3),
             new("MIN", int.MinValue, false, due, BusinessPriorityLevel.P3),
@@ -39,7 +39,7 @@ public sealed partial class SchedulingWorkbenchTests
         var input = await assembler.AssembleAsync("org-001", "env-dev", start, start.AddHours(8), selections, CancellationToken.None);
         var scheduler = new FiniteCapacityScheduler();
         var plan = scheduler.Schedule(input.Problem, "plan-urgency", start);
-        string[] expected = ["RUSH", "CRITICAL", "URGENT", "MAX", "EARLY", "TIE-A", "TIE-B", "MIN"];
+        string[] expected = ["RUSH", "CRITICAL", "URGENT", "MAX", "Z-EARLY", "TIE-A", "TIE-B", "MIN"];
         Assert.Equal(expected, plan.Assignments.OrderBy(x => x.StartUtc).Select(x => x.OrderId));
         Assert.Empty(plan.UnscheduledOperations);
         Assert.All(input.Problem.Orders, order =>

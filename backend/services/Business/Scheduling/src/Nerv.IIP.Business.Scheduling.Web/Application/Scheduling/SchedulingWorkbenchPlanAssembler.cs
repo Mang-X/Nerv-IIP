@@ -24,7 +24,7 @@ public sealed class SchedulingWorkbenchPlanAssembler(
             horizonStartUtc,
             selections,
             cancellationToken);
-        var problem = await problemProducer.AssembleWorkbenchAsync(
+        var problemTask = problemProducer.AssembleWorkbenchAsync(
             new AssembleSchedulingWorkbenchProblemRequest(
                 $"workbench-{Guid.CreateVersion7():N}",
                 organizationId,
@@ -33,9 +33,12 @@ public sealed class SchedulingWorkbenchPlanAssembler(
                 horizonEndUtc,
                 orders),
             cancellationToken);
-        var orderIds = problem.Orders.Select(x => x.OrderId).ToArray();
-        var urgencies = await urgencyService.ListAsync(
+        var orderIds = orders.Select(x => x.Order.OrderId).ToArray();
+        var urgenciesTask = urgencyService.ListAsync(
             organizationId, environmentId, orderIds, cancellationToken);
+        await Task.WhenAll(problemTask, urgenciesTask);
+        var problem = await problemTask;
+        var urgencies = await urgenciesTask;
         var urgencyByOrder = urgencies.ToDictionary(x => x.OrderId, StringComparer.Ordinal);
         var priorityKeys = problem.Orders.ToDictionary(
             x => x.OrderId,
