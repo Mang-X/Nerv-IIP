@@ -1188,7 +1188,9 @@ file sealed class SchedulerState
             var resourceLocks = lockedAssignments
                 .Where(x => x.ResourceId == resource.ResourceId)
                 .Select(x => (Assignment: x, ReservedEndUtc: x.StartUtc +
-                    ReservedDuration(x.EndUtc - x.StartUtc, resource.UtilizationRate)))
+                    (fixedOperationKeys.Contains(OperationKey.From(x))
+                        ? x.EndUtc - x.StartUtc
+                        : ReservedDuration(x.EndUtc - x.StartUtc, resource.UtilizationRate))))
                 .ToList();
             if (resourceLocks.Count <= Math.Max(1, resource.CapacityUnits))
             {
@@ -1631,7 +1633,8 @@ file sealed class SchedulerState
                 assignment.WorkCenterId,
                 startUtc,
                 assignment.EndUtc,
-                resources.TryGetValue(assignment.ResourceId, out var resource)
+                !fixedOperationKeys.Contains(OperationKey.From(assignment))
+                    && resources.TryGetValue(assignment.ResourceId, out var resource)
                     ? assignment.StartUtc + ReservedDuration(
                         assignment.EndUtc - assignment.StartUtc, resource.UtilizationRate)
                     : assignment.EndUtc));
