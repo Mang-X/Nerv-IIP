@@ -1,8 +1,33 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import type { ScheduleModel } from '@nerv-iip/scheduling'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
+import { SchedulingToolbar, SchedulingLegend, TaskDetailPanel } from '@nerv-iip/scheduling'
 import SchedulingDraftBoard from './SchedulingDraftBoard.vue'
 
+function chartStub(name: string) {
+  return defineComponent({
+    name,
+    props: ['model', 'scale', 'readOnly'],
+    emits: ['taskSelect', 'taskDragEnd', 'lockedDragAttempt'],
+    setup(_props, { expose }) {
+      const command = vi.fn()
+      expose({ command })
+      return { command }
+    },
+    render: () => h('div'),
+  })
+}
+const charts = {
+  GanttChart: chartStub('GanttChart'),
+  ResourceSchedulerBoard: chartStub('ResourceSchedulerBoard'),
+}
+async function switchTab(wrapper: ReturnType<typeof mount>, text: string) {
+  const tab = wrapper.findAll('[role="tab"]').find((item) => item.text().includes(text))!
+  await tab.trigger('focus')
+  await tab.trigger('mousedown')
+  await flushPromises()
+}
 const model: ScheduleModel = {
   tasks: [
     {
@@ -43,8 +68,8 @@ describe('SchedulingDraftBoard', () => {
       props: { model },
       global: {
         stubs: {
-          GanttChart: true,
-          ResourceSchedulerBoard: true,
+          GanttChart: charts.GanttChart,
+          ResourceSchedulerBoard: charts.ResourceSchedulerBoard,
         },
       },
     })
@@ -127,7 +152,12 @@ describe('SchedulingDraftBoard', () => {
 
     const wrapper = mount(SchedulingDraftBoard, {
       props: { model: riskyModel },
-      global: { stubs: { GanttChart: true, ResourceSchedulerBoard: true } },
+      global: {
+        stubs: {
+          GanttChart: charts.GanttChart,
+          ResourceSchedulerBoard: charts.ResourceSchedulerBoard,
+        },
+      },
     })
 
     const banner = wrapper.find('[data-testid="scheduling-material-risks"]')
@@ -160,7 +190,12 @@ describe('SchedulingDraftBoard', () => {
 
     const wrapper = mount(SchedulingDraftBoard, {
       props: { model: riskyModel },
-      global: { stubs: { GanttChart: true, ResourceSchedulerBoard: true } },
+      global: {
+        stubs: {
+          GanttChart: charts.GanttChart,
+          ResourceSchedulerBoard: charts.ResourceSchedulerBoard,
+        },
+      },
     })
 
     const banner = wrapper.find('[data-testid="scheduling-equipment-risks"]')
@@ -186,8 +221,8 @@ describe('SchedulingDraftBoard', () => {
       props: { model },
       global: {
         stubs: {
-          GanttChart: true,
-          ResourceSchedulerBoard: true,
+          GanttChart: charts.GanttChart,
+          ResourceSchedulerBoard: charts.ResourceSchedulerBoard,
         },
       },
     })
@@ -210,8 +245,8 @@ describe('SchedulingDraftBoard', () => {
       props: { model },
       global: {
         stubs: {
-          GanttChart: true,
-          ResourceSchedulerBoard: true,
+          GanttChart: charts.GanttChart,
+          ResourceSchedulerBoard: charts.ResourceSchedulerBoard,
         },
       },
     })
@@ -219,5 +254,124 @@ describe('SchedulingDraftBoard', () => {
     wrapper.findComponent({ name: 'GanttChart' }).vm.$emit('lockedDragAttempt', 'assignment-001')
 
     expect(wrapper.emitted('lockedAttempt')).toEqual([['assignment-001']])
+  })
+  // #4038 验收：控制状态、图面命令与详情均以同一草案为准。
+  it('shares scale, search selection and page-local details across both charts', async () => {
+    const wrapper = mount(SchedulingDraftBoard, { props: { model }, global: { stubs: charts } })
+    await flushPromises()
+    const toolbar = wrapper.findComponent(SchedulingToolbar)
+    toolbar.vm.$emit('scaleChange', 'week')
+    await flushPromises()
+    const gantt = wrapper.findComponent({ name: 'GanttChart' })
+    expect(gantt.props('scale')).toBe('week')
+    expect(gantt.vm.command).toHaveBeenCalledWith({ kind: 'scaleTo', scale: 'week' })
+    toolbar.vm.$emit('zoomIn')
+    await flushPromises()
+    expect(toolbar.props('scale')).toBe('day')
+    expect(wrapper.findComponent(SchedulingLegend).props('scale')).toBe('day')
+    toolbar.vm.$emit('update:search', ' wo-001 ')
+    await flushPromises()
+    expect(toolbar.props('matchCount')).toBe(1)
+    expect(gantt.vm.command).toHaveBeenCalledWith({ kind: 'revealTask', taskId: 'assignment-001' })
+    expect(gantt.vm.command).toHaveBeenCalledWith({ kind: 'selectTask', taskId: 'assignment-001' })
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(model.tasks[0])
+    await switchTab(wrapper, '资源排产板')
+    const resource = wrapper.findComponent({ name: 'ResourceSchedulerBoard' })
+    expect(resource.props('scale')).toBe('day')
+    expect(resource.vm.command).toHaveBeenCalledWith({
+      kind: 'setSearchHighlight',
+      taskIds: ['assignment-001'],
+    })
+    expect(resource.vm.command).toHaveBeenCalledWith({
+      kind: 'revealTask',
+      taskId: 'assignment-001',
+    })
+    wrapper.findComponent(SchedulingToolbar).vm.$emit('today')
+    expect(resource.vm.command).toHaveBeenCalledWith({ kind: 'scrollToToday' })
+    wrapper.findComponent(SchedulingToolbar).vm.$emit('fit')
+    expect(resource.vm.command).toHaveBeenCalledWith({ kind: 'fitToScreen' })
+    resource.vm.$emit('taskSelect', 'assignment-001')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="scheduling-draft-task-detail"]').text()).toContain('WO-001')
+    wrapper.unmount()
+  })
+
+  it('refreshes selected details and search results when edits, undo and pending changes replace the draft', async () => {
+    const wrapper = mount(SchedulingDraftBoard, { props: { model }, global: { stubs: charts } })
+    await flushPromises()
+    wrapper.findComponent(SchedulingToolbar).vm.$emit('update:search', 'RES-1')
+    await flushPromises()
+    wrapper.findComponent(TaskDetailPanel).vm.$emit('toggle-lock', 'assignment-001', true)
+    expect(wrapper.emitted('lock')).toEqual([['assignment-001', true]])
+    const changed = {
+      ...model,
+      tasks: [
+        { ...model.tasks[0]!, locked: true, resourceId: 'RES-2', endUtc: '2026-07-24T11:00:00Z' },
+      ],
+    }
+    await wrapper.setProps({ model: changed })
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(changed.tasks[0])
+    expect(wrapper.findComponent(SchedulingToolbar).props('matchCount')).toBe(0)
+    expect(wrapper.findComponent(SchedulingLegend).text()).toContain('锁定')
+    await wrapper.setProps({ model })
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(model.tasks[0])
+    expect(wrapper.findComponent(SchedulingToolbar).props('matchCount')).toBe(1)
+    expect(wrapper.findComponent(SchedulingLegend).text()).not.toContain('锁定')
+    await wrapper.setProps({ model: { ...model, tasks: [] } })
+    expect(wrapper.findComponent(TaskDetailPanel).exists()).toBe(false)
+    expect(wrapper.findComponent(SchedulingToolbar).props('matchCount')).toBe(0)
+    await wrapper.setProps({ model })
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(model.tasks[0])
+    wrapper.unmount()
+  })
+
+  it('derives calendar and risk legend entries from the current draft and scale', async () => {
+    const start = new Date(2026, 6, 24, 8).toISOString()
+    const end = new Date(2026, 6, 24, 16).toISOString()
+    const withCalendar = {
+      ...model,
+      calendars: [
+        {
+          calendarId: 'CAL-1',
+          resourceIds: ['RES-1'],
+          workCenterIds: [],
+          shiftWindows: [{ shiftCode: 'DAY', startUtc: start, endUtc: end }],
+        },
+      ],
+    }
+    const wrapper = mount(SchedulingDraftBoard, {
+      props: { model: withCalendar },
+      global: { stubs: charts },
+    })
+    await flushPromises()
+    wrapper.findComponent(SchedulingToolbar).vm.$emit('scaleChange', 'hour')
+    await flushPromises()
+    expect(wrapper.findComponent(SchedulingLegend).text()).toContain('班次边界')
+    wrapper.findComponent(SchedulingToolbar).vm.$emit('scaleChange', 'day')
+    await flushPromises()
+    expect(wrapper.findComponent(SchedulingLegend).text()).not.toContain('班次边界')
+    await wrapper.setProps({ model })
+    expect(wrapper.findComponent(SchedulingLegend).text()).not.toContain('班次边界')
+    expect(wrapper.findComponent(SchedulingLegend).text()).not.toContain('设备维护')
+    wrapper.unmount()
+  })
+
+  it('keeps read-only lookup tools and shows a clear empty state without a plan', async () => {
+    const wrapper = mount(SchedulingDraftBoard, {
+      props: { model, readOnly: true },
+      global: { stubs: charts },
+    })
+    await flushPromises()
+    wrapper.findComponent({ name: 'GanttChart' }).vm.$emit('taskSelect', 'assignment-001')
+    await flushPromises()
+    expect(wrapper.findComponent(TaskDetailPanel).props('readOnly')).toBe(true)
+    expect(wrapper.findComponent(TaskDetailPanel).findAll('button')).toHaveLength(0)
+    expect(wrapper.findComponent(SchedulingToolbar).props('searchable')).toBe(true)
+    expect(wrapper.findComponent({ name: 'GanttChart' }).props('readOnly')).toBe(true)
+    await wrapper.setProps({ model: undefined })
+    expect(wrapper.text()).toContain('生成首版方案后开始编辑')
+    expect(wrapper.findComponent(SchedulingToolbar).exists()).toBe(false)
+    expect(wrapper.findComponent(TaskDetailPanel).exists()).toBe(false)
+    wrapper.unmount()
   })
 })
