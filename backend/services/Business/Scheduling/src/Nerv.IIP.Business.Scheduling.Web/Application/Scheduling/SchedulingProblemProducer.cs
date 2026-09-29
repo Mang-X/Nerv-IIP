@@ -130,7 +130,12 @@ public sealed class SchedulingProblemProducer(
                 StringComparer.Ordinal);
         var resources = BuildResources(workCenters.Values, devicesByWorkCenter, operationCapabilitiesByWorkCenter);
         var orderedOrders = request.Orders.OrderBy(x => x.DueUtc).ThenBy(x => x.Priority).ThenBy(x => x.OrderId, StringComparer.Ordinal).ToArray();
-        var transitions = BuildTransitions(orderedOrders, routingsByVersion, operationId);
+        var skuCodesByWorkCenter = orderedOrders
+            .SelectMany(order => routingsByVersion[order.RoutingVersionId].Operations
+                .Select(operation => (operation.WorkCenterCode, order.SkuCode)))
+            .GroupBy(x => x.WorkCenterCode, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Select(y => y.SkuCode).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
+        var transitions = BuildTransitions(orderedOrders, routingsByVersion, skuCodesByWorkCenter, operationId);
         var toolingFacts = await masterData.ResolveToolingFactsAsync(request.OrganizationId, request.EnvironmentId, transitions, cancellationToken);
         var toolingFactsByOperation = toolingFacts.ToDictionary(x => x.OperationId, StringComparer.Ordinal);
 
@@ -148,6 +153,7 @@ public sealed class SchedulingProblemProducer(
                     workCenters,
                     resources,
                     toolingFactsByOperation,
+                    skuCodesByWorkCenter,
                     operationId))
                 .ToArray(),
             Resources: resources.Values
@@ -169,6 +175,7 @@ public sealed class SchedulingProblemProducer(
         IReadOnlyDictionary<string, SchedulingProblemWorkCenterSnapshot> workCenters,
         IReadOnlyDictionary<string, SchedulingResourceContract> resources,
         IReadOnlyDictionary<string, SchedulingProblemToolingFactSnapshot> toolingFacts,
+        IReadOnlyDictionary<string, string[]> skuCodesByWorkCenter,
         Func<SchedulingProblemSourceOrder, SchedulingProblemRoutingOperationSnapshot, string> operationId)
     {
         var constraints = (order.OperationConstraints ?? [])
@@ -186,6 +193,17 @@ public sealed class SchedulingProblemProducer(
                 .ToArray();
             var constraint = constraints.GetValueOrDefault(operation.OperationCode);
             var toolingFact = toolingFacts.GetValueOrDefault(resolvedOperationId);
+            var changeovers = skuCodesByWorkCenter[operation.WorkCenterCode]
+                .Select(fromSku =>
+                {
+                    var fact = toolingFacts.GetValueOrDefault(TransitionId(resolvedOperationId, order.SkuCode, fromSku));
+                    return new SchedulingChangeoverContract(
+                        fromSku,
+                        fact is null || fact.SetupMinutes == 0 ? operation.SetupMinutes : fact.SetupMinutes,
+                        NormalizeCodes(fact?.RequiredToolingCodes),
+                        fact?.ToolingAvailable ?? true);
+                })
+                .ToArray();
             operations.Add(new SchedulingOperationContract(
                 OperationId: resolvedOperationId,
                 OperationSequence: operation.Sequence,
@@ -205,7 +223,8 @@ public sealed class SchedulingProblemProducer(
                 SetupMinutes: toolingFact is null || toolingFact.SetupMinutes == 0 ? operation.SetupMinutes : toolingFact.SetupMinutes,
                 RequiredSkillCodes: NormalizeCodes(constraint?.RequiredSkillCodes),
                 RequiredToolingIds: NormalizeCodes(toolingFact?.RequiredToolingCodes),
-                ToolingAvailable: toolingFact?.ToolingAvailable ?? true));
+                ToolingAvailable: toolingFact?.ToolingAvailable ?? true,
+                Changeovers: changeovers));
             previousOperationIds.Clear();
             previousOperationIds.Add(resolvedOperationId);
         }
@@ -224,22 +243,27 @@ public sealed class SchedulingProblemProducer(
     private static IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> BuildTransitions(
         IReadOnlyCollection<SchedulingProblemSourceOrder> orders,
         IReadOnlyDictionary<string, SchedulingProblemRoutingSnapshot> routings,
+        IReadOnlyDictionary<string, string[]> skuCodesByWorkCenter,
         Func<SchedulingProblemSourceOrder, SchedulingProblemRoutingOperationSnapshot, string> operationId)
     {
-        var previousSkuByWorkCenter = new Dictionary<string, string>(StringComparer.Ordinal);
         var transitions = new List<SchedulingProblemToolingTransitionSnapshot>();
         foreach (var order in orders)
         {
             foreach (var operation in routings[order.RoutingVersionId].Operations.OrderBy(x => x.Sequence))
             {
                 var resolvedOperationId = operationId(order, operation);
-                var fromSku = previousSkuByWorkCenter.GetValueOrDefault(operation.WorkCenterCode) ?? order.SkuCode;
-                transitions.Add(new SchedulingProblemToolingTransitionSnapshot(resolvedOperationId, operation.WorkCenterCode, fromSku, null, order.SkuCode));
-                previousSkuByWorkCenter[operation.WorkCenterCode] = order.SkuCode;
+                foreach (var fromSku in skuCodesByWorkCenter[operation.WorkCenterCode])
+                {
+                    transitions.Add(new SchedulingProblemToolingTransitionSnapshot(
+                        TransitionId(resolvedOperationId, order.SkuCode, fromSku), operation.WorkCenterCode, fromSku, null, order.SkuCode));
+                }
             }
         }
         return transitions;
     }
+
+    private static string TransitionId(string operationId, string toSku, string fromSku) =>
+        string.Equals(fromSku, toSku, StringComparison.Ordinal) ? operationId : $"{operationId}::from:{fromSku}";
 
     private async Task<Dictionary<string, SchedulingProblemWorkCenterSnapshot>> LoadWorkCentersAsync(
         AssembleSchedulingProblemRequest request,

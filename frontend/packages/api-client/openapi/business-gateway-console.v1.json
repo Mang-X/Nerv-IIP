@@ -41180,6 +41180,13 @@
           },
           "toolingAvailable": {
             "type": "boolean"
+          },
+          "changeovers": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingChangeoverContract"
+            }
           }
         }
       },
@@ -41190,6 +41197,28 @@
           "nonSplittable",
           "interruptible"
         ]
+      },
+      "NervIIPContractsSchedulingSchedulingChangeoverContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fromSkuCode": {
+            "type": "string"
+          },
+          "setupMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiredToolingIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolingAvailable": {
+            "type": "boolean"
+          }
+        }
       },
       "NervIIPContractsSchedulingSchedulingResourceContract": {
         "type": "object",

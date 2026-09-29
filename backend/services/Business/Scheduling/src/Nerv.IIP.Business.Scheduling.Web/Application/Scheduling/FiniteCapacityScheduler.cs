@@ -196,7 +196,8 @@ internal static class SchedulingProblemNormalizer
                                 .ToArray(),
                             RequiredToolingIds = (y.RequiredToolingIds ?? [])
                                 .OrderBy(id => id, StringComparer.Ordinal)
-                                .ToArray()
+                                .ToArray(),
+                            Changeovers = y.Changeovers?.OrderBy(changeover => changeover.FromSkuCode, StringComparer.Ordinal).ToArray()
                         })
                         .ToArray()
                 })
@@ -443,6 +444,7 @@ file sealed class SchedulerState
     private readonly Dictionary<string, SchedulingCalendarContract> calendars;
     private readonly Dictionary<string, IReadOnlyList<SchedulingTimeWindowContract>> continuousWindowsByCalendar = new(StringComparer.Ordinal);
     private readonly Dictionary<OperationKey, SchedulingOperationContract> operationByKey;
+    private readonly Dictionary<string, string> skuByOrderId;
     private readonly List<ScheduleAssignmentContract> assignments = [];
     private readonly List<ScheduleConflictContract> conflicts = [];
     private readonly List<UnscheduledOperationContract> unscheduledOperations = [];
@@ -483,6 +485,7 @@ file sealed class SchedulerState
             .GroupBy(x => x.WorkCenterId, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Sum(resource => Math.Max(1, resource.CapacityUnits)), StringComparer.Ordinal);
         calendars = problem.Calendars.ToDictionary(x => x.CalendarId, StringComparer.Ordinal);
+        skuByOrderId = problem.Orders.ToDictionary(x => x.OrderId, x => x.SkuCode, StringComparer.Ordinal);
         operationByKey = problem.Orders
             .SelectMany(order => order.Operations.Select(operation => (
                 Key: new OperationKey(order.OrderId, operation.OperationId),
@@ -868,7 +871,7 @@ file sealed class SchedulerState
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)
     {
-        if (!item.Operation.ToolingAvailable)
+        if (item.Operation.Changeovers is null && !item.Operation.ToolingAvailable)
         {
             AddUnscheduled(item, ScheduleConflictReasonCodeContract.Tooling, "所需工装不可用，或不适用于该工作中心与产品。");
             return null;
@@ -1080,7 +1083,6 @@ file sealed class SchedulerState
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
         var reservedDuration = ReservedDuration(duration, resource.UtilizationRate);
-        var setup = TimeSpan.FromMinutes(Math.Max(0, item.Operation.SetupMinutes));
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
@@ -1089,6 +1091,19 @@ file sealed class SchedulerState
 
             while (candidate + reservedDuration <= latestEnd)
             {
+                var effectiveOperation = EffectiveOperation(item, resource, candidate);
+                if (!effectiveOperation.ToolingAvailable)
+                {
+                    var nextEnd = assignments
+                        .Where(x => x.ResourceId == resource.ResourceId && x.EndUtc > candidate)
+                        .Select(x => (DateTimeOffset?)x.EndUtc)
+                        .Min();
+                    if (!nextEnd.HasValue) break;
+                    candidate = nextEnd.Value;
+                    continue;
+                }
+
+                var setup = TimeSpan.FromMinutes(effectiveOperation.SetupMinutes);
                 var setupAdjustedCandidate = ApplySetupGap(resource, candidate, setup);
                 if (setupAdjustedCandidate > candidate)
                 {
@@ -1105,9 +1120,28 @@ file sealed class SchedulerState
                     continue;
                 }
 
-                var blockingEnd = BlockingEnd(resource, item.Operation, resourceQualityBlocks, occupiedStart, candidate + reservedDuration);
+                var blockingEnd = BlockingEnd(resource, effectiveOperation, resourceQualityBlocks, occupiedStart, candidate + reservedDuration);
                 if (blockingEnd is null)
                 {
+                    var next = assignments
+                        .Where(x => x.ResourceId == resource.ResourceId && x.StartUtc >= candidate)
+                        .OrderBy(x => x.StartUtc)
+                        .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+                        .FirstOrDefault();
+                    if (resource.CapacityUnits == 1 && next is not null && !next.IsLocked
+                        && operationByKey.TryGetValue(OperationKey.From(next), out var nextOperation))
+                    {
+                        var nextSetup = nextOperation.Changeovers is null
+                            ? nextOperation.SetupMinutes
+                            : nextOperation.Changeovers.Single(x => x.FromSkuCode == item.Order.SkuCode).SetupMinutes;
+                        var nextToolingAvailable = nextOperation.Changeovers is null ||
+                            nextOperation.Changeovers.Single(x => x.FromSkuCode == item.Order.SkuCode).ToolingAvailable;
+                        if (!nextToolingAvailable || candidate + reservedDuration + TimeSpan.FromMinutes(nextSetup) > next.StartUtc)
+                        {
+                            candidate = next.EndUtc;
+                            continue;
+                        }
+                    }
                     return (candidate, end);
                 }
 
@@ -1200,6 +1234,31 @@ file sealed class SchedulerState
         }
         return null;
     }
+
+    private SchedulingOperationContract EffectiveOperation(
+        OperationWorkItem item,
+        SchedulingResourceContract resource,
+        DateTimeOffset candidate)
+    {
+        if (item.Operation.Changeovers is null) return item.Operation;
+
+        var predecessor = assignments
+            .Where(x => x.ResourceId == resource.ResourceId && x.EndUtc <= candidate)
+            .OrderByDescending(x => x.EndUtc)
+            .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+            .FirstOrDefault();
+        var fromSku = predecessor is not null && skuByOrderId.TryGetValue(predecessor.OrderId, out var predecessorSku)
+            ? predecessorSku
+            : item.Order.SkuCode;
+        var changeover = item.Operation.Changeovers.Single(x => x.FromSkuCode == fromSku);
+        return item.Operation with
+        {
+            SetupMinutes = changeover.SetupMinutes,
+            RequiredToolingIds = changeover.RequiredToolingIds,
+            ToolingAvailable = changeover.ToolingAvailable
+        };
+    }
+
     private static TimeSpan ReservedDuration(TimeSpan duration, decimal utilizationRate) =>
         utilizationRate == 1m
             ? duration
@@ -1551,10 +1610,21 @@ file sealed class SchedulerState
         if (required.Count == 0) return null;
         return assignments
             .Where(x => operationByKey.TryGetValue(OperationKey.From(x), out var assignedOperation)
-                && (assignedOperation.RequiredToolingIds ?? []).Any(required.Contains))
+                && (EffectiveAssignedOperation(x, assignedOperation).RequiredToolingIds ?? []).Any(required.Contains))
             .SelectMany(AssignmentSegments)
             .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
             .Select(x => (DateTimeOffset?)x.EndUtc).Min();
+    }
+
+    private SchedulingOperationContract EffectiveAssignedOperation(
+        ScheduleAssignmentContract assignment,
+        SchedulingOperationContract operation)
+    {
+        if (operation.Changeovers is null || !resources.TryGetValue(assignment.ResourceId, out var resource))
+            return operation;
+
+        var order = problem.Orders.Single(x => x.OrderId == assignment.OrderId);
+        return EffectiveOperation(new OperationWorkItem(order, operation), resource, assignment.StartUtc);
     }
 
     private bool HasToolingSlot(SchedulingResourceContract resource, SchedulingOperationContract operation, DateTimeOffset earliestStart)
@@ -1801,11 +1871,10 @@ file sealed class SchedulerState
                     && !fixedOperationKeys.Contains(OperationKey.From(assignment))
                     && !string.IsNullOrEmpty(assignment.ResourceId)
                     && operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
-                    && operation.SetupMinutes > 0
-                    && earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out var earliestEnd)
+                                        && earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out var earliestEnd)
                     && earliestEnd <= segment.StartUtc)
                 {
-                    startUtc = segment.StartUtc - TimeSpan.FromMinutes(operation.SetupMinutes);
+                    startUtc = segment.StartUtc - TimeSpan.FromMinutes(EffectiveAssignedOperation(assignment, operation).SetupMinutes);
                 }
 
                 resourceOccupancies.Add(new ResourceOccupancy(

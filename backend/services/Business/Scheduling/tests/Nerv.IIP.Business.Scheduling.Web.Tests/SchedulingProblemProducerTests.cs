@@ -116,6 +116,42 @@ public sealed class SchedulingProblemProducerTests
     }
 
     [Fact]
+    public async Task Producer_resolves_both_changeover_directions_before_resource_placement()
+    {
+        var masterData = new StubSchedulingProblemMasterDataClient(
+            WorkCenters: [new("WC-MIX-01", "CAL-DAY", 1, ["mixing"])],
+            Calendars: [new("CAL-DAY", [new(HorizonStart, HorizonEnd, "day-shift")])],
+            DeviceAssets: [new("DEV-MIX-01", "WC-MIX-01")],
+            ToolingFacts:
+            [
+                new("WO-A-10-mixing", 0, []),
+                new("WO-A-10-mixing::from:B", 7, ["tool.b-to-a"]),
+                new("WO-B-10-mixing", 0, []),
+                new("WO-B-10-mixing::from:A", 30, ["tool.a-to-b"])
+            ]);
+        var producer = new SchedulingProblemProducer(
+            new StubSchedulingProblemProductEngineeringClient(
+                new SchedulingProblemRoutingSnapshot("ROUTE-MIX", "A", "A",
+                    [new(10, "WC-MIX-01", "mixing", "Mixing", 11, 60, 0)])),
+            masterData);
+        var problem = await producer.AssembleAsync(RequestFor(
+            new SchedulingProblemSourceOrder("WO-A", "A", 1, HorizonEnd, 20, false, HorizonStart, "ROUTE-MIX:A"),
+            new SchedulingProblemSourceOrder("WO-B", "B", 1, HorizonStart.AddHours(2), 10, false, HorizonStart, "ROUTE-MIX:A")),
+            CancellationToken.None);
+
+        var a = problem.Orders.Single(x => x.OrderId == "WO-A").Operations.Single();
+        var b = problem.Orders.Single(x => x.OrderId == "WO-B").Operations.Single();
+        Assert.Equal(11, a.Changeovers!.Single(x => x.FromSkuCode == "A").SetupMinutes);
+        Assert.Equal(7, a.Changeovers!.Single(x => x.FromSkuCode == "B").SetupMinutes);
+        Assert.Equal(30, b.Changeovers!.Single(x => x.FromSkuCode == "A").SetupMinutes);
+        Assert.Equal(["tool.a-to-b"], b.Changeovers!.Single(x => x.FromSkuCode == "A").RequiredToolingIds);
+        Assert.Equal(4, masterData.RequestedTransitions!.Count);
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-changeover-producer", HorizonStart);
+        Assert.Equal(HorizonStart.AddMinutes(90), plan.Assignments.Single(x => x.OrderId == "WO-B").StartUtc);
+    }
+
+    [Fact]
     public async Task Producer_maps_interruptible_and_legacy_routing_operations_to_split_policy()
     {
         var producer = new SchedulingProblemProducer(
@@ -510,6 +546,7 @@ public sealed class SchedulingProblemProducerTests
         IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>? ToolingFacts = null)
         : ISchedulingProblemMasterDataClient
     {
+        public IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot>? RequestedTransitions { get; private set; }
         public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
             string organizationId,
             string environmentId,
@@ -544,7 +581,11 @@ public sealed class SchedulingProblemProducerTests
             string organizationId,
             string environmentId,
             IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
-            CancellationToken cancellationToken) => Task.FromResult(ToolingFacts ?? (IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>)[]);
+            CancellationToken cancellationToken)
+        {
+            RequestedTransitions = transitions;
+            return Task.FromResult(ToolingFacts ?? (IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>)[]);
+        }
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler

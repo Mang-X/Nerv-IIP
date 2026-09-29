@@ -84,7 +84,14 @@ public sealed record SchedulingOperationContract(
     int SetupMinutes = 0,
     IReadOnlyCollection<string>? RequiredSkillCodes = null,
     IReadOnlyCollection<string>? RequiredToolingIds = null,
-    bool ToolingAvailable = true);
+    bool ToolingAvailable = true,
+    IReadOnlyCollection<SchedulingChangeoverContract>? Changeovers = null);
+
+public sealed record SchedulingChangeoverContract(
+    string FromSkuCode,
+    int SetupMinutes,
+    IReadOnlyCollection<string> RequiredToolingIds,
+    bool ToolingAvailable);
 
 public sealed record SchedulingResourceContract(
     string ResourceId,
