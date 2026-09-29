@@ -44,6 +44,12 @@ if (usePostgreSql)
     healthChecks.AddCheck<NotificationDatabaseHealthCheck>("notification-db");
 }
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+    builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+builder.Services.AddHttpClient<IProductionPlannerMemberDirectory, HttpProductionPlannerMemberDirectory>(client =>
+{
+    client.BaseAddress = iamBaseAddress;
+});
 builder.Services.AddMediatR(configuration =>
 {
     configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
@@ -142,6 +148,7 @@ builder.Services.AddScoped<ConnectorHostUnreachableIntegrationEventHandlerForNot
 builder.Services.AddScoped<ConnectorHostRestoredIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<SpcAlertRaisedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<SalesOrderDemandChangedForWorkOrderIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && persistence.AutoMigrate)

@@ -137,6 +137,7 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__NotificationDb: Host=postgres;Port=5432;Database=nerv_iip_notification;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      Iam__BaseUrl: http://iam:8080
       Observability__Alerts__Enabled: ${NERV_IIP_OBSERVABILITY_ALERTS_ENABLED:-true}
       Observability__Alerts__OrganizationId: ${NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID:?set NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID}
       Observability__Alerts__EnvironmentId: ${NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID:?set NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID}
