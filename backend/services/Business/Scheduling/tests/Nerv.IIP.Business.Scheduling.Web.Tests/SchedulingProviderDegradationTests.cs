@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
@@ -15,12 +17,14 @@ public sealed class SchedulingProviderDegradationTests
     {
         var factory = new StaticResponseHttpClientFactory(
             """
-            {
-              "workOrderId": "WO-SNAPSHOT-001",
-              "readinessStatus": "Ready",
-              "blockingReasons": [],
-              "items": []
-            }
+            { "items": [
+              {
+                "workOrderId": "WO-SNAPSHOT-001",
+                "readinessStatus": "Ready",
+                "blockingReasons": [],
+                "items": []
+              }
+            ] }
             """);
         var provider = new HttpSchedulingMaterialReadinessProvider(
             factory,
@@ -31,19 +35,97 @@ public sealed class SchedulingProviderDegradationTests
 
         Assert.Empty(readiness);
         var request = Assert.Single(factory.Requests);
-        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal(
-            "/api/business/v1/mes/work-orders/WO-SNAPSHOT-001/material-readiness?organizationId=org-001&environmentId=prod",
+            "/api/business/v1/mes/work-orders/material-readiness/batch",
             request.PathAndQuery);
         Assert.Equal("Bearer", request.AuthorizationScheme);
         Assert.Equal("test-internal-token", request.AuthorizationParameter);
+        using var body = JsonDocument.Parse(request.Body!);
+        Assert.Equal("org-001", body.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("prod", body.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("WO-SNAPSHOT-001", Assert.Single(body.RootElement.GetProperty("workOrderIds").EnumerateArray()).GetString());
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_UsesOneBatchForSharedMaterialAcrossOrders()
+    {
+        var factory = new StaticResponseHttpClientFactory(
+            """
+            { "items": [
+              { "workOrderId": "WO-SNAPSHOT-001", "readinessStatus": "Blocked", "blockingReasons": ["material.shortage"],
+                "items": [{ "materialId": "RM-1", "materialLotId": null, "uomCode": "KG", "requiredQuantity": 10, "availableQuantity": 6, "shortageQuantity": 4, "status": "Shortage" }] },
+              { "workOrderId": "WO-SNAPSHOT-002", "readinessStatus": "Blocked", "blockingReasons": ["material.shortage"],
+                "items": [{ "materialId": "RM-1", "materialLotId": null, "uomCode": "KG", "requiredQuantity": 10, "availableQuantity": 4, "shortageQuantity": 6, "status": "Shortage" }] }
+            ] }
+            """);
+        var provider = new HttpSchedulingMaterialReadinessProvider(factory,
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+        var problem = CreateSingleOperationProblem();
+        var secondOrder = problem.Orders.Single() with { OrderId = "WO-SNAPSHOT-002" };
+
+        var readiness = await provider.QueryAsync(problem with { Orders = [problem.Orders.Single(), secondOrder] }, CancellationToken.None);
+
+        Assert.Equal(2, readiness.Count);
+        Assert.Equal(4m, Assert.Single(readiness.Single(x => x.ScopeId == "WO-SNAPSHOT-001").Shortages!).ShortageQuantity);
+        Assert.Equal(6m, Assert.Single(readiness.Single(x => x.ScopeId == "WO-SNAPSHOT-002").Shortages!).ShortageQuantity);
+        var request = Assert.Single(factory.Requests);
+        using var body = JsonDocument.Parse(request.Body!);
+        Assert.Equal(["WO-SNAPSHOT-001", "WO-SNAPSHOT-002"],
+            body.RootElement.GetProperty("workOrderIds").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_KeepsEveryOrderAtRiskWhenBatchSourceIsUnavailable()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new ThrowingHttpClientFactory(), null,
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+        var problem = CreateSingleOperationProblem();
+        var secondOrder = problem.Orders.Single() with { OrderId = "WO-SNAPSHOT-002" };
+
+        var readiness = await provider.QueryAsync(problem with
+        {
+            Orders = [problem.Orders.Single(), secondOrder]
+        }, CancellationToken.None);
+
+        Assert.Equal(["WO-SNAPSHOT-001", "WO-SNAPSHOT-002"],
+            readiness.Select(x => x.ScopeId));
+        Assert.All(readiness, risk =>
+            Assert.Contains("mes.materialReadinessSourceUnavailable", risk.ReasonCodes));
+    }
+
+    [Fact]
+    public async Task MaterialReadinessProvider_KeepsEveryOrderAtRiskWhenBatchOmitsOneRequestedOrder()
+    {
+        var provider = new HttpSchedulingMaterialReadinessProvider(
+            new StaticResponseHttpClientFactory(
+                """
+                { "items": [
+                  { "workOrderId": "WO-SNAPSHOT-001", "readinessStatus": "Ready", "blockingReasons": [], "items": [] }
+                ] }
+                """),
+            new TestInternalServiceTokenProvider("test-internal-token"),
+            NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
+        var problem = CreateSingleOperationProblem();
+        var secondOrder = problem.Orders.Single() with { OrderId = "WO-SNAPSHOT-002" };
+
+        var readiness = await provider.QueryAsync(problem with
+        {
+            Orders = [problem.Orders.Single(), secondOrder]
+        }, CancellationToken.None);
+
+        Assert.Equal(["WO-SNAPSHOT-001", "WO-SNAPSHOT-002"], readiness.Select(x => x.ScopeId));
+        Assert.All(readiness, risk =>
+            Assert.Contains("mes.materialReadinessSourceUnavailable", risk.ReasonCodes));
     }
 
     [Fact]
     public async Task MaterialReadinessProvider_AcceptsSuccessfulResponseDataEnvelope()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
-            new StaticResponseHttpClientFactory(
+            new StaticResponseHttpClientFactory(SingleOrderBatchResponse(
                 """
                 {
                   "success": true,
@@ -56,7 +138,7 @@ public sealed class SchedulingProviderDegradationTests
                     "items": []
                   }
                 }
-                """),
+                """)),
             new TestInternalServiceTokenProvider("test-internal-token"),
             NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
 
@@ -69,7 +151,7 @@ public sealed class SchedulingProviderDegradationTests
     public async Task MaterialReadinessProvider_UsesLatestNonNullEtaAcrossShortageRows()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
-            new StaticResponseHttpClientFactory(
+            new StaticResponseHttpClientFactory(SingleOrderBatchResponse(
                 """
                 {
                   "workOrderId": "WO-SNAPSHOT-001",
@@ -114,7 +196,7 @@ public sealed class SchedulingProviderDegradationTests
                     }
                   ]
                 }
-                """),
+                """)),
             new TestInternalServiceTokenProvider("test-internal-token"),
             NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
 
@@ -129,7 +211,7 @@ public sealed class SchedulingProviderDegradationTests
     public async Task MaterialReadinessProvider_KeepsOpenRiskWhenNoShortageRowHasAnEta()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
-            new StaticResponseHttpClientFactory(
+            new StaticResponseHttpClientFactory(SingleOrderBatchResponse(
                 """
                 {
                   "workOrderId": "WO-SNAPSHOT-001",
@@ -150,7 +232,7 @@ public sealed class SchedulingProviderDegradationTests
                     }
                   ]
                 }
-                """),
+                """)),
             new TestInternalServiceTokenProvider("test-internal-token"),
             NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
 
@@ -165,7 +247,7 @@ public sealed class SchedulingProviderDegradationTests
     public async Task MaterialReadinessProvider_FailsClosedForUnsuccessfulResponseDataEnvelope()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
-            new StaticResponseHttpClientFactory(
+            new StaticResponseHttpClientFactory(SingleOrderBatchResponse(
                 """
                 {
                   "success": false,
@@ -178,7 +260,7 @@ public sealed class SchedulingProviderDegradationTests
                     "items": []
                   }
                 }
-                """),
+                """)),
             new TestInternalServiceTokenProvider("test-internal-token"),
             NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
 
@@ -209,13 +291,13 @@ public sealed class SchedulingProviderDegradationTests
     public async Task MaterialReadinessProvider_FailsClosedWhenRequiredCollectionsAreMissing()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
-            new StaticResponseHttpClientFactory(
+            new StaticResponseHttpClientFactory(SingleOrderBatchResponse(
                 """
                 {
                   "workOrderId": "WO-SNAPSHOT-001",
                   "readinessStatus": "Blocked"
                 }
-                """),
+                """)),
             new TestInternalServiceTokenProvider("test-internal-token"),
             NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
 
@@ -230,7 +312,7 @@ public sealed class SchedulingProviderDegradationTests
     public async Task MaterialReadinessProvider_FailsClosedWhenMesResponseTargetsAnotherWorkOrder()
     {
         var provider = new HttpSchedulingMaterialReadinessProvider(
-            new StaticResponseHttpClientFactory(
+            new StaticResponseHttpClientFactory(SingleOrderBatchResponse(
                 """
                 {
                   "workOrderId": "WO-OTHER-001",
@@ -238,7 +320,7 @@ public sealed class SchedulingProviderDegradationTests
                   "blockingReasons": [],
                   "items": []
                 }
-                """),
+                """)),
             new TestInternalServiceTokenProvider("test-internal-token"),
             NullLogger<HttpSchedulingMaterialReadinessProvider>.Instance);
 
@@ -354,6 +436,22 @@ public sealed class SchedulingProviderDegradationTests
             LockedAssignments: []);
     }
 
+    private static string SingleOrderBatchResponse(string responseBody)
+    {
+        var root = JsonNode.Parse(responseBody)!.AsObject();
+        if (root.ContainsKey("data"))
+        {
+            var data = root["data"]!.DeepClone();
+            root["data"] = new JsonObject { ["items"] = new JsonArray(data) };
+        }
+        else
+        {
+            root = new JsonObject { ["items"] = new JsonArray(root) };
+        }
+
+        return root.ToJsonString();
+    }
+
     private sealed class ThrowingHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name)
@@ -394,7 +492,7 @@ public sealed class SchedulingProviderDegradationTests
         string responseBody,
         ICollection<CapturedRequest> requests) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
@@ -402,11 +500,12 @@ public sealed class SchedulingProviderDegradationTests
                 request.Method,
                 request.RequestUri?.PathAndQuery ?? string.Empty,
                 request.Headers.Authorization?.Scheme,
-                request.Headers.Authorization?.Parameter));
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                request.Headers.Authorization?.Parameter,
+                request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken)));
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
-            });
+            };
         }
     }
 
@@ -414,7 +513,8 @@ public sealed class SchedulingProviderDegradationTests
         HttpMethod Method,
         string PathAndQuery,
         string? AuthorizationScheme,
-        string? AuthorizationParameter);
+        string? AuthorizationParameter,
+        string? Body);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }

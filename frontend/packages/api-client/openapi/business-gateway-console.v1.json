@@ -40197,6 +40197,13 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanEquipmentRiskContract"
             }
+          },
+          "materialShortageSummary": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMaterialShortageSummaryContract"
+            }
           }
         }
       },
@@ -40650,6 +40657,10 @@
           "shortageQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -40673,6 +40684,45 @@
             }
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanMaterialShortageSummaryContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "materialId": {
+            "type": "string"
+          },
+          "materialLotId": {
+            "type": "string",
+            "nullable": true
+          },
+          "uomCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "shortageQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "affectedOperations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMaterialAffectedOperationContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanMaterialAffectedOperationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
             "type": "string"
           }
         }

@@ -152,7 +152,8 @@ public sealed record SchedulingMaterialShortageContract(
     string? MaterialLotId,
     decimal RequiredQuantity,
     decimal AvailableQuantity,
-    decimal ShortageQuantity);
+    decimal ShortageQuantity,
+    string? UomCode = null);
 
 /// <summary>
 /// 物料约束口径:软约束(默认)= 可排 + 带物料风险标记;硬约束 = 缺料直接不可排。
@@ -213,7 +214,17 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<SchedulePlanCalendarContract>? Calendars = null,
     IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null,
     IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null,
-    IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null);
+    IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null,
+    IReadOnlyCollection<SchedulePlanMaterialShortageSummaryContract>? MaterialShortageSummary = null);
+
+public sealed record SchedulePlanMaterialShortageSummaryContract(
+    string MaterialId,
+    string? MaterialLotId,
+    string? UomCode,
+    decimal ShortageQuantity,
+    IReadOnlyCollection<SchedulePlanMaterialAffectedOperationContract> AffectedOperations);
+
+public sealed record SchedulePlanMaterialAffectedOperationContract(string OrderId, string OperationId);
 
 /// <summary>
 /// 设备数据风险(软约束):工序已排到这台设备上,但该设备在计划窗口内没有可信的运行时状态

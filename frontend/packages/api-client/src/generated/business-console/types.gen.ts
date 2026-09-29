@@ -1501,6 +1501,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     blockWindows?: Array<NervIipContractsSchedulingSchedulePlanBlockWindowContract> | null;
     materialRisks?: Array<NervIipContractsSchedulingSchedulePlanMaterialRiskContract> | null;
     equipmentRisks?: Array<NervIipContractsSchedulingSchedulePlanEquipmentRiskContract> | null;
+    materialShortageSummary?: Array<NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1634,6 +1635,7 @@ export type NervIipContractsSchedulingSchedulingMaterialShortageContract = {
     requiredQuantity?: number;
     availableQuantity?: number;
     shortageQuantity?: number;
+    uomCode?: string | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanEquipmentRiskContract = {
@@ -1642,6 +1644,19 @@ export type NervIipContractsSchedulingSchedulePlanEquipmentRiskContract = {
     resourceId?: string;
     reasonCodes?: Array<string>;
     message?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract = {
+    materialId?: string;
+    materialLotId?: string | null;
+    uomCode?: string | null;
+    shortageQuantity?: number;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract = {
+    orderId?: string;
+    operationId?: string;
 };
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
