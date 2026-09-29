@@ -360,12 +360,13 @@ public sealed class MrpCalculatorTests
         var suggestions = MrpCalculator.Calculate(NewInput(
             demands: [],
             availability: [new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 2m)],
-            bomComponents: [],
+            bomComponents: [new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 2m)],
             planningParameters: [new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 5m, null, null, null, ProcurementType: "make")]));
 
         var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
         Assert.Equal(3m, workOrder.Quantity);
         Assert.Equal("PV-001", Assert.Single(workOrder.PeggingLinks).ProductionVersionReference);
+        Assert.Equal(6m, Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase").Quantity);
     }
 
     [Fact]
@@ -391,8 +392,12 @@ public sealed class MrpCalculatorTests
             scheduledReceipts: [new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 5, 20), "erp", "purchase-order", "PO-2001")],
             planningParameters: []));
 
-        Assert.Equal(3m, Assert.Single(suggestions, x => x.SuggestionType == "negative-availability").Quantity);
-        Assert.Equal(4m, Assert.Single(suggestions, x => x.SuggestionType == "overdue-receipt").Quantity);
+        var negative = Assert.Single(suggestions, x => x.SuggestionType == "negative-availability");
+        var overdue = Assert.Single(suggestions, x => x.SuggestionType == "overdue-receipt");
+        Assert.Equal(3m, negative.Quantity);
+        Assert.Contains("可用量 -3 低于 0", negative.NetRequirementExplanation.Formula);
+        Assert.Equal(4m, overdue.Quantity);
+        Assert.Contains("在途 4 应于 2026-05-20 到货", overdue.NetRequirementExplanation.Formula);
         Assert.Equal(1m, Assert.Single(suggestions, x => x.SuggestionType == "cancel").Quantity);
     }
 

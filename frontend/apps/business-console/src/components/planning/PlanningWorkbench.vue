@@ -686,7 +686,13 @@ function suggestionTypeLabel(value?: string | null) {
 function suggestionTypeTone(value?: string | null): StatusTone {
   if (value === 'planned-work-order') return 'info'
   if (value === 'planned-purchase') return 'neutral'
-  if (value === 'reschedule-in' || value === 'reschedule-out' || value === 'release-date-past' || value === 'overdue-receipt') return 'warning'
+  if (
+    value === 'reschedule-in' ||
+    value === 'reschedule-out' ||
+    value === 'release-date-past' ||
+    value === 'overdue-receipt'
+  )
+    return 'warning'
   if (value === 'negative-availability') return 'danger'
   if (value === 'cancel') return 'danger'
   return 'neutral'
@@ -721,6 +727,8 @@ function sourceTypeLabel(value?: string | null) {
     component: '组件展开',
     demand: '需求来源',
     'scheduled-receipt': '在途来源',
+    inventory: '库存来源',
+    'negative-availability': '负可用来源',
   }
   return map[(value ?? '').toLowerCase()] ?? '来源未分类'
 }
@@ -1674,7 +1682,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               class="grid gap-2 rounded-md border border-border/70 bg-muted/30 p-2 text-xs"
             >
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="font-medium text-foreground">净需求公式</span>
+                <span class="font-medium text-foreground">{{
+                  ['negative-availability', 'overdue-receipt'].includes(row.suggestionType ?? '')
+                    ? '例外说明'
+                    : '净需求公式'
+                }}</span>
                 <span class="font-mono tabular-nums text-muted-foreground">{{
                   formulaMathPart(row.netRequirementExplanation.formula)
                 }}</span>
