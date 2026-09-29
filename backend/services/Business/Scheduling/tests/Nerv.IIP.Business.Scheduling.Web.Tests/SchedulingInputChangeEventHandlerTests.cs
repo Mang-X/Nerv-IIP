@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text.Json;
@@ -475,28 +476,68 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
-    public async Task Stock_availability_changed_event_invalidates_generated_plans_in_same_business_scope()
+    public async Task Stock_availability_changed_event_invalidates_only_plans_with_matching_material_shortage()
     {
         await using var provider = CreateInMemoryProvider();
-        await SeedPlansAsync(provider);
+        await SeedMaterialSupplyEtaPlansAsync(provider);
 
         using var scope = provider.CreateScope();
         var handler = new StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
 
         await handler.HandleAsync(CreateStockAvailabilityChangedEvent(), CancellationToken.None);
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
-        Assert.Equal(["plan-generated", "plan-released"], invalidations.Select(x => x.PlanId));
+        Assert.Equal(["plan-eta-both", "plan-eta-released", "plan-eta-sku-001"], invalidations.Select(x => x.PlanId));
         Assert.All(invalidations, invalidation =>
         {
             Assert.Equal(SchedulingPlanInvalidationReasons.MaterialReadinessChanged, invalidation.ReasonCode);
             Assert.Equal("SKU-001", invalidation.AffectedSkuCode);
             Assert.Equal("inventory.StockAvailabilityChanged", invalidation.SourceEventType);
         });
+    }
+
+    [Theory]
+    [InlineData("order", "WO-001", "OP-TARGET,OP-OTHER")]
+    [InlineData("sku", "FG-001", "OP-TARGET,OP-OTHER")]
+    [InlineData("operation", "OP-TARGET", "OP-TARGET")]
+    [InlineData("resource", "ASSET-CNC-01", "OP-TARGET")]
+    public async Task Stock_availability_changed_event_reports_only_operations_in_matching_material_scope(
+        string scopeType, string scopeId, string expectedOperations)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePlanWithAssignments("plan-material-scope", "problem-material-scope",
+            [
+                new ScheduleAssignmentContract("assign-target", "WO-001", "OP-TARGET", 10,
+                    "ASSET-CNC-01", "WC-CNC", FixedNow, FixedNow.AddHours(1), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-other", "WO-001", "OP-OTHER", 20,
+                    "ASSET-LATHE-01", "WC-LATHE", FixedNow.AddHours(1), FixedNow.AddHours(2), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-unrelated", "WO-OTHER", "OP-UNRELATED", 10,
+                    "ASSET-LATHE-01", "WC-LATHE", FixedNow.AddHours(2), FixedNow.AddHours(3), false, "scheduled"),
+            ]));
+            db.ScheduleProblems.Add(CreateMaterialScopeProblemSnapshot(scopeType, scopeId));
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+
+        await handler.HandleAsync(CreateStockAvailabilityChangedEvent(), CancellationToken.None);
+
+        var published = Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
+        Assert.Equal(expectedOperations.Split(','), published.Payload.AffectedOperations.Select(x => x.OperationId));
     }
 
     [Fact]
@@ -713,16 +754,18 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
-    public async Task Mes_work_order_released_event_invalidates_generated_plans_in_same_business_scope_once()
+    public async Task Mes_work_order_released_event_records_no_match_when_order_and_sku_are_absent()
     {
         await using var provider = CreateInMemoryProvider();
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
+        var logger = new RecordingLogger<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>();
         var handler = new WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            logger);
         var integrationEvent = CreateWorkOrderReleasedEvent();
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -730,15 +773,59 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
-        Assert.Equal(["plan-generated", "plan-released"], invalidations.Select(x => x.PlanId));
-        Assert.All(invalidations, invalidation =>
+        Assert.Empty(invalidations);
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
+        Assert.Contains(logger.Messages, x => x.LogLevel == LogLevel.Information &&
+            x.Message.Contains("matched no schedule plan", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("WO-001", "SKU-UNKNOWN")]
+    [InlineData("WO-NEW", "SKU-001")]
+    public async Task Mes_work_order_released_event_invalidates_only_snapshot_match_and_reports_affected_operations(
+        string workOrderId, string skuCode)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+        using (var seedScope = provider.CreateScope())
         {
-            Assert.Equal(SchedulingPlanInvalidationReasons.WorkOrderReleased, invalidation.ReasonCode);
-            Assert.Equal("WO-NEW", invalidation.AffectedWorkOrderId);
-            Assert.Equal("mes.WorkOrderReleased", invalidation.SourceEventType);
-        });
-        Assert.Equal(2, scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
-            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ScheduleProblems.Add(CreateOrderProblemSnapshot("problem-001", "WO-001", "SKU-001", "WO-OTHER"));
+            db.SchedulePlans.Add(CreatePlanWithAssignments("plan-mixed", "problem-001",
+            [
+                new ScheduleAssignmentContract("assign-target", "WO-001", "OP-TARGET", 10,
+                    "ASSET-CNC-01", "WC-CNC", FixedNow, FixedNow.AddHours(1), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-unrelated", "WO-OTHER", "OP-UNRELATED", 20,
+                    "ASSET-CNC-01", "WC-CNC", FixedNow.AddHours(1), FixedNow.AddHours(2), false, "scheduled"),
+            ]));
+            db.SchedulePlans.Add(CreatePlan("plan-unrelated", SchedulePlanStatusContract.Generated,
+                "org-001", "env-dev", "problem-unrelated", workOrderId: "WO-OTHER"));
+            db.ScheduleProblems.Add(CreateOrderProblemSnapshot("problem-unrelated", "WO-OTHER", "SKU-OTHER"));
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+        var integrationEvent = CreateWorkOrderReleasedEvent() with
+        {
+            Payload = CreateWorkOrderReleasedEvent().Payload with { WorkOrderId = workOrderId, SkuCode = skuCode }
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var invalidations = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
+        Assert.Equal(["plan-generated", "plan-mixed", "plan-released"], invalidations.Select(x => x.PlanId));
+        var published = scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().ToArray();
+        Assert.Equal(3, published.Length);
+        Assert.Equal(["OP-TARGET"], Assert.Single(published, x => x.Payload.PlanId == "plan-mixed")
+            .Payload.AffectedOperations.Select(operation => operation.OperationId));
     }
 
     [Fact]
@@ -1190,6 +1277,59 @@ public sealed class SchedulingInputChangeEventHandlerTests
             FixedNow);
     }
 
+    private static ScheduleProblemSnapshot CreateOrderProblemSnapshot(
+        string problemId,
+        string orderId,
+        string skuCode,
+        string? additionalOrderId = null)
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var horizonEnd = horizonStart.AddHours(8);
+        var orders = new List<SchedulingOrderContract>
+        {
+            new(orderId, skuCode, 1, horizonEnd, 1, false, []),
+        };
+        if (additionalOrderId is not null)
+        {
+            orders.Add(new SchedulingOrderContract(additionalOrderId, "SKU-OTHER", 1, horizonEnd, 1, false, []));
+        }
+        var problem = new SchedulingProblemContract(
+            1, problemId, "org-001", "env-dev", horizonStart, horizonEnd,
+            orders,
+            [], [], [], [], [], []);
+        return new ScheduleProblemSnapshot(problemId, 1, "org-001", "env-dev",
+            $"fingerprint-{problemId}", JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart, horizonEnd, FixedNow);
+    }
+
+    private static ScheduleProblemSnapshot CreateMaterialScopeProblemSnapshot(string scopeType, string scopeId)
+    {
+        var start = FixedNow;
+        var end = start.AddHours(8);
+        static SchedulingOperationContract Operation(string id, int sequence, string resource, DateTimeOffset start, DateTimeOffset end) =>
+            new(id, sequence, [], 60, "CAP", [resource], resource, start, end, 1, false,
+                ScheduleSplitPolicyContract.NonSplittable, null, null, null);
+        var problem = new SchedulingProblemContract(
+            1, "problem-material-scope", "org-001", "env-dev", start, end,
+            [
+                new SchedulingOrderContract("WO-001", "FG-001", 1, end, 1, false,
+                [
+                    Operation("OP-TARGET", 10, "ASSET-CNC-01", start, end),
+                    Operation("OP-OTHER", 20, "ASSET-LATHE-01", start, end),
+                ]),
+                new SchedulingOrderContract("WO-OTHER", "FG-OTHER", 1, end, 1, false,
+                [Operation("OP-UNRELATED", 10, "ASSET-LATHE-01", start, end)]),
+            ],
+            [], [], [],
+            [new SchedulingMaterialReadinessContract(scopeType, scopeId, null, false,
+                ["material-shortage"],
+                [new SchedulingMaterialShortageContract("SKU-001", null, 5m, 3m, 2m)])],
+            [], []);
+        return new ScheduleProblemSnapshot(problem.ProblemId, 1, "org-001", "env-dev",
+            "fingerprint-material-scope", JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            start, end, FixedNow);
+    }
+
     private static SchedulePlan CreatePlan(
         string planId,
         SchedulePlanStatusContract status,
@@ -1197,7 +1337,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
         string environmentId,
         string problemId = "problem-001",
         string resourceId = "ASSET-CNC-01",
-        string workCenterId = "WC-CNC")
+        string workCenterId = "WC-CNC",
+        string workOrderId = "WO-001")
     {
         return CreatePlanWithAssignments(
             planId,
@@ -1205,7 +1346,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
             [
                 new ScheduleAssignmentContract(
                     AssignmentId: $"assign-{planId}",
-                    OrderId: "WO-001",
+                    OrderId: workOrderId,
                     OperationId: "OP-001",
                     OperationSequence: 10,
                     ResourceId: resourceId,
@@ -1216,7 +1357,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
                     ExplanationCode: "scheduled"),
                 new ScheduleAssignmentContract(
                     AssignmentId: $"assign-{planId}-2",
-                    OrderId: "WO-001",
+                    OrderId: workOrderId,
                     OperationId: "OP-002",
                     OperationSequence: 20,
                     ResourceId: resourceId,

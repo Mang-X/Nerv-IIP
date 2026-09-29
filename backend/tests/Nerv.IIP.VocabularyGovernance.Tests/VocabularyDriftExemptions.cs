@@ -251,7 +251,8 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs"),
         ..Group("operation", "同值不同义：排程 scope 类型（与 order/sku/resource/workcenter 同族的过滤维度），不是检验来源环节。",
             $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Urgency/OrderUrgencyFactAssembler.cs",
-            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/FiniteCapacityScheduler.cs"),
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/FiniteCapacityScheduler.cs",
+            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Commands/RecordSchedulePlanInvalidationsCommand.cs"),
 
         // ── 检验来源**服务**族（QualityInspectionSourceServices：inventory / wms / mes / erp /
         //    maintenance / purchase-receipt / mes-operation / customer-return；#3191 新建导出） ────
