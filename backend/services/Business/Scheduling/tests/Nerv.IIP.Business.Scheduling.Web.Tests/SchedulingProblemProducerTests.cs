@@ -157,6 +157,44 @@ public sealed class SchedulingProblemProducerTests
     }
 
     [Fact]
+    public async Task Producer_scales_only_run_minutes_by_work_center_efficiency()
+    {
+        var producer = new SchedulingProblemProducer(
+            new StubSchedulingProblemProductEngineeringClient(
+                new SchedulingProblemRoutingSnapshot(
+                    "ROUTE-MIX", "A", "SKU-FG-1000",
+                    [new SchedulingProblemRoutingOperationSnapshot(10, "WC-MIX-01", "mixing", "Mixing", 11, 7, 3)])),
+            MasterDataForWorkCenter(
+                new SchedulingProblemWorkCenterSnapshot("WC-MIX-01", "CAL-DAY", 1, ["mixing"], 1.2m)));
+        var request = RequestFor(new SchedulingProblemSourceOrder(
+            "WO-EFF-001", "SKU-FG-1000", 5, HorizonEnd, 10, false, HorizonStart, "ROUTE-MIX:A"));
+
+        var problem = await producer.AssembleAsync(request, CancellationToken.None);
+
+        var operation = problem.Orders.Single().Operations.Single();
+        Assert.Equal(11, operation.SetupMinutes);
+        Assert.Equal(33, operation.DurationMinutes); // ceiling(7 * 5 / 1.2) + 3
+    }
+
+    [Fact]
+    public async Task Master_data_client_reads_work_center_efficiency_for_scheduling()
+    {
+        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
+            { "data": {
+                "resourceType": "work-center", "code": "WC-MIX-01", "displayName": "Mixing",
+                "active": true, "snapshotVersion": "1", "organizationId": "org-001",
+                "environmentId": "env-dev", "defaultCalendarCode": "CAL-DAY",
+                "numberOfCapacities": 1, "efficiencyRate": 1.2
+              }, "success": true, "message": "", "code": 0 }
+            """))) { BaseAddress = new Uri("http://master-data") };
+
+        var workCenter = await new HttpSchedulingProblemMasterDataClient(httpClient)
+            .GetWorkCenterAsync("org-001", "env-dev", "WC-MIX-01", CancellationToken.None);
+
+        Assert.Equal(1.2m, workCenter.EfficiencyRate);
+    }
+
+    [Fact]
     public async Task Producer_uses_one_capacity_unit_per_device_resource()
     {
         var producer = new SchedulingProblemProducer(
