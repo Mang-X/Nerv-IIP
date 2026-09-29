@@ -54,6 +54,35 @@ public sealed class MesMaterialScanGatewaySeamTests
         Assert.Equal("substitute", response.MaterialQualification);
     }
 
+    // #4034：真实 MES handler 经 HTTP 写入后，新 DbContext 与 Gateway client 读回一致。
+    // EF InMemory 证明写读传输，不替代 PostgreSQL provider 证据。
+    [Theory]
+    [InlineData(true, -7)]
+    [InlineData(false, 1000)]
+    public async Task Priority_write_crosses_mes_http_and_gateway_client_with_persisted_readback(bool isRush, int priority)
+    {
+        await using var factory = CreateMesFactory();
+        using var mesClient = factory.CreateClient();
+        await SeedAsync(factory.Services);
+        using var transport = new HttpClient(new MesTestServerBridgeHandler(mesClient)) { BaseAddress = new Uri("http://mes") };
+        var gatewayClient = new HttpBusinessMesClient(transport);
+        var receipt = await gatewayClient.AdjustWorkOrderPriorityAsync("test-internal-service-token", "WO-001",
+            new("WO-001", "org-001", "env-dev", isRush, priority, Now), CancellationToken.None);
+        Assert.True(receipt.Accepted);
+        Assert.Equal("WO-001", receipt.DownstreamDocumentId);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stored = await db.WorkOrders.SingleAsync();
+        Assert.Equal(isRush, stored.IsRush);
+        Assert.Equal(priority, stored.Priority);
+        var list = await gatewayClient.ListWorkOrdersAsync("test-internal-service-token", new("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(isRush, list.Items.Single().IsRush);
+        Assert.Equal(priority, list.Items.Single().Priority);
+        var detail = await gatewayClient.GetWorkOrderDetailAsync("test-internal-service-token", "WO-001", new("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(isRush, detail.IsRush);
+        Assert.Equal(priority, detail.Priority);
+    }
+
     private static WebApplicationFactory<PrevalidateMaterialScanEndpoint> CreateMesFactory()
     {
         var databaseName = $"mes-material-scan-seam-{Guid.CreateVersion7():N}";
@@ -77,7 +106,8 @@ public sealed class MesMaterialScanGatewaySeamTests
                     services.RemoveAll<DbContextOptions>();
                     services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
                     services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
-                    services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+                    services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName)
+                        .ConfigureWarnings(warnings => warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)));
                     services.AddCap(options => options.UseInMemoryMessageQueue());
                     services.RemoveAll<IMesMaterialLotAvailabilityProvider>();
                     services.AddSingleton<IMesMaterialLotAvailabilityProvider>(new AcceptedAvailabilityProvider());

@@ -4897,7 +4897,8 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     string? SourceNcrId = null,
     string? SourceNcrCode = null,
     bool HasChangedDemand = false,
-    bool HasCancelledDemand = false);
+    bool HasCancelledDemand = false,
+    bool IsRush = false);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -5081,7 +5082,9 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string WorkOrderType = "standard",
     string? SourceWorkOrderId = null,
     string? SourceNcrId = null,
-    string? SourceNcrCode = null);
+    string? SourceNcrCode = null,
+    bool IsRush = false,
+    int Priority = 0);
 
 public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
     string SourceService,
@@ -5105,6 +5108,16 @@ public sealed record BusinessConsoleMesSourcePlanReference(
     string SourceDocumentType,
     string SourceDocumentId,
     string? SourceDemandReference);
+
+public sealed record BusinessConsoleMesAdjustWorkOrderPriorityRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    bool IsRush,
+    int Priority,
+    DateTimeOffset? ChangedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,

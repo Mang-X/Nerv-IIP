@@ -3830,8 +3830,13 @@
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/priority",
       "operationId": "adjustBusinessMesWorkOrderPriority",
-      "classification": "deferred",
-      "followUp": "#4034"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "adjustBusinessConsoleMesWorkOrderPriority"
+      ]
     },
     {
       "service": "Mes",
