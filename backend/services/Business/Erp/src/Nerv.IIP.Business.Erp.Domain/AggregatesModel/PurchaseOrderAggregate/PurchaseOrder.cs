@@ -332,7 +332,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
     {
         var line = lines.SingleOrDefault(x => x.LineNo == ErpText.Required(lineNo, nameof(lineNo)))
             ?? throw new InvalidOperationException($"Purchase order line '{lineNo}' was not found.");
-        if (line.FinalDelivery && changeHistory.Any(x => x.ChangeType == "line-cancel" && x.Lines.Any(y => y.LineNo == lineNo)))
+        if (line.FinalDelivery && line.ReceivedQuantity == 0m)
         {
             return;
         }

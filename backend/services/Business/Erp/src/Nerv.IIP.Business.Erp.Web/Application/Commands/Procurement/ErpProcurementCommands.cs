@@ -1389,7 +1389,7 @@ public sealed class CancelPurchaseOrderLineCommandHandler(ApplicationDbContext d
 {
     public async Task Handle(CancelPurchaseOrderLineCommand request, CancellationToken cancellationToken)
     {
-        var order = await dbContext.PurchaseOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).ThenInclude(x => x.Lines).SingleOrDefaultAsync(x =>
+        var order = await dbContext.PurchaseOrders.Include(x => x.Lines).SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PurchaseOrderNo == request.PurchaseOrderNo,
             cancellationToken) ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
         try { order.CancelLine(request.LineNo, request.Reason); }

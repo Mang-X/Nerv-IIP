@@ -18,18 +18,29 @@ public sealed class ErpProcurementAggregateTests
             [NewPurchaseOrderLine(10m), new PurchaseOrderLineDraft("LINE-002", "SKU-002", "kg", 5m, 20m, new DateOnly(2026, 6, 4))]);
         order.MarkApprovalRequested("chain-3970");
         order.ReleaseAfterApproval("chain-3970");
+        order.ClearDomainEvents();
 
         var newDate = new DateOnly(2026, 7, 1);
         order.RescheduleLine("LINE-001", newDate);
+        var rescheduled = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal("purchase-order-line-rescheduled", rescheduled.ChangeReason);
+        Assert.Equal(["SKU-RM-1000"], rescheduled.SkuCodes);
+        order.ClearDomainEvents();
         var version = order.Version;
         order.RescheduleLine("LINE-001", newDate);
         Assert.Equal(version, order.Version);
+        Assert.Empty(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
         Assert.Equal(newDate, order.Lines.Single(x => x.LineNo == "LINE-001").PromisedDate);
 
         order.CancelLine("LINE-001", "plan cancelled");
+        var cancelled = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
+        Assert.Equal("purchase-order-line-cancelled", cancelled.ChangeReason);
+        Assert.Equal(["SKU-RM-1000"], cancelled.SkuCodes);
+        order.ClearDomainEvents();
         version = order.Version;
         order.CancelLine("LINE-001", "plan cancelled");
         Assert.Equal(version, order.Version);
+        Assert.Empty(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
         Assert.Equal(0m, order.Lines.Single(x => x.LineNo == "LINE-001").OpenQuantity);
         Assert.Equal(PurchaseOrderStatus.Released, order.Status);
         Assert.Throws<InvalidOperationException>(() => order.RescheduleLine("LINE-001", new DateOnly(2026, 7, 2)));

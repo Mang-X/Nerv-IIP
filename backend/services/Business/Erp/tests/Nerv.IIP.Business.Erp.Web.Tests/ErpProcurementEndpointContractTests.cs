@@ -437,6 +437,11 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
+        await new CancelPurchaseOrderLineCommandHandler(dbContext).Handle(
+            new CancelPurchaseOrderLineCommand("org-001", "env-dev", "PO-3970", "20", "plan cancelled"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
         var response = await new ListPurchaseOrdersQueryHandler(dbContext).Handle(
             new ListPurchaseOrdersQuery("org-001", "env-dev"), CancellationToken.None);
         var lines = Assert.Single(response.Items).Lines;
