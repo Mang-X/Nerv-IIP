@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 
@@ -185,8 +186,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
             .Where(x => x.OrganizationId == tenant.OrganizationId &&
                 x.EnvironmentId == tenant.EnvironmentId &&
                 x.SourcePlanReference != null &&
-                x.SourcePlanReference.SourceSystem == "DemandPlanning" &&
-                x.SourcePlanReference.SourceDocumentType == "PlanningSuggestion" &&
+                x.SourcePlanReference.SourceSystem == DemandPlanningSourceReferences.DemandPlanning &&
+                x.SourcePlanReference.SourceDocumentType == DemandPlanningSourceReferences.PlanningSuggestion &&
                 parentSuggestionIds.Contains(x.SourcePlanReference.SourceDocumentId))
             .Select(x => new { x.WorkOrderIdValue, x.SourcePlanReference!.SourceDocumentId })
             .ToListAsync(cancellationToken);
