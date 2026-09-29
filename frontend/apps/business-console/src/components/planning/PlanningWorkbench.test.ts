@@ -716,6 +716,24 @@ describe('PlanningWorkbench', () => {
     expect(wrapper.findAll('button').filter((button) => button.text() === '拒绝')).toHaveLength(3)
   })
 
+  it('shows release, availability and overdue receipt exceptions in business language', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      { suggestionId: 'release', runId: 'run-001', suggestionType: 'release-date-past', skuCode: 'FG-SHOCK', uomCode: 'pcs', siteCode: 'SITE-01', quantity: 4, requiredDate: '2026-06-01', status: 'Open', reasonCode: 'lead-time-insufficient' },
+      { suggestionId: 'negative', runId: 'run-001', suggestionType: 'negative-availability', skuCode: 'RM-SHOCK', uomCode: 'pcs', siteCode: 'SITE-01', quantity: 3, requiredDate: '2026-06-01', status: 'Open', reasonCode: 'negative-availability' },
+      { suggestionId: 'overdue', runId: 'run-001', suggestionType: 'overdue-receipt', skuCode: 'RM-SHOCK', uomCode: 'pcs', siteCode: 'SITE-01', quantity: 5, requiredDate: '2026-06-01', status: 'Open', reasonCode: 'scheduled-receipt-overdue' },
+      { suggestionId: 'safety', runId: 'run-001', suggestionType: 'planned-purchase', skuCode: 'RM-SHOCK', uomCode: 'pcs', siteCode: 'SITE-01', quantity: 2, requiredDate: '2026-06-30', status: 'Open', reasonCode: 'safety-stock-replenishment' },
+    ]
+    await nextTick()
+
+    expect(wrapper.text()).toContain('释放日已过')
+    expect(wrapper.text()).toContain('提前期不足')
+    expect(wrapper.text()).toContain('负可用')
+    expect(wrapper.text()).toContain('超期在途')
+    expect(wrapper.text()).toContain('安全库存低于下限，建议补货')
+    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(1)
+  })
+
   it('已承接成 MES 工单的建议行给出「对该单排产」入口（MAN-694 / #1262）', () => {
     useAuthStore().$patch({
       principal: { permissionCodes: ['business.scheduling.plans.manage'] },

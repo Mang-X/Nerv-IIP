@@ -292,6 +292,13 @@ public static class MrpCalculator
                     reasonCode,
                     explanation with { PlannedQuantity = quantity },
                     peggingLinks)));
+                if (releaseDate < input.HorizonStart)
+                {
+                    suggestions.Add(new CalculatedPlanningSuggestion(
+                        "release-date-past", first.SkuCode, first.UomCode, first.SiteCode,
+                        plannedQuantity, group.Key.RequiredDate, releaseDate, "lead-time-insufficient",
+                        explanation, peggingLinks));
+                }
 
                 if (!isMakeItem || !componentsByParent.TryGetValue(first.SkuCode, out var components))
                 {
@@ -341,7 +348,59 @@ public static class MrpCalculator
             }
         }
 
-        ProtectSafetyStockWithRemainingReceipts(planningParameters, availability, scheduledReceipts);
+        suggestions.AddRange(ReplenishSafetyStock(input.HorizonStart, input.HorizonEnd,
+            planningParameters, productionVersions, availability, scheduledReceipts));
+
+        foreach (var (key, state) in availability.Where(x => x.Value.AvailableQuantity < 0m))
+        {
+            if (planningParameters.TryGetValue(SkuSiteKey.Create(key.SkuCode, key.SiteCode), out var parameter)
+                && parameter.SafetyStockQuantity > 0m)
+            {
+                continue;
+            }
+
+            if (!scheduledReceipts.TryGetValue(key, out var receipts))
+            {
+                continue;
+            }
+
+            var deficit = -state.AvailableQuantity;
+            foreach (var receipt in receipts.Where(x => x.ExpectedReceiptDate <= input.HorizonEnd && x.RemainingQuantity > 0m))
+            {
+                var used = Math.Min(deficit, receipt.RemainingQuantity);
+                receipt.RemainingQuantity -= used;
+                deficit -= used;
+                if (deficit <= 0m)
+                {
+                    break;
+                }
+            }
+        }
+
+        suggestions.AddRange(availability
+            .Where(x => x.Value.AvailableQuantity < 0m)
+            .Select(x => new CalculatedPlanningSuggestion(
+                "negative-availability", x.Key.SkuCode, x.Key.UomCode, x.Key.SiteCode,
+                -x.Value.AvailableQuantity, input.HorizonStart, input.HorizonStart,
+                "negative-availability", new CalculatedNetRequirementExplanation(
+                    0m, x.Value.OnHandQuantity, x.Value.ReservedQuantity, 0m, 0m, 0m,
+                    -x.Value.AvailableQuantity, 0m, 0m, 1m, "inventory",
+                    $"available {x.Value.AvailableQuantity:g29} is below zero", [], []), [])));
+
+        suggestions.AddRange(scheduledReceipts
+            .SelectMany(x => x.Value.Where(y => y.ExpectedReceiptDate < input.HorizonStart)
+                .Select(y => new { Key = x.Key, Receipt = y }))
+            .Select(x => new CalculatedPlanningSuggestion(
+                "overdue-receipt", x.Key.SkuCode, x.Key.UomCode, x.Key.SiteCode,
+                x.Receipt.OriginalQuantity, input.HorizonStart, x.Receipt.ExpectedReceiptDate,
+                "scheduled-receipt-overdue", new CalculatedNetRequirementExplanation(
+                    0m, 0m, 0m, 0m, x.Receipt.OriginalQuantity, 0m, 0m,
+                    x.Receipt.OriginalQuantity, 0m, 1m, "scheduled-receipt",
+                    $"{x.Receipt.OriginalQuantity:g29} scheduled receipt was due {x.Receipt.ExpectedReceiptDate:O}", [], []),
+                [new CalculatedPeggingLink("scheduled-receipt",
+                    $"{x.Receipt.SourceSystem}:{x.Receipt.SourceDocumentType}:{x.Receipt.SourceDocumentId}",
+                    x.Key.SkuCode, null, x.Receipt.OriginalQuantity, null, null, null,
+                    "scheduled-receipt", x.Receipt.OriginalQuantity)])));
 
         suggestions.AddRange(scheduledReceipts
             .SelectMany(x => x.Value.Select(y => new { Key = x.Key, Receipt = y }))
@@ -638,19 +697,21 @@ public static class MrpCalculator
                 .ToArray());
     }
 
-    private static void ProtectSafetyStockWithRemainingReceipts(
+    private static IReadOnlyCollection<CalculatedPlanningSuggestion> ReplenishSafetyStock(
+        DateOnly horizonStart,
+        DateOnly horizonEnd,
         IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
+        IReadOnlyDictionary<string, ProductionVersionSnapshot> productionVersions,
         IDictionary<ItemKey, InventoryAvailabilityState> availability,
         IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
     {
-        foreach (var (key, receipts) in scheduledReceipts.OrderBy(x => x.Key.SkuCode, StringComparer.OrdinalIgnoreCase))
+        var replenishments = new List<CalculatedPlanningSuggestion>();
+        foreach (var parameter in planningParameters.Values
+            .Where(x => x.SafetyStockQuantity > 0m)
+            .OrderBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase))
         {
-            if (!planningParameters.TryGetValue(SkuSiteKey.Create(key.SkuCode, key.SiteCode), out var parameter)
-                || parameter.SafetyStockQuantity <= 0m)
-            {
-                continue;
-            }
-
+            var key = ItemKey.Create(parameter.SkuCode, parameter.UomCode, parameter.SiteCode);
+            scheduledReceipts.TryGetValue(key, out var receipts);
             var availableQuantity = availability.TryGetValue(key, out var state)
                 ? state.AvailableQuantity
                 : 0m;
@@ -660,8 +721,9 @@ public static class MrpCalculator
                 continue;
             }
 
-            foreach (var receipt in receipts
-                .Where(x => x.RemainingQuantity > 0m)
+            var usedReceipts = 0m;
+            foreach (var receipt in (receipts ?? [])
+                .Where(x => x.RemainingQuantity > 0m && x.ExpectedReceiptDate <= horizonEnd)
                 .OrderBy(x => x.ExpectedReceiptDate)
                 .ThenBy(x => x.SourceSystem, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(x => x.SourceDocumentType, StringComparer.OrdinalIgnoreCase)
@@ -675,12 +737,54 @@ public static class MrpCalculator
 
                 receipt.RemainingQuantity -= protectedQuantity;
                 safetyDeficit -= protectedQuantity;
+                usedReceipts += protectedQuantity;
                 if (safetyDeficit <= 0m)
                 {
                     break;
                 }
             }
+
+            if (safetyDeficit <= 0m)
+            {
+                continue;
+            }
+
+            productionVersions.TryGetValue(parameter.SkuCode, out var version);
+            var isMakeItem = IsMakeItem(parameter.ProcurementType, version);
+            var plannedQuantities = ApplyLotSizing(safetyDeficit,
+                parameter.LotSizeMin ?? version?.LotSizeMin,
+                parameter.LotSizeMax ?? version?.LotSizeMax,
+                parameter.LotSizeMultiple ?? version?.LotSizeMultiple,
+                parameter.LotSizingPolicy);
+            var releaseDate = horizonEnd.AddDays(-ResolveLeadTimeDays(parameter, isMakeItem));
+            foreach (var quantity in plannedQuantities)
+            {
+                var explanation = new CalculatedNetRequirementExplanation(
+                    parameter.SafetyStockQuantity, state?.OnHandQuantity ?? 0m,
+                    state?.ReservedQuantity ?? 0m, availableQuantity,
+                    usedReceipts, parameter.SafetyStockQuantity, safetyDeficit,
+                    quantity, 0m, 1m, "safety-stock",
+                    $"{parameter.SafetyStockQuantity:g29} - {availableQuantity:g29} - {usedReceipts:g29} = {safetyDeficit:g29}", [], []);
+                CalculatedPeggingLink[] peggingLinks = isMakeItem && version is not null
+                    ? [new CalculatedPeggingLink(
+                        "safety-stock", parameter.SkuCode, parameter.SkuCode, null, quantity,
+                        version.ProductionVersionReference, version.ManufacturingBomReference,
+                        version.RoutingReference, "safety-stock", quantity)]
+                    : [];
+                replenishments.Add(new CalculatedPlanningSuggestion(
+                    isMakeItem ? DemandPlanningSuggestionTypes.PlannedWorkOrder : DemandPlanningSuggestionTypes.PlannedPurchase,
+                    parameter.SkuCode, parameter.UomCode, parameter.SiteCode, quantity,
+                    horizonEnd, releaseDate, "safety-stock-replenishment", explanation, peggingLinks));
+                if (releaseDate < horizonStart)
+                {
+                    replenishments.Add(new CalculatedPlanningSuggestion(
+                        "release-date-past", parameter.SkuCode, parameter.UomCode, parameter.SiteCode,
+                        quantity, horizonEnd, releaseDate, "lead-time-insufficient", explanation, peggingLinks));
+                }
+            }
         }
+
+        return replenishments;
     }
 
     private static IReadOnlyCollection<decimal> ApplyLotSizing(
@@ -918,6 +1022,7 @@ public static class MrpCalculator
 
     private sealed class ScheduledReceiptState(ScheduledReceiptSnapshot snapshot)
     {
+        public decimal OriginalQuantity { get; } = snapshot.Quantity;
         public DateOnly ExpectedReceiptDate { get; } = snapshot.ExpectedReceiptDate;
         public string SourceSystem { get; } = snapshot.SourceSystem;
         public string SourceDocumentType { get; } = snapshot.SourceDocumentType;

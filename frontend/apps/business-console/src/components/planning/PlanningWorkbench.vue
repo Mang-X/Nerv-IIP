@@ -472,6 +472,9 @@ const suggestionTypeFilterOptions = [
   { label: '采购建议 (→ERP)', value: 'planned-purchase' },
   { label: '提前调整', value: 'reschedule-in' },
   { label: '延期调整', value: 'reschedule-out' },
+  { label: '释放日已过', value: 'release-date-past' },
+  { label: '负可用', value: 'negative-availability' },
+  { label: '超期在途', value: 'overdue-receipt' },
   { label: '取消计划收货', value: 'cancel' },
 ]
 
@@ -671,6 +674,9 @@ function suggestionTypeLabel(value?: string | null) {
         'planned-work-order': '生产建议',
         'reschedule-in': '提前调整',
         'reschedule-out': '延期调整',
+        'release-date-past': '释放日已过',
+        'negative-availability': '负可用',
+        'overdue-receipt': '超期在途',
         cancel: '取消收货',
       } as Record<string, string>
     )[value ?? ''] ??
@@ -680,7 +686,8 @@ function suggestionTypeLabel(value?: string | null) {
 function suggestionTypeTone(value?: string | null): StatusTone {
   if (value === 'planned-work-order') return 'info'
   if (value === 'planned-purchase') return 'neutral'
-  if (value === 'reschedule-in' || value === 'reschedule-out') return 'warning'
+  if (value === 'reschedule-in' || value === 'reschedule-out' || value === 'release-date-past' || value === 'overdue-receipt') return 'warning'
+  if (value === 'negative-availability') return 'danger'
   if (value === 'cancel') return 'danger'
   return 'neutral'
 }
@@ -695,7 +702,10 @@ function reasonLabel(value?: string | null) {
     safety_stock: '安全库存',
     'finished-good-net-requirement': '成品净需求',
     'component-net-requirement': '组件净需求',
-    'safety-stock-replenishment': '安全库存补充',
+    'safety-stock-replenishment': '安全库存低于下限，建议补货',
+    'lead-time-insufficient': '提前期不足，释放日已过',
+    'negative-availability': '可用量为负',
+    'scheduled-receipt-overdue': '在途已超期',
   }
   // 未知码一律降级为通用中文，绝不回显原始英文码。
   return map[value ?? ''] ?? '按计划规则形成'
