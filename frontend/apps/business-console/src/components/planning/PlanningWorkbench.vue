@@ -1094,8 +1094,14 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             </NvFieldGroup>
             <NvDialogFooter>
               <NvButton type="button" variant="outline" @click="mpsOpen = false">取消</NvButton>
-              <NvButton type="submit" :disabled="createMpsBucketPending || updateMpsBucketPending || !canSubmitMps">
-                <Spinner v-if="createMpsBucketPending || updateMpsBucketPending" aria-hidden="true" />
+              <NvButton
+                type="submit"
+                :disabled="createMpsBucketPending || updateMpsBucketPending || !canSubmitMps"
+              >
+                <Spinner
+                  v-if="createMpsBucketPending || updateMpsBucketPending"
+                  aria-hidden="true"
+                />
                 保存主计划行
               </NvButton>
             </NvDialogFooter>
@@ -1436,7 +1442,8 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               variant="outline"
               :aria-label="`编辑主计划行 ${row.skuCode}`"
               @click="editMpsBucket(row)"
-            >编辑</NvButton>
+              >编辑</NvButton
+            >
             <NvButton
               v-if="row.status?.toLowerCase() === 'draft'"
               size="sm"
