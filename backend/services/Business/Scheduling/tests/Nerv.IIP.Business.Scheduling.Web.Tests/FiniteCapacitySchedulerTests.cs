@@ -973,6 +973,41 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_fixed_actual_interval_does_not_reserve_setup_time_before_actual_start()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        var openOperation = problem.Orders.Single().Operations.Single() with { DurationMinutes = 30 };
+        var fixedOperation = openOperation with
+        {
+            OperationId = "OP-FIXED",
+            OperationSequence = 20,
+            SetupMinutes = 30
+        };
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1 }],
+            Orders = [problem.Orders.Single() with { Operations = [openOperation, fixedOperation] }],
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    "lock-before-fixed", "WO-PREVIOUS", "OP-PREVIOUS", 10,
+                    "DEV-PARALLEL-01", "WC-PARALLEL", start, start.AddMinutes(30), "existing-load")
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation(
+            problem.Orders.Single().OrderId, "OP-FIXED", 20, "WC-PARALLEL",
+            start.AddHours(1), start.AddHours(2), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-fixed-actual", GeneratedAtUtc, [frozen]);
+
+        Assert.Equal(start.AddMinutes(30), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.Equal(start.AddHours(1), fixedAssignment.StartUtc);
+        Assert.Equal(start.AddHours(2), fixedAssignment.EndUtc);
+    }
+
+    [Fact]
     public void Schedule_resource_load_available_minutes_reflect_capacity_units()
     {
         var problem = CreateParallelCapacityProblem() with

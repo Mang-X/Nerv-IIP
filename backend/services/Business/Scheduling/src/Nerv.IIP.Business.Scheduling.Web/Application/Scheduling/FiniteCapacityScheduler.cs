@@ -108,12 +108,6 @@ public static class SchedulingQualityConstraintModeResolver
     }
 }
 
-/// <summary>
-/// APS lite 有限产能排程器。
-/// 物料口径按产品裁决走软约束(默认):缺料工单照排,只在计划里带出「物料风险」,
-/// 由 MES 侧的线边齐套硬门在开工时拦截。<see cref="SchedulingMaterialConstraintModeContract.Hard"/>
-/// 保留旧的「缺料即不可排」行为,供需要严格口径的环境按配置切回。
-/// </summary>
 internal sealed record FixedWorkCenterReservation(
     string OrderId,
     string OperationId,
@@ -123,6 +117,12 @@ internal sealed record FixedWorkCenterReservation(
     DateTimeOffset EndUtc,
     string? ResourceId);
 
+/// <summary>
+/// APS lite 有限产能排程器。
+/// 物料口径按产品裁决走软约束(默认):缺料工单照排,只在计划里带出「物料风险」,
+/// 由 MES 侧的线边齐套硬门在开工时拦截。<see cref="SchedulingMaterialConstraintModeContract.Hard"/>
+/// 保留旧的「缺料即不可排」行为,供需要严格口径的环境按配置切回。
+/// </summary>
 public sealed class FiniteCapacityScheduler(
     SchedulingMaterialConstraintModeContract materialConstraintMode = SchedulingMaterialConstraintModeContract.Soft,
     SchedulingQualityConstraintModeContract qualityConstraintMode = SchedulingQualityConstraintModeContract.Soft)
@@ -418,6 +418,7 @@ file sealed class SchedulerState
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private readonly SchedulingQualityConstraintModeContract qualityConstraintMode;
     private readonly IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations;
+    private readonly HashSet<OperationKey> fixedOperationKeys;
     private readonly Dictionary<string, int> workCenterCapacity;
     private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
@@ -436,6 +437,9 @@ file sealed class SchedulerState
         this.materialConstraintMode = materialConstraintMode;
         this.qualityConstraintMode = qualityConstraintMode;
         this.fixedReservations = fixedReservations;
+        fixedOperationKeys = fixedReservations
+            .Select(x => new OperationKey(x.OrderId, x.OperationId))
+            .ToHashSet();
         resources = problem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
         workCenterCapacity = problem.Resources
             .GroupBy(x => x.WorkCenterId, StringComparer.Ordinal)
@@ -1580,7 +1584,8 @@ file sealed class SchedulerState
                      .ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
             var startUtc = assignment.StartUtc;
-            if (!string.IsNullOrEmpty(assignment.ResourceId)
+            if (!fixedOperationKeys.Contains(OperationKey.From(assignment))
+                && !string.IsNullOrEmpty(assignment.ResourceId)
                 && operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
                 && operation.SetupMinutes > 0
                 && earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out var earliestEnd)
