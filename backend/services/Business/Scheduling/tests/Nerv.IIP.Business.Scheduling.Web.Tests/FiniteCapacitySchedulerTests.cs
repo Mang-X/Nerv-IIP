@@ -68,6 +68,35 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Interruptible_first_segment_uses_free_time_before_earliest_start_for_setup()
+    {
+        var template = CreateSingleOperationProblem();
+        var shiftStart = template.HorizonStartUtc;
+        var earliestStart = shiftStart.AddHours(2);
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = shiftStart.AddHours(3),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(shiftStart, shiftStart.AddHours(3), "single-shift")])],
+            LockedAssignments = [new SchedulingLockedAssignmentContract(
+                "locked-before-setup", "WO-LOCKED", "LOCKED-OP10", 10,
+                "DEV-SNAPSHOT-01", "WC-SNAPSHOT", shiftStart, shiftStart.AddHours(1), "existing-load")]
+        }, x => x with
+        {
+            SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+            EarliestStartUtc = earliestStart,
+            SetupMinutes = 15
+        });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-setup-before-earliest", GeneratedAtUtc);
+
+        var assignment = Assignment(plan, template.Orders.Single().Operations.Single().OperationId);
+        Assert.Equal([new ScheduleAssignmentSegmentContract(earliestStart, shiftStart.AddHours(3))],
+            assignment.Segments);
+        Assert.Empty(plan.UnscheduledOperations);
+    }
+
+    [Fact]
     public void Interruptible_operation_avoids_unavailability_and_locked_segment_occupancy()
     {
         var template = CreateSingleOperationProblem();

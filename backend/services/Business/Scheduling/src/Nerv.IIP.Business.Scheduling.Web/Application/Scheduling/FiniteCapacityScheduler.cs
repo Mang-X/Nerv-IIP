@@ -1131,7 +1131,7 @@ file sealed class SchedulerState
         foreach (var shift in ContinuousWindows(calendar)
                      .Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
         {
-            var shiftStart = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
+            var shiftStart = Max(shift.StartUtc, problem.HorizonStartUtc);
             var shiftEnd = Min(shift.EndUtc, problem.HorizonEndUtc);
             var boundaries = new[] { shiftStart, shiftEnd }
                 .Concat(problem.UnavailabilityWindows.Where(x => AppliesTo(x, resource))
@@ -1167,8 +1167,8 @@ file sealed class SchedulerState
                     .Select(x => (DateTimeOffset?)x.EndUtc)
                     .Max();
                 var start = segments.Count == 0 && previousEnd.HasValue
-                    ? Max(interval.StartUtc + setup, previousEnd.Value + setup)
-                    : interval.StartUtc;
+                    ? Max(earliestStart, interval.StartUtc + setup, previousEnd.Value + setup)
+                    : Max(earliestStart, interval.StartUtc);
                 if (start >= interval.EndUtc) continue;
                 var end = Min(start + remaining, interval.EndUtc);
                 segments.Add(new ScheduleAssignmentSegmentContract(start, end));
