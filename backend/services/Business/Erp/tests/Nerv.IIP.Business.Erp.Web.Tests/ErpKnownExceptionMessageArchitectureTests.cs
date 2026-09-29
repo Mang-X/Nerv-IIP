@@ -80,6 +80,8 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Excluded(ErpProcurementCommandsPath, "ReleaseSupplierInvoicePaymentHoldCommandHandler", "Handle", 3, "deferred supplier-invoice payment hold; no public facade"),
         Excluded(ErpProcurementCommandsPath, "VoidSupplierInvoicePaymentHoldCommandHandler", "Handle", 2, "deferred supplier-invoice payment hold; no public facade"),
         Excluded(ErpProcurementCommandsPath, "RequestPurchaseOrderChangeCommandHandler", "Handle", 2, "deferred purchase-order change; no public facade"),
+        Excluded(ErpProcurementCommandsPath, "ReschedulePurchaseOrderLineCommandHandler", "Handle", 2, "internal purchase-order line reschedule; no public facade"),
+        Excluded(ErpProcurementCommandsPath, "CancelPurchaseOrderLineCommandHandler", "Handle", 2, "internal purchase-order line cancellation; no public facade"),
         Excluded(ErpProcurementCommandsPath, "ClosePurchaseOrderLineCommandHandler", "Handle", 2, "deferred purchase-order close; no public facade"),
         Excluded(ErpProcurementCommandsPath, "CancelPurchaseOrderCommandHandler", "Handle", 5, "deferred purchase-order cancellation; no public facade"),
 
@@ -128,11 +130,11 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Assert.Equal(SourcePaths.Count, documents.Count);
         Assert.All(documents, document => Assert.False(string.IsNullOrWhiteSpace(document.Text), $"Erp 源文件缺失或为空：{document.Path}"));
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(81, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(85, discovered.Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(41, ExpectedSites
             .Where(site => site.Kind == ErpKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(40, ExpectedSites
+        Assert.Equal(44, ExpectedSites
             .Where(site => site.Kind == ErpKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(7, DynamicTargetSiteCounts.Values.Sum());
