@@ -1212,6 +1212,22 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/reschedule",
+      "operationId": "rescheduleErpPurchaseOrderLine",
+      "classification": "internal",
+      "rationale": "DemandPlanning suggestion acceptance invokes this ERP-owned line command through service authorization."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/cancel",
+      "operationId": "cancelErpPurchaseOrderLine",
+      "classification": "internal",
+      "rationale": "DemandPlanning suggestion acceptance invokes this ERP-owned line command through service authorization."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/purchase-receipts",
       "operationId": "recordErpPurchaseReceipt",
       "classification": "exposed",
