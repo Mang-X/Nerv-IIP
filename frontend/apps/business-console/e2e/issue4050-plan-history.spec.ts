@@ -34,6 +34,9 @@ test('历史方案超过 100 条仍可翻页，筛选回到第一页并展示真
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/scheduling/plans/history')) {
       requests.push(url)
+      if (url.searchParams.get('status') === 'revoked') {
+        return route.fulfill({ json: { success: true, data: { items: [], total: 0 } } })
+      }
       const pageIndex = Number(url.searchParams.get('pageIndex'))
       const pageSize = Number(url.searchParams.get('pageSize'))
       const items = Array.from(
@@ -86,4 +89,14 @@ test('历史方案超过 100 条仍可翻页，筛选回到第一页并展示真
   }))
   expect(widths.content).toBeLessThanOrEqual(widths.viewport)
   await page.screenshot({ path: test.info().outputPath('history-filtered.png'), fullPage: true })
+  await page.getByRole('combobox', { name: '按方案状态筛选' }).click()
+  await page.getByRole('option', { name: '已撤销', exact: true }).click()
+  await expect(page.getByText('没有符合条件的方案', { exact: true })).toBeVisible()
+  await expect(page.getByText('还没有排程方案', { exact: true })).toHaveCount(0)
+  await page.screenshot({ path: test.info().outputPath('history-no-match.png'), fullPage: true })
+  await page.getByRole('button', { name: '清空筛选', exact: true }).click()
+  await expect(page.getByRole('cell', { name: 'APS-202609-001', exact: true })).toBeVisible()
+  await expect(page.getByLabel('发布日（UTC）')).toHaveValue('')
+  await expect(page.getByRole('combobox', { name: '按方案状态筛选' })).toContainText('全部状态')
+  await expect(page.getByRole('combobox', { name: '按方案失效筛选' })).toContainText('全部方案')
 })

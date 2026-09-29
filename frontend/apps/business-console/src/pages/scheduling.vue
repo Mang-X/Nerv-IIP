@@ -121,6 +121,18 @@ const historyInvalidated = computed({
   },
 })
 const historyStatuses = ['generated', 'released', 'superseded', 'revoked'] as const
+const hasHistoryFilters = computed(() =>
+  Boolean(
+    schedulingFilters.status ||
+    schedulingFilters.releasedOn ||
+    schedulingFilters.isInvalidated !== undefined,
+  ),
+)
+function clearHistoryFilters() {
+  schedulingFilters.status = undefined
+  schedulingFilters.releasedOn = ''
+  schedulingFilters.isInvalidated = undefined
+}
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlansManage))
@@ -428,14 +440,15 @@ async function publishCandidate() {
 const revokeTargetPlanId = shallowRef('')
 const revokeConfirmOpen = shallowRef(false)
 
-function canRevoke(row: BusinessConsoleSchedulingPlanSummaryResponse | undefined) {
+function canRevoke(row: Pick<BusinessConsoleSchedulingPlanSummaryResponse, 'status'> | undefined) {
   return Boolean(row && canPublish.value && row.status === 'released')
 }
 
-function requestRevoke(planId: string | undefined) {
-  if (!planId) return
-  if (!canRevoke(actionablePlans.value.find((plan) => plan.planId === planId))) return
-  revokeTargetPlanId.value = planId
+function requestRevoke(
+  plan: Pick<BusinessConsoleSchedulingPlanSummaryResponse, 'planId' | 'status'> | undefined,
+) {
+  if (!plan?.planId || !canRevoke(plan)) return
+  revokeTargetPlanId.value = plan.planId
   revokeConfirmOpen.value = true
 }
 
@@ -858,19 +871,30 @@ function reasonLabel(reason?: string | null) {
           :loading="plansPending"
           :searchable="false"
           :column-settings="false"
-          empty-message="还没有排程方案"
+          :empty-message="hasHistoryFilters ? '没有符合条件的方案' : '还没有排程方案'"
           :error="plansError"
           error-message="没有取到排程方案列表，当前无法判断已有哪些方案。请重试，或稍后再看。"
           @retry="refreshPlans"
         >
           <template #empty>
-            <p class="text-sm font-medium text-foreground">还没有排程方案</p>
-            <p class="max-w-md text-sm text-muted-foreground">
-              先在排程总览里挑出要排的工单，生成首版方案后即可在这里查看、对比并发布。
-            </p>
-            <NvButton size="sm" type="button" class="mt-1" @click="activeView = 'workbench'">
-              去排程总览生成方案
-            </NvButton>
+            <template v-if="hasHistoryFilters">
+              <p class="text-sm font-medium text-foreground">没有符合条件的方案</p>
+              <p class="max-w-md text-sm text-muted-foreground">
+                调整筛选条件，或清空筛选查看历史方案。
+              </p>
+              <NvButton size="sm" type="button" class="mt-1" @click="clearHistoryFilters"
+                >清空筛选</NvButton
+              >
+            </template>
+            <template v-else>
+              <p class="text-sm font-medium text-foreground">还没有排程方案</p>
+              <p class="max-w-md text-sm text-muted-foreground">
+                先在排程总览里挑出要排的工单，生成首版方案后即可在这里查看、对比并发布。
+              </p>
+              <NvButton size="sm" type="button" class="mt-1" @click="activeView = 'workbench'">
+                去排程总览生成方案
+              </NvButton>
+            </template>
           </template>
           <template #cell-status="{ row }">
             <div class="flex flex-wrap items-center gap-1.5">
@@ -914,7 +938,7 @@ function reasonLabel(reason?: string | null) {
                 type="button"
                 :disabled="revokePlanPending"
                 title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
-                @click="requestRevoke(row.planId)"
+                @click="requestRevoke(row)"
               >
                 <Undo2Icon aria-hidden="true" />
                 撤销发布
@@ -944,13 +968,13 @@ function reasonLabel(reason?: string | null) {
             </NvSelectContent>
           </NvSelect>
           <NvButton
-            v-if="canRevoke(selectedPlanSummary)"
+            v-if="canRevoke(planDetail)"
             size="sm"
             variant="destructive"
             type="button"
             :disabled="revokePlanPending"
             title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
-            @click="requestRevoke(detailSelection.planId)"
+            @click="requestRevoke(planDetail)"
           >
             <Undo2Icon aria-hidden="true" />
             撤销发布
