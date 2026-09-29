@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import type {
   BusinessConsoleResourceItem,
   BusinessConsoleMesWorkOrderItem,
@@ -524,6 +525,7 @@ function setLaneOrder(value: LaneOrder) {
     </div>
 
     <template v-else-if="plan && model">
+      <SchedulingMaterialShortageSummary :shortages="plan.materialShortageSummary ?? []" />
       <div
         v-if="summary?.isInvalidated"
         class="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"

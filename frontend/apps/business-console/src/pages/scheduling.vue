@@ -25,6 +25,7 @@ import {
   schedulingPlanStatusTone,
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
+import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
 import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
 import {
@@ -728,6 +729,7 @@ function reasonLabel(reason?: string | null) {
         </SchedulingOrderPool>
         <SchedulingDraftBoard
           :model="draft.model.value"
+          :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"
           :read-only="!canManage"
           :persisted-operation-keys="persistedOperationKeys"
@@ -1092,6 +1094,9 @@ function reasonLabel(reason?: string | null) {
             物料风险（软约束）：齐套是开工门槛不是排产门槛 —— 缺料工序照排进方案，
             这里告诉规划员开工前必须补齐哪些物料，缺口多少。
           -->
+          <SchedulingMaterialShortageSummary
+            :shortages="planDetail.materialShortageSummary ?? []"
+          />
           <section v-if="planDetail.materialRisks?.length" class="grid gap-3">
             <h3 class="text-sm font-semibold text-foreground">物料风险 · 需在开工前完成备料</h3>
             <div class="grid gap-2">
