@@ -978,6 +978,26 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Scheduled_receipt_suggestion_remains_open_when_downstream_rejects_the_write()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()),
+            "cancel", "SKU-RM-1000", "pcs", "SITE-01", 2m, new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), "scheduled-receipt");
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-001:10", "SKU-RM-1000", null, 2m, null, null, null);
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, new FailingPlanningSuggestionDownstreamBridge());
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AcceptPlanningSuggestionCommand(suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", null), CancellationToken.None));
+
+        Assert.Equal(PlanningSuggestionStatus.Open, suggestion.Status);
+        Assert.Null(suggestion.AcceptedDownstreamDocumentId);
+    }
+
+    [Fact]
     public async Task Suggestion_rejection_marks_open_suggestion_rejected_and_records_reason()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1330,6 +1350,13 @@ public sealed class DemandPlanningEndpointContractTests
                 request.DownstreamDocumentType,
                 referenceId));
         }
+    }
+
+    private sealed class FailingPlanningSuggestionDownstreamBridge : IPlanningSuggestionDownstreamBridge
+    {
+        public Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
+            PlanningSuggestion suggestion, PlanningSuggestionDownstreamRequest request, CancellationToken cancellationToken)
+            => throw new KnownException("下游写回失败");
     }
 
     private sealed class FixedPlanningInputSnapshotProvider(

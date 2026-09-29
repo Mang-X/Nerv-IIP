@@ -55,6 +55,7 @@ const planningSpies = vi.hoisted(() => ({
   suggestionsRef: null as { value: Array<Record<string, unknown>> } | null,
   resetDemands: () => {},
   runMrp: vi.fn(async () => undefined),
+  acceptSuggestion: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   toastWarning: vi.fn(),
@@ -112,7 +113,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
     SUGGESTION_REJECT_REASON_MAX_LENGTH: 128,
     useBusinessPlanning: () => ({
       activeMrpRun: planningSpies.activeMrpRun,
-      acceptSuggestion: vi.fn(),
+      acceptSuggestion: planningSpies.acceptSuggestion,
       acceptSuggestionError: shallowRef(null),
       acceptSuggestionPending: shallowRef(false),
       createMpsBucket: vi.fn(),
@@ -435,6 +436,8 @@ describe('PlanningWorkbench', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     planningSpies.runMrp = vi.fn(async () => undefined)
+    planningSpies.acceptSuggestion.mockReset()
+    routerPush.mockReset()
     planningSpies.toastError.mockReset()
     planningSpies.toastSuccess.mockReset()
     planningSpies.toastWarning.mockReset()
@@ -706,14 +709,64 @@ describe('PlanningWorkbench', () => {
     )
   })
 
-  it('renders MRP exception suggestions as non-acceptance workbench rows', () => {
+  it('allows accepting scheduled receipt changes while keeping unrelated exceptions pending', () => {
     const wrapper = mount(PlanningWorkbench)
 
     expect(wrapper.text()).toContain('延期调整')
-    expect(wrapper.text()).toContain('异常待处理')
-    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(2)
+    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(3)
     // 拒绝对所有 Open 建议可用（含异常类），3 条 Open 行各一个。
     expect(wrapper.findAll('button').filter((button) => button.text() === '拒绝')).toHaveLength(3)
+  })
+
+  it('requires explicit confirmation before cancelling a scheduled receipt', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'cancel-001',
+        runId: 'run-001',
+        suggestionType: 'cancel',
+        skuCode: 'SKU-001',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        quantity: 2,
+        requiredDate: '2026-06-20',
+        status: 'Open',
+        reasonCode: 'scheduled-receipt-unneeded',
+        netRequirementExplanation: null,
+      },
+    ]
+    await nextTick()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '接受')!
+      .trigger('click')
+    expect(planningSpies.acceptSuggestion).not.toHaveBeenCalled()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '返回')!
+      .trigger('click')
+    expect(planningSpies.acceptSuggestion).not.toHaveBeenCalled()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '接受')!
+      .trigger('click')
+    planningSpies.acceptSuggestion.mockResolvedValue({
+      data: {
+        downstreamService: 'BusinessMes',
+        downstreamDocumentType: 'WorkOrder',
+        downstreamDocumentId: 'WO-001',
+      },
+    })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '确认取消并接受')!
+      .trigger('click')
+    await flushPromises()
+    expect(planningSpies.acceptSuggestion).toHaveBeenCalledOnce()
+    expect(routerPush).not.toHaveBeenCalled()
   })
 
   it('shows release, availability and overdue receipt exceptions in business language', async () => {

@@ -59,6 +59,11 @@ try
     {
         client.BaseAddress = erpBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<HttpScheduledReceiptSuggestionDownstreamBridge>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient("planning-mes-command", client => client.BaseAddress = mesBaseAddress).UseHttpClientMetrics();
     builder.Services.AddScoped<IPlanningSuggestionDownstreamBridge, HttpPlanningSuggestionDownstreamBridge>();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();

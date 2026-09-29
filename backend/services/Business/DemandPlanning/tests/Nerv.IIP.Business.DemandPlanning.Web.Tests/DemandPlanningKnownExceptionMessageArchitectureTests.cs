@@ -56,6 +56,7 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
         Target(MasterProductionSchedulePath, "ReleaseMasterProductionScheduleBucketCommandHandler", "Handle", 1),
 
         Target(PlanningSuggestionDownstreamBridgePath, "HttpPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 1),
+        Target(PlanningSuggestionDownstreamBridgePath, "HttpScheduledReceiptSuggestionDownstreamBridge", "CreateDownstreamAsync", 5),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpMesPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 3),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpErpPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 3),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpErpPlanningSuggestionDownstreamBridge", "ReadResponseDataAsync", 2),

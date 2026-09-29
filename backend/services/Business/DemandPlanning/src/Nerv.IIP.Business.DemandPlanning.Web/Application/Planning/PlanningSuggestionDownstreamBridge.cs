@@ -11,13 +11,19 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 
 public sealed class HttpPlanningSuggestionDownstreamBridge(
     HttpMesPlanningSuggestionDownstreamBridge mesBridge,
-    HttpErpPlanningSuggestionDownstreamBridge erpBridge) : IPlanningSuggestionDownstreamBridge
+    HttpErpPlanningSuggestionDownstreamBridge erpBridge,
+    HttpScheduledReceiptSuggestionDownstreamBridge scheduledReceiptBridge) : IPlanningSuggestionDownstreamBridge
 {
     public Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
         PlanningSuggestion suggestion,
         PlanningSuggestionDownstreamRequest request,
         CancellationToken cancellationToken)
     {
+        if (HttpScheduledReceiptSuggestionDownstreamBridge.CanHandle(suggestion))
+        {
+            return scheduledReceiptBridge.CreateDownstreamAsync(suggestion, request, cancellationToken);
+        }
+
         if (HttpMesPlanningSuggestionDownstreamBridge.CanHandle(request, suggestion))
         {
             return mesBridge.CreateDownstreamAsync(suggestion, request, cancellationToken);
@@ -29,6 +35,76 @@ public sealed class HttpPlanningSuggestionDownstreamBridge(
         }
 
         throw new KnownException("计划建议下游创建方式不受支持，请检查下游服务和单据类型。");
+    }
+}
+
+public sealed class HttpScheduledReceiptSuggestionDownstreamBridge(
+    HttpClient erpClient,
+    IHttpClientFactory clientFactory,
+    IInternalServiceTokenProvider internalTokenProvider) : IPlanningSuggestionDownstreamBridge
+{
+    public static bool CanHandle(PlanningSuggestion suggestion) =>
+        suggestion.SuggestionType is "reschedule-in" or "reschedule-out" or "cancel";
+
+    public async Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
+        PlanningSuggestion suggestion,
+        PlanningSuggestionDownstreamRequest request,
+        CancellationToken cancellationToken)
+    {
+        var source = suggestion.PeggingLinks.Single(x => x.PeggingType == "scheduled-receipt").DemandSourceReference;
+        var erpPrefix = "erp:purchase-order:";
+        var mesPrefix = "mes:work-order:";
+        string service;
+        string documentType;
+        string documentId;
+        string path;
+        object body;
+        HttpClient client;
+        if (source.StartsWith(erpPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var reference = source[erpPrefix.Length..];
+            var separator = reference.LastIndexOf(':');
+            if (separator <= 0 || separator == reference.Length - 1)
+                throw new KnownException("采购建议缺少采购单行引用。");
+            var orderNo = reference[..separator];
+            var lineNo = reference[(separator + 1)..];
+            service = DemandPlanningDownstreamReferences.BusinessErp;
+            documentType = "PurchaseOrderLine";
+            documentId = reference;
+            path = $"/api/business/v1/erp/purchase-orders/{Uri.EscapeDataString(orderNo)}/lines/{Uri.EscapeDataString(lineNo)}/{(suggestion.SuggestionType == "cancel" ? "cancel" : "reschedule")}";
+            body = suggestion.SuggestionType == "cancel"
+                ? new { suggestion.OrganizationId, suggestion.EnvironmentId, PurchaseOrderNo = orderNo, LineNo = lineNo, Reason = "计划建议取消在途收货" }
+                : new { suggestion.OrganizationId, suggestion.EnvironmentId, PurchaseOrderNo = orderNo, LineNo = lineNo, PromisedDate = suggestion.RequiredDate };
+            client = erpClient;
+        }
+        else if (source.StartsWith(mesPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            documentId = source[mesPrefix.Length..];
+            service = DemandPlanningDownstreamReferences.BusinessMes;
+            documentType = DemandPlanningDownstreamReferences.WorkOrder;
+            path = $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(documentId)}/{(suggestion.SuggestionType == "cancel" ? "cancel" : "due-utc")}";
+            body = suggestion.SuggestionType == "cancel"
+                ? new { suggestion.OrganizationId, suggestion.EnvironmentId, WorkOrderId = documentId, Reason = "计划建议取消在途收货" }
+                : new { suggestion.OrganizationId, suggestion.EnvironmentId, WorkOrderId = documentId, DueUtc = new DateTimeOffset(suggestion.RequiredDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) };
+            client = clientFactory.CreateClient("planning-mes-command");
+        }
+        else
+        {
+            throw new KnownException("计划建议的在途来源不支持写回。");
+        }
+
+        if (request.DownstreamService != "ScheduledReceipt" || request.DownstreamDocumentType != "ScheduledReceipt")
+            throw new KnownException("计划建议下游目标与在途来源不一致。");
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+        using var response = await client.SendAsync(httpRequest, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new KnownException($"{service} 下游写回失败，计划建议仍未接受。");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        if (payload.RootElement.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.False)
+            throw new KnownException($"{service} 下游写回失败，计划建议仍未接受。");
+        return new PlanningSuggestionDownstreamReference(service, documentType, documentId);
     }
 }
 

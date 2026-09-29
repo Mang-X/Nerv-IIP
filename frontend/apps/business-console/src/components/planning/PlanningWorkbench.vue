@@ -280,6 +280,7 @@ const demandOpen = shallowRef(false)
 const mpsOpen = shallowRef(false)
 const mrpOpen = shallowRef(false)
 const acceptingSuggestionId = shallowRef<string | null>(null)
+const cancelTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
 
 // 拒绝建议：弹框要求填写原因（必填、≤128 字），确认后走网关两跳。
 const rejectTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
@@ -600,6 +601,10 @@ async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionIt
   if (!row.suggestionId || !row.suggestionType) return
   if (!isAcceptableSuggestion(row.suggestionType)) return
   if (acceptingSuggestionId.value) return
+  if (row.suggestionType === 'cancel' && cancelTarget.value?.suggestionId !== row.suggestionId) {
+    cancelTarget.value = row
+    return
+  }
   acceptingSuggestionId.value = row.suggestionId
   try {
     const response = await acceptSuggestion({
@@ -612,15 +617,7 @@ async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionIt
         ? `计划建议已承接到 ${downstreamLabel(response.data?.downstreamService, response.data?.downstreamDocumentType)}「${reference}」。`
         : '计划建议已接受。',
     )
-    if (reference) {
-      await router.push(
-        downstreamRoute(
-          response.data?.downstreamService,
-          response.data?.downstreamDocumentType,
-          reference,
-        ),
-      )
-    }
+    cancelTarget.value = null
   } catch (error) {
     notifyOperationFailure(
       '接受计划建议失败',
@@ -698,7 +695,13 @@ function suggestionTypeTone(value?: string | null): StatusTone {
   return 'neutral'
 }
 function isAcceptableSuggestion(value?: string | null) {
-  return value === 'planned-work-order' || value === 'planned-purchase'
+  return (
+    value === 'planned-work-order' ||
+    value === 'planned-purchase' ||
+    value === 'reschedule-in' ||
+    value === 'reschedule-out' ||
+    value === 'cancel'
+  )
 }
 function reasonLabel(value?: string | null) {
   const map: Record<string, string> = {
@@ -743,6 +746,11 @@ function downstreamLabel(service?: string | null, type?: string | null) {
     normalizeReferenceToken(type) === 'purchaserequisition'
   )
     return 'ERP 采购申请'
+  if (
+    normalizeReferenceToken(service) === 'businesserp' &&
+    normalizeReferenceToken(type) === 'purchaseorderline'
+  )
+    return 'ERP 采购单行'
   return '下游单据'
 }
 // —— 计划建议行的「对该单排产」（MAN-694 / #1262）——
@@ -1725,24 +1733,10 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           </div>
         </template>
         <template #cell-downstream="{ row }">
-          <NvButton
-            v-if="row.downstreamDocumentId"
-            size="sm"
-            type="button"
-            variant="ghost"
-            @click="
-              router.push(
-                downstreamRoute(
-                  row.downstreamService,
-                  row.downstreamDocumentType,
-                  row.downstreamDocumentId,
-                ),
-              )
-            "
-          >
-            <ExternalLinkIcon aria-hidden="true" />
+          <span v-if="row.downstreamDocumentId" class="text-sm">
+            {{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·
             {{ row.downstreamDocumentId }}
-          </NvButton>
+          </span>
           <span v-else class="text-sm text-muted-foreground">未承接</span>
         </template>
         <template #cell-status="{ row }"
@@ -1861,6 +1855,33 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               </NvButton>
             </NvDialogFooter>
           </form>
+        </NvDialogContent>
+      </NvDialog>
+      <NvDialog
+        :open="!!cancelTarget"
+        @update:open="
+          (open) => {
+            if (!open) cancelTarget = null
+          }
+        "
+      >
+        <NvDialogContent>
+          <NvDialogHeader>
+            <NvDialogTitle>确认取消在途单据</NvDialogTitle>
+            <NvDialogDescription
+              >接受此建议会向 ERP 或 MES 下发取消命令。请确认取消
+              {{ skuLabel(cancelTarget?.skuCode) }} 的在途供应。</NvDialogDescription
+            >
+          </NvDialogHeader>
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="cancelTarget = null">返回</NvButton>
+            <NvButton
+              type="button"
+              :disabled="acceptSuggestionPending"
+              @click="cancelTarget && acceptPlanningSuggestion(cancelTarget)"
+              >确认取消并接受</NvButton
+            >
+          </NvDialogFooter>
         </NvDialogContent>
       </NvDialog>
     </NvTabsContent>

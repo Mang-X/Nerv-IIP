@@ -94,7 +94,8 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         CancellationToken cancellationToken)
     {
         if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
-            IsSameDownstreamTarget(suggestion, request))
+            (IsScheduledReceiptTarget(suggestion) && request.DownstreamService == "ScheduledReceipt"
+                || IsSameDownstreamTarget(suggestion, request)))
         {
             return new PlanningSuggestionDownstreamReference(
                 suggestion.AcceptedDownstreamService ?? request.DownstreamService,
@@ -147,6 +148,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         return string.Equals(suggestion.AcceptedDownstreamService, request.DownstreamService, StringComparison.OrdinalIgnoreCase)
             && string.Equals(suggestion.AcceptedDownstreamDocumentType, request.DownstreamDocumentType, StringComparison.OrdinalIgnoreCase)
             && (IsErpPurchaseRequisitionTarget(request)
+                || IsScheduledReceiptTarget(suggestion)
                 || string.IsNullOrWhiteSpace(request.DownstreamDocumentId)
                 || string.Equals(suggestion.AcceptedDownstreamDocumentId, NormalizeOptional(request.DownstreamDocumentId), StringComparison.Ordinal));
     }
@@ -159,12 +161,16 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
 
     private static bool IsBridgeManagedDownstreamTarget(PlanningSuggestion suggestion, AcceptPlanningSuggestionCommand request)
     {
-        return (string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedPurchase, StringComparison.OrdinalIgnoreCase)
+        return IsScheduledReceiptTarget(suggestion)
+            || (string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedPurchase, StringComparison.OrdinalIgnoreCase)
                 && IsErpPurchaseRequisitionTarget(request))
             || (string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedWorkOrder, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessMes, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.WorkOrder, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool IsScheduledReceiptTarget(PlanningSuggestion suggestion) =>
+        suggestion.SuggestionType is "reschedule-in" or "reschedule-out" or "cancel";
 
     private static string? NormalizeOptional(string? value)
     {
