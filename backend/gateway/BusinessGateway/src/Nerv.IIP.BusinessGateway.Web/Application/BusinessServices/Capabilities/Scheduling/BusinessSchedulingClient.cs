@@ -53,6 +53,9 @@ public interface IBusinessSchedulingClient
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>> GetPlanOverridesAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken);
+
     Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,
         BusinessConsoleScheduleOperationOverrideRequest request,
@@ -190,6 +193,13 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             null,
             cancellationToken,
             SchedulingJson.Options);
+
+    public Task<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>> GetPlanOverridesAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken) =>
+        SendAsync<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>>(
+            internalBearerToken, HttpMethod.Get,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/overrides?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null, cancellationToken, SchedulingJson.Options);
 
     public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,

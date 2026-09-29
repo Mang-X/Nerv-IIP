@@ -1864,6 +1864,21 @@ export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttSched
     data?: Array<NervIipContractsSchedulingGanttScheduleItemContract> | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse = {
+    operationId?: string;
+    workOrderId?: string;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    lockReasonCode?: string;
+    sourcePlanId?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseSchedulePlanResponse | null;
 };
@@ -1890,16 +1905,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse = {
-    operationId?: string;
-    workOrderId?: string;
-    resourceId?: string;
-    workCenterId?: string;
-    startUtc?: string;
-    endUtc?: string;
-    lockReasonCode?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest = {
@@ -12174,6 +12179,44 @@ export type GetBusinessConsoleSchedulingPlanGanttResponses = {
 };
 
 export type GetBusinessConsoleSchedulingPlanGanttResponse = GetBusinessConsoleSchedulingPlanGanttResponses[keyof GetBusinessConsoleSchedulingPlanGanttResponses];
+
+export type GetBusinessConsoleSchedulingPlanOverridesData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/overrides';
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesError = GetBusinessConsoleSchedulingPlanOverridesErrors[keyof GetBusinessConsoleSchedulingPlanOverridesErrors];
+
+export type GetBusinessConsoleSchedulingPlanOverridesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse;
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesResponse = GetBusinessConsoleSchedulingPlanOverridesResponses[keyof GetBusinessConsoleSchedulingPlanOverridesResponses];
 
 export type ReleaseBusinessConsoleSchedulingPlanData = {
     body?: never;
