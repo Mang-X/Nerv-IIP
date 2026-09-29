@@ -120,14 +120,15 @@ public sealed class DemandChangePlannerNotificationConsumerTests
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IProductionPlannerMemberDirectory>();
-                services.AddSingleton<IProductionPlannerMemberDirectory>(new FixedPlannerDirectory(plannerIds));
+                services.AddSingleton<IProductionPlannerMemberDirectory>(new ScopedPlannerDirectory(plannerIds));
             });
         }
     }
 
-    private sealed class FixedPlannerDirectory(IReadOnlyList<string> plannerIds) : IProductionPlannerMemberDirectory
+    private sealed class ScopedPlannerDirectory(IReadOnlyList<string> plannerIds) : IProductionPlannerMemberDirectory
     {
         public Task<IReadOnlyList<string>> ListMemberIdsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
-            => Task.FromResult(plannerIds);
+            => Task.FromResult<IReadOnlyList<string>>(
+                organizationId == "org-001" && environmentId == "env-001" ? plannerIds : []);
     }
 }
