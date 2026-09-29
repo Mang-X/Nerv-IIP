@@ -47,6 +47,7 @@ public sealed class MesPermissionCodeSecondSourceTests
             ["releaseBusinessMesWorkOrder"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/release
             ["closeBusinessMesWorkOrder"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/close
             ["holdBusinessMesWorkOrder"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/hold
+            ["adjustBusinessMesWorkOrderPriority"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/priority
             ["cancelBusinessMesWorkOrder"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/cancel
             ["adjustBusinessMesWorkOrderDueUtc"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/due-utc
             ["recordBusinessMesEngineeringChangeDecision"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions
