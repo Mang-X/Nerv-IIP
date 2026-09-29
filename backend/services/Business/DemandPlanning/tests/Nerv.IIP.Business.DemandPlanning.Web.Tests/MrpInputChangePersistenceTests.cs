@@ -37,7 +37,13 @@ public sealed class MrpInputChangePersistenceTests
                 MrpInputChange.Record("org-a", "env-a", "demand", "SO-1", "10", time.AddMinutes(2),
                     MrpInputChangeOperation.Deleted, newDate, newDate, true, null, null, false),
                 MrpInputChange.Record("org-b", "env-a", "demand", "SO-1", "10", time.AddMinutes(1),
-                    MrpInputChangeOperation.Updated, oldDate, oldDate, true, newDate, newDate, true));
+                    MrpInputChangeOperation.Updated, oldDate, oldDate, true, newDate, newDate, true),
+                MrpInputChange.Record("org-a", "env-b", "demand", "SO-1", "10", time.AddMinutes(1),
+                    MrpInputChangeOperation.Updated, oldDate, oldDate, true, newDate, newDate, true),
+                MrpInputChange.Record("org-a", "env-a", "demand", "SO-1", "10", time.AddMinutes(-1),
+                    MrpInputChangeOperation.Created, null, null, false, oldDate, oldDate, true),
+                MrpInputChange.Record("org-a", "env-a", "demand", "SO-1", "10", time.AddMinutes(3),
+                    MrpInputChangeOperation.Deleted, newDate, newDate, true, null, null, false));
             await db.SaveChangesAsync();
             db.ChangeTracker.Clear();
 
@@ -63,7 +69,6 @@ public sealed class MrpInputChangePersistenceTests
                 newHorizon.Select(x => x.Operation).ToArray());
             Assert.False(newHorizon[^1].CurrentlyEligible);
             Assert.Null(newHorizon[^1].CurrentStartDate);
-            Assert.Equal(0, await scoped.Where(x => x.OccurredAtUtc >= time.AddMinutes(3)).CountAsync());
         }
         finally
         {
