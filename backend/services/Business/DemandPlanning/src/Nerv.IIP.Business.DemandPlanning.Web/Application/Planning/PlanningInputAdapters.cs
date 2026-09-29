@@ -463,9 +463,26 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 "mps"))
             .ToListAsync(cancellationToken);
         var converter = PlanningUomConverter.Create(uomConversions);
+        var coveredSales = demandSources
+            .Where(demand => IsSalesDemand(demand) && mpsBuckets.Any(mps =>
+                string.Equals(mps.SkuCode, demand.SkuCode, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(mps.SiteCode, demand.SiteCode, StringComparison.OrdinalIgnoreCase)
+                && mps.DueDate == demand.DueDate))
+            .ToArray();
+        var uncoveredSales = demandSources.Except(coveredSales).ToArray();
+        var salesExcess = mpsBuckets
+            .SelectMany(mps => BuildSalesExcess(mps, coveredSales, converter))
+            .ToArray();
         var forecastDemands = forecastInputs
             .Select(forecast =>
             {
+                if (mpsBuckets.Any(mps => string.Equals(mps.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(mps.SiteCode, forecast.SiteCode, StringComparison.OrdinalIgnoreCase)
+                    && mps.DueDate >= forecast.PeriodStartDate
+                    && mps.DueDate <= forecast.PeriodEndDate))
+                {
+                    return null;
+                }
                 var consumptionStart = forecast.PeriodStartDate.AddDays(-forecast.BackwardConsumptionDays);
                 var consumptionEnd = forecast.PeriodEndDate.AddDays(forecast.ForwardConsumptionDays);
                 var forecastUomCode = ResolvePlanningUom(forecast.SkuCode, forecast.SiteCode, forecast.UomCode, planningParameters);
@@ -477,7 +494,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                     forecastUomCode,
                     forecast.Quantity,
                     requireConversion: true);
-                var consumed = demandSources
+                var consumed = uncoveredSales
                     .Concat(mpsBuckets)
                     .Where(demand => IsForecastConsumingDemand(demand)
                         && string.Equals(demand.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
@@ -507,9 +524,10 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .Select(x => x!)
             .ToArray();
 
-        return demandSources
+        return uncoveredSales
             .Concat(forecastDemands)
             .Concat(mpsBuckets)
+            .Concat(salesExcess)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceType)
             .ThenBy(x => x.DemandSourceReference)
@@ -578,6 +596,35 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         return string.Equals(demand.SourceType, "sales-order", StringComparison.OrdinalIgnoreCase)
             || string.Equals(demand.SourceType, "sales", StringComparison.OrdinalIgnoreCase)
             || string.Equals(demand.SourceType, "mps", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSalesDemand(DemandSnapshot demand)
+    {
+        return string.Equals(demand.SourceType, "sales-order", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(demand.SourceType, "sales", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<DemandSnapshot> BuildSalesExcess(
+        DemandSnapshot mps,
+        IReadOnlyCollection<DemandSnapshot> coveredSales,
+        PlanningUomConverter converter)
+    {
+        var remainingMpsQuantity = mps.Quantity;
+        foreach (var sale in coveredSales
+            .Where(x => string.Equals(x.SkuCode, mps.SkuCode, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.SiteCode, mps.SiteCode, StringComparison.OrdinalIgnoreCase)
+                && x.DueDate == mps.DueDate)
+            .OrderBy(x => x.DemandSourceReference, StringComparer.Ordinal)
+            .ThenBy(x => x.SourceLineReference, StringComparer.Ordinal))
+        {
+            var salesQuantity = converter.Convert(sale.SkuCode, sale.UomCode, mps.UomCode, sale.Quantity, "MPS sales consumption UOM");
+            var excess = Math.Max(0m, salesQuantity - remainingMpsQuantity);
+            remainingMpsQuantity = Math.Max(0m, remainingMpsQuantity - salesQuantity);
+            if (excess > 0m)
+            {
+                yield return sale with { UomCode = mps.UomCode, Quantity = excess, SourceType = "mps-sales-excess" };
+            }
+        }
     }
 
     private static DateOnly ClampForecastDueDate(DateOnly periodEndDate, DateOnly horizonStart, DateOnly horizonEnd)

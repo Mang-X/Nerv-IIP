@@ -8,6 +8,22 @@ public sealed class MrpCalculatorTests
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void Sales_above_released_mps_is_an_exception_not_extra_supply_demand()
+    {
+        var date = new DateOnly(2026, 6, 15);
+        var suggestions = MrpCalculator.Calculate(NewInput(demands:
+        [
+            new DemandSnapshot("MPS:001", "SKU-FG-1000", "pcs", "SITE-01", 8m, date, "mps"),
+            new DemandSnapshot("SO-001", "SKU-FG-1000", "pcs", "SITE-01", 2m, date, "mps-sales-excess", "10"),
+        ]));
+
+        Assert.Equal(8m, Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order").NetRequirementExplanation.GrossDemandQuantity);
+        var exception = Assert.Single(suggestions, x => x.SuggestionType == "mps-sales-excess");
+        Assert.Equal(2m, exception.Quantity);
+        Assert.Contains(exception.PeggingLinks, x => x.DemandSourceReference == "SO-001" && x.SourceLineReference == "10");
+    }
+
+    [Fact]
     public void Same_order_same_sku_and_due_date_keeps_separate_sales_line_pegging()
     {
         var suggestions = MrpCalculator.Calculate(NewInput(demands:

@@ -51,10 +51,12 @@ const planningSpies = vi.hoisted(() => ({
   // 需求池刷新后"某类需求整类消失"要能在用例里复现 → 把 demands 的 ref 交出来供测试改写。
   demandsRef: null as { value: Array<Record<string, unknown>> } | null,
   mpsBucketsRef: null as { value: Array<Record<string, unknown>> } | null,
+  mpsFormRef: null as { quantity: number } | null,
   mrpRunsRef: null as { value: Array<Record<string, unknown>> } | null,
   suggestionsRef: null as { value: Array<Record<string, unknown>> } | null,
   resetDemands: () => {},
   runMrp: vi.fn(async () => undefined),
+  updateMpsBucket: vi.fn(async () => undefined),
   acceptSuggestion: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -155,7 +157,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       mpsBuckets: (planningSpies.mpsBucketsRef = shallowRef([])),
       mpsBucketsError: shallowRef(null),
       mpsBucketsPending: shallowRef(false),
-      mpsForm: reactive({
+      mpsForm: (planningSpies.mpsFormRef = reactive({
         organizationId: 'org-001',
         environmentId: 'env-dev',
         skuCode: '',
@@ -163,13 +165,16 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
         siteCode: '',
         bucketDate: '2026-06-01',
         quantity: 0,
-      }),
+      })),
       releaseMpsBucket: vi.fn(),
       releaseMpsBucketError: shallowRef(null),
       releaseMpsBucketPending: shallowRef(false),
       reviewMpsBucket: vi.fn(),
       reviewMpsBucketError: shallowRef(null),
       reviewMpsBucketPending: shallowRef(false),
+      updateMpsBucket: planningSpies.updateMpsBucket,
+      updateMpsBucketError: shallowRef(null),
+      updateMpsBucketPending: shallowRef(false),
       pegging: shallowRef([
         {
           suggestionId: 'suggestion-001',
@@ -393,6 +398,12 @@ vi.mock('@nerv-iip/ui', async () => {
     template:
       '<div><input :aria-label="searchLabel" :value="search" @input="$emit(\'update:search\', $event.target.value)" /><slot name="filters" /><slot name="actions" /></div>',
   })
+  const Input = defineComponent({
+    props: ['modelValue', 'modelModifiers'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :value="modelValue" @input="$emit(\'update:modelValue\', modelModifiers?.number ? Number($event.target.value) : $event.target.value)" />',
+  })
 
   return {
     toast: {
@@ -413,7 +424,7 @@ vi.mock('@nerv-iip/ui', async () => {
     NvField: Shell,
     NvFieldGroup: Shell,
     NvFieldLabel: Shell,
-    NvInput: Shell,
+    NvInput: Input,
     NvMetricCard: Shell,
     NvPageHeader: Shell,
     NvSelect: Select,
@@ -603,6 +614,39 @@ describe('PlanningWorkbench', () => {
     expect(text).toContain('评审 张伟')
     expect(text).toContain('发布 —')
     expect(text).not.toContain('user-')
+  })
+
+  it('编辑草稿主计划行后保存更新同一行', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mpsBucketsRef!.value = [
+      {
+        mpsId: 'mps-001',
+        skuCode: 'SKU-FG-1000',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        bucketDate: '2026-06-15',
+        quantity: 10,
+        status: 'Draft',
+      },
+    ]
+    await flushPromises()
+
+    await wrapper.get('[aria-label="编辑主计划行 SKU-FG-1000"]').trigger('click')
+    expect(wrapper.text()).toContain('编辑主计划行')
+    expect(planningSpies.mpsFormRef!.quantity).toBe(10)
+    await wrapper.get('#mps-qty').setValue('12')
+    expect(planningSpies.mpsFormRef!.quantity).toBe(12)
+    const submittedQuantities: number[] = []
+    planningSpies.updateMpsBucket.mockImplementationOnce(async () => {
+      submittedQuantities.push(planningSpies.mpsFormRef!.quantity)
+    })
+    await wrapper
+      .findAll('form')
+      .find((form) => form.find('#mps-qty').exists())!
+      .trigger('submit')
+
+    expect(planningSpies.updateMpsBucket).toHaveBeenCalledWith('mps-001')
+    expect(submittedQuantities).toEqual([12])
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
