@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import type { BusinessConsoleSchedulingPlanRevision } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleSchedulePlan,
+  BusinessConsoleSchedulingPlanRevision,
+} from '@nerv-iip/api-client'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import { ChangeSummaryPanel, toModel } from '@nerv-iip/scheduling'
+import { computed } from 'vue'
 import { NvStatusBadge } from '@nerv-iip/ui'
 
-defineProps<{ revision?: BusinessConsoleSchedulingPlanRevision }>()
+const props = defineProps<{
+  revision?: BusinessConsoleSchedulingPlanRevision
+  basePlan?: BusinessConsoleSchedulePlan
+}>()
+const candidateModel = computed(() => toModel(props.revision?.candidate ?? {}))
+const baseModel = computed(() => toModel(props.basePlan ?? {}))
 
 function percent(value?: number) {
   return value === undefined ? '—' : `${Math.round(value * 100)}%`
@@ -62,5 +72,11 @@ function percent(value?: number) {
         <p class="font-semibold">{{ revision.comparison?.unscheduledOperationCount ?? 0 }}</p>
       </div>
     </div>
+    <ChangeSummaryPanel
+      :key="revision.candidate?.planId"
+      :changes="candidateModel.changes"
+      :tasks="candidateModel.tasks"
+      :base-tasks="baseModel.tasks"
+    />
   </section>
 </template>

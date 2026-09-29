@@ -90,6 +90,7 @@ const stub = vi.hoisted(() => ({
     .mockResolvedValue({ success: true, data: { planId: 'plan-released', status: 'revoked' } }),
   upsertOperationOverride: vi.fn().mockResolvedValue({ success: true, data: {} }),
   generatePlan: vi.fn(),
+  revisePlan: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }))
@@ -125,7 +126,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     generatePlan: stub.generatePlan,
     refreshCandidates: vi.fn(),
     revisionPending: shallowRef(false),
-    revisePlan: vi.fn(),
+    revisePlan: stub.revisePlan,
     // 草案工作区要有可选工单才能生成首版方案（持久化 override 用例的前置条件）。
     schedulableCandidates: computed(() => [
       {
@@ -1056,6 +1057,67 @@ describe('APS scheduling workbench page', () => {
     // 引导入口要真的把人送回可编辑的地方，不是一句说明。
     expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
     expect(wrapper.text()).toContain('待排工单池')
+  })
+
+  it('compares each revision against its persisted base rather than the edited draft', async () => {
+    // Regression / DomainInvariant: #3625 原值来自持久化版本，连续修订以刚生成的候选为下一次基线。
+    const candidate = {
+      ...planOne,
+      planId: 'plan-002',
+      assignments: planOne.assignments.map((assignment) =>
+        assignment.assignmentId === 'assign-001'
+          ? { ...assignment, resourceId: 'RES-CNC-02' }
+          : assignment,
+      ),
+      changeSummary: [
+        {
+          orderId: 'WO-20260701-001',
+          operationId: 'OP-10',
+          changeType: 'moved',
+          message: '改派备用设备',
+        },
+      ],
+    }
+    stub.revisePlan.mockResolvedValueOnce({ candidate }).mockResolvedValueOnce({
+      candidate: {
+        ...candidate,
+        planId: 'plan-003',
+        assignments: candidate.assignments.map((assignment) =>
+          assignment.assignmentId === 'assign-001'
+            ? { ...assignment, resourceId: 'RES-CNC-03' }
+            : assignment,
+        ),
+      },
+    })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+    const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+    board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
+    board.vm.$emit('lock', 'assign-001', true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('锁定重预览'))!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-change-row]').text()).toContain('RES-CNC-01 → RES-CNC-02')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('锁定重预览'))!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-change-row]').text()).toContain('RES-CNC-02 → RES-CNC-03')
   })
 
   it('persists a draft operation override with the plan id and the operation behind the task', async () => {
