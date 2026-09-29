@@ -108,7 +108,7 @@ public static class SchedulingQualityConstraintModeResolver
     }
 }
 
-internal sealed record FixedWorkCenterReservation(
+public sealed record FixedWorkCenterReservation(
     string OrderId,
     string OperationId,
     int OperationSequence,
