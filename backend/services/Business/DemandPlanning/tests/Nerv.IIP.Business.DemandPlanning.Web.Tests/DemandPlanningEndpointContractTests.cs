@@ -641,7 +641,8 @@ public sealed class DemandPlanningEndpointContractTests
     [Fact]
     public async Task Mrp_run_worker_marks_run_failed_with_reason_when_snapshot_fetch_throws()
     {
-        await using var provider = CreateWorkerProvider(_ => new ThrowingPlanningInputSnapshotProvider());
+        var attempts = 0;
+        await using var provider = CreateWorkerProvider(_ => new ThrowingPlanningInputSnapshotProvider(() => Interlocked.Increment(ref attempts)));
         var worker = CreateWorker(provider);
         await worker.StartAsync(CancellationToken.None);
         try
@@ -662,6 +663,48 @@ public sealed class DemandPlanningEndpointContractTests
             Assert.NotNull(run.FailureReason);
             Assert.Contains("MRP 计算失败", run.FailureReason!, StringComparison.Ordinal);
             Assert.Contains("上游库存快照拉取超时", run.FailureReason!, StringComparison.Ordinal);
+            Assert.Equal(2, Volatile.Read(ref attempts));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Mrp_run_worker_retries_once_on_same_running_run_then_completes()
+    {
+        var observedStatuses = new List<MrpRunStatus>();
+        var attempts = 0;
+        await using var provider = CreateWorkerProvider(sp => new FirstAttemptFailsSnapshotProvider(
+            new DemandPlanningFixtureInputSnapshotProvider(sp.GetRequiredService<ApplicationDbContext>()),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            observedStatuses,
+            () => Interlocked.Increment(ref attempts)));
+        MrpRunId runId;
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await new CreateOrUpdateDemandSourceCommandHandler(db).Handle(NewDemandCommand(), CancellationToken.None);
+            runId = await new RunMrpCommandHandler(db).Handle(
+                new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var worker = CreateWorker(provider);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var run = await WaitForTerminalRunAsync(provider, runId);
+            Assert.Equal(MrpRunStatus.Completed, run.Status);
+            Assert.Null(run.FailureReason);
+            Assert.Equal(2, run.SuggestionCount);
+            Assert.Equal(2, Volatile.Read(ref attempts));
+            Assert.Equal([MrpRunStatus.Running, MrpRunStatus.Running], observedStatuses);
+            using var scope = provider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(2, db.PlanningSuggestions.Count());
+            Assert.Single(await new ListMrpRunsQueryHandler(db).Handle(new ListMrpRunsQuery("org-001", "env-dev"), CancellationToken.None));
         }
         finally
         {
@@ -774,7 +817,7 @@ public sealed class DemandPlanningEndpointContractTests
         }
     }
 
-    private sealed class ThrowingPlanningInputSnapshotProvider : IPlanningInputSnapshotProvider
+    private sealed class ThrowingPlanningInputSnapshotProvider(Func<int>? onAttempt = null) : IPlanningInputSnapshotProvider
     {
         public Task<PlanningInputSnapshotResult> GetSnapshotAsync(
             string organizationId,
@@ -783,7 +826,31 @@ public sealed class DemandPlanningEndpointContractTests
             DateOnly horizonEnd,
             CancellationToken cancellationToken)
         {
+            onAttempt?.Invoke();
             throw new InvalidOperationException("上游库存快照拉取超时。");
+        }
+    }
+
+    private sealed class FirstAttemptFailsSnapshotProvider(
+        IPlanningInputSnapshotProvider inner,
+        IServiceScopeFactory scopeFactory,
+        List<MrpRunStatus> observedStatuses,
+        Func<int> nextAttempt) : IPlanningInputSnapshotProvider
+    {
+        public async Task<PlanningInputSnapshotResult> GetSnapshotAsync(
+            string organizationId, string environmentId, DateOnly horizonStart, DateOnly horizonEnd,
+            CancellationToken cancellationToken)
+        {
+            using (var scope = scopeFactory.CreateScope())
+            {
+                observedStatuses.Add(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                    .MrpRuns.AsNoTracking().Single().Status);
+            }
+            if (nextAttempt() == 1)
+            {
+                throw new InvalidOperationException("首次快照拉取失败。");
+            }
+            return await inner.GetSnapshotAsync(organizationId, environmentId, horizonStart, horizonEnd, cancellationToken);
         }
     }
 
