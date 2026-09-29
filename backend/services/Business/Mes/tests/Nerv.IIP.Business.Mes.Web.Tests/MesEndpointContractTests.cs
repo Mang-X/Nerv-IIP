@@ -35,6 +35,37 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesEndpointContractTests
 {
+    [Fact]
+    public async Task Batch_material_readiness_endpoint_accepts_orders_and_rejects_over_500()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new MaterialReadinessSender());
+                });
+            });
+        var client = factory.CreateClient();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var accepted = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/work-orders/material-readiness/batch",
+            new { organizationId = "org-001", environmentId = "env-dev", workOrderIds = new[] { "WO-SUB-HTTP" } });
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        using var body = JsonDocument.Parse(await accepted.Content.ReadAsStringAsync());
+        Assert.Equal("WO-SUB-HTTP", body.RootElement.GetProperty("items")[0].GetProperty("workOrderId").GetString());
+
+        var rejected = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/work-orders/material-readiness/batch",
+            new { organizationId = "org-001", environmentId = "env-dev",
+                workOrderIds = Enumerable.Range(1, 501).Select(x => $"WO-{x}").ToArray() });
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+    }
+
     // Contract: HttpApi + Regression. Authority: Issue #2223 acceptance 3.
     [Fact]
     public async Task Material_readiness_endpoint_exposes_frozen_substitutes_and_live_erp_eta()
@@ -988,7 +1019,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposePlanningAndRushOrderRoutes()
     {
-        Assert.Equal(72, MesEndpointContracts.All.Count);
+        Assert.Equal(73, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -3501,6 +3532,13 @@ public sealed class MesEndpointContractTests
     {
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
+            if (request is GetBatchMaterialReadinessQuery batch)
+            {
+                Assert.Equal(["WO-SUB-HTTP"], batch.WorkOrderIds);
+                var batchResponse = new MesMaterialReadinessBatchResponse(
+                    [new MesMaterialReadinessResponse("WO-SUB-HTTP", "Ready", [], [])]);
+                return Task.FromResult((TResponse)(object)batchResponse);
+            }
             _ = Assert.IsType<GetMaterialReadinessQuery>(request);
             var response = new MesMaterialReadinessResponse(
                 "WO-SUB-HTTP",
