@@ -19,7 +19,7 @@ internal static class MrpInputChangeCollector
             var after = entry.State != EntityState.Deleted;
             var oldDate = before ? entry.Property(x => x.DueDate).OriginalValue : (DateOnly?)null;
             var newDate = after ? source.DueDate : (DateOnly?)null;
-            db.MrpInputChanges.Add(MrpInputChange.Record(source.OrganizationId, source.EnvironmentId, "demand",
+            db.MrpInputChanges.Add(MrpInputChange.Record(source.OrganizationId, source.EnvironmentId, "demand", source.DemandType,
                 source.SourceReference, source.SourceLineReference, occurredAtUtc, Operation(entry.State),
                 oldDate, oldDate, before && entry.Property(x => x.SourceStatus).OriginalValue == "active"
                     && entry.Property(x => x.Quantity).OriginalValue > 0m && source.DemandType != "forecast",
@@ -32,7 +32,7 @@ internal static class MrpInputChangeCollector
             var source = entry.Entity;
             var before = entry.State != EntityState.Added;
             var after = entry.State != EntityState.Deleted;
-            db.MrpInputChanges.Add(MrpInputChange.Record(source.OrganizationId, source.EnvironmentId, "forecast",
+            db.MrpInputChanges.Add(MrpInputChange.Record(source.OrganizationId, source.EnvironmentId, "forecast", null,
                 source.ForecastReference, "", occurredAtUtc, Operation(entry.State),
                 before ? entry.Property(x => x.PeriodStartDate).OriginalValue : null,
                 before ? entry.Property(x => x.PeriodEndDate).OriginalValue : null, before,
@@ -46,7 +46,7 @@ internal static class MrpInputChangeCollector
             var after = entry.State != EntityState.Deleted;
             var oldDate = before ? entry.Property(x => x.BucketDate).OriginalValue : (DateOnly?)null;
             var newDate = after ? source.BucketDate : (DateOnly?)null;
-            db.MrpInputChanges.Add(MrpInputChange.Record(source.OrganizationId, source.EnvironmentId, "mps",
+            db.MrpInputChanges.Add(MrpInputChange.Record(source.OrganizationId, source.EnvironmentId, "mps", null,
                 $"MPS:{source.Id}", "", occurredAtUtc, Operation(entry.State),
                 oldDate, oldDate, before && entry.Property(x => x.Status).OriginalValue == MasterProductionScheduleStatus.Released,
                 newDate, newDate, after && source.Status == MasterProductionScheduleStatus.Released));
