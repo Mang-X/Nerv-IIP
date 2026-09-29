@@ -3156,6 +3156,10 @@ public sealed class BusinessGatewayProxyTests
                     DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", [],
                     HasChangedDemand: true),
                 new BusinessConsoleMesWorkOrderItem(
+                    "WO-CANCELLED", "SKU-A", "PV-A", 10m, 10,
+                    DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", [],
+                    HasCancelledDemand: true),
+                new BusinessConsoleMesWorkOrderItem(
                     "WO-PLAIN", "SKU-A", "PV-A", 10m, 10,
                     DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", []),
             ],
@@ -3188,7 +3192,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.True(rows[0].GetProperty("hasChangedDemand").GetBoolean());
         Assert.False(rows[0].GetProperty("hasCancelledDemand").GetBoolean());
         Assert.False(rows[1].GetProperty("hasChangedDemand").GetBoolean());
-        Assert.False(rows[1].GetProperty("hasCancelledDemand").GetBoolean());
+        Assert.True(rows[1].GetProperty("hasCancelledDemand").GetBoolean());
+        Assert.False(rows[2].GetProperty("hasChangedDemand").GetBoolean());
+        Assert.False(rows[2].GetProperty("hasCancelledDemand").GetBoolean());
     }
 
     [Fact]

@@ -19,12 +19,14 @@ public sealed class MesWorkOrderDemandChangeReadTests
             db.WorkOrders.Add(WorkOrder.Create("org-a", "env-dev", id, "SKU-A", "PV-A", 10m, 10, due));
         }
         db.WorkOrders.Add(WorkOrder.Create("org-b", "env-dev", "WO-OTHER", "SKU-A", "PV-A", 10m, 10, due));
+        db.WorkOrders.Add(WorkOrder.Create("org-a", "env-other", "WO-PLAIN", "SKU-A", "PV-A", 10m, 10, due));
         db.WorkOrderDemandChanges.AddRange(
             Marker("org-a", "WO-CHANGED", "demand-1", false),
             Marker("org-a", "WO-CANCELLED", "demand-2", true),
             Marker("org-a", "WO-MIXED", "demand-3", false),
             Marker("org-a", "WO-MIXED", "demand-4", true),
-            Marker("org-b", "WO-PLAIN", "demand-5", true));
+            Marker("org-b", "WO-PLAIN", "demand-5", true),
+            Marker("org-a", "WO-PLAIN", "demand-6", true, "env-other"));
         await db.SaveChangesAsync();
 
         var result = await new ListMesWorkOrdersQueryHandler(db).Handle(
@@ -43,6 +45,7 @@ public sealed class MesWorkOrderDemandChangeReadTests
         Assert.DoesNotContain("WO-OTHER", rows.Keys);
     }
 
-    private static WorkOrderDemandChange Marker(string organizationId, string workOrderId, string reference, bool cancelled) =>
-        new(organizationId, "env-dev", workOrderId, "suggestion-1", reference, "sales-order-1", 2, cancelled);
+    private static WorkOrderDemandChange Marker(
+        string organizationId, string workOrderId, string reference, bool cancelled, string environmentId = "env-dev") =>
+        new(organizationId, environmentId, workOrderId, "suggestion-1", reference, "sales-order-1", 2, cancelled);
 }

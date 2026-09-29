@@ -256,7 +256,9 @@ describe('工单列表需求变更标记', () => {
     ]
     const rows = mountList().findAll('[data-testid="work-order-row"]')
     expect(rows[0].text()).toContain('需求已变更')
+    expect(rows[0].text()).not.toContain('需求已取消')
     expect(rows[1].text()).toContain('需求已取消')
+    expect(rows[1].text()).not.toContain('需求已变更')
     expect(rows[2].text()).not.toContain('需求已变更')
     expect(rows[2].text()).not.toContain('需求已取消')
   })

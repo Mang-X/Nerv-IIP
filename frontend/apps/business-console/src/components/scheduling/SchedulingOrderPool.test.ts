@@ -156,7 +156,7 @@ describe('待排池需求变更标记', () => {
             hasChangedDemand: false,
             hasCancelledDemand: false,
           },
-        ] as never,
+        ],
       },
     })
     const rows = wrapper.findAll('tbody tr')
