@@ -277,7 +277,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         SupersededByRunId = successorRunId;
     }
 
-    public void InvalidateDemandReference(string demandSourceReference)
+    public void InvalidateDemandLines(string demandSourceReference, IReadOnlyCollection<string?> sourceLineReferences)
     {
         if (Status != PlanningSuggestionStatus.Open)
         {
@@ -286,7 +286,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
 
         var demandLinks = peggingLinks.Where(x => string.Equals(x.PeggingType, "demand", StringComparison.OrdinalIgnoreCase)).ToArray();
         var invalidQuantity = demandLinks
-            .Where(x => string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal))
+            .Where(x => string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal)
+                && sourceLineReferences.Contains(x.SourceLineReference))
             .Sum(x => x.Quantity);
         if (invalidQuantity == 0m)
         {
@@ -308,7 +309,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         }
 
         peggingLinks.RemoveAll(x => string.Equals(x.PeggingType, "demand", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal));
+            && string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal)
+            && sourceLineReferences.Contains(x.SourceLineReference));
         PlannedQuantity = Quantity;
     }
 

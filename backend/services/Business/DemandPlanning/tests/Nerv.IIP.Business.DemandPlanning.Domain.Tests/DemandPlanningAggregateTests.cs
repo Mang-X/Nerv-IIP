@@ -305,7 +305,7 @@ public sealed class DemandPlanningAggregateTests
         suggestion.AddPeggingLink("demand", "SO-001", "SKU-FG-1000", "SKU-RM-1000", 8m, null, null, null);
         suggestion.AddPeggingLink("demand", "SO-002", "SKU-FG-1000", "SKU-RM-1000", 12m, null, null, null);
 
-        suggestion.InvalidateDemandReference("SO-001");
+        suggestion.InvalidateDemandLines("SO-001", [null]);
 
         Assert.Equal(PlanningSuggestionStatus.Open, suggestion.Status);
         Assert.Equal(11.4m, suggestion.Quantity);
@@ -318,7 +318,7 @@ public sealed class DemandPlanningAggregateTests
         var suggestion = NewSuggestion();
         suggestion.AddPeggingLink("demand", "SO-001", "SKU-FG-1000", "SKU-RM-1000", 19m, null, null, null);
 
-        suggestion.InvalidateDemandReference("SO-001");
+        suggestion.InvalidateDemandLines("SO-001", [null]);
 
         Assert.Equal(PlanningSuggestionStatus.Closed, suggestion.Status);
         Assert.Equal(19m, suggestion.Quantity);

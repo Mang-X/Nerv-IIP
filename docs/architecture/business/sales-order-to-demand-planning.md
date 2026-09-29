@@ -29,7 +29,7 @@ DemandPlanning 只消费公开 contract，不引用 ERP Domain/Web/Infrastructur
 4. 相同 consumer + idempotency key 只执行一次；合法但低版本的不同事件可以留下 inbox 审计，但不回滚投影。
 5. 合法业务拒绝与 poison message 进入受控 DLQ/诊断路径；数据库或 transport 瞬态失败由消息基础设施重试，handler 不吞掉失败伪造成功。
 6. MRP 只消费有效、正数量的需求投影；pegging 继续携带订单级 `source_reference`，并为新生成的销售需求 pegging 保留 `source_line_reference`，因此同单相同 SKU/交期的行仍可区分。旧 pegging 的行身份保持未知，不凭 SKU/交期推定归属。
-7. 新版本使已投影需求的数量或交期变化、取消订单或移除订单行时，DemandPlanning 定位受影响的建议 pegging。Open 建议移除失效份额；合批建议按 demand pegging 数量比例保留其它需求份额，全部失效则关闭建议。新需求由后续 MRP 计算产生建议。
+7. 新版本使已投影需求的数量或交期变化、取消订单或移除订单行时，DemandPlanning 按订单号与行身份定位受影响的建议 pegging。单行变更不推断旧 pegging 中未知的行归属；整单取消则连同行身份未知的该订单 pegging 一起失效。Open 建议移除失效份额；合批建议按 demand pegging 数量比例保留其它需求份额，全部失效则关闭建议。新需求由后续 MRP 计算产生建议。
 8. 已接受并转为 MES 工单的建议保持原状态和工单引用；DemandPlanning 发布 `SalesOrderDemandChangedForWorkOrderIntegrationEvent`，携带受影响的需求引用、订单版本、取消标志和工单引用，由 MES 消费方决定后续处置，不自动取消工单。
 
 ## 预测与订单冲减

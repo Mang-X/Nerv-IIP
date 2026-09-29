@@ -34,6 +34,79 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpSalesOrderDemandConsumerTests
 {
+    [Fact]
+    public async Task Changed_line_preserves_same_order_same_sku_date_other_line_and_its_work_order()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var lines = new[]
+        {
+            new SalesOrderLineSnapshot("10", "SKU-FG-A", 8m, "EA", new DateOnly(2026, 8, 15), false),
+            new SalesOrderLineSnapshot("20", "SKU-FG-A", 6m, "EA", new DateOnly(2026, 8, 15), false),
+        };
+        await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Released(1, 8m, "10") with { Payload = Payload(1, "released", 8m, "10") with { Lines = lines } }, CancellationToken.None);
+
+        var runId = new MrpRunId(Guid.CreateVersion7());
+        var mixed = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 24m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        mixed.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null, sourceLineReference: "10");
+        mixed.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 6m, null, null, null, sourceLineReference: "20");
+        mixed.AddPeggingLink("demand", "SO-OTHER", "SKU-FG-A", null, 10m, null, null, null);
+        var unchangedOpen = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 6m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        unchangedOpen.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 6m, null, null, null, sourceLineReference: "20");
+        var changedWorkOrder = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        changedWorkOrder.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null, sourceLineReference: "10");
+        changedWorkOrder.Accept("BusinessMes", "WorkOrder", "WO-10");
+        var unchangedWorkOrder = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 6m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        unchangedWorkOrder.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 6m, null, null, null, sourceLineReference: "20");
+        unchangedWorkOrder.Accept("BusinessMes", "WorkOrder", "WO-20");
+        var legacy = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 5m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        legacy.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 5m, null, null, null);
+        foreach (var suggestion in new[] { mixed, unchangedOpen, changedWorkOrder, unchangedWorkOrder, legacy })
+        {
+            suggestion.ClearDomainEvents();
+        }
+        dbContext.PlanningSuggestions.AddRange(mixed, unchangedOpen, changedWorkOrder, unchangedWorkOrder, legacy);
+        await dbContext.SaveChangesAsync();
+
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Changed(2, 4m, "10") with
+            {
+                Payload = Payload(2, "released", 4m, "10") with { Lines = [lines[0] with { Quantity = 4m }, lines[1]] },
+            }, CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Open, mixed.Status);
+        Assert.Equal(16m, mixed.Quantity);
+        Assert.Collection(mixed.PeggingLinks,
+            otherLine => Assert.Equal("20", otherLine.SourceLineReference),
+            otherOrder => Assert.Null(otherOrder.SourceLineReference));
+        Assert.Equal(PlanningSuggestionStatus.Open, unchangedOpen.Status);
+        Assert.Equal(6m, unchangedOpen.Quantity);
+        Assert.Equal(PlanningSuggestionStatus.Open, legacy.Status);
+        Assert.Equal(5m, legacy.Quantity);
+        Assert.Equal(PlanningSuggestionStatus.Accepted, unchangedWorkOrder.Status);
+        var signal = Assert.Single(provider.GetRequiredService<RecordingIntegrationEventPublisher>().Events
+            .OfType<SalesOrderDemandChangedForWorkOrderIntegrationEvent>());
+        Assert.Equal("WO-10", signal.Payload.WorkOrderId);
+        Assert.False(signal.Payload.Cancelled);
+
+        await new SalesOrderCancelledIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Cancelled(3), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Open, mixed.Status);
+        Assert.Equal(10m, mixed.Quantity);
+        Assert.Equal("SO-OTHER", Assert.Single(mixed.PeggingLinks).DemandSourceReference);
+        Assert.Equal(PlanningSuggestionStatus.Closed, unchangedOpen.Status);
+        Assert.Equal(PlanningSuggestionStatus.Closed, legacy.Status);
+        var cancelSignals = provider.GetRequiredService<RecordingIntegrationEventPublisher>().Events
+            .OfType<SalesOrderDemandChangedForWorkOrderIntegrationEvent>()
+            .Where(x => x.Payload.OrderVersion == 3).ToArray();
+        Assert.Equal(["WO-10", "WO-20"], cancelSignals.Select(x => x.Payload.WorkOrderId).OrderBy(x => x).ToArray());
+        Assert.All(cancelSignals, x => Assert.True(x.Payload.Cancelled));
+    }
+
     [DemandPlanningRealPostgresFact]
     public async Task PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line()
     {
@@ -101,12 +174,12 @@ public sealed class ErpSalesOrderDemandConsumerTests
 
         var runId = new MrpRunId(Guid.CreateVersion7());
         var mixed = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 20m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
-        mixed.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        mixed.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null, sourceLineReference: "10");
         mixed.AddPeggingLink("demand", "SO-OTHER", "SKU-FG-A", null, 12m, null, null, null);
         var exclusive = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-purchase", "SKU-RM-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
-        exclusive.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", "SKU-RM-A", 8m, null, null, null);
+        exclusive.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", "SKU-RM-A", 8m, null, null, null, sourceLineReference: "10");
         var accepted = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
-        accepted.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        accepted.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null, sourceLineReference: "10");
         accepted.Accept("BusinessMes", "WorkOrder", "WO-001");
         mixed.ClearDomainEvents();
         exclusive.ClearDomainEvents();
@@ -145,7 +218,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
             .HandleAsync(Released(1, 8m, "10"), CancellationToken.None);
 
         var open = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()), "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
-        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null, sourceLineReference: "10");
         open.ClearDomainEvents();
         dbContext.PlanningSuggestions.Add(open);
         await dbContext.SaveChangesAsync();
@@ -174,7 +247,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
             .HandleAsync(Released(1, 8m, "10"), CancellationToken.None);
 
         var open = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()), "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
-        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null, sourceLineReference: "10");
         open.ClearDomainEvents();
         dbContext.PlanningSuggestions.Add(open);
         await dbContext.SaveChangesAsync();
