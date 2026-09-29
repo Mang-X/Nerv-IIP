@@ -107,7 +107,8 @@ public sealed record GeneratedScheduleAssignmentSnapshot(
     DateTimeOffset EndUtc,
     bool IsLocked,
     string ExplanationCode,
-    string? StandardOperationCode = null);
+    string? StandardOperationCode = null,
+    string? SegmentsJson = null);
 
 public sealed record GeneratedScheduleResourceLoadSnapshot(
     string ResourceId,
@@ -644,6 +645,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
         IsLocked = contract.IsLocked;
         ExplanationCode = Required(contract.ExplanationCode, nameof(contract.ExplanationCode));
         StandardOperationCode = Optional(contract.StandardOperationCode);
+        SegmentsJson = string.IsNullOrWhiteSpace(contract.SegmentsJson) ? "[]" : contract.SegmentsJson;
     }
 
     public SchedulePlanId SchedulePlanId { get; private set; } = null!;
@@ -654,6 +656,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     public string ResourceId { get; private set; } = string.Empty;
     public string WorkCenterId { get; private set; } = string.Empty;
     public string? StandardOperationCode { get; private set; }
+    public string SegmentsJson { get; private set; } = "[]";
     public DateTimeOffset StartUtc { get; private set; }
     public DateTimeOffset EndUtc { get; private set; }
     public bool IsLocked { get; private set; }

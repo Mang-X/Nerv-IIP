@@ -191,7 +191,8 @@ public sealed record SchedulingLockedAssignmentContract(
     string WorkCenterId,
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
-    string LockReasonCode);
+    string LockReasonCode,
+    IReadOnlyCollection<ScheduleAssignmentSegmentContract>? Segments = null);
 
 public sealed record SchedulePlanContract(
     int ContractVersion,
@@ -320,7 +321,12 @@ public sealed record ScheduleAssignmentContract(
     DateTimeOffset EndUtc,
     bool IsLocked,
     string ExplanationCode,
-    string? StandardOperationCode = null);
+    string? StandardOperationCode = null,
+    IReadOnlyCollection<ScheduleAssignmentSegmentContract>? Segments = null);
+
+public sealed record ScheduleAssignmentSegmentContract(
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc);
 
 public sealed record ScheduleResourceLoadContract(
     string ResourceId,

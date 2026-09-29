@@ -40305,6 +40305,27 @@
           "standardOperationCode": {
             "type": "string",
             "nullable": true
+          },
+          "segments": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentSegmentContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleAssignmentSegmentContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -41059,6 +41080,13 @@
           },
           "lockReasonCode": {
             "type": "string"
+          },
+          "segments": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentSegmentContract"
+            }
           }
         }
       },

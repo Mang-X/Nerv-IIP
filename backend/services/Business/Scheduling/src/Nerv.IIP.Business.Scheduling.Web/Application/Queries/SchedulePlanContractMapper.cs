@@ -38,7 +38,10 @@ public static class SchedulePlanContractMapper
                 x.EndUtc,
                 x.IsLocked,
                 x.ExplanationCode,
-                x.StandardOperationCode))
+                x.StandardOperationCode,
+                x.SegmentsJson == "[]"
+                    ? null
+                    : JsonSerializer.Deserialize<ScheduleAssignmentSegmentContract[]>(x.SegmentsJson, SchedulingJson.Options)))
             .ToArray();
         var conflicts = plan.Conflicts
             .OrderBy(x => x.ConflictPublicId, StringComparer.Ordinal)
@@ -228,7 +231,8 @@ public static class SchedulePlanContractMapper
                     x.EndUtc,
                     x.IsLocked,
                     x.ExplanationCode,
-                    x.StandardOperationCode))
+                    x.StandardOperationCode,
+                    JsonSerializer.Serialize(x.Segments ?? [], SchedulingJson.Options)))
                 .ToArray(),
             plan.ResourceLoads
                 .Select(x => new GeneratedScheduleResourceLoadSnapshot(

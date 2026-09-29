@@ -1532,6 +1532,12 @@ export type NervIipContractsSchedulingScheduleAssignmentContract = {
     isLocked?: boolean;
     explanationCode?: string;
     standardOperationCode?: string | null;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
+};
+
+export type NervIipContractsSchedulingScheduleAssignmentSegmentContract = {
+    startUtc?: string;
+    endUtc?: string;
 };
 
 export type NervIipContractsSchedulingScheduleResourceLoadContract = {
@@ -1748,6 +1754,7 @@ export type NervIipContractsSchedulingSchedulingLockedAssignmentContract = {
     startUtc?: string;
     endUtc?: string;
     lockReasonCode?: string;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingEquipmentDataRiskContract = {

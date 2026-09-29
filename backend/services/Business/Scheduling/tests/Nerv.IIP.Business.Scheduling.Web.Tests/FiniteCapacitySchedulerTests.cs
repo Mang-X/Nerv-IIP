@@ -9,6 +9,118 @@ public class FiniteCapacitySchedulerTests
     private static readonly DateTimeOffset GeneratedAtUtc = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void Interruptible_operation_uses_separate_shifts_and_preserves_work_minutes()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(18),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 180 });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-plan", GeneratedAtUtc);
+
+        var assignment = Assert.Single(plan.Assignments);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(2)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11))
+        ], assignment.Segments);
+        Assert.Equal(180, plan.Metrics.AssignedMinutes);
+        Assert.Equal(1, plan.Metrics.ScheduledOperationCount);
+        Assert.Empty(plan.UnscheduledOperations);
+
+        var continuousOnly = ReplaceSingleOperation(problem,
+            x => x with { SplitPolicy = ScheduleSplitPolicyContract.NonSplittable });
+        var continuousPlan = new FiniteCapacityScheduler().Schedule(continuousOnly, "continuous-plan", GeneratedAtUtc);
+        Assert.Empty(continuousPlan.Assignments);
+        Assert.Equal(ScheduleConflictReasonCodeContract.Calendar,
+            Assert.Single(continuousPlan.UnscheduledOperations).ReasonCode);
+    }
+
+    [Fact]
+    public void Interruptible_operation_avoids_unavailability_and_locked_segment_occupancy()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(18),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(3), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(13), "second")])],
+            UnavailabilityWindows = [new SchedulingUnavailabilityWindowContract(
+                "DEV-SNAPSHOT-01", null, start.AddHours(1), start.AddHours(2), "maintenance")],
+            LockedAssignments = [new SchedulingLockedAssignmentContract(
+                "locked", "OTHER", "OTHER-OP", 1, "DEV-SNAPSHOT-01", "WC-SNAPSHOT",
+                start.AddHours(10), start.AddHours(12), "planner-lock",
+                [new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11)),
+                 new ScheduleAssignmentSegmentContract(start.AddHours(11).AddMinutes(30), start.AddHours(12))])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 210 });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-block-plan", GeneratedAtUtc);
+
+        var assignment = plan.Assignments.Single(x => !x.IsLocked);
+        Assert.Equal(210, assignment.Segments!.Sum(x => (int)(x.EndUtc - x.StartUtc).TotalMinutes));
+        Assert.Contains(assignment.Segments!, x => x.StartUtc == start.AddHours(11)
+            && x.EndUtc == start.AddHours(11).AddMinutes(30));
+        Assert.All(assignment.Segments!, segment =>
+        {
+            Assert.False(segment.StartUtc < start.AddHours(2) && segment.EndUtc > start.AddHours(1));
+            Assert.False(segment.StartUtc < start.AddHours(11) && segment.EndUtc > start.AddHours(10));
+            Assert.False(segment.StartUtc < start.AddHours(12) && segment.EndUtc > start.AddHours(11).AddMinutes(30));
+        });
+        Assert.Equal(300, plan.Metrics.AssignedMinutes);
+
+        var reversedLock = problem with
+        {
+            LockedAssignments = [problem.LockedAssignments.Single() with
+            {
+                Segments = problem.LockedAssignments.Single().Segments!.Reverse().ToArray()
+            }]
+        };
+        var repeated = new FiniteCapacityScheduler().Schedule(reversedLock, "split-block-plan", GeneratedAtUtc);
+        Assert.Equal(JsonSerializer.Serialize(plan, SchedulingJson.Options),
+            JsonSerializer.Serialize(repeated, SchedulingJson.Options));
+
+        var envelopeOnlyLock = problem with
+        {
+            LockedAssignments = [problem.LockedAssignments.Single() with { Segments = null }]
+        };
+        var envelopePlan = new FiniteCapacityScheduler().Schedule(
+            envelopeOnlyLock, "envelope-lock-plan", GeneratedAtUtc);
+        Assert.Equal(ScheduleConflictReasonCodeContract.Capacity,
+            Assert.Single(envelopePlan.UnscheduledOperations).ReasonCode);
+    }
+
+    [Fact]
+    public void Interruptible_segments_respect_fixed_work_center_occupancy()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(14),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 150 });
+        var fixedReservation = new FixedWorkCenterReservation(
+            "OTHER", "FIXED", 1, "WC-SNAPSHOT", start, start.AddHours(1), null);
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(
+            problem, "fixed-split-plan", GeneratedAtUtc, [fixedReservation]);
+
+        var assignment = plan.Assignments.Single(x => !x.IsLocked);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start.AddHours(1), start.AddHours(2)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11).AddMinutes(30))
+        ], assignment.Segments);
+    }
+
+    [Fact]
     public void Schedule_returns_identical_plan_for_repeated_shock_absorber_input()
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
