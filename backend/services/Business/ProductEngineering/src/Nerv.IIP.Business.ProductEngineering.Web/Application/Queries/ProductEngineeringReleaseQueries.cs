@@ -305,7 +305,8 @@ public sealed record RoutingOperationItem(
     bool RequiresReporting = true,
     bool RequiresQualityInspection = false,
     bool IsOutsourced = false,
-    string? RequiredSkillCode = null);
+    string? RequiredSkillCode = null,
+    bool Interruptible = false);
 
 public sealed record RoutingListItem(
     string RoutingCode,
@@ -373,7 +374,8 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
                         operation.RequiresReporting,
                         operation.RequiresQualityInspection,
                         operation.IsOutsourced,
-                        operation.RequiredSkillCode))
+                        operation.RequiredSkillCode,
+                        operation.Interruptible))
                     .ToArray()))
             .ToArrayAsync(cancellationToken);
 
@@ -416,7 +418,8 @@ public sealed class GetRoutingQueryHandler(ApplicationDbContext dbContext)
                         operation.RequiresReporting,
                         operation.RequiresQualityInspection,
                         operation.IsOutsourced,
-                        operation.RequiredSkillCode))
+                        operation.RequiredSkillCode,
+                        operation.Interruptible))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"工艺路线 '{request.RoutingCode}' 修订 '{request.Revision}' 不存在。");

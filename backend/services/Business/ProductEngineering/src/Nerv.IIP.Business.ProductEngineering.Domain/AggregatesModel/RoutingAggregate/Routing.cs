@@ -48,7 +48,8 @@ public sealed class Routing : Entity<RoutingId>, IAggregateRoot
         string operationCode,
         string operationName,
         int standardMinutes,
-        string? requiredSkillCode = null)
+        string? requiredSkillCode = null,
+        bool interruptible = false)
     {
         return AddOperation(
             sequence,
@@ -62,7 +63,8 @@ public sealed class Routing : Entity<RoutingId>, IAggregateRoot
             requiresReporting: true,
             requiresQualityInspection: false,
             isOutsourced: false,
-            requiredSkillCode);
+            requiredSkillCode,
+            interruptible);
     }
 
     public Routing AddOperation(
@@ -77,7 +79,8 @@ public sealed class Routing : Entity<RoutingId>, IAggregateRoot
         bool requiresReporting,
         bool requiresQualityInspection,
         bool isOutsourced,
-        string? requiredSkillCode = null)
+        string? requiredSkillCode = null,
+        bool interruptible = false)
     {
         EnsureDraft();
         if (sequence <= 0)
@@ -117,7 +120,8 @@ public sealed class Routing : Entity<RoutingId>, IAggregateRoot
             requiresReporting,
             requiresQualityInspection,
             isOutsourced,
-            Optional(requiredSkillCode)));
+            Optional(requiredSkillCode),
+            interruptible));
         Touch();
         return this;
     }
@@ -185,7 +189,8 @@ public sealed class RoutingOperation
         bool requiresReporting,
         bool requiresQualityInspection,
         bool isOutsourced,
-        string? requiredSkillCode)
+        string? requiredSkillCode,
+        bool interruptible)
     {
         Sequence = sequence;
         WorkCenterCode = workCenterCode;
@@ -200,6 +205,7 @@ public sealed class RoutingOperation
         RequiresQualityInspection = requiresQualityInspection;
         IsOutsourced = isOutsourced;
         RequiredSkillCode = requiredSkillCode;
+        Interruptible = interruptible;
     }
 
     public int Sequence { get; private set; }
@@ -215,4 +221,5 @@ public sealed class RoutingOperation
     public bool RequiresQualityInspection { get; private set; }
     public bool IsOutsourced { get; private set; }
     public string? RequiredSkillCode { get; private set; }
+    public bool Interruptible { get; private set; }
 }

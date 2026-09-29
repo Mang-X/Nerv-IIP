@@ -40884,7 +40884,8 @@
         "type": "string",
         "description": "",
         "enum": [
-          "nonSplittable"
+          "nonSplittable",
+          "interruptible"
         ]
       },
       "NervIIPContractsSchedulingSchedulingResourceContract": {
@@ -45949,6 +45950,9 @@
           "standardMinutes": {
             "type": "integer",
             "format": "int32"
+          },
+          "interruptible": {
+            "type": "boolean"
           }
         }
       },
@@ -46062,6 +46066,9 @@
           "standardMinutes": {
             "type": "integer",
             "format": "int32"
+          },
+          "interruptible": {
+            "type": "boolean"
           }
         }
       },

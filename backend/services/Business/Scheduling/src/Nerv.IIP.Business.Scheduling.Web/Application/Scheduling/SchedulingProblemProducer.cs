@@ -196,7 +196,7 @@ public sealed class SchedulingProblemProducer(
                 DueUtc: order.DueUtc,
                 Priority: order.Priority,
                 IsRush: order.IsRush,
-                SplitPolicy: ScheduleSplitPolicyContract.NonSplittable,
+                SplitPolicy: operation.Interruptible ? ScheduleSplitPolicyContract.Interruptible : ScheduleSplitPolicyContract.NonSplittable,
                 MaterialReadyUtc: null,
                 QualityBlockReason: operation.RequiresQualityInspection ? "quality.inspectionRequired" : null,
                 SourceReference: $"product-engineering:routing:{routing.RoutingCode}:{routing.Revision}:{operation.OperationCode}",
@@ -402,7 +402,8 @@ public sealed record SchedulingProblemRoutingOperationSnapshot(
     int SetupMinutes,
     int RunMinutes,
     int TeardownMinutes,
-    bool RequiresQualityInspection = false);
+    bool RequiresQualityInspection = false,
+    bool Interruptible = false);
 
 public sealed record SchedulingProblemWorkCenterSnapshot(
     string Code,
@@ -464,7 +465,8 @@ public sealed class HttpSchedulingProblemProductEngineeringClient(
                 x.SetupMinutes,
                 Math.Max(1, x.RunMinutes == 0 ? x.StandardMinutes - x.SetupMinutes - x.TeardownMinutes : x.RunMinutes),
                 Math.Max(0, x.TeardownMinutes),
-                x.RequiresQualityInspection)).ToArray());
+                x.RequiresQualityInspection,
+                x.Interruptible)).ToArray());
     }
 
     private async Task<T> SendAsync<T>(string requestUri, CancellationToken cancellationToken)
@@ -519,7 +521,8 @@ public sealed class HttpSchedulingProblemProductEngineeringClient(
         string ControlKey,
         bool RequiresReporting,
         bool RequiresQualityInspection,
-        bool IsOutsourced);
+        bool IsOutsourced,
+        bool Interruptible = false);
 }
 
 public sealed class HttpSchedulingProblemMasterDataClient(
