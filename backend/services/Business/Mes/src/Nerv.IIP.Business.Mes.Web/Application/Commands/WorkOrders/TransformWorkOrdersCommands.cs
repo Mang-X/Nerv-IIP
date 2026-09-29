@@ -90,12 +90,30 @@ public sealed class SplitWorkOrderCommandHandler(ApplicationDbContext dbContext)
 
         var sourceOperations = await WorkOrderTransformationCommandSupport.LoadOperationsAsync(
             dbContext, request.OrganizationId, request.EnvironmentId, [source.WorkOrderIdValue], cancellationToken);
-        foreach (var target in targets)
+        var targetOperations = new List<OperationTask>();
+        foreach (var operation in sourceOperations)
         {
-            dbContext.OperationTasks.AddRange(sourceOperations.Select(operation =>
-                WorkOrderTransformationCommandSupport.CreateTargetOperation(operation, target,
-                    operation.PlannedQuantity * target.Quantity / source.Quantity, operation.EarliestStartUtc)));
+            decimal cumulativeQuantity = 0;
+            decimal allocatedQuantity = 0;
+            for (var index = 0; index < targets.Length; index++)
+            {
+                var target = targets[index];
+                cumulativeQuantity += target.Quantity;
+                // Allocate differences of rounded cumulative shares at numeric(18,6) precision.
+                var cumulativePlannedQuantity = index == targets.Length - 1
+                    ? operation.PlannedQuantity
+                    : decimal.Round(operation.PlannedQuantity * cumulativeQuantity / source.Quantity, 6);
+                var plannedQuantity = cumulativePlannedQuantity - allocatedQuantity;
+                if (plannedQuantity <= 0m)
+                {
+                    throw new MesLifecycleConflictException("work-order-transformation", "invalid-split");
+                }
+                targetOperations.Add(WorkOrderTransformationCommandSupport.CreateTargetOperation(
+                    operation, target, plannedQuantity, operation.EarliestStartUtc));
+                allocatedQuantity = cumulativePlannedQuantity;
+            }
         }
+        dbContext.OperationTasks.AddRange(targetOperations);
         foreach (var operation in sourceOperations)
         {
             operation.Cancel(request.OccurredAtUtc, request.Actor);

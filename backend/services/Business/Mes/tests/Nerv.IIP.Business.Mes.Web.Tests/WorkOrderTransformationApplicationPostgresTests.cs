@@ -27,16 +27,17 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
 
         var occurredAtUtc = DateTimeOffset.Parse("2026-08-26T05:00:00Z");
         await SeedAsync(factory, WorkOrder.Create(
-            "org-001", "env-dev", "WO-CONCURRENT-REPLAY", "SKU-001", "PV-001", 10m, 10,
-            occurredAtUtc.AddHours(4), "PCS"));
+            "org-001", "env-dev", "WO-CONCURRENT-REPLAY", "SKU-001", "PV-001", 3m, 10,
+            occurredAtUtc.AddHours(4), "PCS"), plannedQuantity: 1m);
 
         var command = new SplitWorkOrderCommand(
             "org-001",
             "env-dev",
             "WO-CONCURRENT-REPLAY",
             [
-                new("WO-CONCURRENT-REPLAY-CHILD-1", 4m),
-                new("WO-CONCURRENT-REPLAY-CHILD-2", 6m),
+                new("WO-CONCURRENT-REPLAY-CHILD-1", 1m),
+                new("WO-CONCURRENT-REPLAY-CHILD-2", 1m),
+                new("WO-CONCURRENT-REPLAY-CHILD-3", 1m),
             ],
             "并发幂等拆分",
             "split-application-postgres-race-001",
@@ -51,7 +52,7 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
         Assert.Equal(1, results.Count(result => result.IsIdempotentReplay));
         Assert.Equal(results[0].TransformationId, results[1].TransformationId);
         Assert.Equal(
-            ["WO-CONCURRENT-REPLAY-CHILD-1", "WO-CONCURRENT-REPLAY-CHILD-2"],
+            ["WO-CONCURRENT-REPLAY-CHILD-1", "WO-CONCURRENT-REPLAY-CHILD-2", "WO-CONCURRENT-REPLAY-CHILD-3"],
             results[0].TargetWorkOrderIds);
 
         await using var assertionScope = factory.Services.CreateAsyncScope();
@@ -59,17 +60,18 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
         var source = await assertion.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-CONCURRENT-REPLAY");
         Assert.Equal(1, await assertion.WorkOrderTransformations.CountAsync(
             x => x.IdempotencyKey == command.IdempotencyKey));
-        Assert.Equal(2, await assertion.WorkOrderTransformations
+        Assert.Equal(3, await assertion.WorkOrderTransformations
             .Where(x => x.IdempotencyKey == command.IdempotencyKey)
             .SelectMany(x => x.Lines)
             .CountAsync());
-        Assert.Equal(2, await assertion.WorkOrders.CountAsync(
+        Assert.Equal(3, await assertion.WorkOrders.CountAsync(
             x => x.WorkOrderIdValue.StartsWith("WO-CONCURRENT-REPLAY-CHILD-")));
         Assert.Equal(OperationTaskLifecycleStatus.Cancelled,
             (await assertion.OperationTasks.SingleAsync(x => x.WorkOrderId == source.WorkOrderIdValue)).Status);
         var targetOperations = await assertion.OperationTasks.Where(x => x.WorkOrderId != source.WorkOrderIdValue).ToArrayAsync();
-        Assert.Equal(2, targetOperations.Length);
-        Assert.Equal(10m, targetOperations.Sum(x => x.PlannedQuantity));
+        Assert.Equal(3, targetOperations.Length);
+        Assert.Equal(1m, targetOperations.Sum(x => x.PlannedQuantity));
+        Assert.Equal([0.333333m, 0.333333m, 0.333334m], targetOperations.Select(x => x.PlannedQuantity).Order());
         Assert.All(targetOperations, operation => Assert.Equal(OperationTaskLifecycleStatus.Queued, operation.Status));
         Assert.Equal(WorkOrder.SplitStatus, source.Status);
         Assert.Equal(2, source.Version);
@@ -189,14 +191,14 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
         await dbContext.Database.MigrateAsync(CancellationToken.None);
     }
 
-    private static async Task SeedAsync(WebApplicationFactory<Program> factory, WorkOrder workOrder)
+    private static async Task SeedAsync(WebApplicationFactory<Program> factory, WorkOrder workOrder, decimal? plannedQuantity = null)
     {
         using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Queue(workOrder.OrganizationId, workOrder.EnvironmentId,
             workOrder.WorkOrderIdValue, "SOURCE-OP", 10, "WC-1", [], workOrder.DueUtc,
-            TimeSpan.FromMinutes(20), workOrder.SkuId, workOrder.UomCode, workOrder.Quantity));
+            TimeSpan.FromMinutes(20), workOrder.SkuId, workOrder.UomCode, plannedQuantity ?? workOrder.Quantity));
         await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 

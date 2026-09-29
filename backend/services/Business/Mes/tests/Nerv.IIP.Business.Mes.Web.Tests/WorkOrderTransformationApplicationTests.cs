@@ -317,6 +317,27 @@ public sealed class WorkOrderTransformationApplicationTests
         public override IReadOnlyList<EntityEntry> Entries => [entry];
     }
 
+    [Fact]
+    public async Task Split_rejects_a_share_below_persisted_precision_without_changing_sources()
+    {
+        await using var db = CreateContext();
+        var occurredAtUtc = DateTimeOffset.Parse("2026-08-26T02:00:00Z");
+        db.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-PRECISION", "SKU-001", "PV-001",
+            3m, 10, occurredAtUtc.AddHours(4), "PCS"));
+        db.OperationTasks.Add(OperationTask.Queue("org-001", "env-dev", "WO-PRECISION", "PRECISION-OP",
+            10, "WC-1", [], occurredAtUtc, TimeSpan.FromMinutes(20), "SKU-001", "PCS", 0.000001m));
+        await db.SaveChangesAsync();
+        var command = new SplitWorkOrderCommand("org-001", "env-dev", "WO-PRECISION",
+            [new("WO-PRECISION-A", 1m), new("WO-PRECISION-B", 2m)], "精度不足", "precision-001",
+            "user:planner-001", occurredAtUtc);
+
+        await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
+            new SplitWorkOrderCommandHandler(db).Handle(command, CancellationToken.None));
+        Assert.Equal(WorkOrder.CreatedStatus, (await db.WorkOrders.SingleAsync()).Status);
+        Assert.Equal(OperationTaskLifecycleStatus.Queued, (await db.OperationTasks.SingleAsync()).Status);
+        Assert.DoesNotContain(db.ChangeTracker.Entries(), entry => entry.State == EntityState.Added);
+    }
+
     private static ApplicationDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
