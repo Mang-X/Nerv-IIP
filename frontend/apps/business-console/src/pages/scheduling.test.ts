@@ -464,6 +464,7 @@ describe('APS scheduling workbench page', () => {
       )
       if (hasShortage) {
         expect(draftSummary.findAll('tbody tr')).toHaveLength(1)
+        expect(draftSummary.findAll('tbody td')[0]!.text()).toContain('MAT-SHARED')
         expect(draftSummary.findAll('tbody td')[1]!.text()).toBe('3 kg')
         expect(draftSummary.text()).toContain('LOT-1')
         expect(draftSummary.text()).toContain('WO-20260701-001 · OP-10')
