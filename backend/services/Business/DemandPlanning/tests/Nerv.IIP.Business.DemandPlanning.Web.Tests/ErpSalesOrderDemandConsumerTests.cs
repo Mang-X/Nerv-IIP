@@ -34,6 +34,51 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpSalesOrderDemandConsumerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_unknown_line_pegging_invalidates_when_every_existing_order_line_changes(bool multipleLines)
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        var lines = new List<SalesOrderLineSnapshot>
+        {
+            new("10", "SKU-FG-A", 8m, "EA", new DateOnly(2026, 8, 15), false),
+        };
+        if (multipleLines)
+        {
+            lines.Add(new SalesOrderLineSnapshot("20", "SKU-FG-A", 6m, "EA", new DateOnly(2026, 8, 15), false));
+        }
+
+        await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Released(1, 8m, "10") with { Payload = Payload(1, "released", 8m, "10") with { Lines = lines } }, CancellationToken.None);
+
+        var runId = new MrpRunId(Guid.CreateVersion7());
+        var open = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        var accepted = PlanningSuggestion.Create("org-001", "env-dev", runId, "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        accepted.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        accepted.Accept("BusinessMes", "WorkOrder", "WO-LEGACY");
+        open.ClearDomainEvents();
+        accepted.ClearDomainEvents();
+        dbContext.PlanningSuggestions.AddRange(open, accepted);
+        await dbContext.SaveChangesAsync();
+
+        var changedLines = lines.Select(line => line with { Quantity = line.Quantity / 2m }).ToArray();
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Changed(2, 4m, "10") with { Payload = Payload(2, "released", 4m, "10") with { Lines = changedLines } }, CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Closed, open.Status);
+        Assert.Equal(PlanningSuggestionStatus.Accepted, accepted.Status);
+        var signal = Assert.Single(provider.GetRequiredService<RecordingIntegrationEventPublisher>().Events
+            .OfType<SalesOrderDemandChangedForWorkOrderIntegrationEvent>());
+        Assert.Equal("WO-LEGACY", signal.Payload.WorkOrderId);
+        Assert.Equal(2, signal.Payload.OrderVersion);
+        Assert.False(signal.Payload.Cancelled);
+    }
+
     [Fact]
     public async Task Changed_line_preserves_same_order_same_sku_date_other_line_and_its_work_order()
     {

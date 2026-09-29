@@ -28,7 +28,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | DemandPlanning | `PlanningSuggestionPayload` / `PlannedPurchaseSuggested` | DemandPlanning | ERP 实际采购交接使用已接受建议事件 | `deprecated/covered-by-other-contract` |
 | DemandPlanning | `PlanningSuggestionPayload` / `PlannedWorkOrderSuggested` | DemandPlanning | MES 实际工单交接使用已接受建议事件 | `deprecated/covered-by-other-contract` |
 | DemandPlanning | `PlanningSuggestionAcceptedIntegrationEvent` | DemandPlanning | MES；指向采购申请的建议由 ERP 消费 | `consumed-internally` |
-| DemandPlanning | `SalesOrderDemandChangedForWorkOrderIntegrationEvent` | DemandPlanning | 当前无活动消费者；MES 工单变更处理待后续接入 | `producer-only-until-feature` |
+| DemandPlanning | `SalesOrderDemandChangedForWorkOrderIntegrationEvent` | DemandPlanning | 当前无活动消费者；MES 工单变更处理待后续接入 | `needs-business-consumer` |
 | ERP | `PurchaseRequisitionCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `PurchaseOrderReleasedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `MaterialSupplyEtaChangedIntegrationEvent` | ERP | Scheduling 按受影响 SKU 精确失效 generated 排程方案 | `consumed-internally` |

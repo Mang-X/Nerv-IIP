@@ -217,7 +217,7 @@ internal sealed class SalesOrderDemandEventProcessor(
 
         if (changedLineReferences.Count > 0)
         {
-            if (isOrderCancelled)
+            if (isOrderCancelled || existingDemands.All(demand => changedLineReferences.Contains(demand.SourceLineReference)))
             {
                 changedLineReferences.Add(null);
             }
