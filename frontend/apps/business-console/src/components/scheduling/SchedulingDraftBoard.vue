@@ -5,6 +5,8 @@ import {
   type ScheduleModel,
   type TaskDragPayload,
 } from '@nerv-iip/scheduling'
+import type { BusinessConsoleSchedulingMaterialShortageSummary } from '@nerv-iip/api-client'
+import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import type { EntityPickerOption } from '@nerv-iip/ui'
@@ -23,6 +25,7 @@ import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{
   model?: ScheduleModel
+  materialShortageSummary?: BusinessConsoleSchedulingMaterialShortageSummary[] | null
   pendingOperations?: WorkingSchedulePendingOperation[]
   readOnly?: boolean
   /**
@@ -113,6 +116,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
         </li>
       </ul>
     </section>
+    <SchedulingMaterialShortageSummary v-if="model" :shortages="materialShortageSummary ?? []" />
     <!--
       物料风险横幅：齐套是开工门槛不是排产门槛。缺料工单照排进方案，
       这里显式告诉规划员「哪些工序开工前必须先备料」，避免拿着方案去发布却被 MES 齐套门拦下。

@@ -4,6 +4,8 @@ import { computed, reactive, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPage from './scheduling.vue'
+import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
+import type { BusinessConsoleSchedulingMaterialShortageSummary } from '@nerv-iip/api-client'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 让断言不依赖真实名录查询。挂载仍装一个新 Pinia（见各 mount 的 plugins）：
@@ -146,6 +148,7 @@ const detailError = shallowRef<unknown>()
 // 让草案工作区拿到真实任务（持久化 override 用例要按 taskId 找回工序）。
 const planOne = {
   planId: 'plan-001',
+  materialShortageSummary: [] as BusinessConsoleSchedulingMaterialShortageSummary[],
   status: 'generated',
   generatedAtUtc: '2026-07-01T09:30:00Z',
   metrics: {
@@ -385,6 +388,7 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  planOne.materialShortageSummary = []
   routeStub.query = {}
   detailSelection.planId = ''
   detailError.value = undefined
@@ -423,6 +427,66 @@ async function openPlanTable(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('APS scheduling workbench page', () => {
+  it.each([true, false])(
+    'shows the same batch shortages in draft and saved plan (shortage=%s)',
+    async (hasShortage) => {
+      // #3996：后端已完成共享库存分配，前端只呈现方案级缺口 3，不能按两个工单重复累加。
+      planOne.materialShortageSummary = hasShortage
+        ? [
+            {
+              materialId: 'MAT-SHARED',
+              materialLotId: 'LOT-1',
+              uomCode: 'kg',
+              shortageQuantity: 3,
+              affectedOperations: [
+                { orderId: 'WO-20260701-001', operationId: 'OP-10' },
+                { orderId: 'WO-20260701-002', operationId: 'OP-20' },
+              ],
+            },
+          ]
+        : []
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+      })
+      await flushPromises()
+      expect(wrapper.findComponent(SchedulingMaterialShortageSummary).exists()).toBe(false)
+      wrapper
+        .findComponent({ name: 'SchedulingOrderPool' })
+        .vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('生成首版'))!
+        .trigger('click')
+      await flushPromises()
+      const draftSummary = wrapper.find(
+        '[data-testid="scheduling-draft-board"] [data-testid="scheduling-material-shortage-summary"]',
+      )
+      if (hasShortage) {
+        expect(draftSummary.findAll('tbody tr')).toHaveLength(1)
+        expect(draftSummary.findAll('tbody td')[1]!.text()).toBe('3 kg')
+        expect(draftSummary.text()).toContain('LOT-1')
+        expect(draftSummary.text()).toContain('WO-20260701-001 · OP-10')
+        expect(draftSummary.text()).toContain('WO-20260701-002 · OP-20')
+      } else {
+        expect(draftSummary.text()).toContain('方案物料齐套 · 无缺料')
+      }
+      const expected = draftSummary.text()
+      const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特'))!
+      await ganttTab.trigger('focus')
+      await ganttTab.trigger('mousedown')
+      await flushPromises()
+      const savedSummary = wrapper.find(
+        '[data-testid="scheduling-plan-gantt"] [data-testid="scheduling-material-shortage-summary"]',
+      )
+      expect(savedSummary.text()).toBe(expected)
+      expect(
+        wrapper.find('aside [data-testid="scheduling-material-shortage-summary"]').text(),
+      ).toBe(expected)
+      wrapper.unmount()
+    },
+  )
+
   it('renders the official scheduling entry with plan summary columns from facade data', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
