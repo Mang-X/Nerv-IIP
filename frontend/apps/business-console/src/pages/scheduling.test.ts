@@ -378,7 +378,10 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
               unscheduledOperationCount: 0,
             },
           ]
-      ).filter((row) => historyPage.value === 1 || row.planId !== 'plan-released'),
+      ).filter(
+        (row) =>
+          historyPage.value === 1 || !['plan-released', 'plan-001'].includes(row.planId ?? ''),
+      ),
     ),
     plansError: shallowRef(undefined),
     plansPending: shallowRef(false),
@@ -596,6 +599,7 @@ describe('APS scheduling workbench page', () => {
     const table = wrapper.findComponent({ name: 'NvDataTable' })
     expect(table.props('manual')).toBe(true)
     expect(table.props('totalItems')).toBe(137)
+    expect(wrapper.text()).toContain('2026-09-01')
     table.vm.$emit('update:page', 2)
     await flushPromises()
     expect(table.props('page')).toBe(2)
@@ -603,7 +607,6 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('发布日（UTC）')
     expect(wrapper.text()).toContain('发布时间从新到旧')
     expect(wrapper.text()).not.toContain('明细中确认')
-    expect(wrapper.text()).toContain('2026-09-01')
     expect(wrapper.text()).toContain('工序数')
     expect(wrapper.text()).not.toContain('资源 / 工序')
   })
@@ -666,6 +669,73 @@ describe('APS scheduling workbench page', () => {
       clickConfirmRevoke()
       await flushPromises()
       expect(stub.revokePlan).toHaveBeenCalledWith('plan-released')
+      wrapper.unmount()
+    },
+  )
+
+  it.each(['page', 'filter'])(
+    'publishes the selected generated plan after its summary leaves the %s window',
+    async (change) => {
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+      })
+      await flushPromises()
+      await openPlanTable(wrapper)
+      const row = wrapper.findAll('tbody tr').find((item) => item.text().includes('plan-001'))!
+      await row
+        .findAll('button')
+        .find((button) => button.text().includes('明细'))!
+        .trigger('click')
+      await flushPromises()
+      if (change === 'page')
+        wrapper.findComponent({ name: 'NvDataTable' }).vm.$emit('update:page', 2)
+      else {
+        historyFilters.status = 'revoked'
+        historyEmpty.value = true
+      }
+      await flushPromises()
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text().includes('甘特图'))!
+      await tab.trigger('focus')
+      await tab.trigger('mousedown')
+      await flushPromises()
+      const publish = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('发布当前方案'))!
+      expect(publish.attributes('disabled')).toBeUndefined()
+      await publish.trigger('click')
+      await flushPromises()
+      expect(stub.releasePlan).toHaveBeenCalledWith('plan-001')
+      wrapper.unmount()
+    },
+  )
+
+  it.each(['plan-invalid', 'plan-released'])(
+    'preserves the selected %s release restriction after filtering away its summary',
+    async (planId) => {
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+      })
+      await flushPromises()
+      await openPlanTable(wrapper)
+      const row = wrapper.findAll('tbody tr').find((item) => item.text().includes(planId))!
+      await row
+        .findAll('button')
+        .find((button) => button.text().includes('明细'))!
+        .trigger('click')
+      await flushPromises()
+      historyFilters.status = 'revoked'
+      historyEmpty.value = true
+      await flushPromises()
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text().includes('甘特图'))!
+      await tab.trigger('focus')
+      await tab.trigger('mousedown')
+      await flushPromises()
+      const publish = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('发布当前方案'))!
+      expect(publish.attributes('disabled')).toBeDefined()
+      expect(stub.releasePlan).not.toHaveBeenCalled()
+      if (planId === 'plan-invalid') expect(publish.attributes('title')).toContain('设备不可用')
       wrapper.unmount()
     },
   )

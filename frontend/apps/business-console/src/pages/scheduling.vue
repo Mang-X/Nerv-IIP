@@ -256,8 +256,26 @@ const detailFeedback = computed(() => {
   if (detailSelection.planId) return '未返回方案明细。'
   return '请选择一个排程方案查看明细。'
 })
+// 历史表的分页窗口不决定已选方案的操作能力。保留已选摘要中的失效信息，
+// 状态始终以独立加载的方案明细为准；切换选中方案时不沿用上一方案摘要。
+const selectedHistorySummary = shallowRef<BusinessConsoleSchedulingPlanSummaryResponse>()
+watch(
+  [() => detailSelection.planId, actionablePlans],
+  ([planId, availablePlans]) => {
+    const summary = availablePlans.find((plan) => plan.planId === planId)
+    if (summary || selectedHistorySummary.value?.planId !== planId)
+      selectedHistorySummary.value = summary
+  },
+  { immediate: true },
+)
 const selectedPlanSummary = computed(() =>
-  actionablePlans.value.find((plan) => plan.planId === detailSelection.planId),
+  planDetail.value
+    ? {
+        ...selectedHistorySummary.value,
+        planId: planDetail.value.planId,
+        status: planDetail.value.status,
+      }
+    : undefined,
 )
 const targetedAssignmentFound = computed(() =>
   Boolean(
@@ -350,13 +368,11 @@ function openDetail(planId: string | undefined) {
   detailOpen.value = true
 }
 
-async function publish(planId: string | undefined) {
-  if (!planId) return
-  const summary = actionablePlans.value.find((plan) => plan.planId === planId)
-  if (!summary || !canRelease(summary)) return
+async function publish(plan: BusinessConsoleSchedulingPlanSummaryResponse | undefined) {
+  if (!plan?.planId || !canRelease(plan)) return
 
   try {
-    await releasePlan(planId)
+    await releasePlan(plan.planId)
     toast.success('排程方案已发布')
   } catch (error) {
     notifyOperationFailure('发布失败', error, '发布失败，请稍后重试')
@@ -925,7 +941,7 @@ function reasonLabel(reason?: string | null) {
                 type="button"
                 :disabled="!canRelease(row) || releasePlanPending"
                 :title="releaseDisabledReason(row)"
-                @click="publish(row.planId)"
+                @click="publish(row)"
               >
                 <Spinner v-if="releasePlanPending" aria-hidden="true" />
                 <SendIcon v-else aria-hidden="true" />
@@ -988,7 +1004,7 @@ function reasonLabel(reason?: string | null) {
           :error="planDetailError"
           :release-pending="releasePlanPending"
           @open-detail="detailOpen = true"
-          @release="publish(detailSelection.planId)"
+          @release="publish(selectedPlanSummary)"
         />
       </NvTabsContent>
     </NvTabs>
