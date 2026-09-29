@@ -1947,7 +1947,7 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
-        "Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant"
+        "Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_administrator_default_tenant_and_planner_role"
       ],
       "expectedRuntimeTestCount": 1
     },
@@ -1966,9 +1966,10 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
-        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres"
+        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres",
+        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Production_planner_query_filters_role_scope_and_active_accounts_on_postgres"
       ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 2
     }
   ]
 }

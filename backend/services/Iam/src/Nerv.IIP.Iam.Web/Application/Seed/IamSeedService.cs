@@ -37,7 +37,7 @@ public sealed class IamSeedService(
     ];
 
     /// <summary>
-    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，
+    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，以及生产计划员角色，
     /// 不覆盖已存在的行。例外：仍是旧英文默认名的平台管理员角色一次性改为中文名
     /// （manifest <c>iam-platform-admin-role-name-zh:v1</c>，见 <see cref="RenameLegacyAdministratorRoleAsync"/>）。组织/环境/管理员/角色 id 读 <c>Iam:Seed:*</c>（与产品基线 seed 同源）。
     /// 新建管理员时初始口令只来自部署配置 <c>Iam:Seed:AdminPassword</c>，须满足口令策略，并标记首次登录须改密。
@@ -64,6 +64,7 @@ public sealed class IamSeedService(
                 passwordExpiresAtUtc: passwordPolicy.GetPasswordExpiresAtUtc(now),
                 passwordChangeRequired: true);
         }, cancellationToken);
+        await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -131,6 +132,8 @@ public sealed class IamSeedService(
             ]);
             dbContext.Roles.Add(erpRole);
         }
+
+        await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
 
         var (role, user) = await EnsurePlatformAdministratorAsync(
             dbContext,
@@ -254,6 +257,22 @@ public sealed class IamSeedService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task EnsureProductionPlannerAsync(
+        ApplicationDbContext dbContext,
+        IamSeedOptions seed,
+        CancellationToken cancellationToken)
+    {
+        var definition = NervIipSeedRoles.ProductionPlanner;
+        if (await dbContext.Roles.FindAsync([new RoleId(definition.RoleId)], cancellationToken) is not null)
+        {
+            return;
+        }
+
+        var role = new Role(new RoleId(definition.RoleId), definition.RoleName, definition.PermissionCodes);
+        role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
+        dbContext.Roles.Add(role);
     }
 
     private async Task<(Role Role, User User)> EnsurePlatformAdministratorAsync(

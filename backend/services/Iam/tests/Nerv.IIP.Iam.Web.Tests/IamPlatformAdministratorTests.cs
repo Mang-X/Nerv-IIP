@@ -139,7 +139,7 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
     }
 
     [IamRealPostgresFact]
-    public async Task Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant()
+    public async Task Production_startup_bootstraps_administrator_default_tenant_and_planner_role()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "nerv_iam_bootstrap");
@@ -190,7 +190,9 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
             Assert.Equal("user-admin", Assert.Single(await db.Users.ToListAsync()).Id.Id);
             Assert.Equal("org-001", Assert.Single(await db.Organizations.ToListAsync()).Id.Id);
             Assert.Equal("env-dev", Assert.Single(await db.Environments.ToListAsync()).Id.Id);
-            Assert.Equal("role-platform-admin", Assert.Single(await db.Roles.ToListAsync()).Id.Id);
+            Assert.Equal(
+                ["role-platform-admin", "role-production-planner"],
+                (await db.Roles.ToListAsync()).Select(role => role.Id.Id).Order(StringComparer.Ordinal));
             Assert.Equal(1, await db.Memberships.CountAsync());
             Assert.Equal(0, await db.ConnectorHostCredentials.CountAsync());
             Assert.Equal(0, await db.ExternalClients.CountAsync());

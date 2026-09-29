@@ -35,6 +35,15 @@ public interface IUserRepository : IRepository<User, UserId>
         int take,
         CancellationToken cancellationToken = default);
 
+    Task<(IReadOnlyList<string> UserIds, int Total)> ListRoleMemberIdsAsync(
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        RoleId roleId,
+        DateTimeOffset now,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task PersistFailedLoginAsync(User user, CancellationToken cancellationToken = default);
 }
 
@@ -122,6 +131,32 @@ public sealed class UserRepository(ApplicationDbContext context)
             .Take(take)
             .ToListAsync(cancellationToken);
         return (items, total);
+    }
+
+    public async Task<(IReadOnlyList<string> UserIds, int Total)> ListRoleMemberIdsAsync(
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        RoleId roleId,
+        DateTimeOffset now,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = DbContext.Users.AsNoTracking()
+            .Where(user => user.Deleted == NotDeleted
+                && user.Enabled
+                && (user.AccountExpiresAtUtc == null || user.AccountExpiresAtUtc > now)
+                && DbContext.Memberships.Any(membership =>
+                    membership.UserId == user.Id
+                    && membership.OrganizationId == organizationId
+                    && membership.EnvironmentId == environmentId
+                    && DbContext.MembershipRoles.Any(memberRole =>
+                        memberRole.MembershipId == membership.Id && memberRole.RoleId == roleId))
+                && DbContext.Roles.Any(role => role.Id == roleId && role.Deleted == NotDeleted));
+        var total = await query.CountAsync(cancellationToken);
+        var ids = await query.OrderBy(user => user.Id)
+            .Skip(skip).Take(take).Select(user => user.Id.Id).ToArrayAsync(cancellationToken);
+        return (ids, total);
     }
 
     public async Task PersistFailedLoginAsync(User user, CancellationToken cancellationToken = default)

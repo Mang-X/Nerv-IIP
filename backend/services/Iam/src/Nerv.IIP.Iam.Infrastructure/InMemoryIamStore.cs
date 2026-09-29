@@ -825,7 +825,7 @@ public sealed class InMemoryIamStore
             {
                 new(DataScopeBinding.Organization, "org-001"),
             };
-        foreach (var role in NervIipSeedRoles.ErpJobRoles)
+        foreach (var role in NervIipSeedRoles.ErpJobRoles.Append(NervIipSeedRoles.ProductionPlanner))
         {
             _roles.Add(new RoleFact(
                 role.RoleId,
