@@ -28,7 +28,9 @@ public sealed class WorkOrderPlanningAdjustmentTests
 
         var command = new AdjustWorkOrderDueUtcCommand("org-001", "env-dev", workOrder.WorkOrderId, Now.AddDays(3), Now);
         var handler = new AdjustWorkOrderDueUtcCommandHandler(db);
+        var initialVersion = workOrder.Version;
         await handler.Handle(command, CancellationToken.None);
+        Assert.Equal(initialVersion + 1, workOrder.Version);
         var version = workOrder.Version;
         await handler.Handle(command, CancellationToken.None);
         await db.SaveChangesAsync();
