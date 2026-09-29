@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.Scheduling;
@@ -33,7 +33,6 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
 {
     public const string MesClientName = "SchedulingMesMaterialReadiness";
     public const string SourceUnavailableReasonCode = "mes.materialReadinessSourceUnavailable";
-    private const int MaxConcurrentMesReadinessRequests = 8;
 
     public async Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryAsync(
         SchedulingProblemContract problem,
@@ -52,21 +51,8 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             return [];
         }
 
-        using var throttler = new SemaphoreSlim(MaxConcurrentMesReadinessRequests);
-        var readiness = await Task.WhenAll(workOrderIds.Select(async workOrderId =>
-        {
-            await throttler.WaitAsync(cancellationToken);
-            try
-            {
-                return await QueryWorkOrderAsync(problem, workOrderId, cancellationToken);
-            }
-            finally
-            {
-                throttler.Release();
-            }
-        }));
+        var readiness = await QueryBatchAsync(problem, workOrderIds, cancellationToken);
         return readiness
-            .SelectMany(x => x)
             .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
             .ThenBy(x => x.ScopeId, StringComparer.Ordinal)
             .ThenBy(x => x.MaterialReadyUtc)
@@ -74,17 +60,18 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             .ToArray();
     }
 
-    private async Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryWorkOrderAsync(
+    private async Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryBatchAsync(
         SchedulingProblemContract problem,
-        string workOrderId,
+        string[] workOrderIds,
         CancellationToken cancellationToken)
     {
-        var query = Query(
-            ("organizationId", problem.OrganizationId),
-            ("environmentId", problem.EnvironmentId));
         using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/material-readiness?{query}");
+            HttpMethod.Post,
+            "/api/business/v1/mes/work-orders/material-readiness/batch")
+        {
+            Content = JsonContent.Create(new BatchMaterialReadinessRequest(
+                problem.OrganizationId, problem.EnvironmentId, workOrderIds), options: SchedulingJson.Options)
+        };
         var bearerToken = internalTokenProvider?.BearerToken;
         if (!string.IsNullOrWhiteSpace(bearerToken))
         {
@@ -97,49 +84,45 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             using var response = await client.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
             var readiness = await ReadReadinessResponseAsync(response.Content, cancellationToken);
-            if (readiness is not null &&
-                !string.Equals(readiness.WorkOrderId, workOrderId, StringComparison.Ordinal))
+            if (readiness is null || readiness.Items.Count != workOrderIds.Length ||
+                !readiness.Items.Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal)
+                    .SetEquals(workOrderIds))
             {
                 logger.LogWarning(
-                    "Scheduling material readiness source MES returned work order {ResponseWorkOrderId} for requested work order {WorkOrderId} in problem {ProblemId}.",
-                    readiness.WorkOrderId,
-                    workOrderId,
+                    "Scheduling material readiness source MES returned an incomplete batch for problem {ProblemId}.",
                     problem.ProblemId);
-                return SourceUnavailable(workOrderId);
+                return SourceUnavailable(workOrderIds);
             }
 
-            return ToSchedulingReadiness(readiness, workOrderId);
+            return readiness.Items.SelectMany(ToSchedulingReadiness).ToArray();
         }
         catch (HttpRequestException exception)
         {
             logger.LogWarning(
                 exception,
-                "Scheduling material readiness source MES was unavailable for problem {ProblemId}, work order {WorkOrderId}.",
-                problem.ProblemId,
-                workOrderId);
-            return SourceUnavailable(workOrderId);
+                "Scheduling material readiness source MES was unavailable for problem {ProblemId}.",
+                problem.ProblemId);
+            return SourceUnavailable(workOrderIds);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
                 exception,
-                "Scheduling material readiness source MES timed out for problem {ProblemId}, work order {WorkOrderId}.",
-                problem.ProblemId,
-                workOrderId);
-            return SourceUnavailable(workOrderId);
+                "Scheduling material readiness source MES timed out for problem {ProblemId}.",
+                problem.ProblemId);
+            return SourceUnavailable(workOrderIds);
         }
         catch (JsonException exception)
         {
             logger.LogWarning(
                 exception,
-                "Scheduling material readiness source MES returned an invalid response for problem {ProblemId}, work order {WorkOrderId}.",
-                problem.ProblemId,
-                workOrderId);
-            return SourceUnavailable(workOrderId);
+                "Scheduling material readiness source MES returned an invalid response for problem {ProblemId}.",
+                problem.ProblemId);
+            return SourceUnavailable(workOrderIds);
         }
     }
 
-    private static async Task<MesMaterialReadinessResponse?> ReadReadinessResponseAsync(
+    private static async Task<MesMaterialReadinessBatchResponse?> ReadReadinessResponseAsync(
         HttpContent content,
         CancellationToken cancellationToken)
     {
@@ -166,25 +149,18 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             return null;
         }
 
-        var readiness = payload.Deserialize<MesMaterialReadinessResponse>(SchedulingJson.Options);
-        return readiness is null ||
-               string.IsNullOrWhiteSpace(readiness.WorkOrderId) ||
-               string.IsNullOrWhiteSpace(readiness.ReadinessStatus) ||
-               readiness.BlockingReasons is null ||
-               readiness.Items is null
+        var readiness = payload.Deserialize<MesMaterialReadinessBatchResponse>(SchedulingJson.Options);
+        return readiness?.Items is null || readiness.Items.Any(x =>
+               x is null || string.IsNullOrWhiteSpace(x.WorkOrderId) ||
+               string.IsNullOrWhiteSpace(x.ReadinessStatus) ||
+               x.BlockingReasons is null || x.Items is null)
             ? null
             : readiness;
     }
 
     private static IReadOnlyCollection<SchedulingMaterialReadinessContract> ToSchedulingReadiness(
-        MesMaterialReadinessResponse? response,
-        string workOrderId)
+        MesMaterialReadinessResponse response)
     {
-        if (response is null)
-        {
-            return SourceUnavailable(workOrderId);
-        }
-
         if (string.Equals(response.ReadinessStatus, "Ready", StringComparison.OrdinalIgnoreCase))
         {
             return [];
@@ -209,7 +185,8 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                 string.IsNullOrWhiteSpace(x.MaterialLotId) ? null : x.MaterialLotId,
                 x.RequiredQuantity,
                 x.AvailableQuantity,
-                x.ShortageQuantity))
+                x.ShortageQuantity,
+                x.UomCode))
             .OrderBy(x => x.MaterialId, StringComparer.Ordinal)
             .ThenBy(x => x.MaterialLotId, StringComparer.Ordinal)
             .ToArray();
@@ -242,13 +219,13 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
         ];
     }
 
-    private static string Query(params (string Name, object? Value)[] values)
-    {
-        var pairs = values
-            .Where(x => x.Value is not null && !string.IsNullOrWhiteSpace(Convert.ToString(x.Value, CultureInfo.InvariantCulture)))
-            .Select(x => $"{Uri.EscapeDataString(x.Name)}={Uri.EscapeDataString(Convert.ToString(x.Value, CultureInfo.InvariantCulture) ?? string.Empty)}");
-        return string.Join('&', pairs);
-    }
+    private static IReadOnlyCollection<SchedulingMaterialReadinessContract> SourceUnavailable(IEnumerable<string> workOrderIds) =>
+        workOrderIds.SelectMany(SourceUnavailable).ToArray();
+
+    private sealed record BatchMaterialReadinessRequest(
+        string OrganizationId, string EnvironmentId, IReadOnlyCollection<string> WorkOrderIds);
+
+    private sealed record MesMaterialReadinessBatchResponse(IReadOnlyCollection<MesMaterialReadinessResponse> Items);
 
     private sealed record MesMaterialReadinessResponse(
         string WorkOrderId,
@@ -259,6 +236,7 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
     private sealed record MesMaterialReadinessRow(
         string MaterialId,
         string? MaterialLotId,
+        string? UomCode,
         decimal RequiredQuantity,
         decimal AvailableQuantity,
         decimal RequestedQuantity,

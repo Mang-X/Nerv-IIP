@@ -201,6 +201,10 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(plan.MaterialRisks ?? [], x =>
             x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.Shortages.Any(y => y.MaterialId == "MAT-A" && y.ShortageQuantity == 2m));
+        var summary = Assert.Single(plan.MaterialShortageSummary ?? []);
+        Assert.Equal(2m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x =>
+            x.OrderId == "WO-SNAPSHOT-001" && x.OperationId == "WO-SNAPSHOT-001-OP10");
     }
 
     [Fact]
@@ -254,6 +258,9 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.Assignments).StartUtc);
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.MaterialRisks ?? []).MaterialReadyUtc);
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(detail.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.Equal(
+            JsonSerializer.Serialize(created.MaterialShortageSummary, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.MaterialShortageSummary, SchedulingJson.Options));
     }
 
     [Fact]
