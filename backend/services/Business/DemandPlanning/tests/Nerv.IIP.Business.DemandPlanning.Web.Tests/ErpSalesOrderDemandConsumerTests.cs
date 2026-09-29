@@ -1020,7 +1020,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
             var settings = new Dictionary<string, string?>
             {
                 ["Persistence:Provider"] = "PostgreSQL",
-                ["Persistence:AutoMigrate"] = "false",
+                ["Persistence:AutoMigrate"] = "true",
                 ["ConnectionStrings:PostgreSQL"] = connectionString,
                 ["Messaging:Provider"] = "Redis",
                 ["Messaging:Redis:ConnectionString"] = redisConnectionString,
@@ -1041,8 +1041,6 @@ public sealed class ErpSalesOrderDemandConsumerTests
     private static async Task InitializeRedisCapFactoryAsync(WebApplicationFactory<Program> factory)
     {
         using var scope = factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await dbContext.Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<IStorageInitializer>().InitializeAsync(CancellationToken.None);
         await scope.ServiceProvider.GetRequiredService<IBootstrapper>().BootstrapAsync(CancellationToken.None);
     }
