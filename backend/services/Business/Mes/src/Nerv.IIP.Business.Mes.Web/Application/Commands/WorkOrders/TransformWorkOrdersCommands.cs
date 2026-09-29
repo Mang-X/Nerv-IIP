@@ -297,7 +297,7 @@ internal static class WorkOrderTransformationCommandSupport
     private static SourcePlanReference? CopySourcePlanReference(SourcePlanReference? source) => source is null
         ? null
         : new SourcePlanReference(source.SourceSystem, source.SourceDocumentType, source.SourceDocumentId,
-            source.SourceDemandReference, source.SourceDemandReferences);
+            source.SourceDemandReference, source.SourceDemandReferences, source.AssemblyParentSuggestionIds);
 
     private static string Fingerprint(params string[] values) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\u001f', values))));

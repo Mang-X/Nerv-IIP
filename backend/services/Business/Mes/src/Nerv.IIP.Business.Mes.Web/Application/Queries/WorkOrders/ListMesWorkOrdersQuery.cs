@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 
@@ -48,7 +49,8 @@ public sealed record MesWorkOrderExecutionFact(
     string? SourceNcrId = null,
     string? SourceNcrCode = null,
     bool HasChangedDemand = false,
-    bool HasCancelledDemand = false);
+    bool HasCancelledDemand = false,
+    IReadOnlyCollection<string>? AssemblyParentWorkOrderIds = null);
 
 /// <summary>
 /// MES 工单列表公开的工序执行事实。<paramref name="OperationTaskId"/> 是 MES 持久化工序身份，
@@ -171,8 +173,27 @@ public sealed class ListMesWorkOrdersQueryHandler(
                 x.SourceWorkOrderId,
                 x.SourceNcrId,
                 x.SourceNcrCode,
+                x.SourcePlanReference,
             })
             .ToListAsync(cancellationToken);
+
+        var parentSuggestionIds = workOrders
+            .SelectMany(x => x.SourcePlanReference?.AssemblyParentSuggestionIds ?? [])
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var parentWorkOrders = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
+                x.SourcePlanReference != null &&
+                x.SourcePlanReference.SourceSystem == DemandPlanningSourceReferences.DemandPlanning &&
+                x.SourcePlanReference.SourceDocumentType == DemandPlanningSourceReferences.PlanningSuggestion &&
+                parentSuggestionIds.Contains(x.SourcePlanReference.SourceDocumentId))
+            .Select(x => new { x.WorkOrderIdValue, x.SourcePlanReference!.SourceDocumentId })
+            .ToListAsync(cancellationToken);
+        var parentIdsBySuggestion = parentWorkOrders
+            .GroupBy(x => x.SourceDocumentId, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Select(order => order.WorkOrderIdValue).ToArray(), StringComparer.Ordinal);
 
         // Keep this IN-list bounded by the clamped `take` value above; this endpoint returns a
         // compact execution snapshot for scheduling/acceptance flows, not an unbounded export.
@@ -271,7 +292,11 @@ public sealed class ListMesWorkOrdersQueryHandler(
             x.SourceNcrId,
             x.SourceNcrCode,
             changedDemandIds.Contains(x.WorkOrderIdValue),
-            cancelledDemandIds.Contains(x.WorkOrderIdValue))).ToArray();
+            cancelledDemandIds.Contains(x.WorkOrderIdValue),
+            (x.SourcePlanReference?.AssemblyParentSuggestionIds ?? [])
+                .SelectMany(id => parentIdsBySuggestion.GetValueOrDefault(id, []))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray())).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }

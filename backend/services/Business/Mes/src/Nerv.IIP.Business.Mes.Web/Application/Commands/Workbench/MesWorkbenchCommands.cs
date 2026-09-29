@@ -564,7 +564,8 @@ public sealed record ConvertPlanToWorkOrderCommand(
     string? SourceDocumentId = null,
     string? SourceDemandReference = null,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<string>? SourceDemandReferences = null) : ICommand<MesAcceptedResponse>;
+    IReadOnlyCollection<string>? SourceDemandReferences = null,
+    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class ConvertPlanToWorkOrderCommandValidator : AbstractValidator<ConvertPlanToWorkOrderCommand>
 {
@@ -583,6 +584,7 @@ public sealed class ConvertPlanToWorkOrderCommandValidator : AbstractValidator<C
         RuleFor(x => x.SourceDocumentId).MaximumLength(100);
         RuleFor(x => x.SourceDemandReference).MaximumLength(100);
         RuleForEach(x => x.SourceDemandReferences).NotEmpty().MaximumLength(100);
+        RuleForEach(x => x.AssemblyParentSuggestionIds).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -781,7 +783,8 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
             sourceDocumentType,
             sourceDocumentId,
             request.SourceDemandReference,
-            request.SourceDemandReferences);
+            request.SourceDemandReferences,
+            request.AssemblyParentSuggestionIds);
         var workOrder = WorkOrder.Create(
             request.OrganizationId,
             request.EnvironmentId,

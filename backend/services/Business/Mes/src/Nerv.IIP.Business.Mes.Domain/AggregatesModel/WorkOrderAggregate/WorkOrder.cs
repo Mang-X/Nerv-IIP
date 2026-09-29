@@ -26,7 +26,8 @@ public sealed class SourcePlanReference
         string sourceDocumentType,
         string sourceDocumentId,
         string? sourceDemandReference,
-        IReadOnlyCollection<string>? sourceDemandReferences = null)
+        IReadOnlyCollection<string>? sourceDemandReferences = null,
+        IReadOnlyCollection<string>? assemblyParentSuggestionIds = null)
     {
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceDocumentType = DomainGuard.Required(sourceDocumentType, nameof(sourceDocumentType));
@@ -52,6 +53,7 @@ public sealed class SourcePlanReference
         // AsReadOnly：`IReadOnlyList<string>` 只是静态类型上的只读，直接交出 List 实例
         // 调用方一个向下转型就能绕过聚合、在 EF 变更跟踪背后改掉这条追溯链。
         SourceDemandReferences = references.AsReadOnly();
+        RecordAssemblyParentSuggestionIds(assemblyParentSuggestionIds);
     }
 
     public string SourceSystem { get; private set; } = string.Empty;
@@ -66,6 +68,14 @@ public sealed class SourcePlanReference
     /// 升级前的历史行本列为 null，读面回退单值引用；新建工单恒为非空集合。
     /// </summary>
     public IReadOnlyList<string>? SourceDemandReferences { get; private set; }
+    public IReadOnlyList<string>? AssemblyParentSuggestionIds { get; private set; }
+
+    internal void RecordAssemblyParentSuggestionIds(IReadOnlyCollection<string>? suggestionIds) =>
+        AssemblyParentSuggestionIds = (suggestionIds ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 }
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
@@ -258,6 +268,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public DateTimeOffset? SourceReworkRequestedAtUtc { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
+
+    public void RecordAssemblyParentSuggestionIds(IReadOnlyCollection<string>? suggestionIds)
+    {
+        SourcePlanReference!.RecordAssemblyParentSuggestionIds(suggestionIds);
+        AdvanceVersion();
+    }
 
     public static WorkOrder Create(
         string organizationId,

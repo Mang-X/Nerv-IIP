@@ -227,7 +227,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             : peggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
     }
 
-    public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)
+    public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId,
+        IReadOnlyCollection<string>? assemblyParentSuggestionIds = null)
     {
         if (Status == PlanningSuggestionStatus.Accepted)
         {
@@ -251,7 +252,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         AcceptedDownstreamDocumentId = DemandPlanningText.Optional(downstreamDocumentId);
         AcceptedAtUtc = DateTimeOffset.UtcNow;
         Status = PlanningSuggestionStatus.Accepted;
-        this.AddDomainEvent(new PlanningSuggestionAcceptedDomainEvent(this));
+        this.AddDomainEvent(new PlanningSuggestionAcceptedDomainEvent(this, assemblyParentSuggestionIds));
     }
 
     public void Reject(string actor, string reason)

@@ -70,13 +70,15 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
             .Include(x => x.PeggingLinks)
             .SingleOrDefaultAsync(x => x.Id == request.SuggestionId, cancellationToken)
             ?? throw new KnownException($"计划建议不存在：{request.SuggestionId}");
+        var assemblyParentSuggestionIds = await GetAssemblyParentSuggestionIdsAsync(suggestion, cancellationToken);
         var downstreamReference = await ResolveDownstreamReferenceAsync(suggestion, request, cancellationToken);
         try
         {
             suggestion.Accept(
                 downstreamReference.DownstreamService,
                 downstreamReference.DownstreamDocumentType,
-                downstreamReference.DownstreamDocumentId);
+                downstreamReference.DownstreamDocumentId,
+                assemblyParentSuggestionIds);
             return new AcceptPlanningSuggestionResult(
                 downstreamReference.DownstreamService,
                 downstreamReference.DownstreamDocumentType,
@@ -140,6 +142,48 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                     ? $"demand-planning:accept:{suggestion.OrganizationId}:{suggestion.EnvironmentId}:{suggestion.Id}"
                     : request.IdempotencyKey.Trim()),
             cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<string>> GetAssemblyParentSuggestionIdsAsync(
+        PlanningSuggestion suggestion,
+        CancellationToken cancellationToken)
+    {
+        if (suggestion.SuggestionType != DemandPlanningSuggestionTypes.PlannedWorkOrder)
+        {
+            return [];
+        }
+
+        var componentLinks = suggestion.PeggingLinks
+            .Where(x => x.PeggingType is "demand" or "safety-stock" or "negative-availability"
+                && x.ComponentSkuCode == suggestion.SkuCode)
+            .ToArray();
+        if (componentLinks.Length == 0)
+        {
+            return [];
+        }
+
+        var parentSkus = componentLinks.Select(x => x.ParentSkuCode).Distinct().ToArray();
+        var candidates = await dbContext.PlanningSuggestions
+            .AsNoTracking()
+            .Include(x => x.PeggingLinks)
+            .Where(x => x.MrpRunId == suggestion.MrpRunId &&
+                x.OrganizationId == suggestion.OrganizationId &&
+                x.EnvironmentId == suggestion.EnvironmentId &&
+                x.SiteCode == suggestion.SiteCode &&
+                x.SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder &&
+                parentSkus.Contains(x.SkuCode))
+            .ToListAsync(cancellationToken);
+
+        return candidates
+            .Where(parent => parent.Id != suggestion.Id &&
+                parent.ReleaseDate == suggestion.RequiredDate && componentLinks.Any(link =>
+                link.ParentSkuCode == parent.SkuCode &&
+                parent.PeggingLinks.Any(parentLink => parentLink.PeggingType == link.PeggingType &&
+                    parentLink.DemandSourceReference == link.DemandSourceReference &&
+                    parentLink.SourceLineReference == link.SourceLineReference)))
+            .Select(x => x.Id.ToString())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static bool IsSameDownstreamTarget(PlanningSuggestion suggestion, AcceptPlanningSuggestionCommand request)

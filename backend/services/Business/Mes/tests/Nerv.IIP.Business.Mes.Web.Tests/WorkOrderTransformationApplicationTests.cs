@@ -43,7 +43,9 @@ public sealed class WorkOrderTransformationApplicationTests
         var occurredAtUtc = DateTimeOffset.Parse("2026-08-26T02:00:00Z");
         db.WorkOrders.Add(WorkOrder.Create(
             "org-001", "env-dev", "WO-SPLIT-PARENT", "SKU-001", "PV-001", 10m, 10,
-            occurredAtUtc.AddHours(4), "PCS"));
+            occurredAtUtc.AddHours(4), "PCS",
+            new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-CHILD", "SO-1",
+                assemblyParentSuggestionIds: ["SUG-ASSEMBLY"])));
         await db.SaveChangesAsync();
 
         var command = new SplitWorkOrderCommand(
@@ -81,6 +83,8 @@ public sealed class WorkOrderTransformationApplicationTests
         Assert.Equal(WorkOrder.SplitStatus, parent.Status);
         Assert.Equal(2, parent.Version);
         Assert.Equal([4m, 6m], children.Select(x => x.Quantity));
+        Assert.All(children, child => Assert.Equal(["SUG-ASSEMBLY"],
+            child.SourcePlanReference?.AssemblyParentSuggestionIds));
         Assert.Equal(2, readback.Lines.Count);
         Assert.Equal(10m, readback.Lines.Sum(x => x.Quantity));
         Assert.All(readback.Lines, line => Assert.Equal("WO-SPLIT-PARENT", line.SourceWorkOrderId));
@@ -92,7 +96,9 @@ public sealed class WorkOrderTransformationApplicationTests
         await using var db = CreateContext();
         var occurredAtUtc = DateTimeOffset.Parse("2026-08-26T03:00:00Z");
         db.WorkOrders.AddRange(
-            WorkOrder.Create("org-001", "env-dev", "WO-MERGE-SOURCE-1", "SKU-001", "PV-001", 3m, 10, occurredAtUtc.AddHours(4), "PCS"),
+            WorkOrder.Create("org-001", "env-dev", "WO-MERGE-SOURCE-1", "SKU-001", "PV-001", 3m, 10, occurredAtUtc.AddHours(4), "PCS",
+                new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-CHILD", "SO-1",
+                    assemblyParentSuggestionIds: ["SUG-ASSEMBLY"])),
             WorkOrder.Create("org-001", "env-dev", "WO-MERGE-SOURCE-2", "SKU-001", "PV-001", 7m, 10, occurredAtUtc.AddHours(4), "PCS"));
         await db.SaveChangesAsync();
 
@@ -109,6 +115,9 @@ public sealed class WorkOrderTransformationApplicationTests
         await handler.Handle(first, CancellationToken.None);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
+
+        var merged = await db.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-MERGE-TARGET");
+        Assert.Equal(["SUG-ASSEMBLY"], merged.SourcePlanReference?.AssemblyParentSuggestionIds);
 
         var conflicting = first with { TargetWorkOrderId = "WO-MERGE-TARGET-OTHER" };
         await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
