@@ -56,6 +56,8 @@ DHTMLX 供应商包缺失时（CI、文档构建或未配置本地试用包）�
 `GanttChart` · `ResourceSchedulerBoard` · `useSchedulingPlan` · `useSchedulingEdits` ·
 `toModel` · `toLockedAssignments` · `runEngineConformance` · `isDhtmlxAvailable` · 全部模型与引擎类型。
 
+公开 `command` 在引擎初始化期间由组件暂存，待引擎 mount 并接收当前模型后按序消费；因此加载期间的搜索、定位及选中也会在图面就绪后成立。供应商模块不可用时沿用既有不可用展示。
+
 ## 编辑语义:锁定—重预览
 
 后端（#206 BusinessScheduling）是确定性有限产能启发式算法，不做自动重排。前端「完整可编辑」具体为：
