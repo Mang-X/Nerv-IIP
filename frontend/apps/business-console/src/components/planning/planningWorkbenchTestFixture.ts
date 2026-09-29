@@ -369,6 +369,7 @@ vi.mock('@nerv-iip/ui', async () => {
     props: {
       columns: { type: Array, default: () => [] },
       rows: { type: Array, default: () => [] },
+      rowClass: { type: Function, default: undefined },
     },
     setup(props, { slots }) {
       return () =>
@@ -379,7 +380,7 @@ vi.mock('@nerv-iip/ui', async () => {
               const slot = slots[`cell-${column.key}`]
               return h(
                 'div',
-                { class: `cell-${column.key}` },
+                { class: `cell-${column.key} ${props.rowClass?.(row) ?? ''}` },
                 slot ? slot({ row }) : String(row[column.key] ?? ''),
               )
             }),

@@ -259,7 +259,8 @@ describe('PlanningWorkbench', () => {
     const supersededActions = supersededRow.querySelector('.cell-actions')!
     expect(supersededActions.textContent).not.toContain('接受')
     expect(supersededActions.textContent).not.toContain('拒绝')
-    expect(supersededActions.querySelectorAll('button')).toHaveLength(0)
+    expect(supersededActions.querySelectorAll('button')).toHaveLength(1)
+    expect(supersededActions.textContent).toContain('定位追溯')
     expect(wrapper.text()).toContain('SKU-ACCEPTED')
     expect(wrapper.text()).toContain('SKU-REJECTED')
   })
