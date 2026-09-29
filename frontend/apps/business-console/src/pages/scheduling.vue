@@ -7,6 +7,7 @@ import type {
   BusinessConsoleSchedulingUnscheduledOperation,
   BusinessConsoleSchedulingPlanRevision,
   BusinessConsoleSchedulePlan,
+  BusinessConsoleSchedulingPlanStatus,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { formatDateTime } from '@/utils/format'
@@ -52,6 +53,7 @@ import {
   NvAlertDialogHeader,
   NvAlertDialogTitle,
   NvButton,
+  NvInput,
   NvDataTable,
   NvPageHeader,
   NvSheet,
@@ -91,6 +93,9 @@ const {
   planDetailError,
   planDetailPending,
   plans,
+  plansTotal,
+  page,
+  pageSize,
   plansError,
   plansPending,
   refreshPlans,
@@ -101,6 +106,21 @@ const {
   upsertOperationOverride,
   upsertOperationOverridePending,
 } = useBusinessScheduling()
+const historyStatus = computed({
+  get: () => schedulingFilters.status ?? 'all',
+  set: (value: string) => {
+    schedulingFilters.status =
+      value === 'all' ? undefined : (value as BusinessConsoleSchedulingPlanStatus)
+  },
+})
+const historyInvalidated = computed({
+  get: () =>
+    schedulingFilters.isInvalidated === undefined ? 'all' : String(schedulingFilters.isInvalidated),
+  set: (value: string) => {
+    schedulingFilters.isInvalidated = value === 'all' ? undefined : value === 'true'
+  },
+})
+const historyStatuses = ['generated', 'released', 'superseded', 'revoked'] as const
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlansManage))
@@ -166,7 +186,7 @@ const plansFailed = computed(() => !plansPending.value && plansError.value != nu
 const planHeaderCount = computed(() => {
   if (plansFailed.value) return '方案数取不到'
   if (plansPending.value && actionablePlans.value.length === 0) return undefined
-  return `${actionablePlans.value.length} 个方案`
+  return `${plansTotal.value} 个方案`
 })
 
 watch([activeView, actionablePlans], ([view, availablePlans]) => {
@@ -178,20 +198,36 @@ const columns: NvDataTableColumn<BusinessConsoleSchedulingPlanSummaryResponse>[]
   {
     key: 'planId',
     header: '排程方案',
+    width: '14rem',
     cellClass: 'font-medium',
     accessor: (row) => row.planId ?? '未命名方案',
   },
   { key: 'status', header: '状态', width: 'w-40' },
-  { key: 'range', header: '时间范围', accessor: () => '明细中确认' },
-  { key: 'invalidation', header: '失效原因', accessor: invalidationSummary },
+  {
+    key: 'range',
+    header: '时间范围',
+    width: '22rem',
+    accessor: (row) =>
+      row.horizonStartUtc && row.horizonEndUtc
+        ? `${formatDateTime(row.horizonStartUtc)} 至 ${formatDateTime(row.horizonEndUtc)}`
+        : '未记录时间范围',
+  },
+  { key: 'invalidation', header: '失效原因', width: '14rem', accessor: invalidationSummary },
   {
     key: 'operationCount',
     header: '工序数',
+    width: '7rem',
     accessor: (row) => `${row.assignmentCount ?? 0} 道工序`,
   },
-  { key: 'conflicts', header: '冲突摘要', accessor: conflictSummary },
+  { key: 'conflicts', header: '冲突摘要', width: '12rem', accessor: conflictSummary },
+  {
+    key: 'releasedAtUtc',
+    header: '发布时间',
+    width: 'w-44',
+    accessor: (row) => (row.releasedAtUtc ? formatDateTime(row.releasedAtUtc) : '未发布'),
+  },
   { key: 'generatedAtUtc', header: '创建时间', width: 'w-44' },
-  { key: 'actions', header: '操作', width: 'w-40', align: 'end' },
+  { key: 'actions', header: '操作', width: '16rem', align: 'end' },
 ]
 
 const selectedPlanRange = computed(() => rangeFromAssignments(planDetail.value?.assignments ?? []))
@@ -745,7 +781,7 @@ function reasonLabel(reason?: string | null) {
         <ScheduleRevisionReview :revision="revisionResult" :base-plan="revisionBasePlan" />
       </NvTabsContent>
 
-      <NvTabsContent value="table" class="grid gap-4">
+      <NvTabsContent value="table" class="grid min-w-0 gap-4">
         <!-- 只读边界要自解释：历史方案是已生成结果的查阅面，改排程只能回草案工作区。
              不写这句，用户会在表里反复点、以为"表格坏了"（MAN-691 / #1259）。 -->
         <div
@@ -769,8 +805,53 @@ function reasonLabel(reason?: string | null) {
             去草案工作区修改
           </NvButton>
         </div>
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="grid gap-1">
+            <span class="text-sm font-medium">状态</span>
+            <NvSelect v-model="historyStatus">
+              <NvSelectTrigger class="w-36" aria-label="按方案状态筛选"
+                ><NvSelectValue
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="all">全部状态</NvSelectItem>
+                <NvSelectItem v-for="status in historyStatuses" :key="status" :value="status">{{
+                  schedulingPlanStatusLabel(status)
+                }}</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </div>
+          <div class="grid gap-1">
+            <label for="history-released-on" class="text-sm font-medium">发布日（UTC）</label>
+            <NvInput
+              id="history-released-on"
+              v-model="schedulingFilters.releasedOn"
+              type="date"
+              class="w-44"
+            />
+          </div>
+          <div class="grid gap-1">
+            <span class="text-sm font-medium">失效</span>
+            <NvSelect v-model="historyInvalidated">
+              <NvSelectTrigger class="w-36" aria-label="按方案失效筛选"
+                ><NvSelectValue
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="all">全部方案</NvSelectItem>
+                <NvSelectItem value="true">已失效</NvSelectItem>
+                <NvSelectItem value="false">未失效</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </div>
+          <p class="pb-2 text-sm text-muted-foreground">发布时间从新到旧，未发布方案排在后面</p>
+        </div>
         <NvDataTable
-          :pagination="false"
+          class="min-w-0"
+          manual
+          :page="page"
+          :page-size="pageSize"
+          :total-items="plansTotal"
+          @update:page="page = $event"
+          @update:page-size="pageSize = String($event)"
           :columns="columns"
           :rows="actionablePlans"
           :row-key="rowKey"

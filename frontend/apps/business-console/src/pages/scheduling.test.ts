@@ -300,6 +300,7 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
     planDetail: detail,
     planDetailError: detailError,
     planDetailPending: shallowRef(false),
+    plansTotal: computed(() => 137),
     plans: computed(() => [
       {
         status: 'generated',
@@ -311,6 +312,8 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
       {
         planId: 'plan-001',
         status: 'generated',
+        horizonStartUtc: '2026-09-01T00:00:00Z',
+        horizonEndUtc: '2026-09-08T00:00:00Z',
         generatedAtUtc: '2026-07-01T09:30:00Z',
         assignmentCount: 8,
         conflictCount: 1,
@@ -562,7 +565,7 @@ describe('APS scheduling workbench page', () => {
     expect(span).toBe(1)
   })
 
-  it('uses a single-page table while the facade does not return a total count', async () => {
+  it('shows server total, real horizons and controlled pagination in the history table', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
     })
@@ -570,8 +573,16 @@ describe('APS scheduling workbench page', () => {
     await openPlanTable(wrapper)
 
     const table = wrapper.findComponent({ name: 'NvDataTable' })
-    expect(table.props('pagination')).toBe(false)
-    expect(table.props('manual')).not.toBe(true)
+    expect(table.props('manual')).toBe(true)
+    expect(table.props('totalItems')).toBe(137)
+    table.vm.$emit('update:page', 2)
+    await flushPromises()
+    expect(table.props('page')).toBe(2)
+    expect(wrapper.text()).toContain('137 个方案')
+    expect(wrapper.text()).toContain('发布日（UTC）')
+    expect(wrapper.text()).toContain('发布时间从新到旧')
+    expect(wrapper.text()).not.toContain('明细中确认')
+    expect(wrapper.text()).toContain('2026-09-01')
     expect(wrapper.text()).toContain('工序数')
     expect(wrapper.text()).not.toContain('资源 / 工序')
   })
