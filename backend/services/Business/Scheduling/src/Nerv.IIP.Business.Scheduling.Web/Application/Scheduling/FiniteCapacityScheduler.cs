@@ -1128,15 +1128,16 @@ file sealed class SchedulerState
                         .OrderBy(x => x.StartUtc)
                         .ThenBy(x => x.OperationId, StringComparer.Ordinal)
                         .FirstOrDefault();
-                    if (resource.CapacityUnits == 1 && next is not null && !next.IsLocked
+                    if (resource.CapacityUnits == 1 && next is not null
+                        && !fixedOperationKeys.Contains(OperationKey.From(next))
                         && operationByKey.TryGetValue(OperationKey.From(next), out var nextOperation))
                     {
-                        var nextSetup = nextOperation.Changeovers is null
-                            ? nextOperation.SetupMinutes
-                            : nextOperation.Changeovers.Single(x => x.FromSkuCode == item.Order.SkuCode).SetupMinutes;
-                        var nextToolingAvailable = nextOperation.Changeovers is null ||
-                            nextOperation.Changeovers.Single(x => x.FromSkuCode == item.Order.SkuCode).ToolingAvailable;
-                        if (!nextToolingAvailable || candidate + reservedDuration + TimeSpan.FromMinutes(nextSetup) > next.StartUtc)
+                        var nextEffective = WithChangeover(nextOperation, item.Order.SkuCode);
+                        var nextSetup = TimeSpan.FromMinutes(nextEffective.SetupMinutes);
+                        if (!nextEffective.ToolingAvailable
+                            || candidate + reservedDuration + nextSetup > next.StartUtc
+                            || ToolingBlockEnd(nextEffective, next.StartUtc - nextSetup, next.EndUtc,
+                                OperationKey.From(next)).HasValue)
                         {
                             candidate = next.EndUtc;
                             continue;
@@ -1250,8 +1251,15 @@ file sealed class SchedulerState
         var fromSku = predecessor is not null && skuByOrderId.TryGetValue(predecessor.OrderId, out var predecessorSku)
             ? predecessorSku
             : item.Order.SkuCode;
-        var changeover = item.Operation.Changeovers.Single(x => x.FromSkuCode == fromSku);
-        return item.Operation with
+        return WithChangeover(item.Operation, fromSku);
+    }
+
+    private static SchedulingOperationContract WithChangeover(SchedulingOperationContract operation, string fromSku)
+    {
+        if (operation.Changeovers is null) return operation;
+
+        var changeover = operation.Changeovers.Single(x => x.FromSkuCode == fromSku);
+        return operation with
         {
             SetupMinutes = changeover.SetupMinutes,
             RequiredToolingIds = changeover.RequiredToolingIds,
@@ -1604,11 +1612,16 @@ file sealed class SchedulerState
         return available >= durationMinutes;
     }
 
-    private DateTimeOffset? ToolingBlockEnd(SchedulingOperationContract operation, DateTimeOffset startUtc, DateTimeOffset endUtc)
+    private DateTimeOffset? ToolingBlockEnd(
+        SchedulingOperationContract operation,
+        DateTimeOffset startUtc,
+        DateTimeOffset endUtc,
+        OperationKey? excludedOperation = null)
     {
         var required = (operation.RequiredToolingIds ?? []).ToHashSet(StringComparer.Ordinal);
         if (required.Count == 0) return null;
         return assignments
+            .Where(x => excludedOperation is null || OperationKey.From(x) != excludedOperation.Value)
             .Where(x => operationByKey.TryGetValue(OperationKey.From(x), out var assignedOperation)
                 && (EffectiveAssignedOperation(x, assignedOperation).RequiredToolingIds ?? []).Any(required.Contains))
             .SelectMany(AssignmentSegments)

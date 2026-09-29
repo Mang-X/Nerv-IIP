@@ -836,6 +836,75 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_rechecks_successor_tooling_before_inserting_earlier_on_resource()
+    {
+        var problem = CreateSingleOperationProblemWithAlternateResource();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var r1 = problem.Resources.First().ResourceId;
+        var r2 = problem.Resources.Last().ResourceId;
+        SchedulingOrderContract Order(string sku, string resource, int priority, int earliestMinutes, int duration,
+            IReadOnlyCollection<SchedulingChangeoverContract> changeovers) => template with
+            {
+                OrderId = sku, SkuCode = sku,
+                Operations = [operation with
+                {
+                    OperationId = $"OP-{sku}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliestMinutes),
+                    DurationMinutes = duration, PrimaryResourceId = resource,
+                    EligibleResourceIds = [resource], Changeovers = changeovers
+                }]
+            };
+        problem = problem with
+        {
+            Orders =
+            [
+                Order("B", r1, 30, 120, 60, [new("B", 0, [], true), new("A", 0, ["T"], true)]),
+                Order("C", r2, 20, 60, 90, [new("C", 0, ["T"], true)]),
+                Order("A", r1, 10, 0, 60, [new("A", 0, [], true), new("B", 0, [], true)])
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-successor-tooling", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3), Assignment(plan, "A", "OP-A").StartUtc);
+    }
+
+    [Fact]
+    public void Schedule_preserves_setup_space_before_locked_successor()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var resource = problem.Resources.Single();
+        problem = problem with
+        {
+            Orders =
+            [
+                template with { OrderId = "B", SkuCode = "B", Operations = [operation with
+                {
+                    OperationId = "OP-B",
+                    Changeovers = [new("B", 0, [], true), new("A", 90, [], true)]
+                }] },
+                template with { OrderId = "A", SkuCode = "A", Operations = [operation with
+                {
+                    OperationId = "OP-A",
+                    Changeovers = [new("A", 0, [], true), new("B", 0, [], true)]
+                }] }
+            ],
+            LockedAssignments = [new("lock-B", "B", "OP-B", operation.OperationSequence,
+                resource.ResourceId, resource.WorkCenterId,
+                problem.HorizonStartUtc.AddHours(2), problem.HorizonStartUtc.AddHours(3), "manual")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-locked-successor-setup", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3), Assignment(plan, "A", "OP-A").StartUtc);
+    }
+
+    [Fact]
     public void Schedule_does_not_insert_an_operation_without_room_for_the_next_changeover()
     {
         var problem = CreateSingleOperationProblem();
@@ -877,13 +946,14 @@ public class FiniteCapacitySchedulerTests
         var operation = template.Operations.Single();
         var firstResource = problem.Resources.First().ResourceId;
         var secondResource = problem.Resources.Last().ResourceId;
-        SchedulingOrderContract Order(string id, string sku, int priority, string resourceId,
+        SchedulingOrderContract Order(string id, string sku, int priority, string resourceId, int earliestMinutes,
             IReadOnlyCollection<SchedulingChangeoverContract> changeovers) => template with
             {
                 OrderId = id, SkuCode = sku,
                 Operations = [operation with
                 {
                     OperationId = $"OP-{id}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliestMinutes),
                     EligibleResourceIds = [resourceId], PrimaryResourceId = resourceId,
                     Changeovers = changeovers
                 }]
@@ -892,9 +962,9 @@ public class FiniteCapacitySchedulerTests
         {
             Orders =
             [
-                Order("A", "A", 30, firstResource, [new("A", 0, [], true)]),
-                Order("B", "B", 20, secondResource, [new("B", 0, [], true)]),
-                Order("C", "C", 10, firstResource,
+                Order("A", "A", 30, firstResource, 0, [new("A", 0, [], true)]),
+                Order("B", "B", 20, secondResource, 10, [new("B", 0, [], true)]),
+                Order("C", "C", 10, firstResource, 75,
                     [new("A", 20, [], true), new("B", 5, [], true), new("C", 0, [], true)])
             ]
         };
@@ -903,7 +973,7 @@ public class FiniteCapacitySchedulerTests
 
         Assert.Equal(firstResource, Assignment(plan, "C", "OP-C").ResourceId);
         Assert.Equal(problem.HorizonStartUtc.AddMinutes(80), Assignment(plan, "C", "OP-C").StartUtc);
-        Assert.Equal(problem.HorizonStartUtc, Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddMinutes(10), Assignment(plan, "B", "OP-B").StartUtc);
     }
 
     [Fact]
