@@ -125,6 +125,7 @@ public sealed class SchedulingEndpointContractTests
     [InlineData(typeof(CreateSchedulingWorkbenchPlanEndpoint))]
     [InlineData(typeof(CreateSchedulePlanRevisionEndpoint))]
     [InlineData(typeof(AssembleSchedulingProblemEndpoint))]
+    [InlineData(typeof(ListSchedulePlanHistoryEndpoint))]
     [InlineData(typeof(ListSchedulePlansEndpoint))]
     [InlineData(typeof(GetSchedulePlanEndpoint))]
     [InlineData(typeof(GetSchedulePlanGanttEndpoint))]
@@ -766,6 +767,53 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task History_http_returns_total_and_later_pages_from_release_facts()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            for (var index = 0; index < 105; index++)
+            {
+                var plan = CreatePersistedPlan($"history-{index:000}", $"history-problem-{index:000}", FixedNow.AddMinutes(105 - index));
+                plan.Release(FixedNow.AddDays(1).AddMinutes(index), index + 1);
+                dbContext.SchedulePlans.Add(plan);
+                dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(plan.ProblemId, 1, "org-001", "prod",
+                    plan.ProblemFingerprint, "{}", FixedNow.AddDays(-1), FixedNow.AddDays(3), FixedNow));
+            }
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod&pageIndex=1&pageSize=100&status=released&releasedOn=2026-06-02&isInvalidated=false");
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = json.RootElement.GetProperty("data");
+        Assert.Equal(105, data.GetProperty("total").GetInt32());
+        var items = data.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(5, items.Length);
+        Assert.Equal("history-004", items[0].GetProperty("planId").GetString());
+        Assert.Equal("history-000", items[4].GetProperty("planId").GetString());
+        Assert.Equal(FixedNow.AddDays(-1), items[0].GetProperty("horizonStartUtc").GetDateTimeOffset());
+        Assert.Equal(FixedNow.AddDays(3), items[0].GetProperty("horizonEndUtc").GetDateTimeOffset());
+    }
+
+    [Theory]
+    [InlineData("pageIndex=-1")]
+    [InlineData("pageSize=101")]
+    [InlineData("status=preview")]
+    [InlineData("status=999")]
+    public async Task History_http_rejects_invalid_filter_or_pagination(string parameter)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.GetAsync($"/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod&{parameter}");
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Scheduling_authorized_http_endpoints_execute_mediator_pipeline()
     {
         await using var factory = new SchedulingLiveHttpTestFactory();
@@ -882,6 +930,7 @@ public sealed class SchedulingEndpointContractTests
     {
         yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/plans/preview", new PreviewSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()))];
         yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()))];
+        yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod")];
         yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans?organizationId=org-001&environmentId=prod")];
         yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans/plan-missing")];
         yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans/plan-missing/gantt")];

@@ -71,6 +71,95 @@ public sealed class ListSchedulePlansQueryHandlerTests
         Assert.Equal(new DateTimeOffset(2026, 6, 1, 11, 30, 0, TimeSpan.Zero), invalid.LatestInvalidatedAtUtc);
     }
 
+    [Fact]
+    public async Task History_filters_all_candidates_before_total_and_page_and_keeps_scope()
+    {
+        await using var dbContext = CreateDbContext();
+        var releasedAt = new DateTimeOffset(2026, 6, 2, 0, 0, 0, TimeSpan.Zero);
+        for (var index = 0; index < 105; index++)
+        {
+            var plan = CreatePlan($"history-{index:000}", SchedulePlanStatusContract.Generated);
+            plan.Release(releasedAt.AddMinutes(index), index + 1);
+            dbContext.SchedulePlans.Add(plan);
+            if (index % 2 == 0)
+            {
+                dbContext.SchedulePlanInvalidations.Add(CreateInvalidation(plan.PlanId, "older", releasedAt, releasedAt));
+                dbContext.SchedulePlanInvalidations.Add(CreateInvalidation(plan.PlanId, "latest", releasedAt.AddMinutes(1), releasedAt.AddMinutes(1)));
+            }
+        }
+        var otherOrg = CreatePlan("other-org", SchedulePlanStatusContract.Generated, "org-other");
+        otherOrg.Release(releasedAt, 1);
+        var otherEnv = CreatePlan("other-env", SchedulePlanStatusContract.Generated, environmentId: "env-other");
+        otherEnv.Release(releasedAt, 1);
+        dbContext.SchedulePlans.AddRange(otherOrg, otherEnv, CreatePlan("unreleased", SchedulePlanStatusContract.Generated));
+        // Same plan identifier outside the requested scope must not invalidate the clean local plan.
+        dbContext.SchedulePlanInvalidations.Add(SchedulePlanInvalidation.Create("org-other", "env-dev", "history-103",
+            "foreign", "test", "test", "foreign", null, null, null, null, releasedAt, releasedAt));
+        await dbContext.SaveChangesAsync();
+        var handler = new ListSchedulePlanHistoryQueryHandler(dbContext);
+        var invalid = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", 1, 50,
+            SchedulePlanStatusContract.Released, new DateOnly(2026, 6, 2), true), CancellationToken.None);
+        Assert.Equal(53, invalid.Total);
+        Assert.Equal(new[] { "history-004", "history-002", "history-000" }, invalid.Items.Select(x => x.PlanId));
+        Assert.All(invalid.Items, item => { Assert.True(item.IsInvalidated); Assert.Equal("latest", item.LatestInvalidationReasonCode); });
+        var clean = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", 0, 100,
+            SchedulePlanStatusContract.Released, new DateOnly(2026, 6, 2), false), CancellationToken.None);
+        Assert.Equal(52, clean.Total);
+        Assert.Equal("history-103", clean.Items.First().PlanId);
+        Assert.All(clean.Items, item => Assert.False(item.IsInvalidated));
+        var emptyPage = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", 5, 100), CancellationToken.None);
+        Assert.Equal(106, emptyPage.Total);
+        Assert.Empty(emptyPage.Items);
+    }
+
+    [Fact]
+    public async Task History_orders_release_before_generation_and_reads_only_scoped_horizons()
+    {
+        await using var dbContext = CreateDbContext();
+        var day = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var early = CreatePlan("early-release", SchedulePlanStatusContract.Generated, generatedAtUtc: day.AddHours(10));
+        early.Release(day.AddDays(1), 1);
+        var late = CreatePlan("late-release", SchedulePlanStatusContract.Generated, generatedAtUtc: day);
+        late.Release(day.AddDays(2), 2);
+        late.Revoke(day.AddDays(3));
+        dbContext.SchedulePlans.AddRange(early, late,
+            CreatePlan("draft-b", SchedulePlanStatusContract.Generated, generatedAtUtc: day.AddDays(5)),
+            CreatePlan("draft-a", SchedulePlanStatusContract.Generated, generatedAtUtc: day.AddDays(5)),
+            CreatePlan("draft-old", SchedulePlanStatusContract.Generated, generatedAtUtc: day));
+        dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot("problem-001", 1, "org-001", "env-dev", "test", "{}", day.AddDays(-2), day.AddDays(10), day));
+        dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot("problem-001", 1, "org-other", "env-dev", "foreign", "{}", day, day.AddHours(1), day));
+        await dbContext.SaveChangesAsync();
+        var handler = new ListSchedulePlanHistoryQueryHandler(dbContext);
+        var page = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(new[] { "late-release", "early-release", "draft-a", "draft-b", "draft-old" }, page.Items.Select(x => x.PlanId));
+        Assert.All(page.Items, item => { Assert.Equal(day.AddDays(-2), item.HorizonStartUtc); Assert.Equal(day.AddDays(10), item.HorizonEndUtc); });
+        var revoked = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", Status: SchedulePlanStatusContract.Revoked,
+            ReleasedOn: new DateOnly(2026, 6, 3)), CancellationToken.None);
+        Assert.Equal(1, revoked.Total);
+        Assert.Equal("late-release", Assert.Single(revoked.Items).PlanId);
+    }
+
+    [Fact]
+    public async Task History_uses_utc_release_date_and_does_not_invent_missing_horizons()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = CreatePlan("utc-boundary", SchedulePlanStatusContract.Generated);
+        plan.Release(new DateTimeOffset(2026, 6, 2, 1, 0, 0, TimeSpan.FromHours(2)), 1);
+        dbContext.SchedulePlans.Add(plan);
+        dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot("problem-001", 1, "org-001", "env-other", "foreign", "{}",
+            new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 6, 5, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero)));
+        await dbContext.SaveChangesAsync();
+        var handler = new ListSchedulePlanHistoryQueryHandler(dbContext);
+        var firstDay = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", ReleasedOn: new DateOnly(2026, 6, 1)), CancellationToken.None);
+        var item = Assert.Single(firstDay.Items);
+        Assert.Null(item.HorizonStartUtc);
+        Assert.Null(item.HorizonEndUtc);
+        var secondDay = await handler.Handle(new ListSchedulePlanHistoryQuery("org-001", "env-dev", ReleasedOn: new DateOnly(2026, 6, 2)), CancellationToken.None);
+        Assert.Equal(0, secondDay.Total);
+        Assert.Empty(secondDay.Items);
+    }
+
     private static SchedulePlanInvalidation CreateInvalidation(
         string planId,
         string reasonCode,
@@ -101,11 +190,11 @@ public sealed class ListSchedulePlansQueryHandlerTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static SchedulePlan CreatePlan(string planId, SchedulePlanStatusContract status)
+    private static SchedulePlan CreatePlan(string planId, SchedulePlanStatusContract status, string organizationId = "org-001", string environmentId = "env-dev", DateTimeOffset? generatedAtUtc = null)
     {
         return SchedulePlan.FromGeneratedPlan(
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
                 ContractVersion: 1,
                 PlanId: planId,
@@ -113,7 +202,7 @@ public sealed class ListSchedulePlansQueryHandlerTests
                 ProblemFingerprint: $"fingerprint-{planId}",
                 AlgorithmVersion: "aps-lite-v1",
                 Status: status,
-                GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                GeneratedAtUtc: generatedAtUtc ?? new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
                 Metrics: new SchedulePlanMetricsContract(
                     ScheduledOperationCount: 1,
                     UnscheduledOperationCount: 0,
