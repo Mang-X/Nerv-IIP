@@ -1369,6 +1369,34 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
 
 public sealed record ClosePurchaseOrderLineCommand(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason) : ICommand;
 
+public sealed record ReschedulePurchaseOrderLineCommand(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, DateOnly PromisedDate) : ICommand;
+
+public sealed class ReschedulePurchaseOrderLineCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<ReschedulePurchaseOrderLineCommand>
+{
+    public async Task Handle(ReschedulePurchaseOrderLineCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.PurchaseOrders.Include(x => x.Lines).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PurchaseOrderNo == request.PurchaseOrderNo,
+            cancellationToken) ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+        try { order.RescheduleLine(request.LineNo, request.PromisedDate); }
+        catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
+    }
+}
+
+public sealed record CancelPurchaseOrderLineCommand(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason) : ICommand;
+
+public sealed class CancelPurchaseOrderLineCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<CancelPurchaseOrderLineCommand>
+{
+    public async Task Handle(CancelPurchaseOrderLineCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.PurchaseOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).ThenInclude(x => x.Lines).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PurchaseOrderNo == request.PurchaseOrderNo,
+            cancellationToken) ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+        try { order.CancelLine(request.LineNo, request.Reason); }
+        catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
+    }
+}
+
 public sealed class ClosePurchaseOrderLineCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<ClosePurchaseOrderLineCommand>
 {
     public async Task Handle(ClosePurchaseOrderLineCommand request, CancellationToken cancellationToken)

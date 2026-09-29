@@ -12,6 +12,42 @@ namespace Nerv.IIP.Business.Erp.Domain.Tests;
 public sealed class ErpProcurementAggregateTests
 {
     [Fact]
+    public void Released_purchase_order_line_can_be_rescheduled_and_cancelled_idempotently()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-3970", "SUP-001", "SITE-01",
+            [NewPurchaseOrderLine(10m), new PurchaseOrderLineDraft("LINE-002", "SKU-002", "kg", 5m, 20m, new DateOnly(2026, 6, 4))]);
+        order.MarkApprovalRequested("chain-3970");
+        order.ReleaseAfterApproval("chain-3970");
+
+        var newDate = new DateOnly(2026, 7, 1);
+        order.RescheduleLine("LINE-001", newDate);
+        var version = order.Version;
+        order.RescheduleLine("LINE-001", newDate);
+        Assert.Equal(version, order.Version);
+        Assert.Equal(newDate, order.Lines.Single(x => x.LineNo == "LINE-001").PromisedDate);
+
+        order.CancelLine("LINE-001", "plan cancelled");
+        version = order.Version;
+        order.CancelLine("LINE-001", "plan cancelled");
+        Assert.Equal(version, order.Version);
+        Assert.Equal(0m, order.Lines.Single(x => x.LineNo == "LINE-001").OpenQuantity);
+        Assert.Equal(PurchaseOrderStatus.Released, order.Status);
+        Assert.Throws<InvalidOperationException>(() => order.RescheduleLine("LINE-001", new DateOnly(2026, 7, 2)));
+    }
+
+    [Fact]
+    public void Purchase_order_line_commands_reject_unavailable_business_states()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-3970-STATE", "SUP-001", "SITE-01", [NewPurchaseOrderLine(10m)]);
+        Assert.Throws<InvalidOperationException>(() => order.RescheduleLine("LINE-001", new DateOnly(2026, 7, 1)));
+        Assert.Throws<InvalidOperationException>(() => order.CancelLine("LINE-001", "plan cancelled"));
+
+        order.MarkApprovalRequested("chain-3970-state");
+        order.ReleaseAfterApproval("chain-3970-state");
+        order.RegisterReceipt("LINE-001", 2m);
+        Assert.Throws<InvalidOperationException>(() => order.CancelLine("LINE-001", "plan cancelled"));
+    }
+    [Fact]
     public void Purchase_requisition_can_be_created_from_demand_planning_suggestion()
     {
         var requisition = PurchaseRequisition.CreateFromSuggestion(

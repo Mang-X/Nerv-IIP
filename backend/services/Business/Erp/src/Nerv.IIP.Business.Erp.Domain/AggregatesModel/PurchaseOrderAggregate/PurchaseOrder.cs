@@ -312,6 +312,45 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         }
     }
 
+    public void RescheduleLine(string lineNo, DateOnly promisedDate)
+    {
+        EnsureOpen();
+        var line = lines.SingleOrDefault(x => x.LineNo == ErpText.Required(lineNo, nameof(lineNo)))
+            ?? throw new InvalidOperationException($"Purchase order line '{lineNo}' was not found.");
+        if (!line.Reschedule(promisedDate))
+        {
+            return;
+        }
+        Version++;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-line-rescheduled",
+            $"purchase-order:{PurchaseOrderNo}:reschedule:{Version}",
+            [line.SkuCode]);
+    }
+
+    public void CancelLine(string lineNo, string reason)
+    {
+        var line = lines.SingleOrDefault(x => x.LineNo == ErpText.Required(lineNo, nameof(lineNo)))
+            ?? throw new InvalidOperationException($"Purchase order line '{lineNo}' was not found.");
+        if (line.FinalDelivery && changeHistory.Any(x => x.ChangeType == "line-cancel" && x.Lines.Any(y => y.LineNo == lineNo)))
+        {
+            return;
+        }
+
+        EnsureOpen();
+        line.Cancel();
+        changeHistory.Add(PurchaseOrderChange.Applied("line-cancel", [line.ToChangeDraft()], reason));
+        Version++;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-line-cancelled",
+            $"purchase-order:{PurchaseOrderNo}:line-cancel:{Version}",
+            [line.SkuCode]);
+        if (lines.All(x => x.OpenQuantity == 0 || x.FinalDelivery))
+        {
+            Status = PurchaseOrderStatus.Closed;
+        }
+    }
+
     public void Cancel(string reason)
     {
         EnsureOpen();
@@ -447,6 +486,37 @@ public sealed class PurchaseOrderLine : Entity<PurchaseOrderLineId>
         if (ReceivedQuantity < minimumReceipt)
         {
             throw new InvalidOperationException("Final delivery shortage exceeds the configured under-receipt tolerance.");
+        }
+
+        FinalDelivery = true;
+    }
+
+    internal bool Reschedule(DateOnly promisedDate)
+    {
+        if (FinalDelivery || OpenQuantity == 0)
+        {
+            throw new InvalidOperationException("Only open purchase order lines can be rescheduled.");
+        }
+
+        if (promisedDate == default)
+        {
+            throw new ArgumentException("Promised date is required.", nameof(promisedDate));
+        }
+
+        if (PromisedDate == promisedDate)
+        {
+            return false;
+        }
+
+        PromisedDate = promisedDate;
+        return true;
+    }
+
+    internal void Cancel()
+    {
+        if (FinalDelivery || ReceivedQuantity > 0m)
+        {
+            throw new InvalidOperationException("Only unreceived open purchase order lines can be cancelled.");
         }
 
         FinalDelivery = true;
