@@ -14,9 +14,11 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggreg
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.DomainEvents;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
@@ -32,6 +34,42 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 public sealed class DemandPlanningEndpointContractTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public async Task Accepting_component_suggestion_carries_only_pegged_parent_suggestions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var runId = new MrpRunId(Guid.CreateVersion7());
+        var requiredDate = new DateOnly(2026, 10, 10);
+        PlanningSuggestion NewSuggestion(MrpRunId run, string sku) => PlanningSuggestion.Create(
+            "org-001", "env-dev", run, "planned-work-order", sku, "EA", "SITE-01", 10m,
+            requiredDate, requiredDate.AddDays(-2), "net-requirement");
+
+        var parent = NewSuggestion(runId, "SKU-ASSEMBLY");
+        parent.AddPeggingLink("demand", "SO-1", "SKU-ASSEMBLY", null, 10m, null, null, null,
+            sourceLineReference: "10");
+        var unrelated = NewSuggestion(runId, "SKU-ASSEMBLY");
+        unrelated.AddPeggingLink("demand", "SO-2", "SKU-ASSEMBLY", null, 10m, null, null, null,
+            sourceLineReference: "20");
+        var child = NewSuggestion(runId, "SKU-COMPONENT");
+        child.AddPeggingLink("demand", "SO-1", "SKU-ASSEMBLY", "SKU-COMPONENT", 10m, null, null, null,
+            sourceLineReference: "10");
+        dbContext.PlanningSuggestions.AddRange(parent, unrelated, child);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var bridge = new CountingPlanningSuggestionDownstreamBridge();
+        await new AcceptPlanningSuggestionCommandHandler(dbContext, bridge).Handle(
+            new AcceptPlanningSuggestionCommand(child.Id, "BusinessMes", "WorkOrder", null),
+            CancellationToken.None);
+
+        Assert.Equal([parent.Id.ToString()], bridge.LastRequest!.AssemblyParentSuggestionIds);
+        var accepted = Assert.Single(child.GetDomainEvents().OfType<PlanningSuggestionAcceptedDomainEvent>());
+        Assert.Equal([parent.Id.ToString()], accepted.AssemblyParentSuggestionIds);
+        Assert.Equal([parent.Id.ToString()],
+            new PlanningSuggestionAcceptedIntegrationEventConverter().Convert(accepted).Payload.AssemblyParentSuggestionIds);
+    }
 
     [Fact]
     public void DemandPlanning_endpoints_expose_issue_128_routes_permissions_policies_and_operation_ids()
@@ -1385,6 +1423,7 @@ public sealed class DemandPlanningEndpointContractTests
     private sealed class CountingPlanningSuggestionDownstreamBridge : IPlanningSuggestionDownstreamBridge
     {
         public int CreateCount { get; private set; }
+        public PlanningSuggestionDownstreamRequest? LastRequest { get; private set; }
 
         public Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
             PlanningSuggestion suggestion,
@@ -1392,6 +1431,7 @@ public sealed class DemandPlanningEndpointContractTests
             CancellationToken cancellationToken)
         {
             CreateCount++;
+            LastRequest = request;
             var referenceId = string.Equals(request.DownstreamService, "BusinessErp", StringComparison.OrdinalIgnoreCase)
                 ? "PR-SHOULD-BE-CREATED"
                 : "WO-SHOULD-NOT-BE-CREATED";

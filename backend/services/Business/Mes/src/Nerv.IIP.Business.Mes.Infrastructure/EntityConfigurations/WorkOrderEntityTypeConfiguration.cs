@@ -79,6 +79,9 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
             source.PrimitiveCollection(x => x.SourceDemandReferences)
                 .HasColumnName("source_demand_references")
                 .HasComment("All DemandPlanning demand source references pegged to the source suggestion (batched suggestions peg multiple demands); includes the primary reference. Null for legacy rows, which fall back to source_demand_reference.");
+            source.PrimitiveCollection(x => x.AssemblyParentSuggestionIds)
+                .HasColumnName("assembly_parent_suggestion_ids")
+                .HasComment("DemandPlanning parent suggestion ids resolved from component pegging; MES resolves their work order ids when both suggestions are accepted.");
             source.HasIndex(x => new { x.SourceSystem, x.SourceDocumentId })
                 .HasDatabaseName("ix_work_orders_source_plan");
         });

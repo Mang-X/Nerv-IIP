@@ -150,7 +150,8 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
             suggestion.Id.ToString(),
             demandReference,
             request.IdempotencyKey,
-            demandReferences);
+            demandReferences,
+            request.AssemblyParentSuggestionIds);
 
         using var httpRequest = new HttpRequestMessage(
             HttpMethod.Post,
@@ -302,7 +303,8 @@ internal sealed record MesConvertPlanToWorkOrderRequest(
     string SourceDocumentId,
     string? SourceDemandReference,
     string IdempotencyKey,
-    IReadOnlyCollection<string>? SourceDemandReferences = null);
+    IReadOnlyCollection<string>? SourceDemandReferences = null,
+    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null);
 
 internal sealed record MesAcceptedResponse(string Status, string ReferenceId, DateTimeOffset AcceptedAtUtc);
 

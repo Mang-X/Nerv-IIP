@@ -33,7 +33,8 @@ public sealed record PlanningSuggestionDownstreamRequest(
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null);
 
 public sealed record PlanningSuggestionDownstreamReference(
     string DownstreamService,
@@ -70,13 +71,15 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
             .Include(x => x.PeggingLinks)
             .SingleOrDefaultAsync(x => x.Id == request.SuggestionId, cancellationToken)
             ?? throw new KnownException($"计划建议不存在：{request.SuggestionId}");
-        var downstreamReference = await ResolveDownstreamReferenceAsync(suggestion, request, cancellationToken);
+        var assemblyParentSuggestionIds = await GetAssemblyParentSuggestionIdsAsync(suggestion, cancellationToken);
+        var downstreamReference = await ResolveDownstreamReferenceAsync(suggestion, request, assemblyParentSuggestionIds, cancellationToken);
         try
         {
             suggestion.Accept(
                 downstreamReference.DownstreamService,
                 downstreamReference.DownstreamDocumentType,
-                downstreamReference.DownstreamDocumentId);
+                downstreamReference.DownstreamDocumentId,
+                assemblyParentSuggestionIds);
             return new AcceptPlanningSuggestionResult(
                 downstreamReference.DownstreamService,
                 downstreamReference.DownstreamDocumentType,
@@ -91,6 +94,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
     private async Task<PlanningSuggestionDownstreamReference> ResolveDownstreamReferenceAsync(
         PlanningSuggestion suggestion,
         AcceptPlanningSuggestionCommand request,
+        IReadOnlyCollection<string> assemblyParentSuggestionIds,
         CancellationToken cancellationToken)
     {
         if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
@@ -110,7 +114,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         EnsureCanCreateDownstreamReference(suggestion);
         if (IsBridgeManagedDownstreamTarget(suggestion, request))
         {
-            return await CreateDownstreamReferenceAsync(suggestion, request, cancellationToken);
+            return await CreateDownstreamReferenceAsync(suggestion, request, assemblyParentSuggestionIds, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(request.DownstreamDocumentId))
@@ -121,12 +125,13 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 request.DownstreamDocumentId.Trim());
         }
 
-        return await CreateDownstreamReferenceAsync(suggestion, request, cancellationToken);
+        return await CreateDownstreamReferenceAsync(suggestion, request, assemblyParentSuggestionIds, cancellationToken);
     }
 
     private Task<PlanningSuggestionDownstreamReference> CreateDownstreamReferenceAsync(
         PlanningSuggestion suggestion,
         AcceptPlanningSuggestionCommand request,
+        IReadOnlyCollection<string> assemblyParentSuggestionIds,
         CancellationToken cancellationToken)
     {
         var bridge = downstreamBridge ?? new UnsupportedPlanningSuggestionDownstreamBridge();
@@ -138,8 +143,49 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 request.DownstreamDocumentId,
                 string.IsNullOrWhiteSpace(request.IdempotencyKey)
                     ? $"demand-planning:accept:{suggestion.OrganizationId}:{suggestion.EnvironmentId}:{suggestion.Id}"
-                    : request.IdempotencyKey.Trim()),
+                    : request.IdempotencyKey.Trim(),
+                assemblyParentSuggestionIds),
             cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<string>> GetAssemblyParentSuggestionIdsAsync(
+        PlanningSuggestion suggestion,
+        CancellationToken cancellationToken)
+    {
+        if (suggestion.SuggestionType != DemandPlanningSuggestionTypes.PlannedWorkOrder)
+        {
+            return [];
+        }
+
+        var componentLinks = suggestion.PeggingLinks
+            .Where(x => x.PeggingType == "demand" && x.ComponentSkuCode == suggestion.SkuCode)
+            .ToArray();
+        if (componentLinks.Length == 0)
+        {
+            return [];
+        }
+
+        var parentSkus = componentLinks.Select(x => x.ParentSkuCode).Distinct().ToArray();
+        var candidates = await dbContext.PlanningSuggestions
+            .AsNoTracking()
+            .Include(x => x.PeggingLinks)
+            .Where(x => x.MrpRunId == suggestion.MrpRunId &&
+                x.OrganizationId == suggestion.OrganizationId &&
+                x.EnvironmentId == suggestion.EnvironmentId &&
+                x.SiteCode == suggestion.SiteCode &&
+                x.SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder &&
+                parentSkus.Contains(x.SkuCode))
+            .ToListAsync(cancellationToken);
+
+        return candidates
+            .Where(parent => parent.Id != suggestion.Id && componentLinks.Any(link =>
+                link.ParentSkuCode == parent.SkuCode &&
+                parent.PeggingLinks.Any(parentLink => parentLink.PeggingType == "demand" &&
+                    parentLink.DemandSourceReference == link.DemandSourceReference &&
+                    parentLink.SourceLineReference == link.SourceLineReference)))
+            .Select(x => x.Id.ToString())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static bool IsSameDownstreamTarget(PlanningSuggestion suggestion, AcceptPlanningSuggestionCommand request)

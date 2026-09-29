@@ -69,7 +69,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
             suggestion.AcceptedDownstreamService ?? string.Empty,
             suggestion.AcceptedDownstreamDocumentType ?? string.Empty,
             suggestion.AcceptedDownstreamDocumentId,
-            demandSourceReferences);
+            demandSourceReferences,
+            domainEvent.AssemblyParentSuggestionIds);
         return new PlanningSuggestionAcceptedIntegrationEvent(
             EventIds.New(),
             DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,

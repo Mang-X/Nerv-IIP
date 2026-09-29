@@ -288,7 +288,8 @@ public sealed record ConvertPlanToWorkOrderRequest(
     string? SourceDocumentId = null,
     string? SourceDemandReference = null,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<string>? SourceDemandReferences = null);
+    IReadOnlyCollection<string>? SourceDemandReferences = null,
+    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null);
 
 public sealed class ConvertPlanToWorkOrderRequestValidator : Validator<ConvertPlanToWorkOrderRequest>
 {
@@ -311,6 +312,7 @@ public sealed class ConvertPlanToWorkOrderRequestValidator : Validator<ConvertPl
             .Must(x => x is null || x.Count <= 200)
             .WithMessage("SourceDemandReferences must contain at most 200 entries.");
         RuleForEach(x => x.SourceDemandReferences).NotEmpty().MaximumLength(100);
+        RuleForEach(x => x.AssemblyParentSuggestionIds).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -796,7 +798,8 @@ public sealed class ConvertPlanToWorkOrderEndpoint(ISender sender, TimeProvider 
             req.SourceDocumentId,
             req.SourceDemandReference,
             req.IdempotencyKey,
-            req.SourceDemandReferences), ct);
+            req.SourceDemandReferences,
+            req.AssemblyParentSuggestionIds), ct);
         await Send.OkAsync(response, ct);
     }
 }

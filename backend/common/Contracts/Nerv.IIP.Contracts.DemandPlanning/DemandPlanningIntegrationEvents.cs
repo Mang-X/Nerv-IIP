@@ -161,4 +161,5 @@ public sealed record PlanningSuggestionAcceptedPayload(
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId,
-    IReadOnlyCollection<string>? DemandSourceReferences = null);
+    IReadOnlyCollection<string>? DemandSourceReferences = null,
+    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null);
