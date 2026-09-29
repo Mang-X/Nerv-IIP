@@ -165,7 +165,6 @@ internal sealed class SalesOrderDemandEventProcessor(
         var isOrderCancelled = string.Equals(payload.Status, "cancelled", StringComparison.Ordinal);
         var activeLineReferences = new HashSet<string>(StringComparer.Ordinal);
         var changedDemandReferences = new HashSet<string>(StringComparer.Ordinal);
-        var hasWorkOrderSignal = false;
 
         if (!isOrderCancelled)
         {
@@ -238,7 +237,6 @@ internal sealed class SalesOrderDemandEventProcessor(
                         && string.Equals(suggestion.AcceptedDownstreamDocumentType, DemandPlanningDownstreamReferences.WorkOrder, StringComparison.OrdinalIgnoreCase))
                     {
                         suggestion.NotifySalesOrderDemandChanged(demandReference, payload.SalesOrderId, payload.OrderVersion, isOrderCancelled);
-                        hasWorkOrderSignal = true;
                     }
                 }
             }
@@ -263,15 +261,13 @@ internal sealed class SalesOrderDemandEventProcessor(
             projection.Apply(payload.SalesOrderNo, payload.CustomerCode, payload.SiteCode, payload.OrderVersion, payload.Status, integrationEvent.EventId, integrationEvent.OccurredAtUtc);
         }
 
-        await SaveAsync(cancellationToken, hasWorkOrderSignal);
+        await SaveAsync(cancellationToken);
     }
 
-    private Task<int> SaveAsync(CancellationToken cancellationToken, bool publishDomainEvents = false) =>
+    private Task<int> SaveAsync(CancellationToken cancellationToken) =>
         ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
             dbContext,
-            publishDomainEvents
-                ? async ct => await dbContext.SaveEntitiesAsync(ct) ? 1 : 0
-                : dbContext.SaveChangesAsync,
+            async ct => await dbContext.SaveEntitiesAsync(ct) ? 1 : 0,
             cancellationToken);
 
     private static string? Validate(IIntegrationEventEnvelope integrationEvent, SalesOrderLifecyclePayload payload, string expectedStatus)

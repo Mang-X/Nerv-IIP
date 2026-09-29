@@ -127,10 +127,68 @@ public sealed class ErpSalesOrderDemandConsumerTests
         Assert.Equal("SO-DEMO-001", signal.Payload.DemandSourceReference);
         Assert.Equal("WO-001", signal.Payload.WorkOrderId);
         Assert.Equal(2, signal.Payload.OrderVersion);
+        Assert.False(signal.Payload.Cancelled);
         dbContext.ChangeTracker.Clear();
         var persistedMixed = await dbContext.PlanningSuggestions.Include(x => x.PeggingLinks).SingleAsync(x => x.Id == mixed.Id);
         Assert.Equal(12m, persistedMixed.Quantity);
         Assert.Equal("SO-OTHER", Assert.Single(persistedMixed.PeggingLinks).DemandSourceReference);
+    }
+
+    [Fact]
+    public async Task Changed_due_date_with_unchanged_quantity_invalidates_open_suggestion()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Released(1, 8m, "10"), CancellationToken.None);
+
+        var open = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()), "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        open.ClearDomainEvents();
+        dbContext.PlanningSuggestions.Add(open);
+        await dbContext.SaveChangesAsync();
+
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Changed(2, 8m, "10") with
+            {
+                Payload = Payload(2, "released", 8m, "10") with
+                {
+                    Lines = [new SalesOrderLineSnapshot("10", "SKU-FG-A", 8m, "EA", new DateOnly(2026, 8, 20), false)],
+                },
+            }, CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Closed, open.Status);
+        Assert.Equal(new DateOnly(2026, 8, 20), Assert.Single(await dbContext.DemandSources.ToArrayAsync()).DueDate);
+    }
+
+    [Fact]
+    public async Task Removed_line_invalidates_its_open_suggestion()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+        await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Released(1, 8m, "10"), CancellationToken.None);
+
+        var open = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()), "planned-work-order", "SKU-FG-A", "EA", "SITE-001", 8m, new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 14), "net-requirement");
+        open.AddPeggingLink("demand", "SO-DEMO-001", "SKU-FG-A", null, 8m, null, null, null);
+        open.ClearDomainEvents();
+        dbContext.PlanningSuggestions.Add(open);
+        await dbContext.SaveChangesAsync();
+
+        await new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+            .HandleAsync(Changed(2, 8m, "10") with
+            {
+                Payload = Payload(2, "released", 8m, "10") with { Lines = [] },
+            }, CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Closed, open.Status);
+        var demand = Assert.Single(await dbContext.DemandSources.ToArrayAsync());
+        Assert.Equal("cancelled", demand.SourceStatus);
+        Assert.Equal(0m, demand.Quantity);
     }
 
     [Fact]

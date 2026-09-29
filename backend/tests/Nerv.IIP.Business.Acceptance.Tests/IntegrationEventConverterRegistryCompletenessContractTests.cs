@@ -159,11 +159,12 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(BarcodeLabelConverters.LabelPrintBatchCreatedIntegrationEventConverter),
         typeof(BarcodeLabelConverters.LabelScannedIntegrationEventConverter),
         typeof(BarcodeLabelConverters.ScanRejectedIntegrationEventConverter),
-        // DemandPlanning（4 条）
+        // DemandPlanning（5 条）
         typeof(DemandPlanningConverters.MrpRunCompletedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlannedPurchaseSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlannedWorkOrderSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlanningSuggestionAcceptedIntegrationEventConverter),
+        typeof(DemandPlanningConverters.SalesOrderDemandChangedForWorkOrderIntegrationEventConverter),
         // Erp（17 条）
         typeof(ErpConverters.AccountPayableCreatedIntegrationEventConverter),
         typeof(ErpConverters.AccountReceivableCreatedIntegrationEventConverter),

@@ -53,6 +53,16 @@ public sealed class DemandPlanningAggregateTests
     }
 
     [Fact]
+    public void Sales_order_demand_does_not_emit_a_manual_demand_created_event()
+    {
+        var demand = DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-001", "SO-DEMO-001", "10", "CUST-001",
+            "SKU-FG-1000", "EA", "SITE-001", 2m, new DateOnly(2026, 8, 15), 1);
+
+        Assert.DoesNotContain(demand.GetDomainEvents(), x => x is DemandSourceCreatedDomainEvent);
+    }
+
+    [Fact]
     public void Demand_source_creation_requires_planning_dimensions()
     {
         Assert.Throws<ArgumentException>(() => DemandSource.Create(
