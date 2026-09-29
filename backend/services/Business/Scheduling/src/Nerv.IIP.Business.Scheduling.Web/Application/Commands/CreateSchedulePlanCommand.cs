@@ -51,6 +51,15 @@ public sealed class CreateSchedulePlanCommandHandler(
                 EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
                 materialReadiness));
         var fixedReservations = request.FixedReservations ?? [];
+        var operationKeys = schedulingProblem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation.OperationId)))
+            .ToHashSet();
+        var planReservations = fixedReservations
+            .Where(x => operationKeys.Contains((x.OrderId, x.OperationId)))
+            .ToArray();
+        var externalReservations = fixedReservations
+            .Where(x => !operationKeys.Contains((x.OrderId, x.OperationId)))
+            .ToArray();
         var problemFingerprint = CalculateProblemFingerprint(schedulingProblem, fixedReservations);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
@@ -88,7 +97,8 @@ public sealed class CreateSchedulePlanCommandHandler(
         }
 
         var generatedAtUtc = timeProvider.GetUtcNow();
-        var preview = scheduler.ScheduleNormalized(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc, fixedReservations)
+        var preview = scheduler.ScheduleNormalized(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc,
+                planReservations, externalReservations)
             with { ProblemFingerprint = problemFingerprint };
         var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(

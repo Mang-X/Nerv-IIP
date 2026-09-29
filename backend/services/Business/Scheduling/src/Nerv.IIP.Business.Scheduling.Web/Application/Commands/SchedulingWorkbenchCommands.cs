@@ -166,10 +166,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         };
         var basePlan = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem);
         var impact = await LoadLatestImpactAsync(request, baseProblem, basePlan, cancellationToken);
-        var revisionReservations = fixedReservations
-            .Select(x => x with { IncludeInPlan = included.Contains(x.OrderId) })
-            .ToArray();
-        var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem, revisionReservations), cancellationToken);
+        var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem, fixedReservations), cancellationToken);
         return new SchedulePlanRevisionContract(candidate, impact, Compare(basePlan, candidate));
     }
 

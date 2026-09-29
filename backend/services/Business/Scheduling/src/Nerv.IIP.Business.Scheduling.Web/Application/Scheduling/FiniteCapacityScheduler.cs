@@ -115,8 +115,7 @@ public sealed record FixedWorkCenterReservation(
     string WorkCenterId,
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
-    string? ResourceId,
-    bool IncludeInPlan = true);
+    string? ResourceId);
 
 /// <summary>
 /// APS lite 有限产能排程器。
@@ -148,11 +147,13 @@ public sealed class FiniteCapacityScheduler(
         SchedulingProblemContract normalizedProblem,
         string planId,
         DateTimeOffset generatedAtUtc,
-        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null)
+        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null,
+        IReadOnlyCollection<FixedWorkCenterReservation>? externalReservations = null)
     {
         ArgumentNullException.ThrowIfNull(normalizedProblem);
 
-        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode, fixedReservations ?? []);
+        var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode,
+            fixedReservations ?? [], externalReservations ?? []);
         state.ReserveFixedWorkCenterOccupancy();
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
@@ -419,6 +420,7 @@ file sealed class SchedulerState
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private readonly SchedulingQualityConstraintModeContract qualityConstraintMode;
     private readonly IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations;
+    private readonly IReadOnlyCollection<FixedWorkCenterReservation> externalReservations;
     private readonly HashSet<OperationKey> fixedOperationKeys;
     private readonly Dictionary<string, int> workCenterCapacity;
     private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
@@ -430,7 +432,8 @@ file sealed class SchedulerState
         DateTimeOffset generatedAtUtc,
         SchedulingMaterialConstraintModeContract materialConstraintMode,
         SchedulingQualityConstraintModeContract qualityConstraintMode,
-        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations)
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
+        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations)
     {
         this.problem = problem;
         this.planId = planId;
@@ -438,6 +441,7 @@ file sealed class SchedulerState
         this.materialConstraintMode = materialConstraintMode;
         this.qualityConstraintMode = qualityConstraintMode;
         this.fixedReservations = fixedReservations;
+        this.externalReservations = externalReservations;
         fixedOperationKeys = fixedReservations
             .Select(x => new OperationKey(x.OrderId, x.OperationId))
             .ToHashSet();
@@ -459,15 +463,16 @@ file sealed class SchedulerState
         DateTimeOffset generatedAtUtc,
         SchedulingMaterialConstraintModeContract materialConstraintMode,
         SchedulingQualityConstraintModeContract qualityConstraintMode,
-        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations)
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
+        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations)
     {
-        return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode, qualityConstraintMode, fixedReservations);
+        return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode, qualityConstraintMode,
+            fixedReservations, externalReservations);
     }
 
     public void ReserveFixedWorkCenterOccupancy()
     {
         foreach (var fixedReservation in fixedReservations
-                     .Where(x => x.IncludeInPlan)
                      .OrderBy(x => x.StartUtc)
                      .ThenBy(x => x.WorkCenterId, StringComparer.Ordinal)
                      .ThenBy(x => x.OrderId, StringComparer.Ordinal)
@@ -695,7 +700,7 @@ file sealed class SchedulerState
             .GroupBy(x => new OperationKey(x.OrderId ?? string.Empty, x.OperationId!))
             .ToDictionary(x => x.Key, x => x.First().ReasonCode);
 
-        var resourceOccupancies = BuildResourceOccupancies(orderedAssignments, includeExternal: false);
+        var resourceOccupancies = BuildResourceOccupancies(orderedAssignments);
         var resourceLoads = BuildResourceLoads(resourceOccupancies);
         var orderedMaterialRisks = materialRisks
             .OrderBy(x => x.OrderId, StringComparer.Ordinal)
@@ -1569,15 +1574,21 @@ file sealed class SchedulerState
     {
         if (ReferenceEquals(orderedAssignments, assignments))
         {
-            return resourceOccupancyCache ??= BuildResourceOccupancies(orderedAssignments);
+            return resourceOccupancyCache ??= BuildCapacityOccupancies(orderedAssignments);
         }
 
-        return BuildResourceOccupancies(orderedAssignments);
+        return BuildCapacityOccupancies(orderedAssignments);
     }
 
+    private IReadOnlyCollection<ResourceOccupancy> BuildCapacityOccupancies(
+        IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments) =>
+        BuildResourceOccupancies(orderedAssignments)
+            .Concat(externalReservations
+                .Select(x => new ResourceOccupancy(x.ResourceId ?? string.Empty, x.WorkCenterId, x.StartUtc, x.EndUtc)))
+            .ToArray();
+
     private IReadOnlyCollection<ResourceOccupancy> BuildResourceOccupancies(
-        IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments,
-        bool includeExternal = true)
+        IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
     {
         var resourceOccupancies = new List<ResourceOccupancy>();
         var earliestOccupancyEndByResource = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
@@ -1609,13 +1620,6 @@ file sealed class SchedulerState
             {
                 earliestOccupancyEndByResource[assignment.ResourceId] = assignment.EndUtc;
             }
-        }
-
-        if (includeExternal)
-        {
-            resourceOccupancies.AddRange(fixedReservations
-                .Where(x => !x.IncludeInPlan)
-                .Select(x => new ResourceOccupancy(x.ResourceId ?? string.Empty, x.WorkCenterId, x.StartUtc, x.EndUtc)));
         }
 
         return resourceOccupancies;

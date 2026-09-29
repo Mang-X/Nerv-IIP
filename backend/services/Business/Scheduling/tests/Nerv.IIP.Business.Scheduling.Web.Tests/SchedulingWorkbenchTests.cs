@@ -171,11 +171,22 @@ public sealed class SchedulingWorkbenchTests
                 [includedOrder.OrderId], []), CancellationToken.None);
 
         var reservation = Assert.Single(sender.LastCommand!.FixedReservations!);
-        Assert.False(reservation.IncludeInPlan);
+        Assert.Equal(excludedOrder.OrderId, reservation.OrderId);
+        Assert.DoesNotContain(sender.LastCommand.Problem.Orders, x => x.OrderId == reservation.OrderId);
         Assert.All(result.Candidate.Assignments, x => Assert.Equal(includedOrder.OrderId, x.OrderId));
         Assert.Equal(includedOrder.Operations.Count, result.Candidate.Metrics.ScheduledOperationCount);
         var competingOperation = includedOrder.Operations.First();
         Assert.True(Assert.Single(result.Candidate.Assignments,
+            x => x.OperationId == competingOperation.OperationId).StartUtc >= frozen.EndUtc);
+
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            db, new FiniteCapacityScheduler(), TimeProvider.System,
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db), new OrderUrgencyService(db, TimeProvider.System),
+            SchedulingEquipmentUnknownModeOption.Default);
+        var persistedCandidate = await createHandler.Handle(sender.LastCommand, CancellationToken.None);
+        Assert.All(persistedCandidate.Assignments, x => Assert.Equal(includedOrder.OrderId, x.OrderId));
+        Assert.True(Assert.Single(persistedCandidate.Assignments,
             x => x.OperationId == competingOperation.OperationId).StartUtc >= frozen.EndUtc);
     }
 
@@ -841,9 +852,15 @@ public sealed class SchedulingWorkbenchTests
         public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             LastCommand = Assert.IsType<CreateSchedulePlanCommand>(request);
+            var operationKeys = LastCommand.Problem.Orders
+                .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation.OperationId)))
+                .ToHashSet();
+            var reservations = LastCommand.FixedReservations ?? [];
             var plan = SchedulePlanContractMapper.WithStatus(
-                new FiniteCapacityScheduler().ScheduleWithFixedReservations(
-                    LastCommand.Problem, "plan-candidate", generatedAtUtc, LastCommand.FixedReservations ?? []),
+                new FiniteCapacityScheduler().ScheduleNormalized(
+                    SchedulingProblemNormalizer.Normalize(LastCommand.Problem), "plan-candidate", generatedAtUtc,
+                    reservations.Where(x => operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+                    reservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray()),
                 SchedulePlanStatusContract.Generated);
             return Task.FromResult((TResponse)(object)plan);
         }
