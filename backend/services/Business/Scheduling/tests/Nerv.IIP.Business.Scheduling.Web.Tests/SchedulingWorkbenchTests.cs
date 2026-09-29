@@ -191,6 +191,65 @@ public sealed class SchedulingWorkbenchTests
     }
 
     [Fact]
+    public async Task Revision_interruptible_segments_respect_excluded_frozen_order_capacity()
+    {
+        await using var db = CreateDbContext();
+        var template = ShockAbsorberSchedulingFixture.CreateProblem();
+        var start = template.HorizonStartUtc;
+        var excludedOrder = template.Orders.First();
+        var excludedOperation = excludedOrder.Operations.First();
+        var includedOrder = template.Orders.Last();
+        var includedOperation = includedOrder.Operations.First() with
+        {
+            SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+            DurationMinutes = 150
+        };
+        var problem = template with
+        {
+            HorizonEndUtc = start.AddHours(12),
+            Orders = [
+                excludedOrder with { Operations = [excludedOperation] },
+                includedOrder with { Operations = [includedOperation] }
+            ],
+            Resources = [template.Resources.Single(x => x.ResourceId == includedOperation.PrimaryResourceId)],
+            Calendars = [new SchedulingCalendarContract("CAL-DAY", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])],
+            UnavailabilityWindows = [],
+            QualityBlocks = []
+        };
+        var frozen = new FixedWorkCenterReservation(
+            excludedOrder.OrderId, excludedOperation.OperationId, excludedOperation.OperationSequence,
+            problem.Resources.Single().WorkCenterId, start, start.AddHours(1), null);
+        var basePlan = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().ScheduleWithFixedReservations(
+                problem, "plan-excluded-split-base", start, [frozen]),
+            SchedulePlanStatusContract.Generated);
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(problem.OrganizationId, problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+        db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+            problem.ProblemId, problem.ContractVersion, problem.OrganizationId, problem.EnvironmentId,
+            "fingerprint", SchedulingFrozenOccupancy.SerializeSnapshot(problem, [frozen]),
+            problem.HorizonStartUtc, problem.HorizonEndUtc, start));
+        await db.SaveChangesAsync();
+        var sender = new CapturingPlanSender(start);
+
+        var result = await new CreateSchedulePlanRevisionCommandHandler(db, sender).Handle(
+            new CreateSchedulePlanRevisionCommand(basePlan.PlanId, problem.OrganizationId, problem.EnvironmentId,
+                [includedOrder.OrderId], []), CancellationToken.None);
+
+        Assert.Equal([frozen], sender.LastCommand!.FixedReservations);
+        Assert.DoesNotContain(sender.LastCommand.Problem.Orders, x => x.OrderId == excludedOrder.OrderId);
+        var assignment = Assert.Single(result.Candidate.Assignments);
+        Assert.Equal(includedOperation.OperationId, assignment.OperationId);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start.AddHours(1), start.AddHours(2)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11).AddMinutes(30))
+        ], assignment.Segments);
+        Assert.Equal(1, result.Candidate.Metrics.ScheduledOperationCount);
+    }
+
+    [Fact]
     public void Comparison_counts_only_moved_planner_assignments()
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
