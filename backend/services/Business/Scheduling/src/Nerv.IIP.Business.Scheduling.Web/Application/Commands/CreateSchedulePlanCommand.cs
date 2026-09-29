@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -10,7 +9,9 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
-public sealed record CreateSchedulePlanCommand(SchedulingProblemContract Problem) : ICommand<SchedulePlanContract>;
+public sealed record CreateSchedulePlanCommand(
+    SchedulingProblemContract Problem,
+    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null) : ICommand<SchedulePlanContract>;
 
 public sealed class CreateSchedulePlanCommandValidator : AbstractValidator<CreateSchedulePlanCommand>
 {
@@ -49,7 +50,17 @@ public sealed class CreateSchedulePlanCommandHandler(
             MaterialReadinessSchedulingAdapter.Apply(
                 EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
                 materialReadiness));
-        var problemFingerprint = CalculateProblemFingerprint(schedulingProblem);
+        var fixedReservations = request.FixedReservations ?? [];
+        var operationKeys = schedulingProblem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation.OperationId)))
+            .ToHashSet();
+        var planReservations = fixedReservations
+            .Where(x => operationKeys.Contains((x.OrderId, x.OperationId)))
+            .ToArray();
+        var externalReservations = fixedReservations
+            .Where(x => !operationKeys.Contains((x.OrderId, x.OperationId)))
+            .ToArray();
+        var problemFingerprint = CalculateProblemFingerprint(schedulingProblem, fixedReservations);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.OrganizationId == overlaidProblem.OrganizationId &&
@@ -86,7 +97,9 @@ public sealed class CreateSchedulePlanCommandHandler(
         }
 
         var generatedAtUtc = timeProvider.GetUtcNow();
-        var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
+        var preview = scheduler.ScheduleNormalized(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc,
+                planReservations, externalReservations)
+            with { ProblemFingerprint = problemFingerprint };
         var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             overlaidProblem.ProblemId,
@@ -94,7 +107,7 @@ public sealed class CreateSchedulePlanCommandHandler(
             overlaidProblem.OrganizationId,
             overlaidProblem.EnvironmentId,
             problemFingerprint,
-            JsonSerializer.Serialize(schedulingProblem, SchedulingJson.Options),
+            SchedulingFrozenOccupancy.SerializeSnapshot(schedulingProblem, fixedReservations),
             overlaidProblem.HorizonStartUtc,
             overlaidProblem.HorizonEndUtc,
             generatedAtUtc));
@@ -107,10 +120,12 @@ public sealed class CreateSchedulePlanCommandHandler(
         return generated;
     }
 
-    private static string CalculateProblemFingerprint(SchedulingProblemContract problem)
+    private static string CalculateProblemFingerprint(
+        SchedulingProblemContract problem,
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations)
     {
         var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
-        var json = JsonSerializer.Serialize(normalizedProblem, SchedulingJson.Options);
+        var json = SchedulingFrozenOccupancy.SerializeSnapshot(normalizedProblem, fixedReservations);
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

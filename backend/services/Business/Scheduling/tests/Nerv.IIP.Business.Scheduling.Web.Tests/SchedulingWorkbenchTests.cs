@@ -4,10 +4,12 @@ using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
 using NetCorePal.Extensions.Primitives;
@@ -16,6 +18,199 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 public sealed class SchedulingWorkbenchTests
 {
+    [Fact]
+    public async Task Workbench_freezes_started_paused_and_completed_projection_intervals()
+    {
+        await using var db = CreateDbContext();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var order = problem.Orders.First();
+        var operations = order.Operations.OrderBy(x => x.OperationSequence).Take(3).ToArray();
+        var startedAt = problem.HorizonStartUtc;
+        foreach (var (operation, index) in operations.Select((value, index) => (value, index)))
+        {
+            var projection = OperationExecutionProjection.Create(
+                problem.OrganizationId, problem.EnvironmentId, order.OrderId, operation.OperationId,
+                operation.OperationSequence, problem.Resources.Single(x => x.ResourceId == operation.PrimaryResourceId).WorkCenterId,
+                startedAt, $"event-{index}");
+            projection.ApplyStarted(startedAt, $"start-{index}");
+            if (index == 1)
+            {
+                projection.ApplyPaused(startedAt.AddMinutes(20), "pause");
+            }
+            if (index == 2)
+            {
+                projection.ApplyCompleted(startedAt.AddMinutes(40), "complete");
+            }
+            db.OperationExecutionProjections.Add(projection);
+        }
+        await db.SaveChangesAsync();
+        var sender = new CapturingPlanSender(problem.HorizonStartUtc);
+        var handler = new CreateSchedulingWorkbenchPlanCommandHandler(
+            db,
+            new StaticWorkbenchSourceProvider(order),
+            new StaticWorkbenchProblemProducer(problem),
+            sender);
+
+        var plan = await handler.Handle(new CreateSchedulingWorkbenchPlanCommand(
+            problem.OrganizationId, problem.EnvironmentId, problem.HorizonStartUtc, problem.HorizonEndUtc,
+            [new(order.OrderId, order.Priority, order.IsRush)]), CancellationToken.None);
+
+        var frozen = Assert.IsType<CreateSchedulePlanCommand>(sender.LastCommand).FixedReservations!;
+        Assert.Equal(3, frozen.Count);
+        Assert.All(frozen, x => Assert.Null(x.ResourceId));
+        Assert.Equal(problem.HorizonEndUtc, frozen.Single(x => x.OperationId == operations[0].OperationId).EndUtc);
+        Assert.Equal(problem.HorizonEndUtc, frozen.Single(x => x.OperationId == operations[1].OperationId).EndUtc);
+        Assert.Equal(startedAt.AddMinutes(40), frozen.Single(x => x.OperationId == operations[2].OperationId).EndUtc);
+        Assert.All(plan.Assignments.Where(x => frozen.Any(y => y.OperationId == x.OperationId)), x =>
+        {
+            Assert.True(x.IsLocked);
+            Assert.Equal("in-progress", x.ExplanationCode);
+        });
+        Assert.DoesNotContain(plan.Assignments, x =>
+            x.OrderId != order.OrderId && x.ResourceId == operations[0].PrimaryResourceId);
+    }
+
+    [Fact]
+    public async Task Revision_replays_frozen_snapshot_and_excludes_it_from_moved_count()
+    {
+        await using var db = CreateDbContext();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var operation = problem.Orders.First().Operations.First();
+        var frozen = new FixedWorkCenterReservation(
+            problem.Orders.First().OrderId, operation.OperationId, operation.OperationSequence,
+            problem.Resources.Single(x => x.ResourceId == operation.PrimaryResourceId).WorkCenterId,
+            problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1), null);
+        var basePlan = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-frozen-base", problem.HorizonStartUtc, [frozen]),
+            SchedulePlanStatusContract.Generated);
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(problem.OrganizationId, problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+        db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+            problem.ProblemId, problem.ContractVersion, problem.OrganizationId, problem.EnvironmentId,
+            "fingerprint", SchedulingFrozenOccupancy.SerializeSnapshot(problem, [frozen]),
+            problem.HorizonStartUtc, problem.HorizonEndUtc, problem.HorizonStartUtc));
+        await db.SaveChangesAsync();
+        var sender = new CapturingPlanSender(problem.HorizonStartUtc);
+        var handler = new CreateSchedulePlanRevisionCommandHandler(db, sender);
+
+        var result = await handler.Handle(new CreateSchedulePlanRevisionCommand(
+            basePlan.PlanId, problem.OrganizationId, problem.EnvironmentId,
+            problem.Orders.Select(x => x.OrderId).ToArray(),
+            [new SchedulingLockedAssignmentContract(
+                "planner-lock", frozen.OrderId, frozen.OperationId, frozen.OperationSequence,
+                operation.PrimaryResourceId!, frozen.WorkCenterId,
+                frozen.StartUtc.AddMinutes(5), frozen.EndUtc.AddMinutes(5), "planner-draft-lock")]), CancellationToken.None);
+
+        Assert.Equal([frozen], Assert.IsType<CreateSchedulePlanCommand>(sender.LastCommand).FixedReservations);
+        Assert.Empty(sender.LastCommand!.Problem.LockedAssignments);
+        var fixedAssignment = Assert.Single(result.Candidate.Assignments, x => x.OperationId == operation.OperationId);
+        Assert.Equal("in-progress", fixedAssignment.ExplanationCode);
+        Assert.Equal(frozen.StartUtc, fixedAssignment.StartUtc);
+        Assert.Equal(frozen.EndUtc, fixedAssignment.EndUtc);
+        Assert.Equal(0, result.Comparison.MovedOperationCount);
+    }
+
+    [Fact]
+    public async Task Created_plan_persists_frozen_occupancy_in_snapshot_and_assignment()
+    {
+        await using var db = CreateDbContext();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var operation = problem.Orders.First().Operations.First();
+        var frozen = new FixedWorkCenterReservation(
+            problem.Orders.First().OrderId, operation.OperationId, operation.OperationSequence,
+            problem.Resources.Single(x => x.ResourceId == operation.PrimaryResourceId).WorkCenterId,
+            problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1), null);
+        var handler = new CreateSchedulePlanCommandHandler(
+            db, new FiniteCapacityScheduler(), TimeProvider.System,
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db), new OrderUrgencyService(db, TimeProvider.System),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        var plan = await handler.Handle(new CreateSchedulePlanCommand(problem, [frozen]), CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var snapshot = await db.ScheduleProblems.SingleAsync();
+        Assert.Equal(plan.ProblemFingerprint, snapshot.ProblemFingerprint);
+        Assert.Equal([frozen], SchedulingFrozenOccupancy.ReadSnapshot(snapshot.ProblemJson));
+        var assignment = Assert.Single((await db.SchedulePlans.Include(x => x.Assignments).SingleAsync()).Assignments,
+            x => x.OperationId == operation.OperationId);
+        Assert.Equal(string.Empty, assignment.ResourceId);
+        Assert.Equal("in-progress", assignment.ExplanationCode);
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSchedulePlanCommand(problem, [frozen with { EndUtc = frozen.EndUtc.AddMinutes(1) }]),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Revision_uses_excluded_frozen_order_only_for_capacity()
+    {
+        await using var db = CreateDbContext();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var excludedOrder = problem.Orders.First();
+        var includedOrder = problem.Orders.Last();
+        var operation = excludedOrder.Operations.First();
+        var frozen = new FixedWorkCenterReservation(
+            excludedOrder.OrderId, operation.OperationId, operation.OperationSequence,
+            problem.Resources.Single(x => x.ResourceId == operation.PrimaryResourceId).WorkCenterId,
+            problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1), null);
+        var basePlan = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-partial-base", problem.HorizonStartUtc, [frozen]),
+            SchedulePlanStatusContract.Generated);
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(problem.OrganizationId, problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+        db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+            problem.ProblemId, problem.ContractVersion, problem.OrganizationId, problem.EnvironmentId,
+            "fingerprint", SchedulingFrozenOccupancy.SerializeSnapshot(problem, [frozen]),
+            problem.HorizonStartUtc, problem.HorizonEndUtc, problem.HorizonStartUtc));
+        await db.SaveChangesAsync();
+        var sender = new CapturingPlanSender(problem.HorizonStartUtc);
+
+        var result = await new CreateSchedulePlanRevisionCommandHandler(db, sender).Handle(
+            new CreateSchedulePlanRevisionCommand(basePlan.PlanId, problem.OrganizationId, problem.EnvironmentId,
+                [includedOrder.OrderId], []), CancellationToken.None);
+
+        var reservation = Assert.Single(sender.LastCommand!.FixedReservations!);
+        Assert.Equal(excludedOrder.OrderId, reservation.OrderId);
+        Assert.DoesNotContain(sender.LastCommand.Problem.Orders, x => x.OrderId == reservation.OrderId);
+        Assert.All(result.Candidate.Assignments, x => Assert.Equal(includedOrder.OrderId, x.OrderId));
+        Assert.Equal(includedOrder.Operations.Count, result.Candidate.Metrics.ScheduledOperationCount);
+        var competingOperation = includedOrder.Operations.First();
+        Assert.True(Assert.Single(result.Candidate.Assignments,
+            x => x.OperationId == competingOperation.OperationId).StartUtc >= frozen.EndUtc);
+
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            db, new FiniteCapacityScheduler(), TimeProvider.System,
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db), new OrderUrgencyService(db, TimeProvider.System),
+            SchedulingEquipmentUnknownModeOption.Default);
+        var persistedCandidate = await createHandler.Handle(sender.LastCommand, CancellationToken.None);
+        Assert.All(persistedCandidate.Assignments, x => Assert.Equal(includedOrder.OrderId, x.OrderId));
+        Assert.True(Assert.Single(persistedCandidate.Assignments,
+            x => x.OperationId == competingOperation.OperationId).StartUtc >= frozen.EndUtc);
+    }
+
+    [Fact]
+    public void Comparison_counts_only_moved_planner_assignments()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var baseline = new FiniteCapacityScheduler().Schedule(problem, "plan-base", problem.HorizonStartUtc);
+        var frozen = baseline.Assignments.First() with { IsLocked = true, ExplanationCode = "in-progress" };
+        var open = baseline.Assignments.Last();
+        var basePlan = baseline with { Assignments = [frozen, open] };
+        var candidate = baseline with
+        {
+            Assignments =
+            [
+                frozen with { StartUtc = frozen.StartUtc.AddMinutes(1) },
+                open with { StartUtc = open.StartUtc.AddMinutes(1) },
+            ]
+        };
+
+        var comparison = CreateSchedulePlanRevisionCommandHandler.Compare(basePlan, candidate);
+
+        Assert.Equal(1, comparison.MovedOperationCount);
+    }
     [Fact]
     public void Command_validators_use_the_contract_limit_and_reject_duplicate_ids()
     {
@@ -626,6 +821,58 @@ public sealed class SchedulingWorkbenchTests
             .UseInMemoryDatabase($"scheduling-workbench-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class StaticWorkbenchSourceProvider(SchedulingOrderContract order) : ISchedulingWorkbenchSourceProvider
+    {
+        public Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(
+            string organizationId, string environmentId, DateTimeOffset earliestStartFallbackUtc,
+            IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>>(
+                [new(new SchedulingProblemSourceOrder(order.OrderId, order.SkuCode, order.Quantity,
+                    order.DueUtc, order.Priority, order.IsRush, earliestStartFallbackUtc, "routing",
+                    BusinessReference: order.BusinessReference),
+                    order.Operations.Select(x => new SchedulingWorkbenchOperationSource(x.OperationId, x.OperationSequence)).ToArray())]);
+    }
+
+    private sealed class StaticWorkbenchProblemProducer(SchedulingProblemContract problem) : ISchedulingProblemProducer
+    {
+        public Task<SchedulingProblemContract> AssembleAsync(AssembleSchedulingProblemRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<SchedulingProblemContract> AssembleWorkbenchAsync(
+            AssembleSchedulingWorkbenchProblemRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(problem);
+    }
+
+    private sealed class CapturingPlanSender(DateTimeOffset generatedAtUtc) : ISender
+    {
+        public CreateSchedulePlanCommand? LastCommand { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            LastCommand = Assert.IsType<CreateSchedulePlanCommand>(request);
+            var operationKeys = LastCommand.Problem.Orders
+                .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation.OperationId)))
+                .ToHashSet();
+            var reservations = LastCommand.FixedReservations ?? [];
+            var plan = SchedulePlanContractMapper.WithStatus(
+                new FiniteCapacityScheduler().ScheduleNormalized(
+                    SchedulingProblemNormalizer.Normalize(LastCommand.Problem), "plan-candidate", generatedAtUtc,
+                    reservations.Where(x => operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+                    reservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray()),
+                SchedulePlanStatusContract.Generated);
+            return Task.FromResult((TResponse)(object)plan);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public IAsyncEnumerable<object?> CreateStream(object request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class SchedulingCreateSender(DateTimeOffset generatedAtUtc) : ISender
