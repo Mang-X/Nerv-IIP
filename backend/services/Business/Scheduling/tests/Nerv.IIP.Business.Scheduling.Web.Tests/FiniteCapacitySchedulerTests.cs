@@ -79,6 +79,39 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Locked_interruptible_segments_report_reserved_capacity_overlap()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var secondShift = start.AddHours(10);
+        var problem = template with
+        {
+            HorizonEndUtc = start.AddHours(14),
+            Resources = [template.Resources.Single() with { UtilizationRate = 0.5m }],
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(secondShift, secondShift.AddHours(4), "second")])],
+            LockedAssignments = [
+                new SchedulingLockedAssignmentContract(
+                    "lock-split", "WO-LOCKED-A", "LOCK-A", 10, "DEV-SNAPSHOT-01", "WC-SNAPSHOT",
+                    start, secondShift.AddHours(1), "planner-lock", [
+                        new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+                        new ScheduleAssignmentSegmentContract(secondShift, secondShift.AddHours(1))]),
+                new SchedulingLockedAssignmentContract(
+                    "lock-continuous", "WO-LOCKED-B", "LOCK-B", 10, "DEV-SNAPSHOT-01", "WC-SNAPSHOT",
+                    secondShift.AddHours(1), secondShift.AddHours(2), "planner-lock")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "locked-reserved-overlap", GeneratedAtUtc);
+
+        Assert.Contains(plan.Conflicts, x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            && x.OperationId == "LOCK-A");
+        Assert.Contains(plan.Conflicts, x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            && x.OperationId == "LOCK-B");
+    }
+
+    [Fact]
     public void Interruptible_operation_does_not_repeat_setup_between_its_own_segments()
     {
         var template = CreateSingleOperationProblem();
