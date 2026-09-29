@@ -99,13 +99,13 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
                 request.OperationId, pair.Operation.OperationSequence, request.ResourceId,
                 resource.WorkCenterId, request.StartUtc, request.EndUtc,
                 ScheduleOperationOverrideLockReasonCodes.ManualOverride,
-                ScheduleOperationOverrideSourceTypes.SchedulingApi, null, actor, now, now);
+                ScheduleOperationOverrideSourceTypes.SchedulingApi, null, actor, now, now, plan.PlanId);
             dbContext.ScheduleOperationOverrides.Add(fact);
         }
         else
         {
             fact.ReplaceManually(request.ResourceId, resource.WorkCenterId, request.StartUtc,
-                request.EndUtc, actor, now);
+                request.EndUtc, actor, now, plan.PlanId);
         }
 
         return new ScheduleOperationOverrideResponse(
