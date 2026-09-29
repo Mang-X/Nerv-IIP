@@ -4,6 +4,21 @@ import { toLockedAssignments, toModel } from './aps-mapper'
 import { conflictReasonLabel } from './labels'
 
 describe('toModel', () => {
+  it('preserves real schedule segments when locking an operation (#4004)', () => {
+    const segments = [
+      { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },
+      { startUtc: '2026-06-11T08:00:00Z', endUtc: '2026-06-11T10:00:00Z' },
+    ]
+    const model = toModel({
+      ...samplePlan,
+      assignments: [
+        { ...samplePlan.assignments![0], endUtc: segments[1]!.endUtc, segments, isLocked: true },
+      ],
+    })
+    expect(model.tasks.find((task) => task.id === 'a1')?.segments).toEqual(segments)
+    expect(toLockedAssignments(model)[0]?.segments).toEqual(segments)
+  })
+
   it('maps assignments to operation tasks with stable ids and grouping parents', () => {
     const m = toModel(samplePlan)
     const op = m.tasks.find((t) => t.id === 'a1')!

@@ -56,6 +56,12 @@ function makeFakeGantt() {
       state.destroyed = true
     },
     showDate: (_d: Date) => {},
+    getTaskPosition: (_task: unknown, start: Date, end: Date) => ({
+      left: start.getTime() / 3_600_000,
+      width: (end.getTime() - start.getTime()) / 3_600_000,
+      top: 0,
+      height: 30,
+    }),
   }
   return { gantt, state, fire: (name: string, ...args: unknown[]) => handlers.get(name)?.(...args) }
 }
@@ -69,6 +75,55 @@ const options = (): SchedulingEngineOptions => ({
 })
 
 describe('DhtmlxEngine (fake factory)', () => {
+  it.each(['order', 'resource'] as const)(
+    'renders real segments with an empty overnight gap in %s view (#4004)',
+    (view) => {
+      const fake = makeFakeGantt()
+      const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+      const model = toModel({
+        ...samplePlan,
+        assignments: [
+          {
+            ...samplePlan.assignments![0],
+            endUtc: '2026-06-11T10:00:00Z',
+            isLocked: true,
+            segments: [
+              { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },
+              { startUtc: '2026-06-11T08:00:00Z', endUtc: '2026-06-11T10:00:00Z' },
+            ],
+          },
+        ],
+      })
+      engine.mount(el(), { ...options(), view })
+      engine.setData(model)
+      const operation = fake.state.parsed.data.find((task) => task.id === 'a1')!
+      const template = fake.state.templates.task_text as (
+        s: unknown,
+        e: unknown,
+        task: unknown,
+      ) => string
+      const content = document.createElement('div')
+      content.innerHTML = template(undefined, undefined, operation)
+      const segments = content.querySelectorAll<HTMLElement>('.nerv-segment')
+      expect(segments).toHaveLength(2)
+      expect(segments[0]!.style.left).toBe('0px')
+      expect(segments[0]!.style.width).toBe('2px')
+      expect(segments[1]!.style.left).toBe('24px')
+      expect(segments[1]!.style.width).toBe('2px')
+      if (view === 'resource') expect(content.textContent).toContain('WO-001')
+      else {
+        const columns = fake.state.config.columns as {
+          name: string
+          template?: (task: unknown) => string
+        }[]
+        expect(columns.find((column) => column.name === 'duration')!.template!(operation)).toBe(
+          '4h',
+        )
+      }
+      engine.destroy()
+    },
+  )
+
   it('maps the model into gantt.parse with one task per node and FS links', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })

@@ -51,6 +51,40 @@ const plan = {
 }
 
 describe('useWorkingScheduleDraft', () => {
+  it('keeps actual segments when locking a multi-segment draft (#4004)', () => {
+    const draft = useWorkingScheduleDraft()
+    const segments = [
+      { startUtc: '2026-07-24T08:00:00Z', endUtc: '2026-07-24T09:00:00Z' },
+      { startUtc: '2026-07-25T08:00:00Z', endUtc: '2026-07-25T09:00:00Z' },
+    ]
+    draft.loadPlan({
+      ...plan,
+      assignments: [{ ...plan.assignments[0]!, endUtc: segments[1]!.endUtc, segments }],
+    })
+    draft.setLocked('assignment-001', true)
+    expect(draft.lockedAssignments.value[0]?.segments).toEqual(segments)
+    draft.undo()
+    expect(draft.model.value?.tasks.find((task) => task.id === 'assignment-001')?.segments).toEqual(
+      segments,
+    )
+  })
+
+  it('updates a single actual segment together with edited start/end (#4004)', () => {
+    const draft = useWorkingScheduleDraft()
+    const assignment = plan.assignments[0]!
+    draft.loadPlan({
+      ...plan,
+      assignments: [
+        { ...assignment, segments: [{ startUtc: assignment.startUtc, endUtc: assignment.endUtc }] },
+      ],
+    })
+    draft.updateTask(assignment.assignmentId, { startUtc: '2026-07-24T08:30:00Z' })
+    draft.setLocked(assignment.assignmentId, true)
+    expect(draft.lockedAssignments.value[0]?.segments).toEqual([
+      { startUtc: '2026-07-24T08:30:00Z', endUtc: assignment.endUtc },
+    ])
+  })
+
   it('keeps drag, table edit, lock and undo in one draft history', () => {
     const draft = useWorkingScheduleDraft()
     draft.setOrders([{ workOrderId: 'WO-001', priority: 10 }])

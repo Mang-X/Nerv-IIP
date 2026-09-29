@@ -62,7 +62,11 @@ function fmtDate(iso?: string) {
 const durationH = computed(() => {
   const t = props.task
   if (!t?.startUtc || !t?.endUtc) return '—'
-  const h = (Date.parse(t.endUtc) - Date.parse(t.startUtc)) / 3_600_000
+  const h =
+    (t.segments?.length ? t.segments : [t]).reduce(
+      (sum, segment) => sum + Date.parse(segment.endUtc) - Date.parse(segment.startUtc),
+      0,
+    ) / 3_600_000
   return h >= 1 ? `${Math.round(h)} 小时` : '<1 小时'
 })
 const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
@@ -199,6 +203,14 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
       >
         <p class="font-medium">设备状态未知 · 开工前请人工确认设备可用</p>
         <p class="mt-1">{{ task.equipmentRisk.message }}</p>
+      </div>
+
+      <div v-if="(task.segments?.length ?? 0) > 1" class="mt-3 grid gap-1 text-xs">
+        <p class="font-medium">实际排程 · {{ task.segments!.length }} 段</p>
+        <p v-for="(segment, index) in task.segments" :key="index">
+          第 {{ index + 1 }} 段 · {{ fmt(segment.startUtc) }} 至 {{ fmt(segment.endUtc) }}
+        </p>
+        <p class="text-muted-foreground">段间间隙不计入工时；分段时间由重新排程确定。</p>
       </div>
 
       <!-- 明细网格 -->

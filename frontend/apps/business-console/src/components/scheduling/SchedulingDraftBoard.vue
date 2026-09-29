@@ -19,6 +19,7 @@ import {
   NvTabsTrigger,
 } from '@nerv-iip/ui'
 import { computed, shallowRef } from 'vue'
+import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{
   model?: ScheduleModel
@@ -183,6 +184,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
           <thead class="sticky top-0 z-10 bg-muted text-left [&_th]:whitespace-nowrap">
             <tr>
               <th class="p-2">工单 / 工序</th>
+              <th class="p-2">实际排程段</th>
               <th class="p-2">资源</th>
               <th class="p-2">开始</th>
               <th class="p-2">结束</th>
@@ -202,6 +204,20 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
             >
               <td class="p-2 font-medium">{{ task.orderId }} · {{ task.operationId }}</td>
               <td class="p-2">
+                <p
+                  v-for="(segment, index) in task.segments"
+                  :key="index"
+                  class="whitespace-nowrap text-xs"
+                >
+                  第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
+                  {{ formatDateTime(segment.endUtc) }}
+                </p>
+                <p v-if="(task.segments?.length ?? 0) > 1" class="text-xs text-muted-foreground">
+                  分段时间由重新排程确定；可使用草案锁定保留各段。
+                </p>
+                <span v-else class="text-xs text-muted-foreground">连续排程</span>
+              </td>
+              <td class="p-2">
                 <NvEntityPicker
                   class="min-w-40"
                   :disabled="readOnly || task.locked"
@@ -218,7 +234,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
               <td class="p-2">
                 <NvInput
                   class="h-8 min-w-48"
-                  :disabled="readOnly || task.locked"
+                  :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
                   :model-value="task.startUtc"
                   @update:model-value="emit('update', task.id, { startUtc: String($event) })"
                 />
@@ -226,7 +242,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
               <td class="p-2">
                 <NvInput
                   class="h-8 min-w-48"
-                  :disabled="readOnly || task.locked"
+                  :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
                   :model-value="task.endUtc"
                   @update:model-value="emit('update', task.id, { endUtc: String($event) })"
                 />
@@ -263,11 +279,18 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                     size="sm"
                     variant="outline"
                     type="button"
-                    :disabled="readOnly || persistPending || !task.resourceId"
+                    :disabled="
+                      readOnly ||
+                      persistPending ||
+                      !task.resourceId ||
+                      (task.segments?.length ?? 0) > 1
+                    "
                     :title="
-                      task.resourceId
-                        ? '固定该工序的资源与起止时间，之后重新排程也保持不变'
-                        : '该工序未分配资源，先指定资源再持久锁定'
+                      (task.segments?.length ?? 0) > 1
+                        ? '多段工序请使用草案锁定保留各段；暂不支持持久锁定'
+                        : task.resourceId
+                          ? '固定该工序的资源与起止时间，之后重新排程也保持不变'
+                          : '该工序未分配资源，先指定资源再持久锁定'
                     "
                     @click="emit('persistOverride', task.id)"
                     >持久锁定</NvButton

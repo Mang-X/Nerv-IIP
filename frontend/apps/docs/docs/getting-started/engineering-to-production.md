@@ -39,7 +39,7 @@
 3. 在 `/engineering/documents` 按 `itemCode` 和文档类型关联图纸、作业指导或质量证据。
 4. 在 `/engineering/ebom` 维护设计结构，确认替代料、虚拟件、位号、得率和损耗。
 5. 在 `/engineering/mbom` 将 EBOM 转为制造用料，确保非虚拟件（phantom）的 EBOM 子项 SKU 被 MBOM 物料行覆盖。
-6. 在 `/engineering/standard-operations` 准备启用的标准工序，再到 `/engineering/routings` 发布工艺路线。
+6. 在 `/engineering/standard-operations` 准备启用的标准工序，再到 `/engineering/routings` 发布工艺路线。逐工序选择是否「可中断（跨班次续排）」；未勾选的工序按不可中断处理，版本明细可查看该标记。
 7. 在 `/engineering/production-versions` 绑定 SKU、MBOM、Routing 和有效日期，形成计划和 MES 可引用的版本。
 8. 如需变更，使用 `/engineering/eco` 释放 ECO/ECN；当前归档为即时执行。
 
