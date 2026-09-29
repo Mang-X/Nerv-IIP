@@ -977,8 +977,10 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Equal(0, bridge.CreateCount);
     }
 
-    [Fact]
-    public async Task Scheduled_receipt_suggestion_remains_open_when_downstream_rejects_the_write()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("FAKE")]
+    public async Task Scheduled_receipt_suggestion_remains_open_when_downstream_rejects_the_write(string? callerDocumentId)
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -991,7 +993,7 @@ public sealed class DemandPlanningEndpointContractTests
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, new FailingPlanningSuggestionDownstreamBridge());
 
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new AcceptPlanningSuggestionCommand(suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", null), CancellationToken.None));
+            new AcceptPlanningSuggestionCommand(suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", callerDocumentId), CancellationToken.None));
 
         Assert.Equal(PlanningSuggestionStatus.Open, suggestion.Status);
         Assert.Null(suggestion.AcceptedDownstreamDocumentId);
