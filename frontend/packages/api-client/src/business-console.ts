@@ -1531,6 +1531,8 @@ export type {
   NervIipContractsSchedulingSchedulePlanShiftWindowContract as BusinessConsoleSchedulingShiftWindow,
   NervIipContractsSchedulingSchedulePlanContract as BusinessConsoleSchedulePlan,
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract as BusinessConsoleSchedulingMaterialRisk,
+  NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract as BusinessConsoleSchedulingMaterialShortageSummary,
+  NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract as BusinessConsoleSchedulingMaterialAffectedOperation,
   NervIipContractsSchedulingSchedulePlanEquipmentRiskContract as BusinessConsoleSchedulingEquipmentRisk,
   NervIipContractsSchedulingSchedulingMaterialShortageContract as BusinessConsoleSchedulingMaterialShortage,
   NervIipContractsSchedulingSchedulePlanComparisonContract as BusinessConsoleSchedulingPlanComparison,
@@ -2691,6 +2693,8 @@ import type {
   NervIipContractsSchedulingScheduleChangeTypeContract,
   NervIipContractsSchedulingGanttScheduleItemContract,
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract,
+  NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract,
+  NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract,
   NervIipContractsSchedulingSchedulingMaterialShortageContract,
   NervIipContractsSchedulingSchedulePlanEquipmentRiskContract,
 } from './generated/business-console/types.gen'
@@ -2710,6 +2714,10 @@ export type ScheduleChangeTypeContract = NervIipContractsSchedulingScheduleChang
 // 物料软约束（#1291）：已排但缺料的工序风险 + 结构化缺口明细。
 export type SchedulePlanMaterialRiskContract =
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract
+export type SchedulePlanMaterialShortageSummaryContract =
+  NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract
+export type SchedulePlanMaterialAffectedOperationContract =
+  NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract
 export type SchedulingMaterialShortageContract =
   NervIipContractsSchedulingSchedulingMaterialShortageContract
 // 设备软约束（#1320）：排在状态未知设备上的工序风险（无快照 / 快照过期 / 采集源不可达）。

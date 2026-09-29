@@ -201,6 +201,10 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(plan.MaterialRisks ?? [], x =>
             x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.Shortages.Any(y => y.MaterialId == "MAT-A" && y.ShortageQuantity == 2m));
+        var summary = Assert.Single(plan.MaterialShortageSummary ?? []);
+        Assert.Equal(2m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x =>
+            x.OrderId == "WO-SNAPSHOT-001" && x.OperationId == "WO-SNAPSHOT-001-OP10");
     }
 
     [Fact]
@@ -254,6 +258,50 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.Assignments).StartUtc);
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.MaterialRisks ?? []).MaterialReadyUtc);
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(detail.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.Equal(
+            JsonSerializer.Serialize(created.MaterialShortageSummary, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.MaterialShortageSummary, SchedulingJson.Options));
+    }
+
+    [Fact]
+    public async Task Hard_material_block_remains_in_saved_plan_summary_after_reload()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = CreateSingleOperationProblem();
+        var clock = new FixedTimeProvider(FixedNow);
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard),
+            clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            new StubSchedulingMaterialReadinessProvider(
+            [
+                new SchedulingMaterialReadinessContract("order", "WO-SNAPSHOT-001", null, false,
+                    ["material.shortage"],
+                    [new SchedulingMaterialShortageContract("RM-1", null, 10m, 6m, 4m, "KG")])
+            ]),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var detail = await new GetSchedulePlanDetailQueryHandler(
+                dbContext, NullLogger<GetSchedulePlanDetailQueryHandler>.Instance)
+            .Handle(new GetSchedulePlanDetailQuery(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+                CancellationToken.None);
+
+        Assert.Empty(created.MaterialRisks ?? []);
+        Assert.Empty(detail.MaterialRisks ?? []);
+        var summary = Assert.Single(detail.MaterialShortageSummary ?? []);
+        Assert.Equal(4m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x => x.OrderId == "WO-SNAPSHOT-001" &&
+            x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.Equal(
+            JsonSerializer.Serialize(created.MaterialShortageSummary, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.MaterialShortageSummary, SchedulingJson.Options));
     }
 
     [Fact]

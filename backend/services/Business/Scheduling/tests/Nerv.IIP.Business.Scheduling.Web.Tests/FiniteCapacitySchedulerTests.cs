@@ -1645,6 +1645,24 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Hard_material_block_keeps_shortage_in_plan_summary_without_marking_unscheduled_operation_as_risk()
+    {
+        var problem = CreateMaterialShortageProblem();
+
+        var plan = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard)
+            .Schedule(problem, "plan-material-hard-summary", GeneratedAtUtc);
+
+        Assert.Empty(plan.MaterialRisks ?? []);
+        Assert.Contains(plan.UnscheduledOperations, x => x.OperationId == "WO-SNAPSHOT-001-OP10" &&
+            x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+        var summary = Assert.Single(plan.MaterialShortageSummary ?? []);
+        Assert.Equal("RM-OIL-01", summary.MaterialId);
+        Assert.Equal(145.86m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x => x.OrderId == "WO-SNAPSHOT-001" &&
+            x.OperationId == "WO-SNAPSHOT-001-OP10");
+    }
+
+    [Fact]
     public void Schedule_projects_latest_material_ready_time_for_scheduled_shortage()
     {
         var problem = CreateMaterialShortageProblem();

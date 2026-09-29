@@ -808,7 +808,8 @@ file sealed class SchedulerState
             // 物料软约束的产物:这些工序已排入计划,但开工前必须先备料。
             MaterialRisks: orderedMaterialRisks,
             // 设备软约束的产物:这些工序排在状态未知的设备上,开工前需人工确认设备可用。
-            EquipmentRisks: orderedEquipmentRisks);
+            EquipmentRisks: orderedEquipmentRisks,
+            MaterialShortageSummary: SchedulePlanMaterialShortageSummary.Project(problem));
     }
 
     private SchedulePlanMetricsContract BuildMetrics(
@@ -1967,13 +1968,14 @@ file sealed class SchedulerState
             .ToArray();
         var shortages = blocks
             .SelectMany(x => x.Shortages ?? [])
-            .GroupBy(x => (x.MaterialId, x.MaterialLotId))
+            .GroupBy(x => (x.MaterialId, x.MaterialLotId, x.UomCode))
             .Select(x => new SchedulingMaterialShortageContract(
                 x.Key.MaterialId,
                 x.Key.MaterialLotId,
                 x.Sum(y => y.RequiredQuantity),
                 x.Sum(y => y.AvailableQuantity),
-                x.Sum(y => y.ShortageQuantity)))
+                x.Sum(y => y.ShortageQuantity),
+                x.Key.UomCode))
             .OrderBy(x => x.MaterialId, StringComparer.Ordinal)
             .ThenBy(x => x.MaterialLotId, StringComparer.Ordinal)
             .ToArray();
