@@ -39,6 +39,7 @@
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Scheduling\Nerv.IIP.Contracts.Scheduling.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.DemandPlanning\Nerv.IIP.Contracts.DemandPlanning.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj" />
   </ItemGroup>
 
