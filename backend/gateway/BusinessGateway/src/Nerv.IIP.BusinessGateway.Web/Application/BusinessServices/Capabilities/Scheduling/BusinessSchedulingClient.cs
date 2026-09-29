@@ -38,6 +38,11 @@ public interface IBusinessSchedulingClient
         BusinessConsoleSchedulingContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleSchedulingHistoryResponse> ListPlanHistoryAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingHistoryRequest request,
+        CancellationToken cancellationToken);
+
     Task<SchedulePlanContract> GetPlanAsync(
         string internalBearerToken,
         BusinessConsoleSchedulingPlanRequest request,
@@ -159,6 +164,25 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
                 ("environmentId", request.EnvironmentId),
                 ("pageIndex", request.PageIndex?.ToString(CultureInfo.InvariantCulture)),
                 ("pageSize", request.PageSize?.ToString(CultureInfo.InvariantCulture))),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<BusinessConsoleSchedulingHistoryResponse> ListPlanHistoryAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingHistoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleSchedulingHistoryResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/scheduling/plans/history?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("pageIndex", request.PageIndex.ToString(CultureInfo.InvariantCulture)),
+                ("pageSize", request.PageSize.ToString(CultureInfo.InvariantCulture)),
+                ("status", request.Status is { } status ? System.Text.Json.JsonSerializer.SerializeToElement(status, SchedulingJson.Options).GetString() : null),
+                ("releasedOn", request.ReleasedOn?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                ("isInvalidated", request.IsInvalidated?.ToString().ToLowerInvariant())),
             null,
             cancellationToken,
             SchedulingJson.Options);

@@ -166,6 +166,39 @@ public sealed class ListBusinessConsoleSchedulingPlansEndpoint(
 }
 
 [Tags("Business Console Scheduling")]
+[HttpGet("/api/business-console/v1/scheduling/plans/history")]
+[BusinessGatewayOperationId("listBusinessConsoleSchedulingPlanHistory")]
+public sealed class ListBusinessConsoleSchedulingPlanHistoryEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleSchedulingHistoryRequest, BusinessConsoleSchedulingHistoryResponse>(
+        auth,
+        BusinessGatewayPermissions.SchedulingPlansRead)
+{
+    protected override string OrganizationId(BusinessConsoleSchedulingHistoryRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleSchedulingHistoryRequest request) => request.EnvironmentId;
+    protected override Task<BusinessConsoleSchedulingHistoryResponse> ForwardAsync(
+        BusinessConsoleSchedulingHistoryRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        scheduling.ListPlanHistoryAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleSchedulingHistoryRequestValidator : Validator<BusinessConsoleSchedulingHistoryRequest>
+{
+    public BusinessConsoleSchedulingHistoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.PageIndex).InclusiveBetween(0, int.MaxValue / 100);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
+        RuleFor(x => x.Status).Must(status => status is null or SchedulePlanStatusContract.Generated or
+            SchedulePlanStatusContract.Released or SchedulePlanStatusContract.Superseded or SchedulePlanStatusContract.Revoked);
+    }
+}
+
+[Tags("Business Console Scheduling")]
 [HttpGet("/api/business-console/v1/scheduling/plans/{planId}")]
 [BusinessGatewayOperationId("getBusinessConsoleSchedulingPlan")]
 public sealed class GetBusinessConsoleSchedulingPlanEndpoint(
