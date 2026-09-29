@@ -3145,6 +3145,59 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_work_order_list_forwards_demand_change_facts_without_changing_execution_status()
+    {
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-CHANGED", "SKU-A", "PV-A", 10m, 10,
+                    DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", [],
+                    HasChangedDemand: true),
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-CANCELLED", "SKU-A", "PV-A", 10m, 10,
+                    DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", [],
+                    HasCancelledDemand: true),
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-PLAIN", "SKU-A", "PV-A", 10m, 10,
+                    DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", []),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role", "role-platform-admin", "organization", "org-001",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead], OrganizationWide: true),
+            ]);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rows = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal("released", rows[0].GetProperty("status").GetString());
+        Assert.True(rows[0].GetProperty("hasChangedDemand").GetBoolean());
+        Assert.False(rows[0].GetProperty("hasCancelledDemand").GetBoolean());
+        Assert.False(rows[1].GetProperty("hasChangedDemand").GetBoolean());
+        Assert.True(rows[1].GetProperty("hasCancelledDemand").GetBoolean());
+        Assert.False(rows[2].GetProperty("hasChangedDemand").GetBoolean());
+        Assert.False(rows[2].GetProperty("hasCancelledDemand").GetBoolean());
+    }
+
+    [Fact]
     public async Task Mes_work_order_detail_rejects_a_known_id_outside_the_selected_self_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(

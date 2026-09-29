@@ -2436,7 +2436,9 @@ public sealed class BusinessGatewayOpenApiTests
             "workOrderType",
             "sourceWorkOrderId",
             "sourceNcrId",
-            "sourceNcrCode");
+            "sourceNcrCode",
+            "hasChangedDemand",
+            "hasCancelledDemand");
         AssertMesDisplayProperties(
             document,
             "BusinessConsoleMesWorkOrderDetailResponse",

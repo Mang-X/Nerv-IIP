@@ -4124,6 +4124,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceWorkOrderId?: string | null;
     sourceNcrId?: string | null;
     sourceNcrCode?: string | null;
+    hasChangedDemand?: boolean;
+    hasCancelledDemand?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
