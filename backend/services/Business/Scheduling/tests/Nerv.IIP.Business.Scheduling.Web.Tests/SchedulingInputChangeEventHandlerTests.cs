@@ -501,6 +501,45 @@ public sealed class SchedulingInputChangeEventHandlerTests
         });
     }
 
+    [Theory]
+    [InlineData("order", "WO-001", "OP-TARGET,OP-OTHER")]
+    [InlineData("sku", "FG-001", "OP-TARGET,OP-OTHER")]
+    [InlineData("operation", "OP-TARGET", "OP-TARGET")]
+    [InlineData("resource", "ASSET-CNC-01", "OP-TARGET")]
+    public async Task Stock_availability_changed_event_reports_only_operations_in_matching_material_scope(
+        string scopeType, string scopeId, string expectedOperations)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePlanWithAssignments("plan-material-scope", "problem-material-scope",
+            [
+                new ScheduleAssignmentContract("assign-target", "WO-001", "OP-TARGET", 10,
+                    "ASSET-CNC-01", "WC-CNC", FixedNow, FixedNow.AddHours(1), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-other", "WO-001", "OP-OTHER", 20,
+                    "ASSET-LATHE-01", "WC-LATHE", FixedNow.AddHours(1), FixedNow.AddHours(2), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-unrelated", "WO-OTHER", "OP-UNRELATED", 10,
+                    "ASSET-LATHE-01", "WC-LATHE", FixedNow.AddHours(2), FixedNow.AddHours(3), false, "scheduled"),
+            ]));
+            db.ScheduleProblems.Add(CreateMaterialScopeProblemSnapshot(scopeType, scopeId));
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+
+        await handler.HandleAsync(CreateStockAvailabilityChangedEvent(), CancellationToken.None);
+
+        var published = Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
+        Assert.Equal(expectedOperations.Split(','), published.Payload.AffectedOperations.Select(x => x.OperationId));
+    }
+
     [Fact]
     public async Task Erp_material_supply_eta_changed_invalidates_only_generated_plans_with_affected_skus_once()
     {
@@ -1261,6 +1300,34 @@ public sealed class SchedulingInputChangeEventHandlerTests
         return new ScheduleProblemSnapshot(problemId, 1, "org-001", "env-dev",
             $"fingerprint-{problemId}", JsonSerializer.Serialize(problem, SchedulingJson.Options),
             horizonStart, horizonEnd, FixedNow);
+    }
+
+    private static ScheduleProblemSnapshot CreateMaterialScopeProblemSnapshot(string scopeType, string scopeId)
+    {
+        var start = FixedNow;
+        var end = start.AddHours(8);
+        static SchedulingOperationContract Operation(string id, int sequence, string resource, DateTimeOffset start, DateTimeOffset end) =>
+            new(id, sequence, [], 60, "CAP", [resource], resource, start, end, 1, false,
+                ScheduleSplitPolicyContract.NonSplittable, null, null, null);
+        var problem = new SchedulingProblemContract(
+            1, "problem-material-scope", "org-001", "env-dev", start, end,
+            [
+                new SchedulingOrderContract("WO-001", "FG-001", 1, end, 1, false,
+                [
+                    Operation("OP-TARGET", 10, "ASSET-CNC-01", start, end),
+                    Operation("OP-OTHER", 20, "ASSET-LATHE-01", start, end),
+                ]),
+                new SchedulingOrderContract("WO-OTHER", "FG-OTHER", 1, end, 1, false,
+                [Operation("OP-UNRELATED", 10, "ASSET-LATHE-01", start, end)]),
+            ],
+            [], [], [],
+            [new SchedulingMaterialReadinessContract(scopeType, scopeId, null, false,
+                ["material-shortage"],
+                [new SchedulingMaterialShortageContract("SKU-001", null, 5m, 3m, 2m)])],
+            [], []);
+        return new ScheduleProblemSnapshot(problem.ProblemId, 1, "org-001", "env-dev",
+            "fingerprint-material-scope", JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            start, end, FixedNow);
     }
 
     private static SchedulePlan CreatePlan(

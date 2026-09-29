@@ -9,7 +9,6 @@ public enum SchedulePlanInvalidationScope
 {
     Resource = 0,
     WorkOrderOrOperation = 1,
-    AllInvalidatablePlans = 2,
     GeneratedWorkCenter = 3,
     GeneratedCalendar = 4,
     GeneratedSku = 5,
@@ -144,7 +143,7 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 : null;
             var (affectedWorkOrderId, affectedOperationId) = ResolveWorkOrderOrOperation(request, plans);
             if (request.Scope == SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku &&
-                !inputMatchesByProblem[plan.ProblemId].Contains(Normalize(request.AffectedWorkOrderId)))
+                !inputMatchesByProblem[plan.ProblemId].OrderIds.Contains(Normalize(request.AffectedWorkOrderId)))
             {
                 affectedWorkOrderId = null;
             }
@@ -156,7 +155,8 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                     SelectAffectedOperationsForWorkCenter(plan, Normalize(request.ScopeValue)),
                 SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku or SchedulePlanInvalidationScope.SnapshotMaterial =>
                     plan.Assignments.Where(x =>
-                        inputMatchesByProblem[plan.ProblemId].Contains(x.WorkOrderId)).ToArray(),
+                        inputMatchesByProblem[plan.ProblemId].OrderIds.Contains(x.WorkOrderId) ||
+                        inputMatchesByProblem[plan.ProblemId].Operations.Contains((x.WorkOrderId, x.OperationId))).ToArray(),
                 _ => SelectAffectedOperations(
                     plan,
                     affectedResourceId,
@@ -226,7 +226,6 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 assignment.WorkOrderId == normalizedScopeValue ||
                 assignment.OperationId == normalizedScopeValue)),
             SchedulePlanInvalidationScope.ExactWorkOrderOperation => QueryExecutionDeviationPlans(query, request),
-            SchedulePlanInvalidationScope.AllInvalidatablePlans => query,
             _ => throw new ArgumentOutOfRangeException(nameof(request), request.Scope, "Unsupported schedule invalidation scope.")
         };
     }
@@ -357,7 +356,11 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         }
     }
 
-    private async Task<Dictionary<string, IReadOnlySet<string>>> FindInputMatchesByProblemAsync(
+    private sealed record InputMatch(
+        IReadOnlySet<string> OrderIds,
+        IReadOnlySet<(string OrderId, string OperationId)> Operations);
+
+    private async Task<Dictionary<string, InputMatch>> FindInputMatchesByProblemAsync(
         RecordSchedulePlanInvalidationsCommand request,
         CancellationToken cancellationToken)
     {
@@ -371,7 +374,7 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 x.EnvironmentId == request.EnvironmentId && problemIds.Contains(x.ProblemId))
             .Select(x => new { x.ProblemId, x.ProblemJson })
             .ToArrayAsync(cancellationToken);
-        var matches = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
+        var matches = new Dictionary<string, InputMatch>(StringComparer.Ordinal);
         var workOrderId = Normalize(request.AffectedWorkOrderId);
         var skuCode = Normalize(request.AffectedSkuCode);
 
@@ -394,6 +397,7 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             }
 
             var orderIds = new HashSet<string>(StringComparer.Ordinal);
+            var operations = new HashSet<(string OrderId, string OperationId)>();
             if (request.Scope == SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku)
             {
                 foreach (var order in problem.Orders.Where(x =>
@@ -406,16 +410,40 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             else
             {
                 foreach (var readiness in problem.MaterialReadiness.Where(x =>
-                    string.Equals(x.ScopeType, "order", StringComparison.Ordinal) &&
                     x.Shortages?.Any(shortage => string.Equals(shortage.MaterialId, skuCode, StringComparison.Ordinal)) == true))
                 {
-                    orderIds.Add(readiness.ScopeId);
+                    switch (readiness.ScopeType.ToLowerInvariant())
+                    {
+                        case "order":
+                            orderIds.Add(readiness.ScopeId);
+                            break;
+                        case "sku":
+                            foreach (var order in problem.Orders.Where(x => string.Equals(x.SkuCode, readiness.ScopeId, StringComparison.Ordinal)))
+                            {
+                                orderIds.Add(order.OrderId);
+                            }
+                            break;
+                        case "operation":
+                        case "resource":
+                            foreach (var order in problem.Orders)
+                            {
+                                foreach (var operation in order.Operations.Where(x =>
+                                    string.Equals(readiness.ScopeType, "operation", StringComparison.OrdinalIgnoreCase)
+                                        ? string.Equals(x.OperationId, readiness.ScopeId, StringComparison.Ordinal)
+                                        : x.EligibleResourceIds.Contains(readiness.ScopeId, StringComparer.Ordinal) ||
+                                          string.Equals(x.PrimaryResourceId, readiness.ScopeId, StringComparison.Ordinal)))
+                                {
+                                    operations.Add((order.OrderId, operation.OperationId));
+                                }
+                            }
+                            break;
+                    }
                 }
             }
 
-            if (orderIds.Count > 0)
+            if (orderIds.Count > 0 || operations.Count > 0)
             {
-                matches[snapshot.ProblemId] = orderIds;
+                matches[snapshot.ProblemId] = new InputMatch(orderIds, operations);
             }
         }
 
