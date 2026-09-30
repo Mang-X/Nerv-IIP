@@ -17,7 +17,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 import { useBusinessPlanningMaterialDeliveries } from '@/composables/useBusinessPlanningMaterialDeliveries'
-import { notifyOperationFailure } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure } from '@/utils/notify'
 import PlanningMaterialDeliverySources from './PlanningMaterialDeliverySources.vue'
 import {
   materialDeliverySourceLabel as label,
@@ -94,8 +94,13 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
             ><NvSelectValue placeholder="请先完成 MRP"
           /></NvSelectTrigger>
           <NvSelectContent
-            ><NvSelectItem v-for="run in completedRuns" :key="run.runId" :value="run.runId!"
-              >{{ run.horizonStart }} ~ {{ run.horizonEnd }} · {{ run.runId }}</NvSelectItem
+            ><NvSelectItem
+              v-for="(run, index) in completedRuns"
+              :key="run.runId"
+              :value="run.runId!"
+              :title="run.runId"
+              >{{ run.horizonStart }} ~ {{ run.horizonEnd }} · 已完成运行
+              {{ completedRuns.length - index }}</NvSelectItem
             ></NvSelectContent
           >
         </NvSelect>
@@ -108,10 +113,15 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
           /></NvSelectTrigger>
           <NvSelectContent>
             <NvSelectItem value="none">未选择方案</NvSelectItem>
-            <NvSelectItem v-for="plan in plans" :key="plan.planId" :value="plan.planId!"
+            <NvSelectItem
+              v-for="plan in plans"
+              :key="plan.planId"
+              :value="plan.planId!"
+              :title="plan.planId"
               >{{ utc(plan.generatedAtUtc) }} · {{ label(plan.status) }} ·
-              {{ plan.assignmentCount ?? 0 }} 条排程{{ plan.isInvalidated ? ' · 已失效' : '' }} ·
-              {{ plan.planId }}</NvSelectItem
+              {{ plan.assignmentCount ?? 0 }} 条排程{{
+                plan.isInvalidated ? ' · 已失效' : ''
+              }}</NvSelectItem
             >
           </NvSelectContent>
         </NvSelect>
@@ -156,6 +166,7 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
       row-key="netRequirementReference"
       :loading="deliveriesPending"
       :error="deliveriesError"
+      :error-message="inlineErrorMessage(deliveriesError, '读取物料交付失败。')"
       :awaiting-scope="!selection.runId"
       awaiting-scope-message="完成 MRP 后选择运行，查看物料交付。"
       :searchable="false"

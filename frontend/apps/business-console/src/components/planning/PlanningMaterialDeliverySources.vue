@@ -116,11 +116,13 @@ const netFields = [
           </p>
           <p>
             输入最早开工
-            <span :title="operation.earliestStartUtc">{{ utc(operation.earliestStartUtc) }}</span>
+            <span data-input-earliest-start :title="operation.earliestStartUtc">{{
+              utc(operation.earliestStartUtc)
+            }}</span>
           </p>
           <p>
             实际排程开始
-            <span :title="operation.assignmentStartUtc ?? undefined">{{
+            <span data-assignment-start :title="operation.assignmentStartUtc ?? undefined">{{
               utc(operation.assignmentStartUtc)
             }}</span>
             · {{ label(operation.assignmentStatus) }}

@@ -416,7 +416,7 @@ const suggestionRun = computed(() =>
 const scopedSuggestions = computed(() =>
   suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
 )
-function locateMaterialSuggestion(suggestionId: string, runId: string) {
+function locatePlanningSuggestion(suggestionId: string, runId: string) {
   suggestionRunChoice.value = runId
   suggestionFilters.status = 'all'
   suggestionTypeFilter.type = 'all'
@@ -425,11 +425,7 @@ function locateMaterialSuggestion(suggestionId: string, runId: string) {
 }
 function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
   if (!row.suggestionId) return
-  suggestionRunChoice.value = runSelection.runId
-  suggestionFilters.status = 'all'
-  suggestionTypeFilter.type = 'all'
-  focusedSuggestionId.value = row.suggestionId
-  activeTab.value = 'suggestions'
+  locatePlanningSuggestion(row.suggestionId, runSelection.runId)
 }
 function focusPegging(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.runId) return
@@ -1392,7 +1388,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       <PlanningMaterialDeliveryPanel
         :runs="mrpRuns"
         :sku-label="skuLabel"
-        @locate-suggestion="locateMaterialSuggestion"
+        @locate-suggestion="locatePlanningSuggestion"
       />
     </NvTabsContent>
 

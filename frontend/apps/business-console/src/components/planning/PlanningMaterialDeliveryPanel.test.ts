@@ -56,7 +56,7 @@ describe('物料交付页内事实', () => {
           suggestionSources: [
             { suggestionId: 's-1', quantity: 12 },
             { suggestionId: 's-2', quantity: 12 },
-            { suggestionId: 's-3', quantity: 6 },
+            { suggestionId: 's-3', quantity: 12 },
           ],
           schedulingSources: [
             {
@@ -114,6 +114,8 @@ describe('物料交付页内事实', () => {
     expect(details.text()).toContain('WO-1001')
     expect(details.text()).toContain('输入最早开工')
     expect(details.text()).toContain('实际排程开始')
+    expect(details.find('[data-assignment-start]').text()).toBe('—')
+    expect(details.find('[data-input-earliest-start]').text()).toBe('2026-10-02 08:00:00 UTC')
     expect(wrapper.text()).toContain('净需求身份未知')
     expect(wrapper.findAll('[data-net-requirement-quantity]')).toHaveLength(1)
   })
