@@ -1,4 +1,5 @@
 import {
+  adjustBusinessConsoleMesWorkOrderPriorityMutationOptions,
   createBusinessConsoleSchedulingPlanRevisionMutationOptions,
   createBusinessConsoleSchedulingWorkbenchPlanMutationOptions,
   type BusinessConsoleCreateSchedulePlanRevisionRequest,
@@ -9,7 +10,8 @@ import {
 import { useMutation, useQueryCache } from '@pinia/colada'
 import type { UseQueryEntry } from '@pinia/colada'
 import { computed } from 'vue'
-import { useMesWorkOrders } from './useBusinessMes'
+import { useMesWorkOrders, useMesPrincipalWorkScope } from './useBusinessMes'
+import { assertEnvelopeSuccess } from './serviceEnvelope'
 
 const SCHEDULING_IDS = [
   'listBusinessConsoleSchedulingPlanHistory',
@@ -49,6 +51,8 @@ export function useSchedulingWorkbench() {
   // take=500 的窗口会被终态工单占满,可排候选恒为 0(真机 4759 单中前 ~3900 条全是 closed)。
   mes.filters.statuses = SCHEDULABLE_WORK_ORDER_STATUSES.join(',')
   const queryCache = useQueryCache()
+  const manageScope = useMesPrincipalWorkScope(mes.filters, 'business.mes.work-orders.manage')
+  const priorityMutation = useMutation(adjustBusinessConsoleMesWorkOrderPriorityMutationOptions())
 
   const invalidatePlans = () =>
     Promise.all(
@@ -73,6 +77,26 @@ export function useSchedulingWorkbench() {
 
   return {
     candidates: mes.workOrders,
+    priorityScopeReady: manageScope.scopeReady,
+    saveOrderPriority: async (
+      workOrderId: string,
+      values: { priority: number; isRush: boolean },
+    ) => {
+      const scope = manageScope.requireSelectedScope()
+      const response = await priorityMutation.mutateAsync({
+        path: { workOrderId },
+        query: {
+          organizationId: mes.filters.organizationId,
+          environmentId: mes.filters.environmentId,
+          scopeKind: scope.kind,
+          scopeId: scope.id,
+        },
+        body: values,
+      })
+      assertEnvelopeSuccess(response, '急单与优先级保存失败')
+      await mes.refreshWorkOrders()
+      if (mes.workOrdersError.value) throw mes.workOrdersError.value
+    },
     candidatesError: mes.workOrdersError,
     candidatesPending: mes.workOrdersPending,
     // 待排池的候选查询与 MES 工单同一 scope gate：范围未就绪时查询不发（enabled=false），

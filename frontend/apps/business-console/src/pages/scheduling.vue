@@ -397,8 +397,6 @@ async function generateWorkbenchPlan() {
       horizonEndUtc: resolvedHorizon.horizonEndUtc,
       orders: draft.includedOrders.value.map((order) => ({
         workOrderId: order.workOrderId,
-        priority: order.priority,
-        isRush: order.isRush,
       })),
     })
     persistedDraftPlan.value = plan
@@ -785,7 +783,10 @@ function reasonLabel(reason?: string | null) {
           :scope-message="workbench.candidatesScopeMessage.value"
           :read-only="!canManage"
           @include="draft.setIncluded"
-          @update="draft.updateOrder"
+          :can-edit-priority="
+            permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
+          "
+          :save-order="workbench.saveOrderPriority"
           @retry="workbench.refreshCandidates"
         >
           <template #scope>
