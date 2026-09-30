@@ -4,6 +4,36 @@ import { toLockedAssignments, toModel } from './aps-mapper'
 import { conflictReasonLabel } from './labels'
 
 describe('toModel', () => {
+  it('consumes current work-order facts without replacing saved risks or inventing operation progress', () => {
+    const currentExecution = {
+      workOrderProgress: { completedQuantity: 25, plannedQuantity: 100 },
+      isMaterialReady: false,
+      materialReadyUtc: null,
+      equipmentState: 'Running',
+      isEquipmentSourceFresh: false,
+    }
+    const model = toModel({
+      ...samplePlan,
+      assignments: [{ ...samplePlan.assignments![0], currentExecution }],
+    })
+    const task = model.tasks.find((task) => task.id === 'a1')!
+    expect(task.currentExecution).toEqual(currentExecution)
+    expect(task.progress).toBeUndefined()
+  })
+
+  it('uses the frozen predecessor graph instead of connecting adjacent sequence numbers', () => {
+    const model = toModel({
+      ...samplePlan,
+      validationContext: {
+        operations: [
+          { orderId: 'WO-001', operationId: 'op-10', predecessorOperationIds: [] },
+          { orderId: 'WO-001', operationId: 'op-20', predecessorOperationIds: [] },
+        ],
+      },
+    })
+    expect(model.links).toEqual([])
+  })
+
   it('preserves real schedule segments when locking an operation (#4004)', () => {
     const segments = [
       { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },

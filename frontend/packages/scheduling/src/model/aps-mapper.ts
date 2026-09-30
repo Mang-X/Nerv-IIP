@@ -56,6 +56,8 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     dueUtc: context?.operations?.find(
       (operation) => operation.orderId === a.orderId && operation.operationId === a.operationId,
     )?.dueUtc,
+    currentExecution: a.currentExecution,
+    executionResourceId: a.resourceId,
     locked: a.isLocked ?? false,
     hasConflict: false,
     conflictReason: null,
@@ -80,19 +82,34 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     }
   })
 
-  // 依赖链:同工单按 operationSequence 排序,相邻 finish_to_start。
+  // 有冻结校验依据时只消费真实前序；旧方案无依据时保留原有顺序契约。
   const links: ScheduleLink[] = []
-  for (const orderId of orderIds) {
-    const seq = operations
-      .filter((o) => o.orderId === orderId)
-      .sort((a, b) => a.operationSequence - b.operationSequence)
-    for (let i = 1; i < seq.length; i++) {
-      links.push({
-        id: `${seq[i - 1].id}->${seq[i].id}`,
-        source: seq[i - 1].id,
-        target: seq[i].id,
-        type: 'finish_to_start',
-      })
+  for (const target of operations) {
+    const operation = context?.operations?.find(
+      (item) => item.orderId === target.orderId && item.operationId === target.operationId,
+    )
+    const predecessors = operation
+      ? (operation.predecessorOperationIds ?? [])
+      : operations
+          .filter(
+            (item) =>
+              item.orderId === target.orderId && item.operationSequence < target.operationSequence,
+          )
+          .sort((a, b) => b.operationSequence - a.operationSequence)
+          .slice(0, 1)
+          .map((item) => item.operationId)
+    target.predecessors = predecessors.map((id) => `${target.orderId} · ${id}`)
+    for (const id of predecessors) {
+      const source = operations.find(
+        (item) => item.orderId === target.orderId && item.operationId === id,
+      )
+      if (source)
+        links.push({
+          id: `${source.id}->${target.id}`,
+          source: source.id,
+          target: target.id,
+          type: 'finish_to_start',
+        })
     }
   }
 
@@ -112,6 +129,24 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
       target: parent.id,
       type: 'finish_to_start',
     })
+  }
+
+  for (const task of operations) {
+    const incoming = links
+      .filter((link) => link.target === task.id)
+      .map((link) => operations.find((item) => item.id === link.source)!)
+    task.predecessors = [
+      ...new Set([
+        ...(task.predecessors ?? []),
+        ...incoming.map((item) => `${item.orderId} · ${item.operationId}`),
+      ]),
+    ]
+    task.successors = links
+      .filter((link) => link.source === task.id)
+      .map((link) => {
+        const item = operations.find((item) => item.id === link.target)!
+        return `${item.orderId} · ${item.operationId}`
+      })
   }
 
   const conflicts: ScheduleConflict[] = (plan.conflicts ?? []).map((c) => {

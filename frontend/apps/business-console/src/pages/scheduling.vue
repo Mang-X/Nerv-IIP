@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TaskFacts, toModel, withWorkOrderFacts } from '@nerv-iip/scheduling'
 import type {
   BusinessConsoleSchedulingAssignment,
   BusinessConsoleSchedulingConflict,
@@ -155,6 +156,23 @@ const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPla
 const workbench = useSchedulingWorkbench()
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
 const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
+const draftDisplayModel = computed(() =>
+  draft.model.value ? withWorkOrderFacts(draft.model.value, workbench.candidates.value) : undefined,
+)
+const detailTasks = computed(() =>
+  planDetail.value
+    ? withWorkOrderFacts(toModel(planDetail.value), workbench.candidates.value).tasks
+    : [],
+)
+function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
+  return detailTasks.value.find(
+    (task) =>
+      task.type === 'operation' &&
+      !task.blockKind &&
+      task.orderId === assignment.orderId &&
+      task.operationId === assignment.operationId,
+  )
+}
 const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
@@ -822,7 +840,7 @@ function reasonLabel(reason?: string | null) {
           </template>
         </SchedulingOrderPool>
         <SchedulingDraftBoard
-          :model="draft.model.value"
+          :model="draftDisplayModel"
           :feedback="draft.feedback.value"
           :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"
@@ -1211,6 +1229,11 @@ function reasonLabel(reason?: string | null) {
                     @refresh="refreshUrgency"
                   />
                 </div>
+                <TaskFacts
+                  v-if="assignmentTask(assignment)"
+                  :task="assignmentTask(assignment)!"
+                  class="mt-3"
+                />
                 <p class="mt-1 text-sm text-muted-foreground">
                   <template v-if="assignment.segments?.length">
                     <span

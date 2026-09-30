@@ -5,6 +5,7 @@ import {
   SchedulingToolbar,
   SchedulingLegend,
   TaskDetailPanel,
+  TaskFacts,
   resolveTimeScale,
   type EngineCommand,
   type TimeScale,
@@ -373,8 +374,8 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                   <th class="p-2">资源</th>
                   <th class="p-2">开始</th>
                   <th class="p-2">结束</th>
-                  <th class="p-2">物料</th>
-                  <th class="p-2">设备状态</th>
+                  <th class="p-2">方案物料风险</th>
+                  <th class="p-2">方案设备风险</th>
                   <th class="p-2">锁定</th>
                   <th class="p-2">待排</th>
                   <th class="p-2">即时反馈 / 交期差</th>
@@ -388,7 +389,10 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                   :key="task.id"
                   class="border-t"
                 >
-                  <td class="p-2 font-medium">{{ task.orderId }} · {{ task.operationId }}</td>
+                  <td class="min-w-64 p-2">
+                    <p class="font-medium">{{ task.orderId }} · {{ task.operationId }}</p>
+                    <TaskFacts :task="task" class="mt-2" />
+                  </td>
                   <td class="p-2">
                     <p
                       v-for="(segment, index) in task.segments"
@@ -443,7 +447,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                       :title="task.materialRisk.message"
                       >缺料待备</span
                     >
-                    <span v-else class="text-xs text-muted-foreground">齐套</span>
+                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
                   </td>
                   <td class="p-2">
                     <span
@@ -452,7 +456,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                       :title="task.equipmentRisk.message"
                       >状态未知</span
                     >
-                    <span v-else class="text-xs text-muted-foreground">正常</span>
+                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
                   </td>
                   <td class="p-2">
                     <div class="flex flex-wrap items-center gap-1.5">

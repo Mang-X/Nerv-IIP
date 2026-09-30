@@ -1,3 +1,7 @@
+import type {
+  ScheduleAssignmentContract,
+  BusinessConsoleMesWorkOrderItem,
+} from '@nerv-iip/api-client'
 // 引擎无关的排程数据模型。所有字段为引擎可消费的归一化形态,不含任何引擎私有结构。
 // 这是「换引擎」接缝的数据契约:DHTMLX 适配器与自研适配器都只消费 ScheduleModel。
 
@@ -72,6 +76,12 @@ export interface ScheduleTask {
   /** 计划基线(与实际 start/end 对比;甘特画"计划 vs 实际"双层条)。 */
   plannedStartUtc?: string
   plannedEndUtc?: string
+  currentExecution?: ScheduleAssignmentContract['currentExecution']
+  /** 当前设备事实对应的原始资源；人工改派后不能套用旧设备状态。 */
+  executionResourceId?: string
+  commercialSourceFacts?: BusinessConsoleMesWorkOrderItem['commercialSourceFacts']
+  predecessors?: string[]
+  successors?: string[]
   /** 0..1。 */
   progress?: number
   /** 网格列:负责人 / 优先级 / 状态。来源于 MES/工程数据(当前 APS 契约未提供 → 后端缺口)。 */

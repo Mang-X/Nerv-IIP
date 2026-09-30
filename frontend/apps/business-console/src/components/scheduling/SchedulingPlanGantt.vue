@@ -14,6 +14,7 @@ import {
   SchedulingToolbar,
   TaskDetailPanel,
   toModel,
+  withWorkOrderFacts,
   type ScheduleModel,
   type ScheduleTask,
   type DimensionValue,
@@ -230,7 +231,10 @@ const renderableAssignments = computed(() =>
 
 const model = computed<ScheduleModel | undefined>(() => {
   if (!props.plan) return undefined
-  const mapped = toModel({ ...props.plan, assignments: renderableAssignments.value })
+  const mapped = withWorkOrderFacts(
+    toModel({ ...props.plan, assignments: renderableAssignments.value }),
+    props.workOrders ?? [],
+  )
   const grouped = buildGroupedTasks(
     mapped.tasks.map((task) => {
       // 资源时间块(维护/停机/换线/换型)不是工序:只把工作中心换成人话名,不套工序标题。
@@ -262,7 +266,7 @@ const model = computed<ScheduleModel | undefined>(() => {
         colorKey: family?.key,
         product: skuCode ? (resolveSkuName(skuCode) ?? skuCode) : undefined,
         quantity: workOrder?.quantity,
-        dueUtc: workOrder?.dueUtc,
+        dueUtc: task.dueUtc,
         dimensions: task.workCenterId
           ? {
               ...task.dimensions,

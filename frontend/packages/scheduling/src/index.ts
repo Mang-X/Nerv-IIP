@@ -53,3 +53,6 @@ export type {
 export { runEngineConformance } from './engine/conformance'
 export { DhtmlxEngine } from './engine/dhtmlx/DhtmlxEngine'
 export { isDhtmlxAvailable, preloadGantt } from './engine/dhtmlx/loader'
+
+export { taskFactRows, withWorkOrderFacts } from './model/task-facts'
+export { default as TaskFacts } from './components/panels/TaskFacts.vue'

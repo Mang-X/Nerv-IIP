@@ -1,3 +1,4 @@
+import { taskFactRows } from '../../model/task-facts'
 import type { ScheduleModel, ScheduleTask, TimeScale } from '../../model/types'
 import {
   SCALE_ORDER,
@@ -265,7 +266,15 @@ function blockLabelHtml(t: ScheduleTask): string {
 }
 
 /** 资源排产板工单卡片(条内 HTML)。布局对齐参考图:WO+优先级+插单+锁 / 产品·工序 / 数量·交期 / 换型·占用 / 齐套。 */
-function cardHtml(t: ScheduleTask): string {
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!,
+  )
+}
+
+export function cardHtml(t: ScheduleTask): string {
   const prio = t.priority
     ? `<span class="nerv-card-prio nerv-prio-${t.priority}">${PRIORITY_CELL[t.priority][2]}</span>`
     : ''
@@ -298,6 +307,12 @@ function cardHtml(t: ScheduleTask): string {
     <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${rush}${alert}${lock}</span></div>
     <div class="nerv-card-r2">${t.product ?? ''}<span class="nerv-card-op"> · ${t.operationId}</span></div>
     <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
+    ${taskFactRows(t)
+      .map(
+        ([label, value]) =>
+          `<div class="nerv-card-r3">${escapeHtml(label)} ${escapeHtml(value)}</div>`,
+      )
+      .join('')}
     <div class="nerv-card-r3">${meta3}</div>
     <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}${matRisk}${equipRisk}</div>
     ${prog}
@@ -364,6 +379,7 @@ export function tooltipHtml(t: ScheduleTask): string {
   const head = `<div style="font-weight:700;font-size:13px;letter-spacing:.01em;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid color-mix(in oklch,var(--foreground),transparent 88%);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${t.orderId}</span>${badges}</div>`
   const rows: Array<[string, string]> = [
     ['工序', t.text || '—'],
+    ...taskFactRows(t),
     ...(t.product ? ([['产品', t.product]] as Array<[string, string]>) : []),
     ...(t.resourceId ? ([['资源', t.resourceId]] as Array<[string, string]>) : []),
     ...(t.owner ? ([['负责人', t.owner]] as Array<[string, string]>) : []),
@@ -383,7 +399,7 @@ export function tooltipHtml(t: ScheduleTask): string {
   const body = rows
     .map(
       ([k, v]) =>
-        `<div style="display:flex;gap:10px;justify-content:space-between"><span style="opacity:.7">${k}</span><span>${v}</span></div>`,
+        `<div style="display:flex;gap:10px;justify-content:space-between"><span style="opacity:.7">${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`,
     )
     .join('')
   return head + body
@@ -863,8 +879,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.order_branch = false
     c.order_branch_free = false
     c.open_split_tasks = false // split 分组行:同组工序铺在一行,不展开成多行
-    c.row_height = options.view === 'resource' ? 128 : 48
-    c.bar_height = options.view === 'resource' ? 112 : 22
+    c.row_height = options.view === 'resource' ? 280 : 48
+    c.bar_height = options.view === 'resource' ? 264 : 22
     c.grid_width = options.view === 'resource' ? 258 : 560
     c.grid_resize = true
     // 默认不画连线;资源板仅在「选中某工序」时动态显示该工单的工序连线(showOrderLinks)。

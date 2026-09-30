@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskFacts from './TaskFacts.vue'
 import '../../styles/scheduling.css'
 import { NvButton } from '@nerv-iip/ui'
 import { LockIcon, UnlockIcon } from '@lucide/vue'
@@ -175,7 +176,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         class="nv-sched-material-risk mt-2.5 rounded-md px-2.5 py-1.5 text-xs"
         data-testid="task-material-risk"
       >
-        <p class="font-medium">物料风险 · 需在开工前完成备料</p>
+        <p class="font-medium">方案物料风险 · 需在开工前完成备料</p>
         <p v-if="materialReadyText" class="mt-1 font-medium">
           {{ materialReadyText }}
         </p>
@@ -201,7 +202,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         class="nv-sched-equipment-risk mt-2.5 rounded-md px-2.5 py-1.5 text-xs"
         data-testid="task-equipment-risk"
       >
-        <p class="font-medium">设备状态未知 · 开工前请人工确认设备可用</p>
+        <p class="font-medium">方案设备风险 · 保存时状态未知，开工前请人工确认设备可用</p>
         <p class="mt-1">{{ task.equipmentRisk.message }}</p>
       </div>
 
@@ -212,6 +213,8 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         </p>
         <p class="text-muted-foreground">段间间隙不计入工时；分段时间由重新排程确定。</p>
       </div>
+
+      <TaskFacts :task="task" class="mt-3" />
 
       <!-- 明细网格 -->
       <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
