@@ -108,17 +108,25 @@ public sealed record ProductionStatisticsBucket(
 public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryProductionStatisticsQuery, ProductionStatisticsResponse>
 {
+    private static readonly TimeSpan BusinessDateFetchSlack = TimeSpan.FromDays(1);
+    private static readonly TimeZoneInfo DefaultFactoryTimezone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Shanghai");
+
     public async Task<ProductionStatisticsResponse> Handle(
         QueryProductionStatisticsQuery request,
         CancellationToken cancellationToken)
     {
+        // 窗口按「业务日范围」解释：夜班过了午夜的报工归开班当天，发生时刻可能落在窗口末端之后；
+        // 反过来窗口起点之后的报工也可能属于前一业务日。SQL 两端各放宽一个班次跨度（最多 1 天），
+        // 算出业务日后再按范围精确保留（IsInRequestedBusinessDateRange）。
+        var fetchStartUtc = request.WindowStartUtc - BusinessDateFetchSlack;
+        var fetchEndUtc = request.WindowEndUtc + BusinessDateFetchSlack;
         var scopedOriginalReportNos = dbContext.ProductionReports
             .AsNoTracking()
             .Where(report => report.OrganizationId == request.OrganizationId)
             .Where(report => report.EnvironmentId == request.EnvironmentId)
             .Where(report => report.ReversedReportNo == null)
-            .Where(report => report.ReportedAtUtc >= request.WindowStartUtc)
-            .Where(report => report.ReportedAtUtc < request.WindowEndUtc)
+            .Where(report => report.ReportedAtUtc >= fetchStartUtc)
+            .Where(report => report.ReportedAtUtc < fetchEndUtc)
             .Select(report => report.ReportNo);
         var sourceRows = await (
             from report in dbContext.ProductionReports.AsNoTracking()
@@ -128,8 +136,8 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
             where report.OrganizationId == request.OrganizationId
                 && report.EnvironmentId == request.EnvironmentId
                 && ((report.ReversedReportNo == null
-                        && report.ReportedAtUtc >= request.WindowStartUtc
-                        && report.ReportedAtUtc < request.WindowEndUtc)
+                        && report.ReportedAtUtc >= fetchStartUtc
+                        && report.ReportedAtUtc < fetchEndUtc)
                     || (report.ReversedReportNo != null
                         && scopedOriginalReportNos.Contains(report.ReversedReportNo)))
             select new ProductionStatisticsSourceRow(
@@ -163,6 +171,7 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
                 row.ReversedReportNo is null
                     ? row.ReportedAtUtc
                     : originalsByReportNo[row.ReversedReportNo].ReportedAtUtc))
+            .Where(fact => IsInRequestedBusinessDateRange(fact, request))
             .Where(fact => request.BusinessDate is null || fact.BusinessDate == request.BusinessDate)
             .Where(fact => shiftCode is null || string.Equals(fact.ShiftCode, shiftCode, StringComparison.Ordinal))
             .Where(fact => workCenterId is null || string.Equals(fact.WorkCenterId, workCenterId, StringComparison.Ordinal))
@@ -186,18 +195,24 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
             request.Take);
     }
 
+    /// <summary>
+    /// 业务日口径（#3859）：生产日从首班开始时刻起算，跨午夜班次（夜班）归属开班当天，按工厂时区（报工快照里的工厂时区）取日期。
+    /// 没有工厂时区快照时按默认工厂时区 Asia/Shanghai、没有班次快照时按工厂时区 00:00 起算，退化后仍给出业务日，降级原因保留。
+    /// </summary>
     private static ProductionStatisticsFact Resolve(
         ProductionStatisticsSourceRow row,
         DateTimeOffset effectiveReportedAtUtc)
     {
         if (row.DimensionResolutionStatus is null)
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalDimensionLegacyUnresolved);
+            return CalendarDayFallback(
+                row, effectiveReportedAtUtc, DefaultFactoryTimezone, ProductionStatisticsDegradedReason.HistoricalDimensionLegacyUnresolved);
         }
 
         if (row.SiteTimezone is null)
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalTimezoneMissing);
+            return CalendarDayFallback(
+                row, effectiveReportedAtUtc, DefaultFactoryTimezone, ProductionStatisticsDegradedReason.HistoricalTimezoneMissing);
         }
 
         TimeZoneInfo timezone;
@@ -207,21 +222,26 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
         }
         catch (TimeZoneNotFoundException)
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalTimezoneInvalid);
+            return new(row, effectiveReportedAtUtc, null, null, ProductionStatisticsDegradedReason.HistoricalTimezoneInvalid);
         }
         catch (InvalidTimeZoneException)
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalTimezoneInvalid);
+            return new(row, effectiveReportedAtUtc, null, null, ProductionStatisticsDegradedReason.HistoricalTimezoneInvalid);
         }
 
-        if (row.ShiftCode is null ||
-            row.ShiftStartsAt is null ||
+        if (row.ShiftCode is null)
+        {
+            return CalendarDayFallback(
+                row, effectiveReportedAtUtc, timezone, ProductionStatisticsDegradedReason.HistoricalShiftDefinitionMissing);
+        }
+
+        if (row.ShiftStartsAt is null ||
             row.ShiftEndsAt is null ||
             row.ShiftCrossesMidnight is null ||
             row.ShiftPaidMinutes is null ||
             row.ShiftBreakMinutes is null)
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalShiftDefinitionMissing);
+            return new(row, effectiveReportedAtUtc, null, null, ProductionStatisticsDegradedReason.HistoricalShiftDefinitionMissing);
         }
 
         var startsAt = row.ShiftStartsAt.Value;
@@ -233,7 +253,7 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
             row.ShiftBreakMinutes < 0 ||
             row.ShiftBreakMinutes > row.ShiftPaidMinutes)
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalShiftDefinitionInvalid);
+            return new(row, effectiveReportedAtUtc, null, null, ProductionStatisticsDegradedReason.HistoricalShiftDefinitionInvalid);
         }
 
         var localReportedAt = TimeZoneInfo.ConvertTime(effectiveReportedAtUtc, timezone).DateTime;
@@ -249,7 +269,7 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
                 : null;
         if (businessDate is null)
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalReportOutsideShiftWindow);
+            return new(row, effectiveReportedAtUtc, null, null, ProductionStatisticsDegradedReason.HistoricalReportOutsideShiftWindow);
         }
 
         var localStart = DateTime.SpecifyKind(businessDate.Value.ToDateTime(startsAt), DateTimeKind.Unspecified);
@@ -257,16 +277,44 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
         var localEnd = DateTime.SpecifyKind(endDate.ToDateTime(endsAt), DateTimeKind.Unspecified);
         if (timezone.IsInvalidTime(localStart) || timezone.IsInvalidTime(localEnd))
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalLocalTimeInvalid);
+            return new(row, effectiveReportedAtUtc, null, null, ProductionStatisticsDegradedReason.HistoricalLocalTimeInvalid);
         }
 
         if (timezone.IsAmbiguousTime(localStart) || timezone.IsAmbiguousTime(localEnd))
         {
-            return new(row, null, ProductionStatisticsDegradedReason.HistoricalLocalTimeAmbiguous);
+            return new(row, effectiveReportedAtUtc, null, null, ProductionStatisticsDegradedReason.HistoricalLocalTimeAmbiguous);
         }
 
-        return new(row, businessDate, null);
+        return new(row, effectiveReportedAtUtc, timezone, businessDate, null);
     }
+
+    private static ProductionStatisticsFact CalendarDayFallback(
+        ProductionStatisticsSourceRow row,
+        DateTimeOffset effectiveReportedAtUtc,
+        TimeZoneInfo timezone,
+        ProductionStatisticsDegradedReason reason) =>
+        new(row, effectiveReportedAtUtc, timezone, LocalDate(effectiveReportedAtUtc, timezone), reason);
+
+    /// <summary>
+    /// 窗口起止在该报工的工厂时区里各取日期，得到闭区间 [起始日, 结束日]；结束时刻是开区间，按「结束前一刻」取日期。
+    /// 业务日算不出来的报工（时区或班次定义无效）没有业务日可比，按原始发生时刻落在窗口内保留。
+    /// </summary>
+    private static bool IsInRequestedBusinessDateRange(
+        ProductionStatisticsFact fact,
+        QueryProductionStatisticsQuery request)
+    {
+        if (fact.BusinessDate is not { } businessDate || fact.Timezone is null)
+        {
+            return fact.EffectiveReportedAtUtc >= request.WindowStartUtc &&
+                fact.EffectiveReportedAtUtc < request.WindowEndUtc;
+        }
+
+        return businessDate >= LocalDate(request.WindowStartUtc, fact.Timezone) &&
+            businessDate <= LocalDate(request.WindowEndUtc.AddTicks(-1), fact.Timezone);
+    }
+
+    private static DateOnly LocalDate(DateTimeOffset instantUtc, TimeZoneInfo timezone) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instantUtc, timezone).DateTime);
 
     private static ProductionStatisticsBucket Calculate(
         ProductionStatisticsDimension dimension,
@@ -359,6 +407,8 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
 
     private sealed record ProductionStatisticsFact(
         ProductionStatisticsSourceRow Source,
+        DateTimeOffset EffectiveReportedAtUtc,
+        TimeZoneInfo? Timezone,
         DateOnly? BusinessDate,
         ProductionStatisticsDegradedReason? HistoricalResolutionReason)
     {
