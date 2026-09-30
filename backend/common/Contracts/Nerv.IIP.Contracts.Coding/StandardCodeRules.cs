@@ -48,6 +48,7 @@ public static class StandardCodeRules
         Document("wms-pack-review", "出库复核单", "PKR"),
         Document("wms-count-execution", "仓库盘点单", "CNT"),
         Document("wms-wcs-task", "设备任务", "WCS"),
+        Document("inventory-stock-count-task", "库存盘点任务", "SCT"),
         Material(),
         SimpleResource("standard-operation", "标准工序", "OP", 4, separator: "-"),
         SimpleResource("quality-reason", "质量原因", "QR", 4, separator: "-"),

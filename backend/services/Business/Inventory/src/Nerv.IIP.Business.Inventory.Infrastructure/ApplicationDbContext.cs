@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
@@ -22,6 +23,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<StockCountAdjustment> StockCountAdjustments => Set<StockCountAdjustment>();
     public DbSet<InventoryAuthorityResolutionPendingAudit> AuthorityResolutionPendingAudits =>
         Set<InventoryAuthorityResolutionPendingAudit>();
+    public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
+    public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -31,6 +34,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         modelBuilder.HasDefaultSchema(InventoryFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
         modelBuilder.ConfigureIntegrationEventDeadLetters();
+        modelBuilder.ConfigureCodingEntities();
         ConfigureCapStorage(modelBuilder);
     }
 

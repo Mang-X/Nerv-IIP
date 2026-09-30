@@ -7151,12 +7151,12 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateStockCount
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStockCountTaskResponse = {
     countTaskId?: string;
     expectedLedgerVersion?: number;
+    countTaskCode?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStockCountTaskRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    countTaskCode?: string;
+    organizationId: string;
+    environmentId: string;
     skuCode?: string;
     uomCode?: string;
     siteCode?: string;
@@ -7166,6 +7166,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     qualityStatus?: string;
     ownerType?: string;
     ownerId?: string | null;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfirmStockCountAdjustmentResponse = NetCorePalExtensionsDtoResponseData & {
@@ -21557,6 +21558,10 @@ export type CreateBusinessConsoleInventoryCountTaskData = {
 
 export type CreateBusinessConsoleInventoryCountTaskErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -21565,6 +21570,8 @@ export type CreateBusinessConsoleInventoryCountTaskErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleInventoryCountTaskError = CreateBusinessConsoleInventoryCountTaskErrors[keyof CreateBusinessConsoleInventoryCountTaskErrors];
 
 export type CreateBusinessConsoleInventoryCountTaskResponses = {
     /**
