@@ -385,7 +385,25 @@ public sealed record ScheduleAssignmentContract(
     bool IsLocked,
     string ExplanationCode,
     string? StandardOperationCode = null,
-    IReadOnlyCollection<ScheduleAssignmentSegmentContract>? Segments = null);
+    IReadOnlyCollection<ScheduleAssignmentSegmentContract>? Segments = null,
+    ScheduleAssignmentCurrentExecutionContract? CurrentExecution = null);
+
+/// <summary>
+/// 响应读取时的权威执行信息，不属于方案保存时快照或发布依据。
+/// WorkOrderProgress 为 MES 工单总完成量/计划量，同工单各工序共享，不能解释为工序进度。
+/// MaterialReadyUtc 来自当前 MES 物料就绪 producer；未给预计日期时为 null。
+/// EquipmentState 来自 EquipmentRuntime 当前状态；null 或 IsSourceFresh=false 不表示设备可用。
+/// </summary>
+public sealed record ScheduleAssignmentCurrentExecutionContract(
+    DateTimeOffset ObservedAtUtc,
+    ScheduleWorkOrderProgressContract? WorkOrderProgress,
+    DateTimeOffset? MaterialReadyUtc,
+    bool? IsMaterialReady,
+    string? EquipmentState,
+    DateTimeOffset? EquipmentStateOccurredAtUtc,
+    bool? IsEquipmentSourceFresh);
+
+public sealed record ScheduleWorkOrderProgressContract(decimal CompletedQuantity, decimal PlannedQuantity);
 
 public sealed record ScheduleAssignmentSegmentContract(
     DateTimeOffset StartUtc,

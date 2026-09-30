@@ -40930,6 +40930,14 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentSegmentContract"
             }
+          },
+          "currentExecution": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentCurrentExecutionContract"
+              }
+            ]
           }
         }
       },
@@ -40944,6 +40952,60 @@
           "endUtc": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleAssignmentCurrentExecutionContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workOrderProgress": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleWorkOrderProgressContract"
+              }
+            ]
+          },
+          "materialReadyUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isMaterialReady": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "equipmentState": {
+            "type": "string",
+            "nullable": true
+          },
+          "equipmentStateOccurredAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isEquipmentSourceFresh": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleWorkOrderProgressContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "completedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "plannedQuantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },

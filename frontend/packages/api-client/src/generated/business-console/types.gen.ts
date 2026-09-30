@@ -1536,11 +1536,27 @@ export type NervIipContractsSchedulingScheduleAssignmentContract = {
     explanationCode?: string;
     standardOperationCode?: string | null;
     segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
+    currentExecution?: NervIipContractsSchedulingScheduleAssignmentCurrentExecutionContract | null;
 };
 
 export type NervIipContractsSchedulingScheduleAssignmentSegmentContract = {
     startUtc?: string;
     endUtc?: string;
+};
+
+export type NervIipContractsSchedulingScheduleAssignmentCurrentExecutionContract = {
+    observedAtUtc?: string;
+    workOrderProgress?: NervIipContractsSchedulingScheduleWorkOrderProgressContract | null;
+    materialReadyUtc?: string | null;
+    isMaterialReady?: boolean | null;
+    equipmentState?: string | null;
+    equipmentStateOccurredAtUtc?: string | null;
+    isEquipmentSourceFresh?: boolean | null;
+};
+
+export type NervIipContractsSchedulingScheduleWorkOrderProgressContract = {
+    completedQuantity?: number;
+    plannedQuantity?: number;
 };
 
 export type NervIipContractsSchedulingScheduleResourceLoadContract = {
