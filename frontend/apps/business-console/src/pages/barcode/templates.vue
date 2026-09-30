@@ -98,6 +98,8 @@ const uploadedFileName = shallowRef('')
 const uploadedForCode = shallowRef('')
 const uploadPending = shallowRef(false)
 const uploadError = shallowRef('')
+// 每次重置弹窗都换一代：旧弹窗里还没回来的上传结果，回来时发现代号变了就静默丢弃，不串到新弹窗里。
+let uploadGeneration = 0
 
 const columns: NvDataTableColumn<BusinessConsoleBarcodeTemplateItem>[] = [
   {
@@ -198,6 +200,7 @@ function resetForm() {
 }
 
 function resetUpload() {
+  uploadGeneration += 1
   uploadedFileName.value = ''
   uploadedForCode.value = ''
   uploadError.value = ''
@@ -236,12 +239,14 @@ async function onFileSelected(event: Event) {
   uploadError.value = ''
   // 上传期间模板编码输入框是锁住的；这里再按上传所用的编码核对一次，防止文件绑到别的编码上。
   const templateCode = form.templateCode.trim()
+  const generation = uploadGeneration
   try {
     const asset = await uploadTemplateAsset(file, {
       organizationId: filters.organizationId ?? '',
       environmentId: filters.environmentId ?? '',
       templateCode,
     })
+    if (generation !== uploadGeneration) return
     if (form.templateCode.trim() !== templateCode) {
       form.templateFileId = ''
       uploadedFileName.value = ''
@@ -253,11 +258,12 @@ async function onFileSelected(event: Event) {
     uploadedFileName.value = asset.fileName
     uploadedForCode.value = templateCode
   } catch (error) {
+    if (generation !== uploadGeneration) return
     // 预检不通过是字段级提示，放在「模板文件」旁；接口失败是操作结果，走 toast（feedback-and-notifications）。
     if (error instanceof TemplateAssetPrecheckError) uploadError.value = error.message
     else notifyOperationFailure('上传模板文件失败', error, '模板文件上传失败，请稍后重试。')
   } finally {
-    uploadPending.value = false
+    if (generation === uploadGeneration) uploadPending.value = false
   }
 }
 

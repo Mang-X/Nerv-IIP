@@ -738,6 +738,41 @@ describe('barcode pages', () => {
     )
   })
 
+  it('drops an upload that finishes after its dialog was closed and a new one opened', async () => {
+    let finishUpload!: (value: { fileId: string; fileName: string; sizeBytes: number }) => void
+    barcode.uploadTemplateAsset.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = resolve
+        }),
+    )
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await openNewTemplate(wrapper)
+    await setInput(wrapper, '#barcode-template-code', 'CODE_A')
+    await uploadTemplateFile(wrapper)
+
+    // 上传挂起时关掉弹窗，重开「新建」，换一个编码。
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '取消')!
+      .trigger('click')
+    await openNewTemplate(wrapper)
+    await setInput(wrapper, '#barcode-template-code', 'CODE_B')
+    finishUpload({ fileId: 'file-code-a', fileName: 'a.json', sizeBytes: 363 })
+    await flushPromises()
+
+    // 旧弹窗的上传结果被丢弃，也不在新弹窗里留提示。
+    expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe('未上传')
+    expect(wrapper.text()).not.toContain('模板编码改了')
+    await setInput(wrapper, '#barcode-template-name', '托盘标签')
+    await wrapper.find('#barcode-template-item-0').setValue('skuCode')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(barcode.saveTemplate).not.toHaveBeenCalled()
+  })
+
   it('keeps the existing file when an edited template is saved without re-uploading', async () => {
     const wrapper = mount(TemplatesPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },

@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-09-30
-- 部分修订：[ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2 中「owner 不从请求体读取」对 **owner 标识**的适用性；用途与 owner 服务、owner 类型仍由网关固定，ADR 0030 其余条款仍有效。
+- 部分修订：[ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2 中「业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取」对 **owner 标识**的适用性；用途与 owner 服务、owner 类型仍由网关固定，ADR 0030 其余条款仍有效。
 - 关联：[Issue #3856](https://github.com/Mang-X/Nerv-IIP/issues/3856)
 
 ## 背景
