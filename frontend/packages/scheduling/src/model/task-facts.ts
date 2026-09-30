@@ -1,3 +1,4 @@
+import { equipmentStateLabel } from '@nerv-iip/business-core'
 import type { BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
 import type { ScheduleModel, ScheduleTask } from './types'
 
@@ -14,18 +15,6 @@ export function withWorkOrderFacts(
       commercialSourceFacts: byId.get(task.orderId)?.commercialSourceFacts,
     })),
   }
-}
-
-const equipmentLabels: Record<string, string> = {
-  down: '停机',
-  faulted: '故障',
-  idle: '空闲',
-  offline: '离线',
-  ready: '就绪',
-  running: '运行中',
-  stopped: '停止',
-  maintenance: '维护中',
-  warmup: '预热中',
 }
 
 /** 四个读面统一的事实口径。当前执行值与保存时风险分别展示。 */
@@ -61,10 +50,8 @@ export function taskFactRows(task: ScheduleTask): Array<[string, string]> {
     current?.isEquipmentSourceFresh === true && task.resourceId === task.executionResourceId
   rows.push([
     '当前设备',
-    knownEquipment &&
-    current?.equipmentState &&
-    equipmentLabels[current.equipmentState.toLowerCase()]
-      ? equipmentLabels[current.equipmentState.toLowerCase()]
+    knownEquipment && current?.equipmentState
+      ? equipmentStateLabel(current.equipmentState)
       : '未知 · 开工前请人工确认设备可用',
   ])
   if (task.predecessors) rows.push(['前序', task.predecessors.join('、') || '无'])

@@ -15,7 +15,8 @@
     "@nerv-iip/api-client": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@vueuse/core": "^14.3.0",
-    "vue": "3.5.39"
+    "vue": "3.5.39",
+    "@nerv-iip/business-core": "workspace:*"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.8",

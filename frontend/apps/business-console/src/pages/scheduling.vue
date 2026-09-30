@@ -16,6 +16,7 @@ import {
   useBusinessScheduling,
   useSchedulingPlanSummary,
 } from '@/composables/useBusinessScheduling'
+import { useMesWorkOrderFacts } from '@/composables/useBusinessMes'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -156,12 +157,24 @@ const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPla
 const workbench = useSchedulingWorkbench()
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
 const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
+const associatedWorkOrders = useMesWorkOrderFacts(() => [
+  ...(draft.model.value?.tasks
+    .filter((task) => task.type === 'operation' && !task.blockKind)
+    .map((task) => task.orderId) ?? []),
+  ...(planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId),
+])
+const displayWorkOrders = computed(() => {
+  const orders = new Map(workbench.candidates.value.map((order) => [order.workOrderId, order]))
+  for (const facts of associatedWorkOrders.workOrders.value)
+    orders.set(facts.workOrderId, { ...orders.get(facts.workOrderId), ...facts })
+  return [...orders.values()]
+})
 const draftDisplayModel = computed(() =>
-  draft.model.value ? withWorkOrderFacts(draft.model.value, workbench.candidates.value) : undefined,
+  draft.model.value ? withWorkOrderFacts(draft.model.value, displayWorkOrders.value) : undefined,
 )
 const detailTasks = computed(() =>
   planDetail.value
-    ? withWorkOrderFacts(toModel(planDetail.value), workbench.candidates.value).tasks
+    ? withWorkOrderFacts(toModel(planDetail.value), displayWorkOrders.value).tasks
     : [],
 )
 function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
@@ -706,6 +719,9 @@ function reasonLabel(reason?: string | null) {
         </NvButton>
       </template>
     </NvPageHeader>
+    <p v-if="associatedWorkOrders.error.value" role="alert" class="mb-4 text-destructive">
+      关联工单事实读取失败，销售订单与客户暂不可读取。
+    </p>
 
     <NvTabs v-model="activeView">
       <NvTabsList>
@@ -1055,7 +1071,7 @@ function reasonLabel(reason?: string | null) {
         <SchedulingPlanGantt
           :plan="planDetail"
           :summary="selectedPlanSummary"
-          :work-orders="workbench.candidates.value"
+          :work-orders="displayWorkOrders"
           :loading="planDetailPending"
           :error="planDetailError"
           :release-pending="releasePlanPending"

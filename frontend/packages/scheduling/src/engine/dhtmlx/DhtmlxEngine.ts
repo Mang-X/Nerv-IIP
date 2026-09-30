@@ -951,7 +951,7 @@ export class DhtmlxEngine implements SchedulingEngine {
               new Date(segment.startUtc),
               new Date(segment.endUtc),
             )
-            return `<div class="nerv-segment" style="left:${pos.left - origin}px;width:${pos.width}px" title="第 ${index + 1} 段 · ${fmt(segment.startUtc)} 至 ${fmt(segment.endUtc)}">${isResource ? cardHtml({ ...t!, ...segment }) : ''}</div>`
+            return `<div class="nerv-segment" style="left:${pos.left - origin}px;width:${pos.width}px" title="第 ${index + 1} 段 · ${fmt(segment.startUtc)} 至 ${fmt(segment.endUtc)}">${isResource ? cardHtml(t!) : ''}</div>`
           })
           .join('')
       }

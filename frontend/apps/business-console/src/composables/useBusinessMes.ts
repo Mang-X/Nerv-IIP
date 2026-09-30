@@ -144,7 +144,7 @@ export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-i
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch, toValue, type MaybeRefOrGetter } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -1030,6 +1030,53 @@ export function useMesProductionReporting() {
     reportScopeReady: reportScope.scopeReady,
     refreshProductionReportState: refreshProductionReportQueries,
   }
+}
+
+/** 方案关联工单按 ID 读取，包含不再进入待排池的完成/关闭工单。 */
+export function useMesWorkOrderFacts(orderIds: MaybeRefOrGetter<readonly (string | undefined)[]>) {
+  const filters = defaultWorkOrderContext()
+  const scope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
+  const ids = computed(() =>
+    [...new Set(toValue(orderIds).filter((id): id is string => Boolean(id)))].sort(),
+  )
+  const enabled = computed(
+    () => hasBusinessContext(filters) && scope.scopeReady.value && ids.value.length > 0,
+  )
+  const identity = computed(() =>
+    [
+      scope.principalIdentity.value,
+      filters.organizationId,
+      filters.environmentId,
+      scope.selectedScope.value?.kind,
+      scope.selectedScope.value?.id,
+      ...ids.value,
+    ].join(':'),
+  )
+  const query = useQuery(() => ({
+    key: [{ _id: 'schedulingWorkOrderFacts' }, identity.value],
+    enabled: enabled.value,
+    query: async (context: { signal: AbortSignal }): Promise<BusinessConsoleMesWorkOrderItem[]> => {
+      const selectedScope = scope.selectedScope.value!
+      return Promise.all(
+        ids.value.map(async (workOrderId) => {
+          const options = getBusinessConsoleMesWorkOrderDetailQueryOptions({
+            path: { workOrderId },
+            query: {
+              ...toContextQuery(filters),
+              scopeKind: selectedScope.kind,
+              scopeId: selectedScope.id,
+            },
+          })
+          const response = await options.query(context as Parameters<typeof options.query>[0])
+          if (response?.success !== true || !response.data)
+            throw new Error(response?.message ?? '关联工单事实读取失败')
+          return { workOrderId, commercialSourceFacts: response.data.commercialSourceFacts }
+        }),
+      )
+    },
+  }))
+  const response = useScopeBoundListResponse(() => query.data.value, identity, enabled)
+  return { workOrders: computed(() => response.value ?? []), error: query.error }
 }
 
 export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {

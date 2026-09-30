@@ -98,6 +98,10 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
   },
 }))
 
+vi.mock('@/composables/useBusinessMes', () => ({
+  useMesWorkOrderFacts: () => ({ workOrders: computed(() => []), error: shallowRef(undefined) }),
+}))
+
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
     // 甘特工序详情用它把物料/数量/交期 join 到工序上（工单级事实，见 SchedulingPlanGantt）。

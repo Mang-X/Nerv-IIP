@@ -128,7 +128,7 @@ DHTMLX Gantt 9.x 专业版仍是可选专业引擎(评估许可,禁分发,不入
 
 ## 8. 后端缺口(整批 consolidated issue,落地后回填 issue 号)
 
-1. **工序依赖编辑**:契约无独立 link 端点;当前依赖链由 `operationSequence` 派生展示,不可编辑。
+1. **工序依赖编辑**:契约无独立 link 端点;当前依赖链消费冻结前序与装配关系，无校验依据的旧方案保留 `operationSequence` 顺序展示，不可编辑。
 2. ~~**资源产能日历可视化**~~:已由 MAN-693 / #1261 关掉——`SchedulePlanContract` 增补
    `calendars` / `blockWindows` 两组只读事实(投影自排程问题的班次窗口与不可用窗口,**不新增端点、
    不新增持久化**),甘特据此画日历底纹、班次边界与阻塞斜纹。

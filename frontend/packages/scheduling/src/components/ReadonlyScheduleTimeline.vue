@@ -2,6 +2,7 @@
 import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { TimeScale } from '../engine/engine'
+import { taskFactRows } from '../model/task-facts'
 import { materialReadyLabel } from '../model/material-risk'
 import type { LaneOrder, ScheduleModel, ScheduleTask } from '../model/types'
 
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 const EIGHT_HOURS = 8 * 60 * 60 * 1000
 const ONE_DAY = 24 * 60 * 60 * 1000
 const LABEL_WIDTH = 224
+const TASK_ROW_HEIGHT = 280
 
 interface PositionedTask {
   task: ScheduleTask
@@ -210,7 +212,7 @@ const lanes = computed<TimelineLane[]>(() => {
   })
 })
 
-const laneHeight = (lane: TimelineLane) => Math.max(72, lane.rowCount * 58 + 12)
+const laneHeight = (lane: TimelineLane) => Math.max(72, lane.rowCount * TASK_ROW_HEIGHT + 12)
 
 const dependencyLayout = computed(() => {
   const positions = new Map<string, { orderId: string; start: number; end: number; y: number }>()
@@ -221,7 +223,7 @@ const dependencyLayout = computed(() => {
         orderId: positioned.task.orderId,
         start: (positioned.left / 100) * timelineWidth.value,
         end: ((positioned.left + positioned.width) / 100) * timelineWidth.value,
-        y: height + positioned.row * 58 + 32,
+        y: height + positioned.row * TASK_ROW_HEIGHT + TASK_ROW_HEIGHT / 2,
       })
     }
     height += laneHeight(lane)
@@ -362,13 +364,26 @@ function selectTask(task: ScheduleTask) {
               }"
               :style="{
                 left: `${positioned.left}%`,
-                top: `${positioned.row * 58 + 8}px`,
+                top: `${positioned.row * TASK_ROW_HEIGHT + 8}px`,
                 width: `${positioned.width}%`,
               }"
               :aria-label="taskAriaLabel(positioned.task)"
+              :title="
+                taskFactRows(positioned.task)
+                  .map(([label, value]) => `${label} ${value}`)
+                  .join('\n')
+              "
               @click="selectTask(positioned.task)"
             >
               <span class="nv-timeline-task__title">{{ taskLabel(positioned.task) }}</span>
+              <span
+                v-for="([label, value], index) in taskFactRows(positioned.task)"
+                :key="index"
+                class="nv-timeline-task__fact"
+              >
+                <span>{{ label }}</span
+                ><span>{{ value }}</span>
+              </span>
               <span class="nv-timeline-task__meta">
                 <span>{{ taskTime(positioned.task) }}</span>
                 <span v-if="positioned.task.hasConflict" class="nv-timeline-task__status">
@@ -513,11 +528,19 @@ function selectTask(task: ScheduleTask) {
     border-left: 1px dashed color-mix(in oklch, var(--border), transparent 25%);
   }
 
+  .nv-timeline-task__fact {
+    display: flex;
+    gap: 0.35rem;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.7rem;
+  }
+
   .nv-timeline-task {
     position: absolute;
     z-index: 2;
     display: flex;
-    height: 3rem;
+    height: 16.5rem;
     min-width: 0;
     flex-direction: column;
     justify-content: center;

@@ -65,6 +65,7 @@ import {
   useMesTraceability,
   useMesWipSummary,
   useMesWorkOrderDetail,
+  useMesWorkOrderFacts,
   useMesWorkOrders,
 } from './useBusinessMes'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -862,6 +863,27 @@ describe('business MES composables', () => {
         status: 'released',
       },
     ])
+  })
+
+  it('reads commercial facts for a completed historical work order absent from the candidate pool', async () => {
+    const commercialSourceFacts = {
+      status: 'resolved',
+      salesOrders: [{ salesOrderNo: 'SO-HISTORY', customerCode: 'CUSTOMER-HISTORY' }],
+    }
+    workOrderDetailQuery.mockResolvedValue({
+      success: true,
+      data: { workOrderId: 'WO-COMPLETED', status: 'Completed', commercialSourceFacts },
+    })
+    const facts = useMesWorkOrderFacts(() => ['WO-COMPLETED', 'WO-COMPLETED'])
+    const response = await coladaState.queryFactoriesById.get('schedulingWorkOrderFacts')!().query!(
+      {
+        signal: new AbortController().signal,
+      },
+    )
+    coladaState.queryDataRefById.get('schedulingWorkOrderFacts')!.value = response
+    await nextTick()
+    expect(facts.workOrders.value).toEqual([{ workOrderId: 'WO-COMPLETED', commercialSourceFacts }])
+    expect(workOrderDetailQuery).toHaveBeenCalledTimes(1)
   })
 
   it('applies a caller-owned initial page size before creating the work-order query', () => {
