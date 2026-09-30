@@ -47,7 +47,12 @@ function mountLayout(pinia = createPinia()) {
   return mount(BusinessLayout, {
     global: {
       plugins: [pinia, createBusinessConsoleI18n({ locale: 'en-US' })],
-      stubs: { AppShellT: AppShellTStub, ThemePicker: true, ThemeToggle: true },
+      stubs: {
+        AppShellT: AppShellTStub,
+        NotificationInbox: true,
+        ThemePicker: true,
+        ThemeToggle: true,
+      },
     },
     slots: { default: '<main>Business content</main>' },
   })
