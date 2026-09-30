@@ -48,6 +48,11 @@ public interface IBusinessSchedulingClient
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<byte[]> ExportPlanCsvAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,
         BusinessConsoleSchedulingPlanRequest request,
@@ -198,6 +203,15 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             null,
             cancellationToken,
             SchedulingJson.Options);
+
+    public Task<byte[]> ExportPlanCsvAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendBytesAsync(
+            internalBearerToken,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/csv?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            cancellationToken);
 
     public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,

@@ -68,6 +68,16 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         }
     }
 
+    protected async Task<byte[]> SendBytesAsync(
+        string internalBearerToken,
+        string requestUri,
+        CancellationToken cancellationToken)
+    {
+        using var response = await SendRequestAsync(
+            internalBearerToken, HttpMethod.Get, requestUri, null, cancellationToken, null, null);
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
     protected async Task SendNoContentAsync(
         string internalBearerToken,
         HttpMethod method,

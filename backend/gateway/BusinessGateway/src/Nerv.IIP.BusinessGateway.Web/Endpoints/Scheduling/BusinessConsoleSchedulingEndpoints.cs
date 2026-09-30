@@ -225,6 +225,44 @@ public sealed class GetBusinessConsoleSchedulingPlanEndpoint(
 }
 
 [Tags("Business Console Scheduling")]
+[BusinessGatewayOperationId("exportBusinessConsoleSchedulingPlanCsv")]
+[Microsoft.AspNetCore.Authorization.Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
+public sealed class ExportBusinessConsoleSchedulingPlanCsvEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : Endpoint<BusinessConsoleSchedulingPlanRequest, byte[]>
+{
+    public override void Configure()
+    {
+        Get("/api/business-console/v1/scheduling/plans/{planId}/csv");
+        Policies(BusinessGatewayPolicies.BusinessConsoleAuthenticated);
+        Options(builder => builder.WithTags("Business Console Scheduling"));
+        Description(builder => builder.ClearDefaultProduces(StatusCodes.Status200OK)
+            .Produces<byte[]>(StatusCodes.Status200OK, "text/csv"));
+    }
+
+    public override async Task HandleAsync(BusinessConsoleSchedulingPlanRequest req, CancellationToken ct)
+    {
+        var bearerToken = await BusinessGatewayAuthorization.RequirePermissionAsync(
+            HttpContext, auth,
+            new BusinessGatewayPermissionRequirement(BusinessGatewayPermissions.SchedulingPlansRead,
+                req.OrganizationId, req.EnvironmentId, "scheduling-plan", req.PlanId), ct);
+        if (bearerToken is null) return;
+
+        try
+        {
+            var csv = await scheduling.ExportPlanCsvAsync(tokenProvider.BearerToken, req, ct);
+            await Send.BytesAsync(csv, "schedule-plan.csv", "text/csv; charset=utf-8", cancellation: ct);
+        }
+        catch (BusinessServiceProxyException ex)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[Tags("Business Console Scheduling")]
 [HttpGet("/api/business-console/v1/scheduling/plans/{planId}/gantt")]
 [BusinessGatewayOperationId("getBusinessConsoleSchedulingPlanGantt")]
 public sealed class GetBusinessConsoleSchedulingPlanGanttEndpoint(

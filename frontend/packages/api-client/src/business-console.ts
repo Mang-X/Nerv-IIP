@@ -1,3 +1,4 @@
+import { exportBusinessConsoleSchedulingPlanCsv as generatedExportSchedulingPlanCsv } from './generated/business-console'
 export {
   adjustBusinessConsoleMesWorkOrderPriority,
   adjustBusinessConsoleMesWorkOrderPriorityMutationOptions,
@@ -3133,4 +3134,14 @@ export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostItem as BusinessConsoleErpWorkOrderCostItem,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostListResponse as BusinessConsoleErpWorkOrderCostListResponse,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostListResponse as BusinessConsoleErpWorkOrderCostListEnvelope,
+} from './generated/business-console'
+
+// CSV downloads use the binary type declared by OpenAPI rather than automatic text parsing.
+export const exportBusinessConsoleSchedulingPlanCsv: typeof generatedExportSchedulingPlanCsv = (
+  options,
+) => generatedExportSchedulingPlanCsv({ ...options, parseAs: 'blob' })
+export type {
+  ExportBusinessConsoleSchedulingPlanCsvData,
+  ExportBusinessConsoleSchedulingPlanCsvErrors,
+  ExportBusinessConsoleSchedulingPlanCsvResponse,
 } from './generated/business-console'

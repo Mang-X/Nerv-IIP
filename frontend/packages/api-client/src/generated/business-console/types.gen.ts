@@ -12292,6 +12292,44 @@ export type GetBusinessConsoleSchedulingPlanResponses = {
 
 export type GetBusinessConsoleSchedulingPlanResponse = GetBusinessConsoleSchedulingPlanResponses[keyof GetBusinessConsoleSchedulingPlanResponses];
 
+export type ExportBusinessConsoleSchedulingPlanCsvData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/csv';
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvError = ExportBusinessConsoleSchedulingPlanCsvErrors[keyof ExportBusinessConsoleSchedulingPlanCsvErrors];
+
+export type ExportBusinessConsoleSchedulingPlanCsvResponses = {
+    /**
+     * Success
+     */
+    200: Blob | File;
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvResponse = ExportBusinessConsoleSchedulingPlanCsvResponses[keyof ExportBusinessConsoleSchedulingPlanCsvResponses];
+
 export type GetBusinessConsoleSchedulingPlanGanttData = {
     body?: never;
     path: {
