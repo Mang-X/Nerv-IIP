@@ -192,7 +192,7 @@ const GRID_COLUMNS = (
     { name: 'priority', label: '优先级', align: 'center', width: 66, template: priorityCell },
     { name: 'status', label: '状态', align: 'center', width: 80, template: statusCell },
     { name: 'duration', label: '工时', align: 'center', width: 52, template: durationLabel },
-    { name: 'progress', label: '进度', align: 'center', width: 98, template: progressCell },
+    { name: 'progress', label: '工单进度', align: 'center', width: 98, template: progressCell },
   ]
 }
 
@@ -223,8 +223,8 @@ function statusCell(t: GridTask): string {
 }
 function progressCell(t: GridTask): string {
   if (t.type === 'project' || t.nerv?.type !== 'operation') return ''
-  const pct = Math.round((t.nerv?.progress ?? 0) * 100)
-  return `<span class="nerv-pcell"><span class="nerv-pbar"><span style="width:${pct}%"></span></span><span class="nerv-ptext">${pct}%</span></span>`
+  const progress = taskFactRows(t.nerv).find(([label]) => label === '工单进度')
+  return progress ? `<span class="nerv-ptext">${escapeHtml(progress[1])}</span>` : '—'
 }
 
 // 统一用 lucide 图标(与项目图标包一致):lock / zap(插单)/ triangle-alert(冲突)。

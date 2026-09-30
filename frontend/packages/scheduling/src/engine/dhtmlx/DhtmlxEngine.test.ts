@@ -76,6 +76,32 @@ const options = (): SchedulingEngineOptions => ({
 
 describe('DhtmlxEngine (fake factory)', () => {
   afterEach(() => vi.useRealTimers())
+  it('shows work-order quantities in the grid and never invents zero operation progress', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), options())
+    const model = toModel(samplePlan)
+    engine.setData(model)
+    const columns = fake.state.config.columns as {
+      name: string
+      label: string
+      template: (task: unknown) => string
+    }[]
+    const column = columns.find((item) => item.name === 'progress')!
+    const task = model.tasks.find((item) => item.id === 'a1')!
+    expect(column.template({ nerv: task })).toBe('—')
+    expect(
+      column.template({
+        nerv: {
+          ...task,
+          currentExecution: { workOrderProgress: { completedQuantity: 25, plannedQuantity: 100 } },
+        },
+      }),
+    ).toContain('25 / 100')
+    expect(column.label).toBe('工单进度')
+    engine.destroy()
+  })
+
   it('resource endpoints resize without starting the custom move, including read-only changes (#4041)', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
