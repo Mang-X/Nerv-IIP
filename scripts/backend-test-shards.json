@@ -203,6 +203,8 @@
       ],
       "excludedTests": [
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Changeover_runtime_is_an_availability_loss_and_is_reported_separately_on_postgres",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.NetRequirementIdentityPersistenceTests.Migration_keeps_legacy_identity_unknown_and_preserves_explanation_and_sources_on_postgres",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.NetRequirementIdentityPersistenceTests.Netting_identity_survives_split_independent_stages_accept_reject_and_supersession_on_postgres",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability",

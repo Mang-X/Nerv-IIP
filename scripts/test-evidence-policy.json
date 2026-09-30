@@ -720,7 +720,7 @@
       "id": "demandplanning-postgres",
       "sourceId": "demandplanning-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.(?:ErpSalesOrderDemandConsumerTests|MrpInputChangePersistenceTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.(?:ErpSalesOrderDemandConsumerTests|MrpInputChangePersistenceTests|NetRequirementIdentityPersistenceTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL DemandPlanning persistence tests\\.$",
       "allowedLanes": [
         "backend"
@@ -736,9 +736,11 @@
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres",
-        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Migration_preserves_legacy_fact_with_unknown_demand_type_on_postgres"
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Migration_preserves_legacy_fact_with_unknown_demand_type_on_postgres",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.NetRequirementIdentityPersistenceTests.Migration_keeps_legacy_identity_unknown_and_preserves_explanation_and_sources_on_postgres",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.NetRequirementIdentityPersistenceTests.Netting_identity_survives_split_independent_stages_accept_reject_and_supersession_on_postgres"
       ],
-      "expectedRuntimeTestCount": 6
+      "expectedRuntimeTestCount": 8
     },
     {
       "id": "demandplanning-postgres-redis",
