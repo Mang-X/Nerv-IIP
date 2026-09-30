@@ -1,7 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -107,10 +106,7 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             new NotificationSender(notificationDb),
             notificationDb,
             new InMemoryIntegrationEventDeadLetterStore(),
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Scheduling:InvalidationNotification:RecipientRefs:0"] = "role:scheduler",
-            }).Build(),
+            new PlannerDirectory(),
             new FixedTimeProvider(FixedNow),
             NotificationSummaryBudget.FromModel(notificationDb.Model));
 
@@ -123,7 +119,9 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             .SingleAsync();
         Assert.Equal(SchedulingIntegrationEventTypes.SchedulePlanInvalidated, intent.SourceEventType);
         Assert.Equal("plan-released", intent.ResourceId);
-        Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Equal("user:planner-001", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Equal("排产方案已失效", intent.Title);
+        Assert.Contains("plan-released", intent.Summary, StringComparison.Ordinal);
         Assert.Single(intent.Tasks);
         Assert.Equal(1, await notificationDb.ProcessedIntegrationEvents.CountAsync());
     }
@@ -220,6 +218,13 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             "system:maintenance",
             "maintenance:asset-unavailable:DEV-OIL-01",
             new AssetUnavailablePayload("DEV-OIL-01", "breakdown", DateTimeOffset.Parse("2026-06-01T09:00:00Z")));
+    }
+
+    private sealed class PlannerDirectory : IProductionPlannerMemberDirectory
+    {
+        public Task<IReadOnlyList<string>> ListMemberIdsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<string>>(
+                organizationId == "org-001" && environmentId == "env-dev" ? ["planner-001"] : []);
     }
 
     private sealed class NotificationSender(NotificationDbContext dbContext) : ISender
