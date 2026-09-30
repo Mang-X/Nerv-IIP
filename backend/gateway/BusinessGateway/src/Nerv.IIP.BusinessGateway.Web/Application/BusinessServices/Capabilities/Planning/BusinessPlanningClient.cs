@@ -1,3 +1,4 @@
+using Nerv.IIP.Contracts.DemandPlanning;
 using System.Globalization;
 using System.Text.Json;
 
@@ -6,6 +7,9 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessPlanningClient
 {
+    Task<MaterialDeliveriesResponse> GetMaterialDeliveriesAsync(string internalBearerToken, string runId,
+        string organizationId, string environmentId, string? planId, CancellationToken cancellationToken);
+
     Task<BusinessConsoleMpsBucketListResponse> ListMpsBucketsAsync(
         string internalBearerToken,
         BusinessConsoleMpsListRequest request,
@@ -98,6 +102,13 @@ public interface IBusinessPlanningClient
 public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessPlanningClient
 {
+    public Task<MaterialDeliveriesResponse> GetMaterialDeliveriesAsync(string internalBearerToken, string runId,
+        string organizationId, string environmentId, string? planId, CancellationToken cancellationToken) =>
+        SendAsync<MaterialDeliveriesResponse>(internalBearerToken, HttpMethod.Get,
+            $"/api/business/v1/planning/mrp-runs/{Uri.EscapeDataString(runId)}/material-deliveries?" +
+            Query(("organizationId", organizationId), ("environmentId", environmentId), ("planId", planId)),
+            null, cancellationToken);
+
     public Task<BusinessConsoleMpsBucketListResponse> ListMpsBucketsAsync(
         string internalBearerToken,
         BusinessConsoleMpsListRequest request,

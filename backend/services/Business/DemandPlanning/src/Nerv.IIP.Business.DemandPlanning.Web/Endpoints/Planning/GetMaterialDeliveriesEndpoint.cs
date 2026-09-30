@@ -1,3 +1,4 @@
+using Nerv.IIP.Contracts.DemandPlanning;
 using FastEndpoints;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;

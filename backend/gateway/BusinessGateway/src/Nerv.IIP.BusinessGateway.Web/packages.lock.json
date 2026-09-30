@@ -525,6 +525,13 @@
       "nerv.iip.contracts.coding": {
         "type": "Project"
       },
+      "nerv.iip.contracts.demandplanning": {
+        "type": "Project",
+        "dependencies": {
+          "Nerv.IIP.Contracts.IntegrationEvents": "[1.0.0, )",
+          "Nerv.IIP.Contracts.Scheduling": "[1.0.0, )"
+        }
+      },
       "nerv.iip.contracts.equipmentruntime": {
         "type": "Project"
       },

@@ -21,8 +21,9 @@
       "method": "GET",
       "route": "/api/business/v1/planning/mrp-runs/{runId}/material-deliveries",
       "operationId": "getPlanningMaterialDeliveries",
-      "classification": "deferred",
-      "followUp": "#4096：物料交付 D 原子传播 Gateway/OpenAPI/generated 契约"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsolePlanningMaterialDeliveries"]
     },
     {
       "service": "Mes",
