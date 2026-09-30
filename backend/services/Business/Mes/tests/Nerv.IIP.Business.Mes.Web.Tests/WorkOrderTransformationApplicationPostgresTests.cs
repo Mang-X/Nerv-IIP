@@ -1,3 +1,6 @@
+using System.Text.Json;
+using Npgsql;
+using Nerv.IIP.Contracts.Mes;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -75,6 +78,85 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
         Assert.All(targetOperations, operation => Assert.Equal(OperationTaskLifecycleStatus.Queued, operation.Status));
         Assert.Equal(WorkOrder.SplitStatus, source.Status);
         Assert.Equal(2, source.Version);
+
+        // The concurrent replay commits one transformation and one outbox fact.
+        var splitRow = Assert.Single(await ReadTransformationOutboxAsync());
+        Assert.Contains(nameof(WorkOrderSplitIntegrationEvent), splitRow.Name, StringComparison.Ordinal);
+        var split = ReadEnvelope<WorkOrderSplitIntegrationEvent>(splitRow.Content);
+        Assert.Equal(results[0].TransformationId.Id, split.Payload.TransformationId);
+        Assert.Equal(command.Actor, split.Actor);
+        Assert.Equal(command.OccurredAtUtc, split.OccurredAtUtc);
+        Assert.Equal(command.OrganizationId, split.OrganizationId);
+        Assert.Equal(command.EnvironmentId, split.EnvironmentId);
+        Assert.Equal(command.Reason, split.Payload.Reason);
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderSplit, split.EventType);
+        Assert.Equal(command.Targets.Select(x => x.WorkOrderId).Order(),
+            split.Payload.Lines.Select(x => x.TargetWorkOrderId).Order());
+        Assert.All(split.Payload.Lines, line =>
+        {
+            Assert.Equal(command.SourceWorkOrderId, line.SourceWorkOrderId);
+            Assert.Equal(1m, line.Quantity);
+            Assert.Equal(3m, line.SourceQuantity);
+            Assert.Equal(1m, line.TargetQuantity);
+            Assert.Equal("PCS", line.UomCode);
+        });
+
+        var mergeCommand = new MergeWorkOrdersCommand("org-001", "env-dev",
+            results[0].TargetWorkOrderIds, "WO-MERGED", "重组合并", "merge-outbox", command.Actor, occurredAtUtc.AddMinutes(1));
+        await InstallTransformationOutboxFailureTriggerAsync();
+        await using (var failingScope = factory.Services.CreateAsyncScope())
+        {
+            var exception = await Assert.ThrowsAnyAsync<Exception>(() =>
+                failingScope.ServiceProvider.GetRequiredService<ISender>().Send(mergeCommand));
+            Assert.Contains("injected transformation outbox failure", exception.ToString(), StringComparison.Ordinal);
+        }
+        await AssertRollbackAsync(factory, mergeCommand.IdempotencyKey, mergeCommand.SourceWorkOrderIds,
+            [mergeCommand.TargetWorkOrderId]);
+        Assert.Single(await ReadTransformationOutboxAsync());
+        await RemoveTransformationOutboxFailureTriggerAsync();
+
+        WorkOrderTransformationResult merged;
+        await using (var mergeScope = factory.Services.CreateAsyncScope())
+            merged = await mergeScope.ServiceProvider.GetRequiredService<ISender>().Send(mergeCommand);
+        await using (var replayScope = factory.Services.CreateAsyncScope())
+        {
+            var replay = await replayScope.ServiceProvider.GetRequiredService<ISender>().Send(mergeCommand);
+            Assert.True(replay.IsIdempotentReplay);
+            Assert.Equal(merged.TransformationId, replay.TransformationId);
+        }
+        var mergedRow = Assert.Single(await ReadTransformationOutboxAsync(), row =>
+            row.Name.Contains(nameof(WorkOrderMergedIntegrationEvent), StringComparison.Ordinal));
+        var merge = ReadEnvelope<WorkOrderMergedIntegrationEvent>(mergedRow.Content);
+        Assert.Equal(merged.TransformationId.Id, merge.Payload.TransformationId);
+        Assert.Equal(mergeCommand.Actor, merge.Actor);
+        Assert.Equal(mergeCommand.OccurredAtUtc, merge.OccurredAtUtc);
+        Assert.Equal(mergeCommand.Reason, merge.Payload.Reason);
+        Assert.Equal(mergeCommand.OrganizationId, merge.OrganizationId);
+        Assert.Equal(mergeCommand.EnvironmentId, merge.EnvironmentId);
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderMerged, merge.EventType);
+        Assert.Equal(mergeCommand.SourceWorkOrderIds.Order(), merge.Payload.Lines.Select(x => x.SourceWorkOrderId).Order());
+        Assert.All(merge.Payload.Lines, line =>
+        {
+            Assert.Equal("WO-MERGED", line.TargetWorkOrderId);
+            Assert.Equal(1m, line.Quantity);
+            Assert.Equal(1m, line.SourceQuantity);
+            Assert.Equal(3m, line.TargetQuantity);
+        });
+        Assert.Equal(2, (await ReadTransformationOutboxAsync()).Length);
+
+        var failingSplit = new SplitWorkOrderCommand("org-001", "env-dev", "WO-MERGED",
+            [new("WO-ROLLBACK-1", 1m), new("WO-ROLLBACK-2", 2m)], "回滚拆分", "split-outbox-failure",
+            command.Actor, occurredAtUtc.AddMinutes(2));
+        await InstallTransformationOutboxFailureTriggerAsync();
+        await using (var failingScope = factory.Services.CreateAsyncScope())
+        {
+            var exception = await Assert.ThrowsAnyAsync<Exception>(() =>
+                failingScope.ServiceProvider.GetRequiredService<ISender>().Send(failingSplit));
+            Assert.Contains("injected transformation outbox failure", exception.ToString(), StringComparison.Ordinal);
+        }
+        await AssertRollbackAsync(factory, failingSplit.IdempotencyKey, [failingSplit.SourceWorkOrderId],
+            failingSplit.Targets.Select(x => x.WorkOrderId).ToArray());
+        Assert.Equal(2, (await ReadTransformationOutboxAsync()).Length);
     }
 
     [MesRealPostgresFact]
@@ -143,6 +225,76 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
             : firstTargetIds;
         Assert.Equal(0, await assertion.WorkOrders.CountAsync(
             x => losingTargetIds.Contains(x.WorkOrderIdValue)));
+        var row = Assert.Single(await ReadTransformationOutboxAsync());
+        var split = ReadEnvelope<WorkOrderSplitIntegrationEvent>(row.Content);
+        Assert.Equal(winner.TransformationId.Id, split.Payload.TransformationId);
+        Assert.Equal(winner.TargetWorkOrderIds.Order(), split.Payload.Lines.Select(x => x.TargetWorkOrderId).Order());
+    }
+
+    private static async Task AssertRollbackAsync(WebApplicationFactory<Program> factory, string idempotencyKey,
+        IReadOnlyCollection<string> sourceIds, IReadOnlyCollection<string> targetIds)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await db.WorkOrderTransformations.Where(x => x.IdempotencyKey == idempotencyKey).ToArrayAsync());
+        Assert.Empty(await db.WorkOrders.Where(x => targetIds.Contains(x.WorkOrderIdValue)).ToArrayAsync());
+        Assert.Empty(await db.OperationTasks.Where(x => targetIds.Contains(x.WorkOrderId)).ToArrayAsync());
+        Assert.All(await db.WorkOrders.Where(x => sourceIds.Contains(x.WorkOrderIdValue)).ToArrayAsync(),
+            source => Assert.Equal(WorkOrder.CreatedStatus, source.Status));
+        Assert.All(await db.OperationTasks.Where(x => sourceIds.Contains(x.WorkOrderId)).ToArrayAsync(),
+            operation => Assert.Equal(OperationTaskLifecycleStatus.Queued, operation.Status));
+    }
+
+    private static T ReadEnvelope<T>(string content)
+    {
+        using var document = JsonDocument.Parse(content);
+        return JsonSerializer.Deserialize<T>(document.RootElement.GetProperty("Value").GetRawText())!;
+    }
+
+    private static async Task<(string Name, string Content)[]> ReadTransformationOutboxAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "Name", "Content" FROM cap.published
+            WHERE "Content" LIKE '%mes.WorkOrderSplit%' OR "Content" LIKE '%mes.WorkOrderMerged%'
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var rows = new List<(string, string)>();
+        while (await reader.ReadAsync()) rows.Add((reader.GetString(0), reader.GetString(1)));
+        return rows.ToArray();
+    }
+
+    private static async Task InstallTransformationOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE OR REPLACE FUNCTION cap.reject_transformation_outbox()
+            RETURNS trigger AS $$
+            BEGIN
+                IF NEW."Content" LIKE '%mes.WorkOrderSplit%' OR NEW."Content" LIKE '%mes.WorkOrderMerged%' THEN
+                    RAISE EXCEPTION 'injected transformation outbox failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER reject_transformation_outbox
+            BEFORE INSERT ON cap.published
+            FOR EACH ROW EXECUTE FUNCTION cap.reject_transformation_outbox();
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task RemoveTransformationOutboxFailureTriggerAsync()
+    {
+        await using var connection = new NpgsqlConnection(MesPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DROP TRIGGER reject_transformation_outbox ON cap.published";
+        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task<CommandOutcome[]> SendConcurrentlyAsync(
@@ -211,7 +363,7 @@ public sealed class WorkOrderTransformationApplicationPostgresTests
                 {
                     ["ConnectionStrings:PostgreSQL"] = MesPostgresLaneDatabase.ConnectionString,
                     ["Messaging:Provider"] = "InMemory",
-                    ["Cap:Version"] = $"test-work-order-transformation-application-{Guid.CreateVersion7():N}",
+                    ["Cap:Version"] = $"test-wot-{Guid.CreateVersion7().ToString("N")[..11]}",
                     ["InternalService:BearerToken"] = "test-internal-token",
                 };
 

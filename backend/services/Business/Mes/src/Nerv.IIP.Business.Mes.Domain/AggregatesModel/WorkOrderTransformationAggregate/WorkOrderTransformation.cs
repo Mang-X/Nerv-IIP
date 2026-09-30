@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate;
 
@@ -206,6 +207,7 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
                 target.Quantity));
         }
 
+        transformation.AddDomainEvent(new WorkOrderSplitDomainEvent(transformation));
         return transformation;
     }
 
@@ -264,6 +266,7 @@ public sealed class WorkOrderTransformation : Entity<WorkOrderTransformationId>,
                 source.Quantity));
         }
 
+        transformation.AddDomainEvent(new WorkOrderMergedDomainEvent(transformation));
         return transformation;
     }
 
