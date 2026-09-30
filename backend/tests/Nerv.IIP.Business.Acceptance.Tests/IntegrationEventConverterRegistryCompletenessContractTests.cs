@@ -207,7 +207,7 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(MasterDataConverters.SkuDisabledIntegrationEventConverter),
         typeof(MasterDataConverters.UnitOfMeasureChangedIntegrationEventConverter),
         typeof(MasterDataConverters.WorkCalendarChangedIntegrationEventConverter),
-        // Mes（18 条）
+        // Mes（20 条）
         typeof(MesConverters.DefectRaisedIntegrationEventConverter),
         typeof(MesConverters.FinishedGoodsReceiptRequestedForQualityIntegrationEventConverter),
         typeof(MesConverters.FinishedGoodsReceiptRequestedIntegrationEventConverter),
@@ -226,6 +226,8 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(MesConverters.WorkOrderCompletedIntegrationEventConverter),
         typeof(MesConverters.WorkOrderEngineeringChangeImpactDetectedIntegrationEventConverter),
         typeof(MesConverters.WorkOrderReleasedIntegrationEventConverter),
+        typeof(MesConverters.WorkOrderSplitIntegrationEventConverter),
+        typeof(MesConverters.WorkOrderMergedIntegrationEventConverter),
         // ProductEngineering（4 条）
         typeof(ProductEngineeringConverters.EngineeringBomReleasedIntegrationEventConverter),
         typeof(ProductEngineeringConverters.EngineeringChangeReleasedIntegrationEventConverter),
