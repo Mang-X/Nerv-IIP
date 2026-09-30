@@ -34,7 +34,7 @@ public sealed class HttpMaterialDeliveryMesSourceProvider(
 
         using var detail = await GetAsync($"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}?" + scope,
             cancellationToken);
-        var data = detail.RootElement.GetProperty("data");
+        var data = detail.RootElement;
         var reference = data.GetProperty("sourcePlanReference");
         var suggestionId = reference.ValueKind == JsonValueKind.Object &&
             reference.GetProperty("sourceSystem").GetString() == DemandPlanningSourceReferences.DemandPlanning &&
@@ -45,7 +45,7 @@ public sealed class HttpMaterialDeliveryMesSourceProvider(
         {
             using var reports = await GetAsync("/api/business/v1/mes/production-reports?" + scope + "&" +
                 SchedulingProblemHttp.Query(("workOrderId", workOrderId), ("skip", skip), ("take", 100)), cancellationToken);
-            var page = reports.RootElement.GetProperty("data");
+            var page = reports.RootElement;
             foreach (var report in page.GetProperty("items").EnumerateArray())
             {
                 var id = report.GetProperty("operationTaskId").GetString()!;
