@@ -1503,6 +1503,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     equipmentRisks?: Array<NervIipContractsSchedulingSchedulePlanEquipmentRiskContract> | null;
     materialShortageSummary?: Array<NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract> | null;
     validationContext?: NervIipContractsSchedulingSchedulePlanValidationContextContract | null;
+    assemblyDependencies?: Array<NervIipContractsSchedulingSchedulingAssemblyDependencyContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1695,6 +1696,11 @@ export type NervIipContractsSchedulingSchedulePlanFixedReservationContract = {
     resourceId?: string | null;
 };
 
+export type NervIipContractsSchedulingSchedulingAssemblyDependencyContract = {
+    childOrderId?: string;
+    parentOrderId?: string;
+};
+
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
     problem: NervIipContractsSchedulingSchedulingProblemContract;
 };
@@ -1714,6 +1720,7 @@ export type NervIipContractsSchedulingSchedulingProblemContract = {
     qualityBlocks?: Array<NervIipContractsSchedulingSchedulingQualityBlockContract>;
     lockedAssignments?: Array<NervIipContractsSchedulingSchedulingLockedAssignmentContract>;
     equipmentDataRisks?: Array<NervIipContractsSchedulingSchedulingEquipmentDataRiskContract> | null;
+    assemblyDependencies?: Array<NervIipContractsSchedulingSchedulingAssemblyDependencyContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingOrderContract = {

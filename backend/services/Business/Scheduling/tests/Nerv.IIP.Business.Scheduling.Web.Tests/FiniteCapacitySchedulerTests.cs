@@ -348,6 +348,47 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Assembly_parent_starts_after_child_finishes_and_plan_keeps_dependency()
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        problem = problem with
+        {
+            Orders = problem.Orders.Select(order => order.OrderId == "WO-LOCAL-A"
+                ? order with { IsRush = true, Operations = order.Operations.Select(operation => operation with { IsRush = true }).ToArray() }
+                : order).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-assembly", GeneratedAtUtc);
+
+        Assert.True(plan.Assignments.Single(x => x.OrderId == "WO-LOCAL-A").StartUtc >=
+            plan.Assignments.Where(x => x.OrderId == "WO-LOCAL-B").Max(x => x.EndUtc));
+        Assert.Equal(problem.AssemblyDependencies, plan.AssemblyDependencies);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Assembly_parent_is_unscheduled_when_child_is_missing_or_cannot_be_scheduled(bool childSelected)
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        problem = problem with
+        {
+            Orders = problem.Orders.Where(x => childSelected || x.OrderId == "WO-LOCAL-A")
+                .Select(order => order.OrderId == "WO-LOCAL-B"
+                    ? order with { Operations = order.Operations.Select(operation => operation with { EligibleResourceIds = ["DEV-MISSING"] }).ToArray() }
+                    : order).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-missing-child", GeneratedAtUtc);
+
+        Assert.Empty(plan.Assignments);
+        Assert.Equal(ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+            Assert.Single(plan.UnscheduledOperations, x => x.OrderId == "WO-LOCAL-A").ReasonCode);
+    }
+
+    [Fact]
     public void Schedule_avoids_maintenance_window()
     {
         var plan = ScheduleShockAbsorber();

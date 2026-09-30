@@ -53,7 +53,10 @@ public sealed record SchedulingProblemContract(
     // 设备数据风险(软约束):设备没有运行时快照 / 快照已过期 / 采集源不可达。
     // 「不知道」不等于「不可用」——它不进 UnavailabilityWindows(那里只放真实停机与维护),
     // 只作为风险随计划带出,提示排产员这台设备的状态是盲区。
-    IReadOnlyCollection<SchedulingEquipmentDataRiskContract>? EquipmentDataRisks = null);
+    IReadOnlyCollection<SchedulingEquipmentDataRiskContract>? EquipmentDataRisks = null,
+    IReadOnlyCollection<SchedulingAssemblyDependencyContract>? AssemblyDependencies = null);
+
+public sealed record SchedulingAssemblyDependencyContract(string ChildOrderId, string ParentOrderId);
 
 public sealed record SchedulingOrderContract(
     string OrderId,
@@ -223,7 +226,8 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null,
     IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null,
     IReadOnlyCollection<SchedulePlanMaterialShortageSummaryContract>? MaterialShortageSummary = null,
-    SchedulePlanValidationContextContract? ValidationContext = null);
+    SchedulePlanValidationContextContract? ValidationContext = null,
+    IReadOnlyCollection<SchedulingAssemblyDependencyContract>? AssemblyDependencies = null);
 
 public sealed record SchedulePlanMaterialShortageSummaryContract(
     string MaterialId,

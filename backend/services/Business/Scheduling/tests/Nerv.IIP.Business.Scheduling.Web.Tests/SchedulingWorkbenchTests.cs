@@ -180,6 +180,30 @@ public sealed partial class SchedulingWorkbenchTests
     }
 
     [Fact]
+    public async Task Workbench_problem_keeps_mes_assembly_children_even_when_child_is_not_selected()
+    {
+        var start = new DateTimeOffset(2026, 9, 30, 8, 0, 0, TimeSpan.Zero);
+        var handler = new StubHandler(
+            _ => Json(new { items = new[] { WorkOrder("WO-PARENT", start) }, total = 1 }),
+            ["WO-CHILD"]);
+        var routing = new SchedulingProblemRoutingSnapshot("ROUTE-001", "A", "SKU-001",
+        [
+            new SchedulingProblemRoutingOperationSnapshot(10, "WC-001", "cutting", "Cutting", 0, 30, 0)
+        ]);
+        var productEngineering = new StubProductEngineeringClient(routing);
+        var provider = new HttpSchedulingWorkbenchSourceProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("http://mes") }, productEngineering);
+
+        var orders = await provider.ResolveOrdersAsync(
+            "org-001", "env-dev", start, [new("WO-PARENT", 10, false)], CancellationToken.None);
+        var problem = await new SchedulingProblemProducer(productEngineering, new StubMasterDataClient(start))
+            .AssembleWorkbenchAsync(new AssembleSchedulingWorkbenchProblemRequest(
+                "problem-assembly", "org-001", "env-dev", start, start.AddHours(8), orders), CancellationToken.None);
+
+        Assert.Equal([new SchedulingAssemblyDependencyContract("WO-CHILD", "WO-PARENT")], problem.AssemblyDependencies);
+    }
+
+    [Fact]
     public async Task Source_provider_preserves_mes_operation_identity_through_problem_assembly()
     {
         var start = new DateTimeOffset(2026, 9, 20, 8, 0, 0, TimeSpan.Zero);
@@ -801,10 +825,14 @@ public sealed partial class SchedulingWorkbenchTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    private sealed class StubHandler(
+        Func<HttpRequestMessage, HttpResponseMessage> responseFactory,
+        IReadOnlyCollection<string>? assemblyChildOrderIds = null) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(responseFactory(request));
+            Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/assembly-children", StringComparison.Ordinal)
+                ? Json(new { data = new { assemblyChildWorkOrderIds = assemblyChildOrderIds ?? [] } })
+                : responseFactory(request));
     }
 
     private static HttpResponseMessage Json(object value) => new(HttpStatusCode.OK)
@@ -823,6 +851,6 @@ public sealed partial class SchedulingWorkbenchTests
         dueUtc = start.AddDays(1),
         status,
         workOrderNo = workOrderId,
-        operationTasks = new[] { new { earliestStartUtc = start } },
+        operationTasks = new[] { new { operationTaskId = $"{workOrderId}-OP10", operationSequence = 10, earliestStartUtc = start } },
     };
 }

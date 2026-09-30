@@ -8,13 +8,17 @@ public class SchedulingContractSerializationTests
     [Fact]
     public void Scheduling_problem_round_trips_contract_version_and_core_inputs()
     {
-        var problem = SchedulingContractSamples.CreateShockAbsorberProblem();
+        var problem = SchedulingContractSamples.CreateShockAbsorberProblem() with
+        {
+            AssemblyDependencies = [new("WO-FRONT-001", "WO-RUSH-REAR-001")]
+        };
 
         var json = JsonSerializer.Serialize(problem, SchedulingJson.Options);
         var roundTrip = JsonSerializer.Deserialize<SchedulingProblemContract>(json, SchedulingJson.Options);
 
         Assert.NotNull(roundTrip);
         Assert.Equal(1, roundTrip!.ContractVersion);
+        Assert.Equal(problem.AssemblyDependencies, roundTrip.AssemblyDependencies);
         Assert.Equal("org-001", roundTrip.OrganizationId);
         Assert.Contains(roundTrip.Orders, x => x.OrderId == "WO-RUSH-REAR-001");
         Assert.Contains(roundTrip.Resources, x => x.ResourceId == "DEV-OIL-01");
@@ -46,7 +50,10 @@ public class SchedulingContractSerializationTests
     [Fact]
     public void Schedule_plan_round_trips_assignments_conflicts_and_gantt_items()
     {
-        var plan = SchedulingContractSamples.CreateExpectedShockAbsorberPlan();
+        var plan = SchedulingContractSamples.CreateExpectedShockAbsorberPlan() with
+        {
+            AssemblyDependencies = [new("WO-FRONT-001", "WO-RUSH-REAR-001")]
+        };
 
         var json = JsonSerializer.Serialize(plan, SchedulingJson.Options);
         var roundTrip = JsonSerializer.Deserialize<SchedulePlanContract>(json, SchedulingJson.Options);
@@ -54,6 +61,7 @@ public class SchedulingContractSerializationTests
         Assert.NotNull(roundTrip);
         Assert.Equal("aps-lite-v1", roundTrip!.AlgorithmVersion);
         Assert.Null(roundTrip.ValidationContext);
+        Assert.Equal(plan.AssemblyDependencies, roundTrip.AssemblyDependencies);
         Assert.NotEmpty(roundTrip.Assignments);
         Assert.NotEmpty(roundTrip.ResourceLoads);
         Assert.NotEmpty(roundTrip.GanttItems);

@@ -65,7 +65,7 @@ public sealed class SchedulingProblemProducer(
             static (order, operation) => $"{order.OrderId}-{operation.Sequence}-{operation.OperationCode}",
             cancellationToken);
 
-    public Task<SchedulingProblemContract> AssembleWorkbenchAsync(
+    public async Task<SchedulingProblemContract> AssembleWorkbenchAsync(
         AssembleSchedulingWorkbenchProblemRequest request,
         CancellationToken cancellationToken)
     {
@@ -73,7 +73,7 @@ public sealed class SchedulingProblemProducer(
             x => x.Order.OrderId,
             x => x.Operations.ToDictionary(y => y.OperationSequence, y => y.OperationTaskId),
             StringComparer.Ordinal);
-        return AssembleAsync(
+        var problem = await AssembleAsync(
             new AssembleSchedulingProblemRequest(
                 request.ProblemId,
                 request.OrganizationId,
@@ -93,6 +93,16 @@ public sealed class SchedulingProblemProducer(
                 return operationTaskId;
             },
             cancellationToken);
+        return problem with
+        {
+            AssemblyDependencies = request.Orders
+                .SelectMany(parent => (parent.AssemblyChildOrderIds ?? [])
+                    .Select(childId => new SchedulingAssemblyDependencyContract(childId, parent.Order.OrderId)))
+                .Distinct()
+                .OrderBy(x => x.ParentOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.ChildOrderId, StringComparer.Ordinal)
+                .ToArray()
+        };
     }
 
     private async Task<SchedulingProblemContract> AssembleAsync(

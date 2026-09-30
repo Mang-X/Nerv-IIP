@@ -11,7 +11,8 @@ public sealed record SchedulingWorkbenchOperationSource(string OperationTaskId, 
 
 public sealed record SchedulingWorkbenchProblemSourceOrder(
     SchedulingProblemSourceOrder Order,
-    IReadOnlyCollection<SchedulingWorkbenchOperationSource> Operations);
+    IReadOnlyCollection<SchedulingWorkbenchOperationSource> Operations,
+    IReadOnlyCollection<string>? AssemblyChildOrderIds = null);
 
 public interface ISchedulingWorkbenchSourceProvider
 {
@@ -100,6 +101,15 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             throw new KnownException($"在请求范围内未找到 MES 工单，请检查工单状态后重试：{string.Join(", ", missing)}");
         }
 
+        var assemblyChildren = await Task.WhenAll(requested.Select(async selection => new
+        {
+            selection.WorkOrderId,
+            ChildOrderIds = await GetAssemblyChildOrderIdsAsync(
+                organizationId, environmentId, selection.WorkOrderId, cancellationToken)
+        }));
+        var assemblyChildrenByOrder = assemblyChildren.ToDictionary(
+            x => x.WorkOrderId, x => x.ChildOrderIds, StringComparer.Ordinal);
+
         var productionVersionIds = requested
             .Select(x => byId[x.WorkOrderId].ProductionVersionId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -154,8 +164,32 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                     BusinessReference: order.WorkOrderNo),
                 order.OperationTasks
                     .Select(x => new SchedulingWorkbenchOperationSource(x.OperationTaskId, x.OperationSequence))
-                    .ToArray());
+                    .ToArray(),
+                assemblyChildrenByOrder[order.WorkOrderId]);
         }).ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<string>> GetAssemblyChildOrderIdsAsync(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/assembly-children?" +
+            SchedulingProblemHttp.Query(("organizationId", organizationId), ("environmentId", environmentId)));
+        var bearerToken = internalTokenProvider?.BearerToken;
+        if (!string.IsNullOrWhiteSpace(bearerToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        }
+
+        using var response = await mesClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var document = JsonDocument.Parse(json);
+        var payload = document.RootElement.GetProperty("data");
+        return payload.Deserialize<MesAssemblyChildWorkOrdersResponse>(SchedulingJson.Options)!.AssemblyChildWorkOrderIds;
     }
 
     private async Task<MesWorkOrderItem?> FindWorkOrderByIdAsync(
@@ -252,6 +286,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         "created", "released", "started", "hold");
 
     private sealed record MesWorkOrderListResponse(IReadOnlyCollection<MesWorkOrderItem> Items, int Total);
+    private sealed record MesAssemblyChildWorkOrdersResponse(IReadOnlyCollection<string> AssemblyChildWorkOrderIds);
     private sealed record MesWorkOrderItem(
         string WorkOrderId,
         string SkuId,
