@@ -29,7 +29,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
-      "sha256": "5a96938b903780d46e30ecd86cba736adf0a1592f2424a27c4adaf5b8837c541"
+      "sha256": "911653a5bc15df96773a82efd1dac93de0e39a85ee1146198e319cf8644e2c14"
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj",
@@ -177,7 +177,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
-      "sha256": "3623a1e17fcb30cfda21433fb91e601afac7c60d8dee3409caaec631ca58d825"
+      "sha256": "a15a78154d3d397ebbe3077c28e8cf35c566caa6a81e579a9195302f6b31a5e1"
     },
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.MasterData/Nerv.IIP.Contracts.MasterData.csproj",
@@ -186,6 +186,14 @@
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.MasterData/packages.lock.json",
       "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.DemandPlanning/Nerv.IIP.Contracts.DemandPlanning.csproj",
+      "sha256": "4fb357246eb5db04ef2b9fc5feb434c5f60c0222a65e476fac5738fd2e29c420"
+    },
+    {
+      "path": "backend/common/Contracts/Nerv.IIP.Contracts.DemandPlanning/packages.lock.json",
+      "sha256": "f256e2fff99f71727fb20b82f64714406246dba64869ee7759ca3e6d702f35c4"
     }
   ],
   "lock": {
@@ -193,6 +201,7 @@
       "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.BarcodeLabel/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Coding/packages.lock.json",
+      "backend/common/Contracts/Nerv.IIP.Contracts.DemandPlanning/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.EquipmentRuntime/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.Erp/packages.lock.json",
       "backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/packages.lock.json",

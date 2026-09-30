@@ -14297,6 +14297,82 @@
         ]
       }
     },
+    "/api/business-console/v1/planning/mrp-runs/{runId}/material-deliveries": {
+      "get": {
+        "tags": [
+          "Business Console Planning",
+          "Api"
+        ],
+        "operationId": "getBusinessConsolePlanningMaterialDeliveries",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "planId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfMaterialDeliveriesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/notifications/messages": {
       "get": {
         "tags": [
@@ -49568,6 +49644,542 @@
             "nullable": false
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfMaterialDeliveriesResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveriesResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliveriesResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string",
+            "nullable": true
+          },
+          "evaluatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "supplyCoverageScope": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryResponse"
+            }
+          },
+          "unknownRequirementSuggestions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryUnknownRequirementSource"
+            }
+          }
+        }
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliveryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "netRequirementReference": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "suggestionType": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "requiredDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "netRequirementQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "latestProcurementDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "latestProcurementUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expectedArrivalDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expectedArrivalUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expectedStartUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "latestStartUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "coveredQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uncoveredQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryStatus"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "netRequirementSource": {
+            "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryNetRequirementSource"
+          },
+          "demandSources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryDemandSource"
+            }
+          },
+          "supplySources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliverySupplySource"
+            }
+          },
+          "schedulingSources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingMaterialDeliveryOrderSourceContract"
+            }
+          },
+          "suggestionSources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliverySuggestionSource"
+            }
+          }
+        }
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliveryStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Yellow",
+          "Green",
+          "Red"
+        ],
+        "enum": [
+          "yellow",
+          "green",
+          "red"
+        ]
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliveryNetRequirementSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "grossDemandQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "onHandQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reservedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "availableToNetQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scheduledReceiptQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "safetyStockQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "netRequirementQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "plannedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scrapRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "yieldRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "formula": {
+            "type": "string"
+          },
+          "uomConversionSummary": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliveryDemandSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceReference": {
+            "type": "string"
+          },
+          "sourceLineReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "parentSkuCode": {
+            "type": "string"
+          },
+          "componentSkuCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "grossDemandQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "demandSourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceVersion": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "productionVersionReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturingBomReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "routingReference": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliverySupplySource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "purchaseOrderNo": {
+            "type": "string"
+          },
+          "lineNo": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "promisedDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "openQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryPurchaseSource"
+            }
+          }
+        }
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliveryPurchaseSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "purchaseRequisitionNo": {
+            "type": "string"
+          },
+          "purchaseRequisitionLineNo": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "suggestionId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingMaterialDeliveryOrderSourceContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "suggestionId": {
+            "type": "string"
+          },
+          "workOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "scheduledStartUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "latestStartUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "tightestDueSourceReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingMaterialDeliveryOperationSourceContract"
+            }
+          },
+          "dueBounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingMaterialDeliveryBoundContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingMaterialDeliveryOperationSourceContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "operationSequence": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "executionStatus": {
+            "type": "string"
+          },
+          "netGoodQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "remainingQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "remainingMinutes": {
+            "type": "number",
+            "format": "double"
+          },
+          "earliestStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "assignmentStartUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "assignmentStatus": {
+            "type": "string"
+          },
+          "predecessorOperationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "routingVersionId": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingMaterialDeliveryBoundContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceReference": {
+            "type": "string"
+          },
+          "dueUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remainingMinutes": {
+            "type": "number",
+            "format": "double"
+          },
+          "latestStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "criticalPathOperationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliverySuggestionSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "suggestionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "plannedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "downstreamService": {
+            "type": "string",
+            "nullable": true
+          },
+          "downstreamDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "downstreamDocumentId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsDemandPlanningMaterialDeliveryUnknownRequirementSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "suggestionType": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "requiredDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "releaseDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "suggestionSource": {
+            "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliverySuggestionSource"
+          },
+          "rawNetRequirementSource": {
+            "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryNetRequirementSource"
+          },
+          "demandSources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsDemandPlanningMaterialDeliveryDemandSource"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebEndpointsPlanningBusinessConsoleMaterialDeliveriesRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse": {
         "allOf": [

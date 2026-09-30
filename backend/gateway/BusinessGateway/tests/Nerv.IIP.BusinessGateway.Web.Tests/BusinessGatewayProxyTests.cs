@@ -19207,6 +19207,8 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 
 internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 {
+    public Task<Nerv.IIP.Contracts.DemandPlanning.MaterialDeliveriesResponse> GetMaterialDeliveriesAsync(string token, string runId, string organizationId, string environmentId, string? planId, CancellationToken ct) => throw new NotSupportedException();
+
     public int SuggestionListCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }

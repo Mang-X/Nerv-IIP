@@ -2,13 +2,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
-
-public sealed record MaterialDeliveryPurchaseSource(string PurchaseRequisitionNo, string PurchaseRequisitionLineNo, decimal Quantity, string? SuggestionId);
-public sealed record MaterialDeliverySupplySource(string PurchaseOrderNo, string LineNo, string SiteCode, string SkuCode,
-    string UomCode, DateOnly PromisedDate, decimal OpenQuantity, IReadOnlyCollection<MaterialDeliveryPurchaseSource> Sources);
 
 public interface IMaterialDeliverySourcesClient
 {
