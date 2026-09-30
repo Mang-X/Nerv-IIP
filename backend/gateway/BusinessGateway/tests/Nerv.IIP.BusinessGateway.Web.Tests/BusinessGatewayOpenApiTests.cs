@@ -380,6 +380,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}", "patch", "patchBusinessConsoleShiftHandoverAttachmentTusUpload");
         // 下载面只有一条字节路由、以 fileId 为入参：grant id 不出网关（#3096 审核 A1）。
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content", "get", "downloadBusinessConsoleShiftHandoverAttachmentContent");
+        // #3856 条码模板文件上传面：会话 / tus HEAD+PATCH / complete，模板文件由服务端自取字节、无下载面。
+        AssertOperationId(paths, "/api/business-console/v1/files/barcode-template-assets/upload-sessions", "post", "createBusinessConsoleBarcodeTemplateAssetUploadSession");
+        AssertOperationId(paths, "/api/business-console/v1/files/barcode-template-assets/upload-sessions/{uploadSessionId}/complete", "post", "completeBusinessConsoleBarcodeTemplateAssetUpload");
+        AssertOperationId(paths, "/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}", "head", "getBusinessConsoleBarcodeTemplateAssetTusOffset");
+        AssertOperationId(paths, "/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}", "patch", "patchBusinessConsoleBarcodeTemplateAssetTusUpload");
         // #3314 结构不变量，见 AssertFileFaceExposesOnlyFileIdKeyedByteRoutes 的注释。
         AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
             paths,
@@ -388,7 +393,10 @@ public sealed class BusinessGatewayOpenApiTests
             "/api/business-console/v1/files/shift-handover-attachments/upload-sessions",
             "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete",
             "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}",
-            "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content");
+            "/api/business-console/v1/files/shift-handover-attachments/{fileId}/content",
+            "/api/business-console/v1/files/barcode-template-assets/upload-sessions",
+            "/api/business-console/v1/files/barcode-template-assets/upload-sessions/{uploadSessionId}/complete",
+            "/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}");
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");

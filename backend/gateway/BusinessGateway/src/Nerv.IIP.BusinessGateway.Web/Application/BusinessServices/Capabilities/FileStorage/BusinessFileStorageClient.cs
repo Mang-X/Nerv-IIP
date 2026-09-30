@@ -29,6 +29,17 @@ public interface IBusinessFileStorageClient
         BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleBarcodeTemplateAssetUploadSessionResponse> CreateBarcodeTemplateAssetUploadSessionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBarcodeTemplateAsset> CompleteBarcodeTemplateAssetUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// 交接班附件下载的**唯一**授权入口：复核用途、签发 download grant、校验下游 URL 可代理，
     /// 返回只在网关进程内流转的取字节凭据。用途复核只在本方法一处把关（#3096 审核 A1）；
@@ -190,6 +201,71 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
             file.SizeBytes);
     }
 
+    public async Task<BusinessConsoleBarcodeTemplateAssetUploadSessionResponse> CreateBarcodeTemplateAssetUploadSessionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await SendAsync<CreateUploadSessionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/files/v1/upload-sessions",
+            new CreateUploadSessionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                new OwnerReference(
+                    BarcodeTemplateAssets.OwnerService,
+                    BarcodeTemplateAssets.OwnerType,
+                    request.TemplateCode.Trim()),
+                BarcodeTemplateAssets.FilePurpose,
+                request.FileName,
+                BarcodeTemplateAssets.ContentType,
+                request.ExpectedSizeBytes,
+                request.Checksum),
+            cancellationToken);
+
+        // 与交接班附件同一条失败关闭口径：非 tus 的占位指令没有字节入口（ADR 0023）。
+        if (!string.Equals(session.Provider, BarcodeTemplateAssets.TusUploadProtocol, StringComparison.Ordinal))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "filestorage-upload-protocol-unsupported");
+        }
+
+        return new BusinessConsoleBarcodeTemplateAssetUploadSessionResponse(
+            session.UploadSessionId,
+            session.FileId,
+            BarcodeTemplateAssets.TusUploadProtocol,
+            session.ExpiresAtUtc,
+            FileStorageRoutes.RewriteProxiedUrl(
+                session.Upload.Url,
+                FileStorageRoutes.DownstreamTusPrefix,
+                FileStorageRoutes.ConsoleBarcodeTemplateAssetTusPrefix),
+            session.Upload.Headers);
+    }
+
+    public async Task<BusinessConsoleBarcodeTemplateAsset> CompleteBarcodeTemplateAssetUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        // 用途由门面固定：FileStorage 在 complete 时比对会话用途，别的门面开出的会话在这里提交不了。
+        var file = await SendAsync<FileMetadataResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/files/v1/upload-sessions/{Uri.EscapeDataString(uploadSessionId)}/complete",
+            new CompleteUploadSessionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                BarcodeTemplateAssets.FilePurpose,
+                request.Checksum,
+                request.SizeBytes),
+            cancellationToken);
+
+        return new BusinessConsoleBarcodeTemplateAsset(file.FileId, file.FileName, file.SizeBytes);
+    }
+
     public Task<BusinessFileDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
         string internalBearerToken,
         string fileId,
@@ -286,6 +362,7 @@ public static class FileStorageRoutes
     public const string DownstreamDownloadGrantPrefix = "/api/files/v1/download-grants/";
 
     public const string ConsoleShiftHandoverTusPrefix = "/api/business-console/v1/files/shift-handover-attachments/tus/";
+    public const string ConsoleBarcodeTemplateAssetTusPrefix = "/api/business-console/v1/files/barcode-template-assets/tus/";
 
     public static string RewriteProxiedUrl(string url, string downstreamPrefix, string consolePrefix)
     {
@@ -340,5 +417,21 @@ public static class ShiftHandoverAttachments
     public const string FilePurpose = "shift-handover-photo";
     public const string OwnerService = "business-mes";
     public const string OwnerType = "shift-handover-attachment";
+    public const string TusUploadProtocol = "tus";
+}
+
+/// <summary>
+/// 条码模板文件门面的固定值（#3856）：用途、内容类型与 owner 的服务/类型由 BusinessGateway 决定，不从请求体读取。
+/// owner 标识**不在此列**：它取自请求中的模板编码（Trim 之后），依据是 ADR 0033——新建模板时服务端还没有这条记录，
+/// 编码只能由请求带进来；打印时 BarcodeLabel 按 Ordinal 比对文件 owner 与已存模板编码，绑错的文件在建批次时被拒。
+/// 取值与 FileStorage <c>PurposePolicies:barcode-label-template</c> 及 BarcodeLabel
+/// <c>HttpFileStorageLabelTemplateAssetAdapter</c> 的校验常量一致。
+/// </summary>
+public static class BarcodeTemplateAssets
+{
+    public const string FilePurpose = "barcode-label-template";
+    public const string OwnerService = "business-barcode-label";
+    public const string OwnerType = "label-template";
+    public const string ContentType = "application/vnd.nerv-iip.label-template+json";
     public const string TusUploadProtocol = "tus";
 }

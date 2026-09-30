@@ -2356,6 +2356,48 @@ public sealed record BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest
     string? Checksum = null,
     long? SizeBytes = null);
 
+/// <summary>
+/// 条码模板文件上传会话请求（#3856）。用途、内容类型、owner 的服务/类型与上传协议不收请求体：BusinessGateway 固定
+/// <c>barcode-label-template</c> 用途、<c>application/vnd.nerv-iip.label-template+json</c> 内容类型与
+/// <c>business-barcode-label / label-template</c>，使 <c>business.barcodes.templates.manage</c> 只能开出模板文件会话。
+/// owner 标识取自本请求的 <c>TemplateCode</c>（Trim 之后）：新建模板时服务端还没有记录，编码只能由请求带进来；
+/// 打印时 BarcodeLabel 按 Ordinal 比对文件 owner 与已存模板编码（<c>HttpFileStorageLabelTemplateAssetAdapter</c>），
+/// 绑错的文件在建批次时被拒。
+/// 该用途强制 SHA-256，所以 <c>Checksum</c> 必填（形如 <c>sha256:{64 位十六进制}</c>）。
+/// </summary>
+public sealed record BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string TemplateCode,
+    string FileName,
+    long ExpectedSizeBytes,
+    string Checksum);
+
+/// <summary>
+/// 条码模板文件上传会话。<c>UploadProtocol</c> 只有 <c>tus</c>；<c>UploadUrl</c> 已改写为
+/// BusinessGateway 受控 tus 路径，调用方拿不到 FileStorage 内部 URL。
+/// </summary>
+public sealed record BusinessConsoleBarcodeTemplateAssetUploadSessionResponse(
+    string UploadSessionId,
+    string FileId,
+    string UploadProtocol,
+    DateTimeOffset ExpiresAtUtc,
+    string UploadUrl,
+    IReadOnlyDictionary<string, string> UploadHeaders);
+
+/// <summary>条码模板文件上传 complete 请求；用途由门面固定补齐，校验值须与建会话时一致。</summary>
+public sealed record BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Checksum,
+    long SizeBytes);
+
+/// <summary>已上传的条码模板文件。<c>FileId</c> 由调用方原样写进模板，不上屏。</summary>
+public sealed record BusinessConsoleBarcodeTemplateAsset(
+    string FileId,
+    string FileName,
+    long SizeBytes);
+
 
 public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,

@@ -35,6 +35,23 @@ public interface IBusinessFileTransferClient
         HttpResponse targetResponse,
         CancellationToken cancellationToken);
 
+    Task ProxyBarcodeTemplateAssetTusHeadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken);
+
+    Task ProxyBarcodeTemplateAssetTusPatchAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// 兑换已授权凭据取字节。凭据由 <see cref="IBusinessFileStorageClient"/> 的 Authorize* 方法
     /// 在 JSON 面产出（用途已复核、URL 已校验），调用方全程拿不到 FileStorage 的 downloadGrantId——
@@ -78,6 +95,45 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         string environmentId,
         HttpResponse targetResponse,
         CancellationToken cancellationToken) =>
+        ProxyTusHeadAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, targetResponse, cancellationToken);
+
+    public Task ProxyShiftHandoverAttachmentTusPatchAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken) =>
+        ProxyTusPatchAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, sourceRequest, targetResponse, cancellationToken);
+
+    public Task ProxyBarcodeTemplateAssetTusHeadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken) =>
+        ProxyTusHeadAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, targetResponse, cancellationToken);
+
+    public Task ProxyBarcodeTemplateAssetTusPatchAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken) =>
+        ProxyTusPatchAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, sourceRequest, targetResponse, cancellationToken);
+
+    // 两个上传门面的 tus 跳形状相同：差别只在网关入口的权限口径，由端点把关。
+    private Task ProxyTusHeadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Head,
             FileStorageDownstreamAddress.Tus(uploadSessionId),
@@ -91,7 +147,7 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             },
             cancellationToken);
 
-    public Task ProxyShiftHandoverAttachmentTusPatchAsync(
+    private Task ProxyTusPatchAsync(
         string internalBearerToken,
         string uploadSessionId,
         string organizationId,
