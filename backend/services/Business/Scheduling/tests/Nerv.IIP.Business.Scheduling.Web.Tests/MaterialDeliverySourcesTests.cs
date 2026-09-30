@@ -55,6 +55,23 @@ public sealed class MaterialDeliverySourcesTests
         Assert.Equal(2, order.DueBounds.Count);
     }
 
+    [Fact]
+    public async Task Mixed_scheduled_and_unscheduled_remaining_operations_keep_whole_order_start_empty()
+    {
+        await using var db = CreateDb();
+        await Seed(db, "selected", Start, completedPredecessor: true, mixed: true);
+        var handler = new GetMaterialDeliverySourcesQueryHandler(db, new DetailSender(db), new MesSource(false, mixed: true),
+            new Engineering(), new MasterData());
+        var order = Assert.Single((await handler.Handle(Query("selected", "wo-1", "s-1"), default)).Items);
+        Assert.Equal("unscheduled", order.Status);
+        Assert.Null(order.ScheduledStartUtc);
+        Assert.Equal(2, order.Operations.Count);
+        Assert.All(order.Operations, operation => Assert.True(operation.RemainingMinutes > 0));
+        Assert.Null(Assert.Single(order.Operations, x => x.OperationId == "done").AssignmentStartUtc);
+        Assert.Equal(Start, Assert.Single(order.Operations, x => x.OperationId == "op-wo-1").AssignmentStartUtc);
+        Assert.NotNull(order.LatestStartUtc);
+    }
+
     [Theory]
     [InlineData(false, "unscheduled")]
     [InlineData(true, "problem-snapshot-missing")]
@@ -90,7 +107,7 @@ public sealed class MaterialDeliverySourcesTests
         new(db, new DetailSender(db), new MesSource(partial), new Engineering(), new MasterData());
 
     private static async Task Seed(ApplicationDbContext db, string planId, DateTimeOffset start,
-        bool missingSnapshot = false, bool unscheduled = false, bool completedPredecessor = false)
+        bool missingSnapshot = false, bool unscheduled = false, bool completedPredecessor = false, bool mixed = false)
     {
         var template = ShockAbsorberSchedulingFixture.CreateProblem();
         var op = template.Orders.First().Operations.First() with
@@ -105,7 +122,7 @@ public sealed class MaterialDeliverySourcesTests
             template.Orders.First() with { OrderId = "wo-2", Operations = [op with { OperationId = "op-wo-2", PredecessorOperationIds = [] }] }
         ] };
         var generated = new FiniteCapacityScheduler().Schedule(problem, planId, Start.AddHours(-2));
-        generated = generated with { Assignments = unscheduled ? [] : generated.Assignments.Select(x => x with
+        generated = generated with { Assignments = unscheduled ? [] : generated.Assignments.Where(x => !mixed || x.OperationId != "done").Select(x => x with
             { StartUtc = x.OrderId == "wo-1" ? start : start.AddHours(1), EndUtc = start.AddHours(2) }).ToArray() };
         db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan("org-001", "prod", SchedulePlanContractMapper.ToDomainSnapshot(generated)));
         if (!missingSnapshot) db.ScheduleProblems.Add(new ScheduleProblemSnapshot(problem.ProblemId, 1,
@@ -117,10 +134,11 @@ public sealed class MaterialDeliverySourcesTests
     private static ApplicationDbContext CreateDb() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
         .UseInMemoryDatabase("material-delivery-" + Guid.NewGuid()).Options, new DetailSender());
 
-    private sealed class MesSource(bool partial) : IMaterialDeliveryMesSourceProvider
+    private sealed class MesSource(bool partial, bool mixed = false) : IMaterialDeliveryMesSourceProvider
     {
         public Task<MaterialDeliveryExecutionOrder?> GetAsync(string org, string env, string id, CancellationToken ct) =>
             Task.FromResult<MaterialDeliveryExecutionOrder?>(new(id, id == "wo-1" ? "s-1" : "s-2", "pv", 10,
+                mixed ? [new("done", 1, "queued", Start, null, 0), new("op-" + id, 2, "queued", Start, null, 0)] :
                 partial ? [new("done", 1, "completed", Start, Start, 10), new("op-" + id, 2, "started", Start.AddHours(-1), Start, 4)] :
                 [new("op-" + id, 2, "queued", Start.AddHours(-4), null, 0)]));
     }

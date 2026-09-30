@@ -85,9 +85,9 @@ public sealed class GetMaterialDeliverySourcesQueryHandler(
                 items.Add(Missing(source, "remaining-route-missing"));
                 continue;
             }
-            var centers = new Dictionary<string, SchedulingProblemWorkCenterSnapshot>(StringComparer.Ordinal);
-            foreach (var code in routing.Operations.Select(x => x.WorkCenterCode).Distinct(StringComparer.Ordinal))
-                centers[code] = await masterData.GetWorkCenterAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken);
+            var centerSnapshots = await Task.WhenAll(routing.Operations.Select(x => x.WorkCenterCode).Distinct(StringComparer.Ordinal)
+                .Select(code => masterData.GetWorkCenterAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken)));
+            var centers = centerSnapshots.ToDictionary(x => x.Code, StringComparer.Ordinal);
             var inputOperations = problem!.Orders.Single(x => x.OrderId == source.WorkOrderId).Operations
                 .ToDictionary(x => x.OperationId, StringComparer.Ordinal);
             var operations = execution.Operations.Select(operation =>

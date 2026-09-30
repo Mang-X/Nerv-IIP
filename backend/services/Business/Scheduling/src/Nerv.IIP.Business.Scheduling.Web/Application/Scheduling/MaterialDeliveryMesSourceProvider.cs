@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
@@ -36,8 +37,8 @@ public sealed class HttpMaterialDeliveryMesSourceProvider(
         var data = detail.RootElement.GetProperty("data");
         var reference = data.GetProperty("sourcePlanReference");
         var suggestionId = reference.ValueKind == JsonValueKind.Object &&
-            reference.GetProperty("sourceSystem").GetString() == "DemandPlanning" &&
-            reference.GetProperty("sourceDocumentType").GetString() == "PlanningSuggestion"
+            reference.GetProperty("sourceSystem").GetString() == DemandPlanningSourceReferences.DemandPlanning &&
+            reference.GetProperty("sourceDocumentType").GetString() == DemandPlanningSourceReferences.PlanningSuggestion
             ? reference.GetProperty("sourceDocumentId").GetString() : null;
         var goodByOperation = new Dictionary<string, decimal>(StringComparer.Ordinal);
         for (var skip = 0; ; skip += 100)
