@@ -8,9 +8,9 @@ import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/useUrgencyDisplayMode'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
-import { NvButton, NvCheckbox, NvInput, Spinner, toast } from '@nerv-iip/ui'
+import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
 import { computed, ref, reactive, shallowRef } from 'vue'
-import { notifyOperationFailure } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const props = withDefaults(
   defineProps<{
@@ -134,7 +134,7 @@ async function save(candidate: BusinessConsoleMesWorkOrderItem) {
   try {
     await props.saveOrder(workOrderId, { ...values(candidate) })
     edits.delete(workOrderId)
-    toast.success('急单与优先级已保存')
+    notifySuccess('急单与优先级已保存')
   } catch (error) {
     notifyOperationFailure('保存失败', error, '急单与优先级保存失败，请稍后重试')
   } finally {
