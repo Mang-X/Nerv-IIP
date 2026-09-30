@@ -1,3 +1,10 @@
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+using Nerv.IIP.Contracts.DemandPlanning;
+using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.BusinessGateway.Web.Application.Auth;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +14,104 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessPlanningClientTests
 {
+    // 来源：#4096 冻结 C 结果，四日期/数量/来源/历史未知不能由代理重算或裁剪。
+    [Theory]
+    [InlineData(MaterialDeliveryStatus.Yellow)]
+    [InlineData(MaterialDeliveryStatus.Green)]
+    [InlineData(MaterialDeliveryStatus.Red)]
+    public async Task Material_deliveries_preserve_owner_facts_and_explicit_plan(MaterialDeliveryStatus status)
+    {
+        var date = new DateOnly(2026, 10, 9);
+        var utc = new DateTimeOffset(2026, 10, 9, 0, 0, 0, TimeSpan.Zero);
+        var net = new MaterialDeliveryNetRequirementSource(30, 2, 1, 1, 3, 0, 26, 30, .1m, .9m, "net", "pcs");
+        var suggestion = new MaterialDeliverySuggestionSource("suggestion-1", "Accepted", 30, 30, "shortage", "BusinessMES", "WorkOrder", "wo-1");
+        var demand = new MaterialDeliveryDemandSource("SO-1", "line-1", "sales-order", "assembly", "component", 30,
+            "demand-1", "sales-1", 2, date, "pv-1", "bom-1", "route-1");
+        var owner = new MaterialDeliveriesResponse("11111111-1111-1111-1111-111111111111", "plan /1", utc,
+            "independent-per-net-requirement", [new MaterialDeliveryResponse("net-1", "run-1", "planned-purchase",
+                "component", "pcs", "site-1", date, 26, date.AddDays(-4), utc.AddDays(-4), date.AddDays(-2), utc.AddDays(-2),
+                utc.AddDays(-1), utc, 20, 6, status, ["supply-insufficient"], net, [demand],
+                [new MaterialDeliverySupplySource("PO-1", "1", "site-1", "component", "pcs", date.AddDays(-2), 20,
+                    [new MaterialDeliveryPurchaseSource("PR-1", "1", 20, "suggestion-1")])],
+                [new MaterialDeliveryOrderSourceContract("suggestion-1", "wo-1", "scheduled", utc.AddDays(-1), utc,
+                    "demand-1", [new MaterialDeliveryOperationSourceContract("op-1", 1, "started", 4, 26, 90,
+                        utc.AddDays(-3), utc.AddDays(-1), "scheduled", [], "route-1")],
+                    [new MaterialDeliveryBoundContract("demand-1", utc.AddMinutes(90), 90, utc, ["op-1"])])], [suggestion])],
+            [new MaterialDeliveryUnknownRequirementSource("net-requirement-identity-unknown", "run-old", "planned-purchase",
+                "component", "pcs", "site-1", date, date.AddDays(-4), suggestion, net, [demand])]);
+        var handler = new StubHandler(JsonSerializer.Serialize(new { data = owner }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = BusinessGatewayTestHost.Lease(auth, services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(PlanningClient(handler));
+        }, BusinessGatewayTestHostProfile.ServiceBaseUrls);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/mrp-runs/11111111-1111-1111-1111-111111111111/material-deliveries?organizationId=org-001&environmentId=env-dev&planId=plan%20%2F1");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var actual = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"];
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(owner, options), actual), actual!.ToJsonString());
+        Assert.Equal("/api/business/v1/planning/mrp-runs/11111111-1111-1111-1111-111111111111/material-deliveries", handler.RequestUri!.AbsolutePath);
+        Assert.Equal("?organizationId=org-001&environmentId=env-dev&planId=plan%20%2F1", handler.RequestUri.Query);
+        Assert.All(auth.Requirements, x => Assert.Equal("org-001", x.OrganizationId));
+        Assert.Equal(9, auth.Requirements.Count);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
+    public async Task Material_deliveries_without_plan_do_not_require_or_select_scheduling_sources()
+    {
+        var handler = new StubHandler("""{"data":{"runId":"run-1","planId":null,"evaluatedAtUtc":"2026-10-01T00:00:00Z","supplyCoverageScope":"independent-per-net-requirement","items":[],"unknownRequirementSuggestions":[]}}""");
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly("business.planning.mrp.read", "business.planning.demands.read", "business.erp.procurement.read");
+        await using var lease = BusinessGatewayTestHost.Lease(auth, services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(PlanningClient(handler));
+        }, BusinessGatewayTestHostProfile.ServiceBaseUrls);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync("/api/business-console/v1/planning/mrp-runs/11111111-1111-1111-1111-111111111111/material-deliveries?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("?organizationId=org-001&environmentId=env-dev", handler.RequestUri!.Query);
+        Assert.Equal(3, auth.Requirements.Count);
+    }
+
+    // #4096：任何来源无权时不得查询已经聚合敏感来源的 owner。
+    [Theory]
+    [InlineData("business.planning.mrp.read")]
+    [InlineData("business.planning.demands.read")]
+    [InlineData("business.erp.procurement.read")]
+    [InlineData("business.scheduling.plans.read")]
+    [InlineData("business.mes.work-orders.read")]
+    [InlineData("business.mes.reporting.read")]
+    [InlineData("business.engineering.production-versions.read")]
+    [InlineData("business.engineering.routings.read")]
+    [InlineData("business.masterdata.resources.read")]
+    public async Task Material_deliveries_deny_each_missing_source_before_querying_owner(string deniedPermission)
+    {
+        var auth = new FakeBusinessGatewayAuthorizationClient(requirement => requirement.PermissionCode != deniedPermission);
+        var handler = new StubHandler("""{"data":null}""");
+        await using var lease = BusinessGatewayTestHost.Lease(auth, services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(PlanningClient(handler));
+        }, BusinessGatewayTestHostProfile.ServiceBaseUrls);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/mrp-runs/11111111-1111-1111-1111-111111111111/material-deliveries?organizationId=org-001&environmentId=env-dev&planId=plan-1");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(handler.RequestUri);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == deniedPermission &&
+            x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev");
+    }
+
     [Fact]
     public async Task List_demands_forwards_keyword_skip_and_take_to_downstream_query()
     {

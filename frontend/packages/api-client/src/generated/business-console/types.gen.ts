@@ -3960,6 +3960,158 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     reason: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfMaterialDeliveriesResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsDemandPlanningMaterialDeliveriesResponse | null;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveriesResponse = {
+    runId?: string;
+    planId?: string | null;
+    evaluatedAtUtc?: string;
+    supplyCoverageScope?: string;
+    items?: Array<NervIipContractsDemandPlanningMaterialDeliveryResponse>;
+    unknownRequirementSuggestions?: Array<NervIipContractsDemandPlanningMaterialDeliveryUnknownRequirementSource>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryResponse = {
+    netRequirementReference?: string;
+    runId?: string;
+    suggestionType?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    requiredDate?: string;
+    netRequirementQuantity?: number;
+    latestProcurementDate?: string;
+    latestProcurementUtc?: string;
+    expectedArrivalDate?: string | null;
+    expectedArrivalUtc?: string | null;
+    expectedStartUtc?: string | null;
+    latestStartUtc?: string | null;
+    coveredQuantity?: number;
+    uncoveredQuantity?: number;
+    status?: NervIipContractsDemandPlanningMaterialDeliveryStatus;
+    reasons?: Array<string>;
+    netRequirementSource?: NervIipContractsDemandPlanningMaterialDeliveryNetRequirementSource;
+    demandSources?: Array<NervIipContractsDemandPlanningMaterialDeliveryDemandSource>;
+    supplySources?: Array<NervIipContractsDemandPlanningMaterialDeliverySupplySource>;
+    schedulingSources?: Array<NervIipContractsSchedulingMaterialDeliveryOrderSourceContract>;
+    suggestionSources?: Array<NervIipContractsDemandPlanningMaterialDeliverySuggestionSource>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryStatus = 'yellow' | 'green' | 'red';
+
+export type NervIipContractsDemandPlanningMaterialDeliveryNetRequirementSource = {
+    grossDemandQuantity?: number;
+    onHandQuantity?: number;
+    reservedQuantity?: number;
+    availableToNetQuantity?: number;
+    scheduledReceiptQuantity?: number;
+    safetyStockQuantity?: number;
+    netRequirementQuantity?: number;
+    plannedQuantity?: number;
+    scrapRate?: number;
+    yieldRate?: number;
+    formula?: string;
+    uomConversionSummary?: string;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryDemandSource = {
+    sourceReference?: string;
+    sourceLineReference?: string | null;
+    sourceType?: string;
+    parentSkuCode?: string;
+    componentSkuCode?: string | null;
+    grossDemandQuantity?: number;
+    demandSourceId?: string | null;
+    sourceDocumentId?: string | null;
+    sourceVersion?: number | null;
+    dueDate?: string | null;
+    productionVersionReference?: string | null;
+    manufacturingBomReference?: string | null;
+    routingReference?: string | null;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliverySupplySource = {
+    purchaseOrderNo?: string;
+    lineNo?: string;
+    siteCode?: string;
+    skuCode?: string;
+    uomCode?: string;
+    promisedDate?: string;
+    openQuantity?: number;
+    sources?: Array<NervIipContractsDemandPlanningMaterialDeliveryPurchaseSource>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryPurchaseSource = {
+    purchaseRequisitionNo?: string;
+    purchaseRequisitionLineNo?: string;
+    quantity?: number;
+    suggestionId?: string | null;
+};
+
+export type NervIipContractsSchedulingMaterialDeliveryOrderSourceContract = {
+    suggestionId?: string;
+    workOrderId?: string | null;
+    status?: string;
+    scheduledStartUtc?: string | null;
+    latestStartUtc?: string | null;
+    tightestDueSourceReference?: string | null;
+    operations?: Array<NervIipContractsSchedulingMaterialDeliveryOperationSourceContract>;
+    dueBounds?: Array<NervIipContractsSchedulingMaterialDeliveryBoundContract>;
+};
+
+export type NervIipContractsSchedulingMaterialDeliveryOperationSourceContract = {
+    operationId?: string;
+    operationSequence?: number;
+    executionStatus?: string;
+    netGoodQuantity?: number;
+    remainingQuantity?: number;
+    remainingMinutes?: number;
+    earliestStartUtc?: string;
+    assignmentStartUtc?: string | null;
+    assignmentStatus?: string;
+    predecessorOperationIds?: Array<string>;
+    routingVersionId?: string;
+};
+
+export type NervIipContractsSchedulingMaterialDeliveryBoundContract = {
+    sourceReference?: string;
+    dueUtc?: string;
+    remainingMinutes?: number;
+    latestStartUtc?: string;
+    criticalPathOperationIds?: Array<string>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliverySuggestionSource = {
+    suggestionId?: string;
+    status?: string;
+    quantity?: number;
+    plannedQuantity?: number;
+    reasonCode?: string;
+    downstreamService?: string | null;
+    downstreamDocumentType?: string | null;
+    downstreamDocumentId?: string | null;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryUnknownRequirementSource = {
+    reason?: string;
+    runId?: string;
+    suggestionType?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    requiredDate?: string;
+    releaseDate?: string;
+    suggestionSource?: NervIipContractsDemandPlanningMaterialDeliverySuggestionSource;
+    rawNetRequirementSource?: NervIipContractsDemandPlanningMaterialDeliveryNetRequirementSource;
+    demandSources?: Array<NervIipContractsDemandPlanningMaterialDeliveryDemandSource>;
+};
+
+export type NervIipBusinessGatewayWebEndpointsPlanningBusinessConsoleMaterialDeliveriesRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsNotificationNotificationMessageListResponse | null;
 };
@@ -15804,6 +15956,45 @@ export type RejectBusinessConsolePlanningSuggestionResponses = {
 };
 
 export type RejectBusinessConsolePlanningSuggestionResponse = RejectBusinessConsolePlanningSuggestionResponses[keyof RejectBusinessConsolePlanningSuggestionResponses];
+
+export type GetBusinessConsolePlanningMaterialDeliveriesData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        planId?: string | null;
+    };
+    url: '/api/business-console/v1/planning/mrp-runs/{runId}/material-deliveries';
+};
+
+export type GetBusinessConsolePlanningMaterialDeliveriesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsolePlanningMaterialDeliveriesError = GetBusinessConsolePlanningMaterialDeliveriesErrors[keyof GetBusinessConsolePlanningMaterialDeliveriesErrors];
+
+export type GetBusinessConsolePlanningMaterialDeliveriesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMaterialDeliveriesResponse;
+};
+
+export type GetBusinessConsolePlanningMaterialDeliveriesResponse = GetBusinessConsolePlanningMaterialDeliveriesResponses[keyof GetBusinessConsolePlanningMaterialDeliveriesResponses];
 
 export type ListBusinessConsoleNotificationMessagesData = {
     body?: never;
