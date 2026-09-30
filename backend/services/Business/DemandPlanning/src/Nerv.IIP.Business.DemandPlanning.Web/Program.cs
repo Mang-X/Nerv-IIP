@@ -65,6 +65,10 @@ try
     }).UseHttpClientMetrics();
     builder.Services.AddHttpClient("planning-mes-command", client => client.BaseAddress = mesBaseAddress).UseHttpClientMetrics();
     builder.Services.AddScoped<IPlanningSuggestionDownstreamBridge, HttpPlanningSuggestionDownstreamBridge>();
+    var schedulingBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
+    builder.Services.AddHttpClient("material-delivery-erp", client => client.BaseAddress = erpBaseAddress).UseHttpClientMetrics();
+    builder.Services.AddHttpClient("material-delivery-scheduling", client => client.BaseAddress = schedulingBaseAddress).UseHttpClientMetrics();
+    builder.Services.AddScoped<IMaterialDeliverySourcesClient, HttpMaterialDeliverySourcesClient>();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services

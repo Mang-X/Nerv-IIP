@@ -897,6 +897,10 @@ var businessScheduling = WithNervIipTelemetry(WithAppHostEnvironment(builder.Add
     .WaitFor(businessMes)
     .WaitFor(businessIndustrialTelemetry)
     .WaitFor(businessMaintenance);
+businessDemandPlanning = businessDemandPlanning
+    .WithEnvironment("Scheduling__BaseUrl", businessScheduling.GetEndpoint("http"))
+    .WithReference(businessScheduling);
+
 businessScheduling = businessScheduling.WaitFor(fileStorage);
 businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
