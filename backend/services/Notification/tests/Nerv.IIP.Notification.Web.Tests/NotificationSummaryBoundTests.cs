@@ -3,9 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Quality;
@@ -360,8 +362,8 @@ public sealed class NotificationSummaryBoundTests
         Assert.All(
             resourceIds.Skip(NotificationSummaryList.MaxListedItems),
             id => Assert.DoesNotContain(id, summary, StringComparison.Ordinal));
-        Assert.Contains($"{resourceIds.Length - NotificationSummaryList.MaxListedItems} more", summary, StringComparison.Ordinal);
-        Assert.Contains($"({resourceIds.Length} total)", summary, StringComparison.Ordinal);
+        Assert.Contains($"另有 {resourceIds.Length - NotificationSummaryList.MaxListedItems} 项", summary, StringComparison.Ordinal);
+        Assert.Contains($"共 {resourceIds.Length} 项", summary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -603,6 +605,12 @@ public sealed class NotificationSummaryBoundTests
                 ThresholdValue: 80m,
                 UnitCode: "C"));
 
+    private sealed class PlannerDirectory : IProductionPlannerMemberDirectory
+    {
+        public Task<IReadOnlyList<string>> ListMemberIdsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<string>>(["planner-a"]);
+    }
+
     private sealed class EmptyModelDbContext : DbContext
     {
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
@@ -630,6 +638,11 @@ public sealed class NotificationSummaryBoundTests
                 }
 
                 configuration.AddInMemoryCollection(mergedSettings);
+            });
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IProductionPlannerMemberDirectory>();
+                services.AddSingleton<IProductionPlannerMemberDirectory>(new PlannerDirectory());
             });
         }
     }
