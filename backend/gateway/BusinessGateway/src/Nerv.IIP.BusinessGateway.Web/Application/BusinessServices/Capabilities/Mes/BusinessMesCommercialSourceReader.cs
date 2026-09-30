@@ -29,8 +29,14 @@ public sealed class BusinessMesCommercialSourceReader(
             return referencesByOrder.ToDictionary(x => x.WorkOrderId,
                 _ => new BusinessConsoleMesCommercialSourceFacts(BusinessConsoleMesCommercialSourceStatus.Forbidden, []), StringComparer.Ordinal);
 
-        var ordersByReference = new Dictionary<string, BusinessConsoleMesSalesOrderLink[]>(StringComparer.Ordinal);
-        foreach (var reference in referencesByOrder.SelectMany(x => x.References).Distinct(StringComparer.Ordinal))
+        var sourceOrders = await Task.WhenAll(referencesByOrder.SelectMany(x => x.References)
+            .Distinct(StringComparer.Ordinal).Select(ReadReferenceAsync));
+        var ordersByReference = sourceOrders.ToDictionary(x => x.Reference, x => x.Orders, StringComparer.Ordinal);
+        return referencesByOrder.ToDictionary(x => x.WorkOrderId,
+            x => new BusinessConsoleMesCommercialSourceFacts(BusinessConsoleMesCommercialSourceStatus.Available,
+                x.References.SelectMany(reference => ordersByReference[reference]).Distinct().ToArray()), StringComparer.Ordinal);
+
+        async Task<(string Reference, BusinessConsoleMesSalesOrderLink[] Orders)> ReadReferenceAsync(string reference)
         {
             var orders = new List<BusinessConsoleMesSalesOrderLink>();
             var skip = 0;
@@ -46,11 +52,8 @@ public sealed class BusinessMesCommercialSourceReader(
                 if (page.Items.Count < take) break;
                 skip += page.Items.Count;
             }
-            ordersByReference.Add(reference, orders.Distinct().ToArray());
+            return (reference, orders.Distinct().ToArray());
         }
-        return referencesByOrder.ToDictionary(x => x.WorkOrderId,
-            x => new BusinessConsoleMesCommercialSourceFacts(BusinessConsoleMesCommercialSourceStatus.Available,
-                x.References.SelectMany(reference => ordersByReference[reference]).Distinct().ToArray()), StringComparer.Ordinal);
     }
 
     private static string[] References(BusinessConsoleMesSourcePlanReference? source) =>

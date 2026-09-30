@@ -128,8 +128,8 @@ public sealed class MesListStatusContractTests
     /// 本票聚合之外的值域显式登记表：值域 → 为什么不归本票管。
     ///
     /// <para>这是判据的一部分，不是逃生口 —— 表里没有的值域既不是本票状态、又没写明理由，直接判红。
-    /// 实测面上共 15 个唯一值域：本票 6 个（覆盖 7 个读面聚合 —— 工序任务聚合被 4 个读面共用、
-    /// 停机与产能共用一个 2 值域）+ 下表 9 个，逐条写明理由。键为「排好序、用空格分隔」的值域串。</para>
+    /// 实测面上共 16 个唯一值域：本票 6 个（覆盖 7 个读面聚合 —— 工序任务聚合被 4 个读面共用、
+    /// 停机与产能共用一个 2 值域）+ 下表 10 个，逐条写明理由。键为「排好序、用空格分隔」的值域串。</para>
     ///
     /// <para><b>为什么必须逐条写、不能用「属性名不像 Status」筛</b>：那正是实测出的旁路 ——
     /// 属性改名 <c>state</c> / <c>phase</c> 即绕过。名字能改，值域不能。
@@ -158,6 +158,8 @@ public sealed class MesListStatusContractTests
                     "historicalTimezoneMissing", "nonPositiveTotalOutput", "workCenterMissing",
                 ],
                 "生产统计降级原因（DegradedReason），是原因码不是状态值域。"),
+            Exempt(["available", "forbidden"],
+                "工单商业来源读取状态（BusinessConsoleMesCommercialSourceStatus），表达来源读取权限与事实可用性，不是 MES 聚合生命周期状态。"),
             Exempt(["GET"], "工序动作回执里的 HTTP 方法字面量。"),
             Exempt(["confirmed"], "工序动作回执的确认位字面量。"),
             Exempt(["accepted"], "工单转序回执的受理位字面量。"));

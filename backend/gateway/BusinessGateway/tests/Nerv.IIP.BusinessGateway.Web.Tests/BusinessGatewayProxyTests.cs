@@ -81,6 +81,7 @@ public sealed class BusinessGatewayProxyTests
         {
             Assert.Equal(new[] { "SO-A", "SO-B" }, orders.Select(x => x.GetProperty("salesOrderNo").GetString()));
             Assert.Equal(new[] { "CUST-A", "CUST-B" }, orders.Select(x => x.GetProperty("customerCode").GetString()));
+            Assert.All(orders, order => Assert.Equal("1", order.GetProperty("sourceLineReference").GetString()));
             Assert.Equal(4, handler.Calls);
         }
         else Assert.Equal(0, handler.Calls);
