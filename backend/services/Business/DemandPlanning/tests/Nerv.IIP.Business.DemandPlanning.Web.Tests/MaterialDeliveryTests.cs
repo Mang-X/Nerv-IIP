@@ -55,7 +55,7 @@ public sealed class MaterialDeliveryTests
             DemandSource.CreateSalesOrderDemand("org", "env", "SO-ID", "SO", "20", "C", "SKU", "EA", "SITE", 7, due.AddDays(-1), 1),
             DemandSource.CreateSalesOrderDemand("other", "env", "SO-ID", "SO", "20", "C", "SKU", "EA", "SITE", 7, due.AddDays(-5), 1));
         await db.SaveChangesAsync();
-        var upstream = new Sources(suggestion.Id.ToString());
+        var upstream = new Sources();
         var handler = new GetMaterialDeliveriesQueryHandler(db, upstream, new FixedTime(Latest.AddDays(-2)));
         var result = await handler.Handle(new("org", "env", run, "PLAN"), default);
         var row = Assert.Single(result.Items);
@@ -116,30 +116,89 @@ public sealed class MaterialDeliveryTests
         Assert.False(parent.IsAssemblyParentOf(legacy));
     }
 
+    [Fact]
+    public async Task Lot_max_twelve_split_keeps_one_thirty_unit_requirement_and_all_three_suggestions()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(x => x.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(x => x.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var run = new MrpRunId(Guid.NewGuid());
+        var due = new DateOnly(2026, 10, 12);
+        var input = new MrpCalculationInput("org", "env", due.AddDays(-5), due.AddDays(5),
+            [new("SO", "SKU", "EA", "SITE", 30, due, "sales-order", "10")], [],
+            [new("SKU", "PV", "MBOM", "ROUTE", null, 12, null)], [], [], [], []);
+        var calculated = MrpCalculator.Calculate(input).Where(x => x.SuggestionType == "planned-work-order").ToArray();
+        Assert.Equal(new decimal[] { 12, 12, 6 }, calculated.Select(x => x.Quantity));
+        foreach (var batch in calculated)
+        {
+            var suggestion = PlanningSuggestion.Create("org", "env", run, batch.SuggestionType, batch.SkuCode, batch.UomCode,
+                batch.SiteCode, batch.Quantity, batch.RequiredDate, batch.ReleaseDate, batch.ReasonCode);
+            var net = batch.NetRequirementExplanation;
+            suggestion.SetNetRequirementExplanation(net.GrossDemandQuantity, net.OnHandQuantity, net.ReservedQuantity,
+                net.AvailableToNetQuantity, net.ScheduledReceiptQuantity, net.SafetyStockQuantity, net.NetRequirementQuantity,
+                net.PlannedQuantity, net.ScrapRate, net.YieldRate, net.PrimarySourceType, net.Formula, null);
+            foreach (var link in batch.PeggingLinks)
+                suggestion.AddPeggingLink(link.PeggingType, link.DemandSourceReference, link.ParentSkuCode,
+                    link.ComponentSkuCode, link.Quantity, link.ProductionVersionReference, link.ManufacturingBomReference,
+                    link.RoutingReference, link.SourceType, link.GrossDemandQuantity, link.SourceLineReference);
+            db.PlanningSuggestions.Add(suggestion);
+        }
+        db.DemandSources.Add(DemandSource.CreateSalesOrderDemand("org", "env", "SO-ID", "SO", "10", "C", "SKU", "EA", "SITE", 30, due, 1));
+        await db.SaveChangesAsync();
+        var upstream = new Sources();
+        var handler = new GetMaterialDeliveriesQueryHandler(db, upstream, new FixedTime(Latest.AddDays(-2)));
+        var result = await handler.Handle(new("org", "env", run, null), default);
+        var row = Assert.Single(result.Items);
+        Assert.Equal(30, row.NetRequirementQuantity);
+        Assert.Equal(30, row.NetRequirementSource.PlannedQuantity);
+        Assert.Single(row.DemandSources);
+        Assert.Equal(3, row.SuggestionSources.Count);
+        Assert.Equal(new decimal[] { 6, 12, 12 }, row.SuggestionSources.Select(x => x.PlannedQuantity).Order());
+        Assert.Equal(db.PlanningSuggestions.Select(x => x.Id.ToString()).Order(), row.SuggestionSources.Select(x => x.SuggestionId).Order());
+        var index = 0;
+        foreach (var batch in db.PlanningSuggestions)
+            batch.Accept("BusinessMes", "WorkOrder", $"WO-{++index}");
+        await db.SaveChangesAsync();
+        upstream.Supply = [new("PO", "10", "SITE", "SKU", "EA", new(2026, 10, 9), 30, [])];
+        var scheduled = Assert.Single((await handler.Handle(new("org", "env", run, "PLAN"), default)).Items);
+        Assert.Equal(3, scheduled.SchedulingSources.Count);
+        Assert.Equal(3, scheduled.SchedulingSources.Select(x => x.WorkOrderId).Distinct().Count());
+        Assert.Equal(scheduled.SuggestionSources.Select(x => x.SuggestionId).Order(), scheduled.SchedulingSources.Select(x => x.SuggestionId).Order());
+        Assert.Equal(30, scheduled.CoveredQuantity);
+        Assert.Equal("Green", scheduled.Status.ToString());
+    }
+
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class Sources(string suggestionId) : IMaterialDeliverySourcesClient
+    private sealed class Sources : IMaterialDeliverySourcesClient
     {
         public IReadOnlyCollection<MaterialDeliverySupplySource> Supply { get; set; } =
         [new("PO-1", "10", "SITE", "SKU", "EA", new(2026, 10, 8), 4, []),
          new("PO-2", "20", "SITE", "SKU", "EA", new(2026, 10, 9), 6, []),
          new("WRONG-UOM", "10", "SITE", "SKU", "BOX", new(2026, 10, 8), 100, []),
-         new("WRONG-SITE", "10", "OTHER", "SKU", "EA", new(2026, 10, 8), 100, [])];
+         new("WRONG-SITE", "10", "OTHER", "SKU", "EA", new(2026, 10, 8), 100, []),
+         new("WRONG-SKU", "10", "SITE", "OTHER-SKU", "EA", new(2026, 10, 8), 100, [])];
         public IReadOnlyCollection<MaterialDeliverySourceSelection> Selections { get; private set; } = [];
         public Task<IReadOnlyCollection<MaterialDeliverySupplySource>> GetSupplyAsync(string org, string env, CancellationToken ct) => Task.FromResult(Supply);
         public Task<MaterialDeliverySourcesResponse> GetSchedulingAsync(string org, string env, string plan,
             IReadOnlyCollection<MaterialDeliverySourceSelection> sources, CancellationToken ct)
         {
             Selections = sources;
-            var bounds = sources.Single().DueSources.Select(x => new MaterialDeliveryBoundContract(x.SourceReference, x.DueUtc, 1440,
-                x.DueUtc.AddDays(-1), ["OP"])).ToArray();
-            return Task.FromResult(new MaterialDeliverySourcesResponse(plan,
-                [new(suggestionId, "WO", "scheduled", Latest.AddDays(-1), bounds.Min(x => x.LatestStartUtc),
-                    bounds.MinBy(x => x.LatestStartUtc)!.SourceReference,
-                    [new("OP", 10, "created", 0, 20, 1440, Latest.AddDays(-2), Latest.AddDays(-1), "scheduled", [], "ROUTE")], bounds)]));
+            var items = sources.Select(source =>
+            {
+                var bounds = source.DueSources.Select(x => new MaterialDeliveryBoundContract(x.SourceReference, x.DueUtc, 1440,
+                    x.DueUtc.AddDays(-1), ["OP"])).ToArray();
+                return new MaterialDeliveryOrderSourceContract(source.SuggestionId, source.WorkOrderId, "scheduled", Latest.AddDays(-1),
+                    bounds.Min(x => x.LatestStartUtc), bounds.MinBy(x => x.LatestStartUtc)!.SourceReference,
+                    [new("OP", 10, "created", 0, 20, 1440, Latest.AddDays(-2), Latest.AddDays(-1), "scheduled", [], "ROUTE")], bounds);
+            }).ToArray();
+            return Task.FromResult(new MaterialDeliverySourcesResponse(plan, items));
         }
     }
 }

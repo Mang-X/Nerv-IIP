@@ -32,14 +32,17 @@ public sealed record MaterialDeliveryNetRequirementSource(decimal GrossDemandQua
     decimal ReservedQuantity, decimal AvailableToNetQuantity, decimal ScheduledReceiptQuantity,
     decimal SafetyStockQuantity, decimal NetRequirementQuantity, decimal PlannedQuantity,
     decimal ScrapRate, decimal YieldRate, string Formula, string UomConversionSummary);
-public sealed record MaterialDeliveryResponse(string SuggestionId, string RunId, string SuggestionType,
-    string SuggestionStatus, string SkuCode, string UomCode, string SiteCode, decimal NetRequirementQuantity,
+public sealed record MaterialDeliverySuggestionSource(string SuggestionId, string Status, decimal Quantity,
+    decimal PlannedQuantity, string ReasonCode, string? DownstreamService, string? DownstreamDocumentType, string? DownstreamDocumentId);
+public sealed record MaterialDeliveryResponse(string NetRequirementReference, string RunId, string SuggestionType,
+    string SkuCode, string UomCode, string SiteCode, DateOnly RequiredDate, decimal NetRequirementQuantity,
     DateOnly LatestProcurementDate, DateTimeOffset LatestProcurementUtc, DateOnly? ExpectedArrivalDate,
     DateTimeOffset? ExpectedArrivalUtc, DateTimeOffset? ExpectedStartUtc, DateTimeOffset? LatestStartUtc,
     decimal CoveredQuantity, decimal UncoveredQuantity, MaterialDeliveryStatus Status, IReadOnlyCollection<string> Reasons,
     MaterialDeliveryNetRequirementSource NetRequirementSource, IReadOnlyCollection<MaterialDeliveryDemandSource> DemandSources,
     IReadOnlyCollection<MaterialDeliverySupplySource> SupplySources,
-    IReadOnlyCollection<MaterialDeliveryOrderSourceContract> SchedulingSources);
+    IReadOnlyCollection<MaterialDeliveryOrderSourceContract> SchedulingSources,
+    IReadOnlyCollection<MaterialDeliverySuggestionSource> SuggestionSources);
 
 public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbContext,
     IMaterialDeliverySourcesClient sourcesClient, TimeProvider timeProvider)
@@ -49,7 +52,7 @@ public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbCon
     {
         var suggestions = await dbContext.PlanningSuggestions.AsNoTracking().Include(x => x.PeggingLinks)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.MrpRunId == request.RunId)
-            .OrderBy(x => x.RequiredDate).ThenBy(x => x.SkuCode).ThenBy(x => x.Id).ToListAsync(cancellationToken);
+            .OrderBy(x => x.RequiredDate).ThenBy(x => x.SkuCode).ThenBy(x => x.SiteCode).ThenBy(x => x.UomCode).ThenBy(x => x.PrimarySourceType).ToListAsync(cancellationToken);
         var demands = await dbContext.DemandSources.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .ToListAsync(cancellationToken);
@@ -68,7 +71,7 @@ public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbCon
                     demand?.Id.ToString(), demand?.SourceDocumentId, demand?.SourceVersion, demand?.DueDate,
                     link.ProductionVersionReference, link.ManufacturingBomReference, link.RoutingReference);
             }).ToArray());
-        var selections = suggestions.Where(x => x.SuggestionType == "planned-work-order")
+        var selections = suggestions.Where(x => x.SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder)
             .Select(x => new MaterialDeliverySourceSelection(x.Id.ToString(),
                 x.AcceptedDownstreamService == DemandPlanningDownstreamReferences.BusinessMes &&
                 x.AcceptedDownstreamDocumentType == DemandPlanningDownstreamReferences.WorkOrder ? x.AcceptedDownstreamDocumentId : null,
@@ -76,18 +79,30 @@ public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbCon
                     .Select(d => new MaterialDeliveryDueSourceContract(SourceKey(d), MaterialDeliveryProjection.ToUtc(d.DueDate!.Value)))
                     .Distinct().ToArray()))
             .Where(x => x.DueSources.Count > 0).ToArray();
-        var scheduling = request.PlanId is null || selections.Length == 0 ? [] :
-            (await sourcesClient.GetSchedulingAsync(request.OrganizationId, request.EnvironmentId, request.PlanId, selections, cancellationToken)).Items;
-        var supply = suggestions.Any(x => x.NetRequirementQuantity > 0) ?
-            await sourcesClient.GetSupplyAsync(request.OrganizationId, request.EnvironmentId, cancellationToken) : [];
+        var schedulingTask = request.PlanId is null || selections.Length == 0
+            ? Task.FromResult(new MaterialDeliverySourcesResponse(request.PlanId ?? string.Empty, []))
+            : sourcesClient.GetSchedulingAsync(request.OrganizationId, request.EnvironmentId, request.PlanId, selections, cancellationToken);
+        var supplyTask = suggestions.Any(x => x.NetRequirementQuantity > 0)
+            ? sourcesClient.GetSupplyAsync(request.OrganizationId, request.EnvironmentId, cancellationToken)
+            : Task.FromResult<IReadOnlyCollection<MaterialDeliverySupplySource>>([]);
+        await Task.WhenAll(schedulingTask, supplyTask);
+        var scheduling = (await schedulingTask).Items;
+        var supply = await supplyTask;
         var now = timeProvider.GetUtcNow();
-        var rows = suggestions.Where(x => x.NetRequirementQuantity > 0 && x.SuggestionType is "planned-work-order" or "planned-purchase")
-            .Select(x =>
+        // MRP 在 RequirementBucket(SKU/UOM/site/requiredDate) 内净算后拆批；每批共享净缺口与 pegging。
+        // PrimarySourceType 区分同日正常需求与随后执行的储备补货，不以可被拒绝动作改写的 ReasonCode 作为身份。
+        var rows = suggestions.Where(x => x.NetRequirementQuantity > 0 &&
+                x.SuggestionType is DemandPlanningSuggestionTypes.PlannedWorkOrder or DemandPlanningSuggestionTypes.PlannedPurchase)
+            .GroupBy(x => new { x.SkuCode, x.UomCode, x.SiteCode, x.RequiredDate, x.SuggestionType, x.PrimarySourceType })
+            .Select(group =>
             {
-                var productionSuggestions = x.SuggestionType == "planned-work-order" ? [x] : suggestions.Where(parent => parent.IsAssemblyParentOf(x)).ToArray();
+                var batches = group.OrderBy(x => x.Id.ToString(), StringComparer.Ordinal).ToArray();
+                var productionSuggestions = group.Key.SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder ? batches :
+                    suggestions.Where(parent => batches.Any(batch => parent.IsAssemblyParentOf(batch))).ToArray();
                 var productionIds = productionSuggestions.Select(parent => parent.Id.ToString()).ToHashSet(StringComparer.Ordinal);
-                return MaterialDeliveryProjection.Create(x, demandSources[x.Id], supply,
-                    scheduling.Where(s => productionIds.Contains(s.SuggestionId)).ToArray(),
+                return MaterialDeliveryProjection.Create(batches,
+                    batches.SelectMany(x => demandSources[x.Id]).Distinct().ToArray(), supply,
+                    scheduling.Where(source => productionIds.Contains(source.SuggestionId)).ToArray(),
                     productionSuggestions.Length, request.PlanId, now, productionSuggestions.All(parent =>
                         demandSources[parent.Id].Count > 0 && demandSources[parent.Id].All(d => d.DueDate.HasValue)));
             }).ToArray();
@@ -112,10 +127,11 @@ public static class MaterialDeliveryProjection
         return MaterialDeliveryStatus.Yellow;
     }
 
-    public static MaterialDeliveryResponse Create(PlanningSuggestion suggestion,
+    public static MaterialDeliveryResponse Create(IReadOnlyCollection<PlanningSuggestion> suggestions,
         IReadOnlyCollection<MaterialDeliveryDemandSource> demands, IReadOnlyCollection<MaterialDeliverySupplySource> supply,
         IReadOnlyCollection<MaterialDeliveryOrderSourceContract> scheduling, int productionSourceCount, string? planId, DateTimeOffset now, bool productionDueSourcesComplete)
     {
+        var suggestion = suggestions.First();
         var lines = supply.Where(x => x.SiteCode == suggestion.SiteCode && x.SkuCode == suggestion.SkuCode && x.UomCode == suggestion.UomCode)
             .OrderBy(x => x.PromisedDate).ThenBy(x => x.PurchaseOrderNo, StringComparer.Ordinal).ThenBy(x => x.LineNo, StringComparer.Ordinal).ToArray();
         var accumulated = 0m;
@@ -150,12 +166,14 @@ public static class MaterialDeliveryProjection
         }
         var net = new MaterialDeliveryNetRequirementSource(suggestion.GrossDemandQuantity, suggestion.OnHandQuantity,
             suggestion.ReservedQuantity, suggestion.AvailableToNetQuantity, suggestion.ScheduledReceiptQuantity,
-            suggestion.SafetyStockQuantity, suggestion.NetRequirementQuantity, suggestion.PlannedQuantity,
+            suggestion.SafetyStockQuantity, suggestion.NetRequirementQuantity, suggestions.Sum(x => x.PlannedQuantity),
             suggestion.ScrapRate, suggestion.YieldRate, suggestion.Formula, suggestion.UomConversionSummary);
-        return new(suggestion.Id.ToString(), suggestion.MrpRunId.ToString(), suggestion.SuggestionType, suggestion.Status.ToString(),
-            suggestion.SkuCode, suggestion.UomCode, suggestion.SiteCode, suggestion.NetRequirementQuantity,
+        return new(suggestion.Id.ToString(), suggestion.MrpRunId.ToString(), suggestion.SuggestionType,
+            suggestion.SkuCode, suggestion.UomCode, suggestion.SiteCode, suggestion.RequiredDate, suggestion.NetRequirementQuantity,
             suggestion.ReleaseDate, ToUtc(suggestion.ReleaseDate), arrivalDate, arrival, start, latest, covered,
             suggestion.NetRequirementQuantity - covered, EvaluateStatus(now, latest, arrival, start, reasons.Count == 0),
-            reasons.Distinct(StringComparer.Ordinal).ToArray(), net, demands, lines, scheduling);
+            reasons.Distinct(StringComparer.Ordinal).ToArray(), net, demands, lines, scheduling,
+            suggestions.Select(x => new MaterialDeliverySuggestionSource(x.Id.ToString(), x.Status.ToString(), x.Quantity,
+                x.PlannedQuantity, x.ReasonCode, x.AcceptedDownstreamService, x.AcceptedDownstreamDocumentType, x.AcceptedDownstreamDocumentId)).ToArray());
     }
 }
