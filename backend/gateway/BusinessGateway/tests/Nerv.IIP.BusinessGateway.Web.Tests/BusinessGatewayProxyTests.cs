@@ -31,6 +31,82 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayProxyTests
 {
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    public async Task Mes_commercial_sources_use_exact_sales_demands_and_respect_source_permission(bool detail, bool canRead, bool hasSource)
+    {
+        var source = hasSource ? new BusinessConsoleMesSourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-A", "SO-A", ["SO-A", "SO-B"]) : null;
+        var mes = new RecordingMesClient
+        {
+            WorkOrders = [new("WO-A", "SKU-A", null, 10m, 10, DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "started", [], CompletedQuantity: 3.25m, SourcePlanReference: source)],
+            WorkOrderDetail = new("WO-A", "SKU-A", null, 10m, "started", "Ready", [], [], SourcePlanReference: source, CompletedQuantity: 3.25m),
+        };
+        var auth = new FakeBusinessGatewayAuthorizationClient(
+            requirement => requirement.PermissionCode != BusinessGatewayPermissions.PlanningDemandsRead || canRead,
+            scopeGrants: [new AuthorizationScopeGrant("role", "admin", "organization", "org-001", [BusinessGatewayPermissions.MesWorkOrdersRead], OrganizationWide: true)]);
+        using var handler = new CommercialDemandHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://planning.test") };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(new HttpBusinessPlanningClient(http));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders" + (detail ? "/WO-A" : "") + "?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var row = detail ? json.RootElement.GetProperty("data") : json.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal(3.25m, row.GetProperty("completedQuantity").GetDecimal());
+        var facts = row.GetProperty("commercialSourceFacts");
+        if (!hasSource)
+        {
+            Assert.Equal(JsonValueKind.Null, facts.ValueKind);
+            Assert.Equal(0, handler.Calls);
+            return;
+        }
+        Assert.Equal(canRead ? "available" : "forbidden", facts.GetProperty("status").GetString());
+        var orders = facts.GetProperty("salesOrders").EnumerateArray().ToArray();
+        Assert.Equal(canRead ? 2 : 0, orders.Length);
+        if (canRead)
+        {
+            Assert.Equal(new[] { "SO-A", "SO-B" }, orders.Select(x => x.GetProperty("salesOrderNo").GetString()));
+            Assert.Equal(new[] { "CUST-A", "CUST-B" }, orders.Select(x => x.GetProperty("customerCode").GetString()));
+            Assert.All(orders, order => Assert.Equal("1", order.GetProperty("sourceLineReference").GetString()));
+            Assert.Equal(4, handler.Calls);
+        }
+        else Assert.Equal(0, handler.Calls);
+    }
+
+    private sealed class CommercialDemandHandler : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri!.Query);
+            Assert.Equal("org-001", query["organizationId"].ToString());
+            Assert.Equal("env-dev", query["environmentId"].ToString());
+            var reference = query["keyword"].ToString();
+            Assert.Contains(reference, new[] { "SO-A", "SO-B" });
+            var items = query["skip"] == "0"
+                ? Enumerable.Range(0, 100).Select(i => Demand("noise-" + i, "sales-order", "OTHER", "OTHER")).ToArray()
+                : new[] { Demand("exact", "sales-order", reference, reference == "SO-A" ? "CUST-A" : "CUST-B"), Demand("fuzzy", "sales-order", reference + "-OTHER", "WRONG"), Demand("forecast", "forecast", reference, "WRONG") };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { data = items }) });
+        }
+        private static BusinessConsoleDemandSourceResponse Demand(string id, string type, string reference, string customer) =>
+            new(id, reference, type, "1", customer, 1, "active", "SKU-A", "EA", "SITE-A", 10m, new DateOnly(2026, 10, 2));
+    }
+
     [Fact]
     public void Inventory_operation_flags_fail_closed_when_an_older_service_omits_them()
     {
@@ -21607,6 +21683,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public int? WorkOrdersTotal { get; init; }
 
+    public BusinessConsoleMesWorkOrderDetailResponse? WorkOrderDetail { get; init; }
+
     public IReadOnlyCollection<BusinessConsoleMesOperationTaskRow>? OperationTasks { get; init; }
 
     public bool EmulateMesListPaging { get; init; }
@@ -21817,6 +21895,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     {
         WorkOrderDetailCallCount++;
         LastInternalToken = internalBearerToken;
+        if (WorkOrderDetail is not null) return Task.FromResult(WorkOrderDetail);
         return Task.FromResult(new BusinessConsoleMesWorkOrderDetailResponse(
             workOrderId,
             "SKU-001",
