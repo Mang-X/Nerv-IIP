@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.DemandPlanning;
@@ -14,6 +15,46 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessPlanningClientTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Material_deliveries_check_independent_sources_concurrently_and_wait_before_owner(bool denySupply)
+    {
+        var auth = new GatedSourceAuthorizationClient();
+        var handler = new StubHandler("""{"data":{"runId":"run-1","planId":"plan-1","evaluatedAtUtc":"2026-10-01T00:00:00Z","supplyCoverageScope":"independent-per-net-requirement","items":[],"unknownRequirementSuggestions":[]}}""");
+        await using var lease = BusinessGatewayTestHost.Lease(auth, services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(PlanningClient(handler));
+        }, BusinessGatewayTestHostProfile.ServiceBaseUrls);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var responseTask = client.GetAsync("/api/business-console/v1/planning/mrp-runs/11111111-1111-1111-1111-111111111111/material-deliveries?organizationId=org-001&environmentId=env-dev&planId=plan-1");
+        try
+        {
+            // 授权结果均未返回前八项必须已进入；此边沿证明并发，不用耗时断言推断 RTT。
+            await auth.AllSourcesEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Null(handler.RequestUri);
+            foreach (var (permission, gate) in auth.Gates)
+            {
+                if (permission != BusinessGatewayPermissions.MasterDataResourcesRead)
+                    gate.SetResult(!(denySupply && permission == BusinessGatewayPermissions.ErpProcurementRead));
+            }
+            Assert.False(responseTask.IsCompleted);
+            Assert.Null(handler.RequestUri);
+            auth.Gates[BusinessGatewayPermissions.MasterDataResourcesRead].SetResult(true);
+            var response = await responseTask;
+            Assert.Equal(denySupply ? HttpStatusCode.Forbidden : HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(!denySupply, handler.RequestUri is not null);
+        }
+        finally
+        {
+            // Red 的串行实现也必须解除已登记检查，避免遗留挂起请求。
+            auth.ReleaseRemaining();
+            await responseTask;
+        }
+    }
+
     // 来源：#4096 冻结 C 结果，四日期/数量/来源/历史未知不能由代理重算或裁剪。
     [Theory]
     [InlineData(MaterialDeliveryStatus.Yellow)]
@@ -272,6 +313,36 @@ public sealed class BusinessPlanningClientTests
                 releasedAtUtc = releasedBy is null ? null : "2026-06-01T09:00:00Z",
             },
         });
+
+    private sealed class GatedSourceAuthorizationClient : IBusinessGatewayAuthorizationClient
+    {
+        public TaskCompletionSource AllSourcesEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ConcurrentDictionary<string, TaskCompletionSource<bool>> Gates { get; } = new();
+        private volatile bool releaseRemaining;
+
+        public Task<BusinessGatewayAuthorizationResult> CheckAsync(string token, BusinessGatewayPermissionRequirement requirement,
+            CancellationToken ct) => CheckAsync(token, requirement, BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, ct);
+
+        public async Task<BusinessGatewayAuthorizationResult> CheckAsync(string token, BusinessGatewayPermissionRequirement requirement,
+            BusinessGatewayAuthorizationContinuityMode mode, CancellationToken ct)
+        {
+            Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, mode);
+            if (requirement.PermissionCode == BusinessGatewayPermissions.PlanningMrpRead)
+                return await FakeBusinessGatewayAuthorizationClient.Allowed().CheckAsync(token, requirement, mode, ct);
+            var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Gates[requirement.PermissionCode] = gate;
+            if (releaseRemaining) gate.TrySetResult(true);
+            if (Gates.Count == 8) AllSourcesEntered.TrySetResult();
+            var allowed = await gate.Task;
+            return await new FakeBusinessGatewayAuthorizationClient(_ => allowed).CheckAsync(token, requirement, mode, ct);
+        }
+
+        public void ReleaseRemaining()
+        {
+            releaseRemaining = true;
+            foreach (var gate in Gates.Values) gate.TrySetResult(true);
+        }
+    }
 
     private sealed class StubHandler(string json) : HttpMessageHandler
     {
