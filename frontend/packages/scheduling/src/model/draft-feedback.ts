@@ -34,20 +34,18 @@ export function evaluateDraft(model: ScheduleModel): DraftFeedback {
       mergeWindows(calendar.shiftWindows.map(interval)),
     ]),
   )
-  const fixedKeys = new Set(
-    context.fixedReservations.map((reservation) =>
-      key(reservation.orderId, reservation.operationId),
-    ),
+  // 可见工序按草案占用；冻结 reservation 只保留草案外的占用，避免旧时间/资源和重复计数。
+  const reservations = context.fixedReservations.filter(
+    (reservation) => !taskByKey.has(key(reservation.orderId, reservation.operationId)),
   )
-  const occupancies: Occupancy[] = context.fixedReservations.map((reservation) => ({
+  const occupancies: Occupancy[] = reservations.map((reservation) => ({
     ...interval(reservation),
     resourceId: reservation.resourceId,
     workCenterId: reservation.workCenterId,
-    taskId: taskByKey.get(key(reservation.orderId, reservation.operationId))?.id,
   }))
   const earliestEnd = new Map<string, number>()
   // APS setup 仅在同资源已有生产段结束时占用；外部占用不充当生产前序。
-  for (const reservation of context.fixedReservations) {
+  for (const reservation of reservations) {
     if (
       reservation.resourceId &&
       operations.has(key(reservation.orderId, reservation.operationId))
@@ -117,7 +115,6 @@ export function evaluateDraft(model: ScheduleModel): DraftFeedback {
       incompleteOccupancy = true
       continue
     }
-    if (fixedKeys.has(key(task.orderId, task.operationId))) continue
     const segments = task.segments?.length ? task.segments : [task]
     segments.forEach((segment, index) => {
       const production = interval(segment)

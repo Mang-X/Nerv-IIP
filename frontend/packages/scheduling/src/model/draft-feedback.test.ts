@@ -120,6 +120,49 @@ describe('draft feedback (#4043)', () => {
     expect(kinds(plan)).not.toContain('capacity')
     expect(kinds(plan, 'WO-02')).not.toContain('capacity')
   })
+  it.each(['RES-1', undefined])(
+    'uses edited fixed work instead of its frozen reservation (resource %s)',
+    (resourceId) => {
+      const plan = structuredClone(feedbackPlan)
+      plan.assignments = [
+        { ...assignment('WO-01', 8, 10), isLocked: true },
+        assignment('WO-02', 8, 10),
+        assignment('WO-03', 19, 20, 'RES-2'),
+      ]
+      plan.validationContext!.fixedReservations = [
+        {
+          orderId: 'WO-01',
+          operationId: 'OP-10',
+          workCenterId: 'WC-1',
+          resourceId,
+          startUtc: utc(8),
+          endUtc: utc(10),
+        },
+      ]
+      plan.validationContext!.operations![0]!.isFixed = true
+      const model = toModel(plan)
+      const task = model.tasks.find((task) => task.id === 'WO-01')!
+      Object.assign(task, {
+        locked: false,
+        resourceId: 'RES-2',
+        startUtc: utc(19),
+        endUtc: utc(20),
+      })
+      const feedback = evaluateDraft(model)
+      expect(feedback.tasks['WO-01']!.issues).toContainEqual(
+        expect.objectContaining({ kind: 'calendar' }),
+      )
+      expect(feedback.tasks['WO-01']!.issues).toContainEqual(
+        expect.objectContaining({
+          kind: 'capacity',
+          scope: 'resource',
+          startUtc: utc(19),
+          endUtc: utc(20),
+        }),
+      )
+      expect(feedback.tasks['WO-02']!.issues.map((issue) => issue.kind)).not.toContain('capacity')
+    },
+  )
   it('includes setup before a successor and utilization-reserved tails, not just displayed bars', () => {
     const plan = structuredClone(feedbackPlan)
     plan.validationContext!.operations![1]!.setupMinutes = 30
