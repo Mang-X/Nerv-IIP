@@ -96,6 +96,24 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     }
   }
 
+  // 装配前置来自方案快照；子件全部工序完成后，母单首道工序才能开始。
+  for (const dependency of plan.assemblyDependencies ?? []) {
+    const child = operations
+      .filter((task) => task.orderId === dependency.childOrderId)
+      .sort((a, b) => Date.parse(b.endUtc) - Date.parse(a.endUtc))[0]
+    const parent = operations
+      .filter((task) => task.orderId === dependency.parentOrderId)
+      .sort((a, b) => a.operationSequence - b.operationSequence)[0]
+    // 未排工单没有可连接的工序条，仍由未排列表呈现其原因。
+    if (!child || !parent) continue
+    links.push({
+      id: `${child.id}->${parent.id}`,
+      source: child.id,
+      target: parent.id,
+      type: 'finish_to_start',
+    })
+  }
+
   const conflicts: ScheduleConflict[] = (plan.conflicts ?? []).map((c) => {
     const t = operations.find((o) => o.orderId === c.orderId && o.operationId === c.operationId)
     return {

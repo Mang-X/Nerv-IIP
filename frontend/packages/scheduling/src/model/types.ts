@@ -151,7 +151,7 @@ export interface ScheduleLink {
   source: string
   /** ScheduleTask.id。 */
   target: string
-  /** MVP 仅 FS,由 operationSequence 派生。 */
+  /** FS：工单内由 operationSequence 派生，跨工单来自方案装配关系。 */
   type: 'finish_to_start'
 }
 
