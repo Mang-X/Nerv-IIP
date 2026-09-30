@@ -90,10 +90,12 @@ public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbCon
         var supply = await supplyTask;
         var now = timeProvider.GetUtcNow();
         // MRP 在 RequirementBucket(SKU/UOM/site/requiredDate) 内净算后拆批；每批共享净缺口与 pegging。
-        // PrimarySourceType 区分同日正常需求与随后执行的储备补货，不以可被拒绝动作改写的 ReasonCode 作为身份。
+        // 组件的 PrimarySourceType 均为 component；传播的 pegging 类型仍保留正常/储备阶段身份。
+        // 不以可被拒绝动作改写的 ReasonCode 作为身份。
         var rows = suggestions.Where(x => x.NetRequirementQuantity > 0 &&
                 x.SuggestionType is DemandPlanningSuggestionTypes.PlannedWorkOrder or DemandPlanningSuggestionTypes.PlannedPurchase)
-            .GroupBy(x => new { x.SkuCode, x.UomCode, x.SiteCode, x.RequiredDate, x.SuggestionType, x.PrimarySourceType })
+            .GroupBy(x => new { x.SkuCode, x.UomCode, x.SiteCode, x.RequiredDate, x.SuggestionType, x.PrimarySourceType,
+                IsReserveRequirement = x.PeggingLinks.Any(link => link.PeggingType is "safety-stock" or "negative-availability") })
             .Select(group =>
             {
                 var batches = group.OrderBy(x => x.Id.ToString(), StringComparer.Ordinal).ToArray();

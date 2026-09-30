@@ -132,20 +132,7 @@ public sealed class MaterialDeliveryTests
             [new("SKU", "PV", "MBOM", "ROUTE", null, 12, null)], [], [], [], []);
         var calculated = MrpCalculator.Calculate(input).Where(x => x.SuggestionType == "planned-work-order").ToArray();
         Assert.Equal(new decimal[] { 12, 12, 6 }, calculated.Select(x => x.Quantity));
-        foreach (var batch in calculated)
-        {
-            var suggestion = PlanningSuggestion.Create("org", "env", run, batch.SuggestionType, batch.SkuCode, batch.UomCode,
-                batch.SiteCode, batch.Quantity, batch.RequiredDate, batch.ReleaseDate, batch.ReasonCode);
-            var net = batch.NetRequirementExplanation;
-            suggestion.SetNetRequirementExplanation(net.GrossDemandQuantity, net.OnHandQuantity, net.ReservedQuantity,
-                net.AvailableToNetQuantity, net.ScheduledReceiptQuantity, net.SafetyStockQuantity, net.NetRequirementQuantity,
-                net.PlannedQuantity, net.ScrapRate, net.YieldRate, net.PrimarySourceType, net.Formula, null);
-            foreach (var link in batch.PeggingLinks)
-                suggestion.AddPeggingLink(link.PeggingType, link.DemandSourceReference, link.ParentSkuCode,
-                    link.ComponentSkuCode, link.Quantity, link.ProductionVersionReference, link.ManufacturingBomReference,
-                    link.RoutingReference, link.SourceType, link.GrossDemandQuantity, link.SourceLineReference);
-            db.PlanningSuggestions.Add(suggestion);
-        }
+        AddCalculatedSuggestions(db, run, calculated);
         db.DemandSources.Add(DemandSource.CreateSalesOrderDemand("org", "env", "SO-ID", "SO", "10", "C", "SKU", "EA", "SITE", 30, due, 1));
         await db.SaveChangesAsync();
         var upstream = new Sources();
@@ -169,6 +156,58 @@ public sealed class MaterialDeliveryTests
         Assert.Equal(scheduled.SuggestionSources.Select(x => x.SuggestionId).Order(), scheduled.SchedulingSources.Select(x => x.SuggestionId).Order());
         Assert.Equal(30, scheduled.CoveredQuantity);
         Assert.Equal("Green", scheduled.Status.ToString());
+    }
+
+    [Fact]
+    public async Task Normal_and_reserve_components_on_same_day_remain_distinct_net_requirements()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(x => x.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(x => x.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var run = new MrpRunId(Guid.NewGuid());
+        var due = new DateOnly(2026, 10, 12);
+        var input = new MrpCalculationInput("org", "env", due.AddDays(-5), due,
+            [new("SO", "FG", "EA", "SITE", 5, due, "sales-order", "10")], [],
+            [new("FG", "PV", "MBOM", "ROUTE")], [new("FG", "RM", "EA", 1)], [],
+            [new("FG", "EA", "SITE", 1, 3, null, null, null, "make"),
+             new("RM", "EA", "SITE", 0, 0, null, null, null, "buy")], []);
+        var calculated = MrpCalculator.Calculate(input);
+        var components = calculated.Where(x => x.SkuCode == "RM" && x.SuggestionType == "planned-purchase").ToArray();
+        Assert.Equal(new decimal[] { 3, 5 }, components.Select(x => x.NetRequirementExplanation.NetRequirementQuantity).Order());
+        Assert.All(components, x => Assert.Equal("component", x.NetRequirementExplanation.PrimarySourceType));
+        Assert.All(components, x => Assert.Equal(due.AddDays(-1), x.RequiredDate));
+        AddCalculatedSuggestions(db, run, calculated.Where(x => x.SuggestionType is "planned-purchase" or "planned-work-order"));
+        await db.SaveChangesAsync();
+        var handler = new GetMaterialDeliveriesQueryHandler(db, new Sources(), new FixedTime(Latest.AddDays(-2)));
+        var result = await handler.Handle(new("org", "env", run, null), default);
+        var rows = result.Items.Where(x => x.SkuCode == "RM").ToArray();
+        Assert.Equal(2, rows.Length);
+        Assert.Equal(new decimal[] { 3, 5 }, rows.Select(x => x.NetRequirementQuantity).Order());
+        Assert.Equal(8, rows.Sum(x => x.NetRequirementQuantity));
+        Assert.All(rows, x => Assert.Single(x.SuggestionSources));
+        Assert.All(rows, x => Assert.Equal(x.NetRequirementQuantity, x.NetRequirementSource.PlannedQuantity));
+    }
+
+    private static void AddCalculatedSuggestions(ApplicationDbContext db, MrpRunId run,
+        IEnumerable<CalculatedPlanningSuggestion> calculated)
+    {
+        foreach (var batch in calculated)
+        {
+            var suggestion = PlanningSuggestion.Create("org", "env", run, batch.SuggestionType, batch.SkuCode, batch.UomCode,
+                batch.SiteCode, batch.Quantity, batch.RequiredDate, batch.ReleaseDate, batch.ReasonCode);
+            var net = batch.NetRequirementExplanation;
+            suggestion.SetNetRequirementExplanation(net.GrossDemandQuantity, net.OnHandQuantity, net.ReservedQuantity,
+                net.AvailableToNetQuantity, net.ScheduledReceiptQuantity, net.SafetyStockQuantity, net.NetRequirementQuantity,
+                net.PlannedQuantity, net.ScrapRate, net.YieldRate, net.PrimarySourceType, net.Formula, null);
+            foreach (var link in batch.PeggingLinks)
+                suggestion.AddPeggingLink(link.PeggingType, link.DemandSourceReference, link.ParentSkuCode,
+                    link.ComponentSkuCode, link.Quantity, link.ProductionVersionReference, link.ManufacturingBomReference,
+                    link.RoutingReference, link.SourceType, link.GrossDemandQuantity, link.SourceLineReference);
+            db.PlanningSuggestions.Add(suggestion);
+        }
     }
 
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider
