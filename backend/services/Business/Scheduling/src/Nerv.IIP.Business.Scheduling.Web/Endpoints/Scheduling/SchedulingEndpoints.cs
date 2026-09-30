@@ -594,6 +594,7 @@ public static class SchedulingEndpointContracts
 {
     public static readonly IReadOnlyCollection<SchedulingEndpointContract> All =
     [
+        new(typeof(GetMaterialDeliverySourcesEndpoint), "POST", "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingMaterialDeliverySources"),
         new(typeof(PreviewSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingPlan"),
         new(typeof(CreateSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlan"),
         new(typeof(CreateSchedulingWorkbenchPlanEndpoint), "POST", "/api/business/v1/scheduling/workbench/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingWorkbenchPlan"),

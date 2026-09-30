@@ -6252,6 +6252,14 @@
       "classification": "exposed",
       "gateways": ["business"],
       "gatewayOperationIds": ["ignoreBusinessConsoleDeadLetter"]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources",
+      "operationId": "getSchedulingMaterialDeliverySources",
+      "classification": "internal",
+      "rationale": "DemandPlanning 物料交付读面按显式 planId 与建议/工单身份消费；不经 Gateway 暴露。"
     }
   ]
 }
