@@ -32,21 +32,50 @@ test('后台失效在下一轮轮询更新提示和发布按钮，退出后停�
     })
   })
   await page.route('**/api/business-console/v1/**', async (route) => {
-    const pathname = new URL(route.request().url()).pathname
+    const url = new URL(route.request().url())
+    const pathname = url.pathname
     if (pathname.endsWith('/scheduling/plans/history')) {
       historyRequests++
       return route.fulfill({
         json: {
           success: true,
           data: {
-            total: 1,
-            items: [
+            total: invalidated && url.searchParams.get('isInvalidated') === 'false' ? 0 : 1,
+            items:
+              invalidated && url.searchParams.get('isInvalidated') === 'false'
+                ? []
+                : [
+                    {
+                      planId: 'APS-260930-001',
+                      status: 'generated',
+                      assignmentCount: 12,
+                      isInvalidated: invalidated,
+                      latestInvalidationReasonCode: invalidated
+                        ? 'equipmentUnavailable'
+                        : undefined,
+                    },
+                  ],
+          },
+        },
+      })
+    }
+    if (pathname.endsWith('/scheduling/plans/APS-260930-001')) {
+      return route.fulfill({
+        json: {
+          success: true,
+          data: {
+            planId: 'APS-260930-001',
+            status: 'generated',
+            assignments: [
               {
-                planId: 'APS-260930-001',
-                status: 'generated',
-                assignmentCount: 12,
-                isInvalidated: invalidated,
-                latestInvalidationReasonCode: invalidated ? 'equipmentUnavailable' : undefined,
+                assignmentId: 'A-10',
+                orderId: 'WO-260930-001',
+                operationId: '粗车',
+                operationSequence: 10,
+                resourceId: 'CNC-01',
+                workCenterId: 'WC-TURN',
+                startUtc: '2026-09-30T08:00:00Z',
+                endUtc: '2026-09-30T10:00:00Z',
               },
             ],
           },
@@ -67,6 +96,23 @@ test('后台失效在下一轮轮询更新提示和发布按钮，退出后停�
   await expect(release).toBeDisabled()
   await page.screenshot({
     path: test.info().outputPath('scheduling-invalidated.png'),
+    fullPage: true,
+  })
+  // 同一已选方案被“未失效”筛选移除后，甘特仍须消费最新失效事实。
+  invalidated = false
+  await page.clock.fastForward(5000)
+  await expect(row).not.toContainText('已失效')
+  await page.getByRole('combobox', { name: '按方案失效筛选' }).click()
+  await page.getByRole('option', { name: '未失效', exact: true }).click()
+  await page.getByRole('tab', { name: '甘特图', exact: true }).click()
+  const ganttRelease = page.getByRole('button', { name: '发布当前方案', exact: true })
+  await expect(ganttRelease).toBeEnabled()
+  invalidated = true
+  await page.clock.fastForward(5000)
+  await expect(page.getByText('方案已失效，不能从甘特发布', { exact: true })).toBeVisible()
+  await expect(ganttRelease).toBeDisabled()
+  await page.screenshot({
+    path: test.info().outputPath('gantt-filtered-invalidated.png'),
     fullPage: true,
   })
   await page.goto('/')

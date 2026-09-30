@@ -306,13 +306,17 @@ const detail = computed(() => {
 })
 
 vi.mock('@/composables/useBusinessScheduling', () => ({
-  useSchedulingPlanSummary: () => ({
-    summary: computed(() => ({
-      planId: 'plan-001',
-      status: 'generated',
-      isInvalidated: planOneInvalidated.value,
-      latestInvalidationReasonCode: 'equipmentUnavailable',
-    })),
+  useSchedulingPlanSummary: (planId: () => string | undefined) => ({
+    summary: computed(() => {
+      const id = planId()
+      if (!id) return undefined
+      return {
+        planId: id,
+        status: id === 'plan-released' ? 'released' : 'generated',
+        isInvalidated: id === 'plan-invalid' || (id === 'plan-001' && planOneInvalidated.value),
+        latestInvalidationReasonCode: 'equipmentUnavailable',
+      }
+    }),
   }),
   useBusinessScheduling: () => ({
     detailSelection,
@@ -957,6 +961,33 @@ describe('APS scheduling workbench page', () => {
 
     expect(detailSelection.planId).toBe('plan-invalid')
     expect(wrapper.text()).toContain('正在定位订单 WO-NOT-IN-PLAN')
+  })
+
+  it('refreshes selected Gantt invalidation when the uninvalidated history filter removes it', async () => {
+    detailSelection.planId = 'plan-001'
+    historyFilters.isInvalidated = false
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+    const release = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('发布当前方案'))!
+    expect(release.attributes('disabled')).toBeUndefined()
+    planOneInvalidated.value = true
+    historyEmpty.value = true
+    await flushPromises()
+    expect(detailSelection.planId).toBe('plan-001')
+    expect(wrapper.text()).toContain('方案已失效，不能从甘特发布')
+    expect(release.attributes('disabled')).toBeDefined()
+    wrapper.findComponent({ name: 'SchedulingPlanGantt' }).vm.$emit('release')
+    await flushPromises()
+    expect(stub.releasePlan).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('marks invalidated plans with their reason and blocks release', async () => {

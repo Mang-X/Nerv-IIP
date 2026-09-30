@@ -260,22 +260,12 @@ const detailFeedback = computed(() => {
   if (detailSelection.planId) return '未返回方案明细。'
   return '请选择一个排程方案查看明细。'
 })
-// 历史表的分页窗口不决定已选方案的操作能力。保留已选摘要中的失效信息，
-// 状态始终以独立加载的方案明细为准；切换选中方案时不沿用上一方案摘要。
-const selectedHistorySummary = shallowRef<BusinessConsoleSchedulingPlanSummaryResponse>()
-watch(
-  [() => detailSelection.planId, actionablePlans],
-  ([planId, availablePlans]) => {
-    const summary = availablePlans.find((plan) => plan.planId === planId)
-    if (summary || selectedHistorySummary.value?.planId !== planId)
-      selectedHistorySummary.value = summary
-  },
-  { immediate: true },
-)
+// 查阅方案和草案各按自身 planId 获取摘要，历史表筛选/分页不决定发布能力。
+const { summary: selectedPlanStatus } = useSchedulingPlanSummary(() => detailSelection.planId)
 const selectedPlanSummary = computed(() =>
   planDetail.value
     ? {
-        ...selectedHistorySummary.value,
+        ...selectedPlanStatus.value,
         planId: planDetail.value.planId,
         status: planDetail.value.status,
       }
