@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
@@ -125,6 +126,12 @@ public sealed class WorkOrderTransformationHttpContractTests
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-SPLIT-PARENT", "SKU-HTTP", "PV-HTTP", 10m, 10, dueUtc, "PCS"),
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-MERGE-A", "SKU-HTTP", "PV-HTTP", 4m, 10, dueUtc, "PCS"),
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-MERGE-B", "SKU-HTTP", "PV-HTTP", 6m, 10, dueUtc, "PCS"));
+            foreach (var order in dbContext.WorkOrders.Local.ToArray())
+            {
+                dbContext.OperationTasks.Add(OperationTask.Queue(order.OrganizationId, order.EnvironmentId,
+                    order.WorkOrderIdValue, $"{order.WorkOrderIdValue}-OP", 10, "WC-1", [], dueUtc,
+                    TimeSpan.FromMinutes(20), order.SkuId, order.UomCode, order.Quantity));
+            }
             await dbContext.SaveChangesAsync();
         }
 
