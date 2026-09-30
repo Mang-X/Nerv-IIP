@@ -794,6 +794,7 @@ function reasonLabel(reason?: string | null) {
         </SchedulingOrderPool>
         <SchedulingDraftBoard
           :model="draft.model.value"
+          :feedback="draft.feedback.value"
           :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"
           :read-only="!canManage"

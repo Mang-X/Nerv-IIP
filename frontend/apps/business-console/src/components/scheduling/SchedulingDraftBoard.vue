@@ -10,9 +10,11 @@ import {
   type TimeScale,
   type ScheduleModel,
   type TaskDragPayload,
+  type DraftFeedback,
 } from '@nerv-iip/scheduling'
 import type { BusinessConsoleSchedulingMaterialShortageSummary } from '@nerv-iip/api-client'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
+import SchedulingDraftFeedback from './SchedulingDraftFeedback.vue'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import type { EntityPickerOption } from '@nerv-iip/ui'
@@ -32,6 +34,7 @@ import { WORK_CENTER_FAMILY_LIST } from '@/data/workCenterFamilies'
 
 const props = defineProps<{
   model?: ScheduleModel
+  feedback?: DraftFeedback
   materialShortageSummary?: BusinessConsoleSchedulingMaterialShortageSummary[] | null
   pendingOperations?: WorkingSchedulePendingOperation[]
   readOnly?: boolean
@@ -61,6 +64,13 @@ const activeBoard = computed(() => (view.value === 'gantt' ? ganttRef.value : re
 const selectedTaskId = shallowRef('')
 const selectedTask = computed(() =>
   props.model?.tasks.find((task) => task.id === selectedTaskId.value),
+)
+const attentionTasks = computed(() =>
+  (props.model?.tasks ?? []).flatMap((task) => {
+    const feedback = props.feedback?.tasks[task.id]
+    const issues = feedback?.issues.filter((issue) => issue.kind !== 'unknown') ?? []
+    return issues.length ? [{ task, issues }] : []
+  }),
 )
 const detailTitle = computed(() =>
   selectedTask.value?.blockKind
@@ -102,6 +112,10 @@ const legendCategories = computed(() => {
 })
 function sendCommand(command: EngineCommand) {
   activeBoard.value?.command(command)
+}
+function handleMove(payload: TaskDragPayload) {
+  selectedTaskId.value = payload.taskId
+  emit('move', payload)
 }
 function setScale(value: TimeScale) {
   scale.value = value
@@ -222,6 +236,33 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
       </ul>
     </section>
     <SchedulingMaterialShortageSummary v-if="model" :shortages="materialShortageSummary ?? []" />
+    <p v-if="feedback" class="text-xs text-muted-foreground">
+      即时反馈随草案更新；发布前仍需锁定重预览，由后端确认最终可排结果。
+    </p>
+    <p v-if="feedback && !model?.validationContext" class="text-sm text-muted-foreground">
+      方案未记录校验依据，日历、占用、前序和交期暂无法核对。
+    </p>
+    <section
+      v-if="attentionTasks.length"
+      class="grid gap-2 rounded-md border p-3"
+      data-testid="draft-feedback-attention"
+    >
+      <h3 class="text-sm font-semibold">即时反馈 · {{ attentionTasks.length }} 道工序需核对</h3>
+      <ul class="grid max-h-40 gap-2 overflow-auto text-xs">
+        <li v-for="item in attentionTasks" :key="item.task.id">
+          <NvButton
+            size="sm"
+            variant="link"
+            type="button"
+            class="h-auto p-0 text-xs"
+            @click="selectedTaskId = item.task.id"
+          >
+            {{ item.task.orderId }} · {{ item.task.text }}
+          </NvButton>
+          <p class="text-warning">{{ item.issues.map((issue) => issue.message).join('；') }}</p>
+        </li>
+      </ul>
+    </section>
     <!--
       物料风险横幅：齐套是开工门槛不是排产门槛。缺料工单照排进方案，
       这里显式告诉规划员「哪些工序开工前必须先备料」，避免拿着方案去发布却被 MES 齐套门拦下。
@@ -305,7 +346,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
               :model="model"
               @task-select="selectedTaskId = $event"
               :read-only="readOnly"
-              @task-drag-end="emit('move', $event)"
+              @task-drag-end="handleMove"
               @locked-drag-attempt="emit('lockedAttempt', $event)"
             />
           </NvTabsContent>
@@ -316,7 +357,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
               :model="model"
               @task-select="selectedTaskId = $event"
               :read-only="readOnly"
-              @task-drag-end="emit('move', $event)"
+              @task-drag-end="handleMove"
               @locked-drag-attempt="emit('lockedAttempt', $event)"
             />
           </NvTabsContent>
@@ -333,6 +374,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                   <th class="p-2">设备状态</th>
                   <th class="p-2">锁定</th>
                   <th class="p-2">待排</th>
+                  <th class="p-2">即时反馈 / 交期差</th>
                 </tr>
               </thead>
               <tbody>
@@ -459,6 +501,9 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                       >移回待排</NvButton
                     >
                   </td>
+                  <td class="min-w-64 p-2">
+                    <SchedulingDraftFeedback :feedback="feedback?.tasks[task.id]" />
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -485,6 +530,11 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
             :task="selectedTask"
             :read-only="readOnly"
             @toggle-lock="(taskId, locked) => emit('lock', taskId, locked)"
+          />
+          <SchedulingDraftFeedback
+            v-if="selectedTask.type === 'operation' && !selectedTask.blockKind"
+            class="px-4 py-3"
+            :feedback="feedback?.tasks[selectedTask.id]"
           />
         </aside>
       </div>

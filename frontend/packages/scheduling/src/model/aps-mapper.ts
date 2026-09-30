@@ -24,6 +24,7 @@ const orderNodeId = (orderId: string): string => `order:${orderId}`
 /** APS SchedulePlanContract → 引擎无关 ScheduleModel(纯函数)。 */
 export function toModel(plan: SchedulePlanContract): ScheduleModel {
   const assignments = plan.assignments ?? []
+  const context = plan.validationContext
 
   const operations: ScheduleTask[] = assignments.map((a) => ({
     id: taskId(a),
@@ -52,6 +53,9 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
           endUtc: segment.endUtc ?? '',
         }))
       : undefined,
+    dueUtc: context?.operations?.find(
+      (operation) => operation.orderId === a.orderId && operation.operationId === a.operationId,
+    )?.dueUtc,
     locked: a.isLocked ?? false,
     hasConflict: false,
     conflictReason: null,
@@ -218,6 +222,35 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
 
   return {
     tasks: [...orderNodes, ...operations, ...blocks],
+    validationContext: context
+      ? {
+          horizon: { startUtc: context.horizonStartUtc ?? '', endUtc: context.horizonEndUtc ?? '' },
+          resources: (context.resources ?? []).map((resource) => ({
+            resourceId: resource.resourceId ?? '',
+            workCenterId: resource.workCenterId ?? '',
+            calendarId: resource.calendarId ?? '',
+            capacityUnits: resource.capacityUnits ?? 0,
+            utilizationRate: resource.utilizationRate ?? 0,
+          })),
+          operations: (context.operations ?? []).map((operation) => ({
+            orderId: operation.orderId ?? '',
+            operationId: operation.operationId ?? '',
+            predecessorOperationIds: [...(operation.predecessorOperationIds ?? [])],
+            dueUtc: operation.dueUtc,
+            durationMinutes: operation.durationMinutes,
+            setupMinutes: operation.setupMinutes,
+            isFixed: operation.isFixed ?? false,
+          })),
+          fixedReservations: (context.fixedReservations ?? []).map((reservation) => ({
+            orderId: reservation.orderId ?? '',
+            operationId: reservation.operationId ?? '',
+            resourceId: reservation.resourceId ?? undefined,
+            workCenterId: reservation.workCenterId ?? '',
+            startUtc: reservation.startUtc ?? '',
+            endUtc: reservation.endUtc ?? '',
+          })),
+        }
+      : undefined,
     calendars: calendars.length ? calendars : undefined,
     links,
     resources: [...new Set(operations.map((o) => o.resourceId).filter(Boolean) as string[])].map(
