@@ -4898,7 +4898,8 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     string? SourceNcrCode = null,
     bool HasChangedDemand = false,
     bool HasCancelledDemand = false,
-    bool IsRush = false);
+    bool IsRush = false,
+    decimal CompletedQuantity = 0);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,

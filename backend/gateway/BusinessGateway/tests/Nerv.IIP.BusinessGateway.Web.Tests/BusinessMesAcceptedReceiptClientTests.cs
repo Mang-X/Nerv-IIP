@@ -395,6 +395,18 @@ public sealed class BusinessMesAcceptedReceiptClientTests
         Assert.Equal(-7, list.Items.Single().Priority);
     }
 
+    // #4079 PublicContract: 完成量属于 MES 权威事实，Gateway 列表读取与公开响应必须保留原值。
+    [Fact]
+    public async Task Work_order_list_preserves_completed_quantity_from_mes()
+    {
+        var client = ClientReturning("""{"data":{"items":[{"workOrderId":"WO-001","skuId":"SKU-001","quantity":10,"completedQuantity":3.25,"status":"Released","dueUtc":"2026-10-01T00:00:00Z","operationTasks":[],"priority":0}],"total":1}}""");
+
+        var list = await client.ListWorkOrdersAsync("token", new("org", "env"), CancellationToken.None);
+        var json = JsonSerializer.SerializeToElement(list.Items.Single(), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(3.25m, json.GetProperty("completedQuantity").GetDecimal());
+    }
+
     private static string AcceptedJson(string referenceId, string status = "Accepted") =>
         "{\"data\":{\"status\":\"" + status + "\",\"referenceId\":\"" + referenceId + "\",\"acceptedAtUtc\":\"2026-07-31T08:00:00Z\"}}";
 

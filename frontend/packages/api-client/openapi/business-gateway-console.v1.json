@@ -50241,6 +50241,10 @@
           },
           "isRush": {
             "type": "boolean"
+          },
+          "completedQuantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
