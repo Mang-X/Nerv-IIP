@@ -157,7 +157,13 @@ function locationLabel(siteCode?: string | null, locationCode?: string | null) {
 
 type MovementRow = BusinessConsoleInventoryMovementLineResponse
 const columns: NvDataTableColumn<MovementRow>[] = [
-  { key: 'sourceDocumentId', header: '来源单据', cellClass: 'font-medium' },
+  // 来源单据号（如 MWO-yyyyMMdd-NNNNNN）较长，固定列宽避免挤进类型列
+  {
+    key: 'sourceDocumentId',
+    header: '来源单据',
+    width: 'w-52',
+    cellClass: 'font-medium whitespace-nowrap',
+  },
   {
     key: 'movementType',
     header: '类型',
