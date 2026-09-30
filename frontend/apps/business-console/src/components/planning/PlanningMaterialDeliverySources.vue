@@ -9,7 +9,7 @@ const props = defineProps<{ row: BusinessConsoleMaterialDeliveryResponse }>()
 const emit = defineEmits<{ locateSuggestion: [suggestionId: string, runId: string] }>()
 function dueSourceLabel(reference: string | null | undefined): string {
   if (!reference) return '—'
-  const source = props.row.demandSources?.find(item => item.demandSourceId === reference)
+  const source = props.row.demandSources?.find((item) => item.demandSourceId === reference)
   if (!source) return '未知需求来源'
   return `${source.sourceReference}${source.sourceLineReference ? ` · 行 ${source.sourceLineReference}` : ''}`
 }
@@ -107,7 +107,8 @@ const netFields = [
         </p>
         <div v-for="(bound, j) in source.dueBounds" :key="j" class="mt-2 border-t pt-2">
           <p>
-            <span :title="bound.sourceReference">{{ dueSourceLabel(bound.sourceReference) }}</span> · 交期
+            <span :title="bound.sourceReference">{{ dueSourceLabel(bound.sourceReference) }}</span>
+            · 交期
             <span :title="bound.dueUtc">{{ utc(bound.dueUtc) }}</span>
           </p>
           <p>

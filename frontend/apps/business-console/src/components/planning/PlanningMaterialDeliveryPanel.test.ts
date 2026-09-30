@@ -52,7 +52,13 @@ describe('物料交付页内事实', () => {
               sourceType: 'sales-order',
               grossDemandQuantity: 18,
             },
-            { demandSourceId: 'demand-2', sourceReference: 'SO-1002', sourceLineReference: '20', sourceType: 'sales-order', grossDemandQuantity: 12 },
+            {
+              demandSourceId: 'demand-2',
+              sourceReference: 'SO-1002',
+              sourceLineReference: '20',
+              sourceType: 'sales-order',
+              grossDemandQuantity: 12,
+            },
           ],
           suggestionSources: [
             { suggestionId: 's-1', quantity: 12 },
@@ -117,7 +123,10 @@ describe('物料交付页内事实', () => {
     expect(details.text()).toContain('WO-1001')
     expect(details.text()).toContain('最紧交期来源 SO-1002 · 行 20')
     expect(details.find('[title="demand-1"]').text()).toBe('SO-1001 · 行 10')
-    expect(details.findAll('[title="demand-2"]').map(node => node.text())).toEqual(['SO-1002 · 行 20', 'SO-1002 · 行 20'])
+    expect(details.findAll('[title="demand-2"]').map((node) => node.text())).toEqual([
+      'SO-1002 · 行 20',
+      'SO-1002 · 行 20',
+    ])
     expect(details.text()).toContain('输入最早开工')
     expect(details.text()).toContain('实际排程开始')
     expect(details.find('[data-assignment-start]').text()).toBe('—')
