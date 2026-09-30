@@ -125,6 +125,35 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task Material_delivery_internal_endpoint_requires_token_and_binds_explicit_plan_route()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePersistedPlan("delivery-http", "delivery-problem", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var request = new
+        {
+            OrganizationId = "org-001", EnvironmentId = "prod",
+            Sources = new[] { new MaterialDeliverySourceSelection("suggestion", null,
+                [new MaterialDeliveryDueSourceContract("sales", FixedNow.AddDays(1))]) }
+        };
+        const string path = "/api/business/internal/v1/scheduling/plans/delivery-http/material-delivery-sources";
+        using var unauthorized = await client.PostAsJsonAsync(path, request);
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync(path, request);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = document.RootElement.GetProperty("data").Deserialize<MaterialDeliverySourcesResponse>(SchedulingJson.Options)!;
+        Assert.Equal("delivery-http", result.PlanId);
+        Assert.Equal("work-order-not-linked", Assert.Single(result.Items).Status);
+    }
+
+    [Fact]
     public async Task Workbench_preview_http_freezes_execution_and_preserves_business_records()
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -292,7 +321,8 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(19, contracts.Length);
+        Assert.Equal(20, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingMaterialDeliverySources");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingWorkbenchPlan");
