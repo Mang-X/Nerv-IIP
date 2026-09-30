@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
@@ -1293,6 +1294,14 @@ public sealed class DemandPlanningEndpointContractTests
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 ConfigureRequiredUpstreamBaseUrls(builder);
+                builder.ConfigureTestServices(services =>
+                {
+                    // 匿名鉴权不承担定时 MRP 验收，也不准备后台调度所需的数据库。
+                    var scheduler = services.Single(service =>
+                        service.ServiceType == typeof(IHostedService) &&
+                        service.ImplementationType == typeof(DailyMrpScheduler));
+                    services.Remove(scheduler);
+                });
             });
         using var client = factory.CreateClient();
 
