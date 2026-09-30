@@ -7,6 +7,12 @@ import {
 } from './materialDeliveryPresentation'
 const props = defineProps<{ row: BusinessConsoleMaterialDeliveryResponse }>()
 const emit = defineEmits<{ locateSuggestion: [suggestionId: string, runId: string] }>()
+function dueSourceLabel(reference: string | null | undefined): string {
+  if (!reference) return '—'
+  const source = props.row.demandSources?.find(item => item.demandSourceId === reference)
+  if (!source) return '未知需求来源'
+  return `${source.sourceReference}${source.sourceLineReference ? ` · 行 ${source.sourceLineReference}` : ''}`
+}
 const netFields = [
   ['grossDemandQuantity', '毛需求'],
   ['onHandQuantity', '在库'],
@@ -93,10 +99,15 @@ const netFields = [
         <p class="font-medium">
           {{ source.workOrderId ?? '未关联工单' }} · {{ label(source.status) }}
         </p>
-        <p>最紧交期来源 {{ source.tightestDueSourceReference ?? '—' }}</p>
+        <p>
+          最紧交期来源
+          <span :title="source.tightestDueSourceReference ?? undefined">{{
+            dueSourceLabel(source.tightestDueSourceReference)
+          }}</span>
+        </p>
         <div v-for="(bound, j) in source.dueBounds" :key="j" class="mt-2 border-t pt-2">
           <p>
-            {{ bound.sourceReference }} · 交期
+            <span :title="bound.sourceReference">{{ dueSourceLabel(bound.sourceReference) }}</span> · 交期
             <span :title="bound.dueUtc">{{ utc(bound.dueUtc) }}</span>
           </p>
           <p>

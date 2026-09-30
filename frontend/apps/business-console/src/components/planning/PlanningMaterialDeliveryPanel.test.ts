@@ -46,12 +46,13 @@ describe('物料交付页内事实', () => {
           reasons: ['supply-insufficient', 'expected-start-missing'],
           demandSources: [
             {
+              demandSourceId: 'demand-1',
               sourceReference: 'SO-1001',
               sourceLineReference: '10',
               sourceType: 'sales-order',
               grossDemandQuantity: 18,
             },
-            { sourceReference: 'SO-1002', sourceType: 'sales-order', grossDemandQuantity: 12 },
+            { demandSourceId: 'demand-2', sourceReference: 'SO-1002', sourceLineReference: '20', sourceType: 'sales-order', grossDemandQuantity: 12 },
           ],
           suggestionSources: [
             { suggestionId: 's-1', quantity: 12 },
@@ -62,6 +63,8 @@ describe('物料交付页内事实', () => {
             {
               workOrderId: 'WO-1001',
               status: 'unscheduled',
+              tightestDueSourceReference: 'demand-2',
+              dueBounds: [{ sourceReference: 'demand-1' }, { sourceReference: 'demand-2' }],
               operations: [
                 {
                   operationId: 'OP-10',
@@ -112,6 +115,9 @@ describe('物料交付页内事实', () => {
     expect(details.exists()).toBe(true)
     await details.find('summary').trigger('click')
     expect(details.text()).toContain('WO-1001')
+    expect(details.text()).toContain('最紧交期来源 SO-1002 · 行 20')
+    expect(details.find('[title="demand-1"]').text()).toBe('SO-1001 · 行 10')
+    expect(details.findAll('[title="demand-2"]').map(node => node.text())).toEqual(['SO-1002 · 行 20', 'SO-1002 · 行 20'])
     expect(details.text()).toContain('输入最早开工')
     expect(details.text()).toContain('实际排程开始')
     expect(details.find('[data-assignment-start]').text()).toBe('—')
