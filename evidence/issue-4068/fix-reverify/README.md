@@ -16,7 +16,7 @@
 
 限定：DHTMLX trial 通知会在换刻度/重绘后出现；通过正常UI尝试关闭，截图如仍存在保留事实，不改厂商通知DOM。D1动态图面缩窄后旧悬浮tooltip节点仍产生scrollWidth1283，但board/detail均在1024内；03实际详情完整，不声称全页所有悬浮层均无溢出。本次修复不扩展到厂商tooltip生命周期。初始四类反馈/未知依据完整验收在上级旧基线记录；本次只复验布局相关的正常、资源resize占用/延期反馈，不把旧截图声明成本head新证据。未复验真实后端/发布及日历/前序/未知反馈。
 
-本地门禁（相同产品内容）：fmt check通过；2文件lint通过（SchedulingPlanGantt.vue131原有unicorn warning未改）；Console build含vue-tsc通过；旧base Console全包246files/2893tests通过；当前base Console全包正在重跑，最终结果以PR更新为准；新base Scheduling108passed/4existing skipped；git diff --check通过。无新增CSS形状测试或产品功能。
+本地门禁（相同产品内容）：fmt check通过；2文件lint通过（SchedulingPlanGantt.vue131原有unicorn warning未改）；Console build含vue-tsc通过；旧base Console全包246files/2893tests通过；当前base Console全包246files/2893tests通过（exit0）；新base Scheduling108passed/4existing skipped；git diff --check通过。无新增CSS形状测试或产品功能。
 
 文件清单（每张均人工打开）：
 
