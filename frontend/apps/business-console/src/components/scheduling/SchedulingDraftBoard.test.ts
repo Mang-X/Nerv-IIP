@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { SchedulingToolbar, SchedulingLegend, TaskDetailPanel } from '@nerv-iip/scheduling'
 import SchedulingDraftBoard from './SchedulingDraftBoard.vue'
+import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
+import { NvInput } from '@nerv-iip/ui'
 
 function chartStub(name: string) {
   return defineComponent({
@@ -63,6 +65,120 @@ const model: ScheduleModel = {
 }
 
 describe('SchedulingDraftBoard', () => {
+  it('shows changed operation feedback after chart events and table edits without repreview (#4043)', async () => {
+    const draft = useWorkingScheduleDraft()
+    draft.loadPlan({
+      planId: 'APS-260930-001',
+      assignments: [
+        {
+          assignmentId: 'A-1',
+          orderId: 'WO-01',
+          operationId: '车削',
+          resourceId: '机台一',
+          workCenterId: '车削中心',
+          startUtc: '2026-09-30T08:00:00Z',
+          endUtc: '2026-09-30T10:00:00Z',
+        },
+        {
+          assignmentId: 'A-2',
+          orderId: 'WO-01',
+          operationId: '精车',
+          resourceId: '机台一',
+          workCenterId: '车削中心',
+          startUtc: '2026-09-30T10:00:00Z',
+          endUtc: '2026-09-30T12:00:00Z',
+        },
+      ],
+      calendars: [
+        {
+          calendarId: '白班',
+          shiftWindows: [{ startUtc: '2026-09-30T08:00:00Z', endUtc: '2026-09-30T18:00:00Z' }],
+        },
+      ],
+      validationContext: {
+        horizonStartUtc: '2026-09-30T00:00:00Z',
+        horizonEndUtc: '2026-10-01T00:00:00Z',
+        resources: [
+          {
+            resourceId: '机台一',
+            workCenterId: '车削中心',
+            calendarId: '白班',
+            capacityUnits: 1,
+            utilizationRate: 1,
+          },
+        ],
+        operations: [
+          {
+            orderId: 'WO-01',
+            operationId: '车削',
+            predecessorOperationIds: [],
+            dueUtc: '2026-09-30T12:00:00Z',
+            setupMinutes: 0,
+          },
+          {
+            orderId: 'WO-01',
+            operationId: '精车',
+            predecessorOperationIds: ['车削'],
+            dueUtc: '2026-09-30T12:00:00Z',
+            setupMinutes: 0,
+          },
+        ],
+        fixedReservations: [],
+      },
+    })
+    const host = defineComponent({
+      setup: () => () =>
+        h(SchedulingDraftBoard, {
+          model: draft.model.value,
+          feedback: draft.feedback.value,
+          onMove: draft.moveTask,
+          onUpdate: draft.updateTask,
+        }),
+    })
+    const wrapper = mount(host, { global: { stubs: charts } })
+    wrapper.findComponent(charts.GanttChart).vm.$emit('taskDragEnd', {
+      taskId: 'A-1',
+      operationId: '车削',
+      resourceId: '机台一',
+      startUtc: '2026-09-30T18:00:00Z',
+      endUtc: '2026-09-30T20:00:00Z',
+      kind: 'move',
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="scheduling-draft-task-detail"]').text()).toContain('日历外')
+    expect(wrapper.get('[data-testid="scheduling-draft-task-detail"]').text()).toContain(
+      '延期 480 分钟',
+    )
+    // 修改前序时，后继提示也必须直接可见，不能只藏在未选中的详情里。
+    expect(wrapper.get('[data-testid="draft-feedback-attention"]').text()).toContain('精车')
+    expect(wrapper.get('[data-testid="draft-feedback-attention"]').text()).toContain('前序倒置')
+    draft.undo()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="scheduling-draft-task-detail"]').text()).not.toContain(
+      '日历外',
+    )
+    expect(wrapper.get('[data-testid="scheduling-draft-task-detail"]').text()).toContain(
+      '提前 120 分钟',
+    )
+    await switchTab(wrapper, '资源排产板')
+    wrapper.findComponent(charts.ResourceSchedulerBoard).vm.$emit('taskDragEnd', {
+      taskId: 'A-1',
+      operationId: '车削',
+      resourceId: '机台一',
+      startUtc: '2026-09-30T08:00:00Z',
+      endUtc: '2026-09-30T19:00:00Z',
+      kind: 'resize',
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="scheduling-draft-task-detail"]').text()).toContain('日历外')
+    await switchTab(wrapper, '表格编辑')
+    const row = wrapper.get('tbody tr')
+    row.findAllComponents(NvInput)[1]!.vm.$emit('update:modelValue', '2026-09-30T12:00:00Z')
+    await flushPromises()
+    expect(row.text()).toContain('按期')
+    expect(row.text()).not.toContain('日历外')
+    wrapper.unmount()
+  })
   it('keeps table cells aligned with their visible headers', async () => {
     const wrapper = mount(SchedulingDraftBoard, {
       props: { model },
@@ -81,7 +197,7 @@ describe('SchedulingDraftBoard', () => {
 
     // 列：工单/工序 · 实际排程段 · 资源 · 开始 · 结束 · 物料 · 设备状态 · 锁定 · 待排
     const cells = wrapper.findAll('tbody td')
-    expect(cells).toHaveLength(9)
+    expect(cells).toHaveLength(10)
     expect((cells[3]!.find('input').element as HTMLInputElement).value).toBe('2026-07-24T08:00:00Z')
     expect(cells[5]!.text()).toContain('齐套')
     expect(cells[6]!.text()).toContain('正常')
