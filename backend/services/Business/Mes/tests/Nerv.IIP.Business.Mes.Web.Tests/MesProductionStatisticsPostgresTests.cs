@@ -29,7 +29,8 @@ public sealed class MesProductionStatisticsPostgresTests
             "env-dev",
             "C",
             "SKU-C",
-            windowStart.AddHours(1).AddMinutes(30),
+            // 洛杉矶工厂 08-29 18:30（晚于窗口末端的 UTC 时刻，但窗口按工厂本地取整后就是它的 08-29）。
+            windowStart.AddDays(1).AddHours(1).AddMinutes(30),
             20m,
             5m,
             5m,
@@ -75,23 +76,21 @@ public sealed class MesProductionStatisticsPostgresTests
 
         var handler = new QueryProductionStatisticsQueryHandler(db);
         var days = await Query(handler, ProductionStatisticsDimension.Day, windowStart, windowEnd);
-        Assert.Equal([new DateOnly(2026, 8, 28), new DateOnly(2026, 8, 29)], days.Items.Select(x => x.BusinessDate));
-        Assert.Equal([30m, 16m], days.Items.Select(x => x.TotalOutputQuantity));
-        var day = days.Items.Single(x => x.BusinessDate == new DateOnly(2026, 8, 29));
+        var day = Assert.Single(days.Items);
         Assert.Equal(new DateOnly(2026, 8, 29), day.BusinessDate);
-        Assert.Equal(12m, day.GoodQuantity);
-        Assert.Equal(2m, day.ScrapQuantity);
-        Assert.Equal(2m, day.ReworkQuantity);
-        Assert.Equal(16m, day.TotalOutputQuantity);
-        Assert.Equal(0.75m, day.GoodRate);
-        Assert.Equal(0.125m, day.ScrapRate);
-        Assert.Equal(0.125m, day.ReworkRate);
+        Assert.Equal(32m, day.GoodQuantity);
+        Assert.Equal(7m, day.ScrapQuantity);
+        Assert.Equal(7m, day.ReworkQuantity);
+        Assert.Equal(46m, day.TotalOutputQuantity);
+        Assert.Equal(0.695652m, day.GoodRate);
+        Assert.Equal(0.152174m, day.ScrapRate);
+        Assert.Equal(0.152174m, day.ReworkRate);
 
         var shifts = await Query(handler, ProductionStatisticsDimension.Shift, windowStart, windowEnd);
         Assert.Equal(
-            ["2026-08-28/LATE", "2026-08-29/EARLY", "2026-08-29/LATE"],
+            ["2026-08-29/EARLY", "2026-08-29/LATE"],
             shifts.Items.Select(x => x.DimensionValue));
-        Assert.Equal([30m, 14m, 2m], shifts.Items.Select(x => x.TotalOutputQuantity));
+        Assert.Equal([14m, 32m], shifts.Items.Select(x => x.TotalOutputQuantity));
 
         var workCenters = await Query(handler, ProductionStatisticsDimension.WorkCenter, windowStart, windowEnd);
         Assert.Equal(4, workCenters.TotalCount);
@@ -286,6 +285,45 @@ public sealed class MesProductionStatisticsPostgresTests
         Assert.All(shifts.Items, x => Assert.Equal(new DateOnly(2026, 9, 26), x.BusinessDate));
     }
 
+    [MesRealPostgresFact]
+    public async Task Single_day_window_counts_each_factorys_own_complete_business_day_across_timezones()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var db = new ApplicationDbContext(MesPostgresLaneDatabase.CreateOptions(), new NoopMediator());
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+        // 浏览器在上海、选 09-26：窗口是上海 09-26 00:00 至 09-27 00:00。三个工厂都只该计入各自的 09-26 整个业务日。
+        var windowStart = DateTimeOffset.Parse("2026-09-26T00:00:00+08:00").ToUniversalTime();
+        var windowEnd = DateTimeOffset.Parse("2026-09-27T00:00:00+08:00").ToUniversalTime();
+        var day = (new TimeOnly(8, 0), new TimeOnly(20, 0));
+        var night = (new TimeOnly(20, 0), new TimeOnly(8, 0));
+        // 跨午夜的长班（20:00–次日 14:00）：西半球工厂的尾段会落在窗口末端 24 小时之后，用来钉住末端放宽量。
+        var longNight = (new TimeOnly(20, 0), new TimeOnly(14, 0));
+
+        AddSiteReport(db, "BKK-D25", "Asia/Bangkok", "DAY", day, "2026-09-25T16:00:00+07:00", 1m);
+        AddSiteReport(db, "BKK-N25-TAIL", "Asia/Bangkok", "NIGHT", night, "2026-09-26T00:30:00+07:00", 2m);
+        AddSiteReport(db, "BKK-D26", "Asia/Bangkok", "DAY", day, "2026-09-26T10:00:00+07:00", 10m);
+        AddSiteReport(db, "BKK-N26-TAIL", "Asia/Bangkok", "NIGHT", night, "2026-09-27T02:00:00+07:00", 20m);
+        AddSiteReport(db, "TYO-D26", "Asia/Tokyo", "DAY", day, "2026-09-26T10:00:00+09:00", 100m);
+        AddSiteReport(db, "TYO-N26-TAIL", "Asia/Tokyo", "NIGHT", night, "2026-09-27T02:00:00+09:00", 200m);
+        AddSiteReport(db, "TYO-D27", "Asia/Tokyo", "DAY", day, "2026-09-27T10:00:00+09:00", 1000m);
+        AddSiteReport(db, "TYO-N27-TAIL", "Asia/Tokyo", "NIGHT", night, "2026-09-28T02:00:00+09:00", 2000m);
+        AddSiteReport(db, "BUE-D26", "America/Argentina/Buenos_Aires", "DAY", day, "2026-09-26T10:00:00-03:00", 10000m);
+        AddSiteReport(db, "BUE-L26-TAIL", "America/Argentina/Buenos_Aires", "LONG", longNight, "2026-09-27T13:30:00-03:00", 20000m);
+        await db.SaveChangesAsync();
+
+        var handler = new QueryProductionStatisticsQueryHandler(db);
+        var skus = await Query(handler, ProductionStatisticsDimension.Sku, windowStart, windowEnd);
+        Assert.Equal(
+            ["BKK-D26", "BKK-N26-TAIL", "BUE-D26", "BUE-L26-TAIL", "TYO-D26", "TYO-N26-TAIL"],
+            skus.Items.Select(x => x.SkuId));
+        Assert.Equal([10m, 20m, 10000m, 20000m, 100m, 200m], skus.Items.Select(x => x.GoodQuantity));
+
+        var days = Assert.Single((await Query(handler, ProductionStatisticsDimension.Day, windowStart, windowEnd)).Items);
+        Assert.Equal(new DateOnly(2026, 9, 26), days.BusinessDate);
+        Assert.Equal(30330m, days.GoodQuantity);
+    }
+
     private static void AddShanghaiReport(
         ApplicationDbContext db,
         string suffix,
@@ -293,15 +331,39 @@ public sealed class MesProductionStatisticsPostgresTests
         DateTimeOffset reportedAt,
         decimal goodQuantity)
     {
-        var (startsAt, endsAt) = shiftCode == "NIGHT"
+        var shift = shiftCode == "NIGHT"
             ? (new TimeOnly(20, 0), new TimeOnly(8, 0))
             : (new TimeOnly(8, 0), new TimeOnly(20, 0));
+        AddSiteReport(db, suffix, "Asia/Shanghai", shiftCode, shift, reportedAt, goodQuantity, "SKU-001");
+    }
+
+    private static void AddSiteReport(
+        ApplicationDbContext db,
+        string suffix,
+        string timezone,
+        string? shiftCode,
+        (TimeOnly StartsAt, TimeOnly EndsAt) shift,
+        string reportedAt,
+        decimal goodQuantity) =>
+        AddSiteReport(db, suffix, timezone, shiftCode, shift, DateTimeOffset.Parse(reportedAt), goodQuantity, suffix);
+
+    private static void AddSiteReport(
+        ApplicationDbContext db,
+        string suffix,
+        string timezone,
+        string? shiftCode,
+        (TimeOnly StartsAt, TimeOnly EndsAt) shift,
+        DateTimeOffset reportedAt,
+        decimal goodQuantity,
+        string skuId)
+    {
+        var (startsAt, endsAt) = shift;
         AddReportWithSnapshot(
             db,
             "org-001",
             "env-dev",
             suffix,
-            "SKU-001",
+            skuId,
             reportedAt.ToUniversalTime(),
             goodQuantity,
             0m,
@@ -309,10 +371,10 @@ public sealed class MesProductionStatisticsPostgresTests
             ProductionReportOeeDimensionSnapshot.Resolved(
                 $"DEV-{suffix}",
                 "WC-A",
-                "SITE-SH",
+                "SITE-" + timezone,
                 "WS-01",
                 "LINE-01",
-                "Asia/Shanghai",
+                timezone,
                 shiftCode,
                 shiftCode is null ? null : startsAt,
                 shiftCode is null ? null : endsAt,

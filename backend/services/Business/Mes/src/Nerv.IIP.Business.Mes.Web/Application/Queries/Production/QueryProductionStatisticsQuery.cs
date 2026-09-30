@@ -108,7 +108,17 @@ public sealed record ProductionStatisticsBucket(
 public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryProductionStatisticsQuery, ProductionStatisticsResponse>
 {
-    private static readonly TimeSpan BusinessDateFetchSlack = TimeSpan.FromDays(1);
+    // 窗口两端各取到该工厂本地最近的 00:00：起始日 = LocalDate(start + 12h)，结束日 = LocalDate(end - 12h)（闭区间）。
+    // 浏览器与工厂时区相差不足 12 小时时，选中哪几天就是哪几天，不会整天带入相邻业务日（多工厂多时区时必然出现）。
+    private static readonly TimeSpan WindowRoundingToLocalMidnight = TimeSpan.FromHours(12);
+
+    // SQL 取数放宽量的推导（范围内报工一定落在 [start - 12h, end + 36h) 里）：
+    // - 起始端：LocalDate(start + 12h) = 起始日 ⇒ 起始日本地 00:00 ≥ start - 12h；报工的本地日期不早于它的业务日，
+    //   所以范围内的报工发生时刻 ≥ 起始日本地 00:00 ≥ start - 12h。
+    // - 结束端：LocalDate(end - 12h) = 结束日 ⇒ 结束日次日本地 00:00 ≤ end + 12h；业务日为结束日的报工最晚是跨午夜班次的尾段，
+    //   发生在结束日次日本地 00:00 之后、班次结束时刻（< 24h）之前，所以 < end + 12h + 24h = end + 36h。
+    private static readonly TimeSpan FetchSlackBeforeStart = TimeSpan.FromHours(12);
+    private static readonly TimeSpan FetchSlackAfterEnd = TimeSpan.FromHours(36);
     private static readonly TimeZoneInfo DefaultFactoryTimezone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Shanghai");
 
     public async Task<ProductionStatisticsResponse> Handle(
@@ -118,8 +128,8 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
         // 窗口按「业务日范围」解释：夜班过了午夜的报工归开班当天，发生时刻可能落在窗口末端之后；
         // 反过来窗口起点之后的报工也可能属于前一业务日。SQL 两端各放宽一个班次跨度（最多 1 天），
         // 算出业务日后再按范围精确保留（IsInRequestedBusinessDateRange）。
-        var fetchStartUtc = request.WindowStartUtc - BusinessDateFetchSlack;
-        var fetchEndUtc = request.WindowEndUtc + BusinessDateFetchSlack;
+        var fetchStartUtc = request.WindowStartUtc - FetchSlackBeforeStart;
+        var fetchEndUtc = request.WindowEndUtc + FetchSlackAfterEnd;
         var scopedOriginalReportNos = dbContext.ProductionReports
             .AsNoTracking()
             .Where(report => report.OrganizationId == request.OrganizationId)
@@ -182,6 +192,7 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
             .Select(group => Calculate(request.Dimension, group.Key, group.ToArray()))
             .OrderBy(item => item.DimensionValue is null)
             .ThenBy(item => item.DimensionValue, StringComparer.Ordinal)
+            .ThenBy(item => item.BusinessDate)
             .ToArray();
         return new ProductionStatisticsResponse(
             request.OrganizationId,
@@ -296,21 +307,25 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
         new(row, effectiveReportedAtUtc, timezone, LocalDate(effectiveReportedAtUtc, timezone), reason);
 
     /// <summary>
-    /// 窗口起止在该报工的工厂时区里各取日期，得到闭区间 [起始日, 结束日]；结束时刻是开区间，按「结束前一刻」取日期。
-    /// 业务日算不出来的报工（时区或班次定义无效）没有业务日可比，按原始发生时刻落在窗口内保留。
+    /// 窗口起止各取到该报工工厂本地最近的 00:00 再取日期，得到业务日闭区间 [起始日, 结束日]。
+    /// 取整后区间为空说明窗口不足一天，此时按原始发生时刻落在窗口内保留；业务日算不出来的报工（时区或班次定义无效）同样按发生时刻保留。
     /// </summary>
     private static bool IsInRequestedBusinessDateRange(
         ProductionStatisticsFact fact,
         QueryProductionStatisticsQuery request)
     {
-        if (fact.BusinessDate is not { } businessDate || fact.Timezone is null)
+        if (fact.BusinessDate is { } businessDate && fact.Timezone is { } timezone)
         {
-            return fact.EffectiveReportedAtUtc >= request.WindowStartUtc &&
-                fact.EffectiveReportedAtUtc < request.WindowEndUtc;
+            var firstDate = LocalDate(request.WindowStartUtc + WindowRoundingToLocalMidnight, timezone);
+            var lastDate = LocalDate(request.WindowEndUtc - WindowRoundingToLocalMidnight, timezone);
+            if (firstDate <= lastDate)
+            {
+                return businessDate >= firstDate && businessDate <= lastDate;
+            }
         }
 
-        return businessDate >= LocalDate(request.WindowStartUtc, fact.Timezone) &&
-            businessDate <= LocalDate(request.WindowEndUtc.AddTicks(-1), fact.Timezone);
+        return fact.EffectiveReportedAtUtc >= request.WindowStartUtc &&
+            fact.EffectiveReportedAtUtc < request.WindowEndUtc;
     }
 
     private static DateOnly LocalDate(DateTimeOffset instantUtc, TimeZoneInfo timezone) =>
