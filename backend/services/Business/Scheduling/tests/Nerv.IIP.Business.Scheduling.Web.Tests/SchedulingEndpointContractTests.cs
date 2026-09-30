@@ -78,6 +78,34 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Csv_export_preserves_utf8_without_bom_crlf_and_utc_roundtrip_format(bool empty)
+    {
+        var plan = SchedulePlanContractMapper.ToContract(CreatePersistedPlan("csv-bytes", "csv-problem", FixedNow));
+        plan = plan with
+        {
+            Assignments = empty ? [] :
+            [
+                plan.Assignments.Single() with
+                {
+                    OrderId = "工单,一",
+                    OperationId = "op\"one",
+                    ResourceId = "设备\rline2\nline3",
+                    StartUtc = FixedNow.ToOffset(TimeSpan.FromHours(8)),
+                    EndUtc = FixedNow.AddMinutes(30).ToOffset(TimeSpan.FromHours(8)),
+                }
+            ],
+        };
+        var expected = "OrderId,OperationId,ResourceId,StartUtc,EndUtc,PlanStatus\r\n";
+        if (!empty)
+        {
+            expected += "\"工单,一\",\"op\"\"one\",\"设备\rline2\nline3\",2026-06-01T07:00:00.0000000Z,2026-06-01T07:30:00.0000000Z,Generated\r\n";
+        }
+        Assert.Equal(System.Text.Encoding.UTF8.GetBytes(expected), SchedulePlanCsv.Export(plan));
+    }
+
+    [Theory]
     [InlineData("csv-plan", "other-org", "prod")]
     [InlineData("csv-plan", "org-001", "other-env")]
     [InlineData("missing-plan", "org-001", "prod")]
