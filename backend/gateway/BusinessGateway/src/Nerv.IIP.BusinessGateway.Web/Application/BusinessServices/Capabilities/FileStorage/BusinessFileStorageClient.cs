@@ -421,7 +421,9 @@ public static class ShiftHandoverAttachments
 }
 
 /// <summary>
-/// 条码模板文件门面的固定值（#3856）：用途、owner 与内容类型由 BusinessGateway 决定，不从请求体读取。
+/// 条码模板文件门面的固定值（#3856）：用途、内容类型与 owner 的服务/类型由 BusinessGateway 决定，不从请求体读取。
+/// owner 标识**不在此列**：它取自请求中的模板编码（Trim 之后）——新建模板时服务端还没有这条记录，
+/// 编码只能由请求带进来。打印时 BarcodeLabel 按 Ordinal 比对文件 owner 与已存模板编码，绑错的文件在建批次时被拒。
 /// 取值与 FileStorage <c>PurposePolicies:barcode-label-template</c> 及 BarcodeLabel
 /// <c>HttpFileStorageLabelTemplateAssetAdapter</c> 的校验常量一致。
 /// </summary>

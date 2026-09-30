@@ -1,6 +1,7 @@
 /**
  * 条码模板文件上传（#3856）：建会话 → tus `PATCH` 送字节 → complete，三跳都走 BusinessGateway
- * 的条码模板文件门面，用途、owner（模板编码）与内容类型由网关固定。
+ * 的条码模板文件门面。用途、内容类型与 owner 的服务/类型由网关固定；owner 标识是这里传上去的模板编码，
+ * 打印时服务端按它比对，所以上传时的编码必须与最终保存的模板编码一致。
  *
  * ## 为什么 `PATCH` 要显式传 `bodySerializer: null`
  *
@@ -29,6 +30,14 @@ export const TEMPLATE_ASSET_FORMAT = 'nerv-iip.label-template'
 
 const TUS_RESUMABLE_VERSION = '1.0.0'
 const TUS_PATCH_CONTENT_TYPE = 'application/offset+octet-stream'
+
+/**
+ * 浏览器预检不通过（文件格式、大小、编码、缺模板编码）：这是字段级提示，页面放在「模板文件」旁边；
+ * 其它失败（网络、网关拒绝、上传不完整）是操作结果，页面走 toast。
+ */
+export class TemplateAssetPrecheckError extends Error {
+  override name = 'TemplateAssetPrecheckError'
+}
 
 export interface TemplateAssetUploadScope {
   organizationId: string
@@ -99,13 +108,13 @@ export async function uploadTemplateAsset(
   scope: TemplateAssetUploadScope,
 ): Promise<UploadedTemplateAsset> {
   const fileProblem = templateAssetFileProblem(file)
-  if (fileProblem) throw new Error(fileProblem)
+  if (fileProblem) throw new TemplateAssetPrecheckError(fileProblem)
   const templateCode = scope.templateCode.trim()
-  if (!templateCode) throw new Error('请先填写模板编码，再上传模板文件。')
+  if (!templateCode) throw new TemplateAssetPrecheckError('请先填写模板编码，再上传模板文件。')
 
   const bytes = new Uint8Array(await file.arrayBuffer())
   const contentProblem = templateAssetContentProblem(bytes)
-  if (contentProblem) throw new Error(contentProblem)
+  if (contentProblem) throw new TemplateAssetPrecheckError(contentProblem)
   const checksum = await templateAssetChecksum(bytes)
 
   const { data: session } = await createBusinessConsoleBarcodeTemplateAssetUploadSession({

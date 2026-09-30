@@ -2357,11 +2357,12 @@ public sealed record BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest
     long? SizeBytes = null);
 
 /// <summary>
-/// 条码模板文件上传会话请求（#3856）。用途、owner、内容类型与上传协议都不收请求体：BusinessGateway 固定
+/// 条码模板文件上传会话请求（#3856）。用途、内容类型、owner 的服务/类型与上传协议不收请求体：BusinessGateway 固定
 /// <c>barcode-label-template</c> 用途、<c>application/vnd.nerv-iip.label-template+json</c> 内容类型与
-/// <c>business-barcode-label / label-template / {TemplateCode}</c> owner，使
-/// <c>business.barcodes.templates.manage</c> 只能开出模板文件会话。owner 取模板编码，是因为打印时
-/// BarcodeLabel 要求模板文件的 owner 等于模板编码（<c>HttpFileStorageLabelTemplateAssetAdapter</c>）。
+/// <c>business-barcode-label / label-template</c>，使 <c>business.barcodes.templates.manage</c> 只能开出模板文件会话。
+/// owner 标识取自本请求的 <c>TemplateCode</c>（Trim 之后）：新建模板时服务端还没有记录，编码只能由请求带进来；
+/// 打印时 BarcodeLabel 按 Ordinal 比对文件 owner 与已存模板编码（<c>HttpFileStorageLabelTemplateAssetAdapter</c>），
+/// 绑错的文件在建批次时被拒。
 /// 该用途强制 SHA-256，所以 <c>Checksum</c> 必填（形如 <c>sha256:{64 位十六进制}</c>）。
 /// </summary>
 public sealed record BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest(

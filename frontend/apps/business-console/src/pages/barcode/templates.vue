@@ -16,7 +16,10 @@ import {
   variableSummary,
   type LabelVariableRow,
 } from '@/components/barcode/labelTemplateVariables'
-import { uploadTemplateAsset } from '@/components/barcode/templateAssetUpload'
+import {
+  TemplateAssetPrecheckError,
+  uploadTemplateAsset,
+} from '@/components/barcode/templateAssetUpload'
 import {
   NvButton,
   NvCheckbox,
@@ -231,6 +234,7 @@ async function onFileSelected(event: Event) {
   if (!file) return
   uploadPending.value = true
   uploadError.value = ''
+  // 上传期间模板编码输入框是锁住的；这里再按上传所用的编码核对一次，防止文件绑到别的编码上。
   const templateCode = form.templateCode.trim()
   try {
     const asset = await uploadTemplateAsset(file, {
@@ -238,11 +242,20 @@ async function onFileSelected(event: Event) {
       environmentId: filters.environmentId ?? '',
       templateCode,
     })
+    if (form.templateCode.trim() !== templateCode) {
+      form.templateFileId = ''
+      uploadedFileName.value = ''
+      uploadedForCode.value = ''
+      uploadError.value = '模板编码改了，请重新上传模板文件。'
+      return
+    }
     form.templateFileId = asset.fileId
     uploadedFileName.value = asset.fileName
     uploadedForCode.value = templateCode
   } catch (error) {
-    uploadError.value = inlineErrorMessage(error, '模板文件上传失败，请稍后重试。')
+    // 预检不通过是字段级提示，放在「模板文件」旁；接口失败是操作结果，走 toast（feedback-and-notifications）。
+    if (error instanceof TemplateAssetPrecheckError) uploadError.value = error.message
+    else notifyOperationFailure('上传模板文件失败', error, '模板文件上传失败，请稍后重试。')
   } finally {
     uploadPending.value = false
   }
@@ -351,6 +364,7 @@ async function submitTemplate() {
                     id="barcode-template-code"
                     v-model="form.templateCode"
                     autocomplete="off"
+                    :disabled="uploadPending"
                   />
                 </NvField>
                 <NvField :data-invalid="showErrors && !form.templateName.trim()">

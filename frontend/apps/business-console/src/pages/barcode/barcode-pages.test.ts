@@ -12,7 +12,8 @@ vi.mock('@/components/barcode/TemplateAssetRetirement.vue', () => ({
 }))
 
 // 上传三跳（建会话 / tus / complete）由 templateAssetUpload 自己的用例覆盖；页面用例只看弹窗怎么用它。
-vi.mock('@/components/barcode/templateAssetUpload', () => ({
+vi.mock('@/components/barcode/templateAssetUpload', async (orig) => ({
+  ...(await orig<typeof import('@/components/barcode/templateAssetUpload')>()),
   uploadTemplateAsset: barcode.uploadTemplateAsset,
 }))
 
@@ -53,9 +54,11 @@ const barcode = vi.hoisted(() => ({
       },
 }))
 
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: toastMock,
 }))
 
 const routerLinkStub = vi.hoisted(() => ({
@@ -671,8 +674,11 @@ describe('barcode pages', () => {
     expect(barcode.saveTemplate).not.toHaveBeenCalled()
   })
 
-  it('shows why an upload failed and keeps the template unsaved', async () => {
-    barcode.uploadTemplateAsset.mockRejectedValueOnce(new Error('模板文件只支持 .json 格式。'))
+  it('keeps a precheck problem next to the file field', async () => {
+    const { TemplateAssetPrecheckError } = await import('@/components/barcode/templateAssetUpload')
+    barcode.uploadTemplateAsset.mockRejectedValueOnce(
+      new TemplateAssetPrecheckError('模板文件只支持 .json 格式。'),
+    )
     const wrapper = mount(TemplatesPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
     })
@@ -681,7 +687,55 @@ describe('barcode pages', () => {
     await uploadTemplateFile(wrapper, 'pallet.txt')
 
     expect(wrapper.text()).toContain('模板文件只支持 .json 格式。')
+    expect(toastMock.error).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe('未上传')
+  })
+
+  it('reports a failed upload request as a toast instead of a lasting field message', async () => {
+    barcode.uploadTemplateAsset.mockRejectedValueOnce(new Error('上传会话已失效，请重新上传。'))
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await openNewTemplate(wrapper)
+    await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
+    await uploadTemplateFile(wrapper)
+
+    expect(toastMock.error).toHaveBeenCalledWith('上传模板文件失败：上传会话已失效，请重新上传。')
+    expect(wrapper.text()).not.toContain('上传会话已失效')
+    expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe('未上传')
+  })
+
+  it('never submits a code changed during upload together with the file uploaded for the old code', async () => {
+    let finishUpload!: (value: { fileId: string; fileName: string; sizeBytes: number }) => void
+    barcode.uploadTemplateAsset.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = resolve
+        }),
+    )
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await openNewTemplate(wrapper)
+    await setInput(wrapper, '#barcode-template-code', 'CODE_A')
+    await uploadTemplateFile(wrapper)
+
+    // 上传进行中：编码输入框锁住；即便有人改了编码，完成时也会按上传所用的编码核对。
+    expect(wrapper.find('#barcode-template-code').attributes('disabled')).toBeDefined()
+    await setInput(wrapper, '#barcode-template-code', 'CODE_B')
+    finishUpload({ fileId: 'file-code-a', fileName: 'a.json', sizeBytes: 363 })
+    await flushPromises()
+    expect(wrapper.find('#barcode-template-code').attributes('disabled')).toBeUndefined()
+
+    await setInput(wrapper, '#barcode-template-name', '托盘标签')
+    await wrapper.find('#barcode-template-item-0').setValue('skuCode')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const saved = barcode.saveTemplate.mock.calls.map((call) => call[0])
+    expect(saved).not.toContainEqual(
+      expect.objectContaining({ templateCode: 'CODE_B', templateFileId: 'file-code-a' }),
+    )
   })
 
   it('keeps the existing file when an edited template is saved without re-uploading', async () => {
