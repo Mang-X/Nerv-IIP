@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
@@ -101,22 +102,19 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             throw new KnownException($"在请求范围内未找到 MES 工单，请检查工单状态后重试：{string.Join(", ", missing)}");
         }
 
-        var assemblyChildren = await Task.WhenAll(requested.Select(async selection => new
+        var assemblyChildrenTask = Task.WhenAll(requested.Select(async selection => new
         {
             selection.WorkOrderId,
             ChildOrderIds = await GetAssemblyChildOrderIdsAsync(
                 organizationId, environmentId, selection.WorkOrderId, cancellationToken)
         }));
-        var assemblyChildrenByOrder = assemblyChildren.ToDictionary(
-            x => x.WorkOrderId, x => x.ChildOrderIds, StringComparer.Ordinal);
-
         var productionVersionIds = requested
             .Select(x => byId[x.WorkOrderId].ProductionVersionId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)
             .Select(x => x!)
             .ToArray();
-        var routingResults = await Task.WhenAll(productionVersionIds.Select(async productionVersionId => new
+        var routingResultsTask = Task.WhenAll(productionVersionIds.Select(async productionVersionId => new
         {
             ProductionVersionId = productionVersionId,
             Routing = await productEngineeringClient.GetProductionVersionRoutingAsync(
@@ -125,7 +123,10 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                     productionVersionId,
                     cancellationToken)
         }));
-        var routingsByVersion = routingResults.ToDictionary(
+        await Task.WhenAll(assemblyChildrenTask, routingResultsTask);
+        var assemblyChildrenByOrder = assemblyChildrenTask.Result.ToDictionary(
+            x => x.WorkOrderId, x => x.ChildOrderIds, StringComparer.Ordinal);
+        var routingsByVersion = routingResultsTask.Result.ToDictionary(
             x => x.ProductionVersionId,
             x => x.Routing,
             StringComparer.Ordinal);
@@ -188,7 +189,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(json);
-        return document.RootElement.Deserialize<MesAssemblyChildWorkOrdersResponse>(SchedulingJson.Options)!.AssemblyChildWorkOrderIds;
+        return document.RootElement.Deserialize<AssemblyChildWorkOrdersResponse>(SchedulingJson.Options)!.AssemblyChildWorkOrderIds;
     }
 
     private async Task<MesWorkOrderItem?> FindWorkOrderByIdAsync(
@@ -285,7 +286,6 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         "created", "released", "started", "hold");
 
     private sealed record MesWorkOrderListResponse(IReadOnlyCollection<MesWorkOrderItem> Items, int Total);
-    private sealed record MesAssemblyChildWorkOrdersResponse(IReadOnlyCollection<string> AssemblyChildWorkOrderIds);
     private sealed record MesWorkOrderItem(
         string WorkOrderId,
         string SkuId,

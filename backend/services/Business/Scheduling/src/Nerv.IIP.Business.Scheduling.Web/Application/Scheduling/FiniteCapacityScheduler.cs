@@ -157,6 +157,7 @@ public sealed class FiniteCapacityScheduler(
         state.ReserveFixedWorkCenterOccupancy();
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
+        state.ReportLockedAssemblyConflicts();
         return state.ToPlan();
     }
 
@@ -727,6 +728,34 @@ file sealed class SchedulerState
         }
     }
 
+    public void ReportLockedAssemblyConflicts()
+    {
+        var lockedOperations = from order in problem.Orders
+                               from operation in order.Operations
+                               join locked in problem.LockedAssignments
+                                   on new OperationKey(order.OrderId, operation.OperationId)
+                                   equals new OperationKey(locked.OrderId, locked.OperationId)
+                               select (Item: new OperationWorkItem(order, operation), Locked: locked);
+        foreach (var (item, locked) in lockedOperations)
+        {
+            var predecessorKeys = AssemblyPredecessorKeys(item).ToArray();
+            var predecessors = predecessorKeys.Select(key => assignments.FirstOrDefault(assignment =>
+                assignment.OrderId == key.OrderId && assignment.OperationId == key.OperationId)).ToArray();
+            if (HasMissingAssemblyChild(item) || predecessors.Any(assignment => assignment is null))
+            {
+                AddConflict(ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+                    ScheduleConflictSeverityContract.Error, locked.OrderId, locked.OperationId, locked.ResourceId,
+                    "锁定母单的装配子件未能排入本次计划。");
+            }
+            else if (predecessors.Any(assignment => assignment!.EndUtc > locked.StartUtc))
+            {
+                AddConflict(ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
+                    ScheduleConflictSeverityContract.Error, locked.OrderId, locked.OperationId, locked.ResourceId,
+                    "锁定母单的开始时间早于装配子件全部工序结束。");
+            }
+        }
+    }
+
     public SchedulePlanContract ToPlan()
     {
         var orderedAssignments = assignments
@@ -1054,13 +1083,12 @@ file sealed class SchedulerState
         return predecessorEnds.DefaultIfEmpty(problem.HorizonStartUtc).Max();
     }
 
-    private IEnumerable<OperationKey> PredecessorKeys(OperationWorkItem item)
-    {
-        foreach (var id in item.Operation.PredecessorOperationIds)
-        {
-            yield return new OperationKey(item.Order.OrderId, id);
-        }
+    private IEnumerable<OperationKey> PredecessorKeys(OperationWorkItem item) =>
+        item.Operation.PredecessorOperationIds.Select(id => new OperationKey(item.Order.OrderId, id))
+            .Concat(AssemblyPredecessorKeys(item));
 
+    private IEnumerable<OperationKey> AssemblyPredecessorKeys(OperationWorkItem item)
+    {
         if (item.Operation.OperationSequence != item.Order.Operations.Min(x => x.OperationSequence))
         {
             yield break;

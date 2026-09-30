@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.DemandPlanning;
+using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 
@@ -8,8 +9,6 @@ public sealed record GetAssemblyChildWorkOrdersQuery(
     string OrganizationId,
     string EnvironmentId,
     string WorkOrderId) : IQuery<AssemblyChildWorkOrdersResponse>;
-
-public sealed record AssemblyChildWorkOrdersResponse(IReadOnlyCollection<string> AssemblyChildWorkOrderIds);
 
 public sealed class GetAssemblyChildWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetAssemblyChildWorkOrdersQuery, AssemblyChildWorkOrdersResponse>
