@@ -607,9 +607,10 @@ try {
     # 第三条钉「一条报工都没有的工序落 0 而不是 null」），共 71 条；
     # 加上 #3646 的线边收料 HTTP、实际价值与 outbox 原子提交证明，含 #4033 工单急单与优先级持久化证明，共 74 条。
     # 再加 #3859 的夜班跨午夜报工按业务日范围取数 1 条（窗口两端放宽后再按业务日精确保留），共 75 条。
+    # 再加 #3859 的多时区单日窗口 1 条（上海窗口下曼谷、东京、布宜诺斯艾利斯工厂各自只计本厂完整业务日），共 76 条。
     # CAP 的原生存储表落在独立 cap schema，业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 75) 'The MES member must freeze exactly its seventy-five governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 76) 'The MES member must freeze exactly its seventy-six governed PostgreSQL identities.'
     $mesCollaborationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
     $mesClaimIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
     Assert-Contract (@($mesMember.expectedTestIdentities | Where-Object { [string]::Equals([string]$_, $mesCollaborationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES member must freeze the participant-only reportable-scope PostgreSQL identity exactly once.'
