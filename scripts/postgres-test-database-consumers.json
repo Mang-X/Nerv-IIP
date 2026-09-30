@@ -60,6 +60,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/NetRequirementIdentityPersistenceTests.cs",
+      "sourceSha256": "5e18b5d2fad36dd8feaeae1be8ca625defb59821313b7933b4debe3e2a3be010",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 2,
+          "ownerVariable": "database",
+          "reason": "The netting identity migration and persistence proofs must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
       "sourceSha256": "089aab2ca4a4790bb3a60dd473fbb018479791afa4bdb63ee3dbbe357f35d5d4",
       "factoryCallCount": 1,
