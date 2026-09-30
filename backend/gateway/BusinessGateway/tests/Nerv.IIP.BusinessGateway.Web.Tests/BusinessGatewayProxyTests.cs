@@ -10307,6 +10307,54 @@ public sealed class BusinessGatewayProxyTests
         }
     }
 
+    [Theory]
+    [InlineData(true, "org-001", HttpStatusCode.OK)]
+    [InlineData(false, "org-001", HttpStatusCode.Forbidden)]
+    [InlineData(true, "org-other", HttpStatusCode.Forbidden)]
+    public async Task Scheduling_csv_facade_preserves_download_bytes_and_authorizes_scope(
+        bool allowed, string organizationId, HttpStatusCode expectedStatus)
+    {
+        // #4084 PublicContract: proxy the owner CSV unchanged, only after plans.read in the token scope.
+        var csv = System.Text.Encoding.UTF8.GetBytes("\uFEFFPlanId,OrderReference\r\nplan-001,订单一\r\n");
+        var handler = new RecordingHandler(_ =>
+        {
+            var result = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(csv) };
+            result.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/csv") { CharSet = "utf-8" };
+            result.Content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "schedule-plan.csv" };
+            return result;
+        });
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync($"/api/business-console/v1/scheduling/plans/plan-001/csv?organizationId={organizationId}&environmentId=env-dev");
+        Assert.Equal(expectedStatus, response.StatusCode);
+        if (expectedStatus != HttpStatusCode.OK)
+        {
+            Assert.Empty(handler.Requests);
+            return;
+        }
+        Assert.Equal(csv, await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal("text/csv", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType.CharSet);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition!.DispositionType);
+        Assert.Equal("schedule-plan.csv", response.Content.Headers.ContentDisposition.FileName!.Trim('"'));
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/csv", request.RequestUri!.AbsolutePath);
+        Assert.Equal("?organizationId=org-001&environmentId=env-dev", request.RequestUri.Query);
+        Assert.Equal("internal-test-token", request.Headers.Authorization!.Parameter);
+        Assert.Equal(BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("scheduling-plan", auth.LastRequirement.ResourceType);
+        Assert.Equal("plan-001", auth.LastRequirement.ResourceId);
+    }
+
     [Fact]
     public async Task Scheduling_http_client_sends_internal_token_and_downstream_routes()
     {
@@ -20495,6 +20543,10 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         LastPlanRequest = request;
         return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan());
     }
+
+    public Task<byte[]> ExportPlanCsvAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(Array.Empty<byte>());
 
     public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,

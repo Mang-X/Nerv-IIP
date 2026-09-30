@@ -5113,8 +5113,13 @@
       "method": "GET",
       "route": "/api/business/v1/scheduling/plans/{planId}/csv",
       "operationId": "exportSchedulingPlanCsv",
-      "classification": "deferred",
-      "followUp": "#4084"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "exportBusinessConsoleSchedulingPlanCsv"
+      ]
     },
     {
       "service": "Scheduling",

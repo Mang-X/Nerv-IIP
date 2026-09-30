@@ -16,6 +16,26 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Scheduling_csv_openapi_exposes_a_binary_csv_download_without_a_json_envelope()
+    {
+        // #4084 PublicContract: stable operation and text/csv download, not ResponseData.
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var operation = document.RootElement.GetProperty("paths")
+            .GetProperty("/api/business-console/v1/scheduling/plans/{planId}/csv").GetProperty("get");
+        Assert.Equal("exportBusinessConsoleSchedulingPlanCsv", operation.GetProperty("operationId").GetString());
+        var queryParameters = operation.GetProperty("parameters").EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .Select(parameter => parameter.GetProperty("name").GetString()).ToArray();
+        Assert.Contains("organizationId", queryParameters);
+        Assert.Contains("environmentId", queryParameters);
+        var content = operation.GetProperty("responses").GetProperty("200").GetProperty("content");
+        Assert.False(content.TryGetProperty("application/json", out _));
+        var schema = content.GetProperty("text/csv").GetProperty("schema");
+        Assert.Equal("string", schema.GetProperty("type").GetString());
+        Assert.Equal("binary", schema.GetProperty("format").GetString());
+    }
+
+    [Fact]
     public async Task Mes_material_issue_detail_forwards_scope_and_maps_substitute_audit()
     {
         var handler = new MaterialIssueDetailStubHandler(
