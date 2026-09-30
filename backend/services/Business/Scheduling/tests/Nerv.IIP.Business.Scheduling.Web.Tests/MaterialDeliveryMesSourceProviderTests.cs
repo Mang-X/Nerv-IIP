@@ -7,8 +7,10 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 public sealed class MaterialDeliveryMesSourceProviderTests
 {
-    [Fact]
-    public async Task Public_mes_facts_page_all_signed_reports_and_preserve_exact_identity_tenant_and_start()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Public_mes_facts_page_all_signed_reports_and_preserve_exact_identity_tenant_and_start(bool emptyReports)
     {
         var requested = new List<string>();
         var start = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
@@ -24,7 +26,11 @@ public sealed class MaterialDeliveryMesSourceProviderTests
             if (path.Contains("production-reports"))
             {
                 Assert.Contains("workOrderId=wo", path);
-                data = new { total = 101, items = new[] { new { operationTaskId = "op", goodQuantity = path.Contains("skip=100") ? -1m : 5m } } };
+                data = new { total = emptyReports ? 0 : 101, items = emptyReports
+                    ? []
+                    : path.Contains("skip=100")
+                        ? new[] { new { operationTaskId = "op", goodQuantity = -1m } }
+                        : Enumerable.Range(0, 100).Select(_ => new { operationTaskId = "op", goodQuantity = 0.05m }).ToArray() };
             }
             else if (path.StartsWith("/api/business/v1/mes/work-orders/wo?", StringComparison.Ordinal))
                 data = new { sourcePlanReference = new { sourceSystem = "DemandPlanning", sourceDocumentType = "PlanningSuggestion", sourceDocumentId = "s" },
@@ -42,7 +48,8 @@ public sealed class MaterialDeliveryMesSourceProviderTests
                     }))
                 };
             }
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { data })) };
+            // MES detail 和 production-reports producer 都直接返回 response，未包装 data。
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(data)) };
         })) { BaseAddress = new Uri("http://mes") };
         var source = await new HttpMaterialDeliveryMesSourceProvider(client, new Token()).GetAsync("org", "env", "wo", default);
         Assert.Equal("wo", source!.WorkOrderId);
@@ -50,10 +57,13 @@ public sealed class MaterialDeliveryMesSourceProviderTests
         Assert.Equal(10m, source.Quantity);
         Assert.Equal("s", source!.SuggestionId);
         var operation = Assert.Single(source.Operations);
-        Assert.Equal(4m, operation.NetGoodQuantity);
+        Assert.Equal(emptyReports ? 0m : 4m, operation.NetGoodQuantity);
         Assert.Equal(start, operation.StartedAtUtc);
         Assert.Equal("op", operation.OperationId);
-        Assert.Equal(4, requested.Count);
+        Assert.Equal(2, operation.Sequence);
+        Assert.Equal("started", operation.Status);
+        Assert.Equal(start.AddHours(-1), operation.EarliestStartUtc);
+        Assert.Equal(emptyReports ? 3 : 4, requested.Count);
     }
 
     [Fact]
