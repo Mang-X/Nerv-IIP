@@ -91,7 +91,7 @@ public sealed class DemandPlanningEndpointContractTests
     {
         var contracts = DemandPlanningEndpointContracts.All.ToArray();
 
-        Assert.Equal(16, contracts.Length);
+        Assert.Equal(17, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningMpsBuckets");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createPlanningMpsBucket");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/planning/mps/{mpsId}" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "updatePlanningMpsBucket");
@@ -105,6 +105,7 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mrp-runs" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRun && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "runPlanningMrp");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mrp-runs" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningMrpRuns");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mrp-runs/{runId}/pegging" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getPlanningMrpPegging");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mrp-runs/{runId}/material-deliveries" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getPlanningMaterialDeliveries");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/suggestions" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningSuggestions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/suggestions/{suggestionId}/accept" && x.PermissionCode == DemandPlanningPermissionCodes.SuggestionsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptPlanningSuggestion");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/suggestions/{suggestionId}/reject" && x.PermissionCode == DemandPlanningPermissionCodes.SuggestionsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "rejectPlanningSuggestion");
@@ -124,6 +125,7 @@ public sealed class DemandPlanningEndpointContractTests
     [InlineData(typeof(RunMrpEndpoint))]
     [InlineData(typeof(ListMrpRunsEndpoint))]
     [InlineData(typeof(ListMrpPeggingEndpoint))]
+    [InlineData(typeof(GetMaterialDeliveriesEndpoint))]
     [InlineData(typeof(ListPlanningSuggestionsEndpoint))]
     [InlineData(typeof(AcceptPlanningSuggestionEndpoint))]
     [InlineData(typeof(RejectPlanningSuggestionEndpoint))]
@@ -1424,6 +1426,24 @@ public sealed class DemandPlanningEndpointContractTests
                 efServices.Dispose();
             }
         }
+    }
+
+    [Fact]
+    public async Task Material_deliveries_HTTP_requires_internal_auth_and_keeps_explicit_plan_selection()
+    {
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        var runId = Guid.NewGuid();
+        var path = $"/api/business/v1/planning/mrp-runs/{runId}/material-deliveries?organizationId=org&environmentId=env&planId=selected-plan";
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = payload.RootElement.GetProperty("data");
+        Assert.Equal(runId.ToString(), data.GetProperty("runId").GetString());
+        Assert.Equal("selected-plan", data.GetProperty("planId").GetString());
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
     }
 
     private static void ConfigureRequiredUpstreamBaseUrls(IWebHostBuilder builder)

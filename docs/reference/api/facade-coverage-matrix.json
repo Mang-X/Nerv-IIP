@@ -17,6 +17,14 @@
   ],
   "endpoints": [
     {
+      "service": "DemandPlanning",
+      "method": "GET",
+      "route": "/api/business/v1/planning/mrp-runs/{runId}/material-deliveries",
+      "operationId": "getPlanningMaterialDeliveries",
+      "classification": "deferred",
+      "followUp": "#4096：物料交付 D 原子传播 Gateway/OpenAPI/generated 契约"
+    },
+    {
       "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/andon-calls",

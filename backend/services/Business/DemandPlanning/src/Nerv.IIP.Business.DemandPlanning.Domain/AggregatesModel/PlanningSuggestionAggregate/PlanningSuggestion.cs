@@ -278,6 +278,15 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         SupersededByRunId = successorRunId;
     }
 
+    public bool IsAssemblyParentOf(PlanningSuggestion component) =>
+        Id != component.Id && MrpRunId == component.MrpRunId &&
+        OrganizationId == component.OrganizationId && EnvironmentId == component.EnvironmentId && SiteCode == component.SiteCode &&
+        SuggestionType == "planned-work-order" && ReleaseDate == component.RequiredDate &&
+        component.PeggingLinks.Any(link => link.PeggingType is "demand" or "safety-stock" or "negative-availability" &&
+            link.ComponentSkuCode == component.SkuCode && link.ParentSkuCode == SkuCode &&
+            PeggingLinks.Any(parentLink => parentLink.PeggingType == link.PeggingType &&
+                parentLink.DemandSourceReference == link.DemandSourceReference && parentLink.SourceLineReference == link.SourceLineReference));
+
     public void InvalidateDemandLines(string demandSourceReference, IReadOnlyCollection<string?> sourceLineReferences)
     {
         if (Status != PlanningSuggestionStatus.Open)
