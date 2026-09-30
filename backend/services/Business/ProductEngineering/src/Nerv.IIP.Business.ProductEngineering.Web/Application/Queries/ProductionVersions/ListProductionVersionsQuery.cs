@@ -10,16 +10,24 @@ public sealed record ListProductionVersionsQuery(
     string? SkuCode,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<ListProductionVersionsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListProductionVersionsResponse>;
+
+public sealed class ListProductionVersionsQueryValidator : AbstractValidator<ListProductionVersionsQuery>
+{
+    public ListProductionVersionsQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionVersionsQuery, ListProductionVersionsResponse>
 {
     public async Task<ListProductionVersionsResponse> Handle(ListProductionVersionsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.ProductionVersions
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.SkuCode))
         {
@@ -37,8 +45,8 @@ public sealed class ListProductionVersionsQueryHandler(ApplicationDbContext dbCo
             .ThenByDescending(x => x.IsDefault)
             .ThenBy(x => x.Priority)
             .ThenBy(x => x.ValidFrom)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new
             {
                 Id = x.Id.Id,
