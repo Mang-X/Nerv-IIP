@@ -18,8 +18,9 @@ const session = {
   expiresAtUtc: '2099-01-01T00:00:00Z',
 }
 
-for (const writeFails of [false, true]) {
-  test(`通知收件箱${writeFails ? '保留失败操作前状态' : '筛选、详情与已读数同步'}`, async ({
+for (const failure of ['none', 'domain', 'network'] as const) {
+  const writeFails = failure !== 'none'
+  test(`通知收件箱${writeFails ? `保留失败操作前状态（${failure}）` : '筛选、详情与已读数同步'}`, async ({
     page,
   }, testInfo) => {
     let read = false
@@ -73,6 +74,7 @@ for (const writeFails of [false, true]) {
           organizationId: 'org-001',
           environmentId: 'env-dev',
         })
+        if (failure === 'network') return route.abort('failed')
         if (!writeFails) read = true
         await route.fulfill({
           json: writeFails
@@ -98,10 +100,20 @@ for (const writeFails of [false, true]) {
     await expect(page).toHaveURL(/\/$/)
     await detail.getByRole('button', { name: '标记已读', exact: true }).click()
     if (writeFails) {
-      await expect(inbox.getByRole('alert')).toContainText('无法标记该通知')
+      await expect(
+        page.getByText(
+          failure === 'domain'
+            ? '标记已读失败：无法标记该通知'
+            : '标记已读失败：网络异常，操作结果可能尚未确认；请刷新列表核实后再重试。',
+          { exact: true },
+        ),
+      ).toBeVisible()
+      await expect(inbox.getByRole('alert')).toHaveCount(0)
+      await expect(page.getByText('Failed to fetch', { exact: true })).toHaveCount(0)
       await expect(detail.getByText('未读', { exact: true })).toBeVisible()
       await expect(inbox.getByText('1 条未读通知')).toBeVisible()
     } else {
+      await expect(page.getByText('通知已标记为已读', { exact: true })).toBeVisible()
       await expect(inbox.getByText('0 条未读通知')).toBeVisible()
       await expect(detail.getByText('已读', { exact: true })).toBeVisible()
       await expect(inbox.getByRole('button', { name: '标记已读', exact: true })).toHaveCount(0)

@@ -4,14 +4,6 @@ export function messageTitle(message: BusinessConsoleNotificationMessageItem) {
   return message.title ?? message.summary ?? '通知'
 }
 
-export function formatNotificationDate(value?: string | null) {
-  return value
-    ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(
-        new Date(value),
-      )
-    : '—'
-}
-
 const resourceLabels: Record<string, string> = {
   'schedule-plan': '排产计划',
   'demand-change-request': '需求变更',

@@ -4,7 +4,7 @@ import {
   type BusinessConsoleNotificationMessageItem,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, shallowRef } from 'vue'
+import { computed } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useAuthStore } from '@/stores/auth'
 import { hasBusinessContext } from './businessContextBinding'
@@ -16,7 +16,6 @@ export function isReadMessage(message: BusinessConsoleNotificationMessageItem) {
 export function useBusinessNotifications() {
   const context = useBusinessContextStore()
   const auth = useAuthStore()
-  const actionError = shallowRef<Error>()
   const contextFields = () => ({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
@@ -34,43 +33,23 @@ export function useBusinessNotifications() {
     query.data.value?.success ? (query.data.value.data?.items ?? []) : [],
   )
   const unreadMessages = computed(() => messages.value.filter((message) => !isReadMessage(message)))
-  const allError = computed(
-    () =>
-      actionError.value ??
-      query.error.value ??
-      (query.data.value?.success === false
-        ? new Error(query.data.value.message || '无法加载通知')
-        : undefined),
+  const messagesError = computed(
+    () => query.error.value ?? (query.data.value?.success === false ? query.data.value : undefined),
   )
 
   async function markRead(messageId: string) {
-    actionError.value = undefined
-    try {
-      const response = await mutation.mutateAsync({ path: { messageId }, body: contextFields() })
-      if (!response.success) throw new Error(response.message || '无法标记已读')
-      await query.refetch()
-    } catch (error) {
-      actionError.value = error as Error
-      throw error
-    }
-  }
-
-  async function refreshNotifications() {
-    actionError.value = undefined
-    try {
-      await query.refetch()
-    } catch (error) {
-      actionError.value = error as Error
-    }
+    const response = await mutation.mutateAsync({ path: { messageId }, body: contextFields() })
+    if (!response.success) throw response
+    await query.refetch()
   }
 
   return {
     messages,
     unreadMessages,
-    allError,
+    messagesError,
     markRead,
     markReadPending: mutation.isLoading,
     messagesPending: query.isLoading,
-    refreshNotifications,
+    refreshNotifications: query.refetch,
   }
 }

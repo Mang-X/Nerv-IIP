@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { formatDateTime } from '@/utils/format'
 import type { BusinessConsoleNotificationMessageItem } from '@nerv-iip/api-client'
 import { Button } from '@nerv-iip/ui'
-import { formatNotificationDate, messageTitle, resourceTypeLabel } from './notificationFormatters'
+import { messageTitle, resourceTypeLabel } from './notificationFormatters'
 import { isReadMessage } from '@/composables/useBusinessNotifications'
 
 defineProps<{ message: BusinessConsoleNotificationMessageItem; markReadPending: boolean }>()
@@ -24,7 +25,7 @@ defineEmits<{ markRead: [messageId: string]; close: [] }>()
       </div>
       <div>
         <dt class="text-muted-foreground">发送时间</dt>
-        <dd>{{ formatNotificationDate(message.createdAtUtc) }}</dd>
+        <dd>{{ formatDateTime(message.createdAtUtc) }}</dd>
       </div>
       <template v-if="message.resource">
         <div>

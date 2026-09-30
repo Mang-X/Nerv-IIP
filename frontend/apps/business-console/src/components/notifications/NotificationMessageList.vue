@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { formatDateTime } from '@/utils/format'
 import type { BusinessConsoleNotificationMessageItem } from '@nerv-iip/api-client'
 import { Button } from '@nerv-iip/ui'
 import { isReadMessage } from '@/composables/useBusinessNotifications'
-import { messageTitle, formatNotificationDate, resourceTypeLabel } from './notificationFormatters'
+import { messageTitle, resourceTypeLabel } from './notificationFormatters'
 
 defineProps<{
   messages: BusinessConsoleNotificationMessageItem[]
@@ -38,7 +39,7 @@ defineEmits<{ open: [messageId: string]; markRead: [messageId: string] }>()
         <span v-if="message.resource?.resourceType">{{
           resourceTypeLabel(message.resource.resourceType)
         }}</span>
-        <span>{{ formatNotificationDate(message.createdAtUtc) }}</span>
+        <span>{{ formatDateTime(message.createdAtUtc) }}</span>
         <Button
           v-if="message.messageId && !isReadMessage(message)"
           variant="ghost"

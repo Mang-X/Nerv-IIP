@@ -14,16 +14,20 @@ import { useBusinessNotifications } from '@/composables/useBusinessNotifications
 import NotificationMessageList from './NotificationMessageList.vue'
 import NotificationMessageDetail from './NotificationMessageDetail.vue'
 import { resourceTypeLabel } from './notificationFormatters'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const {
   messages,
   unreadMessages,
   messagesPending,
-  allError,
+  messagesError,
   markRead,
   markReadPending,
   refreshNotifications,
 } = useBusinessNotifications()
+const loadErrorMessage = computed(() =>
+  inlineErrorMessage(messagesError.value, '无法加载通知，请稍后重试。'),
+)
 const resourceType = ref('')
 const selectedMessageId = ref<string>()
 const resourceTypes = computed(() =>
@@ -47,8 +51,16 @@ const selectedMessage = computed(() =>
 async function handleMarkRead(messageId: string) {
   try {
     await markRead(messageId)
-  } catch {
-    // useBusinessNotifications 将操作错误展示在面板中。
+    notifySuccess('通知已标记为已读')
+  } catch (error) {
+    notifyOperationFailure('标记已读失败', error, '标记已读失败，请稍后重试。')
+  }
+}
+async function handleRefresh() {
+  try {
+    await refreshNotifications()
+  } catch (error) {
+    notifyOperationFailure('刷新通知失败', error, '刷新通知失败，请稍后重试。')
   }
 }
 </script>
@@ -84,17 +96,12 @@ async function handleMarkRead(messageId: string) {
               </option>
             </select>
           </label>
-          <Button
-            variant="outline"
-            size="sm"
-            :disabled="messagesPending"
-            @click="refreshNotifications"
-          >
+          <Button variant="outline" size="sm" :disabled="messagesPending" @click="handleRefresh">
             <RefreshCwIcon class="size-4" aria-hidden="true" />刷新
           </Button>
         </div>
-        <p v-if="allError" role="alert" class="text-sm text-destructive">
-          无法更新通知：{{ allError.message }}
+        <p v-if="loadErrorMessage" role="alert" class="text-sm text-destructive">
+          {{ loadErrorMessage }}
         </p>
         <NotificationMessageDetail
           v-if="selectedMessage"
