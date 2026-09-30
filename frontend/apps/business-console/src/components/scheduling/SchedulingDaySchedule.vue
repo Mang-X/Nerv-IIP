@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import type { BusinessConsoleSchedulePlan } from '@nerv-iip/api-client'
-import { NvButton, NvInput } from '@nerv-iip/ui'
+import {
+  NvButton,
+  NvInput,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+} from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
 import SchedulingDaySheet from './SchedulingDaySheet.vue'
@@ -50,14 +58,17 @@ function print() {
       <label for="day-schedule-date" class="text-sm font-medium">排程日期</label>
       <NvInput id="day-schedule-date" v-model="day" type="date" class="w-44" />
       <label for="day-schedule-center" class="text-sm font-medium">工作中心</label>
-      <select
-        id="day-schedule-center"
-        v-model="workCenter"
-        class="h-9 rounded-md border bg-background px-3 text-sm"
-      >
-        <option value="all">全部工作中心</option>
-        <option v-for="center in workCenters" :key="center" :value="center">{{ center }}</option>
-      </select>
+      <NvSelect v-model="workCenter">
+        <NvSelectTrigger id="day-schedule-center" class="w-52" aria-label="工作中心">
+          <NvSelectValue />
+        </NvSelectTrigger>
+        <NvSelectContent>
+          <NvSelectItem value="all">全部工作中心</NvSelectItem>
+          <NvSelectItem v-for="center in workCenters" :key="center" :value="center">{{
+            center
+          }}</NvSelectItem>
+        </NvSelectContent>
+      </NvSelect>
       <NvButton
         type="button"
         variant="outline"
@@ -89,19 +100,21 @@ function print() {
 </template>
 
 <style scoped>
-.scheduling-day-print {
-  display: none;
-}
-@media print {
-  :global(body > :not(.scheduling-day-print)) {
-    display: none !important;
-  }
+@layer app {
   .scheduling-day-print {
-    display: block;
+    display: none;
   }
-  @page {
-    size: landscape;
-    margin: 12mm;
+  @media print {
+    :global(body > :not(.scheduling-day-print)) {
+      display: none !important;
+    }
+    .scheduling-day-print {
+      display: block;
+    }
+    @page {
+      size: landscape;
+      margin: 12mm;
+    }
   }
 }
 </style>

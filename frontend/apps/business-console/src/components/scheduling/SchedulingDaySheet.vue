@@ -62,26 +62,28 @@ defineProps<{
 </template>
 
 <style scoped>
-th,
-td {
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-}
-@media print {
-  .day-sheet {
-    color: black;
-    background: white;
-  }
+@layer app {
   th,
   td {
-    border-color: black;
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
   }
-  tr {
-    break-inside: avoid;
-  }
-  thead {
-    display: table-header-group;
+  @media print {
+    .day-sheet {
+      color: black;
+      background: white;
+    }
+    th,
+    td {
+      border-color: black;
+    }
+    tr {
+      break-inside: avoid;
+    }
+    thead {
+      display: table-header-group;
+    }
   }
 }
 </style>

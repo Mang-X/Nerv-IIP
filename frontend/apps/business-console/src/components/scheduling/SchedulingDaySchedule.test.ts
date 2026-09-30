@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { NvSelect } from '@nerv-iip/ui'
 import { afterEach, expect, it, vi } from 'vitest'
 import SchedulingDaySchedule from './SchedulingDaySchedule.vue'
 
@@ -46,7 +47,8 @@ it('shows overlapping assignments on the selected local day and prints only the 
   const print = vi.spyOn(window, 'print').mockImplementation(() => {})
   const wrapper = mount(SchedulingDaySchedule, { props: { plan }, attachTo: document.body })
   await wrapper.get('input[type="date"]').setValue('2026-09-30')
-  await wrapper.get('select').setValue('WC-CNC')
+  wrapper.findComponent(NvSelect).vm.$emit('update:modelValue', 'WC-CNC')
+  await wrapper.vm.$nextTick()
   expect(wrapper.text()).toContain('WO-ROD-01')
   expect(wrapper.text()).not.toContain('WO-ROD-02')
   expect(wrapper.text()).not.toContain('WO-ASSEMBLY-01')
