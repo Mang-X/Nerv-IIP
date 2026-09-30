@@ -40541,6 +40541,13 @@
                 "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanValidationContextContract"
               }
             ]
+          },
+          "assemblyDependencies": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingAssemblyDependencyContract"
+            }
           }
         }
       },
@@ -41179,6 +41186,18 @@
           }
         }
       },
+      "NervIIPContractsSchedulingSchedulingAssemblyDependencyContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "childOrderId": {
+            "type": "string"
+          },
+          "parentOrderId": {
+            "type": "string"
+          }
+        }
+      },
       "NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -41274,6 +41293,13 @@
             "nullable": true,
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingEquipmentDataRiskContract"
+            }
+          },
+          "assemblyDependencies": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingAssemblyDependencyContract"
             }
           }
         }

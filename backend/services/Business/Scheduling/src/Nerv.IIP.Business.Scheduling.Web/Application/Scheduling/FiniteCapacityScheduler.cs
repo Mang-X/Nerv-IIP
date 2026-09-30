@@ -157,6 +157,7 @@ public sealed class FiniteCapacityScheduler(
         state.ReserveFixedWorkCenterOccupancy();
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
+        state.ReportLockedAssemblyConflicts();
         return state.ToPlan();
     }
 
@@ -201,6 +202,10 @@ internal static class SchedulingProblemNormalizer
                         })
                         .ToArray()
                 })
+                .ToArray(),
+            AssemblyDependencies = (problem.AssemblyDependencies ?? [])
+                .OrderBy(x => x.ParentOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.ChildOrderId, StringComparer.Ordinal)
                 .ToArray(),
             Resources = problem.Resources
                 .OrderBy(x => x.ResourceId, StringComparer.Ordinal)
@@ -635,8 +640,17 @@ file sealed class SchedulerState
         var remaining = new Queue<OperationWorkItem>(operations);
         var stalledItems = new List<OperationWorkItem>();
 
-        while (remaining.Count > 0)
+        while (remaining.Count > 0 || stalledItems.Count > 0)
         {
+            if (remaining.Count == 0)
+            {
+                foreach (var stalled in stalledItems)
+                {
+                    remaining.Enqueue(stalled);
+                }
+                stalledItems.Clear();
+            }
+
             var item = remaining.Dequeue();
             var itemKey = OperationKey.From(item);
             if (scheduledOperationKeys.Contains(itemKey) || failedOperationKeys.Contains(itemKey))
@@ -644,9 +658,13 @@ file sealed class SchedulerState
                 continue;
             }
 
-            var predecessorKeys = item.Operation.PredecessorOperationIds
-                .Select(id => new OperationKey(item.Order.OrderId, id))
-                .ToList();
+            var predecessorKeys = PredecessorKeys(item).ToList();
+            if (HasMissingAssemblyChild(item))
+            {
+                AddUnscheduled(item, ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+                    "装配子件工单未能排入本次计划，母单只能顺延等待。");
+                continue;
+            }
             if (predecessorKeys.Any(failedOperationKeys.Contains))
             {
                 AddUnscheduled(
@@ -660,11 +678,6 @@ file sealed class SchedulerState
             {
                 stalledItems.Add(item);
                 if (remaining.Count > 0)
-                {
-                    continue;
-                }
-
-                if (stalledItems.Count == 0)
                 {
                     continue;
                 }
@@ -683,26 +696,12 @@ file sealed class SchedulerState
                     break;
                 }
 
-                foreach (var stalled in stalledItems)
-                {
-                    remaining.Enqueue(stalled);
-                }
-                stalledItems.Clear();
                 continue;
             }
 
             var result = TrySchedule(item);
             if (result is null)
             {
-                if (remaining.Count == 0 && stalledItems.Count > 0)
-                {
-                    foreach (var stalled in stalledItems)
-                    {
-                        remaining.Enqueue(stalled);
-                    }
-                    stalledItems.Clear();
-                }
-
                 continue;
             }
 
@@ -726,14 +725,33 @@ file sealed class SchedulerState
                     result.ResourceId,
                     "排入时间晚于交期，将造成延期。");
             }
+        }
+    }
 
-            if (remaining.Count == 0 && stalledItems.Count > 0)
+    public void ReportLockedAssemblyConflicts()
+    {
+        var lockedOperations = from order in problem.Orders
+                               from operation in order.Operations
+                               join locked in problem.LockedAssignments
+                                   on new OperationKey(order.OrderId, operation.OperationId)
+                                   equals new OperationKey(locked.OrderId, locked.OperationId)
+                               select (Item: new OperationWorkItem(order, operation), Locked: locked);
+        foreach (var (item, locked) in lockedOperations)
+        {
+            var predecessorKeys = AssemblyPredecessorKeys(item).ToArray();
+            var predecessors = predecessorKeys.Select(key => assignments.FirstOrDefault(assignment =>
+                assignment.OrderId == key.OrderId && assignment.OperationId == key.OperationId)).ToArray();
+            if (HasMissingAssemblyChild(item) || predecessors.Any(assignment => assignment is null))
             {
-                foreach (var stalled in stalledItems)
-                {
-                    remaining.Enqueue(stalled);
-                }
-                stalledItems.Clear();
+                AddConflict(ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+                    ScheduleConflictSeverityContract.Error, locked.OrderId, locked.OperationId, locked.ResourceId,
+                    "锁定母单的装配子件未能排入本次计划。");
+            }
+            else if (predecessors.Any(assignment => assignment!.EndUtc > locked.StartUtc))
+            {
+                AddConflict(ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
+                    ScheduleConflictSeverityContract.Error, locked.OrderId, locked.OperationId, locked.ResourceId,
+                    "锁定母单的开始时间早于装配子件全部工序结束。");
             }
         }
     }
@@ -812,7 +830,8 @@ file sealed class SchedulerState
             MaterialRisks: orderedMaterialRisks,
             // 设备软约束的产物:这些工序排在状态未知的设备上,开工前需人工确认设备可用。
             EquipmentRisks: orderedEquipmentRisks,
-            MaterialShortageSummary: SchedulePlanMaterialShortageSummary.Project(problem));
+            MaterialShortageSummary: SchedulePlanMaterialShortageSummary.Project(problem),
+            AssemblyDependencies: problem.AssemblyDependencies);
     }
 
     private SchedulePlanMetricsContract BuildMetrics(
@@ -1056,13 +1075,50 @@ file sealed class SchedulerState
 
     private DateTimeOffset LatestPredecessorEnd(OperationWorkItem item)
     {
-        var predecessorEnds = item.Operation.PredecessorOperationIds
-            .Select(id => assignments.FirstOrDefault(x =>
-                x.OrderId == item.Order.OrderId && x.OperationId == id)?.EndUtc)
+        var predecessorEnds = PredecessorKeys(item)
+            .Select(key => assignments.FirstOrDefault(x =>
+                x.OrderId == key.OrderId && x.OperationId == key.OperationId)?.EndUtc)
             .Where(x => x.HasValue)
             .Select(x => x!.Value);
         return predecessorEnds.DefaultIfEmpty(problem.HorizonStartUtc).Max();
     }
+
+    private IEnumerable<OperationKey> PredecessorKeys(OperationWorkItem item) =>
+        item.Operation.PredecessorOperationIds.Select(id => new OperationKey(item.Order.OrderId, id))
+            .Concat(AssemblyPredecessorKeys(item));
+
+    private IEnumerable<OperationKey> AssemblyPredecessorKeys(OperationWorkItem item)
+    {
+        if (item.Operation.OperationSequence != item.Order.Operations.Min(x => x.OperationSequence))
+        {
+            yield break;
+        }
+
+        foreach (var dependency in problem.AssemblyDependencies ?? [])
+        {
+            if (dependency.ParentOrderId != item.Order.OrderId)
+            {
+                continue;
+            }
+
+            var child = problem.Orders.FirstOrDefault(x => x.OrderId == dependency.ChildOrderId);
+            if (child is null)
+            {
+                continue;
+            }
+
+            foreach (var operation in child.Operations)
+            {
+                yield return new OperationKey(child.OrderId, operation.OperationId);
+            }
+        }
+    }
+
+    private bool HasMissingAssemblyChild(OperationWorkItem item) =>
+        item.Operation.OperationSequence == item.Order.Operations.Min(x => x.OperationSequence) &&
+        (problem.AssemblyDependencies ?? []).Any(dependency =>
+            dependency.ParentOrderId == item.Order.OrderId &&
+            !problem.Orders.Any(order => order.OrderId == dependency.ChildOrderId && order.Operations.Count > 0));
 
     private (DateTimeOffset StartUtc, DateTimeOffset EndUtc)? FindEarliestSlot(
         SchedulingResourceContract resource,

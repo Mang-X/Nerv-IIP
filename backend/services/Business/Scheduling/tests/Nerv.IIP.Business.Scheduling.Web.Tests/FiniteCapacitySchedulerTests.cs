@@ -348,6 +348,81 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Assembly_parent_starts_after_child_finishes_and_plan_keeps_dependency()
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        problem = problem with
+        {
+            Orders = problem.Orders.Select(order => order.OrderId == "WO-LOCAL-A"
+                ? order with { IsRush = true, Operations = order.Operations.Select(operation => operation with { IsRush = true }).ToArray() }
+                : order).ToArray(),
+            Resources = problem.Resources.Select(resource => resource with { CapacityUnits = 2 }).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-assembly", GeneratedAtUtc);
+
+        Assert.True(plan.Assignments.Single(x => x.OrderId == "WO-LOCAL-A").StartUtc >=
+            plan.Assignments.Where(x => x.OrderId == "WO-LOCAL-B").Max(x => x.EndUtc));
+        Assert.Equal(problem.AssemblyDependencies, plan.AssemblyDependencies);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Assembly_parent_is_unscheduled_when_child_is_missing_or_cannot_be_scheduled(bool childSelected)
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        problem = problem with
+        {
+            Orders = problem.Orders.Where(x => childSelected || x.OrderId == "WO-LOCAL-A")
+                .Select(order => order.OrderId == "WO-LOCAL-B"
+                    ? order with { Operations = order.Operations.Select(operation => operation with { EligibleResourceIds = ["DEV-MISSING"] }).ToArray() }
+                    : order).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-missing-child", GeneratedAtUtc);
+
+        Assert.Empty(plan.Assignments);
+        Assert.Equal(ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+            Assert.Single(plan.UnscheduledOperations, x => x.OrderId == "WO-LOCAL-A").ReasonCode);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void Locked_assembly_parent_is_preserved_but_reports_predecessor_error(bool childSelected, bool childSchedulable)
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Orders = problem.Orders.Where(order => childSelected || order.OrderId == "WO-LOCAL-A")
+                .Select(order => order.OrderId == "WO-LOCAL-B" && !childSchedulable
+                    ? order with { Operations = order.Operations.Select(operation => operation with { EligibleResourceIds = ["DEV-MISSING"] }).ToArray() }
+                    : order).ToArray(),
+            Resources = problem.Resources.Select(resource => resource with { CapacityUnits = 2 }).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")],
+            LockedAssignments = [new("locked-parent", "WO-LOCAL-A", "OP10", 10, "DEV-LOCAL-01", "WC-LOCAL",
+                start, start.AddMinutes(30), "planner-lock")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-locked-assembly", GeneratedAtUtc);
+
+        var parent = Assert.Single(plan.Assignments, assignment => assignment.OrderId == "WO-LOCAL-A");
+        Assert.True(parent.IsLocked);
+        Assert.Equal(start, parent.StartUtc);
+        Assert.Equal(start.AddMinutes(30), parent.EndUtc);
+        var conflict = Assert.Single(plan.Conflicts, conflict => conflict.OrderId == "WO-LOCAL-A");
+        Assert.Equal(ScheduleConflictSeverityContract.Error, conflict.Severity);
+        Assert.Equal(childSelected && childSchedulable
+            ? ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            : ScheduleConflictReasonCodeContract.PredecessorUnscheduled, conflict.ReasonCode);
+    }
+
+    [Fact]
     public void Schedule_avoids_maintenance_window()
     {
         var plan = ScheduleShockAbsorber();

@@ -139,6 +139,7 @@ public static class SchedulePlanContractMapper
                     HasMaterialRisk: materialRiskKeys.Contains(key),
                     HasEquipmentRisk: equipmentRiskKeys.Contains(key));
             }).ToArray(),
+            AssemblyDependencies: problem?.AssemblyDependencies,
             MaterialRisks: materialRisks,
             EquipmentRisks: equipmentRisks,
             MaterialShortageSummary: problem is null

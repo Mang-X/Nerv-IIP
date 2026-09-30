@@ -77,7 +77,10 @@ public sealed class SchedulePlanCalendarProjectionTests
     [Fact]
     public async Task Plan_detail_read_face_projects_the_persisted_problem_snapshot()
     {
-        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem() with
+        {
+            AssemblyDependencies = [new("WO-FRONT-001", "WO-RUSH-REAR-001")]
+        };
         await using var dbContext = CreateDbContext();
         var generated = SchedulePlanContractMapper.WithStatus(
             new FiniteCapacityScheduler().Schedule(
@@ -105,6 +108,7 @@ public sealed class SchedulePlanCalendarProjectionTests
             new GetSchedulePlanDetailQuery("plan-calendar-002", "org-001", "prod"),
             CancellationToken.None);
 
+        Assert.Equal(problem.AssemblyDependencies, detail.AssemblyDependencies);
         Assert.Equal("CAL-DAY", Assert.Single(detail.Calendars!).CalendarId);
         Assert.NotNull(detail.ValidationContext);
         Assert.Empty(detail.ValidationContext.FixedReservations);
