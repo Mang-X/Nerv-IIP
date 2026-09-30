@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import NotificationInbox from '@/components/notifications/NotificationInbox.vue'
 import { AppShellT } from '@nerv-iip/app-shell'
 import { NvDropdownMenuItem, NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
 import { KeyRoundIcon } from '@lucide/vue'
@@ -79,6 +80,12 @@ function openSearch() {
     @open-search="openSearch"
   >
     <template #header-actions>
+      <NotificationInbox
+        v-if="
+          hasSelectedBusinessContext &&
+          principal?.permissionCodes?.includes('notifications.messages.read')
+        "
+      />
       <NvThemePicker />
       <NvThemeToggle />
     </template>
