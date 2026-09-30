@@ -13,6 +13,54 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesDemandPlanningBridgeTests
 {
+    // DomainInvariant / Regression：#4026，母单查询必须覆盖分页外子件，来源关系不能混入普通工单或返工。
+    [Fact]
+    public async Task Assembly_child_query_returns_all_children_without_list_paging_or_unrelated_sources()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var dueUtc = DateTimeOffset.Parse("2026-10-10T00:00:00Z");
+        WorkOrder Order(string id, SourcePlanReference? source = null,
+            string org = "org-001", string env = "env-dev") =>
+            WorkOrder.Create(org, env, id, "SKU-001", "PV-001", 12m, 100, dueUtc, "PCS", source);
+        SourcePlanReference Source(string suggestion, string[]? parents = null,
+            string system = "DemandPlanning", string type = "PlanningSuggestion") =>
+            new(system, type, suggestion, null, assemblyParentSuggestionIds: parents);
+        dbContext.WorkOrders.AddRange(
+            Order("WO-PARENT", Source("SUG-PARENT")),
+            Order("WO-CHILD-A", Source("SUG-CHILD", ["SUG-PARENT"])),
+            Order("WO-CHILD-B", Source("SUG-CHILD", ["SUG-PARENT"])),
+            Order("WO-CHILD-C", Source("SUG-OTHER-CHILD", ["SUG-PARENT", "SUG-OTHER"])),
+            Order("WO-ORDINARY"),
+            Order("WO-UNRELATED", Source("SUG-UNRELATED", ["SUG-OTHER"])),
+            Order("WO-WRONG-SYSTEM", Source("SUG-X", ["SUG-PARENT"], system: "Erp")),
+            Order("WO-WRONG-TYPE", Source("SUG-X", ["SUG-PARENT"], type: "SalesOrder")),
+            Order("WO-OTHER-ORG", Source("SUG-X", ["SUG-PARENT"]), org: "org-other"),
+            Order("WO-OTHER-ENV", Source("SUG-X", ["SUG-PARENT"]), env: "env-other"),
+            Order("WO-FAKE-PARENT", Source("SUG-PARENT", system: "Erp")),
+            WorkOrder.CreateRework("org-001", "env-dev", "WO-REWORK", "SKU-001", "PV-001", "PCS",
+                1m, 100, dueUtc, "WO-PARENT", null, "DEF-001", "NCR-001", "NCR-001", null, null,
+                dueUtc, "corr-001", "cause-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var page = await new ListMesWorkOrdersQueryHandler(dbContext).Handle(
+            new ListMesWorkOrdersQuery("org-001", "env-dev", null, Take: 1, WorkOrderId: "WO-PARENT"),
+            CancellationToken.None);
+        Assert.Equal("WO-PARENT", Assert.Single(page.Items).WorkOrderId);
+        var handler = new GetAssemblyChildWorkOrdersQueryHandler(dbContext);
+        var result = await handler.Handle(
+            new GetAssemblyChildWorkOrdersQuery("org-001", "env-dev", "WO-PARENT"), CancellationToken.None);
+        Assert.Equal(["WO-CHILD-A", "WO-CHILD-B", "WO-CHILD-C"], result.AssemblyChildWorkOrderIds);
+        foreach (var parentId in new[] { "WO-ORDINARY", "WO-REWORK", "WO-FAKE-PARENT", "WO-MISSING" })
+        {
+            var empty = await handler.Handle(
+                new GetAssemblyChildWorkOrdersQuery("org-001", "env-dev", parentId), CancellationToken.None);
+            Assert.Empty(empty.AssemblyChildWorkOrderIds);
+        }
+    }
+
     [Fact]
     public async Task Assembly_parent_relation_resolves_after_parent_work_order_is_created()
     {
