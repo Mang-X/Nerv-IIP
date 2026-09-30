@@ -221,6 +221,38 @@ describe('ResourceSchedulerBoard', () => {
 })
 
 describe('ReadonlyScheduleTimeline assembly dependencies', () => {
+  it('keeps a visible dependency when child completion and parent start touch on the same resource row', () => {
+    const model = toModel({
+      ...samplePlan,
+      assignments: [
+        {
+          ...samplePlan.assignments![0],
+          assignmentId: 'child',
+          orderId: 'WO-CHILD',
+          startUtc: '2026-06-10T00:00:00.000Z',
+          endUtc: '2026-06-10T01:00:00.000Z',
+        },
+        {
+          ...samplePlan.assignments![0],
+          assignmentId: 'parent',
+          orderId: 'WO-PARENT',
+          startUtc: '2026-06-10T01:00:00.000Z',
+          endUtc: '2026-06-10T02:00:00.000Z',
+        },
+      ],
+      assemblyDependencies: [{ childOrderId: 'WO-CHILD', parentOrderId: 'WO-PARENT' }],
+    })
+    const wrapper = mount(ReadonlyScheduleTimeline, {
+      props: { model, view: 'resource', scale: 'hour' },
+    })
+    // 08:00–16:00 的 720px 轴：子件 09:00 完工与母单 09:00 开工同为 x=90，行中心 y=32。
+    // 路径绕过工序条顶沿，连续排程也必须留下可见连线。
+    expect(wrapper.get('[data-dependency-id="child->parent"] path').attributes('d')).toBe(
+      'M 90 32 H 102 V 4 H 78 V 32 H 90',
+    )
+    wrapper.unmount()
+  })
+
   it('draws the child completion to parent start and removes the line when the relationship is absent', async () => {
     const plan = {
       ...samplePlan,
@@ -244,7 +276,7 @@ describe('ReadonlyScheduleTimeline assembly dependencies', () => {
     const link = wrapper.get('[data-dependency-id="a2->assembly"]')
     expect(link.attributes('data-source')).toBe('a2')
     expect(link.attributes('data-target')).toBe('assembly')
-    expect(link.get('path').attributes('d')).toMatch(/^M [\d.]+ 104 H [\d.]+ V 176 H [\d.]+$/)
+    expect(link.get('path').attributes('d')).toBe('M 360 104 H 360 V 176 H 360')
     await wrapper.setProps({ model: toModel({ ...plan, assemblyDependencies: [] }) })
     expect(wrapper.find('[data-dependency-id]').exists()).toBe(false)
     wrapper.unmount()

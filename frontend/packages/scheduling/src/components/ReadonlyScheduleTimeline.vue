@@ -234,7 +234,10 @@ const dependencyLayout = computed(() => {
     return [
       {
         ...link,
-        path: `M ${source.end} ${source.y} H ${elbow} V ${target.y} H ${target.start}`,
+        path:
+          source.y === target.y
+            ? `M ${source.end} ${source.y} H ${source.end + 12} V ${source.y - 28} H ${target.start - 12} V ${target.y} H ${target.start}`
+            : `M ${source.end} ${source.y} H ${elbow} V ${target.y} H ${target.start}`,
         arrow: `${target.start - 5},${target.y - 4} ${target.start},${target.y} ${target.start - 5},${target.y + 4}`,
       },
     ]
