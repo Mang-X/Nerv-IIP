@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using NetCorePal.Extensions.Primitives;
@@ -35,12 +36,12 @@ public sealed class WorkOrderConcurrencyRetryBehavior<TRequest, TResponse>(
                 return await next(cancellationToken);
             }
             catch (DbUpdateConcurrencyException exception)
-                when (request is IWorkOrderConcurrencyRetryCommand && IsWorkOrderRevisionConflict(exception) && attempt < MaxAttempts)
+                when (request is IWorkOrderConcurrencyRetryCommand && IsRevisionConflict(request, exception) && attempt < MaxAttempts)
             {
                 dbContext.ChangeTracker.Clear();
             }
             catch (DbUpdateConcurrencyException exception)
-                when (request is IWorkOrderConcurrencyRetryCommand && IsWorkOrderRevisionConflict(exception))
+                when (request is IWorkOrderConcurrencyRetryCommand && IsRevisionConflict(request, exception))
             {
                 dbContext.ChangeTracker.Clear();
                 throw new MesLifecycleConflictException(
@@ -66,10 +67,12 @@ public sealed class WorkOrderConcurrencyRetryBehavior<TRequest, TResponse>(
     private static bool IsSupportedCommand(TRequest request) =>
         request is IWorkOrderTransformationConcurrencyCommand;
 
-    private static bool IsWorkOrderRevisionConflict(DbUpdateConcurrencyException exception) =>
+    private static bool IsRevisionConflict(TRequest request, DbUpdateConcurrencyException exception) =>
         exception.Entries.Count > 0 && exception.Entries.All(entry =>
-            entry.Entity is WorkOrder &&
-            entry.Metadata.FindProperty(nameof(WorkOrder.Version))?.IsConcurrencyToken == true);
+            (entry.Entity is WorkOrder &&
+                entry.Metadata.FindProperty(nameof(WorkOrder.Version))?.IsConcurrencyToken == true) ||
+            (request is IWorkOrderTransformationConcurrencyCommand && entry.Entity is OperationTask &&
+                entry.Metadata.FindProperty(nameof(OperationTask.RowVersion))?.IsConcurrencyToken == true));
 
     private static bool IsUniqueConstraintConflict(DbUpdateException exception)
     {
