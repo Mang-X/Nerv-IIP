@@ -182,11 +182,14 @@ public sealed class MesProductionStatisticsPostgresTests
         await db.SaveChangesAsync();
 
         var handler = new QueryProductionStatisticsQueryHandler(db);
+        // 原报工在上海 08-30 00:30（夜班 20:00–04:00），业务日是 08-29；按 08-29 这一业务日的窗口查询。
+        var businessDayStartUtc = DateTimeOffset.Parse("2026-08-28T16:00:00Z");
+        var businessDayEndUtc = DateTimeOffset.Parse("2026-08-29T16:00:00Z");
         var originalWindow = await Query(
             handler,
             ProductionStatisticsDimension.Day,
-            originalAtUtc.AddMinutes(-30),
-            originalAtUtc.AddMinutes(30));
+            businessDayStartUtc,
+            businessDayEndUtc);
         var bucket = Assert.Single(originalWindow.Items);
         Assert.Equal(new DateOnly(2026, 8, 29), bucket.BusinessDate);
         Assert.Equal(0m, bucket.TotalOutputQuantity);
@@ -199,8 +202,8 @@ public sealed class MesProductionStatisticsPostgresTests
         var shiftBucket = Assert.Single((await Query(
             handler,
             ProductionStatisticsDimension.Shift,
-            originalAtUtc.AddMinutes(-30),
-            originalAtUtc.AddMinutes(30))).Items);
+            businessDayStartUtc,
+            businessDayEndUtc)).Items);
         Assert.Equal("2026-08-29/NIGHT", shiftBucket.DimensionValue);
         Assert.Equal(0m, shiftBucket.TotalOutputQuantity);
 
@@ -240,13 +243,82 @@ public sealed class MesProductionStatisticsPostgresTests
             reportedAtUtc.AddMinutes(-30),
             reportedAtUtc.AddMinutes(30));
         var bucket = Assert.Single(response.Items);
-        Assert.Null(bucket.DimensionValue);
-        Assert.Null(bucket.BusinessDate);
+        // 没有工厂时区与班次快照：按默认工厂时区 Asia/Shanghai 的 00:00 起算，02:00Z 即上海 08-29 10:00。
+        Assert.Equal("2026-08-29", bucket.DimensionValue);
+        Assert.Equal(new DateOnly(2026, 8, 29), bucket.BusinessDate);
         Assert.Equal(5m, bucket.TotalOutputQuantity);
         Assert.Equal(ProductionStatisticsResolutionStatus.Degraded, bucket.ResolutionStatus);
         Assert.Contains(
             ProductionStatisticsDegradedReason.HistoricalDimensionLegacyUnresolved,
             bucket.DegradedReasons);
+    }
+
+    [MesRealPostgresFact]
+    public async Task Night_shift_reports_after_midnight_count_on_the_shift_start_day_in_day_and_shift_views()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var db = new ApplicationDbContext(MesPostgresLaneDatabase.CreateOptions(), new NoopMediator());
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+        // 上海 09-26 这一天：浏览器按本地 00:00–次日 00:00 发来的窗口。
+        var windowStart = DateTimeOffset.Parse("2026-09-26T00:00:00+08:00").ToUniversalTime();
+        var windowEnd = DateTimeOffset.Parse("2026-09-27T00:00:00+08:00").ToUniversalTime();
+
+        AddShanghaiReport(db, "DAY-1", "DAY", DateTimeOffset.Parse("2026-09-26T10:00:00+08:00"), 1m);
+        AddShanghaiReport(db, "NIGHT-EVE", "NIGHT", DateTimeOffset.Parse("2026-09-26T22:00:00+08:00"), 10m);
+        // 跨午夜那段：发生在窗口末端之后，仍属于 09-26 开班的夜班。
+        AddShanghaiReport(db, "NIGHT-TAIL", "NIGHT", DateTimeOffset.Parse("2026-09-27T01:20:00+08:00"), 100m);
+        // 窗口开头那段夜班属于 09-25 开班，不算进 09-26。
+        AddShanghaiReport(db, "NIGHT-PREV", "NIGHT", DateTimeOffset.Parse("2026-09-26T01:00:00+08:00"), 1000m);
+        // 没有班次快照：按工厂时区 00:00 起算。
+        AddShanghaiReport(db, "NO-SHIFT", null, DateTimeOffset.Parse("2026-09-26T23:30:00+08:00"), 10000m);
+        AddShanghaiReport(db, "NO-SHIFT-NEXT", null, DateTimeOffset.Parse("2026-09-27T00:30:00+08:00"), 100000m);
+        await db.SaveChangesAsync();
+
+        var handler = new QueryProductionStatisticsQueryHandler(db);
+        var day = Assert.Single((await Query(handler, ProductionStatisticsDimension.Day, windowStart, windowEnd)).Items);
+        Assert.Equal(new DateOnly(2026, 9, 26), day.BusinessDate);
+        Assert.Equal(10111m, day.GoodQuantity);
+
+        var shifts = await Query(handler, ProductionStatisticsDimension.Shift, windowStart, windowEnd);
+        Assert.Equal(["2026-09-26/DAY", "2026-09-26/NIGHT", null], shifts.Items.Select(x => x.DimensionValue));
+        Assert.Equal([1m, 110m, 10000m], shifts.Items.Select(x => x.GoodQuantity));
+        Assert.All(shifts.Items, x => Assert.Equal(new DateOnly(2026, 9, 26), x.BusinessDate));
+    }
+
+    private static void AddShanghaiReport(
+        ApplicationDbContext db,
+        string suffix,
+        string? shiftCode,
+        DateTimeOffset reportedAt,
+        decimal goodQuantity)
+    {
+        var (startsAt, endsAt) = shiftCode == "NIGHT"
+            ? (new TimeOnly(20, 0), new TimeOnly(8, 0))
+            : (new TimeOnly(8, 0), new TimeOnly(20, 0));
+        AddReportWithSnapshot(
+            db,
+            "org-001",
+            "env-dev",
+            suffix,
+            "SKU-001",
+            reportedAt.ToUniversalTime(),
+            goodQuantity,
+            0m,
+            0m,
+            ProductionReportOeeDimensionSnapshot.Resolved(
+                $"DEV-{suffix}",
+                "WC-A",
+                "SITE-SH",
+                "WS-01",
+                "LINE-01",
+                "Asia/Shanghai",
+                shiftCode,
+                shiftCode is null ? null : startsAt,
+                shiftCode is null ? null : endsAt,
+                shiftCode is null ? null : endsAt <= startsAt,
+                shiftCode is null ? null : 720,
+                shiftCode is null ? null : 60));
     }
 
     private static Task<ProductionStatisticsResponse> Query(
