@@ -12,6 +12,7 @@ public sealed class PlanningSuggestionEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").HasMaxLength(64).IsRequired().HasComment("Tenant organization id that owns the suggestion.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").HasMaxLength(64).IsRequired().HasComment("Planning environment id.");
         builder.Property(x => x.MrpRunId).HasColumnName("mrp_run_id").HasComment("Owning MRP run id; no cross-service foreign key.");
+        builder.Property(x => x.NetRequirementReference).HasColumnName("net_requirement_reference").HasComment("Immutable netting event reference shared by lot-sized batches; null for legacy or non-netted suggestions.");
         builder.Property(x => x.SuggestionType).HasColumnName("suggestion_type").HasMaxLength(32).IsRequired().HasComment("Suggestion type such as planned-purchase or planned-work-order.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(64).IsRequired().HasComment("Suggested SKU code snapshot.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(32).IsRequired().HasComment("Suggested quantity unit of measure snapshot.");

@@ -159,7 +159,8 @@ public sealed class ExecuteMrpRunCommandHandler(ApplicationDbContext dbContext, 
                 calculatedSuggestion.Quantity,
                 calculatedSuggestion.RequiredDate,
                 calculatedSuggestion.ReleaseDate,
-                calculatedSuggestion.ReasonCode);
+                calculatedSuggestion.ReasonCode,
+                netRequirementReference: calculatedSuggestion.NetRequirementReference);
             suggestion.SetNetRequirementExplanation(
                 calculatedSuggestion.NetRequirementExplanation.GrossDemandQuantity,
                 calculatedSuggestion.NetRequirementExplanation.OnHandQuantity,

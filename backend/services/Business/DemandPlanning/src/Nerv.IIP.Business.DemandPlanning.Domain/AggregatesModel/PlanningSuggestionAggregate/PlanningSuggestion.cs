@@ -34,11 +34,13 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         decimal quantity,
         DateOnly requiredDate,
         DateOnly releaseDate,
-        string reasonCode)
+        string reasonCode,
+        Guid? netRequirementReference)
     {
         OrganizationId = DemandPlanningText.Required(organizationId, nameof(organizationId));
         EnvironmentId = DemandPlanningText.Required(environmentId, nameof(environmentId));
         MrpRunId = mrpRunId;
+        NetRequirementReference = netRequirementReference;
         SuggestionType = DemandPlanningText.Required(suggestionType, nameof(suggestionType)).ToLowerInvariant();
         SkuCode = DemandPlanningText.Required(skuCode, nameof(skuCode));
         UomCode = DemandPlanningText.Required(uomCode, nameof(uomCode));
@@ -62,6 +64,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public MrpRunId MrpRunId { get; private set; } = default!;
+    public Guid? NetRequirementReference { get; private set; }
     public string SuggestionType { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
     public string UomCode { get; private set; } = string.Empty;
@@ -104,7 +107,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         DateOnly requiredDate,
         DateOnly releaseDate,
         string reasonCode,
-        PlanningSuggestionId? suggestionId = null)
+        PlanningSuggestionId? suggestionId = null,
+        Guid? netRequirementReference = null)
     {
         var suggestion = new PlanningSuggestion(
             organizationId,
@@ -117,7 +121,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             quantity,
             requiredDate,
             releaseDate,
-            reasonCode);
+            reasonCode,
+            netRequirementReference);
         if (suggestionId is not null)
         {
             suggestion.Id = suggestionId;

@@ -95,7 +95,8 @@ public sealed record CalculatedPlanningSuggestion(
     DateOnly ReleaseDate,
     string ReasonCode,
     CalculatedNetRequirementExplanation NetRequirementExplanation,
-    IReadOnlyCollection<CalculatedPeggingLink> PeggingLinks);
+    IReadOnlyCollection<CalculatedPeggingLink> PeggingLinks,
+    Guid? NetRequirementReference = null);
 
 public sealed record CalculatedPeggingLink(
     string PeggingType,
@@ -272,6 +273,8 @@ public static class MrpCalculator
                     continue;
                 }
 
+                // One identity per completed netting event, shared by its lot-sized batches.
+                var netRequirementReference = Guid.CreateVersion7();
                 var plannedQuantities = ApplyLotSizing(
                     netRequirement,
                     planningParameter?.LotSizeMin ?? version?.LotSizeMin,
@@ -338,13 +341,14 @@ public static class MrpCalculator
                     releaseDate,
                     reasonCode,
                     explanation with { PlannedQuantity = quantity },
-                    peggingLinks)));
+                    peggingLinks,
+                    netRequirementReference)));
                 if (releaseDate < input.HorizonStart)
                 {
                     suggestions.Add(new CalculatedPlanningSuggestion(
                         "release-date-past", first.SkuCode, first.UomCode, first.SiteCode,
                         plannedQuantity, group.Key.RequiredDate, releaseDate, "lead-time-insufficient",
-                        explanation, peggingLinks));
+                        explanation, peggingLinks, netRequirementReference));
                 }
 
                 if (!isMakeItem || !componentsByParent.TryGetValue(first.SkuCode, out var components))
