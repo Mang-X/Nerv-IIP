@@ -374,12 +374,15 @@ const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
   {
     key: 'workOrderNo',
     header: '工单号',
-    cellClass: 'font-medium',
+    // 正式单号形如 MWO-yyyyMMdd-NNNNNN，固定列宽避免与设备列重叠（#3852）
+    width: 'w-48',
+    cellClass: 'font-medium whitespace-nowrap',
     accessor: (r) => workOrderNo(r),
   },
   {
     key: 'deviceAssetId',
     header: '设备',
+    cellClass: 'truncate',
     accessor: (r) =>
       r.deviceAssetId && deviceNameByCode.value.has(r.deviceAssetId)
         ? `${deviceLabel(r.deviceAssetId)} ${r.deviceAssetId}`
