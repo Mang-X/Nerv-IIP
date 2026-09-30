@@ -306,6 +306,14 @@ const detail = computed(() => {
 })
 
 vi.mock('@/composables/useBusinessScheduling', () => ({
+  useSchedulingPlanSummary: () => ({
+    summary: computed(() => ({
+      planId: 'plan-001',
+      status: 'generated',
+      isInvalidated: planOneInvalidated.value,
+      latestInvalidationReasonCode: 'equipmentUnavailable',
+    })),
+  }),
   useBusinessScheduling: () => ({
     detailSelection,
     filters: historyFilters,
@@ -1357,40 +1365,54 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.get('[data-change-row]').text()).toContain('RES-CNC-02 → RES-CNC-03')
   })
 
-  it('updates invalidation actions without replacing manual draft edits', async () => {
-    // #4072：已有方案失效只刷新读面与操作状态，人工资源修改继续留在草案。
-    const wrapper = mount(SchedulingPage, {
-      global: { plugins: [createPinia()], stubs: layoutStub },
-    })
-    await flushPromises()
-    wrapper
-      .findComponent({ name: 'SchedulingOrderPool' })
-      .vm.$emit('include', ['WO-20260701-001'], true)
-    await flushPromises()
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text().includes('生成首版'))!
-      .trigger('click')
-    await flushPromises()
-    const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
-    board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
-    await flushPromises()
-    const editedModel = board.props('model')
-    const publish = wrapper.findAll('button').find((button) => button.text().includes('发布新版'))!
-    expect(publish.attributes('disabled')).toBeUndefined()
+  it.each(['other-plan', 'filtered-history'])(
+    'keeps draft invalidation and edits independent of %s',
+    async (scenario) => {
+      // #4072：已有方案失效只刷新读面与操作状态，人工资源修改继续留在草案。
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: layoutStub },
+      })
+      await flushPromises()
+      wrapper
+        .findComponent({ name: 'SchedulingOrderPool' })
+        .vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('生成首版'))!
+        .trigger('click')
+      await flushPromises()
+      const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+      board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
+      await flushPromises()
+      const editedModel = board.props('model')
+      const publish = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('发布新版'))!
+      expect(publish.attributes('disabled')).toBeUndefined()
 
-    planOneInvalidated.value = true
-    await flushPromises()
-    expect(publish.attributes('disabled')).toBeDefined()
-    expect(publish.attributes('title')).toContain('设备不可用')
-    expect(wrapper.text()).toContain('方案已失效（设备不可用），请重排后再发布')
-    expect(board.props('model')).toBe(editedModel)
-    expect(
-      board.props('model').tasks.find((task: { id: string }) => task.id === 'assign-001')
-        .resourceId,
-    ).toBe('RES-CNC-02')
-    wrapper.unmount()
-  })
+      if (scenario === 'filtered-history') {
+        historyFilters.isInvalidated = false
+        historyEmpty.value = true
+        await flushPromises()
+      }
+      planOneInvalidated.value = true
+      await flushPromises()
+      if (scenario === 'other-plan') {
+        detailSelection.planId = 'plan-invalid'
+        await flushPromises()
+      }
+      expect(publish.attributes('disabled')).toBeDefined()
+      expect(publish.attributes('title')).toContain('设备不可用')
+      expect(wrapper.text()).toContain('方案已失效（设备不可用），请重排后再发布')
+      expect(board.props('model')).toBe(editedModel)
+      expect(
+        board.props('model').tasks.find((task: { id: string }) => task.id === 'assign-001')
+          .resourceId,
+      ).toBe('RES-CNC-02')
+      wrapper.unmount()
+    },
+  )
 
   it('persists a draft operation override with the plan id and the operation behind the task', async () => {
     const wrapper = mount(SchedulingPage, {

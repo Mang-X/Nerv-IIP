@@ -1,6 +1,7 @@
 import {
   getBusinessConsoleSchedulingPlanQueryOptions,
   listBusinessConsoleSchedulingPlanHistoryQueryOptions,
+  listBusinessConsoleSchedulingPlanHistory,
   releaseBusinessConsoleSchedulingPlanMutationOptions,
   revokeBusinessConsoleSchedulingPlanMutationOptions,
   upsertBusinessConsoleSchedulingOperationOverrideMutationOptions,
@@ -10,7 +11,7 @@ import {
   type BusinessConsoleSchedulePlan,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -243,4 +244,47 @@ export function useBusinessScheduling() {
         : Promise.resolve(),
     refreshPlans: () => refetchWithBusinessContext(filters, plansQuery),
   }
+}
+
+// 草案版本状态独立于历史表的查阅选择、筛选和分页。既有明细契约不带失效事实，
+// 因此从未筛选的 history 页中查找该版本，找到就结束，不重载 assignment 草案。
+export function useSchedulingPlanSummary(planId: MaybeRefOrGetter<string | undefined>) {
+  const scope = defaultFilters()
+  const query = useQuery(() => {
+    const trackedPlanId = toValue(planId)
+    const { organizationId, environmentId } = scope
+    return {
+      key: [
+        {
+          _id: 'listBusinessConsoleSchedulingPlanHistory',
+          organizationId,
+          environmentId,
+          trackedPlanId,
+        },
+      ],
+      enabled: hasBusinessContext(scope) && Boolean(trackedPlanId),
+      autoRefetch: () => SCHEDULING_POLL_INTERVAL_MS,
+      query: async ({
+        signal,
+      }): Promise<BusinessConsoleSchedulingPlanSummaryResponse | undefined> => {
+        const pageSize = 100
+        let pageIndex = 0
+        let total = 0
+        do {
+          const { data: envelope } = await listBusinessConsoleSchedulingPlanHistory({
+            query: { organizationId, environmentId, pageIndex, pageSize },
+            signal,
+            throwOnError: true,
+          })
+          assertEnvelopeSuccess(envelope, '未能读取草案方案状态')
+          const summary = envelope.data?.items?.find((plan) => plan.planId === trackedPlanId)
+          if (summary) return summary
+          total = envelope.data?.total ?? 0
+          pageIndex++
+        } while (pageIndex * pageSize < total)
+        return undefined
+      },
+    }
+  })
+  return { summary: query.data }
 }

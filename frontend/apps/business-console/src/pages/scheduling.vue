@@ -11,7 +11,10 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { formatDateTime } from '@/utils/format'
-import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
+import {
+  useBusinessScheduling,
+  useSchedulingPlanSummary,
+} from '@/composables/useBusinessScheduling'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -139,6 +142,7 @@ const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlan
 const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPlansRelease))
 const workbench = useSchedulingWorkbench()
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
+const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
 const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
@@ -580,11 +584,6 @@ const repreviewDisabledReason = computed(
 )
 
 // 后台刷新只读取版本状态，不重新加载用户正在编辑的草案。
-const draftPlanSummary = computed(() =>
-  selectedPlanSummary.value?.planId === draft.model.value?.meta.planId
-    ? selectedPlanSummary.value
-    : undefined,
-)
 const draftInvalidationReason = computed(() =>
   draftPlanSummary.value?.isInvalidated
     ? `方案已失效（${describeScheduleInvalidationReason(draftPlanSummary.value.latestInvalidationReasonCode)}），请重排后再发布`

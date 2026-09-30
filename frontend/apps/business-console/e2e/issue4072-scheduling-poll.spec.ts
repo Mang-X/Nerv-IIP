@@ -74,3 +74,102 @@ test('后台失效在下一轮轮询更新提示和发布按钮，退出后停�
   await page.clock.fastForward(10_000)
   expect(historyRequests).toBe(requestsAfterLeaving)
 })
+
+for (const scenario of ['查阅另一方案', '筛选未失效方案']) {
+  test(`草案失效状态不受${scenario}影响`, async ({ page }) => {
+    let invalidated = false
+    const planner = {
+      ...principal,
+      permissionCodes: [
+        ...principal.permissionCodes,
+        'business.scheduling.plans.manage',
+        'business.mes.work-orders.read',
+      ],
+    }
+    const draft = { planId: 'APS-260930-001', status: 'generated', assignments: [] }
+    await page.clock.install()
+    await page.addInitScript(
+      (stored) => localStorage.setItem('nerv-iip.business-console.auth', JSON.stringify(stored)),
+      { ...session, principal: planner },
+    )
+    await page.route('**/api/console/v1/**', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: new URL(route.request().url()).pathname.endsWith('/me')
+            ? planner
+            : { ...session, principal: planner },
+        },
+      }),
+    )
+    await page.route('**/api/business-console/v1/**', async (route) => {
+      const url = new URL(route.request().url())
+      let data: unknown = { items: [], total: 0 }
+      if (url.pathname.endsWith('/scheduling/plans/history')) {
+        const items = [
+          {
+            ...draft,
+            isInvalidated: invalidated,
+            latestInvalidationReasonCode: 'equipmentUnavailable',
+          },
+          { planId: 'APS-260930-002', status: 'generated', isInvalidated: false },
+        ].filter((item) => url.searchParams.get('isInvalidated') !== 'false' || !item.isInvalidated)
+        data = { items, total: items.length }
+      } else if (url.pathname.endsWith('/me/work-context')) {
+        data = {
+          authorizedScopes: [{ kind: 'work-center', id: 'WC-TURN', displayName: '车削中心' }],
+          selectedScope: url.searchParams.has('scopeId')
+            ? { kind: 'work-center', id: 'WC-TURN' }
+            : null,
+        }
+      } else if (url.pathname.endsWith('/mes/work-orders')) {
+        data = {
+          items: [
+            {
+              workOrderId: 'WO-260930-001',
+              productionVersionId: 'PV-1',
+              status: 'released',
+              productName: '主轴',
+              priority: 100,
+            },
+          ],
+          total: 1,
+        }
+      } else if (
+        url.pathname.endsWith('/scheduling/workbench/plans') ||
+        url.pathname.endsWith('/scheduling/plans/APS-260930-001')
+      ) {
+        data = draft
+      } else if (url.pathname.endsWith('/scheduling/plans/APS-260930-002')) {
+        data = { ...draft, planId: 'APS-260930-002' }
+      }
+      await route.fulfill({ json: { success: true, data } })
+    })
+    await page.goto('/scheduling')
+    await page.getByRole('button', { name: '全部加入', exact: true }).click()
+    await page.getByRole('button', { name: '生成首版', exact: true }).click()
+    const publish = page.getByRole('button', { name: '发布新版', exact: true })
+    await expect(publish).toBeEnabled()
+    await page.getByRole('tab', { name: '表格', exact: true }).click()
+    if (scenario === '筛选未失效方案') {
+      await page.getByRole('combobox', { name: '按方案失效筛选' }).click()
+      await page.getByRole('option', { name: '未失效', exact: true }).click()
+    }
+    invalidated = true
+    await page.clock.fastForward(5000)
+    if (scenario === '查阅另一方案') {
+      await page
+        .getByRole('row')
+        .filter({ hasText: 'APS-260930-002' })
+        .getByRole('button', { name: '明细', exact: true })
+        .click()
+      await page.keyboard.press('Escape')
+    }
+    await page.getByRole('tab', { name: '排程总览', exact: true }).click()
+    await expect(publish).toBeDisabled()
+    await expect(
+      page.getByText('方案已失效（设备不可用），请重排后再发布', { exact: true }),
+    ).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath(`draft-${scenario}.png`), fullPage: true })
+  })
+}
