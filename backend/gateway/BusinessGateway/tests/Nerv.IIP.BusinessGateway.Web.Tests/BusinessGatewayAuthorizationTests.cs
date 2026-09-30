@@ -655,6 +655,22 @@ public sealed class BusinessGatewayAuthorizationTests
             organizationId = "org-001",
             environmentId = "env-dev",
         },
+        "/api/business-console/v1/files/barcode-template-assets/upload-sessions/ups-template-1/complete" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            checksum = "sha256:81e2fda190f162f1b985b5ffe710e9b271e3962b1edb77e26fd634bdfbe5d4a7",
+            sizeBytes = 363,
+        },
+        "/api/business-console/v1/files/barcode-template-assets/upload-sessions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            templateCode = "BOX_LABEL",
+            fileName = "box-label.json",
+            expectedSizeBytes = 363,
+            checksum = "sha256:81e2fda190f162f1b985b5ffe710e9b271e3962b1edb77e26fd634bdfbe5d4a7",
+        },
         "/api/business-console/v1/files/shift-handover-attachments/upload-sessions" => new
         {
             organizationId = "org-001",
@@ -1377,6 +1393,10 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/ups-handover-1/complete", BusinessGatewayPermissions.MesHandoversManage);
         routes.Add(HttpMethod.Patch, "/api/business-console/v1/files/shift-handover-attachments/tus/ups-handover-1", BusinessGatewayPermissions.MesHandoversManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/files/shift-handover-attachments/file-handover-1/content", BusinessGatewayPermissions.MesHandoversRead);
+        // #3856：条码模板文件上传面归模板维护权限，不落到交接班或平台 files.* 口径上。
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/barcode-template-assets/upload-sessions", BusinessGatewayPermissions.BarcodeTemplatesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/barcode-template-assets/upload-sessions/ups-template-1/complete", BusinessGatewayPermissions.BarcodeTemplatesManage);
+        routes.Add(HttpMethod.Patch, "/api/business-console/v1/files/barcode-template-assets/tus/ups-template-1", BusinessGatewayPermissions.BarcodeTemplatesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsRead);

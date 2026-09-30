@@ -7248,6 +7248,47 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     sizeBytes?: number | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAssetUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAssetUploadSessionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAssetUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadProtocol?: string;
+    expiresAtUtc?: string;
+    uploadUrl?: string;
+    uploadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest = {
+    organizationId: string;
+    environmentId: string;
+    templateCode: string;
+    fileName: string;
+    expectedSizeBytes?: number;
+    checksum: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAsset = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAsset | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAsset = {
+    fileId?: string;
+    fileName?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteBarcodeTemplateAssetUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    checksum: string;
+    sizeBytes?: number;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderListResponse | null;
 };
@@ -21930,6 +21971,132 @@ export type DownloadBusinessConsoleShiftHandoverAttachmentContentResponses = {
 };
 
 export type DownloadBusinessConsoleShiftHandoverAttachmentContentResponse = DownloadBusinessConsoleShiftHandoverAttachmentContentResponses[keyof DownloadBusinessConsoleShiftHandoverAttachmentContentResponses];
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/upload-sessions';
+};
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionError = CreateBusinessConsoleBarcodeTemplateAssetUploadSessionErrors[keyof CreateBusinessConsoleBarcodeTemplateAssetUploadSessionErrors];
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAssetUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponse = CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponses[keyof CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponses];
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteBarcodeTemplateAssetUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadError = CompleteBusinessConsoleBarcodeTemplateAssetUploadErrors[keyof CompleteBusinessConsoleBarcodeTemplateAssetUploadErrors];
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAsset;
+};
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadResponse = CompleteBusinessConsoleBarcodeTemplateAssetUploadResponses[keyof CompleteBusinessConsoleBarcodeTemplateAssetUploadResponses];
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponse = GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponses[keyof GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponses];
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponse = PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses[keyof PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses];
 
 export type ListBusinessConsoleErpPurchaseOrdersData = {
     body?: never;
