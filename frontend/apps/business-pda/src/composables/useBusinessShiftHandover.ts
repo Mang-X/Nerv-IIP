@@ -74,8 +74,8 @@ export const SHIFT_HANDOVER_DIRECTORY_PERMISSION = 'business.masterdata.resource
 const LIST_TAKE = 50
 const DIRECTORY_TAKE = 200
 
-/** 交接单待接班状态的列表过滤值（读面回显 `Open`，列表 query 的枚举取小写 `open`）。 */
-export const HANDOVER_OPEN_STATUS_FILTER = 'open'
+/** 交接单待接班状态的列表过滤值。与读面 `HandoverStatus` 同为 `ShiftHandover.OpenStatus`（#3912）。 */
+export const HANDOVER_OPEN_STATUS_FILTER = 'Open'
 
 export type ShiftHandoverRow = BusinessConsoleMesShiftHandoverRow
 export type ShiftHandoverDetail = BusinessConsoleMesShiftHandoverDetail
@@ -251,7 +251,7 @@ export function useMesShiftHandovers() {
       query: {
         organizationId: scope.organizationId.value,
         environmentId: scope.environmentId.value,
-        ...(filters.status ? { status: filters.status as 'open' | 'accepted' } : {}),
+        ...(filters.status ? { status: filters.status as 'Open' | 'Accepted' } : {}),
         skip: 0,
         take: LIST_TAKE,
       },

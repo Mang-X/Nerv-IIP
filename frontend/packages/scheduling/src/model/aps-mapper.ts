@@ -24,6 +24,7 @@ const orderNodeId = (orderId: string): string => `order:${orderId}`
 /** APS SchedulePlanContract → 引擎无关 ScheduleModel(纯函数)。 */
 export function toModel(plan: SchedulePlanContract): ScheduleModel {
   const assignments = plan.assignments ?? []
+  const context = plan.validationContext
 
   const operations: ScheduleTask[] = assignments.map((a) => ({
     id: taskId(a),
@@ -46,6 +47,15 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
         : undefined,
     startUtc: a.startUtc ?? '',
     endUtc: a.endUtc ?? '',
+    segments: a.segments?.length
+      ? a.segments.map((segment) => ({
+          startUtc: segment.startUtc ?? '',
+          endUtc: segment.endUtc ?? '',
+        }))
+      : undefined,
+    dueUtc: context?.operations?.find(
+      (operation) => operation.orderId === a.orderId && operation.operationId === a.operationId,
+    )?.dueUtc,
     locked: a.isLocked ?? false,
     hasConflict: false,
     conflictReason: null,
@@ -84,6 +94,24 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
         type: 'finish_to_start',
       })
     }
+  }
+
+  // 装配前置来自方案快照；子件全部工序完成后，母单首道工序才能开始。
+  for (const dependency of plan.assemblyDependencies ?? []) {
+    const child = operations
+      .filter((task) => task.orderId === dependency.childOrderId)
+      .sort((a, b) => Date.parse(b.endUtc) - Date.parse(a.endUtc))[0]
+    const parent = operations
+      .filter((task) => task.orderId === dependency.parentOrderId)
+      .sort((a, b) => a.operationSequence - b.operationSequence)[0]
+    // 未排工单没有可连接的工序条，仍由未排列表呈现其原因。
+    if (!child || !parent) continue
+    links.push({
+      id: `${child.id}->${parent.id}`,
+      source: child.id,
+      target: parent.id,
+      type: 'finish_to_start',
+    })
   }
 
   const conflicts: ScheduleConflict[] = (plan.conflicts ?? []).map((c) => {
@@ -212,6 +240,35 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
 
   return {
     tasks: [...orderNodes, ...operations, ...blocks],
+    validationContext: context
+      ? {
+          horizon: { startUtc: context.horizonStartUtc ?? '', endUtc: context.horizonEndUtc ?? '' },
+          resources: (context.resources ?? []).map((resource) => ({
+            resourceId: resource.resourceId ?? '',
+            workCenterId: resource.workCenterId ?? '',
+            calendarId: resource.calendarId ?? '',
+            capacityUnits: resource.capacityUnits ?? 0,
+            utilizationRate: resource.utilizationRate ?? 0,
+          })),
+          operations: (context.operations ?? []).map((operation) => ({
+            orderId: operation.orderId ?? '',
+            operationId: operation.operationId ?? '',
+            predecessorOperationIds: [...(operation.predecessorOperationIds ?? [])],
+            dueUtc: operation.dueUtc,
+            durationMinutes: operation.durationMinutes,
+            setupMinutes: operation.setupMinutes,
+            isFixed: operation.isFixed ?? false,
+          })),
+          fixedReservations: (context.fixedReservations ?? []).map((reservation) => ({
+            orderId: reservation.orderId ?? '',
+            operationId: reservation.operationId ?? '',
+            resourceId: reservation.resourceId ?? undefined,
+            workCenterId: reservation.workCenterId ?? '',
+            startUtc: reservation.startUtc ?? '',
+            endUtc: reservation.endUtc ?? '',
+          })),
+        }
+      : undefined,
     calendars: calendars.length ? calendars : undefined,
     links,
     resources: [...new Set(operations.map((o) => o.resourceId).filter(Boolean) as string[])].map(
@@ -259,5 +316,6 @@ export function toLockedAssignments(model: ScheduleModel): ScheduleAssignmentCon
       startUtc: t.startUtc,
       endUtc: t.endUtc,
       isLocked: true,
+      segments: t.segments,
     }))
 }

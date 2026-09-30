@@ -67,6 +67,12 @@ public interface IBusinessMesClient
         BusinessConsoleMesReleaseWorkOrderRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> AdjustWorkOrderPriorityAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesAdjustWorkOrderPriorityRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> HoldWorkOrderAsync(
         string internalBearerToken,
         string workOrderId,
@@ -511,6 +517,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/release",
             request,
+            MesWorkOrderDocumentType,
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> AdjustWorkOrderPriorityAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesAdjustWorkOrderPriorityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAcceptedAsync(
+            internalBearerToken,
+            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/priority",
+            new { request.OrganizationId, request.EnvironmentId, request.IsRush, request.Priority, request.ChangedAtUtc },
             MesWorkOrderDocumentType,
             cancellationToken);
 

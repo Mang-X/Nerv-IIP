@@ -59,6 +59,11 @@ try
     {
         client.BaseAddress = erpBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<HttpScheduledReceiptSuggestionDownstreamBridge>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient("planning-mes-command", client => client.BaseAddress = mesBaseAddress).UseHttpClientMetrics();
     builder.Services.AddScoped<IPlanningSuggestionDownstreamBridge, HttpPlanningSuggestionDownstreamBridge>();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
@@ -102,6 +107,8 @@ try
     // MRP 异步任务模式（#1306）：受理端点入队，后台 worker 在独立事务中执行计算。
     builder.Services.AddSingleton<IMrpRunExecutionQueue, MrpRunExecutionQueue>();
     builder.Services.AddHostedService<MrpRunWorker>();
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddHostedService<DailyMrpScheduler>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

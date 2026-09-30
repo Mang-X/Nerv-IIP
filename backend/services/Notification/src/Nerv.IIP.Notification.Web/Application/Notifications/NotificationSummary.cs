@@ -171,7 +171,10 @@ public static class NotificationSummaryList
     /// 先截项、后由 <see cref="NotificationSummary.Render"/> 整体夹紧：
     /// 单个元素的长度同样没有上界，所以截项之后仍然需要夹紧兜底。
     /// </summary>
-    public static string Describe(IReadOnlyCollection<string>? items, string emptyFallback)
+    public static string Describe(
+        IReadOnlyCollection<string>? items,
+        string emptyFallback,
+        Func<int, int, string>? describeOverflow = null)
     {
         if (items is null || items.Count == 0)
         {
@@ -184,6 +187,8 @@ public static class NotificationSummaryList
         }
 
         var listed = string.Join(", ", items.Take(MaxListedItems));
-        return $"{listed} and {items.Count - MaxListedItems} more ({items.Count} total)";
+        return describeOverflow is null
+            ? $"{listed} and {items.Count - MaxListedItems} more ({items.Count} total)"
+            : $"{listed}，{describeOverflow(items.Count - MaxListedItems, items.Count)}";
     }
 }

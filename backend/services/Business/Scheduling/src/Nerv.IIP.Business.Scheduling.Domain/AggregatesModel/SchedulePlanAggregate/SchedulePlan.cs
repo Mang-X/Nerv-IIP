@@ -5,6 +5,7 @@ namespace Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggreg
 public partial record ScheduleProblemSnapshotId : IGuidStronglyTypedId;
 public partial record SchedulePlanId : IGuidStronglyTypedId;
 public partial record SchedulePlanAssignmentId : IGuidStronglyTypedId;
+public partial record SchedulePlanAssignmentSegmentId : IGuidStronglyTypedId;
 public partial record SchedulePlanResourceLoadId : IGuidStronglyTypedId;
 public partial record SchedulePlanConflictId : IGuidStronglyTypedId;
 public partial record SchedulePlanUnscheduledOperationId : IGuidStronglyTypedId;
@@ -107,7 +108,13 @@ public sealed record GeneratedScheduleAssignmentSnapshot(
     DateTimeOffset EndUtc,
     bool IsLocked,
     string ExplanationCode,
-    string? StandardOperationCode = null);
+    string? StandardOperationCode = null,
+    IReadOnlyCollection<GeneratedScheduleAssignmentSegmentSnapshot>? Segments = null);
+
+public sealed record GeneratedScheduleAssignmentSegmentSnapshot(
+    int SegmentIndex,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc);
 
 public sealed record GeneratedScheduleResourceLoadSnapshot(
     string ResourceId,
@@ -625,6 +632,8 @@ public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId
 
 public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
 {
+    private readonly List<SchedulePlanAssignmentSegment> segments = [];
+
     private SchedulePlanAssignment()
     {
     }
@@ -635,13 +644,16 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
         WorkOrderId = Required(contract.OrderId, nameof(contract.OrderId));
         OperationId = Required(contract.OperationId, nameof(contract.OperationId));
         OperationSequence = contract.OperationSequence;
-        ResourceId = Required(contract.ResourceId, nameof(contract.ResourceId));
+        ResourceId = contract.IsLocked && contract.ExplanationCode == "in-progress" && contract.ResourceId.Length == 0
+            ? string.Empty
+            : Required(contract.ResourceId, nameof(contract.ResourceId));
         WorkCenterId = Required(contract.WorkCenterId, nameof(contract.WorkCenterId));
         StartUtc = contract.StartUtc;
         EndUtc = contract.EndUtc;
         IsLocked = contract.IsLocked;
         ExplanationCode = Required(contract.ExplanationCode, nameof(contract.ExplanationCode));
         StandardOperationCode = Optional(contract.StandardOperationCode);
+        segments.AddRange((contract.Segments ?? []).Select(SchedulePlanAssignmentSegment.FromPlanSnapshot));
     }
 
     public SchedulePlanId SchedulePlanId { get; private set; } = null!;
@@ -652,6 +664,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     public string ResourceId { get; private set; } = string.Empty;
     public string WorkCenterId { get; private set; } = string.Empty;
     public string? StandardOperationCode { get; private set; }
+    public IReadOnlyCollection<SchedulePlanAssignmentSegment> Segments => segments;
     public DateTimeOffset StartUtc { get; private set; }
     public DateTimeOffset EndUtc { get; private set; }
     public bool IsLocked { get; private set; }
@@ -676,6 +689,28 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
 
         return value.Trim();
     }
+}
+
+public sealed class SchedulePlanAssignmentSegment : Entity<SchedulePlanAssignmentSegmentId>
+{
+    private SchedulePlanAssignmentSegment()
+    {
+    }
+
+    private SchedulePlanAssignmentSegment(GeneratedScheduleAssignmentSegmentSnapshot snapshot)
+    {
+        SegmentIndex = snapshot.SegmentIndex;
+        StartUtc = snapshot.StartUtc;
+        EndUtc = snapshot.EndUtc;
+    }
+
+    public SchedulePlanAssignmentId SchedulePlanAssignmentId { get; private set; } = null!;
+    public int SegmentIndex { get; private set; }
+    public DateTimeOffset StartUtc { get; private set; }
+    public DateTimeOffset EndUtc { get; private set; }
+
+    public static SchedulePlanAssignmentSegment FromPlanSnapshot(GeneratedScheduleAssignmentSegmentSnapshot snapshot) =>
+        new(snapshot);
 }
 
 public sealed class SchedulePlanResourceLoad : Entity<SchedulePlanResourceLoadId>

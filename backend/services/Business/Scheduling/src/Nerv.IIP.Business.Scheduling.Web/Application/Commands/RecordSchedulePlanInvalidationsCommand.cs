@@ -9,11 +9,12 @@ public enum SchedulePlanInvalidationScope
 {
     Resource = 0,
     WorkOrderOrOperation = 1,
-    AllInvalidatablePlans = 2,
     GeneratedWorkCenter = 3,
     GeneratedCalendar = 4,
     GeneratedSku = 5,
     ExactWorkOrderOperation = 6,
+    SnapshotWorkOrderOrSku = 7,
+    SnapshotMaterial = 8,
 }
 
 public enum SchedulePlanExecutionMilestone
@@ -96,7 +97,10 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         var skuByProblem = request.Scope == SchedulePlanInvalidationScope.GeneratedSku
             ? await FindSkuByProblemAsync(request, cancellationToken)
             : [];
-        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys, skuByProblem.Keys).ToArrayAsync(cancellationToken);
+        var inputMatchesByProblem = request.Scope is SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku or SchedulePlanInvalidationScope.SnapshotMaterial
+            ? await FindInputMatchesByProblemAsync(request, cancellationToken)
+            : [];
+        var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys, skuByProblem.Keys, inputMatchesByProblem.Keys).ToArrayAsync(cancellationToken);
         if (request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar)
         {
             plans = plans
@@ -138,12 +142,21 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 ? Normalize(request.ScopeValue)
                 : null;
             var (affectedWorkOrderId, affectedOperationId) = ResolveWorkOrderOrOperation(request, plans);
+            if (request.Scope == SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku &&
+                !inputMatchesByProblem[plan.ProblemId].OrderIds.Contains(Normalize(request.AffectedWorkOrderId)))
+            {
+                affectedWorkOrderId = null;
+            }
             var affectedOperations = request.Scope switch
             {
                 SchedulePlanInvalidationScope.GeneratedCalendar =>
                     SelectAffectedOperationsForCalendar(plan, calendarResourceIdsByProblem[plan.ProblemId]),
                 SchedulePlanInvalidationScope.GeneratedWorkCenter =>
                     SelectAffectedOperationsForWorkCenter(plan, Normalize(request.ScopeValue)),
+                SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku or SchedulePlanInvalidationScope.SnapshotMaterial =>
+                    plan.Assignments.Where(x =>
+                        inputMatchesByProblem[plan.ProblemId].OrderIds.Contains(x.WorkOrderId) ||
+                        inputMatchesByProblem[plan.ProblemId].Operations.Contains((x.WorkOrderId, x.OperationId))).ToArray(),
                 _ => SelectAffectedOperations(
                     plan,
                     affectedResourceId,
@@ -178,7 +191,8 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
     private IQueryable<SchedulePlan> QueryPlans(
         RecordSchedulePlanInvalidationsCommand request,
         IReadOnlyCollection<string> calendarProblemIds,
-        IReadOnlyCollection<string> skuProblemIds)
+        IReadOnlyCollection<string> skuProblemIds,
+        IReadOnlyCollection<string> inputProblemIds)
     {
         var normalizedScopeValue = Normalize(request.ScopeValue);
         // Inline the invalidatable-status predicate: a custom method call (IsInvalidatableStatus) inside a
@@ -206,11 +220,12 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             SchedulePlanInvalidationScope.GeneratedSku => query.Where(x =>
                 x.Status == SchedulePlanLifecycleStatus.Generated &&
                 skuProblemIds.Contains(x.ProblemId)),
+            SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku or SchedulePlanInvalidationScope.SnapshotMaterial =>
+                query.Where(x => inputProblemIds.Contains(x.ProblemId)),
             SchedulePlanInvalidationScope.WorkOrderOrOperation => query.Where(x => x.Assignments.Any(assignment =>
                 assignment.WorkOrderId == normalizedScopeValue ||
                 assignment.OperationId == normalizedScopeValue)),
             SchedulePlanInvalidationScope.ExactWorkOrderOperation => QueryExecutionDeviationPlans(query, request),
-            SchedulePlanInvalidationScope.AllInvalidatablePlans => query,
             _ => throw new ArgumentOutOfRangeException(nameof(request), request.Scope, "Unsupported schedule invalidation scope.")
         };
     }
@@ -339,6 +354,100 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         {
             return null;
         }
+    }
+
+    private sealed record InputMatch(
+        IReadOnlySet<string> OrderIds,
+        IReadOnlySet<(string OrderId, string OperationId)> Operations);
+
+    private async Task<Dictionary<string, InputMatch>> FindInputMatchesByProblemAsync(
+        RecordSchedulePlanInvalidationsCommand request,
+        CancellationToken cancellationToken)
+    {
+        var problemIds = dbContext.SchedulePlans.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                (x.Status == SchedulePlanLifecycleStatus.Generated || x.Status == SchedulePlanLifecycleStatus.Released))
+            .Select(x => x.ProblemId);
+        var snapshots = await dbContext.ScheduleProblems.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId && problemIds.Contains(x.ProblemId))
+            .Select(x => new { x.ProblemId, x.ProblemJson })
+            .ToArrayAsync(cancellationToken);
+        var matches = new Dictionary<string, InputMatch>(StringComparer.Ordinal);
+        var workOrderId = Normalize(request.AffectedWorkOrderId);
+        var skuCode = Normalize(request.AffectedSkuCode);
+
+        foreach (var snapshot in snapshots)
+        {
+            SchedulingProblemContract? problem;
+            try
+            {
+                problem = System.Text.Json.JsonSerializer.Deserialize<SchedulingProblemContract>(
+                    snapshot.ProblemJson, SchedulingJson.Options);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                continue;
+            }
+
+            if (problem is null)
+            {
+                continue;
+            }
+
+            var orderIds = new HashSet<string>(StringComparer.Ordinal);
+            var operations = new HashSet<(string OrderId, string OperationId)>();
+            if (request.Scope == SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku)
+            {
+                foreach (var order in problem.Orders.Where(x =>
+                    string.Equals(x.OrderId, workOrderId, StringComparison.Ordinal) ||
+                    string.Equals(x.SkuCode, skuCode, StringComparison.Ordinal)))
+                {
+                    orderIds.Add(order.OrderId);
+                }
+            }
+            else
+            {
+                foreach (var readiness in problem.MaterialReadiness.Where(x =>
+                    x.Shortages?.Any(shortage => string.Equals(shortage.MaterialId, skuCode, StringComparison.Ordinal)) == true))
+                {
+                    switch (readiness.ScopeType.ToLowerInvariant())
+                    {
+                        case "order":
+                            orderIds.Add(readiness.ScopeId);
+                            break;
+                        case "sku":
+                            foreach (var order in problem.Orders.Where(x => string.Equals(x.SkuCode, readiness.ScopeId, StringComparison.Ordinal)))
+                            {
+                                orderIds.Add(order.OrderId);
+                            }
+                            break;
+                        case "operation":
+                        case "resource":
+                            foreach (var order in problem.Orders)
+                            {
+                                foreach (var operation in order.Operations.Where(x =>
+                                    string.Equals(readiness.ScopeType, "operation", StringComparison.OrdinalIgnoreCase)
+                                        ? string.Equals(x.OperationId, readiness.ScopeId, StringComparison.Ordinal)
+                                        : x.EligibleResourceIds.Contains(readiness.ScopeId, StringComparer.Ordinal) ||
+                                          string.Equals(x.PrimaryResourceId, readiness.ScopeId, StringComparison.Ordinal)))
+                                {
+                                    operations.Add((order.OrderId, operation.OperationId));
+                                }
+                            }
+                            break;
+                    }
+                }
+            }
+
+            if (orderIds.Count > 0 || operations.Count > 0)
+            {
+                matches[snapshot.ProblemId] = new InputMatch(orderIds, operations);
+            }
+        }
+
+        return matches;
     }
 
     private static (string? WorkOrderId, string? OperationId) ResolveWorkOrderOrOperation(

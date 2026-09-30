@@ -236,6 +236,9 @@ public sealed class SchedulingMesOperationIdentityAcceptanceTests
                 ListMesWorkOrdersQuery query =>
                     await new ListMesWorkOrdersQueryHandler(db, new FixedTimeProvider(HorizonStart))
                         .Handle(query, cancellationToken),
+                GetAssemblyChildWorkOrdersQuery query =>
+                    await new GetAssemblyChildWorkOrdersQueryHandler(db)
+                        .Handle(query, cancellationToken),
                 AssignDispatchTaskCommand command =>
                     await AssignAsync(command, cancellationToken),
                 _ => throw new NotSupportedException(request.GetType().Name),

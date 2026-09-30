@@ -3145,6 +3145,115 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_work_order_list_forwards_demand_change_facts_without_changing_execution_status()
+    {
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-CHANGED", "SKU-A", "PV-A", 10m, 10,
+                    DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", [],
+                    HasChangedDemand: true),
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-CANCELLED", "SKU-A", "PV-A", 10m, 10,
+                    DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", [],
+                    HasCancelledDemand: true),
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-PLAIN", "SKU-A", "PV-A", 10m, 10,
+                    DateTimeOffset.Parse("2026-10-02T08:00:00Z"), "released", []),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "role", "role-platform-admin", "organization", "org-001",
+                    [BusinessGatewayPermissions.MesWorkOrdersRead], OrganizationWide: true),
+            ]);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rows = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal("released", rows[0].GetProperty("status").GetString());
+        Assert.True(rows[0].GetProperty("hasChangedDemand").GetBoolean());
+        Assert.False(rows[0].GetProperty("hasCancelledDemand").GetBoolean());
+        Assert.False(rows[1].GetProperty("hasChangedDemand").GetBoolean());
+        Assert.True(rows[1].GetProperty("hasCancelledDemand").GetBoolean());
+        Assert.False(rows[2].GetProperty("hasChangedDemand").GetBoolean());
+        Assert.False(rows[2].GetProperty("hasCancelledDemand").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Mes_work_order_priority_rejects_a_known_id_outside_the_selected_self_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant(
+                    "membership",
+                    "membership-operator",
+                    "self",
+                    "user-admin",
+                    [BusinessGatewayPermissions.MesWorkOrdersManage]),
+            ]);
+        var mes = new RecordingMesClient
+        {
+            WorkOrders =
+            [
+                new BusinessConsoleMesWorkOrderItem(
+                    "WO-OTHER",
+                    "SKU-001",
+                    null,
+                    10,
+                    0,
+                    DateTimeOffset.Parse("2026-05-24T00:00:00Z"),
+                    "released",
+                    []),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope(
+                    "self",
+                    "user-admin",
+                    "当前人员",
+                    "worker-mapping",
+                    [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-FOREIGN/priority?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin", new { isRush = true, priority = 1000 });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(mes.LastAdjustPriorityRequest);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
     public async Task Mes_work_order_detail_rejects_a_known_id_outside_the_selected_self_scope()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
@@ -5891,6 +6000,48 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("EQUIPMENT_MAINTENANCE_CONFLICT", document.RootElement.GetProperty("message").GetString());
     }
 
+    // #4034：Gateway 写入后列表/详情必须读回同一 MES 值；不限制负优先级。
+    [Theory]
+    [InlineData(true, -7)]
+    [InlineData(false, 1000)]
+    public async Task Mes_work_order_priority_write_reads_back_same_values(bool isRush, int priority)
+    {
+        var mes = new RecordingMesClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: [new AuthorizationScopeGrant("role", "role-platform-admin", "organization", "org-001", [BusinessGatewayPermissions.MesWorkOrdersManage, BusinessGatewayPermissions.MesWorkOrdersRead], OrganizationWide: true)]);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var changedAtUtc = DateTimeOffset.Parse("2026-09-30T00:00:00Z");
+        const string context = "?organizationId=org-001&environmentId=env-dev";
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/mes/work-orders/WO-001/priority" + context,
+            new { isRush, priority, changedAtUtc });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal("WO-001", mes.LastAdjustPriorityRequest!.WorkOrderId);
+        Assert.Equal("org-001", mes.LastAdjustPriorityRequest.OrganizationId);
+        Assert.Equal("env-dev", mes.LastAdjustPriorityRequest.EnvironmentId);
+        Assert.Equal(changedAtUtc, mes.LastAdjustPriorityRequest.ChangedAtUtc);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        foreach (var route in new[] { "/api/business-console/v1/mes/work-orders", "/api/business-console/v1/mes/work-orders/WO-001" })
+        {
+            var read = await client.GetAsync(route + context);
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+            using var document = JsonDocument.Parse(await read.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            if (data.TryGetProperty("items", out var items)) data = items[0];
+            Assert.Equal(isRush, data.GetProperty("isRush").GetBoolean());
+            Assert.Equal(priority, data.GetProperty("priority").GetInt32());
+        }
+    }
+
     [Fact]
     public async Task Mes_work_order_hold_forwards_context_and_internal_service_token()
     {
@@ -7063,6 +7214,7 @@ public sealed class BusinessGatewayProxyTests
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.True(item.GetProperty("hasInputDegradation").GetBoolean());
         Assert.Equal("scheduled-receipts", item.GetProperty("inputDegradationSources")[0].GetString());
+        Assert.Equal(3, item.GetProperty("demandChangeCount").GetInt32());
     }
 
     [Fact]
@@ -7121,6 +7273,43 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("sales", explanation.GetProperty("primarySourceType").GetString());
         Assert.Equal("10 - 8 + 0 + 2 - 0 = 4", explanation.GetProperty("formula").GetString());
         Assert.Equal("scheduled-receipts", explanation.GetProperty("degradationSources")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Planning_suggestions_expose_supersession_to_business_console()
+    {
+        const string successorRunId = "2ee1a0a9-861c-4a3a-b580-133756a92711";
+        var planning = new RecordingPlanningClient
+        {
+            SuggestionsResponse = new BusinessConsolePlanningSuggestionListResponse([
+                new BusinessConsolePlanningSuggestionItem(
+                    "old", "old-run", "planned-purchase", "SKU-001", "pcs", "SITE-01", 4m,
+                    new DateOnly(2026, 6, 1), "Superseded", "component-net-requirement",
+                    SupersededByRunId: successorRunId),
+                new BusinessConsolePlanningSuggestionItem(
+                    "current", successorRunId, "planned-purchase", "SKU-001", "pcs", "SITE-01", 4m,
+                    new DateOnly(2026, 6, 1), "Open", "component-net-requirement"),
+            ]),
+        };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = document.RootElement.GetProperty("data").GetProperty("items");
+        Assert.Equal("Superseded", items[0].GetProperty("status").GetString());
+        Assert.Equal(successorRunId, items[0].GetProperty("supersededByRunId").GetString());
+        Assert.Equal("Open", items[1].GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("supersededByRunId").ValueKind);
     }
 
     [Fact]
@@ -8924,6 +9113,91 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Workbench_preview_facade_forwards_selection_with_internal_token()
+    {
+        var scheduling = new RecordingSchedulingClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var request = new BusinessConsoleCreateSchedulingWorkbenchPlanRequest("org-001", "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-02T08:00:00Z", CultureInfo.InvariantCulture), [new("WO-001", 10, true)]);
+
+        using var response = await client.PostAsJsonAsync("/api/business-console/v1/scheduling/workbench/plans/preview", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.SchedulingPlansManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("internal-test-token", scheduling.LastInternalToken);
+        Assert.Equal(request.OrganizationId, scheduling.LastWorkbenchPreview!.OrganizationId);
+        Assert.Equal(request.EnvironmentId, scheduling.LastWorkbenchPreview.EnvironmentId);
+        Assert.Equal(request.HorizonStartUtc, scheduling.LastWorkbenchPreview.HorizonStartUtc);
+        Assert.Equal(request.HorizonEndUtc, scheduling.LastWorkbenchPreview.HorizonEndUtc);
+        Assert.Equal(request.Orders, scheduling.LastWorkbenchPreview.Orders);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("preview", body.RootElement.GetProperty("data").GetProperty("status").GetString());
+    }
+
+    [Theory]
+    [InlineData("create")]
+    [InlineData("detail")]
+    [InlineData("revision")]
+    public async Task Scheduling_facade_preserves_frozen_validation_context_through_http_client(string route)
+    {
+        var start = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var context = new SchedulePlanValidationContextContract(
+            start, start.AddDays(2),
+            [new("res-001", "wc-001", "calendar-001", 3, 0.75m)],
+            [new("order-001", "op-002", ["op-001"], start.AddHours(7), 90, 15, true)],
+            [new("external-order", "external-op", "wc-001", start.AddHours(1), start.AddHours(2), null),
+             new("order-001", "op-002", "wc-001", start.AddHours(3), start.AddHours(4), "res-001")]);
+        var plan = CreateSchedulePlan() with { ValidationContext = context };
+        var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK,
+            request.RequestUri!.AbsolutePath.EndsWith("/revisions", StringComparison.Ordinal)
+                ? new { data = (object)new SchedulePlanRevisionContract(
+                    plan, new(false, null, null, null, null, [], [], []),
+                    new("plan-001", plan.PlanId, plan.Metrics, plan.Metrics, 0, 0, 0)) }
+                : new { data = (object)plan }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = route switch
+        {
+            "create" => await client.PostAsJsonAsync("/api/business-console/v1/scheduling/workbench/plans", new
+            {
+                organizationId = "org-001", environmentId = "env-dev",
+                horizonStartUtc = start, horizonEndUtc = start.AddDays(2),
+                orders = new[] { new { workOrderId = "order-001", priority = 1, isRush = true } },
+            }),
+            "detail" => await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001?organizationId=org-001&environmentId=env-dev"),
+            _ => await client.PostAsJsonAsync("/api/business-console/v1/scheduling/plans/plan-001/revisions", new
+            {
+                organizationId = "org-001", environmentId = "env-dev",
+                includedOrderIds = new[] { "order-001" }, lockedAssignments = Array.Empty<object>(),
+            }),
+        };
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"]!;
+        var returnedPlan = route == "revision" ? body["candidate"]! : body;
+        var expected = JsonSerializer.SerializeToNode(context, SchedulingJson.Options);
+        Assert.True(JsonNode.DeepEquals(expected, returnedPlan["validationContext"]));
+        Assert.Equal("internal-test-token", Assert.Single(handler.Requests).Headers.Authorization?.Parameter);
+    }
+
+    [Fact]
     public async Task Scheduling_facade_uses_internal_service_token_and_forwards_stable_dtos()
     {
         var scheduling = new RecordingSchedulingClient();
@@ -8987,6 +9261,35 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("explicit", revokeDocument.RootElement.GetProperty("data").GetProperty("reason").GetString());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Scheduling_overrides_facade_enforces_read_permission_and_preserves_provenance(bool allowed)
+    {
+        var scheduling = new RecordingSchedulingClient();
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(scheduling);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-002/overrides?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(allowed ? 1 : 0, scheduling.GetPlanOverridesCallCount);
+        if (allowed)
+        {
+            Assert.Equal("internal-test-token", scheduling.LastInternalToken);
+            Assert.Equal(new BusinessConsoleSchedulingPlanRequest("plan-002", "org-001", "env-dev"), scheduling.LastPlanRequest);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("plan-001", body.RootElement.GetProperty("data")[0].GetProperty("sourcePlanId").GetString());
+            Assert.Equal(BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+        }
+    }
+
     [Fact]
     public async Task Scheduling_override_facade_forwards_the_authorized_principal_as_actor()
     {
@@ -9014,6 +9317,8 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("user:user-admin", scheduling.LastOverrideActor);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("plan-001", body.RootElement.GetProperty("data").GetProperty("sourcePlanId").GetString());
     }
 
     [Fact]
@@ -9950,6 +10255,106 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("alarm-event-001", document.RootElement.GetProperty("data").GetProperty("alarmEventId").GetString());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Scheduling_history_facade_forwards_filters_and_preserves_total_and_horizon(bool allowed)
+    {
+        // #4049 / A-layer contract: total is not the current page count; horizon is owner data.
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = new
+            {
+                items = new[] { new { planId = "plan-history", problemId = "problem-history", status = "released",
+                    generatedAtUtc = "2026-06-01T08:00:00Z", releasedAtUtc = "2026-06-02T09:00:00Z",
+                    assignmentCount = 1, conflictCount = 0, unscheduledOperationCount = 0,
+                    isInvalidated = true, horizonStartUtc = "2026-06-01T06:00:00Z", horizonEndUtc = "2026-06-05T18:00:00Z" } },
+                total = 37,
+            },
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync("/api/business-console/v1/scheduling/plans/history?organizationId=org-001&environmentId=env-dev&pageIndex=2&pageSize=50&status=released&releasedOn=2026-06-02&isInvalidated=true");
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(allowed ? 1 : 0, handler.Requests.Count);
+        if (allowed)
+        {
+            var request = Assert.Single(handler.Requests);
+            Assert.Equal("/api/business/v1/scheduling/plans/history", request.RequestUri!.AbsolutePath);
+            Assert.Equal("organizationId=org-001&environmentId=env-dev&pageIndex=2&pageSize=50&status=released&releasedOn=2026-06-02&isInvalidated=true", request.RequestUri.Query.TrimStart('?'));
+            Assert.Equal("internal-test-token", request.Headers.Authorization!.Parameter);
+            Assert.Equal(BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+            Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+            Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = body.RootElement.GetProperty("data");
+            Assert.Equal(37, data.GetProperty("total").GetInt32());
+            var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+            Assert.Equal("released", item.GetProperty("status").GetString());
+            Assert.True(item.GetProperty("isInvalidated").GetBoolean());
+            Assert.Equal(DateTimeOffset.Parse("2026-06-01T06:00:00Z", CultureInfo.InvariantCulture), item.GetProperty("horizonStartUtc").GetDateTimeOffset());
+            Assert.Equal(DateTimeOffset.Parse("2026-06-05T18:00:00Z", CultureInfo.InvariantCulture), item.GetProperty("horizonEndUtc").GetDateTimeOffset());
+        }
+    }
+
+    [Theory]
+    [InlineData(true, "org-001", HttpStatusCode.OK)]
+    [InlineData(false, "org-001", HttpStatusCode.Forbidden)]
+    [InlineData(true, "org-other", HttpStatusCode.Forbidden)]
+    public async Task Scheduling_csv_facade_preserves_download_bytes_and_authorizes_scope(
+        bool allowed, string organizationId, HttpStatusCode expectedStatus)
+    {
+        // #4084 PublicContract: proxy the owner CSV unchanged, only after plans.read in the token scope.
+        var csv = System.Text.Encoding.UTF8.GetBytes("\uFEFFPlanId,OrderReference\r\nplan-001,订单一\r\n");
+        var handler = new RecordingHandler(_ =>
+        {
+            var result = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(csv) };
+            result.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/csv") { CharSet = "utf-8" };
+            result.Content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "schedule-plan.csv" };
+            return result;
+        });
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.GetAsync($"/api/business-console/v1/scheduling/plans/plan-001/csv?organizationId={organizationId}&environmentId=env-dev");
+        Assert.Equal(expectedStatus, response.StatusCode);
+        if (expectedStatus != HttpStatusCode.OK)
+        {
+            Assert.Empty(handler.Requests);
+            return;
+        }
+        Assert.Equal(csv, await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal("text/csv", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType.CharSet);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition!.DispositionType);
+        Assert.Equal("schedule-plan.csv", response.Content.Headers.ContentDisposition.FileName!.Trim('"'));
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/csv", request.RequestUri!.AbsolutePath);
+        Assert.Equal("?organizationId=org-001&environmentId=env-dev", request.RequestUri.Query);
+        Assert.Equal("internal-test-token", request.Headers.Authorization!.Parameter);
+        Assert.Equal(BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("scheduling-plan", auth.LastRequirement.ResourceType);
+        Assert.Equal("plan-001", auth.LastRequirement.ResourceId);
+    }
+
     [Fact]
     public async Task Scheduling_http_client_sends_internal_token_and_downstream_routes()
     {
@@ -9972,6 +10377,18 @@ public sealed class BusinessGatewayProxyTests
             [new("WO-001", 1, true)]), CancellationToken.None);
         await client.CreatePlanRevisionAsync("internal-token-001", new(
             "plan-001", "org-001", "env-dev", ["WO-001"], []), CancellationToken.None);
+
+        await client.GetPlanOverridesAsync("internal-token-001", planRequest, CancellationToken.None);
+        Assert.Equal(HttpMethod.Get, handler.Requests[9].Method);
+        Assert.Equal("/api/business/v1/scheduling/plans/plan-001/overrides", handler.Requests[9].RequestUri!.AbsolutePath);
+        Assert.Equal("organizationId=org-001&environmentId=env-dev", handler.Requests[9].RequestUri!.Query.TrimStart('?'));
+        await client.PreviewWorkbenchPlanAsync("internal-token-001", new(
+            "org-001", "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-02T08:00:00Z", CultureInfo.InvariantCulture),
+            [new("WO-001", 1, true)]), CancellationToken.None);
+        Assert.Equal(HttpMethod.Post, handler.Requests[10].Method);
+        Assert.Equal("/api/business/v1/scheduling/workbench/plans/preview", handler.Requests[10].RequestUri!.AbsolutePath);
 
         Assert.All(handler.Requests, request => Assert.Equal("Bearer", request.Headers.Authorization?.Scheme));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization?.Parameter));
@@ -12319,7 +12736,7 @@ public sealed class BusinessGatewayProxyTests
         await client.GetRoutingAsync("internal-token-001", "RTG-001", "A", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         var releasedRouting = await client.ReleaseRoutingAsync(
             "internal-token-001",
-            new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15)]),
+            new BusinessConsoleReleaseRoutingRequest("org-001", "env-dev", "RTG-001", "A", "SKU-001", new DateOnly(2026, 6, 1), [new BusinessConsoleRoutingOperationRequest(10, "WC-001", "assembly", "装配", 15, Interruptible: true)]),
             CancellationToken.None);
         await client.ListStandardOperationsAsync(
             "internal-token-001",
@@ -12411,6 +12828,11 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", archiveProductionVersionDocument.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", archiveProductionVersionDocument.RootElement.GetProperty("environmentId").GetString());
         Assert.Equal("pv-001", archiveProductionVersionDocument.RootElement.GetProperty("productionVersionId").GetString());
+
+        var releaseRoutingRequestIndex = handler.Requests.FindIndex(request =>
+            request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/routings/release", StringComparison.Ordinal));
+        using var releaseRoutingDocument = JsonDocument.Parse(handler.RequestBodies[releaseRoutingRequestIndex]!);
+        Assert.True(releaseRoutingDocument.RootElement.GetProperty("operations")[0].GetProperty("interruptible").GetBoolean());
 
         var createProductionVersionRequestIndex = handler.Requests.FindIndex(request =>
             request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/production-versions", StringComparison.Ordinal));
@@ -15679,6 +16101,10 @@ public sealed class BusinessGatewayProxyTests
     private static object SchedulingResponseFor(HttpRequestMessage request)
     {
         var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/overrides", StringComparison.Ordinal))
+        {
+            return new { data = Array.Empty<BusinessConsoleScheduleOperationOverrideResponse>(), success = true, message = string.Empty, code = 0 };
+        }
         if (path.EndsWith("/gantt", StringComparison.Ordinal))
         {
             return new
@@ -18908,7 +19334,8 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
                 ["mps", "sales-order"],
                 new DateOnly(2026, 6, 1),
                 new DateOnly(2026, 6, 30),
-                null),
+                null,
+                3),
         ]));
     }
 
@@ -20048,6 +20475,16 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 
     public string? LastOverrideActor { get; private set; }
 
+    public BusinessConsoleCreateSchedulingWorkbenchPlanRequest? LastWorkbenchPreview { get; private set; }
+
+    public Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastWorkbenchPreview = request;
+        return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan(SchedulePlanStatusContract.Preview));
+    }
+
     public Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,
         SchedulingProblemContract problem,
@@ -20067,6 +20504,11 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         LastProblem = problem;
         return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan(SchedulePlanStatusContract.Generated));
     }
+
+    public Task<BusinessConsoleSchedulingHistoryResponse> ListPlanHistoryAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingHistoryRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse>> ListPlansAsync(
         string internalBearerToken,
@@ -20101,6 +20543,10 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         LastPlanRequest = request;
         return Task.FromResult(BusinessGatewayProxyTests.CreateSchedulePlan());
     }
+
+    public Task<byte[]> ExportPlanCsvAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(Array.Empty<byte>());
 
     public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,
@@ -20148,6 +20594,19 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
             null));
     }
 
+    public int GetPlanOverridesCallCount { get; private set; }
+
+    public Task<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>> GetPlanOverridesAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken)
+    {
+        GetPlanOverridesCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastPlanRequest = request;
+        var start = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        return Task.FromResult<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>>([
+            new("op-001", "WO-001", "RES-001", "WC-001", start, start.AddHours(1), "manual-override", "plan-001")]);
+    }
+
     public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,
         BusinessConsoleScheduleOperationOverrideRequest request,
@@ -20159,7 +20618,7 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
         LastOverrideActor = actor;
         return Task.FromResult(new BusinessConsoleScheduleOperationOverrideResponse(
             request.OperationId, "WO-001", request.ResourceId, "WC-001",
-            request.StartUtc, request.EndUtc, "manual-override"));
+            request.StartUtc, request.EndUtc, "manual-override", request.PlanId));
     }
 
     public Task<IReadOnlyCollection<OrderUrgencyContract>> ListOrderUrgenciesAsync(
@@ -21072,7 +21531,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesMaterialReadinessResponse? MaterialReadinessResponse { get; init; }
 
-    public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; init; }
+    public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; set; }
 
     public int? WorkOrdersTotal { get; init; }
 
@@ -21294,7 +21753,9 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             "released",
             "Ready",
             [],
-            []));
+            [],
+            IsRush: LastAdjustPriorityRequest?.IsRush ?? false,
+            Priority: LastAdjustPriorityRequest?.Priority ?? 0));
     }
 
     public Task<BusinessConsoleAcceptedResponse> ReleaseWorkOrderAsync(
@@ -21310,6 +21771,20 @@ internal sealed class RecordingMesClient : IBusinessMesClient
             throw ReleaseFailure;
         }
 
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public BusinessConsoleMesAdjustWorkOrderPriorityRequest? LastAdjustPriorityRequest { get; private set; }
+
+    public Task<BusinessConsoleAcceptedResponse> AdjustWorkOrderPriorityAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesAdjustWorkOrderPriorityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAdjustPriorityRequest = request;
+        WorkOrders = [new(workOrderId, "SKU-001", null, 10, request.Priority, DateTimeOffset.Parse("2026-05-24T00:00:00Z"), "released", [], IsRush: request.IsRush)];
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 

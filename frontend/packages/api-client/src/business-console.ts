@@ -1,3 +1,16 @@
+import { exportBusinessConsoleSchedulingPlanCsv as generatedExportSchedulingPlanCsv } from './generated/business-console'
+export {
+  adjustBusinessConsoleMesWorkOrderPriority,
+  adjustBusinessConsoleMesWorkOrderPriorityMutationOptions,
+} from './generated/business-console'
+
+export type {
+  AdjustBusinessConsoleMesWorkOrderPriorityData,
+  AdjustBusinessConsoleMesWorkOrderPriorityErrors,
+  AdjustBusinessConsoleMesWorkOrderPriorityResponse,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest as BusinessConsoleMesAdjustWorkOrderPriorityRequest,
+} from './generated/business-console'
+
 export {
   raiseBusinessConsoleMesAndonCall,
   raiseBusinessConsoleMesAndonCallMutationOptions,
@@ -230,6 +243,7 @@ export {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
   postBusinessConsoleTelemetryAlarmMutationOptions,
   previewBusinessConsoleSchedulingPlanMutationOptions,
+  previewBusinessConsoleSchedulingWorkbenchPlanMutationOptions,
   queryBusinessConsoleMaintenanceAssetReliabilityQueryOptions,
   queryBusinessConsoleMaintenanceInspectionMeasurementTrendQueryOptions,
   queryBusinessConsoleMaintenanceReliabilitySummaryQueryOptions,
@@ -253,8 +267,10 @@ export {
   startBusinessConsoleApprovalChainMutationOptions,
   unshelveBusinessConsoleEquipmentAlarmMutationOptions,
   listBusinessConsoleSchedulingPlansQueryOptions,
+  listBusinessConsoleSchedulingPlanHistoryQueryOptions,
   getBusinessConsoleSchedulingPlanQueryOptions,
   getBusinessConsoleSchedulingPlanGanttQueryOptions,
+  getBusinessConsoleSchedulingPlanOverridesQueryOptions,
   listBusinessConsoleOrderUrgenciesQueryOptions,
   getBusinessConsoleOrderUrgencyQueryOptions,
   setBusinessConsoleOrderUrgencyBusinessPriorityMutationOptions,
@@ -492,6 +508,7 @@ export {
   getBusinessConsoleMesSupplyReadiness,
   getBusinessConsoleMesWipSummary,
   getBusinessConsoleMesWorkOrderDetail,
+  listBusinessConsoleErpPurchaseRequisitions,
   getBusinessConsoleMesWorkOrderTraceability,
   getBusinessConsoleMesFinishedGoodsReceiptInventoryLink,
   getBusinessConsolePlanningMrpPegging,
@@ -630,6 +647,7 @@ export {
   createOrUpdateBusinessConsoleTelemetryAlarmRule,
   postBusinessConsoleTelemetryAlarm,
   previewBusinessConsoleSchedulingPlan,
+  previewBusinessConsoleSchedulingWorkbenchPlan,
   queryBusinessConsoleMaintenanceAssetReliability,
   queryBusinessConsoleMaintenanceAvailabilityWindows,
   queryBusinessConsoleTelemetryDeviceHistory,
@@ -651,11 +669,13 @@ export {
   resolveBusinessConsoleEngineeringProductionVersion,
   resumeBusinessConsoleMesOperationTask,
   listBusinessConsoleSchedulingPlans,
+  listBusinessConsoleSchedulingPlanHistory,
   createBusinessConsoleSchedulingPlan,
   createBusinessConsoleSchedulingPlanRevision,
   createBusinessConsoleSchedulingWorkbenchPlan,
   getBusinessConsoleSchedulingPlan,
   getBusinessConsoleSchedulingPlanGantt,
+  getBusinessConsoleSchedulingPlanOverrides,
   listBusinessConsoleOrderUrgencies,
   getBusinessConsoleOrderUrgency,
   setBusinessConsoleOrderUrgencyBusinessPriority,
@@ -1138,6 +1158,14 @@ import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest,
   ListBusinessConsoleMesWorkOrdersData,
   ListBusinessConsoleMesOperationTasksData,
+  GetBusinessConsoleMesWipSummaryData,
+  ListBusinessConsoleMesDispatchTasksData,
+  ListBusinessConsoleMesMaterialIssueRequestsData,
+  ListBusinessConsoleMesFinishedGoodsReceiptRequestsData,
+  ListBusinessConsoleMesRelatedQualityItemsData,
+  ListBusinessConsoleMesShiftHandoversData,
+  ListBusinessConsoleMesDowntimeEventsData,
+  ListBusinessConsoleMesCapacityImpactsData,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketItem,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsListRequest,
@@ -1273,6 +1301,9 @@ export type {
   GetBusinessConsoleErpTrialBalanceData,
   GetBusinessConsoleSchedulingPlanData,
   GetBusinessConsoleSchedulingPlanGanttData,
+  GetBusinessConsoleSchedulingPlanOverridesData,
+  GetBusinessConsoleSchedulingPlanOverridesError,
+  GetBusinessConsoleSchedulingPlanOverridesResponse,
   GetBusinessConsoleWorkbenchSummaryData,
   ListBusinessConsoleApprovalChainsData,
   ListBusinessConsoleApprovalDecisionsData,
@@ -1285,11 +1316,13 @@ export type {
   ListBusinessConsoleBarcodeTemplatesData,
   ListBusinessConsoleMaintenanceSparePartsData,
   ListBusinessConsoleSchedulingPlansData,
+  ListBusinessConsoleSchedulingPlanHistoryData,
   ListBusinessConsoleTelemetryAlarmRulesData,
   ListBusinessConsoleTelemetryAlarmsData,
   ListBusinessConsoleTelemetryTagsData,
   PostBusinessConsoleTelemetryAlarmData,
   PreviewBusinessConsoleSchedulingPlanData,
+  PreviewBusinessConsoleSchedulingWorkbenchPlanData,
   CloseBusinessConsoleErpAccountingPeriodData,
   ExecuteBusinessConsoleErpPaymentExecutionData,
   OpenBusinessConsoleErpAccountingPeriodData,
@@ -1386,6 +1419,8 @@ export type {
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDisableTelemetryTagResponse as BusinessConsoleDisableTelemetryTagEnvelope,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWorkbenchSummaryResponse as BusinessConsoleWorkbenchSummaryEnvelope,
   NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleSchedulePlanSummaryResponse as BusinessConsoleSchedulingPlanSummaryListEnvelope,
+  NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse as BusinessConsoleSchedulingHistoryEnvelope,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse as BusinessConsoleSchedulingHistoryResponse,
   NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract as BusinessConsoleSchedulingGanttEnvelope,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalChainItem as BusinessConsoleApprovalChainItem,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalChainListRequest as BusinessConsoleApprovalChainListRequest,
@@ -1521,7 +1556,13 @@ export type {
   NervIipContractsSchedulingSchedulePlanCalendarContract as BusinessConsoleSchedulingPlanCalendar,
   NervIipContractsSchedulingSchedulePlanShiftWindowContract as BusinessConsoleSchedulingShiftWindow,
   NervIipContractsSchedulingSchedulePlanContract as BusinessConsoleSchedulePlan,
+  NervIipContractsSchedulingSchedulePlanValidationContextContract as BusinessConsoleSchedulingValidationContext,
+  NervIipContractsSchedulingSchedulePlanResourceContextContract as BusinessConsoleSchedulingResourceContext,
+  NervIipContractsSchedulingSchedulePlanOperationContextContract as BusinessConsoleSchedulingOperationContext,
+  NervIipContractsSchedulingSchedulePlanFixedReservationContract as BusinessConsoleSchedulingFixedReservation,
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract as BusinessConsoleSchedulingMaterialRisk,
+  NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract as BusinessConsoleSchedulingMaterialShortageSummary,
+  NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract as BusinessConsoleSchedulingMaterialAffectedOperation,
   NervIipContractsSchedulingSchedulePlanEquipmentRiskContract as BusinessConsoleSchedulingEquipmentRisk,
   NervIipContractsSchedulingSchedulingMaterialShortageContract as BusinessConsoleSchedulingMaterialShortage,
   NervIipContractsSchedulingSchedulePlanComparisonContract as BusinessConsoleSchedulingPlanComparison,
@@ -2256,6 +2297,14 @@ export type BusinessConsoleMesEngineeringChangeDecisionRequest =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest
 export type { ListBusinessConsoleMesWorkOrdersData }
 export type { ListBusinessConsoleMesOperationTasksData }
+export type { GetBusinessConsoleMesWipSummaryData }
+export type { ListBusinessConsoleMesDispatchTasksData }
+export type { ListBusinessConsoleMesMaterialIssueRequestsData }
+export type { ListBusinessConsoleMesFinishedGoodsReceiptRequestsData }
+export type { ListBusinessConsoleMesRelatedQualityItemsData }
+export type { ListBusinessConsoleMesShiftHandoversData }
+export type { ListBusinessConsoleMesDowntimeEventsData }
+export type { ListBusinessConsoleMesCapacityImpactsData }
 export type BusinessConsoleMrpPeggingItem =
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrpPeggingItem
 export type BusinessConsoleMrpRunItem =
@@ -2674,6 +2723,8 @@ import type {
   NervIipContractsSchedulingScheduleChangeTypeContract,
   NervIipContractsSchedulingGanttScheduleItemContract,
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract,
+  NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract,
+  NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract,
   NervIipContractsSchedulingSchedulingMaterialShortageContract,
   NervIipContractsSchedulingSchedulePlanEquipmentRiskContract,
 } from './generated/business-console/types.gen'
@@ -2693,6 +2744,10 @@ export type ScheduleChangeTypeContract = NervIipContractsSchedulingScheduleChang
 // 物料软约束（#1291）：已排但缺料的工序风险 + 结构化缺口明细。
 export type SchedulePlanMaterialRiskContract =
   NervIipContractsSchedulingSchedulePlanMaterialRiskContract
+export type SchedulePlanMaterialShortageSummaryContract =
+  NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract
+export type SchedulePlanMaterialAffectedOperationContract =
+  NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract
 export type SchedulingMaterialShortageContract =
   NervIipContractsSchedulingSchedulingMaterialShortageContract
 // 设备软约束（#1320）：排在状态未知设备上的工序风险（无快照 / 快照过期 / 采集源不可达）。
@@ -3079,4 +3134,14 @@ export type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostItem as BusinessConsoleErpWorkOrderCostItem,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostListResponse as BusinessConsoleErpWorkOrderCostListResponse,
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostListResponse as BusinessConsoleErpWorkOrderCostListEnvelope,
+} from './generated/business-console'
+
+// CSV downloads use the binary type declared by OpenAPI rather than automatic text parsing.
+export const exportBusinessConsoleSchedulingPlanCsv: typeof generatedExportSchedulingPlanCsv = (
+  options,
+) => generatedExportSchedulingPlanCsv({ ...options, parseAs: 'blob' })
+export type {
+  ExportBusinessConsoleSchedulingPlanCsvData,
+  ExportBusinessConsoleSchedulingPlanCsvErrors,
+  ExportBusinessConsoleSchedulingPlanCsvResponse,
 } from './generated/business-console'

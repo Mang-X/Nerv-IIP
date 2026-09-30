@@ -116,6 +116,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
 const revokePlanPending = shallowRef(false)
 
 vi.mock('@/composables/useBusinessScheduling', () => ({
+  useSchedulingPlanSummary: () => ({ summary: shallowRef() }),
   useBusinessScheduling: () => ({
     detailSelection: reactive({ planId: '' }),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
@@ -124,6 +125,7 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
     planDetail: computed(() => undefined),
     planDetailError: shallowRef(undefined),
     planDetailPending: shallowRef(false),
+    plansTotal: computed(() => 1),
     plans: computed(() => [
       {
         planId: 'plan-released',

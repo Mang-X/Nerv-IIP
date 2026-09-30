@@ -53,7 +53,7 @@
       "id": "demandplanning-postgres",
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
       "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof\\.\";$"
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL DemandPlanning persistence tests\\.\";$"
     },
     {
       "id": "demandplanning-postgres-redis",
@@ -720,8 +720,8 @@
       "id": "demandplanning-postgres",
       "sourceId": "demandplanning-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.ErpSalesOrderDemandConsumerTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP sales-order demand bridge proof\\.$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.DemandPlanning\\.Web\\.Tests\\.(?:ErpSalesOrderDemandConsumerTests|MrpInputChangePersistenceTests)\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL DemandPlanning persistence tests\\.$",
       "allowedLanes": [
         "backend"
       ],
@@ -733,9 +733,12 @@
       "testIdentities": [
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand",
         "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
-        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability"
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_keeps_existing_pegging_line_unknown_and_persists_new_sales_line",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Created_moved_and_deleted_inputs_remain_queryable_by_scope_time_and_either_interval_on_postgres",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.MrpInputChangePersistenceTests.Migration_preserves_legacy_fact_with_unknown_demand_type_on_postgres"
       ],
-      "expectedRuntimeTestCount": 3
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "demandplanning-postgres-redis",
@@ -1110,7 +1113,7 @@
       "id": "scheduling-postgres",
       "sourceId": "scheduling-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.(?:AssetUnavailableInboxPostgresProfileTests|OperationExecutionProjectionPostgresProfileTests|OrderUrgencyRetentionPostgresCapacityTests|RecordSchedulePlanInvalidationsPostgresProfileTests|ScheduleReleaseGovernancePostgresProfileTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Scheduling\\.Web\\.Tests\\.(?:SchedulingOverrideSourcePlanPostgresTests|AssetUnavailableInboxPostgresProfileTests|OperationExecutionProjectionPostgresProfileTests|OrderUrgencyRetentionPostgresCapacityTests|RecordSchedulePlanInvalidationsPostgresProfileTests|ScheduleReleaseGovernancePostgresProfileTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Scheduling PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -1130,6 +1133,7 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Migration_upgrades_distinct_historical_event_instances_and_old_schema_already_forbids_same_key_duplicates",
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows",
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests.Migration_preserves_legacy_override_and_manual_replacements_track_source_plan",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests.Migration_and_concurrent_consumers_persist_one_projection_without_lost_quantity",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once",
@@ -1142,7 +1146,7 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
       ],
-      "expectedRuntimeTestCount": 20
+      "expectedRuntimeTestCount": 21
     },
     {
       "id": "scheduling-postgres-redis",
@@ -1544,6 +1548,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.ProductionReportOeeDimensionSnapshotPostgresTests.Prior_schema_report_survives_up_down_up_with_nullable_snapshot_columns_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests.PostgreSQL_http_creation_still_dispatches_work_order_created_after_sku_gate_save",
+        "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests.Legacy_priority_and_explicit_rush_adjustment_survive_migration_and_new_scope_queries",
         "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_concurrent_sku_disabled_events_converge_without_retry_poisoning",
         "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_consumer_persists_disabled_sku_and_changes_new_work_order_behavior",
         "Nerv.IIP.Business.Mes.Web.Tests.SkuDisabledConsumerTests.PostgreSQL_disable_commit_serializes_before_new_work_order_creation",
@@ -1561,7 +1566,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token"
       ],
-      "expectedRuntimeTestCount": 59
+      "expectedRuntimeTestCount": 60
     },
     {
       "id": "mes-cap-postgres",
@@ -1946,7 +1951,7 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
-        "Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_only_the_platform_administrator_and_its_default_tenant"
+        "Nerv.IIP.Iam.Web.Tests.IamPlatformAdministratorTests.Production_startup_bootstraps_administrator_default_tenant_and_planner_role"
       ],
       "expectedRuntimeTestCount": 1
     },
@@ -1965,9 +1970,10 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
-        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres"
+        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres",
+        "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Production_planner_query_filters_role_scope_and_active_accounts_on_postgres"
       ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 2
     }
   ]
 }

@@ -34,6 +34,7 @@ public sealed class PlanningSuggestionEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.Formula).HasColumnName("formula").HasMaxLength(512).IsRequired().HasComment("Human-readable net requirement formula from persisted MRP inputs.");
         builder.Property(x => x.UomConversionSummary).HasColumnName("uom_conversion_summary").HasMaxLength(512).IsRequired().HasComment("UOM conversion summary used while calculating this suggestion.");
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(32).HasComment("Suggestion lifecycle status.");
+        builder.Property(x => x.SupersededByRunId).HasColumnName("superseded_by_run_id").HasComment("Newer completed MRP run that replaced this open suggestion.");
         builder.Property(x => x.AcceptedDownstreamService).HasColumnName("accepted_downstream_service").HasMaxLength(64).HasComment("Downstream service that accepted the suggestion.");
         builder.Property(x => x.AcceptedDownstreamDocumentType).HasColumnName("accepted_downstream_document_type").HasMaxLength(64).HasComment("Downstream document type that accepted the suggestion.");
         builder.Property(x => x.AcceptedDownstreamDocumentId).HasColumnName("accepted_downstream_document_id").HasMaxLength(128).HasComment("Downstream document id that accepted the suggestion.");

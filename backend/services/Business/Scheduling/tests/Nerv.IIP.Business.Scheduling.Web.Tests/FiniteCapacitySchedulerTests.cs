@@ -9,6 +9,289 @@ public class FiniteCapacitySchedulerTests
     private static readonly DateTimeOffset GeneratedAtUtc = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void Interruptible_operation_uses_separate_shifts_and_preserves_work_minutes()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(18),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 180 });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-plan", GeneratedAtUtc);
+
+        var assignment = Assert.Single(plan.Assignments);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(2)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11))
+        ], assignment.Segments);
+        Assert.Equal(180, plan.Metrics.AssignedMinutes);
+        Assert.Equal(1, plan.Metrics.ScheduledOperationCount);
+        Assert.Empty(plan.UnscheduledOperations);
+
+        var continuousOnly = ReplaceSingleOperation(problem,
+            x => x with { SplitPolicy = ScheduleSplitPolicyContract.NonSplittable });
+        var continuousPlan = new FiniteCapacityScheduler().Schedule(continuousOnly, "continuous-plan", GeneratedAtUtc);
+        Assert.Empty(continuousPlan.Assignments);
+        Assert.Equal(ScheduleConflictReasonCodeContract.Calendar,
+            Assert.Single(continuousPlan.UnscheduledOperations).ReasonCode);
+    }
+
+    [Fact]
+    public void Interruptible_segments_reserve_capacity_according_to_resource_utilization()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(12),
+            Resources = [template.Resources.Single() with { UtilizationRate = 0.5m }],
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 120 });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-utilization-plan", GeneratedAtUtc);
+
+        var assignment = Assert.Single(plan.Assignments);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11))
+        ], assignment.Segments);
+        Assert.Empty(plan.UnscheduledOperations);
+        Assert.Equal(120, plan.Metrics.AssignedMinutes);
+
+        var lockedProblem = problem with
+        {
+            LockedAssignments = [new SchedulingLockedAssignmentContract(
+                assignment.AssignmentId, assignment.OrderId, assignment.OperationId,
+                assignment.OperationSequence, assignment.ResourceId, assignment.WorkCenterId,
+                assignment.StartUtc, assignment.EndUtc, "planner-lock", assignment.Segments)]
+        };
+        var lockedPlan = new FiniteCapacityScheduler().Schedule(
+            lockedProblem, "locked-split-utilization-plan", GeneratedAtUtc);
+        Assert.Equal(assignment.Segments, Assert.Single(lockedPlan.Assignments).Segments);
+        Assert.DoesNotContain(lockedPlan.Conflicts,
+            x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment);
+    }
+
+    [Fact]
+    public void Locked_interruptible_segments_report_reserved_capacity_overlap()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var secondShift = start.AddHours(10);
+        var problem = template with
+        {
+            HorizonEndUtc = start.AddHours(14),
+            Resources = [template.Resources.Single() with { UtilizationRate = 0.5m }],
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(secondShift, secondShift.AddHours(4), "second")])],
+            LockedAssignments = [
+                new SchedulingLockedAssignmentContract(
+                    "lock-split", "WO-LOCKED-A", "LOCK-A", 10, "DEV-SNAPSHOT-01", "WC-SNAPSHOT",
+                    start, secondShift.AddHours(1), "planner-lock", [
+                        new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+                        new ScheduleAssignmentSegmentContract(secondShift, secondShift.AddHours(1))]),
+                new SchedulingLockedAssignmentContract(
+                    "lock-continuous", "WO-LOCKED-B", "LOCK-B", 10, "DEV-SNAPSHOT-01", "WC-SNAPSHOT",
+                    secondShift.AddHours(1), secondShift.AddHours(2), "planner-lock")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "locked-reserved-overlap", GeneratedAtUtc);
+
+        Assert.Contains(plan.Conflicts, x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            && x.OperationId == "LOCK-A");
+        Assert.Contains(plan.Conflicts, x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            && x.OperationId == "LOCK-B");
+    }
+
+    [Fact]
+    public void Interruptible_operation_does_not_repeat_setup_between_its_own_segments()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(12),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(1), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(11), "second")])]
+        }, x => x with
+        {
+            SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+            DurationMinutes = 120,
+            SetupMinutes = 15
+        });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "setup-split-plan", GeneratedAtUtc);
+
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11))
+        ], Assert.Single(plan.Assignments).Segments);
+        Assert.Equal(120, plan.Metrics.AssignedMinutes);
+    }
+
+    [Fact]
+    public void Interruptible_first_segment_uses_free_time_before_earliest_start_for_setup()
+    {
+        var template = CreateSingleOperationProblem();
+        var shiftStart = template.HorizonStartUtc;
+        var earliestStart = shiftStart.AddHours(2);
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = shiftStart.AddHours(3),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(shiftStart, shiftStart.AddHours(3), "single-shift")])],
+            LockedAssignments = [new SchedulingLockedAssignmentContract(
+                "locked-before-setup", "WO-LOCKED", "LOCKED-OP10", 10,
+                "DEV-SNAPSHOT-01", "WC-SNAPSHOT", shiftStart, shiftStart.AddHours(1), "existing-load")]
+        }, x => x with
+        {
+            SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+            EarliestStartUtc = earliestStart,
+            SetupMinutes = 15
+        });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-setup-before-earliest", GeneratedAtUtc);
+
+        var assignment = Assignment(plan, template.Orders.Single().Operations.Single().OperationId);
+        Assert.Equal([new ScheduleAssignmentSegmentContract(earliestStart, shiftStart.AddHours(3))],
+            assignment.Segments);
+        Assert.Empty(plan.UnscheduledOperations);
+    }
+
+    [Fact]
+    public void Interruptible_operation_avoids_unavailability_and_locked_segment_occupancy()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(18),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(3), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(13), "second")])],
+            UnavailabilityWindows = [new SchedulingUnavailabilityWindowContract(
+                "DEV-SNAPSHOT-01", null, start.AddHours(1), start.AddHours(2), "maintenance")],
+            LockedAssignments = [new SchedulingLockedAssignmentContract(
+                "locked", "OTHER", "OTHER-OP", 1, "DEV-SNAPSHOT-01", "WC-SNAPSHOT",
+                start.AddHours(10), start.AddHours(12), "planner-lock",
+                [new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11)),
+                 new ScheduleAssignmentSegmentContract(start.AddHours(11).AddMinutes(30), start.AddHours(12))])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 210 });
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "split-block-plan", GeneratedAtUtc);
+
+        var assignment = plan.Assignments.Single(x => !x.IsLocked);
+        Assert.Equal(210, assignment.Segments!.Sum(x => (int)(x.EndUtc - x.StartUtc).TotalMinutes));
+        Assert.Contains(assignment.Segments!, x => x.StartUtc == start.AddHours(11)
+            && x.EndUtc == start.AddHours(11).AddMinutes(30));
+        Assert.All(assignment.Segments!, segment =>
+        {
+            Assert.False(segment.StartUtc < start.AddHours(2) && segment.EndUtc > start.AddHours(1));
+            Assert.False(segment.StartUtc < start.AddHours(11) && segment.EndUtc > start.AddHours(10));
+            Assert.False(segment.StartUtc < start.AddHours(12) && segment.EndUtc > start.AddHours(11).AddMinutes(30));
+        });
+        Assert.Equal(300, plan.Metrics.AssignedMinutes);
+
+        var reversedLock = problem with
+        {
+            LockedAssignments = [problem.LockedAssignments.Single() with
+            {
+                Segments = problem.LockedAssignments.Single().Segments!.Reverse().ToArray()
+            }]
+        };
+        var repeated = new FiniteCapacityScheduler().Schedule(reversedLock, "split-block-plan", GeneratedAtUtc);
+        Assert.Equal(JsonSerializer.Serialize(plan, SchedulingJson.Options),
+            JsonSerializer.Serialize(repeated, SchedulingJson.Options));
+
+        var envelopeOnlyLock = problem with
+        {
+            LockedAssignments = [problem.LockedAssignments.Single() with { Segments = null }]
+        };
+        var envelopePlan = new FiniteCapacityScheduler().Schedule(
+            envelopeOnlyLock, "envelope-lock-plan", GeneratedAtUtc);
+        Assert.Equal(ScheduleConflictReasonCodeContract.Capacity,
+            Assert.Single(envelopePlan.UnscheduledOperations).ReasonCode);
+    }
+
+    [Fact]
+    public void Interruptible_segments_respect_fixed_work_center_occupancy()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var problem = ReplaceSingleOperation(template with
+        {
+            HorizonEndUtc = start.AddHours(14),
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(2), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        }, x => x with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible, DurationMinutes = 150 });
+        var fixedReservation = new FixedWorkCenterReservation(
+            "OTHER", "FIXED", 1, "WC-SNAPSHOT", start, start.AddHours(1), null);
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(
+            problem, "fixed-split-plan", GeneratedAtUtc, [fixedReservation]);
+
+        var assignment = plan.Assignments.Single(x => !x.IsLocked);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start.AddHours(1), start.AddHours(2)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11).AddMinutes(30))
+        ], assignment.Segments);
+    }
+
+    [Fact]
+    public void Interruptible_segments_wait_for_shared_tooling_in_later_shift()
+    {
+        var template = CreateSingleOperationProblem();
+        var start = template.HorizonStartUtc;
+        var target = template.Orders.Single().Operations.Single() with
+        {
+            SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+            DurationMinutes = 120,
+            RequiredToolingIds = ["TOOL-1"]
+        };
+        var toolingUser = target with
+        {
+            OperationId = "TOOLING-USER",
+            OperationSequence = 20,
+            SplitPolicy = ScheduleSplitPolicyContract.NonSplittable,
+            DurationMinutes = 60,
+            Priority = 2,
+            EligibleResourceIds = ["DEV-SNAPSHOT-02"],
+            PrimaryResourceId = "DEV-SNAPSHOT-02",
+            EarliestStartUtc = start.AddHours(10)
+        };
+        var problem = template with
+        {
+            HorizonEndUtc = start.AddHours(13),
+            Orders = [template.Orders.Single() with { Operations = [target, toolingUser] }],
+            Resources = [template.Resources.Single(), template.Resources.Single() with
+            {
+                ResourceId = "DEV-SNAPSHOT-02", SortKey = "002"
+            }],
+            Calendars = [new SchedulingCalendarContract("CAL-SNAPSHOT", [
+                new SchedulingTimeWindowContract(start, start.AddHours(1), "first"),
+                new SchedulingTimeWindowContract(start.AddHours(10), start.AddHours(12), "second")])]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "tooling-split-plan", GeneratedAtUtc);
+
+        Assert.Equal(start.AddHours(10), Assignment(plan, "TOOLING-USER").StartUtc);
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(11), start.AddHours(12))
+        ], Assignment(plan, target.OperationId).Segments);
+    }
+
+    [Fact]
     public void Schedule_returns_identical_plan_for_repeated_shock_absorber_input()
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -62,6 +345,81 @@ public class FiniteCapacitySchedulerTests
                 }
             }
         }
+    }
+
+    [Fact]
+    public void Assembly_parent_starts_after_child_finishes_and_plan_keeps_dependency()
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        problem = problem with
+        {
+            Orders = problem.Orders.Select(order => order.OrderId == "WO-LOCAL-A"
+                ? order with { IsRush = true, Operations = order.Operations.Select(operation => operation with { IsRush = true }).ToArray() }
+                : order).ToArray(),
+            Resources = problem.Resources.Select(resource => resource with { CapacityUnits = 2 }).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-assembly", GeneratedAtUtc);
+
+        Assert.True(plan.Assignments.Single(x => x.OrderId == "WO-LOCAL-A").StartUtc >=
+            plan.Assignments.Where(x => x.OrderId == "WO-LOCAL-B").Max(x => x.EndUtc));
+        Assert.Equal(problem.AssemblyDependencies, plan.AssemblyDependencies);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Assembly_parent_is_unscheduled_when_child_is_missing_or_cannot_be_scheduled(bool childSelected)
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        problem = problem with
+        {
+            Orders = problem.Orders.Where(x => childSelected || x.OrderId == "WO-LOCAL-A")
+                .Select(order => order.OrderId == "WO-LOCAL-B"
+                    ? order with { Operations = order.Operations.Select(operation => operation with { EligibleResourceIds = ["DEV-MISSING"] }).ToArray() }
+                    : order).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-missing-child", GeneratedAtUtc);
+
+        Assert.Empty(plan.Assignments);
+        Assert.Equal(ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+            Assert.Single(plan.UnscheduledOperations, x => x.OrderId == "WO-LOCAL-A").ReasonCode);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void Locked_assembly_parent_is_preserved_but_reports_predecessor_error(bool childSelected, bool childSchedulable)
+    {
+        var problem = CreateDuplicateLocalOperationIdProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Orders = problem.Orders.Where(order => childSelected || order.OrderId == "WO-LOCAL-A")
+                .Select(order => order.OrderId == "WO-LOCAL-B" && !childSchedulable
+                    ? order with { Operations = order.Operations.Select(operation => operation with { EligibleResourceIds = ["DEV-MISSING"] }).ToArray() }
+                    : order).ToArray(),
+            Resources = problem.Resources.Select(resource => resource with { CapacityUnits = 2 }).ToArray(),
+            AssemblyDependencies = [new("WO-LOCAL-B", "WO-LOCAL-A")],
+            LockedAssignments = [new("locked-parent", "WO-LOCAL-A", "OP10", 10, "DEV-LOCAL-01", "WC-LOCAL",
+                start, start.AddMinutes(30), "planner-lock")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-locked-assembly", GeneratedAtUtc);
+
+        var parent = Assert.Single(plan.Assignments, assignment => assignment.OrderId == "WO-LOCAL-A");
+        Assert.True(parent.IsLocked);
+        Assert.Equal(start, parent.StartUtc);
+        Assert.Equal(start.AddMinutes(30), parent.EndUtc);
+        var conflict = Assert.Single(plan.Conflicts, conflict => conflict.OrderId == "WO-LOCAL-A");
+        Assert.Equal(ScheduleConflictSeverityContract.Error, conflict.Severity);
+        Assert.Equal(childSelected && childSchedulable
+            ? ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            : ScheduleConflictReasonCodeContract.PredecessorUnscheduled, conflict.ReasonCode);
     }
 
     [Fact]
@@ -486,6 +844,414 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_uses_actual_resource_predecessor_and_directional_changeover_for_slot_and_load()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var templateOperation = template.Operations.Single();
+        var orderA = template with
+        {
+            OrderId = "WO-A", SkuCode = "A", DueUtc = problem.HorizonEndUtc,
+            Operations = [templateOperation with
+            {
+                OperationId = "OP-A", Priority = 20,
+                Changeovers = [new SchedulingChangeoverContract("A", 0, [], true),
+                    new SchedulingChangeoverContract("B", 7, [], true)]
+            }]
+        };
+        var orderB = template with
+        {
+            OrderId = "WO-B", SkuCode = "B", DueUtc = problem.HorizonStartUtc.AddHours(2),
+            Operations = [templateOperation with
+            {
+                OperationId = "OP-B", Priority = 10,
+                Changeovers = [new SchedulingChangeoverContract("A", 30, [], true),
+                    new SchedulingChangeoverContract("B", 0, [], true)]
+            }]
+        };
+        problem = problem with { Orders = [orderB, orderA] };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-directional", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc, Assignment(plan, "WO-A", "OP-A").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddMinutes(90), Assignment(plan, "WO-B", "OP-B").StartUtc);
+        Assert.Equal(150, Assert.Single(plan.ResourceLoads).AssignedMinutes);
+        Assert.Equal(150, plan.Metrics.AssignedMinutes);
+    }
+
+    [Fact]
+    public void Schedule_rejects_unavailable_tooling_for_the_selected_transition()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        problem = problem with
+        {
+            Orders =
+            [
+                template with
+                {
+                    OrderId = "A", SkuCode = "A",
+                    Operations = [operation with { OperationId = "OP-A", Priority = 20,
+                        Changeovers = [new("A", 0, [], true)] }]
+                },
+                template with
+                {
+                    OrderId = "B", SkuCode = "B",
+                    Operations = [operation with { OperationId = "OP-B", Priority = 10,
+                        Changeovers = [new("A", 20, ["tool.a-to-b"], false), new("B", 0, [], true)] }]
+                }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-transition-tooling", GeneratedAtUtc);
+
+        Assert.Single(plan.Assignments, x => x.OrderId == "A");
+        Assert.Contains(plan.UnscheduledOperations, x => x.OrderId == "B");
+    }
+
+    [Fact]
+    public void Schedule_rechecks_successor_tooling_before_inserting_earlier_on_resource()
+    {
+        var problem = CreateSingleOperationProblemWithAlternateResource();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var r1 = problem.Resources.First().ResourceId;
+        var r2 = problem.Resources.Last().ResourceId;
+        SchedulingOrderContract Order(string sku, string resource, int priority, int earliestMinutes, int duration,
+            IReadOnlyCollection<SchedulingChangeoverContract> changeovers) => template with
+            {
+                OrderId = sku, SkuCode = sku,
+                Operations = [operation with
+                {
+                    OperationId = $"OP-{sku}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliestMinutes),
+                    DurationMinutes = duration, PrimaryResourceId = resource,
+                    EligibleResourceIds = [resource], Changeovers = changeovers
+                }]
+            };
+        problem = problem with
+        {
+            Orders =
+            [
+                Order("B", r1, 30, 120, 60, [new("B", 0, [], true), new("A", 0, ["T"], true)]),
+                Order("C", r2, 20, 60, 90, [new("C", 0, ["T"], true)]),
+                Order("A", r1, 10, 0, 60, [new("A", 0, [], true), new("B", 0, [], true)])
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-successor-tooling", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3), Assignment(plan, "A", "OP-A").StartUtc);
+    }
+
+    [Fact]
+    public void Interruptible_operation_rechecks_successor_tooling_before_inserting_earlier_on_resource()
+    {
+        var problem = CreateSingleOperationProblemWithAlternateResource();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var r1 = problem.Resources.First().ResourceId;
+        var r2 = problem.Resources.Last().ResourceId;
+        SchedulingOrderContract Order(string sku, string resource, int priority, int earliestMinutes, int duration,
+            IReadOnlyCollection<SchedulingChangeoverContract> changeovers) => template with
+            {
+                OrderId = sku, SkuCode = sku,
+                Operations = [operation with
+                {
+                    OperationId = $"OP-{sku}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliestMinutes),
+                    DurationMinutes = duration, PrimaryResourceId = resource,
+                    EligibleResourceIds = [resource], Changeovers = changeovers,
+                    SplitPolicy = sku == "A" ? ScheduleSplitPolicyContract.Interruptible : ScheduleSplitPolicyContract.NonSplittable
+                }]
+            };
+        problem = problem with
+        {
+            Orders =
+            [
+                Order("B", r1, 30, 120, 60, [new("B", 0, [], true), new("A", 0, ["T"], true)]),
+                Order("C", r2, 20, 60, 90, [new("C", 0, ["T"], true)]),
+                Order("A", r1, 10, 0, 60, [new("A", 0, [], true), new("B", 0, [], true)])
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-split-successor-tooling", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3), Assignment(plan, "A", "OP-A").StartUtc);
+    }
+
+    [Fact]
+    public void Interruptible_segments_keep_first_transition_tooling_after_an_intervening_operation()
+    {
+        var problem = CreateSingleOperationProblemWithAlternateResource();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var r1 = problem.Resources.First().ResourceId;
+        var r2 = problem.Resources.Last().ResourceId;
+        SchedulingOrderContract Order(string sku, string resource, int priority, int earliestMinutes, int duration,
+            ScheduleSplitPolicyContract splitPolicy, IReadOnlyCollection<SchedulingChangeoverContract> changeovers) =>
+            template with
+            {
+                OrderId = sku, SkuCode = sku,
+                Operations = [operation with
+                {
+                    OperationId = $"OP-{sku}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliestMinutes),
+                    DurationMinutes = duration, PrimaryResourceId = resource,
+                    EligibleResourceIds = [resource], Changeovers = changeovers, SplitPolicy = splitPolicy
+                }]
+            };
+        problem = problem with
+        {
+            Orders =
+            [
+                Order("C", r1, 30, 60, 60, ScheduleSplitPolicyContract.NonSplittable,
+                    [new("C", 0, [], true), new("B", 0, [], true)]),
+                Order("D", r2, 20, 120, 60, ScheduleSplitPolicyContract.NonSplittable,
+                    [new("D", 0, ["T"], true)]),
+                Order("B", r1, 10, 0, 120, ScheduleSplitPolicyContract.Interruptible,
+                    [new("B", 0, ["T"], true), new("C", 0, [], true)])
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-split-fixed-tooling", GeneratedAtUtc);
+
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(problem.HorizonStartUtc.AddHours(3), problem.HorizonStartUtc.AddHours(4))
+        ], Assignment(plan, "B", "OP-B").Segments);
+    }
+
+    [Theory]
+    [InlineData(ScheduleSplitPolicyContract.NonSplittable)]
+    [InlineData(ScheduleSplitPolicyContract.Interruptible)]
+    public void Unavailable_transition_advances_to_predecessor_segment_end(ScheduleSplitPolicyContract splitPolicy)
+    {
+        var problem = CreateSingleOperationProblemWithAlternateResource();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var r1 = problem.Resources.First().ResourceId;
+        var r2 = problem.Resources.Last().ResourceId;
+        SchedulingOrderContract Order(string sku, string resource, int priority, int earliest, int duration,
+            ScheduleSplitPolicyContract policy, IReadOnlyCollection<SchedulingChangeoverContract> changes) => template with
+            {
+                OrderId = sku, SkuCode = sku,
+                Operations = [operation with
+                {
+                    OperationId = $"OP-{sku}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliest), DurationMinutes = duration,
+                    PrimaryResourceId = resource, EligibleResourceIds = [resource], SplitPolicy = policy,
+                    Changeovers = changes
+                }]
+            };
+        problem = problem with
+        {
+            HorizonEndUtc = problem.HorizonStartUtc.AddHours(4),
+            Orders =
+            [
+                Order("C", r2, 30, 60, 120, ScheduleSplitPolicyContract.NonSplittable,
+                    [new("C", 0, ["T"], true)]),
+                Order("A", r1, 20, 0, 120, ScheduleSplitPolicyContract.Interruptible,
+                    [new("A", 0, ["T"], true), new("B", 0, ["T"], true)]),
+                Order("B", r1, 10, 0, 60, splitPolicy,
+                    [new("B", 0, [], false), new("A", 0, [], true)])
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-segment-predecessor-advance", GeneratedAtUtc);
+
+        Assert.Equal([
+            new ScheduleAssignmentSegmentContract(problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(problem.HorizonStartUtc.AddHours(3), problem.HorizonStartUtc.AddHours(4))
+        ], Assignment(plan, "A", "OP-A").Segments);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(1), Assignment(plan, "B", "OP-B").StartUtc);
+    }
+
+    [Fact]
+    public void Interruptible_operation_uses_actual_predecessor_changeover_on_first_segment()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        problem = problem with
+        {
+            Calendars = [problem.Calendars.Single() with
+            {
+                ShiftWindows =
+                [
+                    new(problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(2), "early"),
+                    new(problem.HorizonStartUtc.AddHours(3), problem.HorizonStartUtc.AddHours(5), "middle"),
+                    new(problem.HorizonStartUtc.AddHours(6), problem.HorizonStartUtc.AddHours(8), "late")
+                ]
+            }],
+            Orders =
+            [
+                template with { OrderId = "A", SkuCode = "A", Operations = [operation with
+                {
+                    OperationId = "OP-A", Priority = 20,
+                    Changeovers = [new("A", 0, [], true)]
+                }] },
+                template with { OrderId = "B", SkuCode = "B", Operations = [operation with
+                {
+                    OperationId = "OP-B", Priority = 10,
+                    SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+                    DurationMinutes = 180,
+                    Changeovers = [new("A", 20, [], true), new("B", 0, [], true)]
+                }] }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-split-changeover", GeneratedAtUtc);
+
+        var assignment = Assignment(plan, "B", "OP-B");
+        Assert.Equal(problem.HorizonStartUtc.AddMinutes(80), assignment.Segments!.First().StartUtc);
+        Assert.Equal(260, plan.ResourceLoads.Sum(x => x.AssignedMinutes));
+    }
+
+    [Fact]
+    public void Schedule_does_not_insert_before_successor_when_new_setup_falls_outside_shift()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        problem = problem with
+        {
+            Calendars = [problem.Calendars.Single() with
+            {
+                ShiftWindows = [new(problem.HorizonStartUtc, problem.HorizonStartUtc.AddHours(1), "early"),
+                    new(problem.HorizonStartUtc.AddHours(2), problem.HorizonStartUtc.AddHours(4), "late")]
+            }],
+            Orders =
+            [
+                template with { OrderId = "B", SkuCode = "B", Operations = [operation with
+                {
+                    OperationId = "OP-B", Priority = 20,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddHours(2),
+                    Changeovers = [new("B", 0, [], true), new("A", 30, [], true)]
+                }] },
+                template with { OrderId = "A", SkuCode = "A", Operations = [operation with
+                {
+                    OperationId = "OP-A", Priority = 10,
+                    Changeovers = [new("A", 0, [], true), new("B", 0, [], true)]
+                }] }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-successor-shift", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3), Assignment(plan, "A", "OP-A").StartUtc);
+    }
+
+    [Fact]
+    public void Schedule_preserves_setup_space_before_locked_successor()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var resource = problem.Resources.Single();
+        problem = problem with
+        {
+            Orders =
+            [
+                template with { OrderId = "B", SkuCode = "B", Operations = [operation with
+                {
+                    OperationId = "OP-B",
+                    Changeovers = [new("B", 0, [], true), new("A", 90, [], true)]
+                }] },
+                template with { OrderId = "A", SkuCode = "A", Operations = [operation with
+                {
+                    OperationId = "OP-A",
+                    Changeovers = [new("A", 0, [], true), new("B", 0, [], true)]
+                }] }
+            ],
+            LockedAssignments = [new("lock-B", "B", "OP-B", operation.OperationSequence,
+                resource.ResourceId, resource.WorkCenterId,
+                problem.HorizonStartUtc.AddHours(2), problem.HorizonStartUtc.AddHours(3), "manual")]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-locked-successor-setup", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3), Assignment(plan, "A", "OP-A").StartUtc);
+    }
+
+    [Fact]
+    public void Schedule_does_not_insert_an_operation_without_room_for_the_next_changeover()
+    {
+        var problem = CreateSingleOperationProblem();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var a = template with
+        {
+            OrderId = "A", SkuCode = "A",
+            Operations = [operation with
+            {
+                OperationId = "OP-A", Priority = 20,
+                EarliestStartUtc = problem.HorizonStartUtc.AddHours(2),
+                Changeovers = [new("A", 0, [], true), new("B", 30, [], true)]
+            }]
+        };
+        var b = template with
+        {
+            OrderId = "B", SkuCode = "B",
+            Operations = [operation with
+            {
+                OperationId = "OP-B", Priority = 10, DurationMinutes = 110,
+                Changeovers = [new("A", 15, [], true), new("B", 0, [], true)]
+            }]
+        };
+        problem = problem with { Orders = [a, b] };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-insertion-changeover", GeneratedAtUtc);
+
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), Assignment(plan, "A", "OP-A").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddHours(3).AddMinutes(15), Assignment(plan, "B", "OP-B").StartUtc);
+        Assert.Equal(185, Assert.Single(plan.ResourceLoads).AssignedMinutes);
+    }
+
+    [Fact]
+    public void Schedule_uses_each_resource_own_predecessor_sku()
+    {
+        var problem = CreateSingleOperationProblemWithAlternateResource();
+        var template = problem.Orders.Single();
+        var operation = template.Operations.Single();
+        var firstResource = problem.Resources.First().ResourceId;
+        var secondResource = problem.Resources.Last().ResourceId;
+        SchedulingOrderContract Order(string id, string sku, int priority, string resourceId, int earliestMinutes,
+            IReadOnlyCollection<SchedulingChangeoverContract> changeovers) => template with
+            {
+                OrderId = id, SkuCode = sku,
+                Operations = [operation with
+                {
+                    OperationId = $"OP-{id}", Priority = priority,
+                    EarliestStartUtc = problem.HorizonStartUtc.AddMinutes(earliestMinutes),
+                    EligibleResourceIds = [resourceId], PrimaryResourceId = resourceId,
+                    Changeovers = changeovers
+                }]
+            };
+        problem = problem with
+        {
+            Orders =
+            [
+                Order("A", "A", 30, firstResource, 0, [new("A", 0, [], true)]),
+                Order("B", "B", 20, secondResource, 10, [new("B", 0, [], true)]),
+                Order("C", "C", 10, firstResource, 75,
+                    [new("A", 20, [], true), new("B", 5, [], true), new("C", 0, [], true)])
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-resource-predecessor", GeneratedAtUtc);
+
+        Assert.Equal(firstResource, Assignment(plan, "C", "OP-C").ResourceId);
+        Assert.Equal(problem.HorizonStartUtc.AddMinutes(80), Assignment(plan, "C", "OP-C").StartUtc);
+        Assert.Equal(problem.HorizonStartUtc.AddMinutes(10), Assignment(plan, "B", "OP-B").StartUtc);
+    }
+
+    [Fact]
     public void Schedule_inserts_setup_time_before_next_operation_on_same_resource()
     {
         var problem = CreateSingleOperationProblem();
@@ -858,6 +1624,201 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_fixed_work_center_occupancy_limits_parallel_devices_without_assigning_an_unknown_device()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources =
+            [
+                problem.Resources.Single() with { CapacityUnits = 1 },
+                problem.Resources.Single() with { ResourceId = "DEV-PARALLEL-02", CapacityUnits = 1, SortKey = "002" }
+            ],
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations =
+                    [
+                        problem.Orders.Single().Operations.Single() with
+                        {
+                            DurationMinutes = 60,
+                            EligibleResourceIds = ["DEV-PARALLEL-01", "DEV-PARALLEL-02"]
+                        },
+                        problem.Orders.Single().Operations.Single() with
+                        {
+                            OperationId = "OP-SECOND",
+                            OperationSequence = 20,
+                            DurationMinutes = 60,
+                            EligibleResourceIds = ["DEV-PARALLEL-01", "DEV-PARALLEL-02"]
+                        }
+                    ]
+                }
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation("WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), null);
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-fixed", GeneratedAtUtc, [frozen]);
+
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.True(fixedAssignment.IsLocked);
+        Assert.Equal(start, fixedAssignment.StartUtc);
+        Assert.Equal(start.AddHours(1), fixedAssignment.EndUtc);
+        Assert.Equal(string.Empty, fixedAssignment.ResourceId);
+        var open = plan.Assignments.Where(x => !x.IsLocked).OrderBy(x => x.StartUtc).ToArray();
+        Assert.Equal(2, open.Length);
+        Assert.Equal(start, open[0].StartUtc);
+        Assert.Equal(start.AddHours(1), open[1].StartUtc);
+        Assert.Equal("DEV-PARALLEL-01", open[0].ResourceId);
+        Assert.Equal("DEV-PARALLEL-01", open[1].ResourceId);
+    }
+
+    [Fact]
+    public void Schedule_fixed_occupancy_crossing_horizon_still_blocks_available_capacity()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1 }],
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [problem.Orders.Single().Operations.Single() with { DurationMinutes = 60 }]
+                }
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation("WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start.AddHours(-1), start.AddHours(1), null);
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-cross-horizon", GeneratedAtUtc, [frozen]);
+
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.Equal(start.AddHours(-1), fixedAssignment.StartUtc);
+        Assert.Equal(start.AddHours(1), fixedAssignment.EndUtc);
+        Assert.Equal(start.AddHours(1), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+    }
+
+    [Fact]
+    public void Schedule_fixed_occupancy_on_known_device_keeps_other_device_available()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources =
+            [
+                problem.Resources.Single() with { CapacityUnits = 1 },
+                problem.Resources.Single() with { ResourceId = "DEV-PARALLEL-02", CapacityUnits = 1, SortKey = "002" }
+            ],
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations =
+                    [
+                        problem.Orders.Single().Operations.Single() with
+                        {
+                            DurationMinutes = 60,
+                            EligibleResourceIds = ["DEV-PARALLEL-01", "DEV-PARALLEL-02"]
+                        }
+                    ]
+                }
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation("WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-known-device", GeneratedAtUtc, [frozen]);
+
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.Equal("DEV-PARALLEL-01", fixedAssignment.ResourceId);
+        var open = Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY");
+        Assert.Equal(start, open.StartUtc);
+        Assert.Equal("DEV-PARALLEL-02", open.ResourceId);
+    }
+
+    [Fact]
+    public void Schedule_fixed_actual_interval_is_not_extended_by_resource_utilization()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1, UtilizationRate = 0.8m }],
+            Orders = [problem.Orders.Single() with
+            {
+                Operations = [problem.Orders.Single().Operations.Single() with { DurationMinutes = 30 }]
+            }]
+        };
+        var frozen = new FixedWorkCenterReservation(
+            "WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-fixed-utilization", GeneratedAtUtc, [frozen]);
+
+        Assert.Equal(start.AddHours(1), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+    }
+
+    [Fact]
+    public void Schedule_external_fixed_actual_interval_is_not_extended_by_resource_utilization()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1, UtilizationRate = 0.8m }],
+            Orders = [problem.Orders.Single() with
+            {
+                Operations = [problem.Orders.Single().Operations.Single() with { DurationMinutes = 30 }]
+            }]
+        };
+        var frozen = new FixedWorkCenterReservation(
+            "WO-FIXED", "OP-FIXED", 10, "WC-PARALLEL", start, start.AddHours(1), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleNormalized(
+            SchedulingProblemNormalizer.Normalize(problem), "plan-external-utilization", GeneratedAtUtc,
+            externalReservations: [frozen]);
+
+        Assert.Equal(start.AddHours(1), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+        Assert.DoesNotContain(plan.Assignments, x => x.OperationId == "OP-FIXED");
+    }
+
+    [Fact]
+    public void Schedule_fixed_actual_interval_does_not_reserve_setup_time_before_actual_start()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var start = problem.HorizonStartUtc;
+        var openOperation = problem.Orders.Single().Operations.Single() with { DurationMinutes = 30 };
+        var fixedOperation = openOperation with
+        {
+            OperationId = "OP-FIXED",
+            OperationSequence = 20,
+            SetupMinutes = 30
+        };
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { CapacityUnits = 1 }],
+            Orders = [problem.Orders.Single() with { Operations = [openOperation, fixedOperation] }],
+            LockedAssignments =
+            [
+                new SchedulingLockedAssignmentContract(
+                    "lock-before-fixed", "WO-PREVIOUS", "OP-PREVIOUS", 10,
+                    "DEV-PARALLEL-01", "WC-PARALLEL", start, start.AddMinutes(30), "existing-load")
+            ]
+        };
+        var frozen = new FixedWorkCenterReservation(
+            problem.Orders.Single().OrderId, "OP-FIXED", 20, "WC-PARALLEL",
+            start.AddHours(1), start.AddHours(2), "DEV-PARALLEL-01");
+
+        var plan = new FiniteCapacityScheduler().ScheduleWithFixedReservations(problem, "plan-fixed-actual", GeneratedAtUtc, [frozen]);
+
+        Assert.Equal(start.AddMinutes(30), Assert.Single(plan.Assignments, x => x.OperationId == "OP-CAPACITY").StartUtc);
+        var fixedAssignment = Assert.Single(plan.Assignments, x => x.OperationId == "OP-FIXED");
+        Assert.Equal(start.AddHours(1), fixedAssignment.StartUtc);
+        Assert.Equal(start.AddHours(2), fixedAssignment.EndUtc);
+    }
+
+    [Fact]
     public void Schedule_resource_load_available_minutes_reflect_capacity_units()
     {
         var problem = CreateParallelCapacityProblem() with
@@ -1164,6 +2125,24 @@ public class FiniteCapacitySchedulerTests
             x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.ReasonCode == ScheduleConflictReasonCodeContract.Material
             && x.Severity == ScheduleConflictSeverityContract.Warning);
+    }
+
+    [Fact]
+    public void Hard_material_block_keeps_shortage_in_plan_summary_without_marking_unscheduled_operation_as_risk()
+    {
+        var problem = CreateMaterialShortageProblem();
+
+        var plan = new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard)
+            .Schedule(problem, "plan-material-hard-summary", GeneratedAtUtc);
+
+        Assert.Empty(plan.MaterialRisks ?? []);
+        Assert.Contains(plan.UnscheduledOperations, x => x.OperationId == "WO-SNAPSHOT-001-OP10" &&
+            x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+        var summary = Assert.Single(plan.MaterialShortageSummary ?? []);
+        Assert.Equal("RM-OIL-01", summary.MaterialId);
+        Assert.Equal(145.86m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x => x.OrderId == "WO-SNAPSHOT-001" &&
+            x.OperationId == "WO-SNAPSHOT-001-OP10");
     }
 
     [Fact]

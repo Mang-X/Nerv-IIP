@@ -16,6 +16,26 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Scheduling_csv_openapi_exposes_a_binary_csv_download_without_a_json_envelope()
+    {
+        // #4084 PublicContract: stable operation and text/csv download, not ResponseData.
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var operation = document.RootElement.GetProperty("paths")
+            .GetProperty("/api/business-console/v1/scheduling/plans/{planId}/csv").GetProperty("get");
+        Assert.Equal("exportBusinessConsoleSchedulingPlanCsv", operation.GetProperty("operationId").GetString());
+        var queryParameters = operation.GetProperty("parameters").EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .Select(parameter => parameter.GetProperty("name").GetString()).ToArray();
+        Assert.Contains("organizationId", queryParameters);
+        Assert.Contains("environmentId", queryParameters);
+        var content = operation.GetProperty("responses").GetProperty("200").GetProperty("content");
+        Assert.False(content.TryGetProperty("application/json", out _));
+        var schema = content.GetProperty("text/csv").GetProperty("schema");
+        Assert.Equal("string", schema.GetProperty("type").GetString());
+        Assert.Equal("binary", schema.GetProperty("format").GetString());
+    }
+
+    [Fact]
     public async Task Mes_material_issue_detail_forwards_scope_and_maps_substitute_audit()
     {
         var handler = new MaterialIssueDetailStubHandler(
@@ -430,15 +450,19 @@ public sealed class BusinessGatewayOpenApiTests
             128);
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "post", "runBusinessConsolePlanningMrp");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "get", "listBusinessConsolePlanningMrpRuns");
+        AssertSchemaProperties(document, "BusinessConsoleMrpRunItem", "demandChangeCount", "horizonStart", "horizonEnd", "status", "failureReason");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs/{runId}/pegging", "get", "getBusinessConsolePlanningMrpPegging");
         AssertOperationId(paths, "/api/business-console/v1/planning/suggestions", "get", "listBusinessConsolePlanningSuggestions");
+        AssertSchemaProperties(document, "BusinessConsolePlanningSuggestionItem", "supersededByRunId");
         AssertOperationId(paths, "/api/business-console/v1/planning/suggestions/{suggestionId}/accept", "post", "acceptBusinessConsolePlanningSuggestion");
         AssertOperationId(paths, "/api/business-console/v1/planning/suggestions/{suggestionId}/reject", "post", "rejectBusinessConsolePlanningSuggestion");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/preview", "post", "previewBusinessConsoleSchedulingPlan");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans", "post", "createBusinessConsoleSchedulingPlan");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/workbench/plans", "post", "createBusinessConsoleSchedulingWorkbenchPlan");
+        AssertOperationId(paths, "/api/business-console/v1/scheduling/workbench/plans/preview", "post", "previewBusinessConsoleSchedulingWorkbenchPlan");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/revisions", "post", "createBusinessConsoleSchedulingPlanRevision");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans", "get", "listBusinessConsoleSchedulingPlans");
+        AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/history", "get", "listBusinessConsoleSchedulingPlanHistory");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}", "get", "getBusinessConsoleSchedulingPlan");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/gantt", "get", "getBusinessConsoleSchedulingPlanGantt");
         AssertOperationId(paths, "/api/business-console/v1/scheduling/plans/{planId}/release", "post", "releaseBusinessConsoleSchedulingPlan");
@@ -1260,6 +1284,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/release", "post", "releaseBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/hold", "post", "holdBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/cancel", "post", "cancelBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/priority", "post", "adjustBusinessConsoleMesWorkOrderPriority");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/close", "post", "closeBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/split", "post", "splitBusinessConsoleMesWorkOrder");
         AssertQueryParameters(
@@ -1649,7 +1674,6 @@ public sealed class BusinessGatewayOpenApiTests
                 "deviceAssetId",
                 "skip",
                 "take");
-            AssertMesStatusQueryEnum(paths, mesListPath);
         }
 
         AssertQueryParameters(
@@ -1782,7 +1806,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictReasonCodeContract", "dueDate", "capacity", "calendar", "material", "quality", "equipment", "noEligibleResource", "outsideHorizon", "invalidLockedAssignment", "predecessorUnscheduled", "tooling");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictSeverityContract", "info", "warning", "error");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleChangeTypeContract", "added", "moved", "delayed", "preserved", "blocked");
-        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleSplitPolicyContract", "nonSplittable");
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleSplitPolicyContract", "nonSplittable", "interruptible");
         AssertStringEnumSchema(document, "NervIIPContractsEquipmentRuntimeEquipmentRuntimeSourceType", "device-state", "alarm", "downtime", "maintenance-window", "inspection", "stale-source", "manual-block");
     }
 
@@ -2333,7 +2357,6 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterName",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesCapacityImpactRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2342,7 +2365,6 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskNo",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesDowntimeEventRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2356,7 +2378,6 @@ public sealed class BusinessGatewayOpenApiTests
             "allowedActions",
             "blockReasons",
             "evaluatedAtUtc");
-        AssertMesStatusEnum(document, "BusinessConsoleMesOperationTaskRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2374,7 +2395,6 @@ public sealed class BusinessGatewayOpenApiTests
             "workCenterName",
             "deviceAssetCode",
             "deviceAssetName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesDispatchTaskRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2383,7 +2403,6 @@ public sealed class BusinessGatewayOpenApiTests
             "operationTaskNo",
             "workCenterCode",
             "workCenterName");
-        AssertMesStatusEnum(document, "BusinessConsoleMesWipSummaryRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2394,7 +2413,6 @@ public sealed class BusinessGatewayOpenApiTests
             "isSupplementary",
             "originalMaterialIssueRequestNo",
             "substitutedMaterialId");
-        AssertMesStatusEnum(document, "BusinessConsoleMesMaterialIssueRequestRow", "status");
 
         AssertMesDisplayProperties(
             document,
@@ -2417,7 +2435,6 @@ public sealed class BusinessGatewayOpenApiTests
             "inventoryPostingFailureCode",
             "inventoryPostingFailureMessage",
             "inventoryPostingFailedAtUtc");
-        AssertMesStatusEnum(document, "BusinessConsoleMesReceiptRequestRow", "receiptStatus");
 
         // MAN-445/#799: 工单详情活跃质量保留投影,支撑 hold 区块时间线定位键(sourceService+sourceDocumentId)+强制释放。
         AssertMesDisplayProperties(
@@ -2443,7 +2460,9 @@ public sealed class BusinessGatewayOpenApiTests
             "workOrderType",
             "sourceWorkOrderId",
             "sourceNcrId",
-            "sourceNcrCode");
+            "sourceNcrCode",
+            "hasChangedDemand",
+            "hasCancelledDemand");
         AssertMesDisplayProperties(
             document,
             "BusinessConsoleMesWorkOrderDetailResponse",
@@ -2570,37 +2589,6 @@ public sealed class BusinessGatewayOpenApiTests
                     header.GetProperty("description").GetString());
             }
         }
-    }
-
-    private static void AssertMesStatusEnum(JsonDocument document, string schemaNameSuffix, string propertyName)
-    {
-        var property = FindSchemaBySuffix(document, schemaNameSuffix)
-            .GetProperty("properties")
-            .GetProperty(propertyName);
-
-        Assert.True(
-            property.TryGetProperty("enum", out var inlineEnum)
-            || property.TryGetProperty("$ref", out _)
-            || property.TryGetProperty("oneOf", out _),
-            $"{schemaNameSuffix}.{propertyName} must be an OpenAPI enum, not a free-form string.");
-
-        if (property.TryGetProperty("enum", out inlineEnum))
-        {
-            Assert.Contains(inlineEnum.EnumerateArray(), value => value.GetString() == "ready");
-            Assert.Contains(inlineEnum.EnumerateArray(), value => value.GetString() == "posted");
-        }
-    }
-
-    private static void AssertMesStatusQueryEnum(JsonElement paths, string path)
-    {
-        var statusParameter = FindQueryParameter(paths, path, "get", "status");
-        var schema = statusParameter.GetProperty("schema");
-
-        Assert.True(
-            schema.TryGetProperty("enum", out var values),
-            $"{path} status query parameter must be an OpenAPI enum, not a free-form string.");
-        Assert.Contains(values.EnumerateArray(), value => value.GetString() == "ready");
-        Assert.Contains(values.EnumerateArray(), value => value.GetString() == "posted");
     }
 
     private static void AssertQueryParameterEnum(

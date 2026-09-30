@@ -79,16 +79,20 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             return;
         }
 
-        var existing = await dbContext.WorkOrders.AnyAsync(
+        var existing = await dbContext.WorkOrders.Where(
             x => x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
                 x.SourcePlanReference != null &&
                 x.SourcePlanReference.SourceSystem == DemandPlanningSourceReferences.DemandPlanning &&
                 x.SourcePlanReference.SourceDocumentType == DemandPlanningSourceReferences.PlanningSuggestion &&
-                x.SourcePlanReference.SourceDocumentId == payload.SuggestionId,
-            cancellationToken);
-        if (existing)
+                x.SourcePlanReference.SourceDocumentId == payload.SuggestionId)
+            .ToListAsync(cancellationToken);
+        if (existing.Count > 0)
         {
+            foreach (var workOrder in existing)
+            {
+                workOrder.RecordAssemblyParentSuggestionIds(payload.AssemblyParentSuggestionIds);
+            }
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -125,7 +129,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                     payload.SuggestionId,
                     payload.DemandSourceReference,
                     integrationEvent.IdempotencyKey,
-                    payload.DemandSourceReferences),
+                    payload.DemandSourceReferences,
+                    payload.AssemblyParentSuggestionIds),
                 cancellationToken);
         }
         catch (DisabledMesSkuException)

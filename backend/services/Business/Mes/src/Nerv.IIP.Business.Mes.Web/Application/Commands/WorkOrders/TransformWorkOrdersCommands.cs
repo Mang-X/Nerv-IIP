@@ -3,6 +3,7 @@ using System.Text;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
@@ -87,6 +88,36 @@ public sealed class SplitWorkOrderCommandHandler(ApplicationDbContext dbContext)
             throw new MesLifecycleConflictException("work-order-transformation", "invalid-split");
         }
 
+        var sourceOperations = await WorkOrderTransformationCommandSupport.LoadOperationsAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, [source.WorkOrderIdValue], cancellationToken);
+        var targetOperations = new List<OperationTask>();
+        foreach (var operation in sourceOperations)
+        {
+            decimal cumulativeQuantity = 0;
+            decimal allocatedQuantity = 0;
+            for (var index = 0; index < targets.Length; index++)
+            {
+                var target = targets[index];
+                cumulativeQuantity += target.Quantity;
+                // Allocate differences of rounded cumulative shares at numeric(18,6) precision.
+                var cumulativePlannedQuantity = index == targets.Length - 1
+                    ? operation.PlannedQuantity
+                    : decimal.Round(operation.PlannedQuantity * cumulativeQuantity / source.Quantity, 6);
+                var plannedQuantity = cumulativePlannedQuantity - allocatedQuantity;
+                if (plannedQuantity <= 0m)
+                {
+                    throw new MesLifecycleConflictException("work-order-transformation", "invalid-split");
+                }
+                targetOperations.Add(WorkOrderTransformationCommandSupport.CreateTargetOperation(
+                    operation, target, plannedQuantity, operation.EarliestStartUtc));
+                allocatedQuantity = cumulativePlannedQuantity;
+            }
+        }
+        dbContext.OperationTasks.AddRange(targetOperations);
+        foreach (var operation in sourceOperations)
+        {
+            operation.Cancel(request.OccurredAtUtc, request.Actor);
+        }
         source.MarkSplit();
         dbContext.WorkOrders.AddRange(targets);
         dbContext.WorkOrderTransformations.Add(transformation);
@@ -181,6 +212,26 @@ public sealed class MergeWorkOrdersCommandHandler(ApplicationDbContext dbContext
             throw new MesLifecycleConflictException("work-order-transformation", "invalid-merge");
         }
 
+        var sourceOperations = await WorkOrderTransformationCommandSupport.LoadOperationsAsync(
+            dbContext, request.OrganizationId, request.EnvironmentId, sourceIds, cancellationToken);
+        var routes = sources.Select(source => sourceOperations
+            .Where(operation => operation.WorkOrderId == source.WorkOrderIdValue)
+            .OrderBy(operation => operation.OperationSequence).ToArray()).ToArray();
+        var route = routes[0];
+        if (routes.Skip(1).Any(other => !route.Select(WorkOrderTransformationCommandSupport.RoutingSnapshot)
+                .SequenceEqual(other.Select(WorkOrderTransformationCommandSupport.RoutingSnapshot))))
+        {
+            throw new KnownException("合并源工单的工艺路线快照不一致，无法合并。");
+        }
+        var targetOperations = route.Select((operation, index) =>
+            WorkOrderTransformationCommandSupport.CreateTargetOperation(operation, target,
+                routes.Sum(other => other[index].PlannedQuantity),
+                routes.Max(other => other[index].EarliestStartUtc))).ToArray();
+        dbContext.OperationTasks.AddRange(targetOperations);
+        foreach (var operation in sourceOperations)
+        {
+            operation.Cancel(request.OccurredAtUtc, request.Actor);
+        }
         foreach (var source in sources)
         {
             source.MarkMerged();
@@ -198,6 +249,40 @@ public sealed class MergeWorkOrdersCommandHandler(ApplicationDbContext dbContext
 
 internal static class WorkOrderTransformationCommandSupport
 {
+    public static async Task<OperationTask[]> LoadOperationsAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string[] workOrderIds,
+        CancellationToken cancellationToken)
+    {
+        var operations = await dbContext.OperationTasks
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderId))
+            .OrderBy(x => x.OperationSequence)
+            .ToArrayAsync(cancellationToken);
+        if (workOrderIds.Any(id => !operations.Any(operation => operation.WorkOrderId == id)))
+        {
+            throw new KnownException("拆分或合并源工单缺少工艺路线快照。");
+        }
+        return operations;
+    }
+
+    public static OperationTask CreateTargetOperation(
+        OperationTask source, WorkOrder target, decimal plannedQuantity, DateTimeOffset earliestStartUtc) =>
+        OperationTask.Queue(target.OrganizationId, target.EnvironmentId, target.WorkOrderIdValue,
+            Guid.CreateVersion7().ToString("N"), source.OperationSequence, source.WorkCenterId,
+            source.AlternativeWorkCenterIdList, earliestStartUtc, TimeSpan.FromTicks(source.DurationTicks),
+            source.SkuCode, source.UomCode, plannedQuantity, source.RequiresQualityInspection,
+            source.OperationCode, source.RequiredSkillCode);
+
+    public static (int Sequence, string WorkCenter, string Alternatives, long Duration,
+        string Sku, string Uom, bool Inspection, string? OperationCode, string? Skill)
+        RoutingSnapshot(OperationTask operation) =>
+        (operation.OperationSequence, operation.WorkCenterId, operation.AlternativeWorkCenterIds,
+            operation.DurationTicks, operation.SkuCode, operation.UomCode, operation.RequiresQualityInspection,
+            operation.OperationCode, operation.RequiredSkillCode);
+
     public static async Task<WorkOrderTransformationResult?> FindReplayAsync(
         ApplicationDbContext dbContext,
         string organizationId,
@@ -297,7 +382,7 @@ internal static class WorkOrderTransformationCommandSupport
     private static SourcePlanReference? CopySourcePlanReference(SourcePlanReference? source) => source is null
         ? null
         : new SourcePlanReference(source.SourceSystem, source.SourceDocumentType, source.SourceDocumentId,
-            source.SourceDemandReference, source.SourceDemandReferences);
+            source.SourceDemandReference, source.SourceDemandReferences, source.AssemblyParentSuggestionIds);
 
     private static string Fingerprint(params string[] values) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\u001f', values))));

@@ -2657,7 +2657,8 @@ public sealed record BusinessConsoleRoutingOperationItem(
     string WorkCenterCode,
     string OperationCode,
     string OperationName,
-    int StandardMinutes);
+    int StandardMinutes,
+    bool Interruptible = false);
 
 public sealed record BusinessConsoleReleaseRoutingRequest(
     string OrganizationId,
@@ -2674,7 +2675,8 @@ public sealed record BusinessConsoleRoutingOperationRequest(
     string WorkCenterCode,
     string OperationCode,
     string OperationName,
-    int StandardMinutes);
+    int StandardMinutes,
+    bool Interruptible = false);
 
 public sealed record BusinessConsoleListStandardOperationsRequest(
     string OrganizationId,
@@ -3068,7 +3070,8 @@ public sealed record BusinessConsoleMrpRunItem(
     IReadOnlyCollection<string> InputSources,
     DateOnly? InputCoverageStart,
     DateOnly? InputCoverageEnd,
-    string? FailureReason);
+    string? FailureReason,
+    int DemandChangeCount);
 
 public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
 
@@ -3106,7 +3109,8 @@ public sealed record BusinessConsolePlanningSuggestionItem(
     BusinessConsoleNetRequirementExplanation? NetRequirementExplanation = null,
     string? DownstreamService = null,
     string? DownstreamDocumentType = null,
-    string? DownstreamDocumentId = null);
+    string? DownstreamDocumentId = null,
+    string? SupersededByRunId = null);
 
 public sealed record BusinessConsoleNetRequirementExplanation(
     decimal GrossDemandQuantity,
@@ -3150,6 +3154,19 @@ public sealed record BusinessConsoleSchedulingContextRequest(
     string EnvironmentId,
     int? PageIndex = null,
     int? PageSize = null);
+
+public sealed record BusinessConsoleSchedulingHistoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int PageIndex = 0,
+    int PageSize = 100,
+    Nerv.IIP.Contracts.Scheduling.SchedulePlanStatusContract? Status = null,
+    DateOnly? ReleasedOn = null,
+    bool? IsInvalidated = null);
+
+public sealed record BusinessConsoleSchedulingHistoryResponse(
+    IReadOnlyCollection<BusinessConsoleSchedulePlanSummaryResponse> Items,
+    int Total);
 
 public sealed record BusinessConsoleSchedulingPlanRequest(
     [property: RouteParam] string PlanId,
@@ -3209,7 +3226,8 @@ public sealed record BusinessConsoleScheduleOperationOverrideResponse(
     string WorkCenterId,
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
-    string LockReasonCode);
+    string LockReasonCode,
+    string? SourcePlanId = null);
 
 public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     string PlanId,
@@ -3222,7 +3240,9 @@ public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     int UnscheduledOperationCount,
     bool IsInvalidated = false,
     string? LatestInvalidationReasonCode = null,
-    DateTimeOffset? LatestInvalidatedAtUtc = null);
+    DateTimeOffset? LatestInvalidatedAtUtc = null,
+    DateTimeOffset? HorizonStartUtc = null,
+    DateTimeOffset? HorizonEndUtc = null);
 
 public sealed record BusinessConsoleReleaseSchedulePlanResponse(
     string PlanId,
@@ -4875,7 +4895,11 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     string WorkOrderType = "standard",
     string? SourceWorkOrderId = null,
     string? SourceNcrId = null,
-    string? SourceNcrCode = null);
+    string? SourceNcrCode = null,
+    bool HasChangedDemand = false,
+    bool HasCancelledDemand = false,
+    bool IsRush = false,
+    decimal CompletedQuantity = 0);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -5059,7 +5083,9 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string WorkOrderType = "standard",
     string? SourceWorkOrderId = null,
     string? SourceNcrId = null,
-    string? SourceNcrCode = null);
+    string? SourceNcrCode = null,
+    bool IsRush = false,
+    int Priority = 0);
 
 public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
     string SourceService,
@@ -5083,6 +5109,16 @@ public sealed record BusinessConsoleMesSourcePlanReference(
     string SourceDocumentType,
     string SourceDocumentId,
     string? SourceDemandReference);
+
+public sealed record BusinessConsoleMesAdjustWorkOrderPriorityRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    bool IsRush,
+    int Priority,
+    DateTimeOffset? ChangedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,

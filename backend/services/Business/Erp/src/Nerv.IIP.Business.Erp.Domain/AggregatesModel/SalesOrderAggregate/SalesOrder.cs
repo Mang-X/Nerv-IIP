@@ -84,10 +84,22 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         return line;
     }
 
+    public void RecordDelivery()
+    {
+        Version++;
+        this.AddDomainEvent(new SalesOrderDeliveryRegisteredDomainEvent(this));
+    }
+
     public void ReleaseDelivery(string lineNo, decimal quantity)
     {
         var line = FindLine(lineNo);
         line.ReleaseDelivery(quantity);
+    }
+
+    public void RecordDeliveryCancellation()
+    {
+        Version++;
+        this.AddDomainEvent(new SalesOrderChangedDomainEvent(this));
     }
 
     public void ReleaseCreditHold()

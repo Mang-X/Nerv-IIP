@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { shallowRef, watchEffect, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import type { BusinessConsoleSchedulingPlanStatus } from '@nerv-iip/api-client'
 import {
   getBusinessConsoleSchedulingPlanQueryOptions,
-  listBusinessConsoleSchedulingPlansQueryOptions,
+  listBusinessConsoleSchedulingPlanHistoryQueryOptions,
   releaseBusinessConsoleSchedulingPlanMutationOptions,
   revokeBusinessConsoleSchedulingPlanMutationOptions,
   upsertBusinessConsoleSchedulingOperationOverrideMutationOptions,
@@ -24,8 +24,8 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'getBusinessConsoleSchedulingPlan' }],
     query: vi.fn(),
   })),
-  listBusinessConsoleSchedulingPlansQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleSchedulingPlans' }],
+  listBusinessConsoleSchedulingPlanHistoryQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleSchedulingPlanHistory' }],
     query: vi.fn(),
   })),
   releaseBusinessConsoleSchedulingPlanMutationOptions: vi.fn(() => ({
@@ -59,7 +59,10 @@ vi.mock('@pinia/colada', () => ({
     }),
   })),
   useQuery: vi.fn((optionsFactory) => {
-    const options = optionsFactory()
+    let options = optionsFactory()
+    watchEffect(() => {
+      options = optionsFactory()
+    })
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
@@ -88,24 +91,37 @@ describe('business scheduling composable', () => {
   it('loads APS plan summaries and gates detail until a plan is selected', () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })
-    coladaState.queryDataById.set('listBusinessConsoleSchedulingPlans', {
+    coladaState.queryDataById.set('listBusinessConsoleSchedulingPlanHistory', {
       success: true,
-      data: [
-        {
-          planId: 'plan-001',
-          status: 'generated',
-          assignmentCount: 8,
-          conflictCount: 1,
-          unscheduledOperationCount: 2,
-        },
-      ],
+      data: {
+        total: 137,
+        items: [
+          {
+            planId: 'plan-001',
+            status: 'generated',
+            assignmentCount: 8,
+            conflictCount: 1,
+            unscheduledOperationCount: 2,
+            horizonStartUtc: '2026-09-01T00:00:00Z',
+            horizonEndUtc: '2026-09-08T00:00:00Z',
+          },
+        ],
+      },
     })
 
-    const { detailSelection, planDetail, plans } = useBusinessScheduling()
+    const { detailSelection, planDetail, plans, plansTotal } = useBusinessScheduling()
 
     // 0-based pageIndex contract: UI page 1 → API pageIndex 0 (else the first 100 plans are skipped).
-    expect(listBusinessConsoleSchedulingPlansQueryOptions).toHaveBeenCalledWith({
-      query: { organizationId: 'org-002', environmentId: 'prod', pageIndex: 0, pageSize: 100 },
+    expect(listBusinessConsoleSchedulingPlanHistoryQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        pageIndex: 0,
+        pageSize: 10,
+        status: undefined,
+        releasedOn: undefined,
+        isInvalidated: undefined,
+      },
     })
     expect(getBusinessConsoleSchedulingPlanQueryOptions).toHaveBeenCalledWith({
       path: { planId: '' },
@@ -116,7 +132,44 @@ describe('business scheduling composable', () => {
     )
     expect(detailSelection.planId).toBe('')
     expect(plans.value[0]?.planId).toBe('plan-001')
+    expect(plansTotal.value).toBe(137)
+    expect(plans.value[0]?.horizonEndUtc).toBe('2026-09-08T00:00:00Z')
     expect(planDetail.value).toBeUndefined()
+  })
+
+  it('maps later UI pages and resets paging when server filters or page size change', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })
+    const { page, pageSize, filters } = useBusinessScheduling()
+    page.value = 12
+    await nextTick()
+    expect(listBusinessConsoleSchedulingPlanHistoryQueryOptions).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({ pageIndex: 11, pageSize: 10 }),
+    })
+    filters.status = 'released'
+    filters.releasedOn = '2026-09-29'
+    filters.isInvalidated = true
+    await nextTick()
+    expect(page.value).toBe(1)
+    expect(listBusinessConsoleSchedulingPlanHistoryQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        pageIndex: 0,
+        pageSize: 10,
+        status: 'released',
+        releasedOn: '2026-09-29',
+        isInvalidated: true,
+      },
+    })
+    page.value = 3
+    await nextTick()
+    pageSize.value = '50'
+    await nextTick()
+    expect(page.value).toBe(1)
+    expect(listBusinessConsoleSchedulingPlanHistoryQueryOptions).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({ pageIndex: 0, pageSize: 50 }),
+    })
   })
 
   it('releases a selected plan through the generated facade and invalidates scheduling reads', async () => {

@@ -111,6 +111,7 @@ try
         builder.Configuration[SchedulingExecutionDeviationToleranceResolver.ConfigurationKey]));
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
+    builder.Services.AddScoped<SchedulingWorkbenchPlanAssembler>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
     builder.Services.AddScoped<OrderUrgencyService>();
     builder.Services.AddScoped<WorldHistorySeedService>();

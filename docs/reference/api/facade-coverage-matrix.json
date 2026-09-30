@@ -1212,6 +1212,22 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/reschedule",
+      "operationId": "rescheduleErpPurchaseOrderLine",
+      "classification": "internal",
+      "rationale": "DemandPlanning suggestion acceptance invokes this ERP-owned line command through service authorization."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/cancel",
+      "operationId": "cancelErpPurchaseOrderLine",
+      "classification": "internal",
+      "rationale": "DemandPlanning suggestion acceptance invokes this ERP-owned line command through service authorization."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/purchase-receipts",
       "operationId": "recordErpPurchaseReceipt",
       "classification": "exposed",
@@ -3751,6 +3767,14 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/assembly-children",
+      "operationId": "getBusinessMesAssemblyChildWorkOrders",
+      "classification": "internal",
+      "rationale": "#4026 为 Scheduling 按母工单读取全部装配子件提供服务间查询；不面向 BusinessGateway 页面公开。"
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/split",
       "operationId": "splitBusinessMesWorkOrder",
@@ -3800,6 +3824,27 @@
       "gatewayOperationIds": [
         "cancelBusinessConsoleMesWorkOrder"
       ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/priority",
+      "operationId": "adjustBusinessMesWorkOrderPriority",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "adjustBusinessConsoleMesWorkOrderPriority"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/due-utc",
+      "operationId": "adjustBusinessMesWorkOrderDueUtc",
+      "classification": "deferred",
+      "followUp": "#3972"
     },
     {
       "service": "Mes",
@@ -3866,6 +3911,14 @@
         "getBusinessConsoleMesMaterialReadiness"
       ],
       "note": "#2223 在 material-readiness 响应中新增尾部可选兼容字段 SubstituteMaterialIds，表示创建齐套快照时冻结并去重的替代物料候选；#3685 继续公开 UomCode、ExpectedAvailableAtUtc 与 ExpectedAvailabilitySource，BusinessGateway 保真转发这些字段，旧消费者可继续忽略。齐套计算按物料、批次与单位隔离，RequiredQuantity 只计一次，AvailableQuantity 按主料与冻结去重的替代候选池合计，ShortageQuantity 与 Status 基于该合计结果计算；采购不足时 ETA 与来源保持为空。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/material-readiness/batch",
+      "operationId": "getBusinessMesBatchMaterialReadiness",
+      "classification": "internal",
+      "rationale": "#3994 为 Scheduling 批量齐套计算提供服务间端点；不面向 BusinessGateway 页面公开。"
     },
     {
       "service": "Mes",
@@ -4885,6 +4938,15 @@
     {
       "service": "Scheduling",
       "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/history",
+      "operationId": "listSchedulingPlanHistory",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleSchedulingPlanHistory"]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
       "route": "/api/business/v1/scheduling/order-urgencies",
       "operationId": "listOrderUrgencies",
       "classification": "exposed",
@@ -4944,6 +5006,19 @@
     },
     {
       "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/{planId}/overrides",
+      "operationId": "getSchedulingPlanOverrides",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleSchedulingPlanOverrides"
+      ]
+    },
+    {
+      "service": "Scheduling",
       "method": "PUT",
       "route": "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override",
       "operationId": "upsertSchedulingOperationOverride",
@@ -4984,6 +5059,19 @@
     {
       "service": "Scheduling",
       "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/plans/preview",
+      "operationId": "previewSchedulingWorkbenchPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "previewBusinessConsoleSchedulingWorkbenchPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
       "route": "/api/business/v1/scheduling/plans/{planId}/revisions",
       "operationId": "createSchedulingPlanRevision",
       "classification": "exposed",
@@ -5018,6 +5106,19 @@
       ],
       "gatewayOperationIds": [
         "getBusinessConsoleSchedulingPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/{planId}/csv",
+      "operationId": "exportSchedulingPlanCsv",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "exportBusinessConsoleSchedulingPlanCsv"
       ]
     },
     {

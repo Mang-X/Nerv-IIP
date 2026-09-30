@@ -1305,6 +1305,13 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnName("control_key")
                                 .HasComment("Standard operation control key snapshot.");
 
+                            b1.Property<bool>("Interruptible")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("boolean")
+                                .HasDefaultValue(false)
+                                .HasColumnName("interruptible")
+                                .HasComment("Whether this routing operation may be interrupted across scheduling windows.");
+
                             b1.Property<bool>("IsOutsourced")
                                 .HasColumnType("boolean")
                                 .HasColumnName("is_outsourced")

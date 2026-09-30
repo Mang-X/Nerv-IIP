@@ -354,7 +354,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.InputSources ?? [],
             x.InputCoverageStart,
             x.InputCoverageEnd,
-            x.FailureReason)).ToArray());
+            x.FailureReason,
+            x.DemandChangeCount)).ToArray());
     }
 
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
@@ -427,7 +428,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
                     x.NetRequirementExplanation.DegradationSources ?? []),
             x.AcceptedDownstreamService,
             x.AcceptedDownstreamDocumentType,
-            x.AcceptedDownstreamDocumentId)).ToArray());
+            x.AcceptedDownstreamDocumentId,
+            x.SupersededByRunId)).ToArray());
     }
 
     public Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(
@@ -516,6 +518,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             1 => "Accepted",
             2 => "Rejected",
             3 => "Closed",
+            4 => "Superseded",
             _ => status.ToString(CultureInfo.InvariantCulture),
         };
 
@@ -557,7 +560,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         IReadOnlyCollection<string>? InputSources,
         DateOnly? InputCoverageStart,
         DateOnly? InputCoverageEnd,
-        string? FailureReason);
+        string? FailureReason,
+        int DemandChangeCount);
 
     private sealed record DownstreamPlanningSuggestionItem(
         string SuggestionId,
@@ -573,7 +577,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         string? AcceptedDownstreamService,
         string? AcceptedDownstreamDocumentType,
         string? AcceptedDownstreamDocumentId,
-        DownstreamNetRequirementExplanation? NetRequirementExplanation);
+        DownstreamNetRequirementExplanation? NetRequirementExplanation,
+        string? SupersededByRunId);
 
     private sealed record DownstreamNetRequirementExplanation(
         decimal GrossDemandQuantity,

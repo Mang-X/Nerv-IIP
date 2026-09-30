@@ -51,6 +51,134 @@ const plan = {
 }
 
 describe('useWorkingScheduleDraft', () => {
+  it('recomputes feedback for move, resize, table edit, undo/redo, pending/restore and new plan (#4043)', () => {
+    const draft = useWorkingScheduleDraft()
+    const snapshot = {
+      ...plan,
+      calendars: [
+        {
+          calendarId: 'CAL-1',
+          resourceIds: ['RES-1'],
+          workCenterIds: ['WC-1'],
+          shiftWindows: [
+            { startUtc: '2026-07-24T08:00:00Z', endUtc: '2026-07-24T18:00:00Z', shiftCode: '白班' },
+          ],
+        },
+      ],
+      validationContext: {
+        horizonStartUtc: '2026-07-24T00:00:00Z',
+        horizonEndUtc: '2026-07-25T00:00:00Z',
+        resources: [
+          {
+            resourceId: 'RES-1',
+            workCenterId: 'WC-1',
+            calendarId: 'CAL-1',
+            capacityUnits: 1,
+            utilizationRate: 1,
+          },
+          {
+            resourceId: 'RES-2',
+            workCenterId: 'WC-2',
+            calendarId: 'CAL-1',
+            capacityUnits: 1,
+            utilizationRate: 1,
+          },
+        ],
+        operations: plan.assignments.map((assignment) => ({
+          orderId: assignment.orderId,
+          operationId: assignment.operationId,
+          predecessorOperationIds: assignment.operationId === 'OP-20' ? ['OP-10'] : [],
+          dueUtc: '2026-07-24T10:00:00Z',
+          durationMinutes: 60,
+          setupMinutes: 0,
+          isFixed: false,
+        })),
+        fixedReservations: [],
+      },
+    }
+    draft.loadPlan(snapshot)
+    const kinds = () =>
+      draft.feedback.value!.tasks['assignment-002']!.issues.map((issue) => issue.kind)
+    expect(kinds()).toEqual([])
+    draft.moveTask({
+      taskId: 'assignment-002',
+      operationId: 'OP-20',
+      resourceId: 'RES-1',
+      startUtc: '2026-07-24T08:00:00Z',
+      endUtc: '2026-07-24T09:00:00Z',
+      kind: 'move',
+    })
+    expect(kinds()).toContain('predecessor')
+    expect(kinds()).toContain('capacity')
+    draft.undo()
+    expect(kinds()).toEqual([])
+    draft.redo()
+    expect(kinds()).toContain('predecessor')
+    draft.undo()
+    draft.moveTask({
+      taskId: 'assignment-002',
+      operationId: 'OP-20',
+      resourceId: 'RES-1',
+      startUtc: '2026-07-24T09:00:00Z',
+      endUtc: '2026-07-24T19:00:00Z',
+      kind: 'resize',
+    })
+    expect(kinds()).toContain('calendar')
+    expect(draft.feedback.value!.tasks['assignment-002']!.due?.status).toBe('late')
+    draft.updateTask('assignment-002', { endUtc: '2026-07-24T10:00:00Z' })
+    expect(kinds()).toEqual([])
+    expect(draft.feedback.value!.tasks['assignment-002']!.due?.status).toBe('onTime')
+    draft.moveTaskToPending('assignment-001')
+    expect(kinds()).toContain('predecessorUnscheduled')
+    expect(draft.model.value?.links).toHaveLength(0)
+    draft.restorePendingTask('assignment-001')
+    expect(kinds()).toEqual([])
+    draft.undo()
+    expect(kinds()).toContain('predecessorUnscheduled')
+    draft.redo()
+    expect(kinds()).toEqual([])
+    draft.updateTask('assignment-002', { resourceId: 'RES-2' })
+    expect(
+      draft.model.value?.tasks.find((task) => task.id === 'assignment-002')?.workCenterId,
+    ).toBe('WC-2')
+    draft.loadPlan({ ...plan, planId: 'plan-002' })
+    expect(kinds()).toEqual(['unknown'])
+    expect(draft.canUndo.value).toBe(false)
+  })
+  it('keeps actual segments when locking a multi-segment draft (#4004)', () => {
+    const draft = useWorkingScheduleDraft()
+    const segments = [
+      { startUtc: '2026-07-24T08:00:00Z', endUtc: '2026-07-24T09:00:00Z' },
+      { startUtc: '2026-07-25T08:00:00Z', endUtc: '2026-07-25T09:00:00Z' },
+    ]
+    draft.loadPlan({
+      ...plan,
+      assignments: [{ ...plan.assignments[0]!, endUtc: segments[1]!.endUtc, segments }],
+    })
+    draft.setLocked('assignment-001', true)
+    expect(draft.lockedAssignments.value[0]?.segments).toEqual(segments)
+    draft.undo()
+    expect(draft.model.value?.tasks.find((task) => task.id === 'assignment-001')?.segments).toEqual(
+      segments,
+    )
+  })
+
+  it('updates a single actual segment together with edited start/end (#4004)', () => {
+    const draft = useWorkingScheduleDraft()
+    const assignment = plan.assignments[0]!
+    draft.loadPlan({
+      ...plan,
+      assignments: [
+        { ...assignment, segments: [{ startUtc: assignment.startUtc, endUtc: assignment.endUtc }] },
+      ],
+    })
+    draft.updateTask(assignment.assignmentId, { startUtc: '2026-07-24T08:30:00Z' })
+    draft.setLocked(assignment.assignmentId, true)
+    expect(draft.lockedAssignments.value[0]?.segments).toEqual([
+      { startUtc: '2026-07-24T08:30:00Z', endUtc: assignment.endUtc },
+    ])
+  })
+
   it('keeps drag, table edit, lock and undo in one draft history', () => {
     const draft = useWorkingScheduleDraft()
     draft.setOrders([{ workOrderId: 'WO-001', priority: 10 }])

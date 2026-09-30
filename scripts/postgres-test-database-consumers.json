@@ -28,12 +28,12 @@
     },
     {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
-      "sourceSha256": "45e84b218a6c2b13d3632a811c072da400e9f5c755cb554c60e2eff518f5ebd9",
-      "factoryCallCount": 4,
+      "sourceSha256": "99d00ddcb019ccbe575c4d4617f884b1ec914efcee27eaec6a881bd2303aa8e5",
+      "factoryCallCount": 5,
       "ownerships": [
         {
           "strategy": "explicit-drop-finally",
-          "factoryCallCount": 3,
+          "factoryCallCount": 4,
           "ownerVariable": "database",
           "reason": "The real PostgreSQL demand proofs must surface cleanup failure after every direct-owner exit."
         },
@@ -43,6 +43,19 @@
           "wrapperType": "RedisCapTestDatabase",
           "ownerField": "ownedDatabase",
           "reason": "Redis/CAP tests legitimately encapsulate optional database ownership, and the wrapper propagates DropAsync failure."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpInputChangePersistenceTests.cs",
+      "sourceSha256": "1726ebabf7ac71c09943329a3c6fdd21a20e10ad3a82b0a2040d752c5d407b1a",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 2,
+          "ownerVariable": "database",
+          "reason": "Both MRP input change persistence proofs own and drop their temporary PostgreSQL databases."
         }
       ]
     },
@@ -199,7 +212,7 @@
     },
     {
       "sourcePath": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/SchedulingListPlansPostgresProfileTests.cs",
-      "sourceSha256": "f6bff4348b4536c9d4d6b3407e47972b6e3abf5fb30d0af1909bd69f3eafb12f",
+      "sourceSha256": "e1201ff42dae3cdfcb22522d2d1f37e4cc838b43653c2b20fd79c00e8154061d",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -283,19 +296,19 @@
     },
     {
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamMemberAccountDirectoryPostgresTests.cs",
-      "sourceSha256": "6d01e7b6d6b256ecdfd69b4241a02acdbd5b62d531e52c6a6bba990aa6ed0acf",
-      "factoryCallCount": 1,
+      "sourceSha256": "573532afeb60560ca08ed0cbb19980928b8b60b09469abe259752540223ae944",
+      "factoryCallCount": 2,
       "ownerships": [
         {
           "strategy": "best-effort-dispose",
-          "factoryCallCount": 1,
+          "factoryCallCount": 2,
           "reason": "The IAM member-account directory proof uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
         }
       ]
     },
     {
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPlatformAdministratorTests.cs",
-      "sourceSha256": "4e8b0061c738338218513319c544481a0586398e1df7455a306db039abd4cf56",
+      "sourceSha256": "3b18170260210e4a5f22b53e21a386bd2f7e3992404318450d3fd5208f4c3586",
       "factoryCallCount": 1,
       "ownerships": [
         {

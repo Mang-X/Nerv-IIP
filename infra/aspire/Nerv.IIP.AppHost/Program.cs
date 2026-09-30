@@ -333,6 +333,7 @@ var notification = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProjec
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     // 设备预警可达工作台：Notification 对 alarm-raised 的收件人默认回退 role:maintenance，
     // 但消息面按 principalRef（user:user-admin）精确匹配、没有角色展开层——演示管理员必须显式列入。
     .WithEnvironment("IndustrialTelemetry__AlarmNotification__RecipientRefs__0", "user:user-admin")
@@ -371,8 +372,10 @@ var notification = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProjec
     .WithEnvironment("Observability__Alerts__Rules__4__CapacityMegabytes", "10240")
     .WithEnvironment("Approval__OverdueEscalation__RecipientRefs__0", "role:business-approval-manager")
     .WithReference(apphub)
+    .WithReference(iam)
     .WithReference(notificationDatabase, "NotificationDb")
     .WaitFor(apphub)
+    .WaitFor(iam)
     .WaitFor(notificationDatabase);
 notification = WithRedisMessagingTransport(notification);
 if (rabbitmq is not null)

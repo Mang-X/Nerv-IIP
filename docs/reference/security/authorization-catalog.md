@@ -197,6 +197,12 @@ IAM 仅在对应角色缺失时创建默认角色；重复 seed 不应覆盖同 
 
 角色是否仍由当前 seed 创建以及实际默认集合，以 `IamFacts.cs` / `IamSeedService.cs` 为准。
 
+## 默认生产计划员角色
+
+`role-production-planner` 的默认名称是「生产计划员」。IAM 在开发基线 seed 和非 Development 启动引导中补缺该角色；对已存在的固定 ID 角色仅增量补齐 `business.mes.work-orders.read`、`notifications.messages.read` 和 `notifications.tasks.read`，保留其他权限、名称、data scope 和成员。若已有同名的运营角色，引导保留它，以「生产计划员（系统预置）」命名固定 ID 角色。默认权限覆盖 MES 工单读取、Notification 个人消息与待办读取、Planning 需求、MPS、MRP、建议及 Scheduling 计划的相应读写/发布动作，精确集合见 `IamFacts.cs`。角色默认 data scope 为 Organization；成员关系仍按组织和环境生效。
+
+内部 `GET /internal/iam/v1/production-planner-members` 只供服务身份调用，要求 `organizationId`、`environmentId`，按页返回该角色的有效账号 ID；账号禁用或过期时不在结果中。
+
 ## Console IAM facade 映射
 
 下表用于导航当前 Console IAM 操作；Gateway 代码仍是 operationId 与 permission 的最终事实源。

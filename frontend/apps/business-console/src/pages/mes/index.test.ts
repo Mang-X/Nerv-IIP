@@ -125,7 +125,7 @@ describe('MES index page', () => {
     myScopeState.scope = { kind: 'team', id: 'TEAM-A', displayName: '注塑一班' }
     myScopeState.scopeMessage = ''
     myScopeState.readState = 'ready'
-    myScopeState.totals = { queued: 0, inProgress: 0, paused: 0, scheduleInvalidated: 0 }
+    myScopeState.totals = { Queued: 0, InProgress: 0, Paused: 0, ScheduleInvalidated: 0 }
   })
 
   function mountPage() {
@@ -221,7 +221,7 @@ describe('MES index page', () => {
   // 走查台账 #50：驾驶舱只有全厂总量，班组长看不到「我这一摊」。
   describe('我的班组维度', () => {
     it('按作业范围给出四个未终态计数，并写明这是谁的范围', () => {
-      myScopeState.totals = { queued: 12, inProgress: 3, paused: 5, scheduleInvalidated: 7 }
+      myScopeState.totals = { Queued: 12, InProgress: 3, Paused: 5, ScheduleInvalidated: 7 }
 
       const wrapper = mountPage()
       const text = wrapper.text()
@@ -270,7 +270,7 @@ describe('MES index page', () => {
 
     it('范围数字没读到时显占位，不拿 0 当结论', () => {
       myScopeState.readState = 'error'
-      myScopeState.totals = { queued: 12, inProgress: 3, paused: 5, scheduleInvalidated: 7 }
+      myScopeState.totals = { Queued: 12, InProgress: 3, Paused: 5, ScheduleInvalidated: 7 }
 
       const text = mountPage().text()
 

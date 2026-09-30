@@ -4,6 +4,7 @@ import type {
   BusinessConsoleSchedulingPlanImpact,
 } from '@nerv-iip/api-client'
 import {
+  evaluateDraft,
   toModel,
   type ScheduleModel,
   type ScheduleTask,
@@ -122,8 +123,34 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
     if (!task || task.type !== 'operation' || task.locked) return
     mutate(() => {
       if (!model.value) return
+      const resource = model.value.validationContext?.resources.find(
+        (resource) => resource.resourceId === patch.resourceId,
+      )
       const tasks = model.value.tasks.map((task) =>
-        task.id === taskId ? { ...task, ...patch } : task,
+        task.id === taskId
+          ? {
+              ...task,
+              ...patch,
+              ...(resource
+                ? {
+                    workCenterId: resource.workCenterId,
+                    dimensions: {
+                      ...task.dimensions,
+                      workCenter: { id: resource.workCenterId, label: resource.workCenterId },
+                    },
+                  }
+                : {}),
+              segments:
+                task.segments?.length === 1
+                  ? [
+                      {
+                        startUtc: patch.startUtc ?? task.startUtc,
+                        endUtc: patch.endUtc ?? task.endUtc,
+                      },
+                    ]
+                  : task.segments,
+            }
+          : task,
       )
       model.value = { ...model.value, tasks: recomputeOrderNodes(tasks) }
     })
@@ -279,10 +306,12 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
         startUtc: task.startUtc,
         endUtc: task.endUtc,
         lockReasonCode: 'planner-draft-lock',
+        segments: task.segments,
       })),
   )
 
   return {
+    feedback: computed(() => (model.value ? evaluateDraft(model.value) : undefined)),
     canRedo: computed(() => future.value.length > 0),
     canUndo: computed(() => history.value.length > 0),
     includedOrders,

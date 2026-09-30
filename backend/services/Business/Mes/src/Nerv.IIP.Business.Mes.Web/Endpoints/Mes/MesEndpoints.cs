@@ -249,6 +249,23 @@ public sealed record WorkOrderContextRequest(
     string EnvironmentId,
     [property: RouteParam] string WorkOrderId);
 
+public sealed record BatchMaterialReadinessRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> WorkOrderIds);
+
+public sealed class BatchMaterialReadinessRequestValidator : Validator<BatchMaterialReadinessRequest>
+{
+    public BatchMaterialReadinessRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
+        RuleFor(x => x.WorkOrderIds).NotNull().Must(x => x is { Count: > 0 and <= 500 })
+            .WithMessage("工单数量须在 1 到 500 之间");
+        RuleForEach(x => x.WorkOrderIds).NotEmpty();
+    }
+}
+
 public sealed record ProductionPlanContextRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -302,6 +319,42 @@ public sealed record ReleaseWorkOrderRequest(
     string EnvironmentId,
     [property: RouteParam] string WorkOrderId,
     DateTimeOffset? ReleasedAtUtc);
+
+public sealed record AdjustWorkOrderPriorityRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    bool IsRush,
+    int Priority,
+    DateTimeOffset? ChangedAtUtc);
+
+public sealed class AdjustWorkOrderPriorityRequestValidator : Validator<AdjustWorkOrderPriorityRequest>
+{
+    public AdjustWorkOrderPriorityRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed record AdjustWorkOrderDueUtcRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    DateTimeOffset? DueUtc,
+    DateTimeOffset? ChangedAtUtc);
+
+public sealed class AdjustWorkOrderDueUtcRequestValidator : Validator<AdjustWorkOrderDueUtcRequest>
+{
+    public AdjustWorkOrderDueUtcRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DueUtc).NotNull();
+    }
+}
 
 public sealed record ForceReleaseQualityHoldRequest(
     string OrganizationId,
@@ -826,6 +879,19 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
     }
 }
 
+public sealed class GetAssemblyChildWorkOrdersEndpoint(ISender sender)
+    : MesEndpoint<WorkOrderContextRequest, AssemblyChildWorkOrdersResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetAssemblyChildWorkOrdersEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderContextRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetAssemblyChildWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetMesWorkOrderDetailEndpoint(ISender sender)
     : MesEndpoint<WorkOrderContextRequest, MesWorkOrderDetailResponse>
 {
@@ -970,6 +1036,45 @@ public sealed class HoldWorkOrderEndpoint(ISender sender, TimeProvider timeProvi
     }
 }
 
+public sealed class AdjustWorkOrderPriorityEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<AdjustWorkOrderPriorityRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<AdjustWorkOrderPriorityEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(AdjustWorkOrderPriorityRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new AdjustWorkOrderPriorityCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.IsRush,
+            req.Priority,
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class AdjustWorkOrderDueUtcEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<AdjustWorkOrderDueUtcRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(
+        MesEndpointContracts.Get<AdjustWorkOrderDueUtcEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(AdjustWorkOrderDueUtcRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new AdjustWorkOrderDueUtcCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.DueUtc.GetValueOrDefault(),
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class CancelWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<WorkOrderReasonRequest, MesAcceptedResponse>
 {
@@ -1017,6 +1122,19 @@ public sealed class GetMaterialReadinessEndpoint(ISender sender)
     public override async Task HandleAsync(WorkOrderContextRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetMaterialReadinessQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class GetBatchMaterialReadinessEndpoint(ISender sender)
+    : MesEndpoint<BatchMaterialReadinessRequest, MesMaterialReadinessBatchResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetBatchMaterialReadinessEndpoint>());
+
+    public override async Task HandleAsync(BatchMaterialReadinessRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetBatchMaterialReadinessQuery(
+            req.OrganizationId, req.EnvironmentId, req.WorkOrderIds), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1947,6 +2065,7 @@ public static class MesEndpointContracts
         new(typeof(CreateRushWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/rush", MesPermissionCodes.WorkOrdersManage, "createBusinessMesRushWorkOrder"),
         new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
         new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
+        new(typeof(GetAssemblyChildWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/assembly-children", MesPermissionCodes.WorkOrdersRead, "getBusinessMesAssemblyChildWorkOrders"),
         new(typeof(SplitWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/split", MesPermissionCodes.WorkOrdersManage, "splitBusinessMesWorkOrder"),
         new(typeof(MergeWorkOrdersEndpoint), "POST", "/api/business/v1/mes/work-orders/merge", MesPermissionCodes.WorkOrdersManage, "mergeBusinessMesWorkOrders"),
         new(typeof(GetWorkOrderTransformationEndpoint), "GET", "/api/business/v1/mes/work-order-transformations/{transformationId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderTransformation"),
@@ -1954,10 +2073,13 @@ public static class MesEndpointContracts
         new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
         new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
+        new(typeof(AdjustWorkOrderPriorityEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/priority", MesPermissionCodes.WorkOrdersManage, "adjustBusinessMesWorkOrderPriority"),
+        new(typeof(AdjustWorkOrderDueUtcEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/due-utc", MesPermissionCodes.WorkOrdersManage, "adjustBusinessMesWorkOrderDueUtc"),
         new(typeof(RecordEngineeringChangeDecisionEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesEngineeringChangeDecision"),
         new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
         new(typeof(GetQualityHoldTimelineEndpoint), "GET", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline", MesPermissionCodes.QualityRead, "getBusinessMesQualityHoldTimeline"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
+        new(typeof(GetBatchMaterialReadinessEndpoint), "POST", "/api/business/v1/mes/work-orders/material-readiness/batch", MesPermissionCodes.MaterialsRead, "getBusinessMesBatchMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),
         new(typeof(GetMaterialIssueRequestEndpoint), "GET", "/api/business/v1/mes/material-issue-requests/{requestId}", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialIssueRequest"),

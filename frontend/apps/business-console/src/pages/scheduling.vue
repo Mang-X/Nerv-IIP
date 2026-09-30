@@ -6,10 +6,15 @@ import type {
   BusinessConsoleSchedulingResourceLoad,
   BusinessConsoleSchedulingUnscheduledOperation,
   BusinessConsoleSchedulingPlanRevision,
+  BusinessConsoleSchedulePlan,
+  BusinessConsoleSchedulingPlanStatus,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { formatDateTime } from '@/utils/format'
-import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
+import {
+  useBusinessScheduling,
+  useSchedulingPlanSummary,
+} from '@/composables/useBusinessScheduling'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -24,7 +29,10 @@ import {
   schedulingPlanStatusTone,
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
+import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
+import SchedulingDaySchedule from '@/components/scheduling/SchedulingDaySchedule.vue'
+import { useSchedulingPlanCsv } from '@/composables/useSchedulingPlanCsv'
 import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
 import {
   createSchedulingHorizonInput,
@@ -50,6 +58,7 @@ import {
   NvAlertDialogHeader,
   NvAlertDialogTitle,
   NvButton,
+  NvInput,
   NvDataTable,
   NvPageHeader,
   NvSheet,
@@ -89,6 +98,9 @@ const {
   planDetailError,
   planDetailPending,
   plans,
+  plansTotal,
+  page,
+  pageSize,
   plansError,
   plansPending,
   refreshPlans,
@@ -99,12 +111,52 @@ const {
   upsertOperationOverride,
   upsertOperationOverridePending,
 } = useBusinessScheduling()
+const csv = useSchedulingPlanCsv()
+async function downloadPlanCsv() {
+  try {
+    await csv.download({ ...detailSelection })
+    toast.success('方案 CSV 已下载')
+  } catch (error) {
+    notifyOperationFailure('方案 CSV 下载失败', error, '方案 CSV 下载失败，请稍后重试。')
+  }
+}
+
+const historyStatus = computed({
+  get: () => schedulingFilters.status ?? 'all',
+  set: (value: string) => {
+    schedulingFilters.status =
+      value === 'all' ? undefined : (value as BusinessConsoleSchedulingPlanStatus)
+  },
+})
+const historyInvalidated = computed({
+  get: () =>
+    schedulingFilters.isInvalidated === undefined ? 'all' : String(schedulingFilters.isInvalidated),
+  set: (value: string) => {
+    schedulingFilters.isInvalidated = value === 'all' ? undefined : value === 'true'
+  },
+})
+const historyStatuses = ['generated', 'released', 'superseded', 'revoked'] as const
+const hasHistoryFilters = computed(() =>
+  Boolean(
+    schedulingFilters.status ||
+    schedulingFilters.releasedOn ||
+    schedulingFilters.isInvalidated !== undefined,
+  ),
+)
+function clearHistoryFilters() {
+  schedulingFilters.status = undefined
+  schedulingFilters.releasedOn = ''
+  schedulingFilters.isInvalidated = undefined
+}
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlansManage))
 const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPlansRelease))
 const workbench = useSchedulingWorkbench()
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
+const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
+const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
+const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
 const route = useRoute()
 const orderUrgencies = useOrderUrgencies(
@@ -162,7 +214,7 @@ const plansFailed = computed(() => !plansPending.value && plansError.value != nu
 const planHeaderCount = computed(() => {
   if (plansFailed.value) return '方案数取不到'
   if (plansPending.value && actionablePlans.value.length === 0) return undefined
-  return `${actionablePlans.value.length} 个方案`
+  return `${plansTotal.value} 个方案`
 })
 
 watch([activeView, actionablePlans], ([view, availablePlans]) => {
@@ -174,20 +226,36 @@ const columns: NvDataTableColumn<BusinessConsoleSchedulingPlanSummaryResponse>[]
   {
     key: 'planId',
     header: '排程方案',
+    width: '14rem',
     cellClass: 'font-medium',
     accessor: (row) => row.planId ?? '未命名方案',
   },
   { key: 'status', header: '状态', width: 'w-40' },
-  { key: 'range', header: '时间范围', accessor: () => '明细中确认' },
-  { key: 'invalidation', header: '失效原因', accessor: invalidationSummary },
+  {
+    key: 'range',
+    header: '时间范围',
+    width: '22rem',
+    accessor: (row) =>
+      row.horizonStartUtc && row.horizonEndUtc
+        ? `${formatDateTime(row.horizonStartUtc)} 至 ${formatDateTime(row.horizonEndUtc)}`
+        : '未记录时间范围',
+  },
+  { key: 'invalidation', header: '失效原因', width: '14rem', accessor: invalidationSummary },
   {
     key: 'operationCount',
     header: '工序数',
+    width: '7rem',
     accessor: (row) => `${row.assignmentCount ?? 0} 道工序`,
   },
-  { key: 'conflicts', header: '冲突摘要', accessor: conflictSummary },
+  { key: 'conflicts', header: '冲突摘要', width: '12rem', accessor: conflictSummary },
+  {
+    key: 'releasedAtUtc',
+    header: '发布时间',
+    width: 'w-44',
+    accessor: (row) => (row.releasedAtUtc ? formatDateTime(row.releasedAtUtc) : '未发布'),
+  },
   { key: 'generatedAtUtc', header: '创建时间', width: 'w-44' },
-  { key: 'actions', header: '操作', width: 'w-40', align: 'end' },
+  { key: 'actions', header: '操作', width: '16rem', align: 'end' },
 ]
 
 const selectedPlanRange = computed(() => rangeFromAssignments(planDetail.value?.assignments ?? []))
@@ -204,8 +272,16 @@ const detailFeedback = computed(() => {
   if (detailSelection.planId) return '未返回方案明细。'
   return '请选择一个排程方案查看明细。'
 })
+// 查阅方案和草案各按自身 planId 获取摘要，历史表筛选/分页不决定发布能力。
+const { summary: selectedPlanStatus } = useSchedulingPlanSummary(() => detailSelection.planId)
 const selectedPlanSummary = computed(() =>
-  actionablePlans.value.find((plan) => plan.planId === detailSelection.planId),
+  planDetail.value
+    ? {
+        ...selectedPlanStatus.value,
+        planId: planDetail.value.planId,
+        status: planDetail.value.status,
+      }
+    : undefined,
 )
 const targetedAssignmentFound = computed(() =>
   Boolean(
@@ -298,13 +374,11 @@ function openDetail(planId: string | undefined) {
   detailOpen.value = true
 }
 
-async function publish(planId: string | undefined) {
-  if (!planId) return
-  const summary = actionablePlans.value.find((plan) => plan.planId === planId)
-  if (!summary || !canRelease(summary)) return
+async function publish(plan: BusinessConsoleSchedulingPlanSummaryResponse | undefined) {
+  if (!plan?.planId || !canRelease(plan)) return
 
   try {
-    await releasePlan(planId)
+    await releasePlan(plan.planId)
     toast.success('排程方案已发布')
   } catch (error) {
     notifyOperationFailure('发布失败', error, '发布失败，请稍后重试')
@@ -329,10 +403,9 @@ async function generateWorkbenchPlan() {
       horizonEndUtc: resolvedHorizon.horizonEndUtc,
       orders: draft.includedOrders.value.map((order) => ({
         workOrderId: order.workOrderId,
-        priority: order.priority,
-        isRush: order.isRush,
       })),
     })
+    persistedDraftPlan.value = plan
     draft.loadPlan(plan)
     detailSelection.planId = plan.planId ?? ''
     revisionResult.value = undefined
@@ -353,8 +426,10 @@ async function repreviewLockedDraft() {
       includedOrderIds: draft.includedOrders.value.map((order) => order.workOrderId),
       lockedAssignments: draft.lockedAssignments.value,
     })
+    revisionBasePlan.value = persistedDraftPlan.value
     revisionResult.value = revision
     if (revision.candidate) {
+      persistedDraftPlan.value = revision.candidate
       draft.loadPlan(revision.candidate, revision.impact)
       detailSelection.planId = revision.candidate.planId ?? ''
     }
@@ -385,14 +460,15 @@ async function publishCandidate() {
 const revokeTargetPlanId = shallowRef('')
 const revokeConfirmOpen = shallowRef(false)
 
-function canRevoke(row: BusinessConsoleSchedulingPlanSummaryResponse | undefined) {
+function canRevoke(row: Pick<BusinessConsoleSchedulingPlanSummaryResponse, 'status'> | undefined) {
   return Boolean(row && canPublish.value && row.status === 'released')
 }
 
-function requestRevoke(planId: string | undefined) {
-  if (!planId) return
-  if (!canRevoke(actionablePlans.value.find((plan) => plan.planId === planId))) return
-  revokeTargetPlanId.value = planId
+function requestRevoke(
+  plan: Pick<BusinessConsoleSchedulingPlanSummaryResponse, 'planId' | 'status'> | undefined,
+) {
+  if (!plan?.planId || !canRevoke(plan)) return
+  revokeTargetPlanId.value = plan.planId
   revokeConfirmOpen.value = true
 }
 
@@ -509,10 +585,25 @@ const repreviewDisabledReason = computed(
   () => repreviewBlockedReason.value ?? '保持已锁定工序不动，重排其余工序生成新版本',
 )
 
+// 后台刷新只读取版本状态，不重新加载用户正在编辑的草案。
+const draftInvalidationReason = computed(() =>
+  draftPlanSummary.value?.isInvalidated
+    ? `方案已失效（${describeScheduleInvalidationReason(draftPlanSummary.value.latestInvalidationReasonCode)}），请重排后再发布`
+    : undefined,
+)
+const draftTerminalReason = computed(() =>
+  schedulingPlanTerminalReleaseReason(draftPlanSummary.value?.status),
+)
+
 const publishCandidateBlockedReason = computed(() =>
   firstBlockingReason([
     { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
     { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
+    {
+      blocked: Boolean(draftInvalidationReason.value),
+      reason: draftInvalidationReason.value ?? '',
+    },
+    { blocked: Boolean(draftTerminalReason.value), reason: draftTerminalReason.value ?? '' },
     { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
   ]),
 )
@@ -681,6 +772,13 @@ function reasonLabel(reason?: string | null) {
         >
           当前账号只有读取权限，可查看历史方案但不能编辑或生成新版本。
         </p>
+        <p
+          v-if="draftInvalidationReason"
+          class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+          role="status"
+        >
+          {{ draftInvalidationReason }}
+        </p>
         <div
           v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
           class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
@@ -713,7 +811,10 @@ function reasonLabel(reason?: string | null) {
           :scope-message="workbench.candidatesScopeMessage.value"
           :read-only="!canManage"
           @include="draft.setIncluded"
-          @update="draft.updateOrder"
+          :can-edit-priority="
+            permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
+          "
+          :save-order="workbench.saveOrderPriority"
           @retry="workbench.refreshCandidates"
         >
           <template #scope>
@@ -722,6 +823,8 @@ function reasonLabel(reason?: string | null) {
         </SchedulingOrderPool>
         <SchedulingDraftBoard
           :model="draft.model.value"
+          :feedback="draft.feedback.value"
+          :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"
           :read-only="!canManage"
           :persisted-operation-keys="persistedOperationKeys"
@@ -734,10 +837,10 @@ function reasonLabel(reason?: string | null) {
           @move-to-pending="draft.moveTaskToPending"
           @restore-pending="draft.restorePendingTask"
         />
-        <ScheduleRevisionReview :revision="revisionResult" />
+        <ScheduleRevisionReview :revision="revisionResult" :base-plan="revisionBasePlan" />
       </NvTabsContent>
 
-      <NvTabsContent value="table" class="grid gap-4">
+      <NvTabsContent value="table" class="grid min-w-0 gap-4">
         <!-- 只读边界要自解释：历史方案是已生成结果的查阅面，改排程只能回草案工作区。
              不写这句，用户会在表里反复点、以为"表格坏了"（MAN-691 / #1259）。 -->
         <div
@@ -761,27 +864,83 @@ function reasonLabel(reason?: string | null) {
             去草案工作区修改
           </NvButton>
         </div>
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="grid gap-1">
+            <span class="text-sm font-medium">状态</span>
+            <NvSelect v-model="historyStatus">
+              <NvSelectTrigger class="w-36" aria-label="按方案状态筛选"
+                ><NvSelectValue
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="all">全部状态</NvSelectItem>
+                <NvSelectItem v-for="status in historyStatuses" :key="status" :value="status">{{
+                  schedulingPlanStatusLabel(status)
+                }}</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </div>
+          <div class="grid gap-1">
+            <label for="history-released-on" class="text-sm font-medium">发布日（UTC）</label>
+            <NvInput
+              id="history-released-on"
+              v-model="schedulingFilters.releasedOn"
+              type="date"
+              class="w-44"
+            />
+          </div>
+          <div class="grid gap-1">
+            <span class="text-sm font-medium">失效</span>
+            <NvSelect v-model="historyInvalidated">
+              <NvSelectTrigger class="w-36" aria-label="按方案失效筛选"
+                ><NvSelectValue
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="all">全部方案</NvSelectItem>
+                <NvSelectItem value="true">已失效</NvSelectItem>
+                <NvSelectItem value="false">未失效</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </div>
+          <p class="pb-2 text-sm text-muted-foreground">发布时间从新到旧，未发布方案排在后面</p>
+        </div>
         <NvDataTable
-          :pagination="false"
+          class="min-w-0"
+          manual
+          :page="page"
+          :page-size="pageSize"
+          :total-items="plansTotal"
+          @update:page="page = $event"
+          @update:page-size="pageSize = String($event)"
           :columns="columns"
           :rows="actionablePlans"
           :row-key="rowKey"
           :loading="plansPending"
           :searchable="false"
           :column-settings="false"
-          empty-message="还没有排程方案"
+          :empty-message="hasHistoryFilters ? '没有符合条件的方案' : '还没有排程方案'"
           :error="plansError"
           error-message="没有取到排程方案列表，当前无法判断已有哪些方案。请重试，或稍后再看。"
           @retry="refreshPlans"
         >
           <template #empty>
-            <p class="text-sm font-medium text-foreground">还没有排程方案</p>
-            <p class="max-w-md text-sm text-muted-foreground">
-              先在排程总览里挑出要排的工单，生成首版方案后即可在这里查看、对比并发布。
-            </p>
-            <NvButton size="sm" type="button" class="mt-1" @click="activeView = 'workbench'">
-              去排程总览生成方案
-            </NvButton>
+            <template v-if="hasHistoryFilters">
+              <p class="text-sm font-medium text-foreground">没有符合条件的方案</p>
+              <p class="max-w-md text-sm text-muted-foreground">
+                调整筛选条件，或清空筛选查看历史方案。
+              </p>
+              <NvButton size="sm" type="button" class="mt-1" @click="clearHistoryFilters"
+                >清空筛选</NvButton
+              >
+            </template>
+            <template v-else>
+              <p class="text-sm font-medium text-foreground">还没有排程方案</p>
+              <p class="max-w-md text-sm text-muted-foreground">
+                先在排程总览里挑出要排的工单，生成首版方案后即可在这里查看、对比并发布。
+              </p>
+              <NvButton size="sm" type="button" class="mt-1" @click="activeView = 'workbench'">
+                去排程总览生成方案
+              </NvButton>
+            </template>
           </template>
           <template #cell-status="{ row }">
             <div class="flex flex-wrap items-center gap-1.5">
@@ -812,7 +971,7 @@ function reasonLabel(reason?: string | null) {
                 type="button"
                 :disabled="!canRelease(row) || releasePlanPending"
                 :title="releaseDisabledReason(row)"
-                @click="publish(row.planId)"
+                @click="publish(row)"
               >
                 <Spinner v-if="releasePlanPending" aria-hidden="true" />
                 <SendIcon v-else aria-hidden="true" />
@@ -825,7 +984,7 @@ function reasonLabel(reason?: string | null) {
                 type="button"
                 :disabled="revokePlanPending"
                 title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
-                @click="requestRevoke(row.planId)"
+                @click="requestRevoke(row)"
               >
                 <Undo2Icon aria-hidden="true" />
                 撤销发布
@@ -855,18 +1014,26 @@ function reasonLabel(reason?: string | null) {
             </NvSelectContent>
           </NvSelect>
           <NvButton
-            v-if="canRevoke(selectedPlanSummary)"
+            v-if="canRevoke(planDetail)"
             size="sm"
             variant="destructive"
             type="button"
             :disabled="revokePlanPending"
             title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
-            @click="requestRevoke(detailSelection.planId)"
+            @click="requestRevoke(planDetail)"
           >
             <Undo2Icon aria-hidden="true" />
             撤销发布
           </NvButton>
         </div>
+        <NvButton
+          class="mb-4"
+          type="button"
+          variant="outline"
+          :disabled="!detailSelection.planId || csv.pending.value"
+          @click="downloadPlanCsv"
+          >下载方案 CSV</NvButton
+        >
         <SchedulingPlanGantt
           :plan="planDetail"
           :summary="selectedPlanSummary"
@@ -875,7 +1042,11 @@ function reasonLabel(reason?: string | null) {
           :error="planDetailError"
           :release-pending="releasePlanPending"
           @open-detail="detailOpen = true"
-          @release="publish(detailSelection.planId)"
+          @release="publish(selectedPlanSummary)"
+        />
+        <SchedulingDaySchedule
+          v-if="planDetail && !planDetailPending && !planDetailError"
+          :plan="planDetail"
         />
       </NvTabsContent>
     </NvTabs>
@@ -1041,8 +1212,20 @@ function reasonLabel(reason?: string | null) {
                   />
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">
-                  {{ formatDateTime(assignment.startUtc) }} 至
-                  {{ formatDateTime(assignment.endUtc) }}
+                  <template v-if="assignment.segments?.length">
+                    <span
+                      v-for="(segment, index) in assignment.segments"
+                      :key="index"
+                      class="block"
+                    >
+                      第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
+                      {{ formatDateTime(segment.endUtc) }}
+                    </span>
+                  </template>
+                  <template v-else>
+                    {{ formatDateTime(assignment.startUtc) }} 至
+                    {{ formatDateTime(assignment.endUtc) }}
+                  </template>
                 </p>
               </div>
             </div>
@@ -1074,6 +1257,9 @@ function reasonLabel(reason?: string | null) {
             物料风险（软约束）：齐套是开工门槛不是排产门槛 —— 缺料工序照排进方案，
             这里告诉规划员开工前必须补齐哪些物料，缺口多少。
           -->
+          <SchedulingMaterialShortageSummary
+            :shortages="planDetail.materialShortageSummary ?? []"
+          />
           <section v-if="planDetail.materialRisks?.length" class="grid gap-3">
             <h3 class="text-sm font-semibold text-foreground">物料风险 · 需在开工前完成备料</h3>
             <div class="grid gap-2">

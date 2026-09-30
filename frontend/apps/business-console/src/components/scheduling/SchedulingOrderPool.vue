@@ -2,13 +2,15 @@
 import type { BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
 import type { WorkingScheduleOrder } from '@/composables/useWorkingScheduleDraft'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/useUrgencyDisplayMode'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
 import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
-import { computed, ref } from 'vue'
+import { computed, ref, reactive, shallowRef } from 'vue'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const props = withDefaults(
   defineProps<{
@@ -16,6 +18,11 @@ const props = withDefaults(
     draftOrders: WorkingScheduleOrder[]
     loading?: boolean
     readOnly?: boolean
+    canEditPriority?: boolean
+    saveOrder?: (
+      workOrderId: string,
+      values: { priority: number; isRush: boolean },
+    ) => Promise<void>
     /**
      * MES 工单读取失败（非空即失败）。曾踩坑：这里只有加载态和表体，空数组直接渲染
      * 一个空 tbody——「MES 接口挂了」和「今天真的没有待排工单」长得一模一样，
@@ -37,7 +44,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   include: [workOrderIds: string[], included: boolean]
-  update: [workOrderId: string, patch: { priority?: number; isRush?: boolean }]
   retry: []
 }>()
 
@@ -100,9 +106,40 @@ const candidateIds = computed(
     filteredCandidates.value.map((candidate) => candidate.workOrderId).filter(Boolean) as string[],
 )
 
-function setPriority(workOrderId: string, value: string | number) {
+// MES 编辑不进入甘特草案撤销栈；成功读回后只清除该行输入。
+const edits = reactive(new Map<string, { priority: number; isRush: boolean }>())
+const savingOrderId = shallowRef('')
+function values(candidate: BusinessConsoleMesWorkOrderItem) {
+  return (
+    edits.get(candidate.workOrderId ?? '') ?? {
+      priority: candidate.priority ?? 100,
+      isRush: candidate.isRush ?? false,
+    }
+  )
+}
+function edit(
+  candidate: BusinessConsoleMesWorkOrderItem,
+  patch: { priority?: number; isRush?: boolean },
+) {
+  edits.set(candidate.workOrderId ?? '', { ...values(candidate), ...patch })
+}
+function setPriority(candidate: BusinessConsoleMesWorkOrderItem, value: string | number) {
   const priority = Number(value)
-  if (Number.isFinite(priority)) emit('update', workOrderId, { priority })
+  if (Number.isFinite(priority)) edit(candidate, { priority })
+}
+async function save(candidate: BusinessConsoleMesWorkOrderItem) {
+  const workOrderId = candidate.workOrderId ?? ''
+  if (!props.saveOrder) return
+  savingOrderId.value = workOrderId
+  try {
+    await props.saveOrder(workOrderId, { ...values(candidate) })
+    edits.delete(workOrderId)
+    notifySuccess('急单与优先级已保存')
+  } catch (error) {
+    notifyOperationFailure('保存失败', error, '急单与优先级保存失败，请稍后重试')
+  } finally {
+    savingOrderId.value = ''
+  }
 }
 </script>
 
@@ -263,6 +300,7 @@ function setPriority(workOrderId: string, value: string | number) {
             <th class="p-2">紧迫度</th>
             <th class="p-2">优先级</th>
             <th class="p-2">急单</th>
+            <th class="p-2">保存</th>
           </tr>
         </thead>
         <tbody>
@@ -277,7 +315,15 @@ function setPriority(workOrderId: string, value: string | number) {
                 "
               />
             </td>
-            <td class="p-2 font-medium">{{ candidate.workOrderNo || candidate.workOrderId }}</td>
+            <td class="p-2 font-medium">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span>{{ candidate.workOrderNo || candidate.workOrderId }}</span>
+                <WorkOrderDemandChangeBadges
+                  :has-changed-demand="candidate.hasChangedDemand"
+                  :has-cancelled-demand="candidate.hasCancelledDemand"
+                />
+              </div>
+            </td>
             <td class="p-2">
               <CodeWithNameCell
                 :code="candidate.skuCode || candidate.skuId"
@@ -304,25 +350,39 @@ function setPriority(workOrderId: string, value: string | number) {
               <NvInput
                 class="h-8 w-24"
                 type="number"
-                min="0"
-                :disabled="readOnly"
-                :model-value="
-                  String(
-                    byId.get(candidate.workOrderId ?? '')?.priority ?? candidate.priority ?? 100,
-                  )
-                "
-                @update:model-value="setPriority(candidate.workOrderId ?? '', $event)"
+                :disabled="!canEditPriority || Boolean(savingOrderId)"
+                :aria-label="`优先级 ${candidate.workOrderId}`"
+                :model-value="String(values(candidate).priority)"
+                @update:model-value="setPriority(candidate, $event)"
               />
             </td>
             <td class="p-2">
               <NvCheckbox
-                :model-value="byId.get(candidate.workOrderId ?? '')?.isRush ?? false"
-                :disabled="readOnly"
+                :model-value="values(candidate).isRush"
+                :disabled="!canEditPriority || Boolean(savingOrderId)"
                 :aria-label="`急单 ${candidate.workOrderId}`"
-                @update:model-value="
-                  emit('update', candidate.workOrderId ?? '', { isRush: Boolean($event) })
-                "
+                @update:model-value="edit(candidate, { isRush: Boolean($event) })"
               />
+            </td>
+            <td class="p-2">
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :aria-label="`保存工单 ${candidate.workOrderId} 急单与优先级`"
+                :disabled="
+                  !canEditPriority ||
+                  Boolean(savingOrderId) ||
+                  !edits.has(candidate.workOrderId ?? '')
+                "
+                :title="
+                  canEditPriority
+                    ? '保存后用于排程，刷新或重入仍保留'
+                    : '当前账号没有 MES 工单管理权限或管理范围未就绪'
+                "
+                @click="save(candidate)"
+                >{{ savingOrderId === candidate.workOrderId ? '保存中…' : '保存' }}</NvButton
+              >
             </td>
           </tr>
         </tbody>

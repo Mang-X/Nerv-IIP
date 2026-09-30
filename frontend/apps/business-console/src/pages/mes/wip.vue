@@ -44,7 +44,7 @@ const { page, pageSize } = usePagedList(filters, {
 })
 const statusFilter = shallowRef('all')
 const wipStatusOptions = mesOperationTaskStatusOptions.filter(
-  (option) => option.value !== 'completed' && option.value !== 'cancelled',
+  (option) => option.value !== 'Completed' && option.value !== 'Cancelled',
 )
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value

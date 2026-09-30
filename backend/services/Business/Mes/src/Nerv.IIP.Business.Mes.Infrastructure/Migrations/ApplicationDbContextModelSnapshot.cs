@@ -3236,6 +3236,13 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("hold_reason")
                         .HasComment("Reason code or text for holding the work order.");
 
+                    b.Property<bool>("IsRush")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_rush")
+                        .HasComment("Explicit rush work order flag; not inferred from business priority.");
+
                     b.Property<int>("MaterialMovementCount")
                         .HasColumnType("integer")
                         .HasColumnName("material_movement_count")
@@ -3274,7 +3281,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.Property<int>("Priority")
                         .HasColumnType("integer")
                         .HasColumnName("priority")
-                        .HasComment("Scheduling priority; rush work orders use a high priority value.");
+                        .HasComment("Business priority, independent of the rush work order flag.");
 
                     b.Property<string>("ProductionVersionId")
                         .HasMaxLength(100)
@@ -3408,6 +3415,78 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_work_orders_rework_source", "(work_order_type = 'standard' AND source_work_order_id IS NULL AND source_operation_task_id IS NULL AND source_defect_no IS NULL AND source_ncr_id IS NULL AND source_ncr_code IS NULL AND source_lot_no IS NULL AND source_serial_no IS NULL AND source_rework_requested_at_utc IS NULL) OR (work_order_type = 'rework' AND source_work_order_id IS NOT NULL AND source_defect_no IS NOT NULL AND source_ncr_id IS NOT NULL AND source_ncr_code IS NOT NULL AND source_rework_requested_at_utc IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_work_orders_version_positive", "version > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderDemandChangeAggregate.WorkOrderDemandChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("MES demand change marker identifier.");
+
+                    b.Property<bool>("Cancelled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("cancelled")
+                        .HasComment("Whether the latest source demand change cancelled the demand.");
+
+                    b.Property<string>("DemandSourceReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("demand_source_reference")
+                        .HasComment("Exact demand source reference pegged to the affected work order.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment that owns the affected work order.");
+
+                    b.Property<int>("OrderVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("order_version")
+                        .HasComment("Latest ERP sales order version applied to this demand marker; older events cannot overwrite it.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization that owns the affected work order.");
+
+                    b.Property<string>("SalesOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sales_order_id")
+                        .HasComment("ERP sales order public id carried by the demand change event.");
+
+                    b.Property<string>("SuggestionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("suggestion_id")
+                        .HasComment("DemandPlanning suggestion from which the MES work order was converted.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES business work order id affected by the source demand change.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "DemandSourceReference")
+                        .IsUnique()
+                        .HasDatabaseName("ux_work_order_demand_changes_scope_order_demand");
+
+                    b.ToTable("work_order_demand_changes", "mes", t =>
+                        {
+                            t.HasComment("Latest sales demand change fact for each MES work order and source demand reference.");
                         });
                 });
 
@@ -4426,6 +4505,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         {
                             b1.Property<Guid>("WorkOrderId")
                                 .HasColumnType("uuid");
+
+                            b1.PrimitiveCollection<string[]>("AssemblyParentSuggestionIds")
+                                .HasColumnType("text[]")
+                                .HasColumnName("assembly_parent_suggestion_ids")
+                                .HasComment("DemandPlanning parent suggestion ids resolved from component pegging; MES resolves their work order ids when both suggestions are accepted.");
 
                             b1.Property<string>("SourceDemandReference")
                                 .HasMaxLength(100)

@@ -4,6 +4,21 @@ import { toLockedAssignments, toModel } from './aps-mapper'
 import { conflictReasonLabel } from './labels'
 
 describe('toModel', () => {
+  it('preserves real schedule segments when locking an operation (#4004)', () => {
+    const segments = [
+      { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },
+      { startUtc: '2026-06-11T08:00:00Z', endUtc: '2026-06-11T10:00:00Z' },
+    ]
+    const model = toModel({
+      ...samplePlan,
+      assignments: [
+        { ...samplePlan.assignments![0], endUtc: segments[1]!.endUtc, segments, isLocked: true },
+      ],
+    })
+    expect(model.tasks.find((task) => task.id === 'a1')?.segments).toEqual(segments)
+    expect(toLockedAssignments(model)[0]?.segments).toEqual(segments)
+  })
+
   it('maps assignments to operation tasks with stable ids and grouping parents', () => {
     const m = toModel(samplePlan)
     const op = m.tasks.find((t) => t.id === 'a1')!
@@ -17,6 +32,61 @@ describe('toModel', () => {
   it('derives finish_to_start links from operationSequence within an order', () => {
     const m = toModel(samplePlan)
     expect(m.links).toEqual([{ id: 'a1->a2', source: 'a1', target: 'a2', type: 'finish_to_start' }])
+  })
+
+  it('links each assembly child completion to its parent first operation using assignment identities', () => {
+    const m = toModel({
+      ...samplePlan,
+      assignments: [
+        ...samplePlan.assignments!,
+        {
+          ...samplePlan.assignments![0],
+          assignmentId: 'parent-first',
+          orderId: 'WO-ASSEMBLY',
+          operationId: 'op-10',
+        },
+        {
+          ...samplePlan.assignments![1],
+          assignmentId: 'parent-last',
+          orderId: 'WO-ASSEMBLY',
+          operationId: 'op-20',
+        },
+      ].reverse(),
+      assemblyDependencies: [{ childOrderId: 'WO-001', parentOrderId: 'WO-ASSEMBLY' }],
+    })
+    expect(m.links).toContainEqual({
+      id: 'a2->parent-first',
+      source: 'a2',
+      target: 'parent-first',
+      type: 'finish_to_start',
+    })
+    expect(m.links).toHaveLength(3)
+  })
+
+  it('uses the child actual completion even when sequence order differs from finish order', () => {
+    const m = toModel({
+      ...samplePlan,
+      assignments: [
+        { ...samplePlan.assignments![0], endUtc: '2026-06-10T15:00:00.000Z' },
+        samplePlan.assignments![1]!,
+        { ...samplePlan.assignments![0], assignmentId: 'assembly', orderId: 'WO-ASSEMBLY' },
+      ],
+      assemblyDependencies: [{ childOrderId: 'WO-001', parentOrderId: 'WO-ASSEMBLY' }],
+    })
+    expect(m.links).toContainEqual({
+      id: 'a1->assembly',
+      source: 'a1',
+      target: 'assembly',
+      type: 'finish_to_start',
+    })
+  })
+
+  it('does not draw a dependency to an unscheduled assembly parent', () => {
+    const m = toModel({
+      ...samplePlan,
+      assemblyDependencies: [{ childOrderId: 'WO-001', parentOrderId: 'WO-ASSEMBLY' }],
+    })
+    expect(m.links).toEqual(toModel(samplePlan).links)
   })
 
   it('flags conflicts onto their tasks and carries taskId', () => {

@@ -360,6 +360,53 @@ public sealed class BusinessMesAcceptedReceiptClientTests
         Assert.Equal(referenceId, response.DownstreamDocumentId);
     }
 
+    // #4034 PublicContract: MES 的急单与优先级事实必须在 Gateway 读回时保留。
+    [Fact]
+    public async Task Work_order_detail_preserves_rush_and_priority_from_mes()
+    {
+        var client = ClientReturning("""{"data":{"workOrderId":"WO-001","skuId":"SKU-001","quantity":10,"status":"Released","readinessStatus":"Ready","blockingReasons":[],"operationTasks":[],"isRush":true,"priority":-7}}""");
+        var detail = await client.GetWorkOrderDetailAsync("token", "WO-001", new("org", "env"), CancellationToken.None);
+        var json = JsonSerializer.SerializeToElement(detail, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.True(json.GetProperty("isRush").GetBoolean());
+        Assert.Equal(-7, json.GetProperty("priority").GetInt32());
+    }
+
+    [Fact]
+    public async Task Priority_write_maps_mes_receipt_and_preserves_the_request_values()
+    {
+        string? body = null;
+        var client = ClientReturning(AcceptedJson("WO-001"), capturedBody: value => body = value);
+        var response = await client.AdjustWorkOrderPriorityAsync("token", "WO-001",
+            new("WO-001", "org", "env", true, -7, null), CancellationToken.None);
+        Assert.True(response.Accepted);
+        Assert.Equal("WorkOrder", response.DownstreamDocumentType);
+        Assert.Equal("WO-001", response.DownstreamDocumentId);
+        using var document = JsonDocument.Parse(body!);
+        Assert.True(document.RootElement.GetProperty("isRush").GetBoolean());
+        Assert.Equal(-7, document.RootElement.GetProperty("priority").GetInt32());
+    }
+
+    [Fact]
+    public async Task Work_order_list_preserves_rush_and_priority_from_mes()
+    {
+        var client = ClientReturning("""{"data":{"items":[{"workOrderId":"WO-001","skuId":"SKU-001","quantity":10,"status":"Released","dueUtc":"2026-10-01T00:00:00Z","operationTasks":[],"isRush":true,"priority":-7}],"total":1}}""");
+        var list = await client.ListWorkOrdersAsync("token", new("org", "env"), CancellationToken.None);
+        Assert.True(list.Items.Single().IsRush);
+        Assert.Equal(-7, list.Items.Single().Priority);
+    }
+
+    // #4079 PublicContract: 完成量属于 MES 权威事实，Gateway 列表读取与公开响应必须保留原值。
+    [Fact]
+    public async Task Work_order_list_preserves_completed_quantity_from_mes()
+    {
+        var client = ClientReturning("""{"data":{"items":[{"workOrderId":"WO-001","skuId":"SKU-001","quantity":10,"completedQuantity":3.25,"status":"Released","dueUtc":"2026-10-01T00:00:00Z","operationTasks":[],"priority":0}],"total":1}}""");
+
+        var list = await client.ListWorkOrdersAsync("token", new("org", "env"), CancellationToken.None);
+        var json = JsonSerializer.SerializeToElement(list.Items.Single(), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(3.25m, json.GetProperty("completedQuantity").GetDecimal());
+    }
+
     private static string AcceptedJson(string referenceId, string status = "Accepted") =>
         "{\"data\":{\"status\":\"" + status + "\",\"referenceId\":\"" + referenceId + "\",\"acceptedAtUtc\":\"2026-07-31T08:00:00Z\"}}";
 

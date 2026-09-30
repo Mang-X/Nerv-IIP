@@ -74,7 +74,9 @@ test('报工扫码只采用当前 pair 的服务端预校验，并显示过期�
             requestedQuantity: 5,
             receivedQuantity: 5,
             consumedQuantity: 0,
-            status: 'received',
+            // #3912：领料单状态运行时是 PascalCase，小写 `received` 会让
+            // isAvailableMaterialLot 判否、可选批次恒为空（下面的 toBeChecked 就会红）。
+            status: 'Received',
           },
         ],
         total: 1,

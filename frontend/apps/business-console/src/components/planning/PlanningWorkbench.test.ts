@@ -3,436 +3,18 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
+import { planningSpies, routerPush } from './planningWorkbenchTestFixture'
 import PlanningWorkbench from './PlanningWorkbench.vue'
 import { useAuthStore } from '@/stores/auth'
-
-vi.mock('@/composables/useOrderUrgency', () => ({
-  useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
-}))
-// 图表面板依赖真实 NvBarChart（unovis），工作台测试只关心装配，桩掉即可。
-vi.mock('@/components/planning/PlanningTimePhasedPanel.vue', () => ({
-  default: {
-    props: [
-      'demands',
-      'mpsBuckets',
-      'suggestions',
-      'suggestionRunId',
-      'suggestionRunLabel',
-      'pending',
-      'errorMessage',
-      'skuLabel',
-    ],
-    template: '<div data-testid="time-phased-panel" :data-run-id="suggestionRunId" />',
-  },
-}))
-vi.mock('@/components/planning/PlanningRunSuggestionChart.vue', () => ({
-  default: {
-    props: ['run', 'suggestions', 'pending'],
-    template: '<div data-testid="run-suggestion-chart" :data-run-id="run?.runId" />',
-  },
-}))
-vi.mock('@/components/planning/PlanningForecastManagement.vue', () => ({
-  default: { template: '<div data-testid="forecast-management" />' },
-}))
-// 物料选择器的取数与就地新增由 DirectoryPicker 自己的测试覆盖。
-vi.mock('@/components/business/DirectoryPicker.vue', () => ({
-  default: { props: ['modelValue'], template: '<input readonly :value="modelValue" />' },
-}))
-vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
-  default: {
-    props: ['orderReference', 'mode', 'urgency'],
-    template:
-      '<span data-testid="order-urgency" :data-ref="orderReference" :data-mode="mode">未计算</span>',
-  },
-}))
-
-const routerPush = vi.hoisted(() => vi.fn())
-const planningSpies = vi.hoisted(() => ({
-  // 需求池刷新后"某类需求整类消失"要能在用例里复现 → 把 demands 的 ref 交出来供测试改写。
-  demandsRef: null as { value: Array<Record<string, unknown>> } | null,
-  mpsBucketsRef: null as { value: Array<Record<string, unknown>> } | null,
-  resetDemands: () => {},
-  runMrp: vi.fn(async () => undefined),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastWarning: vi.fn(),
-  // #1306 异步跟踪状态：mock 工厂里包成 reactive，测试直接改字段驱动 watch。
-  activeMrpRun: {
-    runId: '',
-    status: '' as string,
-    failureReason: '',
-    suggestionCount: null as number | null,
-  },
-}))
-
-vi.mock('@/composables/useBusinessPlanning', async () => {
-  const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
-  planningSpies.activeMrpRun = reactive(planningSpies.activeMrpRun)
-  const DEFAULT_DEMANDS = [
-    {
-      demandSourceId: 'demand-001',
-      sourceReference: 'SO-DEMO-001',
-      sourceLineReference: '10',
-      customerCode: 'CUST-001',
-      sourceVersion: 3,
-      sourceStatus: 'active',
-      demandType: 'sales-order',
-      skuCode: 'SKU-FG-1000',
-      uomCode: 'pcs',
-      siteCode: 'SITE-01',
-      quantity: 2,
-      dueDate: '2026-08-15',
-    },
-    // 第二条走预测来源：需求池筛选（关键字 / 类型）要能把两条真的分开。
-    {
-      demandSourceId: 'demand-002',
-      sourceReference: 'FC-2026-08-A',
-      sourceLineReference: '20',
-      customerCode: 'CUST-002',
-      sourceVersion: 1,
-      sourceStatus: 'active',
-      demandType: 'forecast',
-      skuCode: 'SKU-FG-2000',
-      uomCode: 'pcs',
-      siteCode: 'SITE-01',
-      quantity: 8,
-      dueDate: '2026-08-20',
-    },
-  ]
-  const demandsRef = shallowRef([...DEFAULT_DEMANDS])
-  planningSpies.demandsRef = demandsRef as unknown as {
-    value: Array<Record<string, unknown>>
-  }
-  planningSpies.resetDemands = () => {
-    demandsRef.value = [...DEFAULT_DEMANDS]
-  }
-  return {
-    SUGGESTION_REJECT_REASON_MAX_LENGTH: 128,
-    useBusinessPlanning: () => ({
-      activeMrpRun: planningSpies.activeMrpRun,
-      acceptSuggestion: vi.fn(),
-      acceptSuggestionError: shallowRef(null),
-      acceptSuggestionPending: shallowRef(false),
-      createMpsBucket: vi.fn(),
-      createMpsBucketError: shallowRef(null),
-      createMpsBucketPending: shallowRef(false),
-      createDemandError: shallowRef(null),
-      createDemandPending: shallowRef(false),
-      createOrUpdateDemand: vi.fn(),
-      demandForm: reactive({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        demandType: 'forecast',
-        sourceReference: '',
-        skuCode: '',
-        uomCode: '',
-        siteCode: '',
-        quantity: 0,
-        dueDate: '2026-06-01',
-        idempotencyKey: '',
-      }),
-      demands: demandsRef,
-      demandsError: shallowRef(null),
-      demandsPending: shallowRef(false),
-      mrpRuns: shallowRef([
-        {
-          runId: 'run-001',
-          horizonStart: '2026-06-01',
-          horizonEnd: '2026-06-30',
-          status: 'Completed',
-          demandCount: 1,
-          availabilityCount: 1,
-          suggestionCount: 1,
-          hasInputDegradation: false,
-          inputDegradationSources: [],
-        },
-      ]),
-      mrpRunsError: shallowRef(null),
-      mrpRunsPending: shallowRef(false),
-      mpsBuckets: (planningSpies.mpsBucketsRef = shallowRef([])),
-      mpsBucketsError: shallowRef(null),
-      mpsBucketsPending: shallowRef(false),
-      mpsForm: reactive({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        skuCode: '',
-        uomCode: '',
-        siteCode: '',
-        bucketDate: '2026-06-01',
-        quantity: 0,
-      }),
-      releaseMpsBucket: vi.fn(),
-      releaseMpsBucketError: shallowRef(null),
-      releaseMpsBucketPending: shallowRef(false),
-      reviewMpsBucket: vi.fn(),
-      reviewMpsBucketError: shallowRef(null),
-      reviewMpsBucketPending: shallowRef(false),
-      pegging: shallowRef([
-        {
-          suggestionId: 'suggestion-001',
-          peggingType: 'demand',
-          demandSourceReference: 'SO-1001',
-          sourceType: 'sales',
-          parentSkuCode: 'FG-SHOCK',
-          componentSkuCode: null,
-          quantity: 10,
-          grossDemandQuantity: 10,
-          productionVersionReference: 'PV-FG',
-          manufacturingBomReference: 'MBOM-FG:001',
-          routingReference: 'ROUTING-FG',
-        },
-      ]),
-      peggingPending: shallowRef(false),
-      refreshPlanning: vi.fn(),
-      rejectSuggestion: vi.fn(),
-      rejectSuggestionError: shallowRef(null),
-      rejectSuggestionPending: shallowRef(false),
-      runMrp: planningSpies.runMrp,
-      runMrpError: shallowRef(null),
-      runMrpPending: shallowRef(false),
-      runRequest: reactive({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        horizonStart: '2026-06-01',
-        horizonEnd: '2026-06-30',
-      }),
-      runSelection: reactive({ runId: 'run-001' }),
-      suggestionFilters: reactive({
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        status: 'open',
-      }),
-      suggestionTypeFilter: reactive({ type: 'all' }),
-      suggestions: shallowRef([
-        {
-          suggestionId: 'suggestion-001',
-          runId: 'run-001',
-          suggestionType: 'planned-work-order',
-          skuCode: 'FG-SHOCK',
-          uomCode: 'pcs',
-          siteCode: 'SITE-01',
-          quantity: 4,
-          requiredDate: '2026-06-01',
-          status: 'Open',
-          reasonCode: 'net-requirement',
-          netRequirementExplanation: {
-            grossDemandQuantity: 10,
-            onHandQuantity: 8,
-            reservedQuantity: 0,
-            availableToNetQuantity: 6,
-            scheduledReceiptQuantity: 0,
-            safetyStockQuantity: 2,
-            netRequirementQuantity: 4,
-            plannedQuantity: 4,
-            scrapRate: 0,
-            yieldRate: 1,
-            primarySourceType: 'demand',
-            formula: '10 - 6 - 0 = 4',
-            degradationSources: [],
-          },
-        },
-        {
-          suggestionId: 'suggestion-002',
-          runId: 'run-001',
-          suggestionType: 'planned-purchase',
-          skuCode: 'RM-SHOCK',
-          uomCode: 'pcs',
-          siteCode: 'SITE-01',
-          quantity: 27.5,
-          requiredDate: '2026-06-01',
-          status: 'Open',
-          reasonCode: 'component-net-requirement',
-          netRequirementExplanation: {
-            grossDemandQuantity: 27.5,
-            onHandQuantity: 0,
-            reservedQuantity: 0,
-            availableToNetQuantity: 0,
-            scheduledReceiptQuantity: 0,
-            safetyStockQuantity: 0,
-            netRequirementQuantity: 27.5,
-            plannedQuantity: 27.5,
-            scrapRate: 0.1,
-            yieldRate: 0.8,
-            primarySourceType: 'component',
-            formula: '27.5 - 0 - 0 = 27.5; scrap/yield 0.1/0.8',
-            degradationSources: [],
-          },
-        },
-        {
-          suggestionId: 'suggestion-003',
-          runId: 'run-001',
-          suggestionType: 'reschedule-out',
-          skuCode: 'FG-SHOCK',
-          uomCode: 'pcs',
-          siteCode: 'SITE-01',
-          quantity: 8,
-          requiredDate: '2026-06-20',
-          status: 'Open',
-          reasonCode: 'scheduled-receipt-early',
-          netRequirementExplanation: null,
-        },
-        {
-          // 已接受并承接成 MES 工单的生产建议：这一行才有可排的单（MAN-694 / #1262）。
-          suggestionId: 'suggestion-004',
-          runId: 'run-001',
-          suggestionType: 'planned-work-order',
-          skuCode: 'FG-SHOCK',
-          uomCode: 'pcs',
-          siteCode: 'SITE-01',
-          quantity: 4,
-          requiredDate: '2026-06-05',
-          status: 'Accepted',
-          reasonCode: 'net-requirement',
-          netRequirementExplanation: null,
-          // 故意用**种子实际写入**的 kebab 口径（WorldHistorySeedService：`business-mes`），
-          // 不用前端接受建议时写的 `BusinessMes`。夹具原来用后者，于是这条用例一直绿，
-          // 而真机上「对该单排产」一个按钮都不渲染（第五轮走查实测）。
-          // 两个生产者写法不一，读侧必须都认——夹具就该盯着更容易漏的那一边。
-          downstreamService: 'business-mes',
-          downstreamDocumentType: 'work-order',
-          downstreamDocumentId: 'WO-2026-0007',
-        },
-      ]),
-      suggestionsError: shallowRef(null),
-      suggestionsPending: shallowRef(false),
-    }),
-  }
-})
-
-vi.mock('@/composables/useBusinessMasterData', async () => {
-  const { shallowRef } = await vi.importActual<typeof import('vue')>('vue')
-  return {
-    useBusinessMasterDataResources: (resourceType: string) => ({
-      filters: {},
-      resources: shallowRef(
-        resourceType === 'worker'
-          ? [{ userId: 'user-emp-zhangwei', code: 'EMP-0001', displayName: '张伟' }]
-          : [],
-      ),
-    }),
-    useBusinessSkus: () => ({ skus: shallowRef([]) }),
-  }
-})
-
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: routerPush }),
-}))
-
-// 反馈走真实分层透传（notifyOperationFailure / inlineErrorMessage），只把 toast 换成 spy。
-vi.mock('@/utils/notify', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/utils/notify')>()),
-  notifyError: vi.fn(),
-}))
-
-vi.mock('@nerv-iip/ui', async () => {
-  const { defineComponent, h, inject, provide } = await vi.importActual<typeof import('vue')>('vue')
-  // 下拉要能真的选中一项（需求池类型筛选用例靠它）：Root 负责回传值，Item 渲染成可点按钮。
-  const SELECT_SETTER = Symbol.for('nv-select-setter')
-  const Select = defineComponent({
-    props: { modelValue: { type: String, default: '' } },
-    emits: ['update:modelValue'],
-    setup(_props, { emit, slots }) {
-      provide(SELECT_SETTER, (value: string) => emit('update:modelValue', value))
-      return () => h('div', slots.default?.())
-    },
-  })
-  const SelectItem = defineComponent({
-    props: { value: { type: String, default: '' } },
-    setup(props, { slots }) {
-      const setValue = inject<(value: string) => void>(SELECT_SETTER, () => {})
-      return () =>
-        h(
-          'button',
-          {
-            type: 'button',
-            'data-select-value': props.value,
-            onClick: () => setValue(props.value),
-          },
-          slots.default?.(),
-        )
-    },
-  })
-  const Shell = defineComponent({ template: '<div><slot /><slot name="actions" /></div>' })
-  const Button = defineComponent({
-    emits: ['click'],
-    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
-  })
-  const DataTable = defineComponent({
-    props: {
-      columns: { type: Array, default: () => [] },
-      rows: { type: Array, default: () => [] },
-    },
-    setup(props, { slots }) {
-      return () =>
-        h(
-          'div',
-          props.rows.flatMap((row: any) =>
-            props.columns.map((column: any) => {
-              const slot = slots[`cell-${column.key}`]
-              return h(
-                'div',
-                { class: `cell-${column.key}` },
-                slot ? slot({ row }) : String(row[column.key] ?? ''),
-              )
-            }),
-          ),
-        )
-    },
-  })
-
-  // 工具条要真能收关键字并把 filters / actions 插槽渲染出来，否则筛选用例测不到东西。
-  const Toolbar = defineComponent({
-    props: {
-      search: { type: String, default: '' },
-      searchLabel: { type: String, default: '搜索' },
-    },
-    emits: ['update:search'],
-    template:
-      '<div><input :aria-label="searchLabel" :value="search" @input="$emit(\'update:search\', $event.target.value)" /><slot name="filters" /><slot name="actions" /></div>',
-  })
-
-  return {
-    toast: {
-      error: (...args: unknown[]) => planningSpies.toastError(...args),
-      success: (...args: unknown[]) => planningSpies.toastSuccess(...args),
-      warning: (...args: unknown[]) => planningSpies.toastWarning(...args),
-    },
-    NvButton: Button,
-    NvDataTable: DataTable,
-    NvDatePicker: Shell,
-    NvDialog: Shell,
-    NvDialogContent: Shell,
-    NvDialogDescription: Shell,
-    NvDialogFooter: Shell,
-    NvDialogHeader: Shell,
-    NvDialogTitle: Shell,
-    NvDialogTrigger: Shell,
-    NvField: Shell,
-    NvFieldGroup: Shell,
-    NvFieldLabel: Shell,
-    NvInput: Shell,
-    NvMetricCard: Shell,
-    NvPageHeader: Shell,
-    NvSelect: Select,
-    NvSelectContent: Shell,
-    NvSelectItem: SelectItem,
-    NvSelectTrigger: Shell,
-    NvSelectValue: Shell,
-    Spinner: Shell,
-    NvStatusBadge: defineComponent({ props: ['label'], template: '<span>{{ label }}</span>' }),
-    NvTabs: Shell,
-    NvTabsContent: Shell,
-    NvTabsList: Shell,
-    NvTabsTrigger: Shell,
-    NvToolbar: Toolbar,
-  }
-})
 
 describe('PlanningWorkbench', () => {
   // 计划建议行的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
   beforeEach(() => {
     setActivePinia(createPinia())
     planningSpies.runMrp = vi.fn(async () => undefined)
+    planningSpies.acceptSuggestion.mockReset()
+    planningSpies.cancelDemand.mockReset()
+    routerPush.mockReset()
     planningSpies.toastError.mockReset()
     planningSpies.toastSuccess.mockReset()
     planningSpies.toastWarning.mockReset()
@@ -441,6 +23,287 @@ describe('PlanningWorkbench', () => {
     planningSpies.activeMrpRun.failureReason = ''
     planningSpies.activeMrpRun.suggestionCount = null
     planningSpies.resetDemands()
+  })
+
+  it('作废手工需求后保留页面追溯入口', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    await wrapper
+      .findAll('.cell-actions button')
+      .find((button) => button.text() === '作废')!
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '确认作废')!
+      .trigger('click')
+    await flushPromises()
+    expect(planningSpies.cancelDemand).toHaveBeenCalledWith('demand-002')
+  })
+
+  it('pegging 与建议行页内互定位并显示承接单据状态', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.peggingRef!.value = [
+      ...planningSpies.peggingRef!.value,
+      { suggestionId: 'suggestion-002', demandSourceReference: 'SO-OTHER', peggingType: 'demand' },
+    ]
+    await nextTick()
+    expect(wrapper.text()).toContain('已下达')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '定位建议')!
+      .trigger('click')
+    const focusedSuggestion = wrapper.findAll('.cell-skuCode.bg-primary\\/10')
+    expect(focusedSuggestion).toHaveLength(1)
+    expect(focusedSuggestion[0]!.text()).toContain('FG-SHOCK')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '定位追溯')!
+      .trigger('click')
+    expect(
+      wrapper.findAll('.cell-demandSourceReference.bg-primary\\/10').map((cell) => cell.text()),
+    ).toEqual(expect.arrayContaining(['SO-1001']))
+    expect(wrapper.findAll('.cell-demandSourceReference.bg-primary\\/10')).toHaveLength(1)
+  })
+
+  it('建议被状态筛选暂时隐藏时从 pegging 仍可定位', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = planningSpies.suggestionsRef!.value.filter(
+      (row) => row.suggestionId !== 'suggestion-001',
+    )
+    planningSpies.suggestionFiltersRef!.status = 'open'
+    await nextTick()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '定位建议')!
+      .trigger('click')
+    expect(planningSpies.suggestionFiltersRef!.status).toBe('all')
+    planningSpies.suggestionsRef!.value = [
+      ...planningSpies.suggestionsRef!.value,
+      { suggestionId: 'suggestion-001', runId: 'run-001', skuCode: 'FG-SHOCK', status: 'Accepted' },
+    ]
+    await nextTick()
+    const focusedSuggestion = wrapper.findAll('.cell-skuCode.bg-primary\\/10')
+    expect(focusedSuggestion).toHaveLength(1)
+    expect(focusedSuggestion[0]!.text()).toContain('FG-SHOCK')
+  })
+
+  it('只在最近完成的 MRP 有后续需求变更时显示过期横幅', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'retrying', status: 'Running', demandChangeCount: 9 },
+      { runId: 'completed', status: 'Completed', demandChangeCount: 3 },
+      { runId: 'older', status: 'Completed', demandChangeCount: 7 },
+    ]
+    await nextTick()
+    expect(wrapper.get('[role="alert"]').text()).toContain('MRP 结果已过期（3 条需求变更）')
+
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'completed', status: 'Completed', demandChangeCount: 0 },
+    ]
+    await nextTick()
+    expect(wrapper.text()).not.toContain('MRP 结果已过期')
+
+    planningSpies.mrpRunsRef!.value = [{ runId: 'running', status: 'Running' }]
+    await nextTick()
+    expect(wrapper.text()).not.toContain('MRP 结果已过期')
+  })
+
+  it('窗外需求保留在需求池，但不算本次 MRP 的已覆盖需求', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-newer',
+        status: 'Completed',
+        horizonStart: '2026-07-01',
+        horizonEnd: '2026-07-31',
+      },
+      {
+        runId: 'run-001',
+        status: 'Completed',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      },
+    ]
+    planningSpies.demandsRef!.value = [
+      { ...planningSpies.demandsRef!.value[0], dueDate: '2026-06-30' },
+      { ...planningSpies.demandsRef!.value[1], dueDate: '2026-07-01' },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      {
+        runId: 'run-001',
+        skuCode: 'SKU-FG-1000',
+        suggestionType: 'planned-work-order',
+        status: 'Open',
+      },
+    ]
+    await nextTick()
+
+    expect(wrapper.text()).toContain('SO-DEMO-001')
+    expect(wrapper.text()).toContain('FC-2026-08-A')
+    expect(
+      wrapper
+        .findAll('.cell-coverage')
+        .slice(0, 2)
+        .map((cell) => cell.text()),
+    ).toEqual(['已生成建议', '窗外'])
+    expect(wrapper.get('[label="需求覆盖率"]').attributes('value')).toBe('100')
+
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'run-running', status: 'Running', horizonEnd: '2026-07-31' },
+      { runId: 'run-001', status: 'Completed', horizonEnd: '2026-06-30' },
+    ]
+    await nextTick()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '查看追溯')!
+      .trigger('click')
+    expect(wrapper.get('[label="需求覆盖率"]').attributes('value')).toBe('100')
+    expect(wrapper.get('[data-testid="time-phased-panel"]').attributes('data-run-id')).toBe(
+      'run-001',
+    )
+    expect(
+      wrapper
+        .findAll('.cell-coverage')
+        .slice(0, 2)
+        .map((cell) => cell.text()),
+    ).toEqual(['已生成建议', '窗外'])
+  })
+
+  it('建议页默认按运行顺序显示最近完成批次，切换历史后显示作废与继任关系', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-running',
+        status: 'Running',
+        horizonStart: '2026-05-01',
+        horizonEnd: '2026-05-31',
+      },
+      {
+        runId: 'run-new',
+        status: 'Completed',
+        horizonStart: '2026-04-01',
+        horizonEnd: '2026-04-30',
+      },
+      {
+        runId: 'run-old',
+        status: 'Completed',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'new-1',
+        runId: 'run-new',
+        suggestionType: 'planned-work-order',
+        skuCode: 'SKU-NEW',
+        status: 'Open',
+      },
+      {
+        suggestionId: 'old-1',
+        runId: 'run-old',
+        suggestionType: 'planned-work-order',
+        skuCode: 'SKU-OLD',
+        status: 'Superseded',
+        supersededByRunId: 'run-new',
+      },
+      {
+        suggestionId: 'old-2',
+        runId: 'run-old',
+        suggestionType: 'planned-purchase',
+        skuCode: 'SKU-ACCEPTED',
+        status: 'Accepted',
+      },
+      {
+        suggestionId: 'old-3',
+        runId: 'run-old',
+        suggestionType: 'planned-purchase',
+        skuCode: 'SKU-REJECTED',
+        status: 'Rejected',
+      },
+    ]
+    await nextTick()
+
+    expect(wrapper.get('[data-select-value="run-new"]').text()).toContain('2026-04-01')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).toContain('SKU-NEW')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).not.toContain('SKU-OLD')
+
+    await wrapper.get('[data-select-value="run-old"]').trigger('click')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).toContain('SKU-OLD')
+    expect(
+      wrapper
+        .findAll('.cell-skuCode')
+        .map((cell) => cell.text())
+        .join(' '),
+    ).not.toContain('SKU-NEW')
+    expect(wrapper.text()).toContain('已被替代')
+    expect(wrapper.text()).toContain('2026-04-01')
+    const supersededRow = wrapper
+      .findAll('.cell-skuCode')
+      .find((cell) => cell.text().includes('SKU-OLD'))!.element.parentElement!
+    const supersededActions = supersededRow.querySelector('.cell-actions')!
+    expect(supersededActions.textContent).not.toContain('接受')
+    expect(supersededActions.textContent).not.toContain('拒绝')
+    expect(supersededActions.querySelectorAll('button')).toHaveLength(1)
+    expect(supersededActions.textContent).toContain('定位追溯')
+    expect(wrapper.text()).toContain('SKU-ACCEPTED')
+    expect(wrapper.text()).toContain('SKU-REJECTED')
+  })
+
+  it('建议先于运行列表刷新时不显示错误的继任运行标签', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'old-1',
+        runId: 'run-001',
+        suggestionType: 'planned-work-order',
+        skuCode: 'SKU-OLD',
+        status: 'Superseded',
+        supersededByRunId: 'run-new',
+      },
+    ]
+    await nextTick()
+
+    const row = wrapper.findAll('.cell-skuCode').find((cell) => cell.text().includes('SKU-OLD'))!
+      .element.parentElement!
+    expect(row.querySelector('.cell-status')?.textContent).toContain('后续 MRP 运行')
+    expect(row.querySelector('.cell-status')?.textContent).not.toContain('选择一次运行')
+
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-new',
+        status: 'Completed',
+        horizonStart: '2026-07-01',
+        horizonEnd: '2026-07-31',
+      },
+      {
+        runId: 'run-001',
+        status: 'Completed',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      },
+    ]
+    await nextTick()
+    await wrapper.get('[data-select-value="run-001"]').trigger('click')
+    const refreshedRow = wrapper
+      .findAll('.cell-skuCode')
+      .find((cell) => cell.text().includes('SKU-OLD'))!.element.parentElement!
+    expect(refreshedRow.querySelector('.cell-status')?.textContent).toContain('2026-07-01')
   })
 
   it('MPS 评审人 / 发布人显示员工姓名，名录里查不到的账号显示「—」', async () => {
@@ -462,6 +325,39 @@ describe('PlanningWorkbench', () => {
     expect(text).toContain('评审 张伟')
     expect(text).toContain('发布 —')
     expect(text).not.toContain('user-')
+  })
+
+  it('编辑草稿主计划行后保存更新同一行', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mpsBucketsRef!.value = [
+      {
+        mpsId: 'mps-001',
+        skuCode: 'SKU-FG-1000',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        bucketDate: '2026-06-15',
+        quantity: 10,
+        status: 'Draft',
+      },
+    ]
+    await flushPromises()
+
+    await wrapper.get('[aria-label="编辑主计划行 SKU-FG-1000"]').trigger('click')
+    expect(wrapper.text()).toContain('编辑主计划行')
+    expect(planningSpies.mpsFormRef!.quantity).toBe(10)
+    await wrapper.get('#mps-qty').setValue('12')
+    expect(planningSpies.mpsFormRef!.quantity).toBe(12)
+    const submittedQuantities: number[] = []
+    planningSpies.updateMpsBucket.mockImplementationOnce(async () => {
+      submittedQuantities.push(planningSpies.mpsFormRef!.quantity)
+    })
+    await wrapper
+      .findAll('form')
+      .find((form) => form.find('#mps-qty').exists())!
+      .trigger('submit')
+
+    expect(planningSpies.updateMpsBucket).toHaveBeenCalledWith('mps-001')
+    expect(submittedQuantities).toEqual([12])
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
@@ -568,14 +464,139 @@ describe('PlanningWorkbench', () => {
     )
   })
 
-  it('renders MRP exception suggestions as non-acceptance workbench rows', () => {
+  it('allows accepting scheduled receipt changes while keeping unrelated exceptions pending', () => {
     const wrapper = mount(PlanningWorkbench)
 
     expect(wrapper.text()).toContain('延期调整')
-    expect(wrapper.text()).toContain('异常待处理')
-    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(2)
+    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(3)
     // 拒绝对所有 Open 建议可用（含异常类），3 条 Open 行各一个。
     expect(wrapper.findAll('button').filter((button) => button.text() === '拒绝')).toHaveLength(3)
+  })
+
+  it('requires explicit confirmation before cancelling a scheduled receipt', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'cancel-001',
+        runId: 'run-001',
+        suggestionType: 'cancel',
+        skuCode: 'SKU-001',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        quantity: 2,
+        requiredDate: '2026-06-20',
+        status: 'Open',
+        reasonCode: 'scheduled-receipt-unneeded',
+        netRequirementExplanation: null,
+      },
+    ]
+    await nextTick()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '接受')!
+      .trigger('click')
+    expect(planningSpies.acceptSuggestion).not.toHaveBeenCalled()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '返回')!
+      .trigger('click')
+    expect(planningSpies.acceptSuggestion).not.toHaveBeenCalled()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '接受')!
+      .trigger('click')
+    planningSpies.acceptSuggestion.mockResolvedValue({
+      data: {
+        downstreamService: 'BusinessMes',
+        downstreamDocumentType: 'WorkOrder',
+        downstreamDocumentId: 'WO-001',
+      },
+    })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '确认取消并接受')!
+      .trigger('click')
+    await flushPromises()
+    expect(planningSpies.acceptSuggestion).toHaveBeenCalledOnce()
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
+  it('shows release, availability and overdue receipt exceptions in business language', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'release',
+        runId: 'run-001',
+        suggestionType: 'release-date-past',
+        skuCode: 'FG-SHOCK',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        quantity: 4,
+        requiredDate: '2026-06-01',
+        status: 'Open',
+        reasonCode: 'lead-time-insufficient',
+      },
+      {
+        suggestionId: 'negative',
+        runId: 'run-001',
+        suggestionType: 'negative-availability',
+        skuCode: 'RM-SHOCK',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        quantity: 3,
+        requiredDate: '2026-06-01',
+        status: 'Open',
+        reasonCode: 'negative-availability',
+        netRequirementExplanation: {
+          formula: '可用量 -3 低于 0',
+          primarySourceType: 'negative-availability',
+        },
+      },
+      {
+        suggestionId: 'overdue',
+        runId: 'run-001',
+        suggestionType: 'overdue-receipt',
+        skuCode: 'RM-SHOCK',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        quantity: 5,
+        requiredDate: '2026-06-01',
+        status: 'Open',
+        reasonCode: 'scheduled-receipt-overdue',
+        netRequirementExplanation: {
+          formula: '在途 5 应于 2026-05-20 到货，已早于计划开始日 2026-05-25',
+          primarySourceType: 'scheduled-receipt',
+        },
+      },
+      {
+        suggestionId: 'safety',
+        runId: 'run-001',
+        suggestionType: 'planned-purchase',
+        skuCode: 'RM-SHOCK',
+        uomCode: 'pcs',
+        siteCode: 'SITE-01',
+        quantity: 2,
+        requiredDate: '2026-06-30',
+        status: 'Open',
+        reasonCode: 'safety-stock-replenishment',
+      },
+    ]
+    await nextTick()
+
+    const typeLabels = wrapper.findAll('.cell-suggestionType').map((cell) => cell.text())
+    expect(typeLabels).toContain('释放日已过')
+    expect(typeLabels).toContain('负可用')
+    expect(typeLabels).toContain('超期在途')
+    expect(wrapper.text()).toContain('提前期不足')
+    expect(wrapper.text()).toContain('可用量 -3 低于 0')
+    expect(wrapper.text()).toContain('负可用来源')
+    expect(wrapper.text()).toContain('在途 5 应于 2026-05-20 到货')
+    expect(wrapper.text()).toContain('例外说明')
+    expect(wrapper.text()).toContain('安全库存低于下限，建议补货')
+    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(1)
   })
 
   it('已承接成 MES 工单的建议行给出「对该单排产」入口（MAN-694 / #1262）', () => {
@@ -666,16 +687,38 @@ describe('PlanningWorkbench', () => {
     expect(planningSpies.toastSuccess).toHaveBeenCalledWith('MRP 计算完成，共生成 5 条计划建议。')
   })
 
+  it('MRP 自动重试期间不报最终失败，重试成功只通知完成', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.activeMrpRun.runId = 'run-retrying'
+    planningSpies.activeMrpRun.status = 'running'
+    await wrapper.vm.$nextTick()
+    expect(planningSpies.toastError).not.toHaveBeenCalled()
+
+    planningSpies.activeMrpRun.status = 'completed'
+    planningSpies.activeMrpRun.suggestionCount = 2
+    await wrapper.vm.$nextTick()
+    expect(planningSpies.toastSuccess).toHaveBeenCalledWith('MRP 计算完成，共生成 2 条计划建议。')
+    expect(planningSpies.toastError).not.toHaveBeenCalled()
+  })
+
   it('轮询到失败态时把 failureReason 走分层透传上屏', async () => {
     const wrapper = mount(PlanningWorkbench)
 
     planningSpies.activeMrpRun.runId = 'run-async-1'
     planningSpies.activeMrpRun.failureReason = 'MRP 计算失败：上游库存快照不可用。'
+    planningSpies.mrpRunsRef!.value = [
+      {
+        runId: 'run-async-1',
+        status: 'Failed',
+        failureReason: planningSpies.activeMrpRun.failureReason,
+      },
+    ]
     planningSpies.activeMrpRun.status = 'failed'
     await wrapper.vm.$nextTick()
 
     // 后端前缀被去重：不出现「MRP 计算失败：MRP 计算失败：…」的叠层。
     expect(planningSpies.toastError).toHaveBeenCalledWith('MRP 计算失败：上游库存快照不可用。')
+    expect(wrapper.find('.cell-status').text()).toContain('MRP 计算失败：上游库存快照不可用。')
   })
 
   it('轮询超时只提醒去运行列表回看，不按失败处理', async () => {

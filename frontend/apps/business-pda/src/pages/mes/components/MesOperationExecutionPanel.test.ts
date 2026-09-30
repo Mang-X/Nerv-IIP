@@ -13,7 +13,7 @@ const task: BusinessConsoleMesOperationTaskRow = {
   workOrderNo: 'MO-2026-0042',
   operationTaskNo: undefined,
   operationCode: 'OP-STANDARD-20',
-  status: 'queued',
+  status: 'Queued',
   operationSequence: 20,
   workCenterId: 'WC-A',
   allowedActions: ['start'],

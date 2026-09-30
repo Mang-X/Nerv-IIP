@@ -12,7 +12,11 @@ public static class SchedulePlanContractMapper
     /// 该计划所依据的排程问题(快照)。给出时把工作日历与不可用窗口一并投影到读面;
     /// 缺失时读面不带这两组事实(而不是编造一份日历)。
     /// </param>
-    public static SchedulePlanContract ToContract(SchedulePlan plan, SchedulingProblemContract? problem = null)
+    /// <param name="fixedReservations">与问题快照一起持久化的固定及外部占用。</param>
+    public static SchedulePlanContract ToContract(
+        SchedulePlan plan,
+        SchedulingProblemContract? problem = null,
+        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null)
     {
         var status = ToContractStatus(plan.Status);
         var materialRisks = DeserializeRiskCollection<SchedulePlanMaterialRiskContract>(plan.MaterialRisksJson);
@@ -38,7 +42,12 @@ public static class SchedulePlanContractMapper
                 x.EndUtc,
                 x.IsLocked,
                 x.ExplanationCode,
-                x.StandardOperationCode))
+                x.StandardOperationCode,
+                x.Segments.Count == 0
+                    ? null
+                    : x.Segments.OrderBy(segment => segment.SegmentIndex)
+                        .Select(segment => new ScheduleAssignmentSegmentContract(segment.StartUtc, segment.EndUtc))
+                        .ToArray()))
             .ToArray();
         var conflicts = plan.Conflicts
             .OrderBy(x => x.ConflictPublicId, StringComparer.Ordinal)
@@ -130,14 +139,19 @@ public static class SchedulePlanContractMapper
                     HasMaterialRisk: materialRiskKeys.Contains(key),
                     HasEquipmentRisk: equipmentRiskKeys.Contains(key));
             }).ToArray(),
+            AssemblyDependencies: problem?.AssemblyDependencies,
             MaterialRisks: materialRisks,
-            EquipmentRisks: equipmentRisks);
+            EquipmentRisks: equipmentRisks,
+            MaterialShortageSummary: problem is null
+                ? SchedulePlanMaterialShortageSummary.Project(materialRisks)
+                : SchedulePlanMaterialShortageSummary.Project(problem));
 
         // 日历仍从问题快照投影(它在适配前后一致);设备不可用窗口必须用随方案落库的那份——
         // 问题快照里的 UnavailabilityWindows 恒为空(适配发生在落库之后),#1409。
         // 落库前生成的历史方案没有这份数据,退化回问题快照投影,不编造。
         var persistedBlockWindows = DeserializeRiskCollection<SchedulePlanBlockWindowContract>(plan.BlockWindowsJson);
-        var withCalendars = SchedulePlanCalendarProjector.Attach(contract, problem);
+        var withCalendars = SchedulePlanValidationContextProjector.Attach(
+            SchedulePlanCalendarProjector.Attach(contract, problem), problem, fixedReservations ?? []);
         return persistedBlockWindows.Count > 0
             ? withCalendars with { BlockWindows = persistedBlockWindows }
             : withCalendars;
@@ -228,7 +242,9 @@ public static class SchedulePlanContractMapper
                     x.EndUtc,
                     x.IsLocked,
                     x.ExplanationCode,
-                    x.StandardOperationCode))
+                    x.StandardOperationCode,
+                    x.Segments?.Select((segment, index) => new GeneratedScheduleAssignmentSegmentSnapshot(
+                        index, segment.StartUtc, segment.EndUtc)).ToArray()))
                 .ToArray(),
             plan.ResourceLoads
                 .Select(x => new GeneratedScheduleResourceLoadSnapshot(

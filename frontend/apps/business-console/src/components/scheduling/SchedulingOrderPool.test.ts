@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -125,5 +125,104 @@ describe('SchedulingOrderPool 搜索 (#1399 M5)', () => {
     await bulk.trigger('click')
 
     expect(wrapper.emitted('include')?.at(-1)).toEqual([['wo-1'], true])
+  })
+})
+
+describe('待排池需求变更标记', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('按 MES 工单字段显示变更、取消与无标记', () => {
+    const pinia = createPinia()
+    const wrapper = mount(SchedulingOrderPool, {
+      global: { plugins: [pinia] },
+      props: {
+        draftOrders: [],
+        candidates: [
+          {
+            workOrderId: 'WO-CHANGED',
+            skuId: 'SKU-A',
+            hasChangedDemand: true,
+            hasCancelledDemand: false,
+          },
+          {
+            workOrderId: 'WO-CANCELLED',
+            skuId: 'SKU-A',
+            hasChangedDemand: false,
+            hasCancelledDemand: true,
+          },
+          {
+            workOrderId: 'WO-PLAIN',
+            skuId: 'SKU-A',
+            hasChangedDemand: false,
+            hasCancelledDemand: false,
+          },
+        ],
+      },
+    })
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0].text()).toContain('需求已变更')
+    expect(rows[0].text()).not.toContain('需求已取消')
+    expect(rows[1].text()).toContain('需求已取消')
+    expect(rows[1].text()).not.toContain('需求已变更')
+    expect(rows[2].text()).not.toContain('需求已变更')
+    expect(rows[2].text()).not.toContain('需求已取消')
+  })
+})
+
+describe('待排池急单与优先级保存', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('展示 MES 已保存值；页内修改保存后显示权威读回值，重入仍保留', async () => {
+    const candidates = [{ workOrderId: 'WO-001', priority: 60, isRush: true }]
+    const saveOrder = vi.fn(async () => {
+      await wrapper.setProps({
+        candidates: [{ workOrderId: 'WO-001', priority: 25, isRush: false }],
+      })
+    })
+    const wrapper = mount(SchedulingOrderPool, {
+      global: { plugins: [createPinia()] },
+      props: { candidates, draftOrders: [], canEditPriority: true, saveOrder },
+    })
+    const priority = wrapper.find('input[type="number"]')
+    expect((priority.element as HTMLInputElement).value).toBe('60')
+    expect(wrapper.find('[aria-label="急单 WO-001"]').attributes('data-state')).toBe('checked')
+    await priority.setValue('20')
+    await wrapper.find('[aria-label="急单 WO-001"]').trigger('click')
+    await wrapper.find('[aria-label="保存工单 WO-001 急单与优先级"]').trigger('click')
+    await flushPromises()
+    expect(saveOrder).toHaveBeenCalledWith('WO-001', { priority: 20, isRush: false })
+    expect((priority.element as HTMLInputElement).value).toBe('25')
+    expect(wrapper.find('[aria-label="急单 WO-001"]').attributes('data-state')).toBe('unchecked')
+    const reentered = mount(SchedulingOrderPool, {
+      global: { plugins: [createPinia()] },
+      props: {
+        candidates: wrapper.props('candidates'),
+        draftOrders: [],
+        canEditPriority: true,
+        saveOrder,
+      },
+    })
+    expect((reentered.find('input[type="number"]').element as HTMLInputElement).value).toBe('25')
+    expect(reentered.find('[aria-label="急单 WO-001"]').attributes('data-state')).toBe('unchecked')
+  })
+  it('保存失败时保留行内输入以便修正或重试', async () => {
+    const wrapper = mount(SchedulingOrderPool, {
+      global: { plugins: [createPinia()] },
+      props: {
+        candidates: [{ workOrderId: 'WO-001', priority: 60, isRush: false }],
+        draftOrders: [],
+        canEditPriority: true,
+        saveOrder: async () => {
+          throw new Error('工单已关闭，不能调整')
+        },
+      },
+    })
+    await wrapper.find('input[type="number"]').setValue('20')
+    await wrapper.find('[aria-label="保存工单 WO-001 急单与优先级"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.find('input[type="number"]').element as HTMLInputElement).value).toBe('20')
+    expect(
+      wrapper.find('[aria-label="保存工单 WO-001 急单与优先级"]').attributes('disabled'),
+    ).toBeUndefined()
   })
 })

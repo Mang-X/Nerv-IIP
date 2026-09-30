@@ -197,7 +197,13 @@ const GRID_COLUMNS = (
 
 function durationLabel(t: GridTask): string {
   if (t.type === 'project' || !t.start_date || !t.end_date) return ''
-  const h = Math.round((t.end_date.getTime() - t.start_date.getTime()) / 3_600_000)
+  const milliseconds = t.nerv?.segments?.length
+    ? t.nerv.segments.reduce(
+        (sum, segment) => sum + Date.parse(segment.endUtc) - Date.parse(segment.startUtc),
+        0,
+      )
+    : t.end_date.getTime() - t.start_date.getTime()
+  const h = Math.round(milliseconds / 3_600_000)
   return h >= 1 ? `${h}h` : '<1h'
 }
 function ownerCell(t: GridTask): string {
@@ -551,12 +557,15 @@ export class DhtmlxEngine implements SchedulingEngine {
       let downX = 0
       let downY = 0
       this.pointerDown = (e: MouseEvent) => {
-        if (e.button !== 0) return
+        if (e.button !== 0 || this.options.readOnly) return
+        // 端点交给原生 resize;整条移动仍走虚影与跨泳道改派。
+        if ((e.target as HTMLElement)?.closest?.('.gantt_task_drag')) return
         const bar = (e.target as HTMLElement)?.closest?.('.gantt_task_line') as HTMLElement | null
         if (!bar || !bar.querySelector('.nerv-card')) return
         const id = bar.getAttribute('task_id')
         const t = id ? inst.getTask(id) : undefined
         if (!id || !t) return
+        if ((t.nerv?.segments?.length ?? 0) > 1) return
         if (t.nerv?.locked) {
           // 已锁定:不可拖拽。给出抖动反馈并上报(上层提示「先解锁」并聚焦该块)。
           this.signalLockedDrag(id, bar)
@@ -692,7 +701,7 @@ export class DhtmlxEngine implements SchedulingEngine {
           const nativeDrag = !command.readOnly && this.options.view !== 'resource'
           g.config.readonly = command.readOnly
           g.config.drag_move = nativeDrag
-          g.config.drag_resize = nativeDrag
+          g.config.drag_resize = !command.readOnly
           g.config.drag_links = !command.readOnly && this.options.view === 'order'
           g.render()
         }
@@ -844,10 +853,10 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 会被 DHTMLX 弹成右上角红条堆叠;我们已在调用处按容器/存在性守卫,这里再兜底禁用其错误 UI。
     c.show_errors = false
     c.readonly = options.readOnly
-    // 资源排产板用自定义拖拽(原块静止 + 虚影随指针);关闭 DHTMLX 原生 move/resize 以免冲突。
+    // 资源排产板整条移动走自定义虚影;端点拉伸沿用 DHTMLX 原生 resize。
     const nativeDrag = !options.readOnly && options.view !== 'resource'
     c.drag_move = nativeDrag
-    c.drag_resize = nativeDrag
+    c.drag_resize = !options.readOnly
     c.drag_links = !options.readOnly && options.view === 'order'
     c.drag_progress = false
     // 网格内拖拽换分支暂时关闭(onAfterTaskMove 易误触、破坏拖拽);改派后续用时间线跨行拖拽实现。
@@ -892,6 +901,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       if (t?.colorKey && !t?.blockKind) cls.push(`nerv-cat-${t.colorKey}`)
       if (t?.hasConflict) cls.push('nerv-conflict')
       if (t?.locked) cls.push('nerv-locked')
+      if ((t?.segments?.length ?? 0) > 1) cls.push('nerv-segmented')
       if (t?.id === this.selectedTaskId) cls.push('nerv-selected')
       // 搜索态:命中加环、未命中压暗。工单汇总行不参与压暗——把父行也压掉会让整棵树"消失",
       // 看起来像图加载失败。
@@ -912,6 +922,23 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 资源排产板:条内渲染工单卡片;工单甘特:条内不渲染,工序名放右侧。
     inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
+      if ((t?.segments?.length ?? 0) > 1) {
+        const origin = inst.getTaskPosition!(
+          task as DhxTask,
+          new Date(t!.startUtc),
+          new Date(t!.endUtc),
+        ).left
+        return t!
+          .segments!.map((segment, index) => {
+            const pos = inst.getTaskPosition!(
+              task as DhxTask,
+              new Date(segment.startUtc),
+              new Date(segment.endUtc),
+            )
+            return `<div class="nerv-segment" style="left:${pos.left - origin}px;width:${pos.width}px" title="第 ${index + 1} 段 · ${fmt(segment.startUtc)} 至 ${fmt(segment.endUtc)}">${isResource ? cardHtml({ ...t!, ...segment }) : ''}</div>`
+          })
+          .join('')
+      }
       if (!isResource || t?.type !== 'operation') return ''
       return cardHtml(t)
     }
@@ -981,6 +1008,30 @@ export class DhtmlxEngine implements SchedulingEngine {
       }),
     )
     this.eventIds.push(
+      inst.attachEvent('onBeforeTaskDrag', (id, mode) => {
+        const taskId = String(id)
+        const task = inst.getTask(taskId)?.nerv
+        if ((task?.segments?.length ?? 0) > 1) return false
+        if (this.options.view === 'resource') {
+          if (
+            this.options.readOnly ||
+            mode !== 'resize' ||
+            task?.type !== 'operation' ||
+            task.blockKind
+          )
+            return false
+          if (task.locked) {
+            const bar = this.barEl(taskId)
+            if (bar) this.signalLockedDrag(taskId, bar)
+            return false
+          }
+          this.hideTip()
+          this.suppressNextClick = true
+        }
+        return true
+      }),
+    )
+    this.eventIds.push(
       inst.attachEvent('onAfterTaskDrag', (id, mode) =>
         this.emitDrag(inst, String(id), String(mode)),
       ),
@@ -988,7 +1039,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.eventIds.push(
       inst.attachEvent('onAfterTaskMove', (id) => this.emitDrag(inst, String(id), 'move')),
     )
-    // 资源视图拖拽走自定义实现(见 mount 的 pointerDown/Move/Up);此处不接 DHTMLX 原生拖拽。
+    // 资源视图整条移动走自定义实现;端点拉伸由上述原生事件归一化。
     this.eventIds.push(inst.attachEvent('onGanttRender', () => this.mirrorTaskIds()))
   }
 
@@ -1325,7 +1376,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     const payload = {
       taskId,
       operationId: src?.operationId ?? taskId,
-      resourceId: reassignedResource ?? src?.resourceId,
+      resourceId:
+        mode === 'resize' ? originalResourceId : (reassignedResource ?? originalResourceId),
       startUtc: start,
       endUtc: end,
       kind: kind as 'move' | 'resize' | 'reassign',
@@ -1592,8 +1644,16 @@ export class DhtmlxEngine implements SchedulingEngine {
       }
       this.kpiVisibility = resolveLaneKpiVisibility(laneKpis)
       for (const t of ops) data.push(this.toGanttTask(t, `lane:${laneOf(t)}`, toDate))
-      // 资源视图不连工单依赖线(跨资源视觉噪声)。
-      return { data, links: [] }
+      // 工单内线仍按选中展示；装配跨工单前置常显。
+      const taskById = new Map(ops.map((task) => [task.id, task]))
+      const links = model.links
+        .filter((link) => {
+          const source = taskById.get(link.source)
+          const target = taskById.get(link.target)
+          return source && target && source.orderId !== target.orderId
+        })
+        .map((link) => ({ id: link.id, source: link.source, target: link.target, type: '0' }))
+      return { data, links }
     }
 
     // 工单甘特里块同样不作任务条,但要能看见:按「这道工序所在设备/工作中心在此时段不可用」

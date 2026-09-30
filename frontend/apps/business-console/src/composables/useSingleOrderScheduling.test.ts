@@ -80,7 +80,13 @@ describe('单单排产（MAN-694 / #1262）', () => {
       orders: [{ workOrderId: 'WO-77', priority: 10, isRush: true }],
     })
     // 生成后必须让方案列表/明细失效，否则跳过去看到的还是旧列表。
-    expect(state.invalidated.length).toBeGreaterThan(0)
+    expect(
+      state.invalidated.some((entry) =>
+        (entry as { predicate: (query: unknown) => boolean }).predicate({
+          key: [{ _id: 'listBusinessConsoleSchedulingPlanHistory' }],
+        }),
+      ),
+    ).toBe(true)
   })
 
   it('业务范围为空时不发请求（Common Mistakes #13）', async () => {

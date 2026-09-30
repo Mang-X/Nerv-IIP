@@ -249,7 +249,7 @@ Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web
 | `MasterData:Seed:Enabled` | BusinessMasterData | 缺失的编码规则、受控字典（不含工厂自定义码集的样例值）、计量单位与换算、班次、工作日历、部门 |
 | `Maintenance:Seed:Enabled` | BusinessMaintenance | 缺失的停机原因（12 条 TPM/OEE 标准原因）；库里还有未应用的迁移时跳过并记录，迁移后的下一次启动补齐 |
 
-IAM 平台引导（#3846）：非 Development 下 IAM Web 启动时（库结构须已由第 4 节 migrator 建好）只补缺写入最高权限管理员、其默认组织与环境、平台管理员角色（全部权限 + 默认组织数据范围）和成员关系，不覆盖已存在的行；唯一例外是把仍叫旧英文默认名 `Platform Administrator` 的平台管理员角色一次性改名为「平台管理员」（记 manifest `iam-platform-admin-role-name-zh:v1`，运营改过名或中文名已被占用时不改）。默认执行，显式设 `Iam:Bootstrap:Enabled=false` 才关闭。
+IAM 平台引导：非 Development 下 IAM Web 启动时（库结构须已由第 4 节 migrator 建好）只补缺写入最高权限管理员、其默认组织与环境、平台管理员角色（全部权限 + 默认组织数据范围）和成员关系，以及固定 ID `role-production-planner` 的生产计划员角色；不覆盖已存在的行。若旧库已有同名的运营角色，引导保留旧角色并以「生产计划员（系统预置）」命名固定 ID 角色，成员仍须通过现有 IAM 管理入口分配到固定 ID。唯一改名例外是仍叫旧英文默认名 `Platform Administrator` 的平台管理员角色一次性改名为「平台管理员」（记 manifest `iam-platform-admin-role-name-zh:v1`，运营改过名或中文名已被占用时不改）。默认执行，显式设 `Iam:Bootstrap:Enabled=false` 才关闭。
 
 | 键 | 作用 |
 |---|---|

@@ -6,6 +6,11 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken);
+
     Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
@@ -33,7 +38,17 @@ public interface IBusinessSchedulingClient
         BusinessConsoleSchedulingContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleSchedulingHistoryResponse> ListPlanHistoryAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingHistoryRequest request,
+        CancellationToken cancellationToken);
+
     Task<SchedulePlanContract> GetPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken);
+
+    Task<byte[]> ExportPlanCsvAsync(
         string internalBearerToken,
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
@@ -52,6 +67,9 @@ public interface IBusinessSchedulingClient
         string internalBearerToken,
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>> GetPlanOverridesAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken);
 
     Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,
@@ -87,6 +105,18 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/scheduling/workbench/plans",
+            request,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<SchedulePlanContract>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/scheduling/workbench/plans/preview",
             request,
             cancellationToken,
             SchedulingJson.Options);
@@ -143,6 +173,25 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             cancellationToken,
             SchedulingJson.Options);
 
+    public Task<BusinessConsoleSchedulingHistoryResponse> ListPlanHistoryAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingHistoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleSchedulingHistoryResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/scheduling/plans/history?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("pageIndex", request.PageIndex.ToString(CultureInfo.InvariantCulture)),
+                ("pageSize", request.PageSize.ToString(CultureInfo.InvariantCulture)),
+                ("status", request.Status is { } status ? System.Text.Json.JsonSerializer.SerializeToElement(status, SchedulingJson.Options).GetString() : null),
+                ("releasedOn", request.ReleasedOn?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                ("isInvalidated", request.IsInvalidated?.ToString().ToLowerInvariant())),
+            null,
+            cancellationToken,
+            SchedulingJson.Options);
+
     public Task<SchedulePlanContract> GetPlanAsync(
         string internalBearerToken,
         BusinessConsoleSchedulingPlanRequest request,
@@ -154,6 +203,15 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             null,
             cancellationToken,
             SchedulingJson.Options);
+
+    public Task<byte[]> ExportPlanCsvAsync(
+        string internalBearerToken,
+        BusinessConsoleSchedulingPlanRequest request,
+        CancellationToken cancellationToken) =>
+        SendBytesAsync(
+            internalBearerToken,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/csv?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            cancellationToken);
 
     public Task<IReadOnlyCollection<GanttScheduleItemContract>> GetPlanGanttAsync(
         string internalBearerToken,
@@ -190,6 +248,13 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             null,
             cancellationToken,
             SchedulingJson.Options);
+
+    public Task<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>> GetPlanOverridesAsync(
+        string internalBearerToken, BusinessConsoleSchedulingPlanRequest request, CancellationToken cancellationToken) =>
+        SendAsync<IReadOnlyCollection<BusinessConsoleScheduleOperationOverrideResponse>>(
+            internalBearerToken, HttpMethod.Get,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/overrides?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null, cancellationToken, SchedulingJson.Options);
 
     public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,

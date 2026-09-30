@@ -28,12 +28,13 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | DemandPlanning | `PlanningSuggestionPayload` / `PlannedPurchaseSuggested` | DemandPlanning | ERP 实际采购交接使用已接受建议事件 | `deprecated/covered-by-other-contract` |
 | DemandPlanning | `PlanningSuggestionPayload` / `PlannedWorkOrderSuggested` | DemandPlanning | MES 实际工单交接使用已接受建议事件 | `deprecated/covered-by-other-contract` |
 | DemandPlanning | `PlanningSuggestionAcceptedIntegrationEvent` | DemandPlanning | MES；指向采购申请的建议由 ERP 消费 | `consumed-internally` |
+| DemandPlanning | `SalesOrderDemandChangedForWorkOrderIntegrationEvent` | DemandPlanning | MES 按组织、环境、工单、来源建议与需求引用持久标记需求变更或取消，不改变工单执行状态；Notification 按 IAM 当前组织/环境的有效计划员成员逐人生成站内消息与待办 | `consumed-internally` |
 | ERP | `PurchaseRequisitionCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `PurchaseOrderReleasedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `MaterialSupplyEtaChangedIntegrationEvent` | ERP | Scheduling 按受影响 SKU 精确失效 generated 排程方案 | `consumed-internally` |
 | ERP | `PurchaseReceiptRecordedIntegrationEvent` | ERP | ERP GR/IR 处理；Quality 来料检验 | `consumed-internally` |
 | ERP | `SalesReturnAuthorizedIntegrationEvent` | ERP | WMS | `consumed-internally` |
-| ERP | `SalesOrderReleased` / `SalesOrderChanged` / `SalesOrderCancelled` | ERP | DemandPlanning 销售订单需求投影 | `consumed-internally` |
+| ERP | `SalesOrderReleased` / `SalesOrderChanged` / `SalesOrderCancelled` / `SalesOrderDeliveryRegisteredIntegrationEvent` | ERP | DemandPlanning 销售订单未交付需求投影 | `consumed-internally` |
 | ERP | `DeliveryOrderReleasedPayload` | ERP | 实际仓储交接使用公开 `wms.OutboundOrderRequested` | `deprecated/covered-by-other-contract` |
 | ERP | `AccountPayableCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `AccountReceivableCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
@@ -51,7 +52,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Inventory | `StockMovementPostedIntegrationEvent` | Inventory | WMS、MES、ERP | `consumed-internally` |
 | Inventory | `StockMovementPostingFailedIntegrationEvent` | Inventory | WMS | `consumed-internally` |
 | Inventory | `StockCountVarianceConfirmedIntegrationEvent` | Inventory | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
-| Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling | `consumed-internally` |
+| Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling：仅失效问题快照中缺料项含该物料的方案，记录命中工序；无匹配时留痕 | `consumed-internally` |
 | Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance（v1 自由文本入口只发 V1；v2 原因码入口双发 V1 companion + V2）；V2 Maintenance（`POST /api/business/v2/maintenance/work-orders`，#2964 C/D 阶段） | V1 MES、Scheduling；V2 MES、Scheduling 均精确订阅 canonical topic，并按共享 `idempotencyKey` 折叠双发 | V1/V2 `consumed-internally` |
 | Maintenance | `AssetRestoredIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |
 | MasterData | `SkuChangedIntegrationEvent` | MasterData | 当前下游主要使用 API/快照；无活动状态消费者 | `producer-only-until-feature` |
@@ -83,7 +84,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally`。信封 `occurredAtUtc` 与 payload `releasedAtUtc` 同取**发布动作给出的发布事实时刻**（按该工单**既有活动**取下界——最早报工与最早工序完工中更早者，#3117），不再取转换那一刻的 `UtcNow`。按 ADR 0011 §5 这是把原先违反「`occurredAtUtc` 必须是领域事实发生时间」的取值修回合规，属修正而非 §4 意义上的语义变更，**不提升 `eventVersion`**；Scheduling 只读 `Payload.WorkOrderId`/`SkuCode`，不校验也不消费任一时刻。payload `operations[]` 自 #3129 起多带一个**可空可选**字段 `preReleaseGoodQuantity`：下达动作那一刻该工序已经存在的净良品量（非冲销报工行的 `goodQuantity` 之和）。按 ADR 0011 §4「同一 `eventType` 下新增可选字段不提升版本」，**不提升 `eventVersion`**。**消费关系不变**（消费方仍是 Scheduling 与 Quality）：Scheduling 只读上述两个字段、对新增字段无感；Quality 的直投消费分支用它落实「下达之前已产出的数量不补开周期巡检任务」这条裁定。**已知不生效面**：本次发布之前入队、仍在在途队列或 DLQ 里的旧消息不带该字段，Quality 对 `null` 按改动前的老行为处理（不跳过），与彼时 main 逐字相同、不进死信；该面随那批旧消息被消费干净而消失 |
-| MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件的处理是让全部已生成排程计划失效，不能被回填放大。本通道复用 `WorkOrderReleasedPayload`，其 #3129 新增字段 `preReleaseGoodQuantity` 在这里**有意恒为 `null`**：该事件的消费分支（`ReleaseFactAuthority.ReconstructedLowerBound`）**根本不读这个字段**——全仓对 `PreReleaseGoodQuantity` 的唯一读取点在 `Authoritative` 分支内，该分支在补上发布事实后无条件跳过到回填执行时刻为止的全部累计产量与流逝时间（#3000 既有取舍）。填与不填行为逐字相同，依据是这条**结构性**事实，**不是**「下达前产量是其子集」——那个子集关系只在领域意义上成立，实现出来的两个数（Quality 本地水位 vs MES 自有事实）在报工事件滞后时可反向 | `consumed-internally` |
+| MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件只按问题快照中的工单或 SKU 失效命中方案，不能被回填误触发。本通道复用 `WorkOrderReleasedPayload`，其 #3129 新增字段 `preReleaseGoodQuantity` 在这里**有意恒为 `null`**：该事件的消费分支（`ReleaseFactAuthority.ReconstructedLowerBound`）**根本不读这个字段**——全仓对 `PreReleaseGoodQuantity` 的唯一读取点在 `Authoritative` 分支内，该分支在补上发布事实后无条件跳过到回填执行时刻为止的全部累计产量与流逝时间（#3000 既有取舍）。填与不填行为逐字相同，依据是这条**结构性**事实，**不是**「下达前产量是其子集」——那个子集关系只在领域意义上成立，实现出来的两个数（Quality 本地水位 vs MES 自有事实）在报工事件滞后时可反向 | `consumed-internally` |
 | MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
 | MES | `AndonCallEscalatedIntegrationEvent` | MES：未认领呼叫到期后的单次升级，事实与 CAP outbox 同事务；canonical topic 由部署环境构造，稳定业务幂等键为 `andon-call-escalated:{CallId}` | Notification 为事件携带的明确接收人生成 `critical` 站内任务，复用 inbox 与通知意图去重，处理入口为 `/mes/andon` | `consumed-internally` |
 | MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |

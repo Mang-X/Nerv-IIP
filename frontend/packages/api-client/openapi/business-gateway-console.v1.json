@@ -6690,6 +6690,61 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/workbench/plans/preview": {
+      "post": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "previewBusinessConsoleSchedulingWorkbenchPlan",
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateSchedulingWorkbenchPlanRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/{planId}/revisions": {
       "post": {
         "tags": [
@@ -6727,6 +6782,115 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulePlanRevisionContract"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/plans/history": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleSchedulingPlanHistory",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageIndex",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "nullable": false
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "nullable": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanStatusContract"
+                }
+              ]
+            }
+          },
+          {
+            "name": "releasedOn",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "nullable": true
+            }
+          },
+          {
+            "name": "isInvalidated",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse"
                 }
               }
             }
@@ -6823,6 +6987,75 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/plans/{planId}/csv": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "exportBusinessConsoleSchedulingPlanCsv",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/{planId}/gantt": {
       "get": {
         "tags": [
@@ -6863,6 +7096,74 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/plans/{planId}/overrides": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleSchedulingPlanOverrides",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse"
                 }
               }
             }
@@ -15463,35 +15764,16 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
                 "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
                 "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
                 "started",
-                "warning"
+                "hold",
+                "completed",
+                "closed",
+                "cancelled",
+                "scrapped",
+                "split",
+                "merged"
               ]
             }
           },
@@ -15759,35 +16041,16 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
                 "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
                 "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
                 "started",
-                "warning"
+                "hold",
+                "completed",
+                "closed",
+                "cancelled",
+                "scrapped",
+                "split",
+                "merged"
               ]
             }
           },
@@ -15965,6 +16228,103 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderDetailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/work-orders/{workOrderId}/priority": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "adjustBusinessConsoleMesWorkOrderPriority",
+        "parameters": [
+          {
+            "name": "workOrderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scopeKind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "scopeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMesAdjustWorkOrderPriorityRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
                 }
               }
             }
@@ -17050,35 +17410,13 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Requested",
+                "PartiallyReceived",
+                "ReceiptPosting",
+                "Received",
+                "Cancelled",
+                "ReturnRequested",
+                "ReservationExpired"
               ]
             }
           },
@@ -17607,35 +17945,12 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Queued",
+                "InProgress",
+                "Paused",
+                "ScheduleInvalidated",
+                "Completed",
+                "Cancelled"
               ]
             }
           },
@@ -17934,35 +18249,12 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Queued",
+                "InProgress",
+                "Paused",
+                "ScheduleInvalidated",
+                "Completed",
+                "Cancelled"
               ]
             }
           },
@@ -18796,35 +19088,12 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Queued",
+                "InProgress",
+                "Paused",
+                "ScheduleInvalidated",
+                "Completed",
+                "Cancelled"
               ]
             }
           },
@@ -19754,35 +20023,11 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Open",
+                "ReworkPending",
+                "ScrapAccepted",
+                "ReturnAccepted",
+                "DispositionAccepted"
               ]
             }
           },
@@ -19903,35 +20148,11 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Requested",
+                "PartiallyPosted",
+                "Posted",
+                "InventoryPostingFailed",
+                "Cancelled"
               ]
             }
           },
@@ -20171,35 +20392,8 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Open",
+                "Recovered"
               ]
             }
           },
@@ -20525,35 +20719,8 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Open",
+                "Accepted"
               ]
             }
           },
@@ -21017,35 +21184,8 @@
               "type": "string",
               "nullable": true,
               "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "inventoryPostingFailed",
-                "open",
-                "partiallyPosted",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "scheduleInvalidated",
-                "started",
-                "warning"
+                "Open",
+                "Recovered"
               ]
             }
           },
@@ -40455,6 +40595,28 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanEquipmentRiskContract"
             }
+          },
+          "materialShortageSummary": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMaterialShortageSummaryContract"
+            }
+          },
+          "validationContext": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanValidationContextContract"
+              }
+            ]
+          },
+          "assemblyDependencies": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingAssemblyDependencyContract"
+            }
           }
         }
       },
@@ -40563,6 +40725,27 @@
           "standardOperationCode": {
             "type": "string",
             "nullable": true
+          },
+          "segments": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentSegmentContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingScheduleAssignmentSegmentContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -40887,6 +41070,10 @@
           "shortageQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -40910,6 +41097,172 @@
             }
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanMaterialShortageSummaryContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "materialId": {
+            "type": "string"
+          },
+          "materialLotId": {
+            "type": "string",
+            "nullable": true
+          },
+          "uomCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "shortageQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "affectedOperations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMaterialAffectedOperationContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanMaterialAffectedOperationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanValidationContextContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "horizonStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "horizonEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanResourceContextContract"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanOperationContextContract"
+            }
+          },
+          "fixedReservations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFixedReservationContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanResourceContextContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "calendarId": {
+            "type": "string"
+          },
+          "capacityUnits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "utilizationRate": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanOperationContextContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "predecessorOperationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dueUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "setupMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isFixed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanFixedReservationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resourceId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingAssemblyDependencyContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "childOrderId": {
+            "type": "string"
+          },
+          "parentOrderId": {
             "type": "string"
           }
         }
@@ -41009,6 +41362,13 @@
             "nullable": true,
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingEquipmentDataRiskContract"
+            }
+          },
+          "assemblyDependencies": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingAssemblyDependencyContract"
             }
           }
         }
@@ -41135,6 +41495,13 @@
           },
           "toolingAvailable": {
             "type": "boolean"
+          },
+          "changeovers": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingChangeoverContract"
+            }
           }
         }
       },
@@ -41142,8 +41509,31 @@
         "type": "string",
         "description": "",
         "enum": [
-          "nonSplittable"
+          "nonSplittable",
+          "interruptible"
         ]
+      },
+      "NervIIPContractsSchedulingSchedulingChangeoverContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fromSkuCode": {
+            "type": "string"
+          },
+          "setupMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiredToolingIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "toolingAvailable": {
+            "type": "boolean"
+          }
+        }
       },
       "NervIIPContractsSchedulingSchedulingResourceContract": {
         "type": "object",
@@ -41170,6 +41560,10 @@
           },
           "sortKey": {
             "type": "string"
+          },
+          "utilizationRate": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -41316,6 +41710,13 @@
           },
           "lockReasonCode": {
             "type": "string"
+          },
+          "segments": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentSegmentContract"
+            }
           }
         }
       },
@@ -41614,10 +42015,61 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "horizonStartUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "horizonEndUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingContextRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -41644,6 +42096,59 @@
             }
           }
         ]
+      },
+      "NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "workOrderId": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "workCenterId": {
+            "type": "string"
+          },
+          "startUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lockReasonCode": {
+            "type": "string"
+          },
+          "sourcePlanId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse": {
         "allOf": [
@@ -41756,35 +42261,6 @@
             }
           }
         ]
-      },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "operationId": {
-            "type": "string"
-          },
-          "workOrderId": {
-            "type": "string"
-          },
-          "resourceId": {
-            "type": "string"
-          },
-          "workCenterId": {
-            "type": "string"
-          },
-          "startUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "endUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lockReasonCode": {
-            "type": "string"
-          }
-        }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest": {
         "type": "object",
@@ -46207,6 +46683,9 @@
           "standardMinutes": {
             "type": "integer",
             "format": "int32"
+          },
+          "interruptible": {
+            "type": "boolean"
           }
         }
       },
@@ -46320,6 +46799,9 @@
           "standardMinutes": {
             "type": "integer",
             "format": "int32"
+          },
+          "interruptible": {
+            "type": "boolean"
           }
         }
       },
@@ -48492,6 +48974,10 @@
           "failureReason": {
             "type": "string",
             "nullable": true
+          },
+          "demandChangeCount": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -48667,6 +49153,10 @@
             "nullable": true
           },
           "downstreamDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "supersededByRunId": {
             "type": "string",
             "nullable": true
           }
@@ -49768,35 +50258,16 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
               "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
               "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
               "started",
-              "warning"
+              "hold",
+              "completed",
+              "closed",
+              "cancelled",
+              "scrapped",
+              "split",
+              "merged"
             ]
           },
           "operationTasks": {
@@ -49830,6 +50301,19 @@
           "sourceNcrCode": {
             "type": "string",
             "nullable": true
+          },
+          "hasChangedDemand": {
+            "type": "boolean"
+          },
+          "hasCancelledDemand": {
+            "type": "boolean"
+          },
+          "isRush": {
+            "type": "boolean"
+          },
+          "completedQuantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -49843,35 +50327,12 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Queued",
+              "InProgress",
+              "Paused",
+              "ScheduleInvalidated",
+              "Completed",
+              "Cancelled"
             ]
           },
           "operationSequence": {
@@ -50028,6 +50489,13 @@
           "sourceNcrCode": {
             "type": "string",
             "nullable": true
+          },
+          "isRush": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -50044,35 +50512,12 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Queued",
+              "InProgress",
+              "Paused",
+              "ScheduleInvalidated",
+              "Completed",
+              "Cancelled"
             ]
           },
           "operationSequence": {
@@ -50289,6 +50734,24 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderDetailRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "isRush": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "changedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest": {
         "type": "object",
@@ -50942,35 +51405,13 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Requested",
+              "PartiallyReceived",
+              "ReceiptPosting",
+              "Received",
+              "Cancelled",
+              "ReturnRequested",
+              "ReservationExpired"
             ]
           },
           "wmsRequestId": {
@@ -51372,35 +51813,12 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Queued",
+              "InProgress",
+              "Paused",
+              "ScheduleInvalidated",
+              "Completed",
+              "Cancelled"
             ]
           },
           "workCenterId": {
@@ -51699,35 +52117,12 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Queued",
+              "InProgress",
+              "Paused",
+              "ScheduleInvalidated",
+              "Completed",
+              "Cancelled"
             ]
           },
           "plannedQuantity": {
@@ -52851,35 +53246,11 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Open",
+              "ReworkPending",
+              "ScrapAccepted",
+              "ReturnAccepted",
+              "DispositionAccepted"
             ]
           },
           "defectCode": {
@@ -52957,35 +53328,11 @@
           "receiptStatus": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Requested",
+              "PartiallyPosted",
+              "Posted",
+              "InventoryPostingFailed",
+              "Cancelled"
             ]
           },
           "requestedAtUtc": {
@@ -53446,35 +53793,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Open",
+              "Recovered"
             ]
           },
           "startedAtUtc": {
@@ -54159,35 +54479,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "accepted",
-              "active",
-              "blocked",
-              "cancelled",
-              "closed",
-              "completed",
-              "created",
-              "dispositionAccepted",
-              "hold",
-              "inProgress",
-              "inventoryPostingFailed",
-              "open",
-              "partiallyPosted",
-              "partiallyReceived",
-              "paused",
-              "posted",
-              "queued",
-              "ready",
-              "received",
-              "recovered",
-              "released",
-              "returnAccepted",
-              "reworkPending",
-              "scrapAccepted",
-              "scrapped",
-              "requested",
-              "scheduleInvalidated",
-              "started",
-              "warning"
+              "Open",
+              "Recovered"
             ]
           },
           "effectiveFromUtc": {

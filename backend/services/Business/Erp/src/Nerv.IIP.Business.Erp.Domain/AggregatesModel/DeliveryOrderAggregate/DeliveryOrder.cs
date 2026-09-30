@@ -44,6 +44,7 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
             throw new ArgumentException("At least one delivery line is required.", nameof(lineDrafts));
         }
 
+        order.RecordDelivery();
         this.AddDomainEvent(new DeliveryOrderReleasedDomainEvent(this));
     }
 

@@ -131,7 +131,7 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IConfiguration configuration,
+    IProductionPlannerMemberDirectory plannerMembers,
     TimeProvider timeProvider,
     NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<SchedulePlanInvalidatedIntegrationEvent>, ICapSubscribe
@@ -178,18 +178,10 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
         var operationCount = payload.AffectedOperations.Count;
         // 同质枚举集合（资源标识）：先截项、后由 Render 整体夹紧。
         // 截字符会产出不存在的资源标识，收件人拿 WC-PRESS-0 去搜会搜不到、或搜到另一台设备。
-        var resourceSummary = NotificationSummaryList.Describe(payload.AffectedResourceIds, "no specific resource");
-        var recipientRefs = configuration.GetSection("Scheduling:InvalidationNotification:RecipientRefs").Get<string[]>() ?? [];
-        recipientRefs = recipientRefs
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (recipientRefs.Length == 0)
-        {
-            recipientRefs = ["role:production-planner"];
-        }
-
+        var resourceSummary = NotificationSummaryList.Describe(
+            payload.AffectedResourceIds,
+            "无特定资源",
+            (remaining, total) => $"另有 {remaining} 项（共 {total} 项）");
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
             dbContext,
             ConsumerName,
@@ -197,6 +189,13 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
             timeProvider.GetUtcNow(),
             cancellationToken))
         {
+            return;
+        }
+
+        var members = await plannerMembers.ListMemberIdsAsync(organizationId, environmentId, cancellationToken);
+        if (members.Count == 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -208,9 +207,9 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
             Severity: NotificationContractConstants.SeverityWarning,
             DedupeKey: dedupeKey,
             Resource: new NotificationResourceRef("schedule-plan", planId, null),
-            Title: "Schedule plan invalidated",
-            Summary: $"Schedule plan {planId} was invalidated by {reasonCode}; {operationCount} operation(s), resources: {resourceSummary}.",
-            SuggestedRecipientRefs: recipientRefs);
+            Title: "排产方案已失效",
+            Summary: $"排产方案 {planId} 因 {reasonCode} 失效；影响 {operationCount} 道工序，资源：{resourceSummary}。",
+            SuggestedRecipientRefs: members.Select(id => $"user:{id}").ToArray());
 
         await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }

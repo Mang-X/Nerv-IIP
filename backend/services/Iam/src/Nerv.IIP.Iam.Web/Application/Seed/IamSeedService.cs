@@ -21,6 +21,12 @@ public sealed class IamSeedService(
     IamTokenService tokenService)
 {
     private const string ErpFinanceRoleId = "role-erp-finance";
+    private static readonly string[] ProductionPlannerWorkbenchReadPermissions =
+    [
+        NervIipPermissionCodes.MesWorkOrdersRead,
+        NervIipPermissionCodes.NotificationMessagesRead,
+        NervIipPermissionCodes.NotificationTasksRead,
+    ];
 
     // #3838 之前平台管理员的默认角色名。只用来判断「运营没改过名」，角色本身按角色码查找。
     private const string LegacyPlatformAdministratorRoleName = "Platform Administrator";
@@ -37,8 +43,8 @@ public sealed class IamSeedService(
     ];
 
     /// <summary>
-    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，
-    /// 不覆盖已存在的行。例外：仍是旧英文默认名的平台管理员角色一次性改为中文名
+    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，以及生产计划员角色，
+    /// 不覆盖已存在的行。例外：为已有固定 ID 的生产计划员角色补工作台读取权限，仍是旧英文默认名的平台管理员角色一次性改为中文名
     /// （manifest <c>iam-platform-admin-role-name-zh:v1</c>，见 <see cref="RenameLegacyAdministratorRoleAsync"/>）。组织/环境/管理员/角色 id 读 <c>Iam:Seed:*</c>（与产品基线 seed 同源）。
     /// 新建管理员时初始口令只来自部署配置 <c>Iam:Seed:AdminPassword</c>，须满足口令策略，并标记首次登录须改密。
     /// 连接器凭据、外部客户端、ERP 岗位角色与演示账号不在此列。
@@ -64,6 +70,7 @@ public sealed class IamSeedService(
                 passwordExpiresAtUtc: passwordPolicy.GetPasswordExpiresAtUtc(now),
                 passwordChangeRequired: true);
         }, cancellationToken);
+        await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -131,6 +138,8 @@ public sealed class IamSeedService(
             ]);
             dbContext.Roles.Add(erpRole);
         }
+
+        await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
 
         var (role, user) = await EnsurePlatformAdministratorAsync(
             dbContext,
@@ -254,6 +263,40 @@ public sealed class IamSeedService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task EnsureProductionPlannerAsync(
+        ApplicationDbContext dbContext,
+        IamSeedOptions seed,
+        CancellationToken cancellationToken)
+    {
+        var definition = NervIipSeedRoles.ProductionPlanner;
+        var existingRole = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .SingleOrDefaultAsync(role => role.Id == new RoleId(definition.RoleId), cancellationToken);
+        if (existingRole is not null)
+        {
+            var existingCodes = existingRole.Permissions.Select(permission => permission.PermissionCode).ToArray();
+            var missingCodes = ProductionPlannerWorkbenchReadPermissions.Except(existingCodes, StringComparer.Ordinal).ToArray();
+            if (missingCodes.Length > 0)
+            {
+                existingRole.ReplacePermissions([
+                    .. existingCodes,
+                    .. missingCodes,
+                ]);
+            }
+
+            return;
+        }
+
+        var normalizedDefaultName = Role.NormalizeName(definition.RoleName);
+        var defaultNameTaken = await dbContext.Roles.AnyAsync(
+            role => role.NormalizedRoleName == normalizedDefaultName,
+            cancellationToken);
+        var roleName = defaultNameTaken ? "生产计划员（系统预置）" : definition.RoleName;
+        var role = new Role(new RoleId(definition.RoleId), roleName, definition.PermissionCodes);
+        role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
+        dbContext.Roles.Add(role);
     }
 
     private async Task<(Role Role, User User)> EnsurePlatformAdministratorAsync(

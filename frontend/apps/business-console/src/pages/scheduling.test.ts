@@ -4,6 +4,8 @@ import { computed, reactive, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPage from './scheduling.vue'
+import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
+import type { BusinessConsoleSchedulingMaterialShortageSummary } from '@nerv-iip/api-client'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 让断言不依赖真实名录查询。挂载仍装一个新 Pinia（见各 mount 的 plugins）：
@@ -70,16 +72,9 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
       '<span data-testid="order-urgency" :data-ref="orderReference" :data-mode="mode">未计算</span>',
   },
 }))
+const authState = vi.hoisted(() => ({ permissionCodes: [] as string[] }))
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({
-    principal: {
-      permissionCodes: [
-        'business.scheduling.plans.read',
-        'business.scheduling.plans.manage',
-        'business.scheduling.plans.release',
-      ],
-    },
-  }),
+  useAuthStore: () => ({ principal: authState }),
 }))
 const stub = vi.hoisted(() => ({
   releasePlan: vi
@@ -90,6 +85,7 @@ const stub = vi.hoisted(() => ({
     .mockResolvedValue({ success: true, data: { planId: 'plan-released', status: 'revoked' } }),
   upsertOperationOverride: vi.fn().mockResolvedValue({ success: true, data: {} }),
   generatePlan: vi.fn(),
+  revisePlan: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }))
@@ -115,6 +111,8 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
         productionVersionId: 'pv-001',
       },
     ]),
+    priorityScopeReady: shallowRef(true),
+    saveOrderPriority: vi.fn(),
     candidatesError: shallowRef(undefined),
     candidatesPending: shallowRef(false),
     // #1288 待排池 scope gate 事实：本文件不测未就绪分支，按就绪打桩。
@@ -125,7 +123,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     generatePlan: stub.generatePlan,
     refreshCandidates: vi.fn(),
     revisionPending: shallowRef(false),
-    revisePlan: vi.fn(),
+    revisePlan: stub.revisePlan,
     // 草案工作区要有可选工单才能生成首版方案（持久化 override 用例的前置条件）。
     schedulableCandidates: computed(() => [
       {
@@ -140,11 +138,22 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
 }))
 
 const detailSelection = reactive({ planId: '' })
+const historyPage = shallowRef(1)
+const historyEmpty = shallowRef(false)
+const planOneInvalidated = shallowRef(false)
+const historyFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  status: undefined as string | undefined,
+  releasedOn: '',
+  isInvalidated: undefined as boolean | undefined,
+})
 const detailError = shallowRef<unknown>()
 // plan-001 的方案明细：既作为 planDetail 返回值，也作为「生成首版」的返回方案，
 // 让草案工作区拿到真实任务（持久化 override 用例要按 taskId 找回工序）。
 const planOne = {
   planId: 'plan-001',
+  materialShortageSummary: [] as BusinessConsoleSchedulingMaterialShortageSummary[],
   status: 'generated',
   generatedAtUtc: '2026-07-01T09:30:00Z',
   metrics: {
@@ -242,6 +251,8 @@ const planOne = {
 }
 
 const detail = computed(() => {
+  if (detailSelection.planId === 'plan-released')
+    return { ...planOne, planId: 'plan-released', status: 'released' }
   if (detailSelection.planId === 'plan-001') {
     return planOne
   }
@@ -288,75 +299,102 @@ const detail = computed(() => {
 })
 
 vi.mock('@/composables/useBusinessScheduling', () => ({
+  useSchedulingPlanSummary: (planId: () => string | undefined) => ({
+    summary: computed(() => {
+      const id = planId()
+      if (!id) return undefined
+      return {
+        planId: id,
+        status: id === 'plan-released' ? 'released' : 'generated',
+        isInvalidated: id === 'plan-invalid' || (id === 'plan-001' && planOneInvalidated.value),
+        latestInvalidationReasonCode: 'equipmentUnavailable',
+      }
+    }),
+  }),
   useBusinessScheduling: () => ({
     detailSelection,
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
-    page: shallowRef(1),
+    filters: historyFilters,
+    page: historyPage,
     pageSize: shallowRef('100'),
     planDetail: detail,
     planDetailError: detailError,
     planDetailPending: shallowRef(false),
-    plans: computed(() => [
-      {
-        status: 'generated',
-        generatedAtUtc: '2026-07-01T08:30:00Z',
-        assignmentCount: 1,
-        conflictCount: 0,
-        unscheduledOperationCount: 0,
-      },
-      {
-        planId: 'plan-001',
-        status: 'generated',
-        generatedAtUtc: '2026-07-01T09:30:00Z',
-        assignmentCount: 8,
-        conflictCount: 1,
-        unscheduledOperationCount: 2,
-      },
-      {
-        planId: 'plan-empty',
-        status: 'preview',
-        generatedAtUtc: '2026-07-01T10:00:00Z',
-        assignmentCount: 0,
-        conflictCount: 0,
-        unscheduledOperationCount: 0,
-      },
-      {
-        planId: 'plan-invalid',
-        status: 'generated',
-        generatedAtUtc: '2026-07-01T11:00:00Z',
-        releasedAtUtc: '2026-07-01T11:30:00Z',
-        assignmentCount: 5,
-        conflictCount: 0,
-        unscheduledOperationCount: 0,
-        isInvalidated: true,
-        latestInvalidationReasonCode: 'equipmentUnavailable',
-        latestInvalidatedAtUtc: '2026-07-01T12:00:00Z',
-      },
-      {
-        planId: 'plan-superseded',
-        status: 'superseded',
-        assignmentCount: 3,
-        conflictCount: 0,
-        unscheduledOperationCount: 0,
-      },
-      {
-        planId: 'plan-revoked',
-        status: 'revoked',
-        assignmentCount: 2,
-        conflictCount: 0,
-        unscheduledOperationCount: 0,
-      },
-      // 已发布方案：撤销发布入口只对它开放。
-      {
-        planId: 'plan-released',
-        status: 'released',
-        generatedAtUtc: '2026-07-01T12:00:00Z',
-        releasedAtUtc: '2026-07-01T12:30:00Z',
-        assignmentCount: 4,
-        conflictCount: 0,
-        unscheduledOperationCount: 0,
-      },
-    ]),
+    plansTotal: computed(() => 137),
+    plans: computed(() =>
+      (historyEmpty.value
+        ? []
+        : [
+            {
+              status: 'generated',
+              generatedAtUtc: '2026-07-01T08:30:00Z',
+              assignmentCount: 1,
+              conflictCount: 0,
+              unscheduledOperationCount: 0,
+            },
+            {
+              planId: 'plan-001',
+              isInvalidated: planOneInvalidated.value,
+              latestInvalidationReasonCode: planOneInvalidated.value
+                ? 'equipmentUnavailable'
+                : undefined,
+              status: 'generated',
+              horizonStartUtc: '2026-09-01T00:00:00Z',
+              horizonEndUtc: '2026-09-08T00:00:00Z',
+              generatedAtUtc: '2026-07-01T09:30:00Z',
+              assignmentCount: 8,
+              conflictCount: 1,
+              unscheduledOperationCount: 2,
+            },
+            {
+              planId: 'plan-empty',
+              status: 'preview',
+              generatedAtUtc: '2026-07-01T10:00:00Z',
+              assignmentCount: 0,
+              conflictCount: 0,
+              unscheduledOperationCount: 0,
+            },
+            {
+              planId: 'plan-invalid',
+              status: 'generated',
+              generatedAtUtc: '2026-07-01T11:00:00Z',
+              releasedAtUtc: '2026-07-01T11:30:00Z',
+              assignmentCount: 5,
+              conflictCount: 0,
+              unscheduledOperationCount: 0,
+              isInvalidated: true,
+              latestInvalidationReasonCode: 'equipmentUnavailable',
+              latestInvalidatedAtUtc: '2026-07-01T12:00:00Z',
+            },
+            {
+              planId: 'plan-superseded',
+              status: 'superseded',
+              assignmentCount: 3,
+              conflictCount: 0,
+              unscheduledOperationCount: 0,
+            },
+            {
+              planId: 'plan-revoked',
+              status: 'revoked',
+              assignmentCount: 2,
+              conflictCount: 0,
+              unscheduledOperationCount: 0,
+            },
+            // 已发布方案：撤销发布入口只对它开放。
+            {
+              planId: 'plan-released',
+              status: 'released',
+              generatedAtUtc: '2026-07-01T12:00:00Z',
+              releasedAtUtc: '2026-07-01T12:30:00Z',
+              assignmentCount: 4,
+              conflictCount: 0,
+              unscheduledOperationCount: 0,
+            },
+          ]
+      ).filter(
+        (row) =>
+          historyPage.value === 1 || !['plan-released', 'plan-001'].includes(row.planId ?? ''),
+      ),
+    ),
     plansError: shallowRef(undefined),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
@@ -384,6 +422,18 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  authState.permissionCodes = [
+    'business.scheduling.plans.read',
+    'business.scheduling.plans.manage',
+    'business.scheduling.plans.release',
+  ]
+  historyPage.value = 1
+  historyEmpty.value = false
+  planOneInvalidated.value = false
+  historyFilters.status = undefined
+  historyFilters.releasedOn = ''
+  historyFilters.isInvalidated = undefined
+  planOne.materialShortageSummary = []
   routeStub.query = {}
   detailSelection.planId = ''
   detailError.value = undefined
@@ -422,6 +472,67 @@ async function openPlanTable(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('APS scheduling workbench page', () => {
+  it.each([true, false])(
+    'shows the same batch shortages in draft and saved plan (shortage=%s)',
+    async (hasShortage) => {
+      // #3996：后端已完成共享库存分配，前端只呈现方案级缺口 3，不能按两个工单重复累加。
+      planOne.materialShortageSummary = hasShortage
+        ? [
+            {
+              materialId: 'MAT-SHARED',
+              materialLotId: 'LOT-1',
+              uomCode: 'kg',
+              shortageQuantity: 3,
+              affectedOperations: [
+                { orderId: 'WO-20260701-001', operationId: 'OP-10' },
+                { orderId: 'WO-20260701-002', operationId: 'OP-20' },
+              ],
+            },
+          ]
+        : []
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+      })
+      await flushPromises()
+      expect(wrapper.findComponent(SchedulingMaterialShortageSummary).exists()).toBe(false)
+      wrapper
+        .findComponent({ name: 'SchedulingOrderPool' })
+        .vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('生成首版'))!
+        .trigger('click')
+      await flushPromises()
+      const draftSummary = wrapper.find(
+        '[data-testid="scheduling-draft-board"] [data-testid="scheduling-material-shortage-summary"]',
+      )
+      if (hasShortage) {
+        expect(draftSummary.findAll('tbody tr')).toHaveLength(1)
+        expect(draftSummary.findAll('tbody td')[0]!.text()).toContain('MAT-SHARED')
+        expect(draftSummary.findAll('tbody td')[1]!.text()).toBe('3 kg')
+        expect(draftSummary.text()).toContain('LOT-1')
+        expect(draftSummary.text()).toContain('WO-20260701-001 · OP-10')
+        expect(draftSummary.text()).toContain('WO-20260701-002 · OP-20')
+      } else {
+        expect(draftSummary.text()).toContain('方案物料齐套 · 无缺料')
+      }
+      const expected = draftSummary.text()
+      const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特'))!
+      await ganttTab.trigger('focus')
+      await ganttTab.trigger('mousedown')
+      await flushPromises()
+      const savedSummary = wrapper.find(
+        '[data-testid="scheduling-plan-gantt"] [data-testid="scheduling-material-shortage-summary"]',
+      )
+      expect(savedSummary.text()).toBe(expected)
+      expect(
+        wrapper.find('aside [data-testid="scheduling-material-shortage-summary"]').text(),
+      ).toBe(expected)
+      wrapper.unmount()
+    },
+  )
+
   it('renders the official scheduling entry with plan summary columns from facade data', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
@@ -496,7 +607,7 @@ describe('APS scheduling workbench page', () => {
     expect(span).toBe(1)
   })
 
-  it('uses a single-page table while the facade does not return a total count', async () => {
+  it('shows server total, real horizons and controlled pagination in the history table', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
     })
@@ -504,11 +615,148 @@ describe('APS scheduling workbench page', () => {
     await openPlanTable(wrapper)
 
     const table = wrapper.findComponent({ name: 'NvDataTable' })
-    expect(table.props('pagination')).toBe(false)
-    expect(table.props('manual')).not.toBe(true)
+    expect(table.props('manual')).toBe(true)
+    expect(table.props('totalItems')).toBe(137)
+    expect(wrapper.text()).toContain('2026-09-01')
+    table.vm.$emit('update:page', 2)
+    await flushPromises()
+    expect(table.props('page')).toBe(2)
+    expect(wrapper.text()).toContain('137 个方案')
+    expect(wrapper.text()).toContain('发布日（UTC）')
+    expect(wrapper.text()).toContain('发布时间从新到旧')
+    expect(wrapper.text()).not.toContain('明细中确认')
     expect(wrapper.text()).toContain('工序数')
     expect(wrapper.text()).not.toContain('资源 / 工序')
   })
+
+  it('distinguishes filtered no-match results and lets the user clear all server filters', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+    historyFilters.status = 'revoked'
+    historyFilters.releasedOn = '2026-09-30'
+    historyFilters.isInvalidated = true
+    historyEmpty.value = true
+    await flushPromises()
+    expect(wrapper.text()).toContain('没有符合条件的方案')
+    expect(wrapper.text()).not.toContain('还没有排程方案')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '清空筛选')!
+      .trigger('click')
+    expect(historyFilters.status).toBeUndefined()
+    expect(historyFilters.releasedOn).toBe('')
+    expect(historyFilters.isInvalidated).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it.each(['page', 'filter'])(
+    'keeps selected released plan revocable after its summary leaves the %s window',
+    async (change) => {
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+      })
+      await flushPromises()
+      await openPlanTable(wrapper)
+      const row = wrapper.findAll('tbody tr').find((item) => item.text().includes('plan-released'))!
+      await row
+        .findAll('button')
+        .find((button) => button.text().includes('明细'))!
+        .trigger('click')
+      await flushPromises()
+      if (change === 'page') {
+        wrapper.findComponent({ name: 'NvDataTable' }).vm.$emit('update:page', 2)
+      } else {
+        historyFilters.status = 'revoked'
+        historyEmpty.value = true
+      }
+      await flushPromises()
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text().includes('甘特图'))!
+      await tab.trigger('focus')
+      await tab.trigger('mousedown')
+      await flushPromises()
+      expect(detailSelection.planId).toBe('plan-released')
+      const revoke = wrapper.findAll('button').find((button) => button.text().includes('撤销发布'))
+      expect(revoke).toBeDefined()
+      await revoke!.trigger('click')
+      await flushPromises()
+      expect(stub.revokePlan).not.toHaveBeenCalled()
+      expect(document.body.textContent).toContain('确认撤销发布该排程方案？')
+      clickConfirmRevoke()
+      await flushPromises()
+      expect(stub.revokePlan).toHaveBeenCalledWith('plan-released')
+      wrapper.unmount()
+    },
+  )
+
+  it.each(['page', 'filter'])(
+    'publishes the selected generated plan after its summary leaves the %s window',
+    async (change) => {
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+      })
+      await flushPromises()
+      await openPlanTable(wrapper)
+      const row = wrapper.findAll('tbody tr').find((item) => item.text().includes('plan-001'))!
+      await row
+        .findAll('button')
+        .find((button) => button.text().includes('明细'))!
+        .trigger('click')
+      await flushPromises()
+      if (change === 'page')
+        wrapper.findComponent({ name: 'NvDataTable' }).vm.$emit('update:page', 2)
+      else {
+        historyFilters.status = 'revoked'
+        historyEmpty.value = true
+      }
+      await flushPromises()
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text().includes('甘特图'))!
+      await tab.trigger('focus')
+      await tab.trigger('mousedown')
+      await flushPromises()
+      const publish = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('发布当前方案'))!
+      expect(publish.attributes('disabled')).toBeUndefined()
+      await publish.trigger('click')
+      await flushPromises()
+      expect(stub.releasePlan).toHaveBeenCalledWith('plan-001')
+      wrapper.unmount()
+    },
+  )
+
+  it.each(['plan-invalid', 'plan-released'])(
+    'preserves the selected %s release restriction after filtering away its summary',
+    async (planId) => {
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+      })
+      await flushPromises()
+      await openPlanTable(wrapper)
+      const row = wrapper.findAll('tbody tr').find((item) => item.text().includes(planId))!
+      await row
+        .findAll('button')
+        .find((button) => button.text().includes('明细'))!
+        .trigger('click')
+      await flushPromises()
+      historyFilters.status = 'revoked'
+      historyEmpty.value = true
+      await flushPromises()
+      const tab = wrapper.findAll('[role="tab"]').find((item) => item.text().includes('甘特图'))!
+      await tab.trigger('focus')
+      await tab.trigger('mousedown')
+      await flushPromises()
+      const publish = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('发布当前方案'))!
+      expect(publish.attributes('disabled')).toBeDefined()
+      expect(stub.releasePlan).not.toHaveBeenCalled()
+      if (planId === 'plan-invalid') expect(publish.attributes('title')).toContain('设备不可用')
+      wrapper.unmount()
+    },
+  )
 
   it('renders the selected APS plan as a read-only resource timeline', async () => {
     const wrapper = mount(SchedulingPage, {
@@ -711,6 +959,33 @@ describe('APS scheduling workbench page', () => {
 
     expect(detailSelection.planId).toBe('plan-invalid')
     expect(wrapper.text()).toContain('正在定位订单 WO-NOT-IN-PLAN')
+  })
+
+  it('refreshes selected Gantt invalidation when the uninvalidated history filter removes it', async () => {
+    detailSelection.planId = 'plan-001'
+    historyFilters.isInvalidated = false
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+    const release = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('发布当前方案'))!
+    expect(release.attributes('disabled')).toBeUndefined()
+    planOneInvalidated.value = true
+    historyEmpty.value = true
+    await flushPromises()
+    expect(detailSelection.planId).toBe('plan-001')
+    expect(wrapper.text()).toContain('方案已失效，不能从甘特发布')
+    expect(release.attributes('disabled')).toBeDefined()
+    wrapper.findComponent({ name: 'SchedulingPlanGantt' }).vm.$emit('release')
+    await flushPromises()
+    expect(stub.releasePlan).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('marks invalidated plans with their reason and blocks release', async () => {
@@ -1058,6 +1333,116 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('待排工单池')
   })
 
+  it('compares each revision against its persisted base rather than the edited draft', async () => {
+    // Regression / DomainInvariant: #3625 原值来自持久化版本，连续修订以刚生成的候选为下一次基线。
+    const candidate = {
+      ...planOne,
+      planId: 'plan-002',
+      assignments: planOne.assignments.map((assignment) =>
+        assignment.assignmentId === 'assign-001'
+          ? { ...assignment, resourceId: 'RES-CNC-02' }
+          : assignment,
+      ),
+      changeSummary: [
+        {
+          orderId: 'WO-20260701-001',
+          operationId: 'OP-10',
+          changeType: 'moved',
+          message: '改派备用设备',
+        },
+      ],
+    }
+    stub.revisePlan.mockResolvedValueOnce({ candidate }).mockResolvedValueOnce({
+      candidate: {
+        ...candidate,
+        planId: 'plan-003',
+        assignments: candidate.assignments.map((assignment) =>
+          assignment.assignmentId === 'assign-001'
+            ? { ...assignment, resourceId: 'RES-CNC-03' }
+            : assignment,
+        ),
+      },
+    })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+    const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+    board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
+    board.vm.$emit('lock', 'assign-001', true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('锁定重预览'))!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-change-row]').text()).toContain('RES-CNC-01 → RES-CNC-02')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('锁定重预览'))!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-change-row]').text()).toContain('RES-CNC-02 → RES-CNC-03')
+  })
+
+  it.each(['other-plan', 'filtered-history'])(
+    'keeps draft invalidation and edits independent of %s',
+    async (scenario) => {
+      // #4072：已有方案失效只刷新读面与操作状态，人工资源修改继续留在草案。
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: layoutStub },
+      })
+      await flushPromises()
+      wrapper
+        .findComponent({ name: 'SchedulingOrderPool' })
+        .vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('生成首版'))!
+        .trigger('click')
+      await flushPromises()
+      const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+      board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
+      await flushPromises()
+      const editedModel = board.props('model')
+      const publish = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('发布新版'))!
+      expect(publish.attributes('disabled')).toBeUndefined()
+
+      if (scenario === 'filtered-history') {
+        historyFilters.isInvalidated = false
+        historyEmpty.value = true
+        await flushPromises()
+      }
+      planOneInvalidated.value = true
+      await flushPromises()
+      if (scenario === 'other-plan') {
+        detailSelection.planId = 'plan-invalid'
+        await flushPromises()
+      }
+      expect(publish.attributes('disabled')).toBeDefined()
+      expect(publish.attributes('title')).toContain('设备不可用')
+      expect(wrapper.text()).toContain('方案已失效（设备不可用），请重排后再发布')
+      expect(board.props('model')).toBe(editedModel)
+      expect(
+        board.props('model').tasks.find((task: { id: string }) => task.id === 'assign-001')
+          .resourceId,
+      ).toBe('RES-CNC-02')
+      wrapper.unmount()
+    },
+  )
+
   it('persists a draft operation override with the plan id and the operation behind the task', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
@@ -1123,5 +1508,69 @@ describe('APS scheduling workbench page', () => {
 
     expect(detailSelection.planId).toBe('plan-empty')
     expect(wrapper.text()).toContain('未返回方案明细')
+  })
+})
+
+// DomainInvariant: #3634 与产品文档 §4；页面裁剪不替代 Gateway 的最终授权。
+describe('排产三级权限', () => {
+  it.each([
+    ['只读', false, false],
+    ['管理', true, false],
+    ['发布', true, true],
+  ] as const)('%s角色按权限开放动作并说明禁用原因', async (_role, manage, release) => {
+    authState.permissionCodes = [
+      'business.scheduling.plans.read',
+      ...(manage ? ['business.scheduling.plans.manage'] : []),
+      ...(release ? ['business.scheduling.plans.release'] : []),
+    ]
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    if (manage) {
+      wrapper
+        .findComponent({ name: 'SchedulingOrderPool' })
+        .vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+    }
+    const generate = wrapper.findAll('button').find((button) => button.text().includes('生成首版'))!
+    expect(generate.attributes('disabled') !== undefined).toBe(!manage)
+    if (!manage) expect(generate.attributes('title')).toContain('没有排产管理权限')
+    expect(wrapper.findComponent({ name: 'SchedulingDraftBoard' }).props('readOnly')).toBe(!manage)
+
+    await openPlanTable(wrapper)
+    const row = wrapper.findAll('tbody tr').find((item) => item.text().includes('plan-001'))!
+    const publish = row.findAll('button').find((button) => button.text().trim() === '发布')!
+    expect(publish.attributes('disabled') !== undefined).toBe(!release)
+    expect(publish.attributes('title')).toContain(release ? '发布该排程方案' : '没有排程发布权限')
+    const released = wrapper
+      .findAll('tbody tr')
+      .find((item) => item.text().includes('plan-released'))!
+    expect(released.findAll('button').some((button) => button.text().includes('撤销发布'))).toBe(
+      release,
+    )
+    wrapper.unmount()
+  })
+
+  it('Gateway 拒绝发布时显示中文权限原因', async () => {
+    stub.releasePlan.mockRejectedValueOnce({
+      success: false,
+      code: 403,
+      message: 'Forbidden.',
+      data: [],
+    })
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+    const row = wrapper.findAll('tbody tr').find((item) => item.text().includes('plan-001'))!
+    await row
+      .findAll('button')
+      .find((button) => button.text().trim() === '发布')!
+      .trigger('click')
+    await flushPromises()
+    expect(stub.toastError).toHaveBeenCalledWith('发布失败：没有权限执行此操作。')
+    wrapper.unmount()
   })
 })

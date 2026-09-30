@@ -162,6 +162,24 @@ public sealed class CreateSchedulingWorkbenchPlanEndpoint(ISender sender)
     }
 }
 
+public sealed class PreviewSchedulingWorkbenchPlanEndpoint(ISender sender)
+    : SchedulingEndpoint<CreateSchedulingWorkbenchPlanRequest, ResponseData<SchedulePlanContract>>
+{
+    public override void Configure() =>
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<PreviewSchedulingWorkbenchPlanEndpoint>());
+
+    public override async Task HandleAsync(CreateSchedulingWorkbenchPlanRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new PreviewSchedulingWorkbenchPlanCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.HorizonStartUtc,
+            req.HorizonEndUtc,
+            req.Orders), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CreateSchedulePlanRevisionEndpoint(ISender sender)
     : SchedulingEndpoint<CreateSchedulePlanRevisionRequest, ResponseData<SchedulePlanRevisionContract>>
 {
@@ -210,6 +228,41 @@ public sealed class ListSchedulePlansEndpoint(ISender sender)
     }
 }
 
+public sealed record ListSchedulePlanHistoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int PageIndex = 0,
+    int PageSize = 100,
+    SchedulePlanStatusContract? Status = null,
+    DateOnly? ReleasedOn = null,
+    bool? IsInvalidated = null);
+
+public sealed class ListSchedulePlanHistoryEndpoint(ISender sender)
+    : SchedulingEndpoint<ListSchedulePlanHistoryRequest, ResponseData<SchedulePlanHistoryResponse>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<ListSchedulePlanHistoryEndpoint>());
+
+    public override async Task HandleAsync(ListSchedulePlanHistoryRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListSchedulePlanHistoryQuery(req.OrganizationId, req.EnvironmentId,
+            req.PageIndex, req.PageSize, req.Status, req.ReleasedOn, req.IsInvalidated), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListSchedulePlanHistoryRequestValidator : Validator<ListSchedulePlanHistoryRequest>
+{
+    public ListSchedulePlanHistoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.PageIndex).InclusiveBetween(0, int.MaxValue / ListSchedulePlansQueryHandler.MaxPageSize);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, ListSchedulePlansQueryHandler.MaxPageSize);
+        RuleFor(x => x.Status).Must(status => status is null or SchedulePlanStatusContract.Generated or
+            SchedulePlanStatusContract.Released or SchedulePlanStatusContract.Superseded or SchedulePlanStatusContract.Revoked);
+    }
+}
+
 public sealed class GetSchedulePlanEndpoint(ISender sender)
     : SchedulingEndpoint<GetSchedulePlanRequest, ResponseData<SchedulePlanContract>>
 {
@@ -228,6 +281,20 @@ public sealed class GetSchedulePlanEndpoint(ISender sender)
     }
 }
 
+public sealed class ExportSchedulePlanCsvEndpoint(ISender sender)
+    : SchedulingEndpoint<GetSchedulePlanRequest, byte[]>
+{
+    public override void Configure() =>
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<ExportSchedulePlanCsvEndpoint>());
+
+    public override async Task HandleAsync(GetSchedulePlanRequest req, CancellationToken ct)
+    {
+        var plan = await sender.Send(new GetSchedulePlanDetailQuery(
+            req.PlanId, req.OrganizationId, req.EnvironmentId), ct);
+        await Send.BytesAsync(SchedulePlanCsv.Export(plan), "schedule-plan.csv", "text/csv; charset=utf-8", cancellation: ct);
+    }
+}
+
 public sealed class GetSchedulePlanGanttEndpoint(ISender sender)
     : SchedulingEndpoint<GetSchedulePlanGanttRequest, ResponseData<IReadOnlyCollection<GanttScheduleItemContract>>>
 {
@@ -242,6 +309,18 @@ public sealed class GetSchedulePlanGanttEndpoint(ISender sender)
             req.PlanId,
             req.OrganizationId,
             req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetSchedulePlanOverridesEndpoint(ISender sender)
+    : SchedulingEndpoint<GetSchedulePlanRequest, ResponseData<IReadOnlyCollection<ScheduleOperationOverrideResponse>>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<GetSchedulePlanOverridesEndpoint>());
+
+    public override async Task HandleAsync(GetSchedulePlanRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetSchedulePlanOverridesQuery(req.PlanId, req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -518,13 +597,17 @@ public static class SchedulingEndpointContracts
         new(typeof(PreviewSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingPlan"),
         new(typeof(CreateSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlan"),
         new(typeof(CreateSchedulingWorkbenchPlanEndpoint), "POST", "/api/business/v1/scheduling/workbench/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingWorkbenchPlan"),
+        new(typeof(PreviewSchedulingWorkbenchPlanEndpoint), "POST", "/api/business/v1/scheduling/workbench/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingWorkbenchPlan"),
         new(typeof(CreateSchedulePlanRevisionEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revisions", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlanRevision"),
         new(typeof(AssembleSchedulingProblemEndpoint), "POST", "/api/business/v1/scheduling/problems/assemble", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "assembleSchedulingProblem"),
+        new(typeof(ListSchedulePlanHistoryEndpoint), "GET", "/api/business/v1/scheduling/plans/history", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlanHistory"),
         new(typeof(ListSchedulePlansEndpoint), "GET", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlans"),
         new(typeof(GetSchedulePlanEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlan"),
+        new(typeof(ExportSchedulePlanCsvEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/csv", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "exportSchedulingPlanCsv"),
         new(typeof(GetSchedulePlanGanttEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/gantt", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanGantt"),
         new(typeof(ReleaseSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/release", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "releaseSchedulingPlan"),
         new(typeof(RevokeSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revoke", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "revokeSchedulingPlan"),
+        new(typeof(GetSchedulePlanOverridesEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/overrides", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanOverrides"),
         new(typeof(UpsertScheduleOperationOverrideEndpoint), "PUT", "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "upsertSchedulingOperationOverride"),
         new(typeof(ListOrderUrgenciesEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listOrderUrgencies"),
         new(typeof(GetOrderUrgencyEndpoint), "GET", "/api/business/v1/scheduling/order-urgencies/{orderReference}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getOrderUrgency"),

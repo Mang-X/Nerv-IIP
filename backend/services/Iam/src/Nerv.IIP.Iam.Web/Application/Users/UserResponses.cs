@@ -42,3 +42,12 @@ public sealed record MemberAccountListOptions(
     public const int MaxPageSize = 100;
     public const int MaxUserIds = 100;
 }
+
+public sealed record ProductionPlannerMemberListOptions(
+    string OrganizationId,
+    string EnvironmentId,
+    int PageIndex,
+    int PageSize)
+{
+    public const int MaxPageSize = 100;
+}

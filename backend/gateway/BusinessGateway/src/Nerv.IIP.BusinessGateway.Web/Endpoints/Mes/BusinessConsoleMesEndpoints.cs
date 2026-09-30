@@ -538,6 +538,50 @@ public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/priority")]
+[BusinessGatewayOperationId("adjustBusinessConsoleMesWorkOrderPriority")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+public sealed class AdjustBusinessConsoleMesWorkOrderPriorityEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesAdjustWorkOrderPriorityRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesAdjustWorkOrderPriorityRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesAdjustWorkOrderPriorityRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesAdjustWorkOrderPriorityRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.AdjustWorkOrderPriorityAsync(
+            tokenProvider.BearerToken,
+            request.WorkOrderId,
+            request,
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/release")]
 [BusinessGatewayOperationId("releaseBusinessConsoleMesWorkOrder")]
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]

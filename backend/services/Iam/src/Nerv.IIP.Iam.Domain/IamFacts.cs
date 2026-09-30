@@ -42,6 +42,27 @@ public sealed record SeedRoleDefinition(
 public static class NervIipSeedRoles
 {
     public const string PlatformAdministratorRoleName = "平台管理员";
+    public const string ProductionPlannerRoleId = "role-production-planner";
+
+    public static readonly SeedRoleDefinition ProductionPlanner = new(
+        ProductionPlannerRoleId,
+        "生产计划员",
+        [
+            "business.mes.work-orders.read",
+            "business.planning.demands.read",
+            "business.planning.demands.manage",
+            "business.planning.mps.read",
+            "business.planning.mps.manage",
+            "business.planning.mps.release",
+            "business.planning.mrp.read",
+            "business.planning.mrp.run",
+            "business.planning.suggestions.manage",
+            "business.scheduling.plans.read",
+            "business.scheduling.plans.manage",
+            "business.scheduling.plans.release",
+            "notifications.messages.read",
+            "notifications.tasks.read",
+        ]);
 
     public static readonly SeedRoleDefinition[] ErpJobRoles =
     [

@@ -187,6 +187,7 @@ public sealed class RushWorkOrderCommandTests
 
         Assert.Equal("WO-RUSH", response.WorkOrderId);
         Assert.Equal(1000, store.WorkOrders.Single(x => x.WorkOrderId == "WO-RUSH").Priority);
+        Assert.True(store.WorkOrders.Single(x => x.WorkOrderId == "WO-RUSH").IsRush);
         var operation = Assert.Single(store.OperationTasks, x => x.WorkOrderId == "WO-RUSH");
         Assert.Equal("OP-RUSH-20", operation.OperationTaskId);
         Assert.Equal(20, operation.OperationSequence);

@@ -15,6 +15,8 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderReleaseProjectionBackfilled = "mes.WorkOrderReleaseProjectionBackfilled";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
+    public const string WorkOrderSplit = "mes.WorkOrderSplit";
+    public const string WorkOrderMerged = "mes.WorkOrderMerged";
     public const string ReworkWorkOrderCreated = "mes.ReworkWorkOrderCreated";
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";

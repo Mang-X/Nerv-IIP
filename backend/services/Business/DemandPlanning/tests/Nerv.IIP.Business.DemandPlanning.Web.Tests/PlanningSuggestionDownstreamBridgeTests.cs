@@ -14,6 +14,78 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
 public sealed class PlanningSuggestionDownstreamBridgeTests
 {
+    [Theory]
+    [InlineData("reschedule-in", "erp:purchase-order:PO-001:10", "/api/business/v1/erp/purchase-orders/PO-001/lines/10/reschedule", "promisedDate", "BusinessErp", "PurchaseOrderLine", "PO-001:10")]
+    [InlineData("reschedule-out", "mes:work-order:WO-001", "/api/business/v1/mes/work-orders/WO-001/due-utc", "dueUtc", "BusinessMes", "WorkOrder", "WO-001")]
+    [InlineData("cancel", "erp:purchase-order:PO-001:10", "/api/business/v1/erp/purchase-orders/PO-001/lines/10/cancel", "reason", "BusinessErp", "PurchaseOrderLine", "PO-001:10")]
+    [InlineData("cancel", "mes:work-order:WO-001", "/api/business/v1/mes/work-orders/WO-001/cancel", "reason", "BusinessMes", "WorkOrder", "WO-001")]
+    public async Task Scheduled_receipt_acceptance_writes_the_source_document_before_returning_its_reference(
+        string type, string source, string expectedPath, string expectedField, string expectedService, string expectedType, string expectedId)
+    {
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()),
+            type, "SKU-001", "pcs", "SITE-01", 2m, new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), "scheduled-receipt");
+        suggestion.AddPeggingLink("scheduled-receipt", source, "SKU-001", null, 2m, null, null, null);
+        var handler = new StubHttpMessageHandler(async request =>
+        {
+            Assert.Equal(expectedPath, request.RequestUri?.AbsolutePath);
+            Assert.Equal(new AuthenticationHeaderValue("Bearer", "test-internal-token"), request.Headers.Authorization);
+            if (type == "cancel" && expectedService == "BusinessMes")
+                Assert.Equal("service:demand-planning", request.Headers.GetValues("X-Authenticated-Actor").Single());
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var writeValue = document.RootElement.GetProperty(expectedField);
+            if (expectedField == "promisedDate")
+                Assert.Equal("2026-09-30", writeValue.GetString());
+            else if (expectedField == "dueUtc")
+                Assert.Equal(DateTimeOffset.Parse("2026-09-30T00:00:00Z"), writeValue.GetDateTimeOffset());
+            else
+                Assert.False(string.IsNullOrWhiteSpace(writeValue.GetString()));
+            return JsonResponse("""{"success":true,"data":"accepted"}""");
+        });
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://downstream.test") };
+        var bridge = new HttpScheduledReceiptSuggestionDownstreamBridge(client, new TestHttpClientFactory(client), new TestInternalServiceTokenProvider());
+
+        var reference = await bridge.CreateDownstreamAsync(suggestion,
+            new PlanningSuggestionDownstreamRequest("ScheduledReceipt", "ScheduledReceipt", null, "accept-001"), CancellationToken.None);
+
+        Assert.Equal(expectedService, reference.DownstreamService);
+        Assert.Equal(expectedType, reference.DownstreamDocumentType);
+        Assert.Equal(expectedId, reference.DownstreamDocumentId);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Failed_scheduled_receipt_write_does_not_return_an_accepted_reference()
+    {
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()),
+            "cancel", "SKU-001", "pcs", "SITE-01", 2m, new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), "scheduled-receipt");
+        suggestion.AddPeggingLink("scheduled-receipt", "mes:work-order:WO-001", "SKU-001", null, 2m, null, null, null);
+        var handler = new StubHttpMessageHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://downstream.test") };
+        var bridge = new HttpScheduledReceiptSuggestionDownstreamBridge(client, new TestHttpClientFactory(client), new TestInternalServiceTokenProvider());
+
+        await Assert.ThrowsAsync<KnownException>(() => bridge.CreateDownstreamAsync(suggestion,
+            new PlanningSuggestionDownstreamRequest("ScheduledReceipt", "ScheduledReceipt", null, "accept-001"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Business_failure_envelope_does_not_accept_a_scheduled_receipt()
+    {
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.CreateVersion7()),
+            "cancel", "SKU-001", "pcs", "SITE-01", 2m, new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), "scheduled-receipt");
+        suggestion.AddPeggingLink("scheduled-receipt", "mes:work-order:WO-001", "SKU-001", null, 2m, null, null, null);
+        var handler = new StubHttpMessageHandler(_ => Task.FromResult(JsonResponse("""{"success":false,"message":"cannot cancel"}""")));
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://downstream.test") };
+        var bridge = new HttpScheduledReceiptSuggestionDownstreamBridge(client, new TestHttpClientFactory(client), new TestInternalServiceTokenProvider());
+
+        await Assert.ThrowsAsync<KnownException>(() => bridge.CreateDownstreamAsync(suggestion,
+            new PlanningSuggestionDownstreamRequest("ScheduledReceipt", "ScheduledReceipt", null, "accept-001"), CancellationToken.None));
+    }
+
+    private sealed class TestHttpClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
     [Fact]
     public async Task Http_mes_bridge_posts_expected_work_order_contract_and_returns_reference()
     {

@@ -19,6 +19,92 @@ namespace Nerv.IIP.Iam.Web.Tests;
 public sealed class IamErpRoleSeedTests
 {
     [Fact]
+    public async Task Bootstrap_creates_planner_role_with_workbench_read_permissions()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.BootstrapAsync();
+
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .Include(candidate => candidate.DataScopes)
+            .SingleAsync(candidate => candidate.Id == new RoleId(Nerv.IIP.Iam.Domain.NervIipSeedRoles.ProductionPlannerRoleId));
+        Assert.Equal("生产计划员", role.RoleName);
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.planning.mps.release");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.scheduling.plans.manage");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.mes.work-orders.read");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "notifications.messages.read");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "notifications.tasks.read");
+        var scope = Assert.Single(role.DataScopes);
+        Assert.Equal(DataScopeBinding.Organization, scope.ScopeType);
+        Assert.Equal("org-001", scope.ScopeCode);
+    }
+
+    [Fact]
+    public async Task Bootstrap_upgrades_only_the_fixed_planner_role_and_preserves_custom_permissions_and_members()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.BootstrapAsync();
+
+        var plannerRoleId = new RoleId("role-production-planner");
+        var planner = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == plannerRoleId);
+        planner.ReplacePermissions(["business.planning.mps.read", "business.masterdata.products.read"]);
+        planner.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Site, "SITE-CUSTOM")]);
+        dbContext.Roles.Add(new Role(new RoleId("role-custom-planner"), "计划员自定义", ["business.planning.mps.read"]));
+        var membership = await dbContext.Memberships.Include(item => item.Roles).SingleAsync();
+        membership.ReplaceRoles([new RoleId("role-platform-admin"), plannerRoleId]);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await seed.BootstrapAsync();
+        await seed.BootstrapAsync();
+        await seed.SeedAsync();
+        dbContext.ChangeTracker.Clear();
+
+        planner = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == plannerRoleId);
+        Assert.Equal(
+            ["business.masterdata.products.read", "business.mes.work-orders.read", "business.planning.mps.read", "notifications.messages.read", "notifications.tasks.read"],
+            planner.Permissions.Select(permission => permission.PermissionCode).Order(StringComparer.Ordinal));
+        var custom = await dbContext.Roles.Include(role => role.Permissions)
+            .SingleAsync(role => role.Id == new RoleId("role-custom-planner"));
+        Assert.Equal("计划员自定义", custom.RoleName);
+        Assert.Equal(["business.planning.mps.read"], custom.Permissions.Select(permission => permission.PermissionCode));
+        Assert.Equal([new DataScopeBinding(DataScopeBinding.Site, "SITE-CUSTOM")],
+            planner.DataScopes.Select(scope => new DataScopeBinding(scope.ScopeType, scope.ScopeCode)));
+        membership = await dbContext.Memberships.Include(item => item.Roles).SingleAsync();
+        Assert.Equal(
+            ["role-platform-admin", "role-production-planner"],
+            membership.Roles.Select(role => role.RoleId.Id).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Bootstrap_preserves_an_existing_same_name_role_and_creates_the_canonical_planner_role()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.Roles.Add(new Role(new RoleId("role-operator-created"), "生产计划员", ["business.planning.mps.read"]));
+        await dbContext.SaveChangesAsync();
+
+        await CreateSeed(dbContext).BootstrapAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var roles = await dbContext.Roles.Include(role => role.Permissions).ToListAsync();
+        var existing = Assert.Single(roles, role => role.Id == new RoleId("role-operator-created"));
+        Assert.Equal("生产计划员", existing.RoleName);
+        Assert.Equal(["business.planning.mps.read"], existing.Permissions.Select(permission => permission.PermissionCode));
+
+        var canonical = Assert.Single(roles, role => role.Id == new RoleId("role-production-planner"));
+        Assert.Equal("生产计划员（系统预置）", canonical.RoleName);
+        Assert.Contains(canonical.Permissions, permission => permission.PermissionCode == "business.planning.mps.release");
+    }
+
+    [Fact]
     public async Task Template_asset_retirement_is_in_the_catalog_and_only_the_default_platform_administrator()
     {
         const string permission = "business.barcodes.template-assets.retire";

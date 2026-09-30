@@ -5,7 +5,10 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
-import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  mesWorkOrderStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   mesWorkOrderReleaseBlocker,
@@ -40,7 +43,14 @@ import {
 } from '@/composables/useUrgencyDisplayMode'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
+import { isSchedulableWorkbenchCandidate } from '@/composables/useSchedulingWorkbench'
+import {
+  useCanScheduleSingleOrder,
+  SINGLE_ORDER_SCHEDULING_DENIED_REASON,
+} from '@/composables/useSingleOrderScheduling'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
+import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
@@ -165,6 +175,23 @@ watch(workCenterFilter, (value) => {
 })
 
 const statusOptions = mesWorkOrderStatusOptions
+const { statusLabel } = useMesReferenceLabels()
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
+const scheduleTarget = shallowRef<Row | null>(null)
+const scheduleOpen = shallowRef(false)
+function scheduleDisabledReason(order: Row) {
+  if (!isSchedulableWorkbenchCandidate(order)) {
+    return order.productionVersionId
+      ? '工单已处于终态，不能再排产。'
+      : '工单没有生产版本，排程无法展开工艺路线。'
+  }
+  return canScheduleSingleOrder.value ? '' : SINGLE_ORDER_SCHEDULING_DENIED_REASON
+}
+function openSchedule(order: Row) {
+  if (scheduleDisabledReason(order)) return
+  scheduleTarget.value = order
+  scheduleOpen.value = true
+}
 // 组织与环境不进表单：它们由壳层异步绑定到 filters，整页直开时表单初始化那一刻还是空串（#3858）。
 const rushForm = reactive({
   skuId: '',
@@ -458,6 +485,7 @@ const canCreateRush = computed(
 const sort = ref<NvDataTableSort | null>(null)
 function sortValue(order: Row, key: string): string | number {
   if (key === 'quantity') return order.quantity ?? 0
+  if (key === 'completedQuantity') return order.completedQuantity ?? 0
   if (key === 'dueUtc') return order.dueUtc ? new Date(order.dueUtc).getTime() : 0
   if (key === 'operationCount') return order.operationTasks?.length ?? 0
   return (order[key as keyof Row] as string | null) ?? ''
@@ -513,6 +541,7 @@ const columns: NvDataTableColumn<Row>[] = [
     width: 'w-24',
     accessor: (r) => r.quantity ?? 0,
   },
+  { key: 'completedQuantity', header: '完成量', align: 'end', sortable: true, width: 'w-24' },
   {
     key: 'dueUtc',
     header: '交期',
@@ -836,7 +865,11 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-status="{ row }">
         <div class="flex items-center gap-1.5">
-          <NvStatusBadge :value="row.status" />
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+          <WorkOrderDemandChangeBadges
+            :has-changed-demand="row.hasChangedDemand"
+            :has-cancelled-demand="row.hasCancelledDemand"
+          />
           <!-- 质量保留锁定标记：与工单生命周期状态无关，来源为活跃 quality hold（#886）。 -->
           <LockIcon
             v-if="row.hasActiveQualityHold"
@@ -863,6 +896,13 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-quantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template
+      >
+      <template #cell-completedQuantity="{ row }"
+        ><span class="tabular-nums">{{
+          row.completedQuantity == null
+            ? '—'
+            : row.completedQuantity.toLocaleString(undefined, { maximumFractionDigits: 6 })
+        }}</span></template
       >
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>
       <template #cell-operationCount="{ row }">
@@ -913,6 +953,14 @@ function isNonEmpty(value: string) {
             <FactoryIcon aria-hidden="true" />
             {{ releaseBlocker(row) ? `不能下达：${releaseBlocker(row)}` : '下达工单' }}
           </NvDropdownMenuItem>
+          <NvDropdownMenuItem
+            :disabled="Boolean(scheduleDisabledReason(row))"
+            :title="scheduleDisabledReason(row) || '对当前工单生成排程方案'"
+            @click="openSchedule(row)"
+          >
+            <CalendarCogIcon aria-hidden="true" />
+            对该单排产
+          </NvDropdownMenuItem>
           <NvDropdownMenuSeparator />
           <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openOrderDetail(row)">
             <ExternalLinkIcon aria-hidden="true" />
@@ -921,6 +969,14 @@ function isNonEmpty(value: string) {
         </NvRowActions>
       </template>
     </NvDataTable>
+
+    <SingleOrderSchedulingDialog
+      v-if="scheduleOpen && scheduleTarget"
+      v-model:open="scheduleOpen"
+      :work-order-id="scheduleTarget.workOrderId"
+      :context-label="`MES 工单 ${scheduleTarget.workOrderNo ?? scheduleTarget.workOrderId}`"
+      @scheduled="refreshWorkOrders"
+    />
 
     <WorkOrderTransformationDialog
       v-model:open="mergeDialogOpen"

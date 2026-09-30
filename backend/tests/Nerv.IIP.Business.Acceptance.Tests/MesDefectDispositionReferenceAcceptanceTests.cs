@@ -148,6 +148,8 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
         Assert.True(widenIndex > 0, $"迁移 {WidenMigrationId} 必须存在于迁移清单中，否则本用例失去跨迁移语义。");
         var migrator = dbContext.GetService<IMigrator>();
         await migrator.MigrateAsync(migrations[widenIndex - 1]);
+        // 当前 WorkOrder 模型需新列；列宽证明仍保持旧目标列，前滚前移除兼容列。
+        await dbContext.Database.ExecuteSqlRawAsync("ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE");
 
         await SeedDefectAsync(dbContext, DefectNo);
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
@@ -162,6 +164,7 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
         Assert.Equal(legacyReference, legacyDefect.DispositionReferenceId);
 
         // 加宽迁移在既有行之上执行。
+        await dbContext.Database.ExecuteSqlRawAsync("ALTER TABLE mes.work_orders DROP COLUMN is_rush");
         await migrator.MigrateAsync();
         dbContext.ChangeTracker.Clear();
 

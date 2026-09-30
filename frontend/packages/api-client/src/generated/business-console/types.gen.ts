@@ -1501,6 +1501,9 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     blockWindows?: Array<NervIipContractsSchedulingSchedulePlanBlockWindowContract> | null;
     materialRisks?: Array<NervIipContractsSchedulingSchedulePlanMaterialRiskContract> | null;
     equipmentRisks?: Array<NervIipContractsSchedulingSchedulePlanEquipmentRiskContract> | null;
+    materialShortageSummary?: Array<NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract> | null;
+    validationContext?: NervIipContractsSchedulingSchedulePlanValidationContextContract | null;
+    assemblyDependencies?: Array<NervIipContractsSchedulingSchedulingAssemblyDependencyContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1532,6 +1535,12 @@ export type NervIipContractsSchedulingScheduleAssignmentContract = {
     isLocked?: boolean;
     explanationCode?: string;
     standardOperationCode?: string | null;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
+};
+
+export type NervIipContractsSchedulingScheduleAssignmentSegmentContract = {
+    startUtc?: string;
+    endUtc?: string;
 };
 
 export type NervIipContractsSchedulingScheduleResourceLoadContract = {
@@ -1628,6 +1637,7 @@ export type NervIipContractsSchedulingSchedulingMaterialShortageContract = {
     requiredQuantity?: number;
     availableQuantity?: number;
     shortageQuantity?: number;
+    uomCode?: string | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanEquipmentRiskContract = {
@@ -1636,6 +1646,59 @@ export type NervIipContractsSchedulingSchedulePlanEquipmentRiskContract = {
     resourceId?: string;
     reasonCodes?: Array<string>;
     message?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract = {
+    materialId?: string;
+    materialLotId?: string | null;
+    uomCode?: string | null;
+    shortageQuantity?: number;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract = {
+    orderId?: string;
+    operationId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanValidationContextContract = {
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    resources?: Array<NervIipContractsSchedulingSchedulePlanResourceContextContract>;
+    operations?: Array<NervIipContractsSchedulingSchedulePlanOperationContextContract>;
+    fixedReservations?: Array<NervIipContractsSchedulingSchedulePlanFixedReservationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanResourceContextContract = {
+    resourceId?: string;
+    workCenterId?: string;
+    calendarId?: string;
+    capacityUnits?: number;
+    utilizationRate?: number;
+};
+
+export type NervIipContractsSchedulingSchedulePlanOperationContextContract = {
+    orderId?: string;
+    operationId?: string;
+    predecessorOperationIds?: Array<string>;
+    dueUtc?: string;
+    durationMinutes?: number;
+    setupMinutes?: number;
+    isFixed?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFixedReservationContract = {
+    orderId?: string;
+    operationId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    resourceId?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingAssemblyDependencyContract = {
+    childOrderId?: string;
+    parentOrderId?: string;
 };
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
@@ -1657,6 +1720,7 @@ export type NervIipContractsSchedulingSchedulingProblemContract = {
     qualityBlocks?: Array<NervIipContractsSchedulingSchedulingQualityBlockContract>;
     lockedAssignments?: Array<NervIipContractsSchedulingSchedulingLockedAssignmentContract>;
     equipmentDataRisks?: Array<NervIipContractsSchedulingSchedulingEquipmentDataRiskContract> | null;
+    assemblyDependencies?: Array<NervIipContractsSchedulingSchedulingAssemblyDependencyContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingOrderContract = {
@@ -1690,9 +1754,17 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     requiredSkillCodes?: Array<string> | null;
     requiredToolingIds?: Array<string> | null;
     toolingAvailable?: boolean;
+    changeovers?: Array<NervIipContractsSchedulingSchedulingChangeoverContract> | null;
 };
 
-export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
+export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable' | 'interruptible';
+
+export type NervIipContractsSchedulingSchedulingChangeoverContract = {
+    fromSkuCode?: string;
+    setupMinutes?: number;
+    requiredToolingIds?: Array<string>;
+    toolingAvailable?: boolean;
+};
 
 export type NervIipContractsSchedulingSchedulingResourceContract = {
     resourceId?: string;
@@ -1701,6 +1773,7 @@ export type NervIipContractsSchedulingSchedulingResourceContract = {
     capacityUnits?: number;
     calendarId?: string;
     sortKey?: string;
+    utilizationRate?: number;
 };
 
 export type NervIipContractsSchedulingSchedulingCalendarContract = {
@@ -1748,6 +1821,7 @@ export type NervIipContractsSchedulingSchedulingLockedAssignmentContract = {
     startUtc?: string;
     endUtc?: string;
     lockReasonCode?: string;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingEquipmentDataRiskContract = {
@@ -1827,9 +1901,24 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     isInvalidated?: boolean;
     latestInvalidationReasonCode?: string | null;
     latestInvalidatedAtUtc?: string | null;
+    horizonStartUtc?: string | null;
+    horizonEndUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingContextRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryRequest = {
     [key: string]: never;
 };
 
@@ -1839,6 +1928,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
 
 export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract = NetCorePalExtensionsDtoResponseData & {
     data?: Array<NervIipContractsSchedulingGanttScheduleItemContract> | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse = {
+    operationId?: string;
+    workOrderId?: string;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    lockReasonCode?: string;
+    sourcePlanId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1867,16 +1971,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse = {
-    operationId?: string;
-    workOrderId?: string;
-    resourceId?: string;
-    workCenterId?: string;
-    startUtc?: string;
-    endUtc?: string;
-    lockReasonCode?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest = {
@@ -3139,6 +3233,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     operationCode?: string;
     operationName?: string;
     standardMinutes?: number;
+    interruptible?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListRoutingsRequest = {
@@ -3170,6 +3265,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     operationCode?: string;
     operationName?: string;
     standardMinutes?: number;
+    interruptible?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3749,6 +3845,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inputCoverageStart?: string | null;
     inputCoverageEnd?: string | null;
     failureReason?: string | null;
+    demandChangeCount?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
@@ -3804,6 +3901,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     downstreamService?: string | null;
     downstreamDocumentType?: string | null;
     downstreamDocumentId?: string | null;
+    supersededByRunId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNetRequirementExplanation = {
@@ -4114,7 +4212,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     priority?: number;
     dueUtc?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
     operationTasks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem>;
     workOrderNo?: string | null;
     skuCode?: string | null;
@@ -4123,11 +4221,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceWorkOrderId?: string | null;
     sourceNcrId?: string | null;
     sourceNcrCode?: string | null;
+    hasChangedDemand?: boolean;
+    hasCancelledDemand?: boolean;
+    isRush?: boolean;
+    completedQuantity?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
     operationTaskId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     operationSequence?: number;
     workCenterId?: string;
     alternativeWorkCenterIds?: Array<string>;
@@ -4166,12 +4268,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceWorkOrderId?: string | null;
     sourceNcrId?: string | null;
     sourceNcrCode?: string | null;
+    isRush?: boolean;
+    priority?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     operationSequence?: number;
     workCenterId?: string;
     deviceAssetId?: string | null;
@@ -4236,6 +4340,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderDetailRequest = {
     [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest = {
+    isRush?: boolean;
+    priority?: number;
+    changedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest = {
@@ -4431,7 +4541,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     requestedQuantity?: number;
     receivedQuantity?: number;
     consumedQuantity?: number;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Requested' | 'PartiallyReceived' | 'ReceiptPosting' | 'Received' | 'Cancelled' | 'ReturnRequested' | 'ReservationExpired';
     wmsRequestId?: string | null;
     requestedAtUtc?: string;
     workOrderNo?: string | null;
@@ -4531,7 +4641,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     workCenterId?: string;
     deviceAssetId?: string | null;
     shiftId?: string | null;
@@ -4618,7 +4728,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string;
     workCenterId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     plannedQuantity?: number;
     goodQuantity?: number;
     scrapQuantity?: number;
@@ -4932,7 +5042,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     qualityItemId?: string;
     sourceType?: string;
     sourceDocumentId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'ReworkPending' | 'ScrapAccepted' | 'ReturnAccepted' | 'DispositionAccepted';
     defectCode?: string | null;
     ncrId?: string | null;
 };
@@ -4953,7 +5063,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skuId?: string;
     quantity?: number;
     unitCost?: number | null;
-    receiptStatus?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    receiptStatus?: 'Requested' | 'PartiallyPosted' | 'Posted' | 'InventoryPostingFailed' | 'Cancelled';
     requestedAtUtc?: string;
     workOrderNo?: string | null;
     skuCode?: string | null;
@@ -5081,7 +5191,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string | null;
     operationTaskId?: string | null;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'Recovered';
     startedAtUtc?: string;
     recoveredAtUtc?: string | null;
     workOrderNo?: string | null;
@@ -5284,7 +5394,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     impactId?: string;
     workCenterId?: string;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'Recovered';
     effectiveFromUtc?: string;
     effectiveToUtc?: string | null;
     reasonCode?: string;
@@ -12035,6 +12145,39 @@ export type CreateBusinessConsoleSchedulingWorkbenchPlanResponses = {
 
 export type CreateBusinessConsoleSchedulingWorkbenchPlanResponse = CreateBusinessConsoleSchedulingWorkbenchPlanResponses[keyof CreateBusinessConsoleSchedulingWorkbenchPlanResponses];
 
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/plans/preview';
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanError = PreviewBusinessConsoleSchedulingWorkbenchPlanErrors[keyof PreviewBusinessConsoleSchedulingWorkbenchPlanErrors];
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanResponse = PreviewBusinessConsoleSchedulingWorkbenchPlanResponses[keyof PreviewBusinessConsoleSchedulingWorkbenchPlanResponses];
+
 export type CreateBusinessConsoleSchedulingPlanRevisionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest;
     path: {
@@ -12069,6 +12212,47 @@ export type CreateBusinessConsoleSchedulingPlanRevisionResponses = {
 };
 
 export type CreateBusinessConsoleSchedulingPlanRevisionResponse = CreateBusinessConsoleSchedulingPlanRevisionResponses[keyof CreateBusinessConsoleSchedulingPlanRevisionResponses];
+
+export type ListBusinessConsoleSchedulingPlanHistoryData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        pageIndex?: number;
+        pageSize?: number;
+        status?: NervIipContractsSchedulingSchedulePlanStatusContract | null;
+        releasedOn?: string | null;
+        isInvalidated?: boolean | null;
+    };
+    url: '/api/business-console/v1/scheduling/plans/history';
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryError = ListBusinessConsoleSchedulingPlanHistoryErrors[keyof ListBusinessConsoleSchedulingPlanHistoryErrors];
+
+export type ListBusinessConsoleSchedulingPlanHistoryResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse;
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryResponse = ListBusinessConsoleSchedulingPlanHistoryResponses[keyof ListBusinessConsoleSchedulingPlanHistoryResponses];
 
 export type GetBusinessConsoleSchedulingPlanData = {
     body?: never;
@@ -12108,6 +12292,44 @@ export type GetBusinessConsoleSchedulingPlanResponses = {
 
 export type GetBusinessConsoleSchedulingPlanResponse = GetBusinessConsoleSchedulingPlanResponses[keyof GetBusinessConsoleSchedulingPlanResponses];
 
+export type ExportBusinessConsoleSchedulingPlanCsvData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/csv';
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvError = ExportBusinessConsoleSchedulingPlanCsvErrors[keyof ExportBusinessConsoleSchedulingPlanCsvErrors];
+
+export type ExportBusinessConsoleSchedulingPlanCsvResponses = {
+    /**
+     * Success
+     */
+    200: Blob | File;
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvResponse = ExportBusinessConsoleSchedulingPlanCsvResponses[keyof ExportBusinessConsoleSchedulingPlanCsvResponses];
+
 export type GetBusinessConsoleSchedulingPlanGanttData = {
     body?: never;
     path: {
@@ -12145,6 +12367,44 @@ export type GetBusinessConsoleSchedulingPlanGanttResponses = {
 };
 
 export type GetBusinessConsoleSchedulingPlanGanttResponse = GetBusinessConsoleSchedulingPlanGanttResponses[keyof GetBusinessConsoleSchedulingPlanGanttResponses];
+
+export type GetBusinessConsoleSchedulingPlanOverridesData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/overrides';
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesError = GetBusinessConsoleSchedulingPlanOverridesErrors[keyof GetBusinessConsoleSchedulingPlanOverridesErrors];
+
+export type GetBusinessConsoleSchedulingPlanOverridesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse;
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesResponse = GetBusinessConsoleSchedulingPlanOverridesResponses[keyof GetBusinessConsoleSchedulingPlanOverridesResponses];
 
 export type ReleaseBusinessConsoleSchedulingPlanData = {
     body?: never;
@@ -16048,7 +16308,7 @@ export type ListBusinessConsoleMesProductionPlansData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -16157,7 +16417,7 @@ export type ListBusinessConsoleMesWorkOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -16226,6 +16486,43 @@ export type GetBusinessConsoleMesWorkOrderDetailResponses = {
 };
 
 export type GetBusinessConsoleMesWorkOrderDetailResponse = GetBusinessConsoleMesWorkOrderDetailResponses[keyof GetBusinessConsoleMesWorkOrderDetailResponses];
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/priority';
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityError = AdjustBusinessConsoleMesWorkOrderPriorityErrors[keyof AdjustBusinessConsoleMesWorkOrderPriorityErrors];
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityResponse = AdjustBusinessConsoleMesWorkOrderPriorityResponses[keyof AdjustBusinessConsoleMesWorkOrderPriorityResponses];
 
 export type ReleaseBusinessConsoleMesWorkOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest;
@@ -16695,7 +16992,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Requested' | 'PartiallyReceived' | 'ReceiptPosting' | 'Received' | 'Cancelled' | 'ReturnRequested' | 'ReservationExpired';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -16912,7 +17209,7 @@ export type ListBusinessConsoleMesDispatchTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17028,7 +17325,7 @@ export type ListBusinessConsoleMesOperationTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17332,7 +17629,7 @@ export type GetBusinessConsoleMesWipSummaryData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17723,7 +18020,7 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'ReworkPending' | 'ScrapAccepted' | 'ReturnAccepted' | 'DispositionAccepted';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17761,7 +18058,7 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Requested' | 'PartiallyPosted' | 'Posted' | 'InventoryPostingFailed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -17865,7 +18162,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Recovered';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -18004,7 +18301,7 @@ export type ListBusinessConsoleMesShiftHandoversData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Accepted';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -18235,7 +18532,7 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Recovered';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;

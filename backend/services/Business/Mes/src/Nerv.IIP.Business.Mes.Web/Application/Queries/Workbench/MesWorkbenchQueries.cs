@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -822,7 +823,9 @@ public sealed record MesWorkOrderDetailResponse(
     string WorkOrderType = WorkOrder.StandardType,
     string? SourceWorkOrderId = null,
     string? SourceNcrId = null,
-    string? SourceNcrCode = null);
+    string? SourceNcrCode = null,
+    bool IsRush = false,
+    int Priority = 0);
 
 // 工单质量保留（quality hold）投影,含活跃与已释放周期,供工单详情 hold 区块接时间线查询与人工强制释放。
 // IsActive 是「锁定/自动消失」的依据(列表锁定图标仅看活跃);已释放周期仍返回,使释放时间/方式与时间线在详情可见。
@@ -956,6 +959,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.SkuId,
                 x.ProductionVersionId,
                 x.Quantity,
+                x.IsRush,
+                x.Priority,
                 x.Status,
                 x.WorkOrderType,
                 x.SourceWorkOrderId,
@@ -1045,7 +1050,9 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             workOrder.WorkOrderType,
             workOrder.SourceWorkOrderId,
             workOrder.SourceNcrId,
-            workOrder.SourceNcrCode);
+            workOrder.SourceNcrCode,
+            workOrder.IsRush,
+            workOrder.Priority);
     }
 
     internal static IQueryable<MesOperationTaskRow> QueryOperationTasks(
@@ -2272,7 +2279,7 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 null,
                 null,
                 x.DeviceAssetId,
-                x.ToUtc == null ? "Open" : "Recovered",
+                x.ToUtc == null ? WorkCenterUnavailability.OpenStatus : WorkCenterUnavailability.RecoveredStatus,
                 x.FromUtc,
                 x.ToUtc,
                 x.WorkCenterId,

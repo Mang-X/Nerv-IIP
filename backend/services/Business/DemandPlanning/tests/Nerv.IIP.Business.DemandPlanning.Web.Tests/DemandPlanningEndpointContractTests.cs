@@ -10,13 +10,16 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.DomainEvents;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
@@ -32,6 +35,56 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 public sealed class DemandPlanningEndpointContractTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Theory]
+    [InlineData("demand")]
+    [InlineData("safety-stock")]
+    [InlineData("negative-availability")]
+    public async Task Accepting_component_suggestion_carries_only_pegged_parent_suggestions(string peggingType)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var runId = new MrpRunId(Guid.CreateVersion7());
+        var requiredDate = new DateOnly(2026, 10, 10);
+        PlanningSuggestion NewSuggestion(MrpRunId run, string sku, DateOnly dueDate) => PlanningSuggestion.Create(
+            "org-001", "env-dev", run, "planned-work-order", sku, "EA", "SITE-01", 10m,
+            dueDate, dueDate.AddDays(-2), "net-requirement");
+
+        var parent = NewSuggestion(runId, "SKU-ASSEMBLY", requiredDate);
+        parent.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", null, 10m, null, null, null,
+            sourceLineReference: "10");
+        var otherPathParent = NewSuggestion(runId, "SKU-ASSEMBLY", requiredDate.AddDays(-1));
+        otherPathParent.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", null, 10m, null, null, null,
+            sourceLineReference: "10");
+        var unrelated = NewSuggestion(runId, "SKU-ASSEMBLY", requiredDate);
+        unrelated.AddPeggingLink(peggingType, "SO-2", "SKU-ASSEMBLY", null, 10m, null, null, null,
+            sourceLineReference: "20");
+        var child = NewSuggestion(runId, "SKU-COMPONENT", parent.ReleaseDate);
+        child.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", "SKU-COMPONENT", 10m, null, null, null,
+            sourceLineReference: "10");
+        var otherPathChild = NewSuggestion(runId, "SKU-COMPONENT", otherPathParent.ReleaseDate);
+        otherPathChild.AddPeggingLink(peggingType, "SO-1", "SKU-ASSEMBLY", "SKU-COMPONENT", 10m, null, null, null,
+            sourceLineReference: "10");
+        dbContext.PlanningSuggestions.AddRange(parent, otherPathParent, unrelated, child, otherPathChild);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var bridge = new CountingPlanningSuggestionDownstreamBridge();
+        await new AcceptPlanningSuggestionCommandHandler(dbContext, bridge).Handle(
+            new AcceptPlanningSuggestionCommand(child.Id, "BusinessMes", "WorkOrder", null),
+            CancellationToken.None);
+        await new AcceptPlanningSuggestionCommandHandler(dbContext, bridge).Handle(
+            new AcceptPlanningSuggestionCommand(otherPathChild.Id, "BusinessMes", "WorkOrder", null),
+            CancellationToken.None);
+
+        Assert.Equal(2, bridge.CreateCount);
+        var accepted = Assert.Single(child.GetDomainEvents().OfType<PlanningSuggestionAcceptedDomainEvent>());
+        Assert.Equal([parent.Id.ToString()], accepted.AssemblyParentSuggestionIds);
+        Assert.Equal([parent.Id.ToString()],
+            new PlanningSuggestionAcceptedIntegrationEventConverter().Convert(accepted).Payload.AssemblyParentSuggestionIds);
+        var otherAccepted = Assert.Single(otherPathChild.GetDomainEvents().OfType<PlanningSuggestionAcceptedDomainEvent>());
+        Assert.Equal([otherPathParent.Id.ToString()], otherAccepted.AssemblyParentSuggestionIds);
+    }
 
     [Fact]
     public void DemandPlanning_endpoints_expose_issue_128_routes_permissions_policies_and_operation_ids()
@@ -117,7 +170,7 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
-    public async Task Cancel_demand_source_command_removes_source_from_planning_input()
+    public async Task Cancel_demand_source_command_keeps_cancelled_source_for_traceability()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -132,7 +185,28 @@ public sealed class DemandPlanningEndpointContractTests
 
         var demands = await new ListDemandSourcesQueryHandler(dbContext)
             .Handle(new ListDemandSourcesQuery("org-001", "env-dev"), CancellationToken.None);
-        Assert.Empty(demands);
+        var demand = Assert.Single(demands);
+        Assert.Equal("cancelled", demand.SourceStatus);
+    }
+
+    [Fact]
+    public async Task Cancel_demand_source_command_rejects_erp_owned_sales_order_projection()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var demand = DemandSource.CreateSalesOrderDemand(
+            "org-001", "env-dev", "sales-order-id-1001", "SO-1001", "10", "CUST-001",
+            "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), 1);
+        dbContext.DemandSources.Add(demand);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new CancelDemandSourceCommandHandler(dbContext).Handle(
+            new CancelDemandSourceCommand("org-001", "env-dev", demand.Id), CancellationToken.None));
+
+        Assert.Equal("active", demand.SourceStatus);
+        Assert.Equal(10m, demand.Quantity);
+        Assert.Equal(1, demand.SourceVersion);
     }
 
     [Fact]
@@ -419,6 +493,26 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Execute_mrp_run_persists_distinct_sales_lines_on_new_suggestion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var snapshotProvider = new FixedPlanningInputSnapshotProvider("fixture-inventory", [
+            new DemandSnapshot("SO-001", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 1), "sales-order", "10"),
+            new DemandSnapshot("SO-001", "SKU-FG-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 1), "sales-order", "20"),
+        ]);
+
+        var run = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        dbContext.ChangeTracker.Clear();
+        var suggestion = Assert.Single(await dbContext.PlanningSuggestions
+            .Include(x => x.PeggingLinks).Where(x => x.MrpRunId == run.RunId).ToArrayAsync());
+        Assert.Equal(new (string? Line, decimal Quantity)[] { ("10", 4m), ("20", 6m) }, suggestion.PeggingLinks
+            .OrderBy(x => x.SourceLineReference)
+            .Select(x => (x.SourceLineReference, x.Quantity)).ToArray());
+    }
+
+    [Fact]
     public async Task Execute_mrp_run_command_rejects_missing_and_non_queued_runs()
     {
         await using var provider = CreateInMemoryProvider();
@@ -438,6 +532,96 @@ public sealed class DemandPlanningEndpointContractTests
         var replay = await Assert.ThrowsAsync<KnownException>(() =>
             executeHandler.Handle(new ExecuteMrpRunCommand(result.RunId), CancellationToken.None));
         Assert.Contains("不能重复执行", replay.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Completed_mrp_run_supersedes_only_older_open_suggestions_in_same_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var snapshotProvider = new DemandPlanningFixtureInputSnapshotProvider(dbContext);
+        var first = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        var firstSuggestions = dbContext.PlanningSuggestions.Where(x => x.MrpRunId == first.RunId).ToArray();
+        firstSuggestions[0].Accept("BusinessErp", "PurchaseRequisition", "PR-001");
+        firstSuggestions[1].Reject("planner", "not needed");
+        var open = PlanningSuggestion.Create("org-001", "env-dev", first.RunId, "planned-purchase", "SKU-RM-2000", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        var otherScope = PlanningSuggestion.Create("org-002", "env-dev", first.RunId, "planned-purchase", "SKU-RM-3000", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.AddRange(open, otherScope);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var second = await ExecuteMrpAsync(dbContext, snapshotProvider, new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+
+        var listed = await new ListPlanningSuggestionsQueryHandler(dbContext)
+            .Handle(new ListPlanningSuggestionsQuery("org-001", "env-dev", "Superseded"), CancellationToken.None);
+        var superseded = Assert.Single(listed);
+        Assert.Equal(open.Id, superseded.SuggestionId);
+        Assert.Equal(second.RunId, superseded.SupersededByRunId);
+        Assert.Equal(PlanningSuggestionStatus.Accepted, firstSuggestions[0].Status);
+        Assert.Equal(PlanningSuggestionStatus.Rejected, firstSuggestions[1].Status);
+        Assert.Equal(PlanningSuggestionStatus.Open, otherScope.Status);
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == second.RunId), x =>
+        {
+            Assert.Equal(PlanningSuggestionStatus.Open, x.Status);
+            Assert.Null(x.SupersededByRunId);
+        });
+        dbContext.ChangeTracker.Clear();
+        var persisted = await dbContext.PlanningSuggestions.AsNoTracking().ToArrayAsync();
+        Assert.Contains(persisted, x => x.Id == open.Id && x.Status == PlanningSuggestionStatus.Superseded && x.SupersededByRunId == second.RunId);
+        Assert.All(persisted.Where(x => x.MrpRunId == second.RunId), x => Assert.Equal(PlanningSuggestionStatus.Open, x.Status));
+    }
+
+    [Fact]
+    public async Task Failed_mrp_run_keeps_prior_open_suggestions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var first = await ExecuteMrpAsync(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext), new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        var secondRunId = await new RunMrpCommandHandler(dbContext)
+            .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new ExecuteMrpRunCommandHandler(dbContext, new ThrowingPlanningInputSnapshotProvider())
+                .Handle(new ExecuteMrpRunCommand(secondRunId), CancellationToken.None));
+
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == first.RunId), x =>
+        {
+            Assert.Equal(PlanningSuggestionStatus.Open, x.Status);
+            Assert.Null(x.SupersededByRunId);
+        });
+    }
+
+    [Fact]
+    public async Task Older_run_completing_after_newer_run_does_not_replace_newer_suggestions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var runHandler = new RunMrpCommandHandler(dbContext);
+        var olderRunId = await runHandler.Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        var newerRunId = await runHandler.Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var executeHandler = new ExecuteMrpRunCommandHandler(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext));
+
+        await executeHandler.Handle(new ExecuteMrpRunCommand(newerRunId), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await executeHandler.Handle(new ExecuteMrpRunCommand(olderRunId), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == newerRunId), x => Assert.Equal(PlanningSuggestionStatus.Open, x.Status));
+        Assert.All(dbContext.PlanningSuggestions.Where(x => x.MrpRunId == olderRunId), x =>
+        {
+            Assert.Equal(PlanningSuggestionStatus.Superseded, x.Status);
+            Assert.Equal(newerRunId, x.SupersededByRunId);
+        });
     }
 
     [Fact]
@@ -531,7 +715,8 @@ public sealed class DemandPlanningEndpointContractTests
     [Fact]
     public async Task Mrp_run_worker_marks_run_failed_with_reason_when_snapshot_fetch_throws()
     {
-        await using var provider = CreateWorkerProvider(_ => new ThrowingPlanningInputSnapshotProvider());
+        var attempts = 0;
+        await using var provider = CreateWorkerProvider(_ => new ThrowingPlanningInputSnapshotProvider(() => Interlocked.Increment(ref attempts)));
         var worker = CreateWorker(provider);
         await worker.StartAsync(CancellationToken.None);
         try
@@ -552,6 +737,48 @@ public sealed class DemandPlanningEndpointContractTests
             Assert.NotNull(run.FailureReason);
             Assert.Contains("MRP 计算失败", run.FailureReason!, StringComparison.Ordinal);
             Assert.Contains("上游库存快照拉取超时", run.FailureReason!, StringComparison.Ordinal);
+            Assert.Equal(2, Volatile.Read(ref attempts));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Mrp_run_worker_retries_once_on_same_running_run_then_completes()
+    {
+        var observedStatuses = new List<MrpRunStatus>();
+        var attempts = 0;
+        await using var provider = CreateWorkerProvider(sp => new FirstAttemptFailsSnapshotProvider(
+            new DemandPlanningFixtureInputSnapshotProvider(sp.GetRequiredService<ApplicationDbContext>()),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            observedStatuses,
+            () => Interlocked.Increment(ref attempts)));
+        MrpRunId runId;
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await new CreateOrUpdateDemandSourceCommandHandler(db).Handle(NewDemandCommand(), CancellationToken.None);
+            runId = await new RunMrpCommandHandler(db).Handle(
+                new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var worker = CreateWorker(provider);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var run = await WaitForTerminalRunAsync(provider, runId);
+            Assert.Equal(MrpRunStatus.Completed, run.Status);
+            Assert.Null(run.FailureReason);
+            Assert.Equal(2, run.SuggestionCount);
+            Assert.Equal(2, Volatile.Read(ref attempts));
+            Assert.Equal([MrpRunStatus.Running, MrpRunStatus.Running], observedStatuses);
+            using var scope = provider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(2, db.PlanningSuggestions.Count());
+            Assert.Single(await new ListMrpRunsQueryHandler(db).Handle(new ListMrpRunsQuery("org-001", "env-dev"), CancellationToken.None));
         }
         finally
         {
@@ -664,7 +891,7 @@ public sealed class DemandPlanningEndpointContractTests
         }
     }
 
-    private sealed class ThrowingPlanningInputSnapshotProvider : IPlanningInputSnapshotProvider
+    private sealed class ThrowingPlanningInputSnapshotProvider(Func<int>? onAttempt = null) : IPlanningInputSnapshotProvider
     {
         public Task<PlanningInputSnapshotResult> GetSnapshotAsync(
             string organizationId,
@@ -673,7 +900,31 @@ public sealed class DemandPlanningEndpointContractTests
             DateOnly horizonEnd,
             CancellationToken cancellationToken)
         {
+            onAttempt?.Invoke();
             throw new InvalidOperationException("上游库存快照拉取超时。");
+        }
+    }
+
+    private sealed class FirstAttemptFailsSnapshotProvider(
+        IPlanningInputSnapshotProvider inner,
+        IServiceScopeFactory scopeFactory,
+        List<MrpRunStatus> observedStatuses,
+        Func<int> nextAttempt) : IPlanningInputSnapshotProvider
+    {
+        public async Task<PlanningInputSnapshotResult> GetSnapshotAsync(
+            string organizationId, string environmentId, DateOnly horizonStart, DateOnly horizonEnd,
+            CancellationToken cancellationToken)
+        {
+            using (var scope = scopeFactory.CreateScope())
+            {
+                observedStatuses.Add(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                    .MrpRuns.AsNoTracking().Single().Status);
+            }
+            if (nextAttempt() == 1)
+            {
+                throw new InvalidOperationException("首次快照拉取失败。");
+            }
+            return await inner.GetSnapshotAsync(organizationId, environmentId, horizonStart, horizonEnd, cancellationToken);
         }
     }
 
@@ -798,6 +1049,55 @@ public sealed class DemandPlanningEndpointContractTests
 
         Assert.Equal("只有开放状态的计划建议才能接受。", exception.Message);
         Assert.Equal(0, bridge.CreateCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("FAKE")]
+    public async Task Scheduled_receipt_suggestion_remains_open_when_downstream_rejects_the_write(string? callerDocumentId)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()),
+            "cancel", "SKU-RM-1000", "pcs", "SITE-01", 2m, new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), "scheduled-receipt");
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-001:10", "SKU-RM-1000", null, 2m, null, null, null);
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, new FailingPlanningSuggestionDownstreamBridge());
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AcceptPlanningSuggestionCommand(suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", callerDocumentId), CancellationToken.None));
+
+        Assert.Equal(PlanningSuggestionStatus.Open, suggestion.Status);
+        Assert.Null(suggestion.AcceptedDownstreamDocumentId);
+    }
+
+    [Fact]
+    public async Task Accepted_scheduled_receipt_replay_requires_the_same_source_target()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()),
+            "cancel", "SKU-RM-1000", "pcs", "SITE-01", 2m, new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), "scheduled-receipt");
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-001:10", "SKU-RM-1000", null, 2m, null, null, null);
+        suggestion.Accept("BusinessErp", "PurchaseOrderLine", "PO-001:10");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext);
+
+        var replay = await handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", null), CancellationToken.None);
+        Assert.Equal("PO-001:10", replay.DownstreamDocumentId);
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "ScheduledReceipt", "OtherType", "other-id"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", "other-id"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "BusinessErp", "PurchaseOrderLine", "PO-999:10"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
+            suggestion.Id, "BusinessErp", "PurchaseOrderLine", null), CancellationToken.None));
     }
 
     [Fact]
@@ -994,6 +1294,14 @@ public sealed class DemandPlanningEndpointContractTests
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 ConfigureRequiredUpstreamBaseUrls(builder);
+                builder.ConfigureTestServices(services =>
+                {
+                    // 匿名鉴权不承担定时 MRP 验收，也不准备后台调度所需的数据库。
+                    var scheduler = services.Single(service =>
+                        service.ServiceType == typeof(IHostedService) &&
+                        service.ImplementationType == typeof(DailyMrpScheduler));
+                    services.Remove(scheduler);
+                });
             });
         using var client = factory.CreateClient();
 
@@ -1153,6 +1461,13 @@ public sealed class DemandPlanningEndpointContractTests
                 request.DownstreamDocumentType,
                 referenceId));
         }
+    }
+
+    private sealed class FailingPlanningSuggestionDownstreamBridge : IPlanningSuggestionDownstreamBridge
+    {
+        public Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
+            PlanningSuggestion suggestion, PlanningSuggestionDownstreamRequest request, CancellationToken cancellationToken)
+            => throw new KnownException("下游写回失败");
     }
 
     private sealed class FixedPlanningInputSnapshotProvider(

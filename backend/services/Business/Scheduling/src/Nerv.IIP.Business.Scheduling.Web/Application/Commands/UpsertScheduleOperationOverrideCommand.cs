@@ -15,7 +15,7 @@ public sealed record UpsertScheduleOperationOverrideCommand(
 
 public sealed record ScheduleOperationOverrideResponse(
     string OperationId, string WorkOrderId, string ResourceId, string WorkCenterId,
-    DateTimeOffset StartUtc, DateTimeOffset EndUtc, string LockReasonCode);
+    DateTimeOffset StartUtc, DateTimeOffset EndUtc, string LockReasonCode, string? SourcePlanId = null);
 
 public sealed class UpsertScheduleOperationOverrideCommandValidator
     : AbstractValidator<UpsertScheduleOperationOverrideCommand>
@@ -99,18 +99,18 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
                 request.OperationId, pair.Operation.OperationSequence, request.ResourceId,
                 resource.WorkCenterId, request.StartUtc, request.EndUtc,
                 ScheduleOperationOverrideLockReasonCodes.ManualOverride,
-                ScheduleOperationOverrideSourceTypes.SchedulingApi, null, actor, now, now);
+                ScheduleOperationOverrideSourceTypes.SchedulingApi, null, actor, now, now, plan.PlanId);
             dbContext.ScheduleOperationOverrides.Add(fact);
         }
         else
         {
             fact.ReplaceManually(request.ResourceId, resource.WorkCenterId, request.StartUtc,
-                request.EndUtc, actor, now);
+                request.EndUtc, actor, now, plan.PlanId);
         }
 
         return new ScheduleOperationOverrideResponse(
             fact.OperationId, fact.WorkOrderId, fact.ResourceId, fact.WorkCenterId,
-            fact.StartUtc, fact.EndUtc, fact.LockReasonCode);
+            fact.StartUtc, fact.EndUtc, fact.LockReasonCode, fact.SourcePlanId);
     }
 
     private static bool ContainsNull<T>(IEnumerable<T> values) =>

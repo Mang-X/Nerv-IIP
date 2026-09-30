@@ -136,6 +136,11 @@ const formSelectStubs = {
 const routerLinkStub = { RouterLink: { props: ['to'], template: '<a><slot /></a>' } }
 
 const allStubs = {
+  NvCheckbox: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: `<input type="checkbox" :checked="modelValue" @change="$emit('update:modelValue', $event.target.checked)" />`,
+  },
   ...layoutStub,
   ...dialogStubs,
   ...sheetStubs,
@@ -225,7 +230,21 @@ describe('engineering routings page', () => {
     expect(ops[0]!.operationCode).toBe('OP-WELD')
     expect(ops[0]!.operationName).toBe('焊接')
     expect(ops[0]!.standardMinutes).toBe(12)
+    expect(ops[0]!.interruptible).toBe(false)
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('publishes the interruptible choice on the selected operation (#4004)', async () => {
+    const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await openAndFillHeader(wrapper)
+    await wrapper.findAll('select')[1]!.setValue('WC-A')
+    await wrapper.findAll('select')[2]!.setValue('OP-WELD')
+    await wrapper.find('#rt-min-0').setValue('12')
+    await wrapper.find('#rt-interruptible-0').setValue(true)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(stub.releaseRouting.mock.calls[0]![0].operations[0].interruptible).toBe(true)
   })
 
   it('工序可增删：增加工序后两道，序号自动 10/20', async () => {
@@ -332,6 +351,7 @@ describe('engineering routings page', () => {
           operationCode: 'OP-WELD',
           operationName: '焊接',
           standardMinutes: 12,
+          interruptible: true,
         },
       ],
     })
@@ -351,6 +371,7 @@ describe('engineering routings page', () => {
     // 按序号排序：第一道为序号 10（焊接）。
     const firstRow = sheet.findAll('tbody tr')[0]!
     expect(firstRow.text()).toContain('焊接')
+    expect(firstRow.text()).toContain('可中断')
   })
 
   it('无标准工序时给出「去标准工序维护」出路且禁用增加工序', async () => {

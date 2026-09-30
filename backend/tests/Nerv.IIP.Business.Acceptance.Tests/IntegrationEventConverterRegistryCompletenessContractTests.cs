@@ -89,9 +89,9 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 /// <see cref="Converter_scan_face_is_closed_over_repository_service_web_projects"/> 把
 /// <b>后缀 <c>.Web.csproj</c> 且位于 <c>backend/services</c> 或 <c>backend/gateway</c> 之下</b>
 /// 的项目与扫描面对撞（⚠️ 这个限定本身是第 4 条失效方向），此形态的新服务不登记即红；
-/// ⛔ 但 <see cref="ScanFaceExcludedServiceProjects"/> 里那 3 个**排除项内部**若新增 converter，
+/// ⛔ 但 <see cref="ScanFaceExcludedServiceProjects"/> 里那 2 个**排除项内部**若新增 converter，
 /// 本类看不见（它们不在本测试项目的引用图里）。
-/// ⚠️ 「今天那 3 个里 converter 数为 0」是 #3382 实施时按 <c>IIntegrationEventConverter&lt;</c>
+/// ⚠️ 「今天那 2 个里 converter 数为 0」是 #3382 实施时按 <c>IIntegrationEventConverter&lt;</c>
 /// 全仓文本扫描得到的**当前读数**（117 处声明全部落在上面那 15 个程序集里），
 /// ⛔ **不是**被本类看守的性质——那条读数明天就可能过期而本类不会报红。</item>
 /// <item><b>⭐ 闭集探针的「服务」身份判据是<u>命名 + 目录</u>，不是「是不是一个服务」。</b>
@@ -159,12 +159,13 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(BarcodeLabelConverters.LabelPrintBatchCreatedIntegrationEventConverter),
         typeof(BarcodeLabelConverters.LabelScannedIntegrationEventConverter),
         typeof(BarcodeLabelConverters.ScanRejectedIntegrationEventConverter),
-        // DemandPlanning（4 条）
+        // DemandPlanning（5 条）
         typeof(DemandPlanningConverters.MrpRunCompletedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlannedPurchaseSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlannedWorkOrderSuggestedIntegrationEventConverter),
         typeof(DemandPlanningConverters.PlanningSuggestionAcceptedIntegrationEventConverter),
-        // Erp（16 条）
+        typeof(DemandPlanningConverters.SalesOrderDemandChangedForWorkOrderIntegrationEventConverter),
+        // Erp（17 条）
         typeof(ErpConverters.AccountPayableCreatedIntegrationEventConverter),
         typeof(ErpConverters.AccountReceivableCreatedIntegrationEventConverter),
         typeof(ErpConverters.CostCandidateCreatedIntegrationEventConverter),
@@ -178,6 +179,7 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(ErpConverters.PurchaseRequisitionCreatedIntegrationEventConverter),
         typeof(ErpConverters.SalesOrderCancelledIntegrationEventConverter),
         typeof(ErpConverters.SalesOrderChangedIntegrationEventConverter),
+        typeof(ErpConverters.SalesOrderDeliveryRegisteredIntegrationEventConverter),
         typeof(ErpConverters.SalesOrderReleasedIntegrationEventConverter),
         typeof(ErpConverters.SalesReturnAuthorizedIntegrationEventConverter),
         typeof(ErpConverters.WorkOrderCostCompletedIntegrationEventConverter),
@@ -205,7 +207,7 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(MasterDataConverters.SkuDisabledIntegrationEventConverter),
         typeof(MasterDataConverters.UnitOfMeasureChangedIntegrationEventConverter),
         typeof(MasterDataConverters.WorkCalendarChangedIntegrationEventConverter),
-        // Mes（18 条）
+        // Mes（20 条）
         typeof(MesConverters.DefectRaisedIntegrationEventConverter),
         typeof(MesConverters.FinishedGoodsReceiptRequestedForQualityIntegrationEventConverter),
         typeof(MesConverters.FinishedGoodsReceiptRequestedIntegrationEventConverter),
@@ -224,6 +226,8 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
         typeof(MesConverters.WorkOrderCompletedIntegrationEventConverter),
         typeof(MesConverters.WorkOrderEngineeringChangeImpactDetectedIntegrationEventConverter),
         typeof(MesConverters.WorkOrderReleasedIntegrationEventConverter),
+        typeof(MesConverters.WorkOrderSplitIntegrationEventConverter),
+        typeof(MesConverters.WorkOrderMergedIntegrationEventConverter),
         // ProductEngineering（4 条）
         typeof(ProductEngineeringConverters.EngineeringBomReleasedIntegrationEventConverter),
         typeof(ProductEngineeringConverters.EngineeringChangeReleasedIntegrationEventConverter),
@@ -277,10 +281,9 @@ public sealed class IntegrationEventConverterRegistryCompletenessContractTests
             // ⛔ 理由不是「拉进来会污染 WebApplicationFactory 的装配面」——本 PR 自证那条理由无效：
             // 加了 Nerv.IIP.Ops.Web 的 ProjectReference 之后整程序集 152 条读数**无一变化**，
             // 说明 WebApplicationFactory<TEntryPoint> 按**入口类型**定装配面，⛔ 不按本程序集的引用面。
-            // 真实理由是下面这条实读：三者今天各自**零 converter、零集成事件发布点**，
+            // 真实理由是下面这条实读：两者今天各自**零 converter、零集成事件发布点**，
             // 拉进来只增加编译面与产物体积，换不到任何鉴别力。
             // ⚠️ 这是**当前读数**不是被看守的性质——见类 <remarks> 覆盖边界第 3 条。
-            ["Nerv.IIP.Iam.Web"] = "平台身份服务：IIntegrationEventConverter 命中 0、集成事件发布点命中 0（backend/services/Iam/src 实读）。",
             ["Nerv.IIP.FileStorage.Web"] = "文件存储服务：IIntegrationEventConverter 命中 0、集成事件发布点命中 0（backend/services/FileStorage/src 实读）。",
             ["Nerv.IIP.PlatformGateway.Web"] = "平台网关：IIntegrationEventConverter 命中 0、集成事件发布点命中 0（backend/gateway/PlatformGateway/src 实读）。",
         };

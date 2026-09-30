@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderDemandChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
@@ -29,6 +30,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     private const string ProcessedIntegrationEventInstanceIndexName = "ux_processed_integration_events_consumer_event_id";
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+
+    public DbSet<WorkOrderDemandChange> WorkOrderDemandChanges => Set<WorkOrderDemandChange>();
 
     public DbSet<AndonCall> AndonCalls => Set<AndonCall>();
 

@@ -39,7 +39,7 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
 
     private static readonly IReadOnlyCollection<DemandPlanningKnownExceptionSite> ExpectedSites =
     [
-        Target(CancelDemandSourcePath, "CancelDemandSourceCommandHandler", "Handle", 1),
+        Target(CancelDemandSourcePath, "CancelDemandSourceCommandHandler", "Handle", 2),
         Target(CreateOrUpdateDemandSourcePath, "CreateOrUpdateDemandSourceCommandHandler", "Handle", 1),
 
         Target(AcceptPlanningSuggestionPath, "UnsupportedPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 1),
@@ -56,6 +56,7 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
         Target(MasterProductionSchedulePath, "ReleaseMasterProductionScheduleBucketCommandHandler", "Handle", 1),
 
         Target(PlanningSuggestionDownstreamBridgePath, "HttpPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 1),
+        Target(PlanningSuggestionDownstreamBridgePath, "HttpScheduledReceiptSuggestionDownstreamBridge", "CreateDownstreamAsync", 5),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpMesPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 3),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpErpPlanningSuggestionDownstreamBridge", "CreateDownstreamAsync", 3),
         Target(PlanningSuggestionDownstreamBridgePath, "HttpErpPlanningSuggestionDownstreamBridge", "ReadResponseDataAsync", 2),

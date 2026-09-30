@@ -36,30 +36,56 @@ public sealed class CreateSchedulingWorkbenchPlanCommandValidator
 }
 
 public sealed class CreateSchedulingWorkbenchPlanCommandHandler(
-    ISchedulingWorkbenchSourceProvider sourceProvider,
-    ISchedulingProblemProducer problemProducer,
+    SchedulingWorkbenchPlanAssembler assembler,
     ISender sender) : ICommandHandler<CreateSchedulingWorkbenchPlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(
         CreateSchedulingWorkbenchPlanCommand request,
         CancellationToken cancellationToken)
     {
-        var orders = await sourceProvider.ResolveOrdersAsync(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.HorizonStartUtc,
-            request.Orders,
-            cancellationToken);
-        var problem = await problemProducer.AssembleWorkbenchAsync(
-            new AssembleSchedulingWorkbenchProblemRequest(
-                $"workbench-{Guid.CreateVersion7():N}",
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.HorizonStartUtc,
-                request.HorizonEndUtc,
-                orders),
-            cancellationToken);
-        return await sender.Send(new CreateSchedulePlanCommand(problem), cancellationToken);
+        var input = await assembler.AssembleAsync(request.OrganizationId, request.EnvironmentId,
+            request.HorizonStartUtc, request.HorizonEndUtc, request.Orders, cancellationToken);
+        return await sender.Send(new CreateSchedulePlanCommand(input.Problem, input.FixedReservations), cancellationToken);
+    }
+}
+
+public sealed record PreviewSchedulingWorkbenchPlanCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset HorizonStartUtc,
+    DateTimeOffset HorizonEndUtc,
+    IReadOnlyCollection<SchedulingWorkbenchOrderSelection> Orders) : ICommand<SchedulePlanContract>;
+
+public sealed class PreviewSchedulingWorkbenchPlanCommandValidator
+    : AbstractValidator<PreviewSchedulingWorkbenchPlanCommand>
+{
+    public PreviewSchedulingWorkbenchPlanCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.HorizonEndUtc).GreaterThan(x => x.HorizonStartUtc);
+        RuleFor(x => x.Orders).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
+        RuleForEach(x => x.Orders).ChildRules(order =>
+        {
+            order.RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(128);
+            order.RuleFor(x => x.Priority).InclusiveBetween(0, 9999);
+        });
+        RuleFor(x => x.Orders).Must(x => x.Select(y => y.WorkOrderId).Distinct(StringComparer.Ordinal).Count() == x.Count)
+            .WithMessage("Work-order selections must be distinct.");
+    }
+}
+
+public sealed class PreviewSchedulingWorkbenchPlanCommandHandler(
+    SchedulingWorkbenchPlanAssembler assembler,
+    ISender sender) : ICommandHandler<PreviewSchedulingWorkbenchPlanCommand, SchedulePlanContract>
+{
+    public async Task<SchedulePlanContract> Handle(
+        PreviewSchedulingWorkbenchPlanCommand request,
+        CancellationToken cancellationToken)
+    {
+        var input = await assembler.AssembleAsync(request.OrganizationId, request.EnvironmentId,
+            request.HorizonStartUtc, request.HorizonEndUtc, request.Orders, cancellationToken);
+        return await sender.Send(new PreviewSchedulePlanCommand(input.Problem, input.FixedReservations), cancellationToken);
     }
 }
 
@@ -122,6 +148,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
                 cancellationToken);
         var baseProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options)
             ?? throw new KnownException($"排程问题快照无效，请重新生成方案，问题 ID = {snapshot.ProblemId}");
+        var fixedReservations = SchedulingFrozenOccupancy.ReadSnapshot(snapshot.ProblemJson);
         var included = request.IncludedOrderIds.ToHashSet(StringComparer.Ordinal);
         var orders = baseProblem.Orders.Where(x => included.Contains(x.OrderId)).ToArray();
         var missingOrders = included.Except(orders.Select(x => x.OrderId), StringComparer.Ordinal).ToArray();
@@ -130,16 +157,18 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
             throw new KnownException($"所选工单不在基础方案中，请刷新后重新选择：{string.Join(", ", missingOrders)}");
         }
 
-        var normalizedLocks = ValidateLocks(baseProblem, orders, request.LockedAssignments);
+        var fixedKeys = fixedReservations.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        var normalizedLocks = ValidateLocks(baseProblem, orders,
+            request.LockedAssignments.Where(x => !fixedKeys.Contains((x.OrderId, x.OperationId))).ToArray());
         var revisionProblem = baseProblem with
         {
             ProblemId = $"revision-{Guid.CreateVersion7():N}",
             Orders = orders,
             LockedAssignments = normalizedLocks,
         };
-        var basePlan = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem);
+        var basePlan = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem, fixedReservations);
         var impact = await LoadLatestImpactAsync(request, baseProblem, basePlan, cancellationToken);
-        var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem), cancellationToken);
+        var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem, fixedReservations), cancellationToken);
         return new SchedulePlanRevisionContract(candidate, impact, Compare(basePlan, candidate));
     }
 
@@ -282,12 +311,14 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
                string.IsNullOrWhiteSpace(invalidation.AffectedSkuCode);
     }
 
-    private static SchedulePlanComparisonContract Compare(SchedulePlanContract basePlan, SchedulePlanContract candidate)
+    internal static SchedulePlanComparisonContract Compare(SchedulePlanContract basePlan, SchedulePlanContract candidate)
     {
         var baseAssignments = basePlan.Assignments.ToDictionary(x => (x.OrderId, x.OperationId));
         var moved = candidate.Assignments.Count(x =>
+            !string.Equals(x.ExplanationCode, "in-progress", StringComparison.Ordinal) &&
             baseAssignments.TryGetValue((x.OrderId, x.OperationId), out var previous) &&
-            (previous.ResourceId != x.ResourceId || previous.StartUtc != x.StartUtc || previous.EndUtc != x.EndUtc));
+            (previous.ResourceId != x.ResourceId || previous.StartUtc != x.StartUtc || previous.EndUtc != x.EndUtc
+                || !(previous.Segments ?? []).SequenceEqual(x.Segments ?? [])));
         return new(
             basePlan.PlanId,
             candidate.PlanId,

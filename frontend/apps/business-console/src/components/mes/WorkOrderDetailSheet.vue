@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
+import WorkOrderSourceFacts from '@/components/mes/WorkOrderSourceFacts.vue'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
@@ -74,6 +76,7 @@ const lifecycleIntent = useLifecycleWriteIntent<MesLifecycleActionKey>(
 )
 usePendingWriteLeaveGuard(lifecycleIntent.locked)
 
+const { statusLabel } = useMesReferenceLabels()
 const emit = defineEmits<{ report: [operationTaskId: string] }>()
 
 const { detail, detailError, detailPending, filters, materialReadiness, refreshDetail } =
@@ -303,7 +306,11 @@ function formatQuantity(value?: number | null) {
           <section class="grid gap-3 rounded-lg border p-3 sm:grid-cols-4">
             <div class="grid gap-1">
               <span class="text-xs text-muted-foreground">状态</span>
-              <NvStatusBadge class="justify-self-start" :value="detail.status" />
+              <NvStatusBadge
+                class="justify-self-start"
+                :value="detail.status"
+                :label="statusLabel(detail.status)"
+              />
             </div>
             <div class="grid gap-1">
               <span class="text-xs text-muted-foreground">开工就绪</span>
@@ -320,6 +327,13 @@ function formatQuantity(value?: number | null) {
               <span class="text-sm font-medium">{{ resolveSkuLabel(detail.skuId) }}</span>
             </div>
           </section>
+
+          <WorkOrderSourceFacts
+            v-if="detail"
+            :source="detail.sourcePlanReference"
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+          />
 
           <!-- 阻塞（有就先显，最要紧） -->
           <section

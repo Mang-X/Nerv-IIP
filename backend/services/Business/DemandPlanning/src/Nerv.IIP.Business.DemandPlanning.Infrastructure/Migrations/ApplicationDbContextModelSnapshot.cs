@@ -359,6 +359,112 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpInputChangeAggregate.MrpInputChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Unique change fact id.");
+
+                    b.Property<DateOnly?>("CurrentEndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("current_end_date")
+                        .HasComment("Last date in the input interval after the change, if present.");
+
+                    b.Property<DateOnly?>("CurrentStartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("current_start_date")
+                        .HasComment("First date in the input interval after the change, if present.");
+
+                    b.Property<bool>("CurrentlyEligible")
+                        .HasColumnType("boolean")
+                        .HasColumnName("currently_eligible")
+                        .HasComment("Whether the current source state qualifies as an MRP input.");
+
+                    b.Property<string>("DemandType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("demand_type")
+                        .HasComment("Demand source type; null for forecast, MPS, or legacy facts with unknown type.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Planning environment owning the input.");
+
+                    b.Property<string>("InputType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("input_type")
+                        .HasComment("MRP input category, such as demand or forecast.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("UTC time at which the source input changed.");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("operation")
+                        .HasComment("Source change operation: Created, Updated, or Deleted.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization owning the input.");
+
+                    b.Property<DateOnly?>("PreviousEndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("previous_end_date")
+                        .HasComment("Last date in the input interval before the change, if present.");
+
+                    b.Property<DateOnly?>("PreviousStartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("previous_start_date")
+                        .HasComment("First date in the input interval before the change, if present.");
+
+                    b.Property<bool>("PreviouslyEligible")
+                        .HasColumnType("boolean")
+                        .HasColumnName("previously_eligible")
+                        .HasComment("Whether the previous source state qualified as an MRP input.");
+
+                    b.Property<string>("SourceLineReference")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_line_reference")
+                        .HasComment("Stable source line identity, empty for a whole-input source.");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_reference")
+                        .HasComment("Stable source document or input identity.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OccurredAtUtc");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CurrentEndDate", "CurrentStartDate");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PreviousEndDate", "PreviousStartDate");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "InputType", "DemandType", "SourceReference", "SourceLineReference", "OccurredAtUtc");
+
+                    b.ToTable("mrp_input_changes", "demand_planning", t =>
+                        {
+                            t.HasComment("Durable before-and-after facts for DemandPlanning MRP input changes.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate.MrpRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -540,6 +646,12 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("routing_reference")
                         .HasComment("ProductEngineering routing snapshot reference.");
+
+                    b.Property<string>("SourceLineReference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source_line_reference")
+                        .HasComment("Stable upstream sales order line reference; null when not known or not applicable.");
 
                     b.Property<string>("SourceType")
                         .IsRequired()
@@ -730,6 +842,11 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("suggestion_type")
                         .HasComment("Suggestion type such as planned-purchase or planned-work-order.");
+
+                    b.Property<Guid?>("SupersededByRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("superseded_by_run_id")
+                        .HasComment("Newer completed MRP run that replaced this open suggestion.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()

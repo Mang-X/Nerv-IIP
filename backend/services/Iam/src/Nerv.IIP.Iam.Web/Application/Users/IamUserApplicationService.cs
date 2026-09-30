@@ -24,6 +24,10 @@ public interface IIamUserApplicationService
         MemberAccountListOptions options,
         CancellationToken cancellationToken);
 
+    Task<PagedListResponse<string>> ListProductionPlannerMemberIdsAsync(
+        ProductionPlannerMemberListOptions options,
+        CancellationToken cancellationToken);
+
     Task<UserResponse> CreateUserAsync(
         string loginName,
         string email,
@@ -111,6 +115,26 @@ public sealed class InMemoryIamUserApplicationService(
                 .Take(options.PageSize)
                 .Select(user => new MemberAccountResponse(user.UserId, user.LoginName, null, user.Enabled))
                 .ToArray()));
+    }
+
+    public Task<PagedListResponse<string>> ListProductionPlannerMemberIdsAsync(
+        ProductionPlannerMemberListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ids = store.Users
+            .Where(user => user.Enabled
+                && (user.AccountExpiresAtUtc is null || user.AccountExpiresAtUtc > now)
+                && store.GetMembershipRoleIds(user.UserId, options.OrganizationId, options.EnvironmentId)
+                    .Contains(NervIipSeedRoles.ProductionPlannerRoleId, StringComparer.Ordinal))
+            .Select(user => user.UserId)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return Task.FromResult(new PagedListResponse<string>(
+            options.PageIndex,
+            options.PageSize,
+            ids.Length,
+            ids.Skip((options.PageIndex - 1) * options.PageSize).Take(options.PageSize).ToArray()));
     }
 
     public Task<UserResponse> CreateUserAsync(
@@ -311,6 +335,21 @@ public sealed class PostgreSqlIamUserApplicationService(
             options.PageSize,
             total,
             items.Select(user => new MemberAccountResponse(user.Id.Id, user.LoginName, user.DisplayName, user.Enabled)).ToArray());
+    }
+
+    public async Task<PagedListResponse<string>> ListProductionPlannerMemberIdsAsync(
+        ProductionPlannerMemberListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var (ids, total) = await repository.ListRoleMemberIdsAsync(
+            new OrganizationId(options.OrganizationId),
+            new IamEnvironmentId(options.EnvironmentId),
+            new RoleId(NervIipSeedRoles.ProductionPlannerRoleId),
+            DateTimeOffset.UtcNow,
+            (options.PageIndex - 1) * options.PageSize,
+            options.PageSize,
+            cancellationToken);
+        return new PagedListResponse<string>(options.PageIndex, options.PageSize, total, ids);
     }
 
     public async Task<UserResponse> CreateUserAsync(

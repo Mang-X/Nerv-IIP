@@ -4,6 +4,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggreg
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpInputChangeAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Coding;
@@ -15,10 +16,23 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure;
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        MrpInputChangeCollector.Record(this);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        MrpInputChangeCollector.Record(this);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     public DbSet<DemandSource> DemandSources => Set<DemandSource>();
     public DbSet<ForecastInput> ForecastInputs => Set<ForecastInput>();
     public DbSet<MasterProductionSchedule> MasterProductionSchedules => Set<MasterProductionSchedule>();
     public DbSet<MrpRun> MrpRuns => Set<MrpRun>();
+    public DbSet<MrpInputChange> MrpInputChanges => Set<MrpInputChange>();
     public DbSet<PlanningSuggestion> PlanningSuggestions => Set<PlanningSuggestion>();
     public DbSet<PeggingLink> PeggingLinks => Set<PeggingLink>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();

@@ -24,7 +24,8 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.ProductionVersionId).HasColumnName("production_version_id").HasMaxLength(100).HasComment("ProductEngineering production version public id; MES does not duplicate engineering facts.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Unit of measure copied from the source production plan when the work order is converted from DemandPlanning.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).IsRequired().HasComment("Planned production quantity.");
-        builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasComment("Scheduling priority; rush work orders use a high priority value.");
+        builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasComment("Business priority, independent of the rush work order flag.");
+        builder.Property(x => x.IsRush).HasColumnName("is_rush").HasDefaultValue(false).IsRequired().HasComment("Explicit rush work order flag; not inferred from business priority.");
         builder.Property(x => x.DueUtc).HasColumnName("due_utc").IsRequired().HasComment("UTC due time used by the deterministic rule scheduler.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("MES work order lifecycle status.");
         builder.Property(x => x.Version).HasColumnName("version").HasDefaultValue(1L).IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for every work-order lifecycle or execution mutation.");
@@ -79,6 +80,9 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
             source.PrimitiveCollection(x => x.SourceDemandReferences)
                 .HasColumnName("source_demand_references")
                 .HasComment("All DemandPlanning demand source references pegged to the source suggestion (batched suggestions peg multiple demands); includes the primary reference. Null for legacy rows, which fall back to source_demand_reference.");
+            source.PrimitiveCollection(x => x.AssemblyParentSuggestionIds)
+                .HasColumnName("assembly_parent_suggestion_ids")
+                .HasComment("DemandPlanning parent suggestion ids resolved from component pegging; MES resolves their work order ids when both suggestions are accepted.");
             source.HasIndex(x => new { x.SourceSystem, x.SourceDocumentId })
                 .HasDatabaseName("ix_work_orders_source_plan");
         });

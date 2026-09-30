@@ -160,6 +160,41 @@ public sealed class ListMemberAccountsEndpoint(IMediator mediator)
     }
 }
 
+public sealed record ListProductionPlannerMembersRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int? PageIndex,
+    int? PageSize);
+
+[HttpGet("/internal/iam/v1/production-planner-members")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class ListProductionPlannerMembersEndpoint(IIamUserApplicationService users)
+    : Endpoint<ListProductionPlannerMembersRequest, ResponseData<PagedListResponse<string>>>
+{
+    public override async Task HandleAsync(ListProductionPlannerMembersRequest req, CancellationToken ct)
+    {
+        var organizationId = req.OrganizationId?.Trim();
+        var environmentId = req.EnvironmentId?.Trim();
+        if (string.IsNullOrEmpty(organizationId) || string.IsNullOrEmpty(environmentId))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "planner-members-scope-required", ct);
+            return;
+        }
+
+        var pageIndex = req.PageIndex ?? 1;
+        var pageSize = req.PageSize ?? 100;
+        if (pageIndex < 1 || pageSize is < 1 or > ProductionPlannerMemberListOptions.MaxPageSize)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "planner-members-page-invalid", ct);
+            return;
+        }
+
+        var result = await users.ListProductionPlannerMemberIdsAsync(
+            new ProductionPlannerMemberListOptions(organizationId, environmentId, pageIndex, pageSize), ct);
+        await Send.OkAsync(result.AsResponseData(), ct);
+    }
+}
+
 [HttpPost("/api/iam/v1/users")]
 [AllowAnonymous]
 public sealed class CreateUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)

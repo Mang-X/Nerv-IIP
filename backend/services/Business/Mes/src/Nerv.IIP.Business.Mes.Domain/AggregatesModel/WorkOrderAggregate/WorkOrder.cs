@@ -26,7 +26,8 @@ public sealed class SourcePlanReference
         string sourceDocumentType,
         string sourceDocumentId,
         string? sourceDemandReference,
-        IReadOnlyCollection<string>? sourceDemandReferences = null)
+        IReadOnlyCollection<string>? sourceDemandReferences = null,
+        IReadOnlyCollection<string>? assemblyParentSuggestionIds = null)
     {
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceDocumentType = DomainGuard.Required(sourceDocumentType, nameof(sourceDocumentType));
@@ -52,6 +53,7 @@ public sealed class SourcePlanReference
         // AsReadOnly：`IReadOnlyList<string>` 只是静态类型上的只读，直接交出 List 实例
         // 调用方一个向下转型就能绕过聚合、在 EF 变更跟踪背后改掉这条追溯链。
         SourceDemandReferences = references.AsReadOnly();
+        RecordAssemblyParentSuggestionIds(assemblyParentSuggestionIds);
     }
 
     public string SourceSystem { get; private set; } = string.Empty;
@@ -66,6 +68,14 @@ public sealed class SourcePlanReference
     /// 升级前的历史行本列为 null，读面回退单值引用；新建工单恒为非空集合。
     /// </summary>
     public IReadOnlyList<string>? SourceDemandReferences { get; private set; }
+    public IReadOnlyList<string>? AssemblyParentSuggestionIds { get; private set; }
+
+    internal void RecordAssemblyParentSuggestionIds(IReadOnlyCollection<string>? suggestionIds) =>
+        AssemblyParentSuggestionIds = (suggestionIds ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 }
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
@@ -230,6 +240,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string? UomCode { get; private set; }
     public decimal Quantity { get; private set; }
     public int Priority { get; private set; }
+    public bool IsRush { get; private set; }
     public DateTimeOffset DueUtc { get; private set; }
     public SourcePlanReference? SourcePlanReference { get; private set; }
     public string Status { get; private set; } = string.Empty;
@@ -259,6 +270,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
     public string WorkOrderId => WorkOrderIdValue;
 
+    public void RecordAssemblyParentSuggestionIds(IReadOnlyCollection<string>? suggestionIds)
+    {
+        SourcePlanReference!.RecordAssemblyParentSuggestionIds(suggestionIds);
+        AdvanceVersion();
+    }
+
     public static WorkOrder Create(
         string organizationId,
         string environmentId,
@@ -270,7 +287,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         DateTimeOffset dueUtc,
         string? uomCode = null,
         SourcePlanReference? sourcePlanReference = null,
-        decimal overReceiptTolerancePercent = 0m)
+        decimal overReceiptTolerancePercent = 0m,
+        bool isRush = false)
     {
         var workOrder = new WorkOrder(
             organizationId,
@@ -285,6 +303,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             sourcePlanReference,
             overReceiptTolerancePercent,
             StandardType);
+        workOrder.IsRush = isRush;
         workOrder.AddDomainEvent(new WorkOrderCreatedDomainEvent(workOrder));
         return workOrder;
     }
@@ -577,6 +596,39 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         HoldReason = DomainGuard.Required(reason, nameof(reason));
         Status = HoldStatus;
+        AdvanceVersion();
+    }
+
+    public void AdjustPriority(bool isRush, int priority)
+    {
+        if (TerminalStatuses.Contains(Status))
+        {
+            throw new InvalidOperationException("Terminal work orders cannot have their priority adjusted.");
+        }
+
+        if (IsRush == isRush && Priority == priority)
+        {
+            return;
+        }
+
+        IsRush = isRush;
+        Priority = priority;
+        AdvanceVersion();
+    }
+
+    public void AdjustDueUtc(DateTimeOffset dueUtc)
+    {
+        if (TerminalStatuses.Contains(Status))
+        {
+            throw new InvalidOperationException("Terminal work orders cannot have their due time adjusted.");
+        }
+
+        if (DueUtc == dueUtc)
+        {
+            return;
+        }
+
+        DueUtc = dueUtc;
         AdvanceVersion();
     }
 

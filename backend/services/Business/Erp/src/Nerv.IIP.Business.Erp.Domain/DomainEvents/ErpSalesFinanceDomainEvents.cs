@@ -17,3 +17,4 @@ public sealed record SalesReturnAuthorizedDomainEvent(SalesReturnAuthorization S
 public sealed record SalesOrderReleasedDomainEvent(SalesOrder SalesOrder) : IDomainEvent;
 public sealed record SalesOrderChangedDomainEvent(SalesOrder SalesOrder) : IDomainEvent;
 public sealed record SalesOrderCancelledDomainEvent(SalesOrder SalesOrder) : IDomainEvent;
+public sealed record SalesOrderDeliveryRegisteredDomainEvent(SalesOrder SalesOrder) : IDomainEvent;

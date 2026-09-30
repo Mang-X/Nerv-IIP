@@ -67,6 +67,8 @@ export interface ScheduleTask {
   dimensions?: Record<string, DimensionValue>
   startUtc: string
   endUtc: string
+  /** 后端实际生产段；缺省表示单段连续排程。 */
+  segments?: { startUtc: string; endUtc: string }[]
   /** 计划基线(与实际 start/end 对比;甘特画"计划 vs 实际"双层条)。 */
   plannedStartUtc?: string
   plannedEndUtc?: string
@@ -149,7 +151,7 @@ export interface ScheduleLink {
   source: string
   /** ScheduleTask.id。 */
   target: string
-  /** MVP 仅 FS,由 operationSequence 派生。 */
+  /** FS：工单内由 operationSequence 派生，跨工单来自方案装配关系。 */
   type: 'finish_to_start'
 }
 
@@ -219,6 +221,58 @@ export interface ScheduleCalendar {
   shiftWindows: ScheduleShiftWindow[]
 }
 
+/** 方案冻结的即时反馈依据；不从当前 MES 分页或主数据补造。 */
+export interface ScheduleValidationContext {
+  horizon: { startUtc: string; endUtc: string }
+  resources: {
+    resourceId: string
+    workCenterId: string
+    calendarId: string
+    capacityUnits: number
+    utilizationRate: number
+  }[]
+  operations: {
+    orderId: string
+    operationId: string
+    predecessorOperationIds: string[]
+    dueUtc?: string
+    durationMinutes?: number
+    setupMinutes?: number
+    isFixed: boolean
+  }[]
+  fixedReservations: {
+    orderId: string
+    operationId: string
+    resourceId?: string
+    workCenterId: string
+    startUtc: string
+    endUtc: string
+  }[]
+}
+
+export interface DraftFeedbackIssue {
+  kind:
+    | 'calendar'
+    | 'capacity'
+    | 'predecessor'
+    | 'predecessorUnscheduled'
+    | 'unknown'
+    | 'invalidTime'
+  message: string
+  scope?: 'resource' | 'workCenter'
+  startUtc?: string
+  endUtc?: string
+}
+
+export interface DraftTaskFeedback {
+  issues: DraftFeedbackIssue[]
+  due?: { dueUtc: string; deltaMinutes: number; status: 'early' | 'onTime' | 'late' }
+}
+
+export interface DraftFeedback {
+  tasks: Record<string, DraftTaskFeedback>
+}
+
 export interface ScheduleModel {
   tasks: ScheduleTask[]
   links: ScheduleLink[]
@@ -241,6 +295,7 @@ export interface ScheduleModel {
    * 无值时引擎退回「周末 + 夜间」的通用作息假设。
    */
   calendars?: ScheduleCalendar[]
+  validationContext?: ScheduleValidationContext
   horizon: { startUtc: string; endUtc: string }
   meta: { planId: string; status: PlanStatus; algorithmVersion: string }
 }

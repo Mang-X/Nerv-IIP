@@ -1,5 +1,8 @@
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
+  cancelBusinessConsolePlanningDemandMutationOptions,
+  getBusinessConsoleMesWorkOrderDetail,
+  listBusinessConsoleErpPurchaseRequisitions,
   rejectBusinessConsolePlanningSuggestionMutationOptions,
   createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
@@ -148,7 +151,7 @@ function defaultSuggestionFilters(
     reactive({
       organizationId,
       environmentId,
-      status: 'open',
+      status: 'all',
     }),
   )
 }
@@ -323,12 +326,81 @@ export function useBusinessPlanning() {
         query: {
           organizationId: suggestionFilters.organizationId,
           environmentId: suggestionFilters.environmentId,
-          status: suggestionFilters.status,
+          status: suggestionFilters.status === 'all' ? undefined : suggestionFilters.status,
         },
       }),
       suggestionFilters,
     ),
   )
+
+  const suggestions = computed<BusinessConsolePlanningSuggestionItem[]>(() =>
+    unwrapItems(
+      suggestionsQuery.data.value as BusinessConsolePlanningSuggestionListEnvelope | undefined,
+    ),
+  )
+  const downstreamSuggestions = computed(() =>
+    suggestions.value.filter(
+      (item) =>
+        item.suggestionId &&
+        item.downstreamDocumentId &&
+        (item.suggestionType === 'planned-work-order' ||
+          item.suggestionType === 'planned-purchase'),
+    ),
+  )
+  const downstreamStatusesQuery = useQuery(() => ({
+    key: [
+      'planning',
+      'downstream-statuses',
+      suggestionFilters.organizationId,
+      suggestionFilters.environmentId,
+      downstreamSuggestions.value
+        .map((item) => `${item.suggestionId}:${item.downstreamDocumentId}`)
+        .join('|'),
+    ],
+    enabled: hasBusinessContext(suggestionFilters) && downstreamSuggestions.value.length > 0,
+    query: async () => {
+      const statuses: Record<string, string> = {}
+      await Promise.all(
+        downstreamSuggestions.value.map(async (item) => {
+          try {
+            if (item.suggestionType === 'planned-work-order') {
+              const { data } = await getBusinessConsoleMesWorkOrderDetail({
+                path: { workOrderId: item.downstreamDocumentId! },
+                query: {
+                  organizationId: suggestionFilters.organizationId,
+                  environmentId: suggestionFilters.environmentId,
+                },
+                throwOnError: true,
+              })
+              statuses[item.suggestionId!] =
+                assertEnvelopeSuccess(data!, '读取工单状态失败。').data?.status ?? 'unknown'
+            } else {
+              const { data } = await listBusinessConsoleErpPurchaseRequisitions({
+                query: {
+                  organizationId: suggestionFilters.organizationId,
+                  environmentId: suggestionFilters.environmentId,
+                  keyword: item.suggestionId!,
+                  take: 100,
+                },
+                throwOnError: true,
+              })
+              const requisitions =
+                assertEnvelopeSuccess(data!, '读取采购申请状态失败。').data?.items ?? []
+              statuses[item.suggestionId!] =
+                requisitions.find(
+                  (row) =>
+                    row.requisitionNo === item.downstreamDocumentId ||
+                    row.purchaseRequisitionId === item.downstreamDocumentId,
+                )?.status ?? 'unknown'
+            }
+          } catch {
+            statuses[item.suggestionId!] = 'unavailable'
+          }
+        }),
+      )
+      return statuses
+    },
+  }))
 
   const invalidatePlanningQueries = () =>
     queryCache.invalidateQueries({ predicate: isBusinessQuery(PLANNING_QUERY_IDS) })
@@ -339,6 +411,12 @@ export function useBusinessPlanning() {
 
   const createDemandMutation = useMutation({
     ...createOrUpdateBusinessConsolePlanningDemandMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
+  const cancelDemandMutation = useMutation({
+    ...cancelBusinessConsolePlanningDemandMutationOptions(),
     onSuccess() {
       void invalidatePlanningQueries().catch(ignoreBackgroundError)
     },
@@ -461,6 +539,9 @@ export function useBusinessPlanning() {
   })
 
   function downstreamTargetForSuggestion(suggestionType: string) {
+    if (['reschedule-in', 'reschedule-out', 'cancel'].includes(suggestionType)) {
+      return { downstreamService: 'ScheduledReceipt', downstreamDocumentType: 'ScheduledReceipt' }
+    }
     if (suggestionType === 'planned-work-order') {
       return {
         downstreamService: 'BusinessMes',
@@ -534,6 +615,15 @@ export function useBusinessPlanning() {
           idempotencyKey: demandForm.idempotencyKey || null,
         },
       }),
+    cancelDemand: async (demandSourceId: string) =>
+      assertEnvelopeSuccess(
+        await cancelDemandMutation.mutateAsync({
+          path: { demandSourceId },
+          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        }),
+        '作废需求失败，请稍后重试。',
+      ),
+    cancelDemandPending: cancelDemandMutation.isLoading,
     demandForm,
     demands: computed<BusinessConsoleDemandSourceItem[]>(() =>
       unwrapItems(demandsQuery.data.value as BusinessConsoleDemandSourceListEnvelope | undefined),
@@ -570,6 +660,9 @@ export function useBusinessPlanning() {
 
       if (runSelection.runId.trim().length > 0) {
         queries.push(peggingQuery.refetch())
+      }
+      if (downstreamSuggestions.value.length > 0) {
+        queries.push(downstreamStatusesQuery.refetch())
       }
 
       await Promise.all(queries)
@@ -633,11 +726,8 @@ export function useBusinessPlanning() {
     reviewMpsBucketPending: reviewMpsMutation.isLoading,
     suggestionFilters,
     suggestionTypeFilter,
-    suggestions: computed<BusinessConsolePlanningSuggestionItem[]>(() =>
-      unwrapItems(
-        suggestionsQuery.data.value as BusinessConsolePlanningSuggestionListEnvelope | undefined,
-      ),
-    ),
+    suggestions,
+    downstreamStatuses: computed(() => downstreamStatusesQuery.data.value ?? {}),
     suggestionsError: suggestionsQuery.error,
     suggestionsPending: suggestionsQuery.isLoading,
     syncContext,

@@ -14,6 +14,43 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed class SchedulingPersistenceTests
 {
     [Fact]
+    public async Task Interruptible_assignment_segments_survive_persistence_round_trip()
+    {
+        var start = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var segments = new[]
+        {
+            new ScheduleAssignmentSegmentContract(start, start.AddHours(1)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(10), start.AddHours(11))
+        };
+        var contract = CreateContract("split", "split-op", "res-new", "conflict", "other", "other-op", 120);
+        contract = contract with
+        {
+            Assignments = [contract.Assignments.Single() with
+            {
+                EndUtc = segments[^1].EndUtc,
+                Segments = segments
+            }]
+        };
+
+        await using var provider = CreateInMemoryProvider();
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan("org-001", "env-dev",
+                SchedulePlanContractMapper.ToDomainSnapshot(contract)));
+            await db.SaveChangesAsync();
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var plan = await db.SchedulePlans.AsNoTracking().Include(x => x.Assignments)
+                .SingleAsync(x => x.PlanId == contract.PlanId);
+            Assert.Equal(segments, Assert.Single(SchedulePlanContractMapper.ToContract(plan).Assignments).Segments);
+        }
+    }
+
+    [Fact]
     public void Order_urgency_persistence_is_scoped_and_idempotent()
     {
         using var provider = CreateInMemoryProvider();
