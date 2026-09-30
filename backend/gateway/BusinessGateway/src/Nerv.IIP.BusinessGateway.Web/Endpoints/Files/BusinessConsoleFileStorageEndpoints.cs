@@ -322,8 +322,8 @@ public sealed class DownloadBusinessConsoleShiftHandoverAttachmentContentEndpoin
 // 形状照搬交接班附件上传面（建会话 / tus HEAD / tus PATCH / complete），差别只有两处：
 // 权限口径是 business.barcodes.templates.manage；owner 取模板编码而不是上传者——打印时
 // BarcodeLabel 要求模板文件的 owner 等于模板编码。用途、内容类型与 owner 的服务/类型由网关固定；
-// owner 标识取自请求中的模板编码（Trim 之后），不是网关固定值——与 ADR 0030 决策 2「owner 不从请求体读取」
-// 的差异见 docs/architecture/platform/file-storage.md 第 8 条。打印时服务端按 Ordinal 比对，绑错会在建批次时被拒。
+// owner 标识取自请求中的模板编码（Trim 之后），依据是 ADR 0033（部分修订 ADR 0030 决策 2 对 owner 标识的适用性）：
+// 打印时服务端按 Ordinal 比对，绑错会在建批次时被拒；templates.manage 本就能改任意模板及其文件。
 // 本门面只管上传；模板文件由 BarcodeLabel 服务端自取字节，控制台不需要下载面。
 // ---------------------------------------------------------------------------
 

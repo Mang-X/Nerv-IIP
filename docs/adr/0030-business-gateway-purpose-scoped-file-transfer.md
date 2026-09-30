@@ -5,6 +5,7 @@
 - 关联：[Issue #3085](https://github.com/Mang-X/Nerv-IIP/issues/3085)、[ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md)
 - 修订对象：ADR 0023 决策 1.3 与决策 1.1 中「自研 tus endpoint 不得新增消费方」这一面；ADR 0015 决策 2 的「单次调用超时为 10 秒」对字节流跳的适用性
 - 自我修订（本 ADR 决策 3）：适用范围由「本 ADR 之后新开的**业务**字节面」扩为「**网关暴露的**文件字节面」，并取消既有存量的不追溯登记。扩面把 PlatformGateway 的文件字节面纳入本 ADR 约束，因此本 ADR 的适用对象不再只有 BusinessGateway（标题保留原措辞，不就地改写历史标题）。
+- 修订依据：[ADR 0033](0033-file-face-owner-id-from-server-compared-business-key.md) 部分修订决策 2 中「owner 不从请求体读取」对 **owner 标识**的适用性：满足「使用方逐字比对」与「不因此越权」两个条件时，owner 标识可以取自请求中的业务键；用途与 owner 服务、owner 类型仍由网关固定，其余条款仍有效。
 - 本次自我修订**就地改写了三处正文**，逐条点名：决策 3 首句、决策 3 的「既有存量」段、后果 7。三处的旧判断都**保留表述并标注被推翻**，不做无痕替换——这张 ADR 最值得后来人看见的正是「我们曾经这样判断、错在哪」。替代方案 3 的原文未改，只在其后追加一段说明。
 
 ## 背景
