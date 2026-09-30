@@ -23,7 +23,12 @@ public sealed class GetMaterialDeliveriesQueryValidator : AbstractValidator<GetM
 
 public enum MaterialDeliveryStatus { Yellow, Green, Red }
 public sealed record MaterialDeliveriesResponse(string RunId, string? PlanId, DateTimeOffset EvaluatedAtUtc,
-    string SupplyCoverageScope, IReadOnlyCollection<MaterialDeliveryResponse> Items);
+    string SupplyCoverageScope, IReadOnlyCollection<MaterialDeliveryResponse> Items,
+    IReadOnlyCollection<MaterialDeliveryUnknownRequirementSource> UnknownRequirementSuggestions);
+public sealed record MaterialDeliveryUnknownRequirementSource(string Reason, string RunId, string SuggestionType,
+    string SkuCode, string UomCode, string SiteCode, DateOnly RequiredDate, DateOnly ReleaseDate,
+    MaterialDeliverySuggestionSource SuggestionSource, MaterialDeliveryNetRequirementSource RawNetRequirementSource,
+    IReadOnlyCollection<MaterialDeliveryDemandSource> DemandSources);
 public sealed record MaterialDeliveryDemandSource(string SourceReference, string? SourceLineReference,
     string SourceType, string ParentSkuCode, string? ComponentSkuCode, decimal GrossDemandQuantity,
     string? DemandSourceId, string? SourceDocumentId, int? SourceVersion, DateOnly? DueDate,
@@ -71,7 +76,9 @@ public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbCon
                     demand?.Id.ToString(), demand?.SourceDocumentId, demand?.SourceVersion, demand?.DueDate,
                     link.ProductionVersionReference, link.ManufacturingBomReference, link.RoutingReference);
             }).ToArray());
-        var selections = suggestions.Where(x => x.SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder)
+        var requirements = suggestions.Where(x => x.NetRequirementQuantity > 0 &&
+            x.SuggestionType is DemandPlanningSuggestionTypes.PlannedWorkOrder or DemandPlanningSuggestionTypes.PlannedPurchase).ToArray();
+        var selections = requirements.Where(x => x.NetRequirementReference.HasValue && x.SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder)
             .Select(x => new MaterialDeliverySourceSelection(x.Id.ToString(),
                 x.AcceptedDownstreamService == DemandPlanningDownstreamReferences.BusinessMes &&
                 x.AcceptedDownstreamDocumentType == DemandPlanningDownstreamReferences.WorkOrder ? x.AcceptedDownstreamDocumentId : null,
@@ -82,24 +89,20 @@ public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbCon
         var schedulingTask = request.PlanId is null || selections.Length == 0
             ? Task.FromResult(new MaterialDeliverySourcesResponse(request.PlanId ?? string.Empty, []))
             : sourcesClient.GetSchedulingAsync(request.OrganizationId, request.EnvironmentId, request.PlanId, selections, cancellationToken);
-        var supplyTask = suggestions.Any(x => x.NetRequirementQuantity > 0)
+        var supplyTask = requirements.Any(x => x.NetRequirementReference.HasValue)
             ? sourcesClient.GetSupplyAsync(request.OrganizationId, request.EnvironmentId, cancellationToken)
             : Task.FromResult<IReadOnlyCollection<MaterialDeliverySupplySource>>([]);
         await Task.WhenAll(schedulingTask, supplyTask);
         var scheduling = (await schedulingTask).Items;
         var supply = await supplyTask;
         var now = timeProvider.GetUtcNow();
-        // MRP 在 RequirementBucket(SKU/UOM/site/requiredDate) 内净算后拆批；每批共享净缺口与 pegging。
-        // 组件的 PrimarySourceType 均为 component；传播的 pegging 类型仍保留正常/储备阶段身份。
-        // 不以可被拒绝动作改写的 ReasonCode 作为身份。
-        var rows = suggestions.Where(x => x.NetRequirementQuantity > 0 &&
-                x.SuggestionType is DemandPlanningSuggestionTypes.PlannedWorkOrder or DemandPlanningSuggestionTypes.PlannedPurchase)
-            .GroupBy(x => new { x.SkuCode, x.UomCode, x.SiteCode, x.RequiredDate, x.SuggestionType, x.PrimarySourceType,
-                IsReserveRequirement = x.PeggingLinks.Any(link => link.PeggingType is "safety-stock" or "negative-availability") })
+        // 净算身份由 producer 在拆批前建立；来源类型、数量和生命周期不参与归属推断。
+        var rows = requirements.Where(x => x.NetRequirementReference.HasValue)
+            .GroupBy(x => x.NetRequirementReference!.Value)
             .Select(group =>
             {
                 var batches = group.OrderBy(x => x.Id.ToString(), StringComparer.Ordinal).ToArray();
-                var productionSuggestions = group.Key.SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder ? batches :
+                var productionSuggestions = batches[0].SuggestionType == DemandPlanningSuggestionTypes.PlannedWorkOrder ? batches :
                     suggestions.Where(parent => batches.Any(batch => parent.IsAssemblyParentOf(batch))).ToArray();
                 var productionIds = productionSuggestions.Select(parent => parent.Id.ToString()).ToHashSet(StringComparer.Ordinal);
                 return MaterialDeliveryProjection.Create(batches,
@@ -108,7 +111,13 @@ public sealed class GetMaterialDeliveriesQueryHandler(ApplicationDbContext dbCon
                     productionSuggestions.Length, request.PlanId, now, productionSuggestions.All(parent =>
                         demandSources[parent.Id].Count > 0 && demandSources[parent.Id].All(d => d.DueDate.HasValue)));
             }).ToArray();
-        return new(request.RunId.ToString(), request.PlanId, now, "independent-per-net-requirement", rows);
+        // 历史建议的复制说明只作为原始来源展示，不进入精确净需求行及供应覆盖。
+        var unknown = requirements.Where(x => !x.NetRequirementReference.HasValue)
+            .Select(x => new MaterialDeliveryUnknownRequirementSource("net-requirement-identity-unknown", x.MrpRunId.ToString(),
+                x.SuggestionType, x.SkuCode, x.UomCode, x.SiteCode, x.RequiredDate, x.ReleaseDate,
+                MaterialDeliveryProjection.SuggestionSource(x), MaterialDeliveryProjection.NetRequirementSource(x, x.PlannedQuantity),
+                demandSources[x.Id])).ToArray();
+        return new(request.RunId.ToString(), request.PlanId, now, "independent-per-net-requirement", rows, unknown);
     }
 
     private static string SourceKey(MaterialDeliveryDemandSource source) =>
@@ -166,16 +175,23 @@ public static class MaterialDeliveryProjection
             if (start > latest) reasons.Add("start-after-latest-start");
             if (now == latest || arrival == latest || start == latest) reasons.Add("at-latest-start-boundary");
         }
-        var net = new MaterialDeliveryNetRequirementSource(suggestion.GrossDemandQuantity, suggestion.OnHandQuantity,
-            suggestion.ReservedQuantity, suggestion.AvailableToNetQuantity, suggestion.ScheduledReceiptQuantity,
-            suggestion.SafetyStockQuantity, suggestion.NetRequirementQuantity, suggestions.Sum(x => x.PlannedQuantity),
-            suggestion.ScrapRate, suggestion.YieldRate, suggestion.Formula, suggestion.UomConversionSummary);
-        return new(suggestion.Id.ToString(), suggestion.MrpRunId.ToString(), suggestion.SuggestionType,
+        var net = NetRequirementSource(suggestion, suggestions.Sum(x => x.PlannedQuantity));
+        return new(suggestion.NetRequirementReference!.Value.ToString(), suggestion.MrpRunId.ToString(), suggestion.SuggestionType,
             suggestion.SkuCode, suggestion.UomCode, suggestion.SiteCode, suggestion.RequiredDate, suggestion.NetRequirementQuantity,
             suggestion.ReleaseDate, ToUtc(suggestion.ReleaseDate), arrivalDate, arrival, start, latest, covered,
             suggestion.NetRequirementQuantity - covered, EvaluateStatus(now, latest, arrival, start, reasons.Count == 0),
             reasons.Distinct(StringComparer.Ordinal).ToArray(), net, demands, lines, scheduling,
-            suggestions.Select(x => new MaterialDeliverySuggestionSource(x.Id.ToString(), x.Status.ToString(), x.Quantity,
-                x.PlannedQuantity, x.ReasonCode, x.AcceptedDownstreamService, x.AcceptedDownstreamDocumentType, x.AcceptedDownstreamDocumentId)).ToArray());
+            suggestions.Select(SuggestionSource).ToArray());
     }
+
+    public static MaterialDeliverySuggestionSource SuggestionSource(PlanningSuggestion suggestion) =>
+        new(suggestion.Id.ToString(), suggestion.Status.ToString(), suggestion.Quantity, suggestion.PlannedQuantity,
+            suggestion.ReasonCode, suggestion.AcceptedDownstreamService, suggestion.AcceptedDownstreamDocumentType,
+            suggestion.AcceptedDownstreamDocumentId);
+
+    public static MaterialDeliveryNetRequirementSource NetRequirementSource(PlanningSuggestion suggestion, decimal plannedQuantity) =>
+        new(suggestion.GrossDemandQuantity, suggestion.OnHandQuantity, suggestion.ReservedQuantity,
+            suggestion.AvailableToNetQuantity, suggestion.ScheduledReceiptQuantity, suggestion.SafetyStockQuantity,
+            suggestion.NetRequirementQuantity, plannedQuantity, suggestion.ScrapRate, suggestion.YieldRate,
+            suggestion.Formula, suggestion.UomConversionSummary);
 }

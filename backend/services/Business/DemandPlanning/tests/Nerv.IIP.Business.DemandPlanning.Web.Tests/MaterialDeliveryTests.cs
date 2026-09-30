@@ -44,7 +44,7 @@ public sealed class MaterialDeliveryTests
         var run = new MrpRunId(Guid.NewGuid());
         var due = new DateOnly(2026, 10, 12);
         var suggestion = PlanningSuggestion.Create("org", "env", run, "planned-work-order", "SKU", "EA", "SITE", 20,
-            due, due.AddDays(-3), "net-requirement");
+            due, due.AddDays(-3), "net-requirement", netRequirementReference: Guid.NewGuid());
         suggestion.SetNetRequirementExplanation(12, 2, 0, 2, 0, 0, 10, 20, 0, 1, "sales-order", "gross - available", null);
         suggestion.AddPeggingLink("demand", "SO", "SKU", null, 5, null, null, null, "sales-order", 5, "10");
         suggestion.AddPeggingLink("demand", "SO", "SKU", null, 7, null, null, null, "sales-order", 7, "20");
@@ -191,13 +191,82 @@ public sealed class MaterialDeliveryTests
         Assert.All(rows, x => Assert.Equal(x.NetRequirementQuantity, x.NetRequirementSource.PlannedQuantity));
     }
 
+    [Fact]
+    public async Task Identical_sources_and_explanations_keep_two_persisted_requirements_after_rejection()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(x => x.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(x => x.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var run = new MrpRunId(Guid.NewGuid());
+        var input = NetRequirementIdentityTests.CollisionInput() with
+        {
+            Demands = [new("SKU", "SKU", "EA", "SITE", 3, NetRequirementIdentityTests.Date, "safety-stock")],
+            PlanningParameters = [new("SKU", "EA", "SITE", 0, 3, null, null, null, "buy")]
+        };
+        var calculated = MrpCalculator.Calculate(input).ToArray();
+        Assert.Equal(2, calculated.Length);
+        Assert.Equal(calculated[0].PeggingLinks.ToArray(), calculated[1].PeggingLinks.ToArray());
+        Assert.Equal(calculated[0].NetRequirementExplanation, calculated[1].NetRequirementExplanation);
+        AddCalculatedSuggestions(db, run, calculated);
+        await db.SaveChangesAsync();
+        var handler = new GetMaterialDeliveriesQueryHandler(db, new Sources(), new FixedTime(Latest));
+        var result = await handler.Handle(new("org", "env", run, null), default);
+        Assert.Equal(2, result.Items.Count);
+        Assert.Equal(calculated.Select(x => x.NetRequirementReference!.Value.ToString()).Order(),
+            result.Items.Select(x => x.NetRequirementReference).Order());
+        Assert.All(result.Items, x => { Assert.Equal(3, x.NetRequirementQuantity); Assert.Single(x.SuggestionSources); });
+        foreach (var suggestion in db.PlanningSuggestions) suggestion.Reject("planner", "same reason");
+        await db.SaveChangesAsync();
+        var rejected = await handler.Handle(new("org", "env", run, null), default);
+        Assert.Equal(result.Items.Select(x => x.NetRequirementReference).Order(), rejected.Items.Select(x => x.NetRequirementReference).Order());
+        Assert.All(rejected.Items, x => Assert.Equal("Rejected", Assert.Single(x.SuggestionSources).Status));
+    }
+
+    [Fact]
+    public async Task Historical_split_without_identity_preserves_raw_suggestions_without_precise_requirement_totals()
+    {
+        var services = new ServiceCollection();
+        services.AddMediatR(x => x.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(x => x.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var run = new MrpRunId(Guid.NewGuid());
+        var historical = MrpCalculator.Calculate(NetRequirementIdentityTests.SplitInput())
+            .Select(x => x with { NetRequirementReference = null }).ToArray();
+        AddCalculatedSuggestions(db, run, historical);
+        await db.SaveChangesAsync();
+        db.PlanningSuggestions.First().Reject("planner", "same reason");
+        await db.SaveChangesAsync();
+        var upstream = new Sources();
+        var handler = new GetMaterialDeliveriesQueryHandler(db, upstream, new FixedTime(Latest));
+        var result = await handler.Handle(new("org", "env", run, "PLAN"), default);
+        Assert.Empty(result.Items);
+        Assert.Empty(upstream.Selections);
+        Assert.Equal(3, result.UnknownRequirementSuggestions.Count);
+        Assert.Equal(db.PlanningSuggestions.Select(x => x.Id.ToString()).Order(),
+            result.UnknownRequirementSuggestions.Select(x => x.SuggestionSource.SuggestionId).Order());
+        Assert.All(result.UnknownRequirementSuggestions, x =>
+        {
+            Assert.Equal("net-requirement-identity-unknown", x.Reason);
+            Assert.Equal(30, x.RawNetRequirementSource.NetRequirementQuantity);
+            Assert.Single(x.DemandSources);
+        });
+        Assert.Equal(new decimal[] { 6, 12, 12 }, result.UnknownRequirementSuggestions.Select(x => x.RawNetRequirementSource.PlannedQuantity).Order());
+        Assert.Single(result.UnknownRequirementSuggestions, x => x.SuggestionSource.Status == "Rejected");
+    }
+
     private static void AddCalculatedSuggestions(ApplicationDbContext db, MrpRunId run,
         IEnumerable<CalculatedPlanningSuggestion> calculated)
     {
         foreach (var batch in calculated)
         {
             var suggestion = PlanningSuggestion.Create("org", "env", run, batch.SuggestionType, batch.SkuCode, batch.UomCode,
-                batch.SiteCode, batch.Quantity, batch.RequiredDate, batch.ReleaseDate, batch.ReasonCode);
+                batch.SiteCode, batch.Quantity, batch.RequiredDate, batch.ReleaseDate, batch.ReasonCode,
+                netRequirementReference: batch.NetRequirementReference);
             var net = batch.NetRequirementExplanation;
             suggestion.SetNetRequirementExplanation(net.GrossDemandQuantity, net.OnHandQuantity, net.ReservedQuantity,
                 net.AvailableToNetQuantity, net.ScheduledReceiptQuantity, net.SafetyStockQuantity, net.NetRequirementQuantity,
