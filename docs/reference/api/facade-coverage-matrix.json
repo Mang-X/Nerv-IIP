@@ -5111,6 +5111,14 @@
     {
       "service": "Scheduling",
       "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/{planId}/csv",
+      "operationId": "exportSchedulingPlanCsv",
+      "classification": "deferred",
+      "followUp": "#4084"
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
       "route": "/api/business/v1/scheduling/plans/{planId}/gantt",
       "operationId": "getSchedulingPlanGantt",
       "classification": "exposed",

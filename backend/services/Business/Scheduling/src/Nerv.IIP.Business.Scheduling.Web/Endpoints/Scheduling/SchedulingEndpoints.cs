@@ -281,6 +281,20 @@ public sealed class GetSchedulePlanEndpoint(ISender sender)
     }
 }
 
+public sealed class ExportSchedulePlanCsvEndpoint(ISender sender)
+    : SchedulingEndpoint<GetSchedulePlanRequest, byte[]>
+{
+    public override void Configure() =>
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<ExportSchedulePlanCsvEndpoint>());
+
+    public override async Task HandleAsync(GetSchedulePlanRequest req, CancellationToken ct)
+    {
+        var plan = await sender.Send(new GetSchedulePlanDetailQuery(
+            req.PlanId, req.OrganizationId, req.EnvironmentId), ct);
+        await Send.BytesAsync(SchedulePlanCsv.Export(plan), "schedule-plan.csv", "text/csv; charset=utf-8", cancellation: ct);
+    }
+}
+
 public sealed class GetSchedulePlanGanttEndpoint(ISender sender)
     : SchedulingEndpoint<GetSchedulePlanGanttRequest, ResponseData<IReadOnlyCollection<GanttScheduleItemContract>>>
 {
@@ -589,6 +603,7 @@ public static class SchedulingEndpointContracts
         new(typeof(ListSchedulePlanHistoryEndpoint), "GET", "/api/business/v1/scheduling/plans/history", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlanHistory"),
         new(typeof(ListSchedulePlansEndpoint), "GET", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlans"),
         new(typeof(GetSchedulePlanEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlan"),
+        new(typeof(ExportSchedulePlanCsvEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/csv", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "exportSchedulingPlanCsv"),
         new(typeof(GetSchedulePlanGanttEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/gantt", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanGantt"),
         new(typeof(ReleaseSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/release", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "releaseSchedulingPlan"),
         new(typeof(RevokeSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/revoke", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "revokeSchedulingPlan"),

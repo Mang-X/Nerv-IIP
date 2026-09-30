@@ -33,6 +33,69 @@ public sealed class SchedulingEndpointContractTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
 
+    [Theory]
+    [InlineData(SchedulePlanStatusContract.Generated)]
+    [InlineData(SchedulePlanStatusContract.Released)]
+    [InlineData(SchedulePlanStatusContract.Revoked)]
+    public async Task Csv_download_exports_all_assignments_with_plan_status_and_roundtrip_fields(SchedulePlanStatusContract status)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var plan = CreatePersistedPlan("csv-plan", "csv-problem", FixedNow,
+                includeUnscheduledOperation: false, assignmentCount: 101);
+            if (status != SchedulePlanStatusContract.Generated) plan.Release(FixedNow.AddHours(1), 1);
+            if (status == SchedulePlanStatusContract.Revoked) plan.Revoke(FixedNow.AddHours(2));
+            db.SchedulePlans.Add(plan);
+            await db.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/scheduling/plans/csv-plan/csv?organizationId=org-001&environmentId=prod");
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/csv", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType?.CharSet);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition?.DispositionType);
+        using var parser = new Microsoft.VisualBasic.FileIO.TextFieldParser(new StringReader(await response.Content.ReadAsStringAsync()));
+        parser.SetDelimiters(",");
+        parser.HasFieldsEnclosedInQuotes = true;
+        Assert.Equal(new[] { "OrderId", "OperationId", "ResourceId", "StartUtc", "EndUtc", "PlanStatus" }, parser.ReadFields());
+        var rows = new List<string[]>();
+        while (!parser.EndOfData) rows.Add(parser.ReadFields()!);
+        Assert.Equal(101, rows.Count);
+        for (var index = 0; index < rows.Count; index++)
+        {
+            Assert.Equal($"wo,csv-plan-{index:D3}", rows[index][0]);
+            Assert.Equal($"op\"csv-plan-{index:D3}", rows[index][1]);
+            Assert.Equal("DEV-OIL-01\nline2", rows[index][2]);
+            Assert.Equal(FixedNow, DateTimeOffset.Parse(rows[index][3], System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(FixedNow.AddMinutes(30), DateTimeOffset.Parse(rows[index][4], System.Globalization.CultureInfo.InvariantCulture));
+            Assert.EndsWith("Z", rows[index][3]);
+            Assert.Equal(status.ToString(), rows[index][5]);
+        }
+    }
+
+    [Theory]
+    [InlineData("csv-plan", "other-org", "prod")]
+    [InlineData("csv-plan", "org-001", "other-env")]
+    [InlineData("missing-plan", "org-001", "prod")]
+    public async Task Csv_download_rejects_missing_or_out_of_scope_plan(string planId, string organizationId, string environmentId)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePersistedPlan("csv-plan", "csv-problem", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        using var response = await client.GetAsync($"/api/business/v1/scheduling/plans/{planId}/csv?organizationId={organizationId}&environmentId={environmentId}");
+        await AssertRejectedKnownExceptionEnvelopeAsync(response);
+    }
+
     [Fact]
     public async Task Workbench_preview_http_freezes_execution_and_preserves_business_records()
     {
@@ -201,7 +264,7 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(18, contracts.Length);
+        Assert.Equal(19, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingWorkbenchPlan");
@@ -1233,7 +1296,8 @@ public sealed class SchedulingEndpointContractTests
         string planId,
         string problemId,
         DateTimeOffset generatedAtUtc,
-        bool includeUnscheduledOperation = true)
+        bool includeUnscheduledOperation = true,
+        int assignmentCount = 1)
     {
         IReadOnlyCollection<UnscheduledOperationContract> unscheduledOperations = includeUnscheduledOperation
             ?
@@ -1263,20 +1327,17 @@ public sealed class SchedulingEndpointContractTests
                 LateOperationCount: 0,
                 OnTimeRate: 1m,
                 AverageResourceUtilization: 0.0625m),
-            Assignments:
-            [
-                new ScheduleAssignmentContract(
-                    AssignmentId: $"assign-{planId}",
-                    OrderId: $"wo-{planId}",
-                    OperationId: $"op-{planId}",
-                    OperationSequence: 10,
-                    ResourceId: "DEV-OIL-01",
-                    WorkCenterId: "WC-OIL",
-                    StartUtc: generatedAtUtc,
-                    EndUtc: generatedAtUtc.AddMinutes(30),
-                    IsLocked: false,
-                    ExplanationCode: "scheduled")
-            ],
+            Assignments: Enumerable.Range(0, assignmentCount).Select(index => new ScheduleAssignmentContract(
+                AssignmentId: assignmentCount == 1 ? $"assign-{planId}" : $"assign-{planId}-{index:D3}",
+                OrderId: assignmentCount == 1 ? $"wo-{planId}" : $"wo,{planId}-{index:D3}",
+                OperationId: assignmentCount == 1 ? $"op-{planId}" : $"op\"{planId}-{index:D3}",
+                OperationSequence: 10,
+                ResourceId: assignmentCount == 1 ? "DEV-OIL-01" : "DEV-OIL-01\nline2",
+                WorkCenterId: "WC-OIL",
+                StartUtc: generatedAtUtc,
+                EndUtc: generatedAtUtc.AddMinutes(30),
+                IsLocked: false,
+                ExplanationCode: "scheduled")).ToArray(),
             ResourceLoads:
             [
                 new ScheduleResourceLoadContract(
