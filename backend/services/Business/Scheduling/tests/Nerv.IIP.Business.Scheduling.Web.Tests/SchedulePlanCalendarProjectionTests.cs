@@ -106,6 +106,9 @@ public sealed class SchedulePlanCalendarProjectionTests
             CancellationToken.None);
 
         Assert.Equal("CAL-DAY", Assert.Single(detail.Calendars!).CalendarId);
+        Assert.NotNull(detail.ValidationContext);
+        Assert.Empty(detail.ValidationContext.FixedReservations);
+        Assert.All(detail.ValidationContext.Operations, x => Assert.False(x.IsFixed));
         Assert.Equal(ScheduleBlockKindContract.Maintenance, Assert.Single(detail.BlockWindows!).Kind);
     }
 
@@ -132,6 +135,7 @@ public sealed class SchedulePlanCalendarProjectionTests
 
         // 没有问题快照就不带日历——读面宁可少说,也不编一份日历出来。
         Assert.Null(detail.Calendars);
+        Assert.Null(detail.ValidationContext);
 
         // 但设备不可用窗口不再依赖问题快照:它随方案一起落库(#1409)。
         // 这里原来断言的是 Null,那是把缺陷当成了契约——问题快照存的是「设备可用性适配之前」

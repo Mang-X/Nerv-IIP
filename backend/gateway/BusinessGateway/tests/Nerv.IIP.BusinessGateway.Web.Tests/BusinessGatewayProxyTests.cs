@@ -9144,6 +9144,59 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("preview", body.RootElement.GetProperty("data").GetProperty("status").GetString());
     }
 
+    [Theory]
+    [InlineData("create")]
+    [InlineData("detail")]
+    [InlineData("revision")]
+    public async Task Scheduling_facade_preserves_frozen_validation_context_through_http_client(string route)
+    {
+        var start = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var context = new SchedulePlanValidationContextContract(
+            start, start.AddDays(2),
+            [new("res-001", "wc-001", "calendar-001", 3, 0.75m)],
+            [new("order-001", "op-002", ["op-001"], start.AddHours(7), 90, 15, true)],
+            [new("external-order", "external-op", "wc-001", start.AddHours(1), start.AddHours(2), null),
+             new("order-001", "op-002", "wc-001", start.AddHours(3), start.AddHours(4), "res-001")]);
+        var plan = CreateSchedulePlan() with { ValidationContext = context };
+        var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK,
+            request.RequestUri!.AbsolutePath.EndsWith("/revisions", StringComparison.Ordinal)
+                ? new { data = (object)new SchedulePlanRevisionContract(
+                    plan, new(false, null, null, null, null, [], [], []),
+                    new("plan-001", plan.PlanId, plan.Metrics, plan.Metrics, 0, 0, 0)) }
+                : new { data = (object)plan }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = route switch
+        {
+            "create" => await client.PostAsJsonAsync("/api/business-console/v1/scheduling/workbench/plans", new
+            {
+                organizationId = "org-001", environmentId = "env-dev",
+                horizonStartUtc = start, horizonEndUtc = start.AddDays(2),
+                orders = new[] { new { workOrderId = "order-001", priority = 1, isRush = true } },
+            }),
+            "detail" => await client.GetAsync("/api/business-console/v1/scheduling/plans/plan-001?organizationId=org-001&environmentId=env-dev"),
+            _ => await client.PostAsJsonAsync("/api/business-console/v1/scheduling/plans/plan-001/revisions", new
+            {
+                organizationId = "org-001", environmentId = "env-dev",
+                includedOrderIds = new[] { "order-001" }, lockedAssignments = Array.Empty<object>(),
+            }),
+        };
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"]!;
+        var returnedPlan = route == "revision" ? body["candidate"]! : body;
+        var expected = JsonSerializer.SerializeToNode(context, SchedulingJson.Options);
+        Assert.True(JsonNode.DeepEquals(expected, returnedPlan["validationContext"]));
+        Assert.Equal("internal-test-token", Assert.Single(handler.Requests).Headers.Authorization?.Parameter);
+    }
+
     [Fact]
     public async Task Scheduling_facade_uses_internal_service_token_and_forwards_stable_dtos()
     {

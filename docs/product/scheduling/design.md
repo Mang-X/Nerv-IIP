@@ -30,6 +30,8 @@
 
 - **权威可编辑**:首版与修订版都由 BusinessScheduling 持久化生成；前端只编辑 assignment 草稿并提交显式锁定，不猜工序时长、冲突、未排原因或 KPI。
 - **单一草稿**:拖拽、资源改派、时间表格、锁定/解锁和撤销/重做共享 `WorkingScheduleDraft`，不存在视图间复制状态。
+- **草案即时反馈**：甘特移动、资源端点调整和表格编辑后，工序详情与表格行内即时展示日历外、资源/工作中心超容量、前序倒置或前序尚未排程，以及相对方案工序交期的提前/按期/延期分钟数。移动与端点调整自动选中该工序；移回/恢复待排、撤销/重做和加载新方案均随同一草案重新核对，已消除的提示随即清除。
+  日历合并相接和重叠班次，真实停产空隙仍不可跨越；占用按半开区间分段计数，计入准备时间、利用率保留时间、固定及外部占用，分段工序的生产间隙不当作占用。前序按快照真实工单/工序依赖判断，交期直接取方案工序快照，不从 MES 分页补造。未记录校验依据时明确提示无法核对；这些浏览器建议不改写后端冲突与 KPI，重预览、发布及最终校验仍由后端裁决。
 - **状态不只靠颜色**:冲突使用图标 + “冲突”文字 + 实线边框,锁定使用锁图标 + “锁定”文字 + 虚线边框；未排工序在时间轴外列出业务说明。
 - **时间轴背景讲日历事实**(MAN-693 / #1261):方案带出工作日历(班次窗口)与不可用窗口后,
   甘特按**权威日历**画工作/非工作底纹、在交班时刻画班次边界,并给设备维护 / 计划停机 / 换线 / 换型
@@ -94,6 +96,8 @@
 
 BusinessGateway 新增两个公开两跳契约:`POST /api/business-console/v1/scheduling/workbench/plans` 从最多 500 个 MES 工单生成首版；`POST /api/business-console/v1/scheduling/plans/{planId}/revisions` 从持久化 base problem + included orders + explicit locks 生成修订版、失效影响与方案对比。既有 `list` / detail / gantt / release / revoke 继续承担历史和版本治理。
 读取经 `@nerv-iip/api-client` 生成 SDK + curated barrel(`SchedulePlanContract` 等)→ `@nerv-iip/scheduling` 的 `toModel` 归一化。
+
+Scheduling owner 的首版创建、修订 candidate 和 detail 响应提供可空的 `validationContext`：资源/工作中心映射、日历标识、容量与利用率；所有快照工序的真实前序、工序交期、时长、setup 和固定身份；以及包含外部工序的冻结占用区间与方案 horizon。事实来自该方案持久化问题快照，日历和不可用窗口复用已有 `calendars` / `blockWindows`。Gateway 三种响应透传，稳定生成类型经 `toModel` 进入草案即时反馈。历史快照缺失时不提供上下文，不以当前主数据、已排条或通用作息补造依据。
 
 ## 6. 技术落点(引擎可替换)
 

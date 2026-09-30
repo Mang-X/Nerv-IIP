@@ -1,3 +1,5 @@
+using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Contracts.Mes;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -15,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
@@ -125,6 +128,12 @@ public sealed class WorkOrderTransformationHttpContractTests
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-SPLIT-PARENT", "SKU-HTTP", "PV-HTTP", 10m, 10, dueUtc, "PCS"),
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-MERGE-A", "SKU-HTTP", "PV-HTTP", 4m, 10, dueUtc, "PCS"),
                 WorkOrder.Create("org-001", "env-dev", "WO-HTTP-MERGE-B", "SKU-HTTP", "PV-HTTP", 6m, 10, dueUtc, "PCS"));
+            foreach (var order in dbContext.WorkOrders.Local.ToArray())
+            {
+                dbContext.OperationTasks.Add(OperationTask.Queue(order.OrganizationId, order.EnvironmentId,
+                    order.WorkOrderIdValue, $"{order.WorkOrderIdValue}-OP", 10, "WC-1", [], dueUtc,
+                    TimeSpan.FromMinutes(20), order.SkuId, order.UomCode, order.Quantity));
+            }
             await dbContext.SaveChangesAsync();
         }
 
@@ -220,6 +229,14 @@ public sealed class WorkOrderTransformationHttpContractTests
                 (x.WorkOrderIdValue == "WO-HTTP-MERGE-A" || x.WorkOrderIdValue == "WO-HTTP-MERGE-B")));
         Assert.Equal(1, await assertion.WorkOrders.CountAsync(
             x => x.WorkOrderIdValue == "WO-HTTP-MERGE-TARGET"));
+        var published = factory.Services.GetRequiredService<RecordingIntegrationEventPublisher>().Published;
+        Assert.Equal(2, published.Count);
+        var splitEvent = Assert.Single(published.OfType<WorkOrderSplitIntegrationEvent>());
+        var mergeEvent = Assert.Single(published.OfType<WorkOrderMergedIntegrationEvent>());
+        Assert.Equal(Guid.Parse(splitTransformationId), splitEvent.Payload.TransformationId);
+        Assert.Equal(Guid.Parse(mergeTransformationId), mergeEvent.Payload.TransformationId);
+        Assert.Equal("user:planner-001", splitEvent.Actor);
+        Assert.Equal("user:planner-001", mergeEvent.Actor);
     }
 
     private static async Task<JsonElement> ReadDataAsync(HttpResponseMessage response)
@@ -261,11 +278,26 @@ public sealed class WorkOrderTransformationHttpContractTests
                     services.AddDbContext<ApplicationDbContext>(options => options
                         .UseSqlite(sqliteConnection));
                     services.AddSingleton(sqliteConnection);
+                    services.AddSingleton<RecordingIntegrationEventPublisher>();
+                    services.AddSingleton<IIntegrationEventPublisher>(provider =>
+                        provider.GetRequiredService<RecordingIntegrationEventPublisher>());
                     services.AddCap(options => options.UseInMemoryMessageQueue());
                     services.Configure<HostOptions>(options =>
                         options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
                 });
             });
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class SourceUnavailableSender : ISender
