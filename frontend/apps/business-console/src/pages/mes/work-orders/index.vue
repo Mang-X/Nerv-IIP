@@ -899,7 +899,9 @@ function isNonEmpty(value: string) {
       >
       <template #cell-completedQuantity="{ row }"
         ><span class="tabular-nums">{{
-          row.completedQuantity == null ? '—' : formatQuantity(row.completedQuantity)
+          row.completedQuantity == null
+            ? '—'
+            : row.completedQuantity.toLocaleString(undefined, { maximumFractionDigits: 6 })
         }}</span></template
       >
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>

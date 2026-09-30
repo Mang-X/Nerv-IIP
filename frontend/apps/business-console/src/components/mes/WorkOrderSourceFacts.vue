@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {
   listBusinessConsolePlanningDemands,
+  listBusinessConsolePlanningDemandsQueryOptions,
+  type BusinessConsoleDemandSourceItem,
   type BusinessConsoleMesWorkOrderDetailResponse,
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
@@ -21,23 +23,39 @@ const canReadDemands = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.planningDemandsRead),
 )
 const demandReference = computed(() => props.source?.sourceDemandReference ?? '')
-const { data, error, isPending, refetch } = useQuery(() => ({
-  key: ['mes-work-order-source', props.organizationId, props.environmentId, demandReference.value],
-  enabled:
-    canReadDemands.value &&
-    Boolean(props.organizationId && props.environmentId && demandReference.value),
-  query: async () => {
-    const response = await listBusinessConsolePlanningDemands({
-      query: {
-        organizationId: props.organizationId,
-        environmentId: props.environmentId,
-        keyword: demandReference.value,
-      },
-      throwOnError: true,
-    })
-    return assertEnvelopeSuccess(response.data!, '读取工单来源需求失败。')
-  },
-}))
+const { data, error, isPending, refetch } = useQuery(() => {
+  const query = {
+    organizationId: props.organizationId,
+    environmentId: props.environmentId,
+    keyword: demandReference.value,
+    skip: 0,
+    take: 100,
+  }
+  const options = listBusinessConsolePlanningDemandsQueryOptions({ query })
+  return {
+    ...options,
+    // 保留生成 key 的 endpoint 身份参与统一失效；全页精确关联结果与单页模糊结果分开缓存。
+    key: [...options.key, 'all-pages-exact-reference'],
+    enabled:
+      canReadDemands.value &&
+      Boolean(props.organizationId && props.environmentId && demandReference.value),
+    query: async () => {
+      const items: BusinessConsoleDemandSourceItem[] = []
+      let skip = 0
+      while (true) {
+        const response = await listBusinessConsolePlanningDemands({
+          query: { ...query, skip },
+          throwOnError: true,
+        })
+        const envelope = assertEnvelopeSuccess(response.data!, '读取工单来源需求失败。')
+        const page = envelope.data?.items ?? []
+        items.push(...page.filter((item) => item.sourceReference === query.keyword))
+        if (page.length < 100) return { ...envelope, data: { items } }
+        skip += page.length
+      }
+    },
+  }
+})
 const relatedDemands = computed(() =>
   canReadDemands.value
     ? (data.value?.data?.items ?? []).filter(

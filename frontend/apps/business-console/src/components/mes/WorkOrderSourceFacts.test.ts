@@ -8,15 +8,24 @@ import WorkOrderSourceFacts from './WorkOrderSourceFacts.vue'
 const state = vi.hoisted(() => ({
   items: [] as Array<Record<string, unknown>>,
   error: null as unknown,
+  query: undefined as undefined | (() => Promise<unknown>),
+  fetch: vi.fn(),
+}))
+vi.mock('@nerv-iip/api-client', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsolePlanningDemands: (...args: unknown[]) => state.fetch(...args),
 }))
 vi.mock('@pinia/colada', async (original) => ({
   ...(await original<typeof import('@pinia/colada')>()),
-  useQuery: () => ({
-    data: ref({ success: true, data: { items: state.items } }),
-    error: ref(state.error),
-    isPending: ref(false),
-    refetch: vi.fn(),
-  }),
+  useQuery: (options: () => { query: () => Promise<unknown> }) => {
+    state.query = options().query
+    return {
+      data: ref({ success: true, data: { items: state.items } }),
+      error: ref(state.error),
+      isPending: ref(false),
+      refetch: vi.fn(),
+    }
+  },
 }))
 function render(source: Record<string, unknown> | null) {
   const pinia = createPinia()
@@ -75,6 +84,47 @@ describe('工单来源事实', () => {
     })
     expect(wrapper.text()).toContain('未取得对应需求来源')
     expect(wrapper.text()).not.toContain('销售订单')
+  })
+  it('非销售需求即使引用像销售单，也显示需求来源', () => {
+    state.items = [{ sourceReference: 'SO-20260930-012', demandType: 'forecast', quantity: 120 }]
+    const wrapper = render({ sourceDemandReference: 'SO-20260930-012' })
+    expect(wrapper.text()).toContain('需求来源')
+    expect(wrapper.text()).not.toContain('销售订单')
+  })
+  it('读取第二页的真实关联，不让第一页的100条相似引用遮蔽来源', async () => {
+    state.fetch.mockReset()
+    state.fetch
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: Array.from({ length: 100 }, (_, index) => ({
+              sourceReference: `SO-20260930-012${index}`,
+              demandType: 'sales-order',
+            })),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                sourceReference: 'SO-20260930-012',
+                demandType: 'sales-order',
+                customerCode: 'CUST-LATE',
+              },
+            ],
+          },
+        },
+      })
+    render({ sourceDemandReference: 'SO-20260930-012' })
+    const result = (await state.query!()) as { data: { items: Array<{ sourceReference: string }> } }
+    expect(result.data.items).toEqual([
+      { sourceReference: 'SO-20260930-012', demandType: 'sales-order', customerCode: 'CUST-LATE' },
+    ])
+    expect(state.fetch.mock.calls[1][0].query.skip).toBe(100)
   })
   it('无来源的急单如实显示未记录来源', () => {
     expect(render(null).text()).toContain('未记录来源计划或需求')

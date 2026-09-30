@@ -56,7 +56,10 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
   }),
 }))
 
-const workOrders = vi.hoisted(() => ({ items: [] as Array<Record<string, unknown>> }))
+const workOrders = vi.hoisted(() => ({
+  items: [] as Array<Record<string, unknown>>,
+  refresh: vi.fn(),
+}))
 vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   useProductionReportSerialOptions: () => ({
     serialPolicy: ref('none'),
@@ -127,7 +130,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recordProductionReport: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
-    refreshWorkOrders: vi.fn(),
+    refreshWorkOrders: workOrders.refresh,
     workOrders: ref(workOrders.items),
     workOrdersError: ref(undefined),
     workOrdersHasFailedResponse: ref(false),
@@ -175,6 +178,7 @@ function mountList(permissions: string[] = []) {
         // 行内工单抽屉自带一整套 MES 查询，本用例只看紧急度徽章，整体桩掉。
         WorkOrderDetailSheet: true,
         SingleOrderSchedulingDialog: {
+          name: 'SingleOrderSchedulingDialog',
           props: ['workOrderId', 'contextLabel', 'open'],
           emits: ['scheduled'],
           template:
@@ -281,17 +285,19 @@ describe('工单列表需求变更标记', () => {
 describe('工单列表完成量与排产', () => {
   it('展示服务端完成量和拆合中文状态', () => {
     workOrders.items = [
-      { workOrderId: 'WO-SPLIT', status: 'split', completedQuantity: 37.5 },
+      { workOrderId: 'WO-SPLIT', status: 'split', completedQuantity: 0.0004 },
       { workOrderId: 'WO-MERGED', status: 'merged', completedQuantity: 0 },
     ]
     const rows = mountList().findAll('[data-testid="work-order-row"]')
-    expect(rows[0].text()).toContain('37.5')
+    expect(rows[0].text()).toContain('0.0004')
     expect(rows[0].text()).toContain('已拆分')
     expect(rows[1].text()).toContain('已合并')
     expect(rows[1].text()).toContain('0')
   })
-  it('有权限时固定当前行工单打开既有排产弹窗', async () => {
+  it('点击第二行固定第二张工单，成功排产后刷新列表', async () => {
+    workOrders.refresh.mockClear()
     workOrders.items = [
+      { workOrderId: 'WO-20260930-002', productionVersionId: 'PV-FG-1000', status: 'released' },
       {
         workOrderId: 'WO-20260930-003',
         workOrderNo: 'WO-20260930-003',
@@ -300,10 +306,14 @@ describe('工单列表完成量与排产', () => {
       },
     ]
     const wrapper = mountList(['business.scheduling.plans.manage'])
-    const button = wrapper.findAll('button').find((button) => button.text().includes('对该单排产'))!
+    const button = wrapper
+      .findAll('button')
+      .filter((button) => button.text().includes('对该单排产'))[1]!
     expect(button.element.disabled).toBe(false)
     await button.trigger('click')
     expect(wrapper.get('[data-testid="scheduling-target"]').text()).toContain('WO-20260930-003')
+    wrapper.findComponent({ name: 'SingleOrderSchedulingDialog' }).vm.$emit('scheduled', 'PLAN-007')
+    expect(workOrders.refresh).toHaveBeenCalledOnce()
   })
   it('只有读取权限时不允许列表发起排产', () => {
     workOrders.items = [
