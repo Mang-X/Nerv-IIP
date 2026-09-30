@@ -54,6 +54,7 @@ const props = defineProps<{
    * 工序详情要展示这些字段就只能在呈现层 join，join 不到的字段一律不上屏。
    */
   workOrders?: BusinessConsoleMesWorkOrderItem[]
+  workOrderFactsUnavailable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -234,6 +235,7 @@ const model = computed<ScheduleModel | undefined>(() => {
   const mapped = withWorkOrderFacts(
     toModel({ ...props.plan, assignments: renderableAssignments.value }),
     props.workOrders ?? [],
+    props.workOrderFactsUnavailable,
   )
   const grouped = buildGroupedTasks(
     mapped.tasks.map((task) => {

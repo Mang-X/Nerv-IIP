@@ -6,13 +6,17 @@ import type { ScheduleModel, ScheduleTask } from './types'
 export function withWorkOrderFacts(
   model: ScheduleModel,
   orders: BusinessConsoleMesWorkOrderItem[],
+  commercialSourceUnavailable = false,
 ): ScheduleModel {
   const byId = new Map(orders.map((order) => [order.workOrderId, order]))
   return {
     ...model,
     tasks: model.tasks.map((task) => ({
       ...task,
-      commercialSourceFacts: byId.get(task.orderId)?.commercialSourceFacts,
+      commercialSourceFacts: commercialSourceUnavailable
+        ? undefined
+        : byId.get(task.orderId)?.commercialSourceFacts,
+      commercialSourceUnavailable,
     })),
   }
 }
@@ -23,7 +27,8 @@ export function taskFactRows(task: ScheduleTask): Array<[string, string]> {
   const current = task.currentExecution
   const rows: Array<[string, string]> = []
   const commercial = task.commercialSourceFacts
-  if (commercial?.status === 'forbidden') rows.push(['商业关联', '无权读取'])
+  if (task.commercialSourceUnavailable) rows.push(['商业关联', '暂不可读取'])
+  else if (commercial?.status === 'forbidden') rows.push(['商业关联', '无权读取'])
   for (const order of commercial?.salesOrders ?? []) {
     if (order.salesOrderNo) rows.push(['销售订单', order.salesOrderNo])
     if (order.customerCode) rows.push(['客户', order.customerCode])

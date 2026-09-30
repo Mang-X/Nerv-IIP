@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPage from './scheduling.vue'
 import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
-import type { BusinessConsoleSchedulingMaterialShortageSummary } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleMesWorkOrderItem,
+  BusinessConsoleSchedulingMaterialShortageSummary,
+} from '@nerv-iip/api-client'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 让断言不依赖真实名录查询。挂载仍装一个新 Pinia（见各 mount 的 plugins）：
@@ -98,23 +101,30 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
   },
 }))
 
+const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
+const associatedError = shallowRef<unknown>()
+const candidatesEmpty = shallowRef(false)
 vi.mock('@/composables/useBusinessMes', () => ({
-  useMesWorkOrderFacts: () => ({ workOrders: computed(() => []), error: shallowRef(undefined) }),
+  useMesWorkOrderFacts: () => ({ workOrders: associatedOrders, error: associatedError }),
 }))
 
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
     // 甘特工序详情用它把物料/数量/交期 join 到工序上（工单级事实，见 SchedulingPlanGantt）。
-    candidates: computed(() => [
-      {
-        workOrderId: 'WO-20260701-001',
-        skuCode: 'SKU-PISTON-01',
-        quantity: 120,
-        dueUtc: '2026-07-06T00:00:00Z',
-        status: 'released',
-        productionVersionId: 'pv-001',
-      },
-    ]),
+    candidates: computed(() =>
+      candidatesEmpty.value
+        ? []
+        : [
+            {
+              workOrderId: 'WO-20260701-001',
+              skuCode: 'SKU-PISTON-01',
+              quantity: 120,
+              dueUtc: '2026-07-06T00:00:00Z',
+              status: 'released',
+              productionVersionId: 'pv-001',
+            },
+          ],
+    ),
     priorityScopeReady: shallowRef(true),
     saveOrderPriority: vi.fn(),
     candidatesError: shallowRef(undefined),
@@ -426,6 +436,9 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  associatedOrders.value = []
+  associatedError.value = undefined
+  candidatesEmpty.value = false
   authState.permissionCodes = [
     'business.scheduling.plans.read',
     'business.scheduling.plans.manage',
@@ -536,6 +549,72 @@ describe('APS scheduling workbench page', () => {
       wrapper.unmount()
     },
   )
+
+  it('preserves completed work-order commercial facts after it leaves the candidate pool', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+    candidatesEmpty.value = true
+    associatedOrders.value = [
+      {
+        workOrderId: 'WO-20260701-001',
+        commercialSourceFacts: {
+          status: 'available',
+          salesOrders: [{ salesOrderNo: 'SO-COMPLETED', customerCode: 'CUSTOMER-COMPLETED' }],
+        },
+      },
+    ]
+    await flushPromises()
+    const draftBoard = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+    const tableTab = draftBoard.findAll('[role=tab]').find((tab) => tab.text().includes('表格编辑'))!
+    await tableTab.trigger('focus')
+    await tableTab.trigger('mousedown')
+    await flushPromises()
+    expect(draftBoard.text()).toContain('SO-COMPLETED')
+    expect(draftBoard.text()).toContain('CUSTOMER-COMPLETED')
+    await openPlanTable(wrapper)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '明细')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('SO-COMPLETED')
+    expect(wrapper.text()).toContain('CUSTOMER-COMPLETED')
+    wrapper.unmount()
+  })
+
+  it('notifies actual commercial fact read failure and distinguishes unavailable from no source', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+    await openPlanTable(wrapper)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '明细')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('暂不可读取')
+    associatedError.value = { status: 503, detail: 'Service Unavailable' }
+    await flushPromises()
+    expect(stub.toastError).toHaveBeenCalledWith(expect.stringContaining('服务暂时不可用'))
+    expect(wrapper.text()).toContain('商业关联')
+    expect(wrapper.text()).toContain('暂不可读取')
+    associatedError.value = undefined
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('暂不可读取')
+    wrapper.unmount()
+  })
 
   it('renders the official scheduling entry with plan summary columns from facade data', async () => {
     const wrapper = mount(SchedulingPage, {

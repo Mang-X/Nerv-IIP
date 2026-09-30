@@ -48,7 +48,7 @@ import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionRevi
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useAuthStore } from '@/stores/auth'
-import { notifyOperationFailure } from '@/utils/notify'
+import { notifyError, notifyOperationFailure } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -163,6 +163,13 @@ const associatedWorkOrders = useMesWorkOrderFacts(() => [
     .map((task) => task.orderId) ?? []),
   ...(planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId),
 ])
+watch(
+  associatedWorkOrders.error,
+  (error) => {
+    if (error) notifyError(error, '关联工单事实暂不可读取，请稍后重试。')
+  },
+  { immediate: true },
+)
 const displayWorkOrders = computed(() => {
   const orders = new Map(workbench.candidates.value.map((order) => [order.workOrderId, order]))
   for (const facts of associatedWorkOrders.workOrders.value)
@@ -170,11 +177,21 @@ const displayWorkOrders = computed(() => {
   return [...orders.values()]
 })
 const draftDisplayModel = computed(() =>
-  draft.model.value ? withWorkOrderFacts(draft.model.value, displayWorkOrders.value) : undefined,
+  draft.model.value
+    ? withWorkOrderFacts(
+        draft.model.value,
+        displayWorkOrders.value,
+        Boolean(associatedWorkOrders.error.value),
+      )
+    : undefined,
 )
 const detailTasks = computed(() =>
   planDetail.value
-    ? withWorkOrderFacts(toModel(planDetail.value), displayWorkOrders.value).tasks
+    ? withWorkOrderFacts(
+        toModel(planDetail.value),
+        displayWorkOrders.value,
+        Boolean(associatedWorkOrders.error.value),
+      ).tasks
     : [],
 )
 function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
@@ -719,9 +736,6 @@ function reasonLabel(reason?: string | null) {
         </NvButton>
       </template>
     </NvPageHeader>
-    <p v-if="associatedWorkOrders.error.value" role="alert" class="mb-4 text-destructive">
-      关联工单事实读取失败，销售订单与客户暂不可读取。
-    </p>
 
     <NvTabs v-model="activeView">
       <NvTabsList>
@@ -1072,6 +1086,7 @@ function reasonLabel(reason?: string | null) {
           :plan="planDetail"
           :summary="selectedPlanSummary"
           :work-orders="displayWorkOrders"
+          :work-order-facts-unavailable="Boolean(associatedWorkOrders.error.value)"
           :loading="planDetailPending"
           :error="planDetailError"
           :release-pending="releasePlanPending"

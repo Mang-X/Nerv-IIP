@@ -80,6 +80,7 @@ export interface ScheduleTask {
   /** 当前设备事实对应的原始资源；人工改派后不能套用旧设备状态。 */
   executionResourceId?: string
   commercialSourceFacts?: BusinessConsoleMesWorkOrderItem['commercialSourceFacts']
+  commercialSourceUnavailable?: boolean
   predecessors?: string[]
   successors?: string[]
   /** 0..1。 */
