@@ -14,6 +14,7 @@ import {
   SchedulingToolbar,
   TaskDetailPanel,
   toModel,
+  withWorkOrderFacts,
   type ScheduleModel,
   type ScheduleTask,
   type DimensionValue,
@@ -48,11 +49,12 @@ const props = defineProps<{
   error?: unknown
   releasePending?: boolean
   /**
-   * MES 权威工单（与「待排工单池」同一份查询缓存，这里不另发请求）。
+   * MES 权威工单：待排池基本信息与方案关联工单详情事实。
    * APS 的 assignment 契约只有工单号/工序号/资源/起止，物料、数量、交期在工单上；
    * 工序详情要展示这些字段就只能在呈现层 join，join 不到的字段一律不上屏。
    */
   workOrders?: BusinessConsoleMesWorkOrderItem[]
+  workOrderFactsUnavailable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -230,7 +232,11 @@ const renderableAssignments = computed(() =>
 
 const model = computed<ScheduleModel | undefined>(() => {
   if (!props.plan) return undefined
-  const mapped = toModel({ ...props.plan, assignments: renderableAssignments.value })
+  const mapped = withWorkOrderFacts(
+    toModel({ ...props.plan, assignments: renderableAssignments.value }),
+    props.workOrders ?? [],
+    props.workOrderFactsUnavailable,
+  )
   const grouped = buildGroupedTasks(
     mapped.tasks.map((task) => {
       // 资源时间块(维护/停机/换线/换型)不是工序:只把工作中心换成人话名,不套工序标题。
@@ -262,7 +268,7 @@ const model = computed<ScheduleModel | undefined>(() => {
         colorKey: family?.key,
         product: skuCode ? (resolveSkuName(skuCode) ?? skuCode) : undefined,
         quantity: workOrder?.quantity,
-        dueUtc: workOrder?.dueUtc,
+        dueUtc: task.dueUtc,
         dimensions: task.workCenterId
           ? {
               ...task.dimensions,

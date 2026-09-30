@@ -17,6 +17,29 @@ async function settle() {
 // 「一 task 一节点」+ selectTask 的引擎级覆盖移到 engine/conformance.selfcheck.test.ts。
 
 describe('GanttChart', () => {
+  it('keeps current execution facts on cards and tooltips without a commercial engine', async () => {
+    const model = toModel({
+      ...samplePlan,
+      assignments: [
+        {
+          ...samplePlan.assignments![0],
+          currentExecution: {
+            workOrderProgress: { completedQuantity: 25, plannedQuantity: 100 },
+            isMaterialReady: false,
+            materialReadyUtc: null,
+          },
+        },
+      ],
+    })
+    const wrapper = mount(GanttChart, { props: { model, readOnly: true } })
+    await settle()
+    const card = wrapper.get('[data-task-id="a1"]')
+    expect(card.text()).toContain('工单进度25 / 100')
+    expect(card.text()).toContain('缺料 · 未知到料日')
+    expect(card.attributes('title')).toContain('工单进度 25 / 100')
+    wrapper.unmount()
+  })
+
   it('shows loading skeleton when loading', () => {
     const wrapper = mount(GanttChart, { props: { loading: true } })
     expect(wrapper.find('[data-testid="gantt-skeleton"]').exists()).toBe(true)
@@ -248,7 +271,7 @@ describe('ReadonlyScheduleTimeline assembly dependencies', () => {
     // 08:00–16:00 的 720px 轴：子件 09:00 完工与母单 09:00 开工同为 x=90，行中心 y=32。
     // 路径绕过工序条顶沿，连续排程也必须留下可见连线。
     expect(wrapper.get('[data-dependency-id="child->parent"] path').attributes('d')).toBe(
-      'M 90 32 H 102 V 4 H 78 V 32 H 90',
+      'M 90 140 H 102 V 112 H 78 V 140 H 90',
     )
     wrapper.unmount()
   })
@@ -276,7 +299,7 @@ describe('ReadonlyScheduleTimeline assembly dependencies', () => {
     const link = wrapper.get('[data-dependency-id="a2->assembly"]')
     expect(link.attributes('data-source')).toBe('a2')
     expect(link.attributes('data-target')).toBe('assembly')
-    expect(link.get('path').attributes('d')).toBe('M 360 104 H 360 V 176 H 360')
+    expect(link.get('path').attributes('d')).toBe('M 360 432 H 360 V 724 H 360')
     await wrapper.setProps({ model: toModel({ ...plan, assemblyDependencies: [] }) })
     expect(wrapper.find('[data-dependency-id]').exists()).toBe(false)
     wrapper.unmount()

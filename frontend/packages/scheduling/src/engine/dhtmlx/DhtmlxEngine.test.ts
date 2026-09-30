@@ -76,6 +76,71 @@ const options = (): SchedulingEngineOptions => ({
 
 describe('DhtmlxEngine (fake factory)', () => {
   afterEach(() => vi.useRealTimers())
+  it('shows work-order quantities in the grid and never invents zero operation progress', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), options())
+    const model = toModel(samplePlan)
+    engine.setData(model)
+    const columns = fake.state.config.columns as {
+      name: string
+      label: string
+      template: (task: unknown) => string
+    }[]
+    const column = columns.find((item) => item.name === 'progress')!
+    const task = model.tasks.find((item) => item.id === 'a1')!
+    expect(column.template({ nerv: task })).toBe('—')
+    expect(
+      column.template({
+        nerv: {
+          ...task,
+          currentExecution: { workOrderProgress: { completedQuantity: 25, plannedQuantity: 100 } },
+        },
+      }),
+    ).toContain('25 / 100')
+    expect(column.label).toBe('工单进度')
+    engine.destroy()
+  })
+
+  it('uses the full operation due difference on every segment card', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const endUtc = '2026-06-10T16:00:00Z'
+    const model = toModel({
+      ...samplePlan,
+      assignments: [
+        {
+          ...samplePlan.assignments![0],
+          endUtc,
+          segments: [
+            { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },
+            { startUtc: '2026-06-10T14:00:00Z', endUtc },
+          ],
+        },
+      ],
+      validationContext: {
+        operations: [
+          { orderId: 'WO-001', operationId: 'op-10', dueUtc: endUtc, predecessorOperationIds: [] },
+        ],
+      },
+    })
+    engine.mount(el(), { ...options(), view: 'resource' })
+    engine.setData(model)
+    const template = fake.state.templates.task_text as (
+      s: unknown,
+      e: unknown,
+      task: unknown,
+    ) => string
+    const html = template(
+      null,
+      null,
+      fake.state.parsed.data.find((task) => task.id === 'a1'),
+    )
+    expect(html.match(/交期差 按期/g)).toHaveLength(2)
+    expect(html).not.toContain('提前 360 分钟')
+    engine.destroy()
+  })
+
   it('resource endpoints resize without starting the custom move, including read-only changes (#4041)', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })

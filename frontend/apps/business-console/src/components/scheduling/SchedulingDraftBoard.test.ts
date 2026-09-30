@@ -199,8 +199,9 @@ describe('SchedulingDraftBoard', () => {
     const cells = wrapper.findAll('tbody td')
     expect(cells).toHaveLength(10)
     expect((cells[3]!.find('input').element as HTMLInputElement).value).toBe('2026-07-24T08:00:00Z')
-    expect(cells[5]!.text()).toContain('齐套')
-    expect(cells[6]!.text()).toContain('正常')
+    expect(cells[5]!.text()).toContain('无已记录风险')
+    expect(cells[6]!.text()).toContain('无已记录风险')
+    expect(cells[0]!.text()).toContain('未知 · 开工前请人工确认设备可用')
     expect(cells[8]!.text()).toContain('移回待排')
   })
 

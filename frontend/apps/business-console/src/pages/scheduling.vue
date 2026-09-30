@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TaskFacts, toModel, withWorkOrderFacts } from '@nerv-iip/scheduling'
 import type {
   BusinessConsoleSchedulingAssignment,
   BusinessConsoleSchedulingConflict,
@@ -15,6 +16,7 @@ import {
   useBusinessScheduling,
   useSchedulingPlanSummary,
 } from '@/composables/useBusinessScheduling'
+import { useMesWorkOrderFacts } from '@/composables/useBusinessMes'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -46,7 +48,7 @@ import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionRevi
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useAuthStore } from '@/stores/auth'
-import { notifyOperationFailure } from '@/utils/notify'
+import { notifyError, notifyOperationFailure } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -155,6 +157,52 @@ const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPla
 const workbench = useSchedulingWorkbench()
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
 const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
+const associatedWorkOrders = useMesWorkOrderFacts(() => [
+  ...(draft.model.value?.tasks
+    .filter((task) => task.type === 'operation' && !task.blockKind)
+    .map((task) => task.orderId) ?? []),
+  ...(planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId),
+])
+watch(
+  associatedWorkOrders.error,
+  (error) => {
+    if (error) notifyError(error, '关联工单事实暂不可读取，请稍后重试。')
+  },
+  { immediate: true },
+)
+const displayWorkOrders = computed(() => {
+  const orders = new Map(workbench.candidates.value.map((order) => [order.workOrderId, order]))
+  for (const facts of associatedWorkOrders.workOrders.value)
+    orders.set(facts.workOrderId, { ...orders.get(facts.workOrderId), ...facts })
+  return [...orders.values()]
+})
+const draftDisplayModel = computed(() =>
+  draft.model.value
+    ? withWorkOrderFacts(
+        draft.model.value,
+        displayWorkOrders.value,
+        Boolean(associatedWorkOrders.error.value),
+      )
+    : undefined,
+)
+const detailTasks = computed(() =>
+  planDetail.value
+    ? withWorkOrderFacts(
+        toModel(planDetail.value),
+        displayWorkOrders.value,
+        Boolean(associatedWorkOrders.error.value),
+      ).tasks
+    : [],
+)
+function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
+  return detailTasks.value.find(
+    (task) =>
+      task.type === 'operation' &&
+      !task.blockKind &&
+      task.orderId === assignment.orderId &&
+      task.operationId === assignment.operationId,
+  )
+}
 const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
@@ -822,7 +870,7 @@ function reasonLabel(reason?: string | null) {
           </template>
         </SchedulingOrderPool>
         <SchedulingDraftBoard
-          :model="draft.model.value"
+          :model="draftDisplayModel"
           :feedback="draft.feedback.value"
           :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"
@@ -1037,7 +1085,8 @@ function reasonLabel(reason?: string | null) {
         <SchedulingPlanGantt
           :plan="planDetail"
           :summary="selectedPlanSummary"
-          :work-orders="workbench.candidates.value"
+          :work-orders="displayWorkOrders"
+          :work-order-facts-unavailable="Boolean(associatedWorkOrders.error.value)"
           :loading="planDetailPending"
           :error="planDetailError"
           :release-pending="releasePlanPending"
@@ -1211,6 +1260,11 @@ function reasonLabel(reason?: string | null) {
                     @refresh="refreshUrgency"
                   />
                 </div>
+                <TaskFacts
+                  v-if="assignmentTask(assignment)"
+                  :task="assignmentTask(assignment)!"
+                  class="mt-3"
+                />
                 <p class="mt-1 text-sm text-muted-foreground">
                   <template v-if="assignment.segments?.length">
                     <span

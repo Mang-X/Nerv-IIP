@@ -411,6 +411,9 @@ importers:
       '@nerv-iip/api-client':
         specifier: workspace:*
         version: link:../api-client
+      '@nerv-iip/business-core':
+        specifier: workspace:*
+        version: link:../business-core
       '@nerv-iip/ui':
         specifier: workspace:*
         version: link:../ui
