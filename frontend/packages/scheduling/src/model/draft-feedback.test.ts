@@ -120,6 +120,37 @@ describe('draft feedback (#4043)', () => {
     expect(kinds(plan)).not.toContain('capacity')
     expect(kinds(plan, 'WO-02')).not.toContain('capacity')
   })
+  it('counts a visible work-center-only fixed reservation while its resource is unknown', () => {
+    const plan = structuredClone(feedbackPlan)
+    plan.validationContext!.resources = [plan.validationContext!.resources![0]!]
+    plan.assignments = [
+      { ...assignment('WO-01', 8, 10), resourceId: undefined, isLocked: true },
+      assignment('WO-02', 8, 10),
+    ]
+    plan.validationContext!.operations![0]!.isFixed = true
+    plan.validationContext!.fixedReservations = [
+      {
+        orderId: 'WO-01',
+        operationId: 'OP-10',
+        workCenterId: 'WC-1',
+        startUtc: utc(8),
+        endUtc: utc(10),
+      },
+    ]
+    const feedback = evaluate(plan)
+    expect(feedback.tasks['WO-01']!.issues.map((issue) => issue.kind)).toContain('unknown')
+    expect(feedback.tasks['WO-02']!.issues).toContainEqual(
+      expect.objectContaining({
+        kind: 'capacity',
+        scope: 'workCenter',
+        startUtc: utc(8),
+        endUtc: utc(10),
+      }),
+    )
+    expect(feedback.tasks['WO-02']!.issues).not.toContainEqual(
+      expect.objectContaining({ kind: 'capacity', scope: 'resource' }),
+    )
+  })
   it.each(['RES-1', undefined])(
     'uses edited fixed work instead of its frozen reservation (resource %s)',
     (resourceId) => {

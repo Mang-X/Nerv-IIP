@@ -102,6 +102,20 @@ export function evaluateDraft(model: ScheduleModel): DraftFeedback {
       }
     }
     const resource = resources.get(task.resourceId ?? '')
+    if (!resource) {
+      // MES 固定执行可能仅提供工作中心；保留已知占用，但不猜测具体资源。
+      const reservation = context.fixedReservations.find(
+        (reservation) =>
+          key(reservation.orderId, reservation.operationId) === key(task.orderId, task.operationId),
+      )
+      if (reservation)
+        for (const segment of task.segments?.length ? task.segments : [task])
+          occupancies.push({
+            ...interval(segment),
+            workCenterId: reservation.workCenterId,
+            taskId: task.id,
+          })
+    }
     if (
       !resource ||
       resource.capacityUnits < 1 ||
