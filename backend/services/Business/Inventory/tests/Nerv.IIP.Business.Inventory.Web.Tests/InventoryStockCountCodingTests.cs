@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Coding;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
@@ -58,6 +59,47 @@ public sealed class InventoryStockCountCodingTests
         var corrected = await AttemptAsync(provider, coding, Command("LOC-A-01"), commit: true);
 
         Assert.Equal("未找到盘点任务对应的库存台账。", rejected.Message);
+        Assert.Matches(@"^SCT-\d{8}-000001$", corrected.CountTaskCode);
+    }
+
+    /// <summary>
+    /// 复审 S2：所选台账已被别的盘点任务冻结（例如仓库盘点单正在盘），请求被拒；用户改选另一个库位后
+    /// 用同一个键重提必须成功并拿到第一个号。钉住的是分号前的冻结预检——它看起来和建任务时
+    /// <c>FreezeForCount</c> 里的检查重复，删掉它 B1 就会在冻结路径上复发。
+    /// </summary>
+    [Fact]
+    public async Task Frozen_ledger_rejection_neither_consumes_a_number_nor_blocks_the_corrected_retry_with_the_same_key()
+    {
+        await using var provider = CreateProvider();
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var frozen = DomainLedgerFactory.NewLedger();
+            frozen.ApplyMovement(DomainMovementFactory.Inbound(10m));
+            frozen.FreezeForCount("CNT-20260928-000001");
+            var free = StockLedger.Create(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-B-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001");
+            free.ApplyMovement(DomainMovementFactory.InboundForLocation("LOC-B-01", "LOT-001", 8m));
+            db.StockLedgers.AddRange(frozen, free);
+            await db.SaveChangesAsync();
+        }
+
+        var coding = new InventoryCodingService(provider.GetRequiredService<IServiceScopeFactory>());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            AttemptAsync(provider, coding, Command("LOC-A-01"), commit: true));
+        var corrected = await AttemptAsync(provider, coding, Command("LOC-B-01"), commit: true);
+
         Assert.Matches(@"^SCT-\d{8}-000001$", corrected.CountTaskCode);
     }
 

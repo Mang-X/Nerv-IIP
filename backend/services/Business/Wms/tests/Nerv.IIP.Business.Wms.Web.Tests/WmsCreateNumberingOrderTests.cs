@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Coding;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
@@ -95,6 +96,108 @@ public sealed class WmsCreateNumberingOrderTests
 
         Assert.Equal("拣货数量不能超过出库行数量。", rejected.Message);
         Assert.Matches(@"^PICK-\d{8}-000001$", taskNo);
+    }
+
+    /// <summary>
+    /// 审核 B2：任务已建好，入库单随后被取消（不再允许新建上架任务），同键重试必须仍返回原任务，
+    /// 而不是被业务校验拒绝——重放必须排在校验之前。
+    /// </summary>
+    [Fact]
+    public async Task Putaway_retry_after_the_inbound_order_left_open_still_replays_the_original_task()
+    {
+        await using var provider = CreateProvider();
+        var inboundId = await SeedInboundAsync(provider);
+        var coding = new WmsCodingService(provider.GetRequiredService<IServiceScopeFactory>());
+        var command = new CreatePutawayTaskCommand(inboundId, null, "LINE-001", "RECEIVING", "LINE-SIDE", 10m, IntentKey);
+        var firstId = await HandlePutawayAsync(provider, coding, command);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            (await db.InboundOrders.SingleAsync()).Cancel("供应商取消到货");
+            await db.SaveChangesAsync();
+        }
+
+        var retriedId = await HandlePutawayAsync(provider, coding, command);
+
+        Assert.Equal(firstId, retriedId);
+    }
+
+    [Fact]
+    public async Task Picking_retry_after_the_outbound_order_left_open_still_replays_the_original_task()
+    {
+        await using var provider = CreateProvider();
+        var outboundId = await SeedOutboundAsync(provider);
+        var coding = new WmsCodingService(provider.GetRequiredService<IServiceScopeFactory>());
+        var command = new CreatePickingTaskCommand(outboundId, null, "LINE-001", "LOC-A-01", "PACK-01", 4m, IntentKey);
+        var firstId = await HandlePickingAsync(provider, coding, command);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            (await db.OutboundOrders.Include(x => x.Lines).SingleAsync()).Cancel("客户撤单");
+            await db.SaveChangesAsync();
+        }
+
+        var retriedId = await HandlePickingAsync(provider, coding, command);
+
+        Assert.Equal(firstId, retriedId);
+    }
+
+    private static async Task<WarehouseTaskId> HandlePutawayAsync(
+        ServiceProvider provider,
+        WmsCodingService coding,
+        CreatePutawayTaskCommand command)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var taskId = await new CreatePutawayTaskCommandHandler(db, coding).Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        return taskId;
+    }
+
+    private static async Task<WarehouseTaskId> HandlePickingAsync(
+        ServiceProvider provider,
+        WmsCodingService coding,
+        CreatePickingTaskCommand command)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var taskId = await new CreatePickingTaskCommandHandler(db, null, coding).Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        return taskId;
+    }
+
+    private static async Task<InboundOrderId> SeedInboundAsync(ServiceProvider provider)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-NUMBERING-001",
+            "purchase-order",
+            "PO-NUMBERING-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)]);
+        db.InboundOrders.Add(inbound);
+        await db.SaveChangesAsync();
+        return inbound.Id;
+    }
+
+    private static async Task<OutboundOrderId> SeedOutboundAsync(ServiceProvider provider)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-NUMBERING-001",
+            "sales-delivery",
+            "SO-NUMBERING-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", null, null, "qualified", "company", "owner-001")]);
+        db.OutboundOrders.Add(outbound);
+        await db.SaveChangesAsync();
+        return outbound.Id;
     }
 
     private static ServiceProvider CreateProvider()
