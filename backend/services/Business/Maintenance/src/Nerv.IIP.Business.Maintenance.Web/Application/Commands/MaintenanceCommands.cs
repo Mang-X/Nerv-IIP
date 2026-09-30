@@ -1050,7 +1050,7 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
             _codingService,
             plan.OrganizationId,
             plan.EnvironmentId,
-            $"plan:{plan.PlanCode}:{dueSuffix}",
+            MaintenanceWorkOrderNumbers.PlanIntent(plan.PlanCode, dueSuffix),
             cancellationToken);
         var workOrder = MaintenanceWorkOrder.OpenFromPlan(
             plan.OrganizationId,
@@ -1471,7 +1471,7 @@ public sealed class RecordMaintenanceInspectionCommandHandler(
             _codingService,
             inspection.OrganizationId,
             inspection.EnvironmentId,
-            $"inspection:{inspection.Id}",
+            MaintenanceWorkOrderNumbers.InspectionIntent(inspection.Id.ToString()),
             cancellationToken);
         var workOrder = MaintenanceWorkOrder.OpenFromInspection(
             inspection.OrganizationId,

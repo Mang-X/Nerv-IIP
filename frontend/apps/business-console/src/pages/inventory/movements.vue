@@ -11,6 +11,7 @@ import {
   inventoryMovementTypeLabel,
 } from '@/data/inventoryReference'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
+import { maintenanceWorkOrderNoLabel } from '@/composables/useEquipmentPickerCatalog'
 import { makeIdempotencyKey } from '@/composables/useBusinessMes'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
@@ -156,6 +157,15 @@ function locationLabel(siteCode?: string | null, locationCode?: string | null) {
 }
 
 type MovementRow = BusinessConsoleInventoryMovementLineResponse
+// 维修备件出库的来源单据（#3852，docs/product/maintenance/design.md §3.4.1）：新流水是正式单号，原样显示；
+// 早期流水存的是工单 ID（GUID），不上屏，显示为「维修工单」。其它来源的单据号照原样显示。
+const MAINTENANCE_SOURCE_SERVICE = 'maintenance'
+function sourceDocumentLabel(row: MovementRow) {
+  const documentId = row.sourceDocumentId ?? ''
+  return row.sourceService === MAINTENANCE_SOURCE_SERVICE
+    ? maintenanceWorkOrderNoLabel(documentId)
+    : documentId
+}
 const columns: NvDataTableColumn<MovementRow>[] = [
   // 来源单据号（如 MWO-yyyyMMdd-NNNNNN）较长，固定列宽避免挤进类型列
   {
@@ -163,6 +173,7 @@ const columns: NvDataTableColumn<MovementRow>[] = [
     header: '来源单据',
     width: 'w-52',
     cellClass: 'font-medium whitespace-nowrap',
+    accessor: (r) => sourceDocumentLabel(r),
   },
   {
     key: 'movementType',

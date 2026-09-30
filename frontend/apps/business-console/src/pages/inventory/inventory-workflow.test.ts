@@ -815,6 +815,38 @@ describe('inventory workflow pages', () => {
     expect(movements.text()).toContain('LOT-PR-2026-0001')
   })
 
+  it('shows maintenance spare-part issues by formal number and hides legacy work-order GUIDs', () => {
+    const legacyWorkOrderId = '01a0f250-c298-7901-a442-fd1741691fb5'
+    const movementLine = {
+      movementType: 'outbound',
+      skuCode: 'SPARE-BEARING-01',
+      uomCode: 'pcs',
+      siteCode: 'SITE-001',
+      locationCode: 'loc-spare-01',
+      quantity: -2,
+      postedAtUtc: '2026-09-30T12:35:00Z',
+    }
+    inventoryState.movementRows = [
+      {
+        ...movementLine,
+        movementId: 'MOVE-MWO',
+        sourceService: 'maintenance',
+        sourceDocumentId: 'MWO-20260930-000001',
+      },
+      {
+        ...movementLine,
+        movementId: 'MOVE-LEGACY',
+        sourceService: 'maintenance',
+        sourceDocumentId: legacyWorkOrderId,
+      },
+    ]
+
+    const text = mountInventoryPage(MovementsPage).text()
+    expect(text).toContain('MWO-20260930-000001')
+    expect(text).toContain('维修工单')
+    expect(text).not.toContain(legacyWorkOrderId)
+  })
+
   it('links inventory lot context to barcode scan records', async () => {
     const wrapper = mountInventoryPage(AvailabilityPage)
 

@@ -1,9 +1,13 @@
+using MediatR;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Coding;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
@@ -20,6 +24,7 @@ public sealed class MaintenanceWorkOrderNumberTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var coding = new MaintenanceCodingService();
+        var dayBefore = $"MWO-{DateTimeOffset.UtcNow:yyyyMMdd}";
 
         await new CreateMaintenanceWorkOrderCommandHandler(db, coding).Handle(
             new CreateMaintenanceWorkOrderCommand("org-001", "env-dev", "DEV-CNC-01", "high", null, "operator-001", null),
@@ -36,7 +41,9 @@ public sealed class MaintenanceWorkOrderNumberTests
         Assert.Equal(3, numbers.Count);
         Assert.All(numbers, number => Assert.Matches(RuleShaped, number));
         Assert.Equal(3, numbers.Distinct(StringComparer.Ordinal).Count());
-        Assert.All(numbers, number => Assert.Equal($"MWO-{DateTimeOffset.UtcNow:yyyyMMdd}", number[..12]));
+        // 分配日取的是真实时钟：前后各取一次，跨过 UTC 午夜时两天都算对，不随运行时刻变红。
+        var dayAfter = $"MWO-{DateTimeOffset.UtcNow:yyyyMMdd}";
+        Assert.All(numbers, number => Assert.Contains(number[..12], new[] { dayBefore, dayAfter }));
     }
 
     [Fact]
@@ -62,19 +69,70 @@ public sealed class MaintenanceWorkOrderNumberTests
         Assert.Equal(workOrders.Count, workOrders.Select(x => x.WorkOrderNo).Distinct(StringComparer.Ordinal).Count());
     }
 
+    /// <summary>
+    /// 审核阻断 2：走生产路径（DI + EF 存储，不用内存分配器）。第一次报警建单时外层不提交（模拟 UoW 回滚），
+    /// 同一个报警在新 scope 里重试，必须拿回第一次分到的 000001——「键 → 号」绑定已在独立 scope 里提交。
+    /// 绑定改回挂在外层 DbContext，或报警分支不传意图键，重试都会分到 000002。
+    /// </summary>
     [Fact]
-    public async Task The_same_create_intent_gets_the_same_number_back_on_retry()
+    public async Task Alarm_retry_after_an_uncommitted_first_attempt_gets_the_same_number_back()
     {
-        var coding = new MaintenanceCodingService();
+        await using var provider = CreateSharedDatabaseProvider();
+        async Task<string> AttemptAsync(bool commit)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var coding = scope.ServiceProvider.GetRequiredService<MaintenanceCodingService>();
+            var result = await new CreateMaintenanceWorkOrderCommandHandler(db, coding).Handle(
+                new CreateMaintenanceWorkOrderCommand("org-001", "env-dev", "DEV-CNC-01", "high", "alarm-retry-001", "system:alarm", null),
+                CancellationToken.None);
+            if (commit)
+            {
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
 
-        var first = await MaintenanceWorkOrderNumbers.AllocateAsync(coding, "org-001", "env-dev", "alarm:alarm-001", CancellationToken.None);
-        var retry = await MaintenanceWorkOrderNumbers.AllocateAsync(coding, "org-001", "env-dev", "alarm:alarm-001", CancellationToken.None);
-        var other = await MaintenanceWorkOrderNumbers.AllocateAsync(coding, "org-001", "env-dev", "alarm:alarm-002", CancellationToken.None);
-        var unkeyed = await MaintenanceWorkOrderNumbers.AllocateAsync(coding, "org-001", "env-dev", null, CancellationToken.None);
+            return db.MaintenanceWorkOrders.Local.Single(x => x.Id == result.WorkOrderId).WorkOrderNo;
+        }
 
-        Assert.Equal(first, retry);
-        Assert.NotEqual(first, other);
-        Assert.NotEqual(other, unkeyed);
+        var first = await AttemptAsync(commit: false);
+        var retried = await AttemptAsync(commit: true);
+
+        Assert.Matches(RuleShaped, first);
+        Assert.EndsWith("-000001", first, StringComparison.Ordinal);
+        Assert.Equal(first, retried);
+        await using var verifyScope = provider.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(first, Assert.Single(await verifyDb.MaintenanceWorkOrders.AsNoTracking().ToListAsync()).WorkOrderNo);
+    }
+
+    /// <summary>
+    /// 审核阻断 1：报警 ID、幂等键入参各自最长 150，拼成意图键后仍须落得进绑定表 150 列宽；
+    /// 长度在这里直接断言，不依赖内存库（内存库不校验列宽）。
+    /// </summary>
+    [Fact]
+    public void Intent_keys_have_a_fixed_length_within_the_binding_column_at_the_150_character_boundary()
+    {
+        var at150 = new string('x', 150);
+        var keys = new[]
+        {
+            MaintenanceWorkOrderNumbers.CreateIntent(at150, null)!,
+            MaintenanceWorkOrderNumbers.CreateIntent(null, at150)!,
+            MaintenanceWorkOrderNumbers.CreateIntent("a", null)!,
+            MaintenanceWorkOrderNumbers.CreateIntent(null, "k")!,
+            MaintenanceWorkOrderNumbers.PlanIntent(new string('p', 100), "runtime:1234567.123456:99"),
+            MaintenanceWorkOrderNumbers.InspectionIntent(Guid.NewGuid().ToString()),
+        };
+
+        Assert.All(keys, key => Assert.True(key.Length <= CodeIdempotencyKey.IdempotencyKeyMaxLength, key));
+        Assert.Equal(6 + 64, keys[0].Length);
+        Assert.Equal(keys[0].Length, keys[2].Length);
+        Assert.Equal(7 + 64, keys[1].Length);
+        Assert.Equal(keys[1].Length, keys[3].Length);
+        Assert.StartsWith("alarm:", keys[0], StringComparison.Ordinal);
+        Assert.StartsWith("create:", keys[1], StringComparison.Ordinal);
+        Assert.Null(MaintenanceWorkOrderNumbers.CreateIntent(null, null));
+        Assert.Equal(MaintenanceWorkOrderNumbers.CreateIntent(" alarm-1 ", null), MaintenanceWorkOrderNumbers.CreateIntent("alarm-1", null));
+        Assert.NotEqual(MaintenanceWorkOrderNumbers.CreateIntent("alarm-1", null), MaintenanceWorkOrderNumbers.CreateIntent("alarm-2", null));
     }
 
     [Fact]
@@ -100,5 +158,26 @@ public sealed class MaintenanceWorkOrderNumberTests
         Assert.Equal("MWO-20260928-000007", Assert.Single(searched.Items).WorkOrderNo);
         Assert.Equal("MWO-20260928-000007", detail.WorkOrder.WorkOrderNo);
         Assert.Equal("MWO-20260928-000007", Assert.Single(spareParts.Items).WorkOrderNo);
+    }
+
+    private static ServiceProvider CreateSharedDatabaseProvider()
+    {
+        var databaseName = $"maintenance-number-shared-{Guid.NewGuid():N}";
+        var services = new ServiceCollection();
+        services.AddScoped<IMediator, NoopMediator>();
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        services.AddScoped<MaintenanceCodingService>();
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default) where TNotification : INotification => Task.CompletedTask;
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }
