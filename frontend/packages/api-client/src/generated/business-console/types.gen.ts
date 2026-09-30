@@ -4224,6 +4224,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     hasChangedDemand?: boolean;
     hasCancelledDemand?: boolean;
     isRush?: boolean;
+    completedQuantity?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
