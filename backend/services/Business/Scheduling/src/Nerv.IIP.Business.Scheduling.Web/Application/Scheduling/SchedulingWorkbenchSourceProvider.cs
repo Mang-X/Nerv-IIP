@@ -145,8 +145,8 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                     routing.SkuCode,
                     order.Quantity,
                     order.DueUtc,
-                    selection.Priority,
-                    selection.IsRush,
+                    order.Priority,
+                    order.IsRush,
                     order.OperationTasks.Count == 0
                         ? earliestStartFallbackUtc
                         : order.OperationTasks.Min(x => x.EarliestStartUtc),
@@ -258,6 +258,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         string? ProductionVersionId,
         decimal Quantity,
         int Priority,
+        bool IsRush,
         DateTimeOffset DueUtc,
         string Status,
         IReadOnlyCollection<MesOperationTaskItem> OperationTasks,
