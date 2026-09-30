@@ -17,6 +17,7 @@ import {
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
 import {
+  maintenanceWorkOrderNoLabel,
   useDeviceSiteLookup,
   useEquipmentAlarmCatalog,
   useEquipmentSkuCatalog,
@@ -367,12 +368,15 @@ const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
   {
     key: 'workOrderNo',
     header: '工单号',
-    cellClass: 'font-medium',
+    // 正式单号形如 MWO-yyyyMMdd-NNNNNN，固定列宽避免与设备列重叠（#3852）
+    width: 'w-48',
+    cellClass: 'font-medium whitespace-nowrap',
     accessor: (r) => workOrderNo(r),
   },
   {
     key: 'deviceAssetId',
     header: '设备',
+    cellClass: 'truncate',
     accessor: (r) =>
       r.deviceAssetId && deviceNameByCode.value.has(r.deviceAssetId)
         ? `${deviceLabel(r.deviceAssetId)} ${r.deviceAssetId}`
@@ -407,13 +411,9 @@ const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
     : []),
 ])
 
-/**
- * 人读工单号。以前拿 workOrderId（GUID）末 8 位拼 `WO-XXXXXXXX` 冒充单号——
- * 那是编造出来的、系统里查不到的号。真实单号（`MWO-2026-####`）现在落在
- * `sourceReferenceId` 上；读面还没有专门的 workOrderNo 字段，已登记为后端缺口。
- */
+/** 人读工单号：后端按编码规则分配的正式单号（#3852，MWO-yyyyMMdd-NNNNNN），可按单号检索。 */
 function workOrderNo(row: WorkOrderRow) {
-  return row.sourceReferenceId ?? '无工单号'
+  return maintenanceWorkOrderNoLabel(row.workOrderNo)
 }
 // 建单只开放高/中/低三档，但报警自动开单等来源还会带 critical/urgent/normal；
 // 显示统一走 business-core 的跨端生产词表，PC 的空值/未知值继续显示破折号。

@@ -195,7 +195,7 @@ public sealed class MaintenanceWorkOrderV2CommandTests
         var publisher = new AssetUnavailableV2IntegrationEventPublisher(
             recorder,
             new MaintenanceAssetUnavailableTopicOptions(" Production "));
-        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical", "operator-001");
         var fromUtc = new DateTimeOffset(2026, 9, 4, 1, 2, 3, 456, TimeSpan.Zero);
         workOrder.MarkAssetUnavailableByReasonCode(fromUtc, ExactCode);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<AssetUnavailableByReasonCodeDomainEvent>());
@@ -254,7 +254,7 @@ public sealed class MaintenanceWorkOrderV2CommandTests
         var publisher = new AssetUnavailableV2IntegrationEventPublisher(
             recorder,
             new MaintenanceAssetUnavailableTopicOptions("Production"));
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "operator-001");
         // 非 UTC 偏移的 fromUtc 违反 v2 wire 契约；publisher 必须在写 v1 companion 之前就失败，不能留下只有 v1 的半次双发。
         var nonUtc = new DateTimeOffset(2026, 9, 4, 9, 0, 0, TimeSpan.FromHours(8));
 
@@ -270,7 +270,7 @@ public sealed class MaintenanceWorkOrderV2CommandTests
     [Fact]
     public void Aggregate_v2_marker_keeps_the_raw_code_and_refuses_blank_or_over_long_codes()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "operator-001");
 
         Assert.Throws<ArgumentException>(() => workOrder.MarkAssetUnavailableByReasonCode(DateTimeOffset.UtcNow, "   "));
         Assert.Throws<ArgumentOutOfRangeException>(() => workOrder.MarkAssetUnavailableByReasonCode(DateTimeOffset.UtcNow, new string('x', 101)));

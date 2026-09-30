@@ -84,7 +84,7 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
 
         await using var dbContext = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
-            "org-001", "env-dev", "DEV-CNC-01", sourceAlarmId: "WH-DEV-CNC-01-spindle:0001", priority: "high");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", sourceAlarmId: "WH-DEV-CNC-01-spindle:0001", priority: "high");
         workOrder.MarkAssetUnavailable(unavailableFromUtc, "alarm downtime");
         workOrder.MarkAlarmCleared(now.AddHours(-1));
         workOrder.Accept("tech-001");
@@ -148,7 +148,7 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
         MaintenanceWorkOrderStatus status,
         DateTimeOffset unavailableFromUtc)
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "maintenance");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "maintenance");
         workOrder.MarkAssetUnavailable(unavailableFromUtc, "repair downtime");
         switch (status)
         {

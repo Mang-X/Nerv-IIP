@@ -144,7 +144,9 @@ public sealed class MaintenanceSparePartIssuedIntegrationEventConverter
                 InventoryMovementTypes.Outbound,
                 // 载荷来源服务面（#1370 ③ 批次 D 销账）。
                 InventoryMovementSourceServices.Maintenance,
-                workOrder.Id.ToString(),
+                // 来源单据用维修工单的正式单号（#3852），库存流水与其它来源（GR-… / WO-…）一样显示人读单号；
+                // 幂等键仍按工单 ID + 行 ID 派生，不受单号影响。
+                workOrder.WorkOrderNo,
                 line.Id.ToString(),
                 idempotencyKey,
                 line.SkuCode,

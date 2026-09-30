@@ -231,7 +231,8 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     int Version = 0,
     IReadOnlyCollection<string>? AllowedActions = null,
     IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>? Lifecycle = null,
-    IReadOnlyCollection<string>? BlockReasons = null);
+    IReadOnlyCollection<string>? BlockReasons = null,
+    string? WorkOrderNo = null);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderLifecycleEventItem(
     string Action,
@@ -298,7 +299,8 @@ public sealed record BusinessConsoleMaintenanceSparePartItem(
     decimal Quantity,
     string? UomCode,
     string? SiteCode = null,
-    string? LocationCode = null);
+    string? LocationCode = null,
+    string? WorkOrderNo = null);
 
 public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
     string OrganizationId,

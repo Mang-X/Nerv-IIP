@@ -37,6 +37,7 @@ public sealed class StandardCodeRulesTests
     [InlineData("manufacturing-bom", "MBOM")]
     [InlineData("routing", "RTG")]
     [InlineData("engineering-change", "ECO")]
+    [InlineData("maintenance-work-order", "MWO")]
     public void Document_rules_preserve_existing_prefixes(string ruleKey, string prefix)
     {
         var rule = StandardCodeRules.Get(ruleKey);

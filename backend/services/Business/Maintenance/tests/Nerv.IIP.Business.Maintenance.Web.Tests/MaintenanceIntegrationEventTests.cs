@@ -13,7 +13,7 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Asset_unavailable_converter_matches_common_contract_shape()
     {
-        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         var fromUtc = DateTimeOffset.UtcNow;
         workOrder.MarkAssetUnavailable(fromUtc, "over temperature");
 
@@ -31,7 +31,7 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Asset_restored_and_local_work_order_events_use_required_event_types()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "planned maintenance");
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
@@ -47,7 +47,7 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Spare_part_issue_converter_requests_inventory_outbound_movement()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.Complete(
             "fixed",
             "minor-stop",
@@ -61,7 +61,8 @@ public sealed class MaintenanceIntegrationEventTests
         Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
         Assert.Equal("maintenance", integrationEvent.Payload.SourceService);
         Assert.Equal("outbound", integrationEvent.Payload.MovementType);
-        Assert.Equal(workOrder.Id.ToString(), integrationEvent.Payload.SourceDocumentId);
+        Assert.Equal(workOrder.WorkOrderNo, integrationEvent.Payload.SourceDocumentId);
+        Assert.StartsWith("MWO-", integrationEvent.Payload.SourceDocumentId, StringComparison.Ordinal);
         Assert.Equal(domainEvent.SparePartLine.Id.ToString(), integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal("SPARE-001", integrationEvent.Payload.SkuCode);
         Assert.Equal("pcs", integrationEvent.Payload.UomCode);
@@ -83,7 +84,7 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Spare_part_issue_converter_refuses_to_invent_a_missing_unit_of_measure()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, SiteCode: "SITE-001", LocationCode: "loc-spare-01")]);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
 
@@ -103,7 +104,7 @@ public sealed class MaintenanceIntegrationEventTests
     [InlineData(" ", "loc-spare-01")]
     public void Spare_part_issue_converter_refuses_to_invent_an_issue_location(string? siteCode, string? locationCode)
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, "pcs", siteCode, locationCode)]);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
 

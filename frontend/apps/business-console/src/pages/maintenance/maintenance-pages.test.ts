@@ -206,6 +206,8 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
     ]),
     uomsPending: shallowRef(false),
   }),
+  maintenanceWorkOrderNoLabel: (no?: string | null) =>
+    no && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(no) ? no : '维修工单',
   // 设备所在工厂：DEV-1 登记在 SITE-001，其余设备没有所属工厂。
   useDeviceSiteLookup: () => ({
     deviceSiteCode: (device?: string | null) => (device === 'DEV-1' ? 'SITE-001' : ''),
@@ -290,6 +292,7 @@ beforeEach(() => {
   state.workOrders = [
     {
       workOrderId: '11111111-2222-3333-4444-55555555abcd',
+      workOrderNo: 'MWO-20260706-000001',
       deviceAssetId: 'DEV-PRESS-01',
       priority: 'high',
       status: 'open',
@@ -384,7 +387,9 @@ describe('maintenance work orders page', () => {
     await flushPromises()
 
     expect(document.body.textContent).not.toContain('新建维护工单')
-    expect(document.body.querySelector('[aria-label="维护工单操作 无工单号"]')).toBeNull()
+    expect(
+      document.body.querySelector('[aria-label="维护工单操作 MWO-20260706-000001"]'),
+    ).toBeNull()
     expect(document.body.querySelector('[data-slot="carried-context"]')).toBeNull()
   })
 
@@ -413,7 +418,9 @@ describe('maintenance work orders page', () => {
         b.textContent?.includes('新建维护工单'),
       ),
     ).toBe(true)
-    expect(document.body.querySelector('[aria-label="维护工单操作 无工单号"]')).not.toBeNull()
+    expect(
+      document.body.querySelector('[aria-label="维护工单操作 MWO-20260706-000001"]'),
+    ).not.toBeNull()
   })
 
   it('prefills maintenance work order creation from equipment alarm context', async () => {
