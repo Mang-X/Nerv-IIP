@@ -576,7 +576,9 @@ describe('APS scheduling workbench page', () => {
     ]
     await flushPromises()
     const draftBoard = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
-    const tableTab = draftBoard.findAll('[role=tab]').find((tab) => tab.text().includes('表格编辑'))!
+    const tableTab = draftBoard
+      .findAll('[role=tab]')
+      .find((tab) => tab.text().includes('表格编辑'))!
     await tableTab.trigger('focus')
     await tableTab.trigger('mousedown')
     await flushPromises()
