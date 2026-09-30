@@ -292,12 +292,12 @@ describe('business inventory composables', () => {
     await createCountTask({
       organizationId: 'org-001',
       environmentId: 'env-dev',
-      countTaskCode: 'COUNT-1',
       skuCode: 'SKU-001',
       uomCode: 'EA',
       siteCode: 'S1',
       qualityStatus: 'available',
       ownerType: 'owned',
+      idempotencyKey: 'count-task-intent-1',
     })
 
     // 建任务成功后必须失效盘点读面，否则新建的任务要等下次手动刷新才出现在表格里。
@@ -314,7 +314,7 @@ describe('business inventory composables', () => {
         .mutation,
     ).toHaveBeenCalledWith({
       body: expect.objectContaining({
-        countTaskCode: 'COUNT-1',
+        idempotencyKey: 'count-task-intent-1',
       }),
     })
     expect(confirmBusinessConsoleInventoryCountAdjustmentMutationOptions).toHaveBeenCalled()

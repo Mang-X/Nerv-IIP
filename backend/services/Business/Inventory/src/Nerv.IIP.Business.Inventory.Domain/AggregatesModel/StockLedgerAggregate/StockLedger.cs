@@ -293,14 +293,22 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
 
     public void FreezeForCount(string countTaskCode)
     {
+        EnsureCanFreezeForCount(countTaskCode);
+        IsFrozenForCount = true;
+        FrozenCountTaskCode = InventoryText.Required(countTaskCode);
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// 能否被 <paramref name="countTaskCode"/> 冻结；传 <c>null</c> 表示「一张还没分号的新任务」，
+    /// 台账已被任何任务冻结都不行。新建盘点任务在分号之前先问这一句，失败的请求不占号（#3918）。
+    /// </summary>
+    public void EnsureCanFreezeForCount(string? countTaskCode)
+    {
         if (IsFrozenForCount && FrozenCountTaskCode != countTaskCode)
         {
             throw new InvalidOperationException($"Stock ledger is already frozen for count task '{FrozenCountTaskCode}'.");
         }
-
-        IsFrozenForCount = true;
-        FrozenCountTaskCode = InventoryText.Required(countTaskCode);
-        UpdatedAtUtc = DateTime.UtcNow;
     }
 
     public void ReleaseCountFreeze()

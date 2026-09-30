@@ -149,13 +149,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string? assignedOperatorUserId = null,
         string? assignedPoolCode = null)
     {
-        var line = FindLine(lineNo);
-        EnsureCanCreatePutawayTask(line);
-        if (quantity > line.ReceivedQuantity)
-        {
-            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Putaway quantity cannot exceed inbound line quantity.");
-        }
-
+        var line = EnsureCanCreatePutawayTask(lineNo, quantity);
         return WarehouseTask.CreatePutaway(
             OrganizationId,
             EnvironmentId,
@@ -172,6 +166,22 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             line.SerialNo,
             assignedOperatorUserId,
             assignedPoolCode);
+    }
+
+    /// <summary>
+    /// 上架任务的全部前置校验，不改状态。新建上架任务在分号之前先调它，
+    /// 失败的请求不占号、不留幂等绑定（#3918 审核）。
+    /// </summary>
+    public InboundOrderLine EnsureCanCreatePutawayTask(string lineNo, decimal quantity)
+    {
+        var line = FindLine(lineNo);
+        EnsureCanCreatePutawayTask(line);
+        if (quantity > line.ReceivedQuantity)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Putaway quantity cannot exceed inbound line quantity.");
+        }
+
+        return line;
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> Complete(

@@ -17676,7 +17676,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         string internalBearerToken,
         BusinessConsoleCreateStockCountTaskRequest request,
         CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleCreateStockCountTaskResponse("count-001", 1));
+        Task.FromResult(new BusinessConsoleCreateStockCountTaskResponse("count-001", 1, "SCT-20260928-000001"));
 
     public int ConfirmCountAdjustmentCallCount { get; private set; }
 

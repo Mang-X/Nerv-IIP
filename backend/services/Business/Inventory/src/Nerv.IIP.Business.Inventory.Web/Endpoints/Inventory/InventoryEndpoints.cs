@@ -148,7 +148,7 @@ public sealed record GetStockBySourceRequest(
 public sealed record CreateStockCountTaskRequest(
     string OrganizationId,
     string EnvironmentId,
-    string CountTaskCode,
+    string? CountTaskCode,
     string SkuCode,
     string UomCode,
     string SiteCode,
@@ -160,7 +160,7 @@ public sealed record CreateStockCountTaskRequest(
     string? OwnerId,
     string? IdempotencyKey = null);
 
-public sealed record CreateStockCountTaskResponse(StockCountTaskId CountTaskId, long ExpectedLedgerVersion);
+public sealed record CreateStockCountTaskResponse(StockCountTaskId CountTaskId, long ExpectedLedgerVersion, string CountTaskCode);
 
 public sealed record ConfirmStockCountAdjustmentRequest(
     StockCountTaskId CountTaskId,
@@ -706,7 +706,7 @@ public sealed class CreateStockCountTaskEndpoint(ISender sender)
             req.OwnerType,
             req.OwnerId,
             req.IdempotencyKey), ct);
-        await Send.OkAsync(new CreateStockCountTaskResponse(result.CountTaskId, result.ExpectedLedgerVersion).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CreateStockCountTaskResponse(result.CountTaskId, result.ExpectedLedgerVersion, result.CountTaskCode).AsResponseData(), cancellation: ct);
     }
 }
 

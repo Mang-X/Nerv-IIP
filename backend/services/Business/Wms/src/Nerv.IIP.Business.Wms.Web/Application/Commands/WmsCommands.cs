@@ -180,24 +180,29 @@ public sealed class CreatePutawayTaskCommandHandler(
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"未找到入库单，入库单 ID = {request.InboundOrderId}");
-        var taskNo = await _codingService.AllocateAsync(
+        var fingerprint = WmsCodingService.Fingerprint(
+            request.InboundOrderId,
+            request.LineNo,
+            request.FromLocationCode,
+            request.ToLocationCode,
+            request.Quantity);
+        // 顺序：重放 → 业务校验 → 分号 → 新建（#3918 审核 B1/B2）。
+        // 先按键找已绑定的号并返回已建任务：单据状态变了之后到达的同键重试仍拿回原任务；
+        // 校验放在分号之前：被拒的请求不占号、不留绑定，改正后用同一个键重提不会撞指纹冲突。
+        var replayTaskNo = request.TaskNo ?? await _codingService.TryPeekBoundCodeAsync(
             inbound.OrganizationId,
             inbound.EnvironmentId,
             WmsCodeRules.PutawayTask,
-            request.TaskNo,
             request.IdempotencyKey,
-            WmsCodingService.Fingerprint(
-                request.InboundOrderId,
-                request.LineNo,
-                request.FromLocationCode,
-                request.ToLocationCode,
-                request.Quantity),
+            fingerprint,
             cancellationToken);
-        var existingTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
-            x => x.OrganizationId == inbound.OrganizationId
-                && x.EnvironmentId == inbound.EnvironmentId
-                && x.TaskNo == taskNo,
-            cancellationToken);
+        var existingTask = replayTaskNo is null
+            ? null
+            : await dbContext.WarehouseTasks.SingleOrDefaultAsync(
+                x => x.OrganizationId == inbound.OrganizationId
+                    && x.EnvironmentId == inbound.EnvironmentId
+                    && x.TaskNo == replayTaskNo,
+                cancellationToken);
         if (existingTask is not null)
         {
             if (existingTask.TaskType != WarehouseTaskType.Putaway
@@ -209,23 +214,15 @@ public sealed class CreatePutawayTaskCommandHandler(
                 || existingTask.AssignedOperatorUserId != inbound.AssignedOperatorUserId
                 || existingTask.AssignedPoolCode != inbound.AssignedPoolCode)
             {
-                throw new KnownException($"仓库任务已存在但上架事实不一致：'{taskNo}'");
+                throw new KnownException($"仓库任务已存在但上架事实不一致：'{existingTask.TaskNo}'");
             }
 
             return existingTask.Id;
         }
 
-        WarehouseTask task;
         try
         {
-            task = inbound.CreatePutawayTask(
-                taskNo,
-                request.LineNo,
-                request.FromLocationCode,
-                request.ToLocationCode,
-                request.Quantity,
-                inbound.AssignedOperatorUserId,
-                inbound.AssignedPoolCode);
+            inbound.EnsureCanCreatePutawayTask(request.LineNo, request.Quantity);
         }
         // 领域守卫的原因是英文，不上屏；给中文业务原因，不再落成 500（#3927）。
         catch (InvalidOperationException exception) when (inbound.Status == InboundOrderStatus.Completed)
@@ -237,6 +234,22 @@ public sealed class CreatePutawayTaskCommandHandler(
             throw new KnownException("当前入库行暂不能上架，请刷新后按最新状态处理。", exception);
         }
 
+        var taskNo = await _codingService.AllocateAsync(
+            inbound.OrganizationId,
+            inbound.EnvironmentId,
+            WmsCodeRules.PutawayTask,
+            request.TaskNo,
+            request.IdempotencyKey,
+            fingerprint,
+            cancellationToken);
+        var task = inbound.CreatePutawayTask(
+            taskNo,
+            request.LineNo,
+            request.FromLocationCode,
+            request.ToLocationCode,
+            request.Quantity,
+            inbound.AssignedOperatorUserId,
+            inbound.AssignedPoolCode);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
@@ -679,26 +692,30 @@ public sealed class CreatePickingTaskCommandHandler(
             ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var line = outbound.Lines.SingleOrDefault(x => x.LineNo == request.LineNo)
             ?? throw new KnownException($"未找到出库行，行号 = {request.LineNo}");
-        var taskNo = await _codingService.AllocateAsync(
+        var fingerprint = WmsCodingService.Fingerprint(
+            request.OutboundOrderId,
+            request.LineNo,
+            request.FromLocationCode,
+            request.ToLocationCode,
+            request.Quantity);
+        // 顺序：重放 → 本地校验 → 分号 → 远程预留 → 新建（理由同上架，#3918 审核 B1/B2）。
+        // 库存预留必须拿着号去做（预留键由任务号派生，ADR 0031），所以远程预留被拒仍发生在分号之后。
+        var replayTaskNo = request.TaskNo ?? await _codingService.TryPeekBoundCodeAsync(
             outbound.OrganizationId,
             outbound.EnvironmentId,
             WmsCodeRules.PickingTask,
-            request.TaskNo,
             request.IdempotencyKey,
-            WmsCodingService.Fingerprint(
-                request.OutboundOrderId,
-                request.LineNo,
-                request.FromLocationCode,
-                request.ToLocationCode,
-                request.Quantity),
+            fingerprint,
             cancellationToken);
-        var replayedTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
-            x => x.OrganizationId == outbound.OrganizationId
-                && x.EnvironmentId == outbound.EnvironmentId
-                && x.TaskNo == taskNo
-                && x.TaskType == WarehouseTaskType.Picking
-                && x.SourceOrderNo == outbound.OutboundOrderNo,
-            cancellationToken);
+        var replayedTask = replayTaskNo is null
+            ? null
+            : await dbContext.WarehouseTasks.SingleOrDefaultAsync(
+                x => x.OrganizationId == outbound.OrganizationId
+                    && x.EnvironmentId == outbound.EnvironmentId
+                    && x.TaskNo == replayTaskNo
+                    && x.TaskType == WarehouseTaskType.Picking
+                    && x.SourceOrderNo == outbound.OutboundOrderNo,
+                cancellationToken);
         if (replayedTask is not null)
         {
             return replayedTask.Id;
@@ -712,6 +729,15 @@ public sealed class CreatePickingTaskCommandHandler(
         {
             throw new KnownException("当前出库单不可创建拣货任务，请检查状态后重试。", exception);
         }
+
+        var taskNo = await _codingService.AllocateAsync(
+            outbound.OrganizationId,
+            outbound.EnvironmentId,
+            WmsCodeRules.PickingTask,
+            request.TaskNo,
+            request.IdempotencyKey,
+            fingerprint,
+            cancellationToken);
 
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
         // line-level idempotency key lets command retries recover the same reservation.

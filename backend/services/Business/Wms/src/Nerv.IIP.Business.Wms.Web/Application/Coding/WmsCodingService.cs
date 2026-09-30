@@ -86,6 +86,38 @@ public sealed class WmsCodingService
         }
     }
 
+    /// <summary>
+    /// 只读：这把幂等键在该规则下已经绑定的号，没有绑定时返回 <c>null</c>，不分号、不写绑定。
+    /// 新建命令先用它找重放，再做业务校验、最后分号——这样单据状态变了之后到达的同键重试
+    /// 仍能拿回原任务，被拒的请求也不占号（#3918 审核 B1/B2）。载荷指纹不一致时照常抛冲突。
+    /// </summary>
+    public async Task<string?> TryPeekBoundCodeAsync(
+        string organizationId,
+        string environmentId,
+        string ruleKey,
+        string? idempotencyKey,
+        string payloadFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var request = new CodeAllocationRequest(
+            organizationId,
+            environmentId,
+            StandardCodeRules.Get(ruleKey),
+            null,
+            null,
+            idempotencyKey,
+            payloadFingerprint,
+            "Wms");
+        if (_serviceScopeFactory is null)
+        {
+            return (await _inMemoryAllocator!.TryPeekReplayAsync(request, cancellationToken))?.Code;
+        }
+
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var peekDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return (await NewAllocator(peekDbContext).TryPeekReplayAsync(request, cancellationToken))?.Code;
+    }
+
     public static string Fingerprint(params object?[] parts) => CodeAllocator.Fingerprint(parts);
 
     private CodeAllocator NewAllocator(ApplicationDbContext bindingDbContext) =>

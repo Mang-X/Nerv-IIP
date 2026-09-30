@@ -65,11 +65,17 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
     private const string DeadLetterEntityName = "Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetter";
 
     /// <summary>
+    /// 第二条具名豁免（#3918）：共享编码实体 <c>code_idempotency_keys</c>，列宽由共享配置定义，
+    /// 跨服务一致性由 <c>CodeIdempotencyKeyCrossServiceWidthContractTests</c> 看守，不由本策略管辖。
+    /// </summary>
+    private const string CodeIdempotencyKeyEntityName = "Nerv.IIP.Coding.CodeIdempotencyKey";
+
+    /// <summary>
     /// EF 模型里 <c>idempotency_key</c> 列的总数（含上面那条具名豁免）。真库读数见 PR 正文。
     /// 这条计数是**下界**：新增一张带该列的表、或改列名让值域塌成空集，都会红——
     /// 否则 <c>Assert.All</c> 对空集恒真，护栏会静默缴械。
     /// </summary>
-    private const int IdempotencyKeyColumnCount = 6;
+    private const int IdempotencyKeyColumnCount = 7;
 
     [Fact]
     public void Idempotency_key_column_width_matches_the_policy_constant()
@@ -81,14 +87,12 @@ public sealed class InventoryIdempotencyKeyLengthContractTests
         var columns = IdempotencyKeyColumns(model);
         Assert.Equal(IdempotencyKeyColumnCount, columns.Length);
 
-        var exempted = columns
-            .Where(property => property.DeclaringType.Name == DeadLetterEntityName)
-            .ToArray();
-        Assert.Single(exempted);
-        Assert.Equal(500, Assert.Single(exempted).GetMaxLength());
+        var deadLetter = Assert.Single(columns, property => property.DeclaringType.Name == DeadLetterEntityName);
+        Assert.Equal(500, deadLetter.GetMaxLength());
+        var codeIdempotencyKey = Assert.Single(columns, property => property.DeclaringType.Name == CodeIdempotencyKeyEntityName);
 
-        var governed = columns.Except(exempted).ToArray();
-        Assert.Equal(IdempotencyKeyColumnCount - 1, governed.Length);
+        var governed = columns.Except([deadLetter, codeIdempotencyKey]).ToArray();
+        Assert.Equal(IdempotencyKeyColumnCount - 2, governed.Length);
         Assert.All(
             governed,
             property => Assert.Equal(

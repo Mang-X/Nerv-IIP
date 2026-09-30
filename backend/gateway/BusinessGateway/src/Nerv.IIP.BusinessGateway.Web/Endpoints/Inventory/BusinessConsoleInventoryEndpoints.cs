@@ -277,6 +277,17 @@ public sealed class BusinessConsolePostStockMovementRequestValidator
     }
 }
 
+public sealed class BusinessConsoleCreateStockCountTaskRequestValidator
+    : Validator<BusinessConsoleCreateStockCountTaskRequest>
+{
+    public BusinessConsoleCreateStockCountTaskRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+    }
+}
+
 public sealed class BusinessConsoleConfirmStockCountAdjustmentRequestValidator
     : Validator<BusinessConsoleConfirmStockCountAdjustmentRequest>
 {
