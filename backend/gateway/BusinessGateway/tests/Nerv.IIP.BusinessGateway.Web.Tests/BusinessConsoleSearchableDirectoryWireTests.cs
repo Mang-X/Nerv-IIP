@@ -13,7 +13,7 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
-public sealed class BusinessConsoleSearchableDirectoryWireTests
+public sealed partial class BusinessConsoleSearchableDirectoryWireTests
 {
     [Fact]
     public async Task Directory_endpoint_authorizes_only_owner_permission_and_forwards_site_scope()

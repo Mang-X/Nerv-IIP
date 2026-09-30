@@ -120,8 +120,8 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
         int pageOffset,
         CancellationToken cancellationToken)
     {
-        // 库存目录（库位 / 批次 / 序列号）按工厂切分：可见范围取授权工厂的并集；其余目录解析成单一范围。
-        if (definition.Owner == "inventory")
+        // 按工厂切分的目录（库位 / 批次 / 序列号 / 工作中心 / 车间）：可见范围取授权工厂的并集；其余目录解析成单一范围。
+        if (definition.SplitBySite)
         {
             var sites = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedSites(
                 definition,
@@ -129,7 +129,14 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 request.OrganizationId,
                 scopeKind,
                 scopeId);
-            return sites is null ? null : await QueryInventoryAsync(request, sites, pageOffset, cancellationToken);
+            if (sites is null)
+            {
+                return null;
+            }
+
+            return definition.Owner == "inventory"
+                ? await QueryInventoryAsync(request, sites, pageOffset, cancellationToken)
+                : await QueryMasterDataAsync(request, null, null, sites.SiteFilter, pageOffset, cancellationToken);
         }
 
         var scope = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedScope(
@@ -145,7 +152,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
         return definition.Owner switch
         {
-            "master-data" => await QueryMasterDataAsync(request, scope.Kind, scope.Id, pageOffset, cancellationToken),
+            "master-data" => await QueryMasterDataAsync(request, scope.Kind, scope.Id, null, pageOffset, cancellationToken),
             "quality" => await QueryQualityAsync(request, pageOffset, cancellationToken),
             "maintenance" => await QueryMaintenanceAsync(request, pageOffset, cancellationToken),
             "iam" => await QueryLoginAccountsAsync(request, pageOffset, cancellationToken),
@@ -157,6 +164,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
         BusinessConsoleSearchableDirectoryRequest request,
         string? scopeKind,
         string? scopeId,
+        IReadOnlyList<string>? siteCodes,
         int pageOffset,
         CancellationToken cancellationToken)
     {
@@ -209,11 +217,10 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
             Skip: pageOffset,
             Take: request.PageSize,
             CodeSet: request.DirectoryType == "priority" ? "priority" : null,
-            SiteCode: scopeKind == "site" ? scopeId : null,
             WorkCenterCode: scopeKind == "work-center" ? scopeId : null,
             Keyword: request.Keyword,
             WorkshopCode: scopeKind == "workshop" ? scopeId : null);
-        var resources = await masterData.ListResourcesAsync(tokenProvider.BearerToken, query, cancellationToken);
+        var resources = await masterData.ListResourcesInSitesAsync(tokenProvider.BearerToken, query, siteCodes, cancellationToken);
         ValidateResources(resources, request, pageOffset);
         var authorityConfigured = true;
         if (request.DirectoryType == "priority" && resources.Total == 0)
