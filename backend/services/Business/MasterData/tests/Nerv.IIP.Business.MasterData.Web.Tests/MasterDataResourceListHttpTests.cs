@@ -13,6 +13,8 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -287,6 +289,43 @@ public sealed class MasterDataResourceListHttpTests
             Assert.DoesNotContain("SKU-PUMP-OTHER-ORG", resourceCodes);
             Assert.DoesNotContain("SKU-PUMP-OTHER-ENV", resourceCodes);
         }
+    }
+
+    // #3825：工作中心、车间目录按网关给出的授权工厂集合收窄（重复参数 siteCodes），集合外的工厂一条都不返回。
+    [Theory]
+    [InlineData("workshop")]
+    [InlineData("work-center")]
+    public async Task Get_resources_narrows_to_the_given_site_set(string resourceType)
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            foreach (var site in new[] { "SITE-A", "SITE-B", "SITE-C" })
+            {
+                dbContext.Workshops.Add(Workshop.Create("org-001", "env-dev", $"WS-{site}", $"车间 {site}", site, null, null));
+                dbContext.WorkCenters.Add(WorkCenter.CreateResource(
+                    "org-001", "env-dev", $"WC-{site}", $"工作中心 {site}", 480, "work-center",
+                    site, "LINE-1", "STANDARD", "minute", true));
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var client = CreateAuthenticatedClient(factory);
+        var response = await client.GetAsync(
+            "/api/business/v1/master-data/resources" +
+            $"?organizationId=org-001&environmentId=env-dev&resourceType={resourceType}&siteCodes=SITE-A&siteCodes=SITE-C");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"{response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        var prefix = resourceType == "workshop" ? "WS" : "WC";
+        Assert.Equal(
+            [$"{prefix}-SITE-A", $"{prefix}-SITE-C"],
+            data.GetProperty("resources").EnumerateArray().Select(resource => resource.GetProperty("code").GetString()!).ToArray());
+        Assert.Equal(2, data.GetProperty("total").GetInt32());
     }
 
     [Fact]
