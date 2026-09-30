@@ -18466,6 +18466,40 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
         LastAuthorizedEnvironmentId = environmentId;
         return Task.FromResult(TestDownloadGrants.Ticket("grant-handover-1", organizationId, environmentId));
     }
+
+    public BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest? LastTemplateAssetSessionRequest { get; private set; }
+
+    public string? LastTemplateAssetCompletedUploadSessionId { get; private set; }
+
+    public BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest? LastTemplateAssetCompleteRequest { get; private set; }
+
+    public Task<BusinessConsoleBarcodeTemplateAssetUploadSessionResponse> CreateBarcodeTemplateAssetUploadSessionAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTemplateAssetSessionRequest = request;
+        return Task.FromResult(new BusinessConsoleBarcodeTemplateAssetUploadSessionResponse(
+            "ups-template-1",
+            "file-template-1",
+            "tus",
+            DateTimeOffset.Parse("2026-09-28T08:00:00Z"),
+            "/api/business-console/v1/files/barcode-template-assets/tus/ups-template-1",
+            new Dictionary<string, string> { ["x-nerv-upload-mode"] = "tus" }));
+    }
+
+    public Task<BusinessConsoleBarcodeTemplateAsset> CompleteBarcodeTemplateAssetUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTemplateAssetCompletedUploadSessionId = uploadSessionId;
+        LastTemplateAssetCompleteRequest = request;
+        return Task.FromResult(new BusinessConsoleBarcodeTemplateAsset("file-template-1", "box-label.json", 363));
+    }
 }
 
 /// <summary>字节面替身：与 JSON 面分属两个 typed client（弹性契约不同，见 ADR 0015）。</summary>
@@ -18519,6 +18553,44 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
         LastTusPatchEnvironmentId = environmentId;
         targetResponse.StatusCode = StatusCodes.Status204NoContent;
         targetResponse.Headers["Upload-Offset"] = "2048";
+        return Task.CompletedTask;
+    }
+
+    public string? LastTemplateAssetTusHeadUploadSessionId { get; private set; }
+
+    public string? LastTemplateAssetTusPatchUploadSessionId { get; private set; }
+
+    public string? LastTemplateAssetTusPatchOrganizationId { get; private set; }
+
+    public Task ProxyBarcodeTemplateAssetTusHeadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTemplateAssetTusHeadUploadSessionId = uploadSessionId;
+        targetResponse.StatusCode = StatusCodes.Status204NoContent;
+        targetResponse.Headers["Upload-Offset"] = "0";
+        return Task.CompletedTask;
+    }
+
+    public Task ProxyBarcodeTemplateAssetTusPatchAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTemplateAssetTusPatchUploadSessionId = uploadSessionId;
+        LastTemplateAssetTusPatchOrganizationId = organizationId;
+        targetResponse.StatusCode = StatusCodes.Status204NoContent;
+        targetResponse.Headers["Upload-Offset"] = "363";
         return Task.CompletedTask;
     }
 

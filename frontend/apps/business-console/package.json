@@ -18,6 +18,7 @@
     "@nerv-iip/business-core": "workspace:*",
     "@nerv-iip/scheduling": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
+    "@noble/hashes": "2.4.0",
     "@pinia/colada": "1.4.2",
     "@pinia/colada-plugin-auto-refetch": "0.2.6",
     "@vueuse/core": "14.3.0",

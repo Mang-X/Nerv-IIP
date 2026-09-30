@@ -274,5 +274,18 @@ public sealed class BusinessConsoleSopFileDownloadFacadeTests
             string environmentId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<BusinessConsoleBarcodeTemplateAssetUploadSessionResponse> CreateBarcodeTemplateAssetUploadSessionAsync(
+            string internalBearerToken,
+            BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<BusinessConsoleBarcodeTemplateAsset> CompleteBarcodeTemplateAssetUploadAsync(
+            string internalBearerToken,
+            string uploadSessionId,
+            BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

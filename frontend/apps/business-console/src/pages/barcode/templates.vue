@@ -16,6 +16,7 @@ import {
   variableSummary,
   type LabelVariableRow,
 } from '@/components/barcode/labelTemplateVariables'
+import { uploadTemplateAsset } from '@/components/barcode/templateAssetUpload'
 import {
   NvButton,
   NvCheckbox,
@@ -45,8 +46,8 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { PencilIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { PencilIcon, PlusIcon, RefreshCwIcon, Trash2Icon, UploadIcon } from '@lucide/vue'
+import { computed, reactive, shallowRef, useTemplateRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -87,6 +88,13 @@ const form = reactive({
   status: 'active',
 })
 const variableRows = shallowRef<LabelVariableRow[]>([emptyVariableRow()])
+// 模板文件只能在弹窗里上传：文件标识只在这里进出，界面上只显示文件名或「已上传」。
+const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
+const uploadedFileName = shallowRef('')
+// 文件的归属是模板编码；上传后改了编码，这个文件就不能再给新编码用。
+const uploadedForCode = shallowRef('')
+const uploadPending = shallowRef(false)
+const uploadError = shallowRef('')
 
 const columns: NvDataTableColumn<BusinessConsoleBarcodeTemplateItem>[] = [
   {
@@ -99,12 +107,13 @@ const columns: NvDataTableColumn<BusinessConsoleBarcodeTemplateItem>[] = [
   {
     key: 'templateFileId',
     header: '模板文件',
-    width: 'w-40',
-    accessor: (r) => r.templateFileId ?? '无',
+    width: 'w-24',
+    accessor: (r) => (r.templateFileId ? '已上传' : '未上传'),
   },
   { key: 'variableSchemaJson', header: '标签数据项' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
+  // 两个操作按钮（资产退役、编辑）要并排放得下，否则「编辑」被挤出表格右缘。
+  { key: 'actions', header: '操作', align: 'end', width: 'w-48' },
 ]
 
 watch(statusFilter, (value) => {
@@ -134,6 +143,7 @@ const canSubmit = computed(
     form.templateCode.trim().length > 0 &&
     form.templateName.trim().length > 0 &&
     form.templateFileId.trim().length > 0 &&
+    !uploadPending.value &&
     !variableError.value,
 )
 const variableError = computed(() => variableRowsError(variableRows.value))
@@ -181,6 +191,61 @@ function resetForm() {
   variableRows.value = [emptyVariableRow()]
   editingTemplateCode.value = null
   showErrors.value = false
+  resetUpload()
+}
+
+function resetUpload() {
+  uploadedFileName.value = ''
+  uploadedForCode.value = ''
+  uploadError.value = ''
+  uploadPending.value = false
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+// 新建时先上传再改编码：文件归属已绑在旧编码上，只能清掉重传。
+watch(
+  () => form.templateCode.trim(),
+  (code) => {
+    if (editingTemplateCode.value || !uploadedForCode.value || code === uploadedForCode.value)
+      return
+    form.templateFileId = ''
+    uploadedFileName.value = ''
+    uploadedForCode.value = ''
+    uploadError.value = '模板编码改了，请重新上传模板文件。'
+  },
+)
+
+function chooseFile() {
+  uploadError.value = ''
+  if (!form.templateCode.trim()) {
+    uploadError.value = '请先填写模板编码，再上传模板文件。'
+    return
+  }
+  fileInput.value?.click()
+}
+
+async function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  uploadPending.value = true
+  uploadError.value = ''
+  const templateCode = form.templateCode.trim()
+  try {
+    const asset = await uploadTemplateAsset(file, {
+      organizationId: filters.organizationId ?? '',
+      environmentId: filters.environmentId ?? '',
+      templateCode,
+    })
+    form.templateFileId = asset.fileId
+    uploadedFileName.value = asset.fileName
+    uploadedForCode.value = templateCode
+  } catch (error) {
+    uploadError.value = inlineErrorMessage(error, '模板文件上传失败，请稍后重试。')
+  } finally {
+    uploadPending.value = false
+  }
 }
 
 function openEdit(row: BusinessConsoleBarcodeTemplateItem) {
@@ -194,6 +259,7 @@ function openEdit(row: BusinessConsoleBarcodeTemplateItem) {
   variableRows.value = rows.length ? rows : [emptyVariableRow()]
   editingTemplateCode.value = row.templateCode ?? null
   showErrors.value = false
+  resetUpload()
   open.value = true
 }
 
@@ -271,7 +337,7 @@ async function submitTemplate() {
                 :items="carriedItems"
               />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写模板编码、名称、模板文件，并补全标签数据项。
+                请填写模板编码、名称，上传模板文件，并补全标签数据项。
               </p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField
@@ -301,11 +367,44 @@ async function submitTemplate() {
                   <NvFieldLabel for="barcode-template-file"
                     >模板文件 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="barcode-template-file"
-                    v-model="form.templateFileId"
-                    autocomplete="off"
+                  <input
+                    ref="fileInput"
+                    type="file"
+                    accept=".json,application/json"
+                    class="sr-only"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    data-testid="barcode-template-file-input"
+                    @change="onFileSelected"
                   />
+                  <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <NvButton
+                      id="barcode-template-file"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      :disabled="uploadPending"
+                      @click="chooseFile"
+                    >
+                      <Spinner v-if="uploadPending" aria-hidden="true" />
+                      <UploadIcon v-else aria-hidden="true" />
+                      {{ form.templateFileId ? '重新上传' : '上传模板文件' }}
+                    </NvButton>
+                    <span
+                      class="min-w-0 text-sm break-all text-muted-foreground"
+                      data-testid="barcode-template-file-status"
+                      >{{
+                        uploadPending
+                          ? '正在上传…'
+                          : uploadedFileName
+                            ? `「${uploadedFileName}」已上传`
+                            : form.templateFileId
+                              ? '已上传'
+                              : '未上传'
+                      }}</span
+                    >
+                  </div>
+                  <NvFieldError v-if="uploadError" :errors="[uploadError]" />
                 </NvField>
                 <NvField>
                   <NvFieldLabel>状态</NvFieldLabel>

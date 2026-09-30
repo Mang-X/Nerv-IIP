@@ -17,7 +17,7 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 5. `ObjectKey` 可以作为 File Storage 内部持久化事实存在，但不得暴露到公开 API、Gateway facade、SDK DTO 或业务持久化模型。
 6. UI、外部应用、Connector Host 与业务服务不得绕过 File Storage 直接访问对象存储；上传、完成、下载都必须经过受控会话或授权入口。
 7. purpose、content type / extension、quota、retention 等当前策略由 File Storage 自己的配置与实现解释；其它服务不能维护平行 allowlist 或配额事实。
-8. BusinessGateway 当前有两组面向业务控制台的文件面：工程 SOP 文件的内容（门在 `business.engineering.documents.read`），以及交接班附件的上传与下载（门在 `business.mes.handovers.manage` / `business.mes.handovers.read`）。**两组现在同形**：各自只暴露一条以 `fileId` 为入参的单跳字节路由，用途与 owner 由网关固定并在取字节前复核，download grant 由网关在服务端签发并立即兑换、grant id 不交给调用方。规则以 [ADR 0030](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2/3 为准，本页不复述。
+8. BusinessGateway 当前有三组面向业务控制台的文件面：工程 SOP 文件的内容（门在 `business.engineering.documents.read`）、交接班附件的上传与下载（门在 `business.mes.handovers.manage` / `business.mes.handovers.read`），以及条码模板文件的上传（门在 `business.barcodes.templates.manage`）。三组的用途与 owner 都由网关固定、不从请求体读取；条码模板文件的 owner 是模板编码、内容类型也由网关固定，因为 BarcodeLabel 打印时按这几项逐一校验模板文件。**有下载面的两组同形**：各自只暴露一条以 `fileId` 为入参的单跳字节路由，在取字节前复核用途，download grant 由网关在服务端签发并立即兑换、grant id 不交给调用方。条码模板文件没有控制台下载面，字节由 BarcodeLabel 服务端经 FileStorage 自取。规则以 [ADR 0030](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2/3 为准，本页不复述。
 
 9. PlatformGateway 的文件面同样不把 download grant id 交给调用方（一条以 `fileId` 为入参的字节路由，网关服务端签发并就地兑换），但**它不按用途分面**：该路由不复核 `filePurpose`，因此持 `files.download-grants.create` + `files.read` 即可取得本租户全部用途的文件字节。[ADR 0030](../../adr/0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2 只写了业务面按用途分面，**对平台面未置可否**；因此这个差别**尚未经裁决**，本页不替条文表态。收窄与否由 [Issue #3663](https://github.com/Mang-X/Nerv-IIP/issues/3663) 承接，本页只陈述当前事实。
 

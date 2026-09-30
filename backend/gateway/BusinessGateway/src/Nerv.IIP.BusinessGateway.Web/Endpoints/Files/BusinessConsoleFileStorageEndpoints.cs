@@ -315,3 +315,163 @@ public sealed class DownloadBusinessConsoleShiftHandoverAttachmentContentEndpoin
             },
             ct);
 }
+
+// ---------------------------------------------------------------------------
+// #3856 条码模板文件上传门面。
+//
+// 形状照搬交接班附件上传面（建会话 / tus HEAD / tus PATCH / complete），差别只有两处：
+// 权限口径是 business.barcodes.templates.manage；owner 取模板编码而不是上传者——打印时
+// BarcodeLabel 要求模板文件的 owner 等于模板编码。用途、owner 与内容类型都由网关固定（ADR 0030 决策 2）。
+// 本门面只管上传；模板文件由 BarcodeLabel 服务端自取字节，控制台不需要下载面。
+// ---------------------------------------------------------------------------
+
+[Tags("Business Console Files")]
+[HttpPost("/api/business-console/v1/files/barcode-template-assets/upload-sessions")]
+[BusinessGatewayOperationId("createBusinessConsoleBarcodeTemplateAssetUploadSession")]
+public sealed class CreateBusinessConsoleBarcodeTemplateAssetUploadSessionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessFileStorageClient files,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<
+        BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest,
+        BusinessConsoleBarcodeTemplateAssetUploadSessionResponse>(
+        auth,
+        BusinessGatewayPermissions.BarcodeTemplatesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request) => "barcode-template-asset";
+
+    protected override string? ResourceId(BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request) => request.TemplateCode;
+
+    protected override Task<BusinessConsoleBarcodeTemplateAssetUploadSessionResponse> ForwardAsync(
+        BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        files.CreateBarcodeTemplateAssetUploadSessionAsync(
+            tokenProvider.BearerToken,
+            request,
+            cancellationToken);
+}
+
+public sealed class BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequestValidator
+    : Validator<BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest>
+{
+    public BusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        // 与 BarcodeLabel label_templates.template_code 的列宽一致。
+        RuleFor(x => x.TemplateCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.FileName).NotEmpty().MaximumLength(512);
+        RuleFor(x => x.ExpectedSizeBytes).GreaterThan(0);
+        RuleFor(x => x.Checksum).NotEmpty().MaximumLength(128);
+    }
+}
+
+[Tags("Business Console Files")]
+[HttpPost("/api/business-console/v1/files/barcode-template-assets/upload-sessions/{uploadSessionId}/complete")]
+[BusinessGatewayOperationId("completeBusinessConsoleBarcodeTemplateAssetUpload")]
+public sealed class CompleteBusinessConsoleBarcodeTemplateAssetUploadEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessFileStorageClient files,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<
+        BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest,
+        BusinessConsoleBarcodeTemplateAsset>(
+        auth,
+        BusinessGatewayPermissions.BarcodeTemplatesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request) => "barcode-template-asset";
+
+    protected override string? ResourceId(BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request) => Route<string>("uploadSessionId");
+
+    protected override Task<BusinessConsoleBarcodeTemplateAsset> ForwardAsync(
+        BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        files.CompleteBarcodeTemplateAssetUploadAsync(
+            tokenProvider.BearerToken,
+            Route<string>("uploadSessionId")!,
+            request,
+            cancellationToken);
+}
+
+public sealed class BusinessConsoleCompleteBarcodeTemplateAssetUploadRequestValidator
+    : Validator<BusinessConsoleCompleteBarcodeTemplateAssetUploadRequest>
+{
+    public BusinessConsoleCompleteBarcodeTemplateAssetUploadRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Checksum).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.SizeBytes).GreaterThan(0);
+    }
+}
+
+[Tags("Business Console Files")]
+[BusinessGatewayOperationId("getBusinessConsoleBarcodeTemplateAssetTusOffset")]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
+public sealed class GetBusinessConsoleBarcodeTemplateAssetTusOffsetEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessFileTransferClient files,
+    IInternalServiceTokenProvider tokenProvider)
+    : EndpointWithoutRequest
+{
+    public override void Configure()
+    {
+        Head("/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}");
+        Policies(BusinessGatewayPolicies.BusinessConsoleAuthenticated);
+        Options(x => x.WithTags("Business Console Files"));
+    }
+
+    public override Task HandleAsync(CancellationToken ct) =>
+        BusinessConsoleFileTransfer.ProxyAsync(
+            HttpContext,
+            auth,
+            BusinessGatewayPermissions.BarcodeTemplatesManage,
+            "barcode-template-asset-upload",
+            Route<string>("uploadSessionId")!,
+            (organizationId, environmentId, cancellationToken) => files.ProxyBarcodeTemplateAssetTusHeadAsync(
+                tokenProvider.BearerToken,
+                Route<string>("uploadSessionId")!,
+                organizationId,
+                environmentId,
+                HttpContext.Response,
+                cancellationToken),
+            ct);
+}
+
+[Tags("Business Console Files")]
+[HttpPatch("/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}")]
+[BusinessGatewayOperationId("patchBusinessConsoleBarcodeTemplateAssetTusUpload")]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
+public sealed class PatchBusinessConsoleBarcodeTemplateAssetTusUploadEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessFileTransferClient files,
+    IInternalServiceTokenProvider tokenProvider)
+    : EndpointWithoutRequest
+{
+    public override Task HandleAsync(CancellationToken ct) =>
+        BusinessConsoleFileTransfer.ProxyAsync(
+            HttpContext,
+            auth,
+            BusinessGatewayPermissions.BarcodeTemplatesManage,
+            "barcode-template-asset-upload",
+            Route<string>("uploadSessionId")!,
+            (organizationId, environmentId, cancellationToken) => files.ProxyBarcodeTemplateAssetTusPatchAsync(
+                tokenProvider.BearerToken,
+                Route<string>("uploadSessionId")!,
+                organizationId,
+                environmentId,
+                HttpContext.Request,
+                HttpContext.Response,
+                cancellationToken),
+            ct);
+}

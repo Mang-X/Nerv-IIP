@@ -11,10 +11,16 @@ vi.mock('@/components/barcode/TemplateAssetRetirement.vue', () => ({
   default: { template: '<span />' },
 }))
 
+// 上传三跳（建会话 / tus / complete）由 templateAssetUpload 自己的用例覆盖；页面用例只看弹窗怎么用它。
+vi.mock('@/components/barcode/templateAssetUpload', () => ({
+  uploadTemplateAsset: barcode.uploadTemplateAsset,
+}))
+
 const barcode = vi.hoisted(() => ({
   saveRule: vi.fn(),
   saveTemplate: vi.fn(),
   createPrintBatch: vi.fn(),
+  uploadTemplateAsset: vi.fn(),
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
   printBatchStatus: 'ready-to-print',
@@ -327,6 +333,26 @@ function setInput(wrapper: ReturnType<typeof mount>, selector: string, value: st
   return wrapper.find(selector).setValue(value)
 }
 
+async function uploadTemplateFile(wrapper: ReturnType<typeof mount>, name = 'pallet-label.json') {
+  const input = wrapper.find('[data-testid="barcode-template-file-input"]')
+  const file = new File(['{"format":"nerv-iip.label-template"}'], name, {
+    type: 'application/json',
+  })
+  Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+  await input.trigger('change')
+  await flushPromises()
+  return file
+}
+
+async function openNewTemplate(wrapper: ReturnType<typeof mount>) {
+  await flushPromises()
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建模板'))!
+    .trigger('click')
+  await flushPromises()
+}
+
 const COUNT_RULE = {
   barcodeRuleId: 'rule-count',
   ruleCode: 'COUNT-TAG',
@@ -388,6 +414,11 @@ describe('barcode pages', () => {
     barcode.saveTemplate.mockResolvedValue(undefined)
     barcode.createPrintBatch.mockResolvedValue(undefined)
     barcode.recordScan.mockResolvedValue(undefined)
+    barcode.uploadTemplateAsset.mockResolvedValue({
+      fileId: 'file-pallet',
+      fileName: 'pallet-label.json',
+      sizeBytes: 363,
+    })
   })
 
   it('renders rule maintenance with source usage and route-seeded keyword', async () => {
@@ -544,7 +575,7 @@ describe('barcode pages', () => {
     await flushPromises()
     await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
     await setInput(wrapper, '#barcode-template-name', '托盘标签')
-    await setInput(wrapper, '#barcode-template-file', 'file-pallet')
+    await uploadTemplateFile(wrapper)
     await wrapper.find('#barcode-template-item-0').setValue('skuCode')
     await wrapper
       .findAll('button')
@@ -574,6 +605,100 @@ describe('barcode pages', () => {
     )
   })
 
+  it('uploads the template file in the dialog and never shows its file id', async () => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    // 列表只说「已上传」，不显示文件标识。
+    await flushPromises()
+    expect(wrapper.text()).toContain('已上传')
+    expect(wrapper.text()).not.toContain('file-label-box')
+
+    await openNewTemplate(wrapper)
+    expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe('未上传')
+    await setInput(wrapper, '#barcode-template-code', ' PALLET_LABEL ')
+    const file = await uploadTemplateFile(wrapper)
+
+    expect(barcode.uploadTemplateAsset).toHaveBeenCalledWith(file, {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      templateCode: 'PALLET_LABEL',
+    })
+    expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe(
+      '「pallet-label.json」已上传',
+    )
+    expect(wrapper.find('#barcode-template-file').text()).toContain('重新上传')
+    expect(wrapper.text()).not.toContain('file-pallet')
+
+    await setInput(wrapper, '#barcode-template-name', '托盘标签')
+    await wrapper.find('#barcode-template-item-0').setValue('skuCode')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(barcode.saveTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ templateCode: 'PALLET_LABEL', templateFileId: 'file-pallet' }),
+    )
+  })
+
+  it('asks for the template code before choosing a file', async () => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await openNewTemplate(wrapper)
+
+    await wrapper.find('#barcode-template-file').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('请先填写模板编码，再上传模板文件。')
+    expect(barcode.uploadTemplateAsset).not.toHaveBeenCalled()
+  })
+
+  it('drops an uploaded file when the template code changes afterwards', async () => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await openNewTemplate(wrapper)
+    await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
+    await uploadTemplateFile(wrapper)
+    await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL_2')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe('未上传')
+    expect(wrapper.text()).toContain('模板编码改了，请重新上传模板文件。')
+    await setInput(wrapper, '#barcode-template-name', '托盘标签')
+    await wrapper.find('#barcode-template-item-0').setValue('skuCode')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(barcode.saveTemplate).not.toHaveBeenCalled()
+  })
+
+  it('shows why an upload failed and keeps the template unsaved', async () => {
+    barcode.uploadTemplateAsset.mockRejectedValueOnce(new Error('模板文件只支持 .json 格式。'))
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await openNewTemplate(wrapper)
+    await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
+    await uploadTemplateFile(wrapper, 'pallet.txt')
+
+    expect(wrapper.text()).toContain('模板文件只支持 .json 格式。')
+    expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe('未上传')
+  })
+
+  it('keeps the existing file when an edited template is saved without re-uploading', async () => {
+    const wrapper = mount(TemplatesPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('编辑'))!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="barcode-template-file-status"]').text()).toBe('已上传')
+    expect(wrapper.text()).not.toContain('file-label-box')
+  })
+
   it('does not submit a template until every data item row is chosen', async () => {
     const wrapper = mount(TemplatesPage, {
       global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
@@ -586,7 +711,7 @@ describe('barcode pages', () => {
     await flushPromises()
     await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
     await setInput(wrapper, '#barcode-template-name', '托盘标签')
-    await setInput(wrapper, '#barcode-template-file', 'file-pallet')
+    await uploadTemplateFile(wrapper)
 
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -610,7 +735,7 @@ describe('barcode pages', () => {
     await flushPromises()
     await setInput(wrapper, '#barcode-template-code', 'PALLET_LABEL')
     await setInput(wrapper, '#barcode-template-name', '托盘标签')
-    await setInput(wrapper, '#barcode-template-file', 'file-pallet')
+    await uploadTemplateFile(wrapper)
     await wrapper.find('#barcode-template-item-0').setValue('skuCode')
     await wrapper
       .findAll('button')
