@@ -180,7 +180,10 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
 </script>
 
 <template>
-  <section class="grid gap-3 rounded-lg border bg-card p-4" data-testid="scheduling-draft-board">
+  <section
+    class="grid grid-cols-1 gap-3 rounded-lg border bg-card p-4"
+    data-testid="scheduling-draft-board"
+  >
     <header>
       <h2 class="font-semibold">排程草案工作区</h2>
       <p class="text-sm text-muted-foreground">甘特拖拽、资源泳道和表格编辑共享同一份草稿状态。</p>

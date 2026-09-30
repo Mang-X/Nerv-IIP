@@ -500,7 +500,7 @@ function setLaneOrder(value: LaneOrder) {
 </script>
 
 <template>
-  <section class="grid gap-4" data-testid="scheduling-plan-gantt">
+  <section class="grid grid-cols-1 gap-4" data-testid="scheduling-plan-gantt">
     <div
       v-if="loading"
       class="flex min-h-80 items-center justify-center gap-2 rounded-lg border bg-card text-sm text-muted-foreground"
@@ -625,10 +625,11 @@ function setLaneOrder(value: LaneOrder) {
         >
       </div>
 
-      <!-- 甘特与详情并排：详情是同一行里的一列（不是覆盖层），
-           打开时甘特只是变窄，仍然可见、可点、可继续换选。 -->
-      <div class="flex h-[34rem] min-h-[28rem] gap-3">
-        <div class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+      <!-- 宽窗甘特与详情并排，窄窗详情在图面下方展开；两者均保留完整查阅空间。 -->
+      <div class="flex flex-col gap-3 xl:h-[34rem] xl:min-h-[28rem] xl:flex-row">
+        <div
+          class="flex h-[34rem] min-w-0 flex-none flex-col overflow-hidden rounded-lg border bg-card xl:h-auto xl:flex-1"
+        >
           <!-- 时间线工具栏。这是只读面:不给撤销/重做/解锁(canEdit=false),也不在这里发布
                (发布走上方带失效守卫与禁用原因的「发布当前方案」,不要在工具栏再放一个)。 -->
           <SchedulingToolbar
@@ -675,7 +676,7 @@ function setLaneOrder(value: LaneOrder) {
 
         <aside
           v-if="detailPanelOpen && selectedTask"
-          class="flex w-[21rem] flex-none flex-col overflow-y-auto rounded-lg border bg-card"
+          class="flex max-h-[34rem] min-w-0 flex-col overflow-y-auto rounded-lg border bg-card xl:w-[21rem] xl:flex-none"
           :aria-label="detailPanelTitle"
           data-testid="scheduling-task-detail"
           :data-detail-kind="selectedKind"
