@@ -321,18 +321,24 @@ public sealed class SchedulingProblemProducerTests
         Assert.All(problem.Resources, x => Assert.Equal(1, x.CapacityUnits));
     }
 
-    [Fact]
-    public async Task Master_data_client_preserves_shift_boundaries_when_paid_minutes_is_net_capacity()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Master_data_client_preserves_shift_boundaries_with_legal_null_rates(
+        bool calendarHasNullRates, bool shiftHasNullRates)
     {
         var httpClient = new HttpClient(new StubHttpMessageHandler(request =>
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
             if (path.EndsWith("/api/business/v1/master-data/resources/work-calendar/CAL-DAY", StringComparison.Ordinal))
             {
-                return JsonResponse("""
+                return JsonResponse($$"""
                     {
                       "data": {
                         "resourceType": "work-calendar",
+                        {{(calendarHasNullRates ? "\"utilizationRate\": null, \"efficiencyRate\": null," : "")}}
                         "code": "CAL-DAY",
                         "displayName": "Day calendar",
                         "active": true,
@@ -376,10 +382,11 @@ public sealed class SchedulingProblemProducerTests
 
             if (path.EndsWith("/api/business/v1/master-data/resources/shift/DAY", StringComparison.Ordinal))
             {
-                return JsonResponse("""
+                return JsonResponse($$"""
                     {
                       "data": {
                         "resourceType": "shift",
+                        {{(shiftHasNullRates ? "\"utilizationRate\": null, \"efficiencyRate\": null," : "")}}
                         "code": "DAY",
                         "displayName": "Day shift",
                         "active": true,
