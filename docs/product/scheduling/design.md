@@ -95,6 +95,16 @@
 - 可见域:计划员、排产员、车间主管;只读旁观:跟单、管理。
 - 路由读取门槛:`business.scheduling.plans.read`；批量生成、编辑和修订:`business.scheduling.plans.manage`；发布新版:`business.scheduling.plans.release`。前端只负责提前禁用，BusinessGateway 权限检查是最终授权边界。候选工单读取继续使用 MES 工单 facade 的现有读取权限。
 
+三级验收角色按权限组合配置，不能把级别当成 IAM 自动继承关系：
+
+| 验收角色 | 排产权限 | 可用动作 | 禁止动作 |
+| --- | --- | --- | --- |
+| 只读查阅 | read | 历史方案、明细、甘特查阅 | 生成、编辑、重预览、发布、撤销发布 |
+| 排产管理 | read + manage | 查阅、生成、编辑锁定、重预览 | 发布、撤销发布 |
+| 排程发布 | read + manage + release | 查阅、生成、编辑锁定、重预览、发布、撤销发布 | 仍受方案失效、终态等业务门禁约束 |
+
+这里的 read / manage / release 对应上述三个完整权限码。默认「生产计划员」持有全部三级权限；只读与管理验收角色按现场岗位配置，不要求增加默认角色。撤销发布与发布使用同一权限。权限不足时主动作的禁用说明指出缺少管理或发布权限；Gateway 实际返回 403 时，操作反馈以中文说明没有权限执行此操作。
+
 ## 5. 数据来源(facade 代码事实)
 
 BusinessGateway 新增两个公开两跳契约:`POST /api/business-console/v1/scheduling/workbench/plans` 从最多 500 个 MES 工单生成首版；`POST /api/business-console/v1/scheduling/plans/{planId}/revisions` 从持久化 base problem + included orders + explicit locks 生成修订版、失效影响与方案对比。既有 `list` / detail / gantt / release / revoke 继续承担历史和版本治理。
