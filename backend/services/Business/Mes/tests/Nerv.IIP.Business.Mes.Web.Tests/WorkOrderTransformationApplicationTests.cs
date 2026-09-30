@@ -1,3 +1,6 @@
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Mes;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -69,10 +72,38 @@ public sealed class WorkOrderTransformationApplicationTests
         var handler = new SplitWorkOrderCommandHandler(db);
 
         var first = await handler.Handle(command, CancellationToken.None);
+        var fact = db.WorkOrderTransformations.Local.Single();
+        var splitEvent = new WorkOrderSplitIntegrationEventConverter(new TransformationEventContextAccessor()).Convert(
+            Assert.IsType<WorkOrderSplitDomainEvent>(Assert.Single(fact.GetDomainEvents())));
+        Assert.Equal(fact.Id.Id, splitEvent.Payload.TransformationId);
+        Assert.Equal(command.OccurredAtUtc, splitEvent.OccurredAtUtc);
+        Assert.Equal(command.Actor, splitEvent.Actor);
+        Assert.Equal(command.Reason, splitEvent.Payload.Reason);
+        Assert.Equal(command.OrganizationId, splitEvent.OrganizationId);
+        Assert.Equal(command.EnvironmentId, splitEvent.EnvironmentId);
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderSplit, splitEvent.EventType);
+        Assert.Equal(MesIntegrationEventVersions.V1, splitEvent.EventVersion);
+        Assert.Equal(MesIntegrationEventSources.BusinessMes, splitEvent.SourceService);
+        Assert.Equal("corr-transformation", splitEvent.CorrelationId);
+        Assert.Equal("cause-transformation", splitEvent.CausationId);
+        Assert.Equal(["WO-SPLIT-PARENT", "WO-SPLIT-PARENT"], splitEvent.Payload.Lines.Select(x => x.SourceWorkOrderId));
+        Assert.Equal(["WO-SPLIT-CHILD-1", "WO-SPLIT-CHILD-2"], splitEvent.Payload.Lines.Select(x => x.TargetWorkOrderId));
+        Assert.Equal([4m, 6m], splitEvent.Payload.Lines.Select(x => x.Quantity));
+        Assert.All(splitEvent.Payload.Lines, line =>
+        {
+            Assert.Equal(10m, line.SourceQuantity);
+            Assert.Equal(line.Quantity, line.TargetQuantity);
+            Assert.Equal("PCS", line.UomCode);
+            Assert.Equal(WorkOrder.CreatedStatus, line.SourceStatus);
+            Assert.Equal(WorkOrder.CreatedStatus, line.TargetStatus);
+            Assert.Equal(1, line.SourceVersion);
+            Assert.Equal(1, line.TargetVersion);
+        });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
         var replay = await handler.Handle(command, CancellationToken.None);
+        Assert.Empty(db.WorkOrderTransformations.Local);
         var parent = await db.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-SPLIT-PARENT");
         var children = await db.WorkOrders
             .Where(x => x.WorkOrderIdValue.StartsWith("WO-SPLIT-CHILD-"))
@@ -157,6 +188,29 @@ public sealed class WorkOrderTransformationApplicationTests
             "user:planner-001",
             occurredAtUtc);
         await handler.Handle(first, CancellationToken.None);
+        var fact = db.WorkOrderTransformations.Local.Single();
+        var mergedEvent = new WorkOrderMergedIntegrationEventConverter(new TransformationEventContextAccessor()).Convert(
+            Assert.IsType<WorkOrderMergedDomainEvent>(Assert.Single(fact.GetDomainEvents())));
+        Assert.Equal(fact.Id.Id, mergedEvent.Payload.TransformationId);
+        Assert.Equal(first.OccurredAtUtc, mergedEvent.OccurredAtUtc);
+        Assert.Equal(first.Actor, mergedEvent.Actor);
+        Assert.Equal(first.Reason, mergedEvent.Payload.Reason);
+        Assert.Equal(first.OrganizationId, mergedEvent.OrganizationId);
+        Assert.Equal(first.EnvironmentId, mergedEvent.EnvironmentId);
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderMerged, mergedEvent.EventType);
+        Assert.Equal(["WO-MERGE-SOURCE-1", "WO-MERGE-SOURCE-2"], mergedEvent.Payload.Lines.Select(x => x.SourceWorkOrderId));
+        Assert.Equal(["WO-MERGE-TARGET", "WO-MERGE-TARGET"], mergedEvent.Payload.Lines.Select(x => x.TargetWorkOrderId));
+        Assert.Equal([3m, 7m], mergedEvent.Payload.Lines.Select(x => x.Quantity));
+        Assert.All(mergedEvent.Payload.Lines, line =>
+        {
+            Assert.Equal(line.Quantity, line.SourceQuantity);
+            Assert.Equal(10m, line.TargetQuantity);
+            Assert.Equal("PCS", line.UomCode);
+            Assert.Equal(WorkOrder.CreatedStatus, line.SourceStatus);
+            Assert.Equal(WorkOrder.CreatedStatus, line.TargetStatus);
+            Assert.Equal(1, line.SourceVersion);
+            Assert.Equal(1, line.TargetVersion);
+        });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
@@ -345,4 +399,9 @@ public sealed class WorkOrderTransformationApplicationTests
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }
+    private sealed class TransformationEventContextAccessor : IMesIntegrationEventContextAccessor
+    {
+        public MesIntegrationEventContext GetContext() => new("corr-transformation", "cause-transformation");
+    }
+
 }
