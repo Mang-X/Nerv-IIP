@@ -1644,8 +1644,16 @@ export class DhtmlxEngine implements SchedulingEngine {
       }
       this.kpiVisibility = resolveLaneKpiVisibility(laneKpis)
       for (const t of ops) data.push(this.toGanttTask(t, `lane:${laneOf(t)}`, toDate))
-      // 资源视图不连工单依赖线(跨资源视觉噪声)。
-      return { data, links: [] }
+      // 工单内线仍按选中展示；装配跨工单前置常显。
+      const taskById = new Map(ops.map((task) => [task.id, task]))
+      const links = model.links
+        .filter((link) => {
+          const source = taskById.get(link.source)
+          const target = taskById.get(link.target)
+          return source && target && source.orderId !== target.orderId
+        })
+        .map((link) => ({ id: link.id, source: link.source, target: link.target, type: '0' }))
+      return { data, links }
     }
 
     // 工单甘特里块同样不作任务条,但要能看见:按「这道工序所在设备/工作中心在此时段不可用」

@@ -210,6 +210,38 @@ const lanes = computed<TimelineLane[]>(() => {
   })
 })
 
+const laneHeight = (lane: TimelineLane) => Math.max(72, lane.rowCount * 58 + 12)
+
+const dependencyLayout = computed(() => {
+  const positions = new Map<string, { orderId: string; start: number; end: number; y: number }>()
+  let height = 0
+  for (const lane of lanes.value) {
+    for (const positioned of lane.tasks) {
+      positions.set(positioned.task.id, {
+        orderId: positioned.task.orderId,
+        start: (positioned.left / 100) * timelineWidth.value,
+        end: ((positioned.left + positioned.width) / 100) * timelineWidth.value,
+        y: height + positioned.row * 58 + 32,
+      })
+    }
+    height += laneHeight(lane)
+  }
+  const links = props.model.links.flatMap((link) => {
+    const source = positions.get(link.source)
+    const target = positions.get(link.target)
+    if (!source || !target || source.orderId === target.orderId) return []
+    const elbow = (source.end + target.start) / 2
+    return [
+      {
+        ...link,
+        path: `M ${source.end} ${source.y} H ${elbow} V ${target.y} H ${target.start}`,
+        arrow: `${target.start - 5},${target.y - 4} ${target.start},${target.y} ${target.start - 5},${target.y + 4}`,
+      },
+    ]
+  })
+  return { links, height }
+})
+
 const groupLabel = computed(() => {
   if (props.view === 'order') return '工单 / 工序'
   return (
@@ -290,63 +322,84 @@ function selectTask(task: ScheduleTask) {
         </div>
       </div>
 
-      <div
-        v-for="lane in lanes"
-        :key="lane.id"
-        :data-resource-lane="view === 'resource' ? lane.id : undefined"
-        class="nv-timeline-grid nv-timeline-lane"
-        :style="{
-          gridTemplateColumns: `${LABEL_WIDTH}px ${timelineWidth}px`,
-          minHeight: `${Math.max(72, lane.rowCount * 58 + 12)}px`,
-        }"
-      >
-        <div class="nv-timeline-label">
-          <span class="nv-timeline-label__name">{{ lane.label }}</span>
-          <span class="nv-timeline-label__count">{{ lane.tasks.length }} 道工序</span>
+      <div class="nv-timeline-body">
+        <div
+          v-for="lane in lanes"
+          :key="lane.id"
+          :data-resource-lane="view === 'resource' ? lane.id : undefined"
+          class="nv-timeline-grid nv-timeline-lane"
+          :style="{
+            gridTemplateColumns: `${LABEL_WIDTH}px ${timelineWidth}px`,
+            minHeight: `${laneHeight(lane)}px`,
+          }"
+        >
+          <div class="nv-timeline-label">
+            <span class="nv-timeline-label__name">{{ lane.label }}</span>
+            <span class="nv-timeline-label__count">{{ lane.tasks.length }} 道工序</span>
+          </div>
+          <div class="nv-timeline-track">
+            <span
+              v-for="tick in ticks"
+              :key="tick.key"
+              class="nv-timeline-gridline"
+              :style="{ left: `${tick.left}%` }"
+              aria-hidden="true"
+            />
+            <button
+              v-for="positioned in lane.tasks"
+              :key="positioned.task.id"
+              type="button"
+              :data-task-id="positioned.task.id"
+              :data-conflict="positioned.task.hasConflict || undefined"
+              :data-locked="positioned.task.locked || undefined"
+              class="nv-timeline-task"
+              :class="{
+                'nv-timeline-task--conflict': positioned.task.hasConflict,
+                'nv-timeline-task--locked': positioned.task.locked,
+              }"
+              :style="{
+                left: `${positioned.left}%`,
+                top: `${positioned.row * 58 + 8}px`,
+                width: `${positioned.width}%`,
+              }"
+              :aria-label="taskAriaLabel(positioned.task)"
+              @click="selectTask(positioned.task)"
+            >
+              <span class="nv-timeline-task__title">{{ taskLabel(positioned.task) }}</span>
+              <span class="nv-timeline-task__meta">
+                <span>{{ taskTime(positioned.task) }}</span>
+                <span v-if="positioned.task.hasConflict" class="nv-timeline-task__status">
+                  <TriangleAlertIcon aria-hidden="true" />冲突
+                </span>
+                <span v-if="positioned.task.locked" class="nv-timeline-task__status">
+                  <LockIcon aria-hidden="true" />锁定
+                </span>
+                <span v-if="positioned.task.materialRisk" class="nv-timeline-task__status">
+                  {{ materialReadyLabel(positioned.task.materialRisk) ?? '缺料待备' }}
+                </span>
+              </span>
+            </button>
+          </div>
         </div>
-        <div class="nv-timeline-track">
-          <span
-            v-for="tick in ticks"
-            :key="tick.key"
-            class="nv-timeline-gridline"
-            :style="{ left: `${tick.left}%` }"
-            aria-hidden="true"
-          />
-          <button
-            v-for="positioned in lane.tasks"
-            :key="positioned.task.id"
-            type="button"
-            :data-task-id="positioned.task.id"
-            :data-conflict="positioned.task.hasConflict || undefined"
-            :data-locked="positioned.task.locked || undefined"
-            class="nv-timeline-task"
-            :class="{
-              'nv-timeline-task--conflict': positioned.task.hasConflict,
-              'nv-timeline-task--locked': positioned.task.locked,
-            }"
-            :style="{
-              left: `${positioned.left}%`,
-              top: `${positioned.row * 58 + 8}px`,
-              width: `${positioned.width}%`,
-            }"
-            :aria-label="taskAriaLabel(positioned.task)"
-            @click="selectTask(positioned.task)"
+        <svg
+          v-if="dependencyLayout.links.length"
+          class="nv-timeline-dependencies"
+          :style="{ left: `${LABEL_WIDTH}px` }"
+          :width="timelineWidth"
+          :height="dependencyLayout.height"
+          aria-label="装配工单依赖"
+        >
+          <g
+            v-for="link in dependencyLayout.links"
+            :key="link.id"
+            :data-dependency-id="link.id"
+            :data-source="link.source"
+            :data-target="link.target"
           >
-            <span class="nv-timeline-task__title">{{ taskLabel(positioned.task) }}</span>
-            <span class="nv-timeline-task__meta">
-              <span>{{ taskTime(positioned.task) }}</span>
-              <span v-if="positioned.task.hasConflict" class="nv-timeline-task__status">
-                <TriangleAlertIcon aria-hidden="true" />冲突
-              </span>
-              <span v-if="positioned.task.locked" class="nv-timeline-task__status">
-                <LockIcon aria-hidden="true" />锁定
-              </span>
-              <span v-if="positioned.task.materialRisk" class="nv-timeline-task__status">
-                {{ materialReadyLabel(positioned.task.materialRisk) ?? '缺料待备' }}
-              </span>
-            </span>
-          </button>
-        </div>
+            <path :d="link.path" />
+            <polygon :points="link.arrow" />
+          </g>
+        </svg>
       </div>
     </div>
   </div>
@@ -354,6 +407,28 @@ function selectTask(task: ScheduleTask) {
 
 <style scoped>
 @layer nv-components {
+  .nv-timeline-body {
+    position: relative;
+  }
+
+  .nv-timeline-dependencies {
+    position: absolute;
+    top: 0;
+    z-index: 3;
+    pointer-events: none;
+    color: var(--primary);
+  }
+
+  .nv-timeline-dependencies path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+  }
+
+  .nv-timeline-dependencies polygon {
+    fill: currentColor;
+  }
+
   .nv-timeline-grid {
     display: grid;
   }

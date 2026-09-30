@@ -5,6 +5,7 @@ import { toModel } from '../model/aps-mapper'
 import { samplePlan } from '../model/fixtures'
 import GanttChart from './GanttChart.vue'
 import ResourceSchedulerBoard from './ResourceSchedulerBoard.vue'
+import ReadonlyScheduleTimeline from './ReadonlyScheduleTimeline.vue'
 
 async function settle() {
   await flushPromises()
@@ -215,6 +216,37 @@ describe('ResourceSchedulerBoard', () => {
     await settle()
 
     expect(wrapper.find('[data-task-id="a1"]').text()).toContain('激光切割')
+    wrapper.unmount()
+  })
+})
+
+describe('ReadonlyScheduleTimeline assembly dependencies', () => {
+  it('draws the child completion to parent start and removes the line when the relationship is absent', async () => {
+    const plan = {
+      ...samplePlan,
+      assignments: [
+        ...samplePlan.assignments!,
+        {
+          ...samplePlan.assignments![0],
+          assignmentId: 'assembly',
+          orderId: 'WO-ASSEMBLY',
+          resourceId: 'WC-ASSEMBLY',
+          workCenterId: 'WC-ASSEMBLY',
+          startUtc: '2026-06-10T12:00:00.000Z',
+          endUtc: '2026-06-10T14:00:00.000Z',
+        },
+      ],
+      assemblyDependencies: [{ childOrderId: 'WO-001', parentOrderId: 'WO-ASSEMBLY' }],
+    }
+    const wrapper = mount(ReadonlyScheduleTimeline, {
+      props: { model: toModel(plan), view: 'resource' },
+    })
+    const link = wrapper.get('[data-dependency-id="a2->assembly"]')
+    expect(link.attributes('data-source')).toBe('a2')
+    expect(link.attributes('data-target')).toBe('assembly')
+    expect(link.get('path').attributes('d')).toMatch(/^M [\d.]+ 104 H [\d.]+ V 176 H [\d.]+$/)
+    await wrapper.setProps({ model: toModel({ ...plan, assemblyDependencies: [] }) })
+    expect(wrapper.find('[data-dependency-id]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

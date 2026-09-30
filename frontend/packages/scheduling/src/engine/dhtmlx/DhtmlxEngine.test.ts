@@ -220,6 +220,29 @@ describe('DhtmlxEngine (fake factory)', () => {
     },
   )
 
+  it('keeps assembly dependencies visible in resource view without showing all intra-order links', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel(samplePlan)
+    model.tasks.push({
+      ...model.tasks.find((task) => task.id === 'a1')!,
+      id: 'assembly',
+      orderId: 'WO-ASSEMBLY',
+    })
+    model.links.push({
+      id: 'a2->assembly',
+      source: 'a2',
+      target: 'assembly',
+      type: 'finish_to_start',
+    })
+    engine.mount(el(), { ...options(), view: 'resource' })
+    engine.setData(model)
+    expect(fake.state.parsed.links).toEqual([
+      { id: 'a2->assembly', source: 'a2', target: 'assembly', type: '0' },
+    ])
+    engine.destroy()
+  })
+
   it('maps the model into gantt.parse with one task per node and FS links', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
