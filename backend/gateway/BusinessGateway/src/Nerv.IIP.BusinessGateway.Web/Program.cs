@@ -70,6 +70,7 @@ builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(b
 builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
 builder.Services.AddScoped<PrincipalWorkScopeResolver>();
 builder.Services.AddScoped<MesPrincipalWorkScopeAuthorizer>();
+builder.Services.AddScoped<BusinessMesCommercialSourceReader>();
 builder.Services.AddScoped<WmsTrustedRequestContextResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();

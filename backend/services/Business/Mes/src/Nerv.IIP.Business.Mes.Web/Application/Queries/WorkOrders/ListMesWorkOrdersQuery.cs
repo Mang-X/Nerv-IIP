@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Contracts.DemandPlanning;
 
@@ -51,7 +52,8 @@ public sealed record MesWorkOrderExecutionFact(
     bool HasChangedDemand = false,
     bool HasCancelledDemand = false,
     IReadOnlyCollection<string>? AssemblyParentWorkOrderIds = null,
-    bool IsRush = false);
+    bool IsRush = false,
+    MesSourcePlanReferenceResponse? SourcePlanReference = null);
 
 /// <summary>
 /// MES 工单列表公开的工序执行事实。<paramref name="OperationTaskId"/> 是 MES 持久化工序身份，
@@ -299,7 +301,11 @@ public sealed class ListMesWorkOrdersQueryHandler(
                 .SelectMany(id => parentIdsBySuggestion.GetValueOrDefault(id, []))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray(),
-            x.IsRush)).ToArray();
+            x.IsRush,
+            x.SourcePlanReference is null ? null : new MesSourcePlanReferenceResponse(
+                x.SourcePlanReference.SourceSystem, x.SourcePlanReference.SourceDocumentType,
+                x.SourcePlanReference.SourceDocumentId, x.SourcePlanReference.SourceDemandReference,
+                x.SourcePlanReference.SourceDemandReferences))).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }

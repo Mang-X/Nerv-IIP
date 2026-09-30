@@ -807,7 +807,8 @@ public sealed record MesSourcePlanReferenceResponse(
     string SourceSystem,
     string SourceDocumentType,
     string SourceDocumentId,
-    string? SourceDemandReference);
+    string? SourceDemandReference,
+    IReadOnlyCollection<string>? SourceDemandReferences = null);
 
 public sealed record MesWorkOrderDetailResponse(
     string WorkOrderId,
@@ -825,7 +826,8 @@ public sealed record MesWorkOrderDetailResponse(
     string? SourceNcrId = null,
     string? SourceNcrCode = null,
     bool IsRush = false,
-    int Priority = 0);
+    int Priority = 0,
+    decimal CompletedQuantity = 0);
 
 // 工单质量保留（quality hold）投影,含活跃与已释放周期,供工单详情 hold 区块接时间线查询与人工强制释放。
 // IsActive 是「锁定/自动消失」的依据(列表锁定图标仅看活跃);已释放周期仍返回,使释放时间/方式与时间线在详情可见。
@@ -959,6 +961,7 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.SkuId,
                 x.ProductionVersionId,
                 x.Quantity,
+                x.CompletedQuantity,
                 x.IsRush,
                 x.Priority,
                 x.Status,
@@ -972,7 +975,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                         x.SourcePlanReference.SourceSystem,
                         x.SourcePlanReference.SourceDocumentType,
                         x.SourcePlanReference.SourceDocumentId,
-                        x.SourcePlanReference.SourceDemandReference),
+                        x.SourcePlanReference.SourceDemandReference,
+                        x.SourcePlanReference.SourceDemandReferences),
             })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
@@ -1052,7 +1056,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             workOrder.SourceNcrId,
             workOrder.SourceNcrCode,
             workOrder.IsRush,
-            workOrder.Priority);
+            workOrder.Priority,
+            workOrder.CompletedQuantity);
     }
 
     internal static IQueryable<MesOperationTaskRow> QueryOperationTasks(

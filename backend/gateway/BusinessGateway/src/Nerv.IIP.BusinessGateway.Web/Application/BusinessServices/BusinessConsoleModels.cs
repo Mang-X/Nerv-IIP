@@ -4943,7 +4943,9 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     bool HasChangedDemand = false,
     bool HasCancelledDemand = false,
     bool IsRush = false,
-    decimal CompletedQuantity = 0);
+    decimal CompletedQuantity = 0,
+    BusinessConsoleMesSourcePlanReference? SourcePlanReference = null,
+    BusinessConsoleMesCommercialSourceFacts? CommercialSourceFacts = null);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -5129,7 +5131,9 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string? SourceNcrId = null,
     string? SourceNcrCode = null,
     bool IsRush = false,
-    int Priority = 0);
+    int Priority = 0,
+    decimal CompletedQuantity = 0,
+    BusinessConsoleMesCommercialSourceFacts? CommercialSourceFacts = null);
 
 public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
     string SourceService,
@@ -5152,7 +5156,8 @@ public sealed record BusinessConsoleMesSourcePlanReference(
     string SourceSystem,
     string SourceDocumentType,
     string SourceDocumentId,
-    string? SourceDemandReference);
+    string? SourceDemandReference,
+    IReadOnlyCollection<string>? SourceDemandReferences = null);
 
 public sealed record BusinessConsoleMesAdjustWorkOrderPriorityRequest(
     [property: RouteParam] string WorkOrderId,
@@ -6045,3 +6050,22 @@ public sealed record BusinessConsoleMesCapacityImpactRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null);
+
+[JsonConverter(typeof(BusinessConsoleMesCommercialSourceStatusJsonConverter))]
+public enum BusinessConsoleMesCommercialSourceStatus
+{
+    Available,
+    Forbidden,
+}
+
+public sealed class BusinessConsoleMesCommercialSourceStatusJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleMesCommercialSourceStatus>(JsonNamingPolicy.CamelCase, allowIntegerValues: false);
+
+public sealed record BusinessConsoleMesCommercialSourceFacts(
+    BusinessConsoleMesCommercialSourceStatus Status,
+    IReadOnlyCollection<BusinessConsoleMesSalesOrderLink> SalesOrders);
+
+public sealed record BusinessConsoleMesSalesOrderLink(
+    string SalesOrderNo,
+    string SourceLineReference,
+    string? CustomerCode);

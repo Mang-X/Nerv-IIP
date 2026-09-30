@@ -50512,6 +50512,22 @@
           "completedQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "sourcePlanReference": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference"
+              }
+            ]
+          },
+          "commercialSourceFacts": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts"
+              }
+            ]
           }
         }
       },
@@ -50593,6 +50609,75 @@
           "evaluatedAtUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceSystem": {
+            "type": "string"
+          },
+          "sourceDocumentType": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "sourceDemandReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDemandReferences": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceStatus"
+          },
+          "salesOrders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSalesOrderLink"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Available",
+          "Forbidden"
+        ],
+        "enum": [
+          "available",
+          "forbidden"
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSalesOrderLink": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "salesOrderNo": {
+            "type": "string"
+          },
+          "sourceLineReference": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string",
             "nullable": true
           }
         }
@@ -50694,6 +50779,18 @@
           "priority": {
             "type": "integer",
             "format": "int32"
+          },
+          "completedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "commercialSourceFacts": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts"
+              }
+            ]
           }
         }
       },
@@ -50842,25 +50939,6 @@
             "nullable": true
           },
           "sourceNcrCode": {
-            "type": "string",
-            "nullable": true
-          }
-        }
-      },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "sourceSystem": {
-            "type": "string"
-          },
-          "sourceDocumentType": {
-            "type": "string"
-          },
-          "sourceDocumentId": {
-            "type": "string"
-          },
-          "sourceDemandReference": {
             "type": "string",
             "nullable": true
           }

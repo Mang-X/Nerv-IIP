@@ -413,6 +413,7 @@ public sealed class BusinessConsoleMesConvertPlanToWorkOrderRequestValidator
 public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    BusinessMesCommercialSourceReader commercialSources,
     PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderListRequest, BusinessConsoleMesWorkOrderListResponse>(
@@ -441,7 +442,7 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
             request.ScopeKind,
             request.ScopeId,
             cancellationToken);
-        return await mes.ListWorkOrdersAsync(
+        var response = await mes.ListWorkOrdersAsync(
             tokenProvider.BearerToken,
             new BusinessMesWorkOrderListRequest(
                 request.OrganizationId,
@@ -459,6 +460,10 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
                 request.DeviceAssetIds,
                 request.Statuses),
             cancellationToken);
+        var facts = await commercialSources.ReadAsync(request.OrganizationId, request.EnvironmentId, bearerToken,
+            response.Items.Select(x => (x.WorkOrderId, x.SourcePlanReference)).ToArray(), cancellationToken);
+        return response with { Items = response.Items.Select(x => x with { CommercialSourceFacts = facts.GetValueOrDefault(x.WorkOrderId) }).ToArray() };
+
     }
 
     private static string? NarrowRequestedIds(
@@ -500,6 +505,7 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
 public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    BusinessMesCommercialSourceReader commercialSources,
     MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderDetailRequest, BusinessConsoleMesWorkOrderDetailResponse>(
@@ -529,11 +535,15 @@ public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
             request.ScopeId,
             request.WorkOrderId,
             cancellationToken);
-        return await mes.GetWorkOrderDetailAsync(
+        var response = await mes.GetWorkOrderDetailAsync(
             tokenProvider.BearerToken,
             request.WorkOrderId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
+        var facts = await commercialSources.ReadAsync(request.OrganizationId, request.EnvironmentId, bearerToken,
+            [(response.WorkOrderId, response.SourcePlanReference)], cancellationToken);
+        return response with { CommercialSourceFacts = facts.GetValueOrDefault(response.WorkOrderId) };
+
     }
 }
 

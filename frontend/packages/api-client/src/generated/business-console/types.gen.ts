@@ -4225,6 +4225,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     hasCancelledDemand?: boolean;
     isRush?: boolean;
     completedQuantity?: number;
+    sourcePlanReference?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference | null;
+    commercialSourceFacts?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
@@ -4243,6 +4245,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     allowedActions?: Array<string> | null;
     blockReasons?: Array<string> | null;
     evaluatedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
+    sourceSystem?: string;
+    sourceDocumentType?: string;
+    sourceDocumentId?: string;
+    sourceDemandReference?: string | null;
+    sourceDemandReferences?: Array<string> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts = {
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceStatus;
+    salesOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSalesOrderLink>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceStatus = 'available' | 'forbidden';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSalesOrderLink = {
+    salesOrderNo?: string;
+    sourceLineReference?: string;
+    customerCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListRequest = {
@@ -4270,6 +4293,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceNcrCode?: string | null;
     isRush?: boolean;
     priority?: number;
+    completedQuantity?: number;
+    commercialSourceFacts?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
@@ -4311,13 +4336,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceWorkOrderId?: string | null;
     sourceNcrId?: string | null;
     sourceNcrCode?: string | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
-    sourceSystem?: string;
-    sourceDocumentType?: string;
-    sourceDocumentId?: string;
-    sourceDemandReference?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary = {

@@ -13,6 +13,19 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessMesAcceptedReceiptClientTests
 {
     [Fact]
+    public async Task Work_order_reads_preserve_mes_source_references_and_detail_completed_quantity()
+    {
+        const string row = """{"workOrderId":"WO-A","skuId":"SKU-A","quantity":10,"completedQuantity":3.25,"status":"started","readinessStatus":"Ready","blockingReasons":[],"operationTasks":[],"dueUtc":"2026-10-02T08:00:00Z","sourcePlanReference":{"sourceSystem":"DemandPlanning","sourceDocumentType":"PlanningSuggestion","sourceDocumentId":"SUG-A","sourceDemandReference":"SO-A","sourceDemandReferences":["SO-A","SO-B"]}}""";
+        var detail = await ClientReturning("{\"data\":" + row + "}").GetWorkOrderDetailAsync("token", "WO-A", new("org-a", "env-dev"), CancellationToken.None);
+        var list = await ClientReturning("{\"data\":{\"items\":[" + row + "],\"total\":1}}").ListWorkOrdersAsync("token", new("org-a", "env-dev"), CancellationToken.None);
+        Assert.Equal(3.25m, detail.CompletedQuantity);
+        Assert.Equal(detail.CompletedQuantity, Assert.Single(list.Items).CompletedQuantity);
+        Assert.Equal(new[] { "SO-A", "SO-B" }, detail.SourcePlanReference!.SourceDemandReferences);
+        Assert.Equal("SUG-A", Assert.Single(list.Items).SourcePlanReference!.SourceDocumentId);
+        Assert.Equal(new[] { "SO-A", "SO-B" }, Assert.Single(list.Items).SourcePlanReference!.SourceDemandReferences);
+    }
+
+    [Fact]
     public async Task Convert_plan_to_work_order_returns_an_accepted_receipt_carrying_the_work_order_no() =>
         await AssertAcceptedReceiptAsync(
             "WO-20260731-001",
