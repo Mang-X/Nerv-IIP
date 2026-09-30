@@ -28,7 +28,7 @@ public sealed class HttpMaterialDeliveryMesSourceProvider(
         var scope = SchedulingProblemHttp.Query(("organizationId", organizationId), ("environmentId", environmentId));
         using var list = await GetAsync("/api/business/v1/mes/work-orders?" + scope + "&" +
             SchedulingProblemHttp.Query(("workOrderId", workOrderId), ("skip", 0), ("take", 1)), cancellationToken);
-        var order = list.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
+        var order = list.RootElement.GetProperty("items").EnumerateArray()
             .SingleOrDefault(x => x.GetProperty("workOrderId").GetString() == workOrderId);
         if (order.ValueKind == JsonValueKind.Undefined) return null;
 

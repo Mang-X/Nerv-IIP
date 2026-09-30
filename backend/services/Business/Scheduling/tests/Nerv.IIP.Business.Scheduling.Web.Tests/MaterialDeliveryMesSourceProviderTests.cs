@@ -32,18 +32,48 @@ public sealed class MaterialDeliveryMesSourceProviderTests
             else
             {
                 Assert.Contains("workOrderId=wo", path);
-                data = new { items = new[] { new { workOrderId = "wo", productionVersionId = "pv", quantity = 10m,
-                    operationTasks = new[] { new { operationTaskId = "op", operationSequence = 2, status = "started", earliestStartUtc = start.AddHours(-1) } } } } };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new
+                    {
+                        total = 1,
+                        items = new[] { new { workOrderId = "wo", productionVersionId = "pv", quantity = 10m,
+                            operationTasks = new[] { new { operationTaskId = "op", operationSequence = 2, status = "started", earliestStartUtc = start.AddHours(-1) } } } }
+                    }))
+                };
             }
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { data })) };
         })) { BaseAddress = new Uri("http://mes") };
         var source = await new HttpMaterialDeliveryMesSourceProvider(client, new Token()).GetAsync("org", "env", "wo", default);
+        Assert.Equal("wo", source!.WorkOrderId);
+        Assert.Equal("pv", source.ProductionVersionId);
+        Assert.Equal(10m, source.Quantity);
         Assert.Equal("s", source!.SuggestionId);
         var operation = Assert.Single(source.Operations);
         Assert.Equal(4m, operation.NetGoodQuantity);
         Assert.Equal(start, operation.StartedAtUtc);
         Assert.Equal("op", operation.OperationId);
         Assert.Equal(4, requested.Count);
+    }
+
+    [Fact]
+    public async Task Empty_mes_work_order_list_returns_not_found_without_fetching_detail()
+    {
+        var requested = new List<string>();
+        using var client = new HttpClient(new FakeHttp(request =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            requested.Add(path);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { total = 0, items = Array.Empty<object>() }))
+            };
+        })) { BaseAddress = new Uri("http://mes") };
+
+        var source = await new HttpMaterialDeliveryMesSourceProvider(client, new Token()).GetAsync("org", "env", "wo", default);
+
+        Assert.Null(source);
+        Assert.Single(requested);
     }
 
     private sealed class FakeHttp(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
