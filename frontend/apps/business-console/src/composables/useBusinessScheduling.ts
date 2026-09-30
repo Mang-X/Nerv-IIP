@@ -21,6 +21,8 @@ import { assertEnvelopeSuccess } from './serviceEnvelope'
 import { usePagedList, type PagedListFilters } from './usePagedList'
 import type { BusinessConsoleSchedulingPlanStatus } from '@nerv-iip/api-client'
 
+const SCHEDULING_POLL_INTERVAL_MS = 5_000
+
 const SCHEDULING_QUERY_IDS = [
   'listBusinessConsoleSchedulingPlanHistory',
   'getBusinessConsoleSchedulingPlan',
@@ -111,6 +113,7 @@ export function useBusinessScheduling() {
         },
       }),
       enabled: hasBusinessContext(filters),
+      autoRefetch: () => SCHEDULING_POLL_INTERVAL_MS,
     }
   })
 
@@ -123,6 +126,7 @@ export function useBusinessScheduling() {
       },
     }),
     enabled: hasBusinessContext(detailSelection) && detailSelection.planId.trim().length > 0,
+    autoRefetch: () => SCHEDULING_POLL_INTERVAL_MS,
   }))
 
   const invalidateSchedulingQueries = () =>

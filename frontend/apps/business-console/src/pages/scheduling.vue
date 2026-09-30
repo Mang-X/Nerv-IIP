@@ -579,10 +579,30 @@ const repreviewDisabledReason = computed(
   () => repreviewBlockedReason.value ?? '保持已锁定工序不动，重排其余工序生成新版本',
 )
 
+// 后台刷新只读取版本状态，不重新加载用户正在编辑的草案。
+const draftPlanSummary = computed(() =>
+  selectedPlanSummary.value?.planId === draft.model.value?.meta.planId
+    ? selectedPlanSummary.value
+    : undefined,
+)
+const draftInvalidationReason = computed(() =>
+  draftPlanSummary.value?.isInvalidated
+    ? `方案已失效（${describeScheduleInvalidationReason(draftPlanSummary.value.latestInvalidationReasonCode)}），请重排后再发布`
+    : undefined,
+)
+const draftTerminalReason = computed(() =>
+  schedulingPlanTerminalReleaseReason(draftPlanSummary.value?.status),
+)
+
 const publishCandidateBlockedReason = computed(() =>
   firstBlockingReason([
     { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
     { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
+    {
+      blocked: Boolean(draftInvalidationReason.value),
+      reason: draftInvalidationReason.value ?? '',
+    },
+    { blocked: Boolean(draftTerminalReason.value), reason: draftTerminalReason.value ?? '' },
     { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
   ]),
 )
@@ -750,6 +770,13 @@ function reasonLabel(reason?: string | null) {
           role="status"
         >
           当前账号只有读取权限，可查看历史方案但不能编辑或生成新版本。
+        </p>
+        <p
+          v-if="draftInvalidationReason"
+          class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+          role="status"
+        >
+          {{ draftInvalidationReason }}
         </p>
         <div
           v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
