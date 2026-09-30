@@ -46,8 +46,8 @@ public sealed partial class SchedulingWorkbenchTests
         await db.SaveChangesAsync();
         var sender = new CapturingPlanSender(problem.HorizonStartUtc);
         var handler = new CreateSchedulingWorkbenchPlanCommandHandler(
-            new SchedulingWorkbenchPlanAssembler(db, new StaticWorkbenchSourceProvider(order),
-                new StaticWorkbenchProblemProducer(problem)), sender);
+            new SchedulingWorkbenchPlanAssembler(db, new StaticWorkbenchSourceProvider(problem.Orders),
+                new StaticWorkbenchProblemProducer(problem), new OrderUrgencyService(db, TimeProvider.System)), sender);
 
         var plan = await handler.Handle(new CreateSchedulingWorkbenchPlanCommand(
             problem.OrganizationId, problem.EnvironmentId, problem.HorizonStartUtc, problem.HorizonEndUtc,
@@ -151,7 +151,8 @@ public sealed partial class SchedulingWorkbenchTests
             skuCode = "SKU-001",
             productionVersionId = "pv-001",
             quantity = 10,
-            priority = 10,
+            priority = 12345,
+            isRush = false,
             dueUtc = start.AddDays(2),
             status = "released",
             workOrderNo = $"MO-{index:000}",
@@ -174,7 +175,8 @@ public sealed partial class SchedulingWorkbenchTests
             SchedulingWorkbenchLimits.MaxOrderCount,
             result.Select(x => x.Order.OrderId).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal("ROUTE-001:A", result.First().Order.RoutingVersionId);
-        Assert.True(result.First().Order.IsRush);
+        Assert.False(result.First().Order.IsRush);
+        Assert.Equal(12345, result.First().Order.Priority);
     }
 
     [Fact]
@@ -701,16 +703,17 @@ public sealed partial class SchedulingWorkbenchTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private sealed class StaticWorkbenchSourceProvider(SchedulingOrderContract order) : ISchedulingWorkbenchSourceProvider
+    private sealed class StaticWorkbenchSourceProvider(IReadOnlyCollection<SchedulingOrderContract> orders) : ISchedulingWorkbenchSourceProvider
     {
         public Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(
             string organizationId, string environmentId, DateTimeOffset earliestStartFallbackUtc,
             IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>>(
-                [new(new SchedulingProblemSourceOrder(order.OrderId, order.SkuCode, order.Quantity,
-                    order.DueUtc, order.Priority, order.IsRush, earliestStartFallbackUtc, "routing",
-                    BusinessReference: order.BusinessReference),
-                    order.Operations.Select(x => new SchedulingWorkbenchOperationSource(x.OperationId, x.OperationSequence)).ToArray())]);
+                orders.Select(order => new SchedulingWorkbenchProblemSourceOrder(
+                    new SchedulingProblemSourceOrder(order.OrderId, order.SkuCode, order.Quantity,
+                        order.DueUtc, order.Priority, order.IsRush, earliestStartFallbackUtc, "routing",
+                        BusinessReference: order.BusinessReference),
+                    order.Operations.Select(x => new SchedulingWorkbenchOperationSource(x.OperationId, x.OperationSequence)).ToArray())).ToArray());
     }
 
     private sealed class StaticWorkbenchProblemProducer(SchedulingProblemContract problem) : ISchedulingProblemProducer
