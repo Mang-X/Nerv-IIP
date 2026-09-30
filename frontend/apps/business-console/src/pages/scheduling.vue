@@ -31,6 +31,8 @@ import {
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
+import SchedulingDaySchedule from '@/components/scheduling/SchedulingDaySchedule.vue'
+import { useSchedulingPlanCsv } from '@/composables/useSchedulingPlanCsv'
 import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
 import {
   createSchedulingHorizonInput,
@@ -109,6 +111,16 @@ const {
   upsertOperationOverride,
   upsertOperationOverridePending,
 } = useBusinessScheduling()
+const csv = useSchedulingPlanCsv()
+async function downloadPlanCsv() {
+  try {
+    await csv.download({ ...detailSelection })
+    toast.success('方案 CSV 已下载')
+  } catch (error) {
+    notifyOperationFailure('方案 CSV 下载失败', error, '方案 CSV 下载失败，请稍后重试。')
+  }
+}
+
 const historyStatus = computed({
   get: () => schedulingFilters.status ?? 'all',
   set: (value: string) => {
@@ -1014,6 +1026,14 @@ function reasonLabel(reason?: string | null) {
             撤销发布
           </NvButton>
         </div>
+        <NvButton
+          class="mb-4"
+          type="button"
+          variant="outline"
+          :disabled="!detailSelection.planId || csv.pending.value"
+          @click="downloadPlanCsv"
+          >下载方案 CSV</NvButton
+        >
         <SchedulingPlanGantt
           :plan="planDetail"
           :summary="selectedPlanSummary"
@@ -1023,6 +1043,10 @@ function reasonLabel(reason?: string | null) {
           :release-pending="releasePlanPending"
           @open-detail="detailOpen = true"
           @release="publish(selectedPlanSummary)"
+        />
+        <SchedulingDaySchedule
+          v-if="planDetail && !planDetailPending && !planDetailError"
+          :plan="planDetail"
         />
       </NvTabsContent>
     </NvTabs>
