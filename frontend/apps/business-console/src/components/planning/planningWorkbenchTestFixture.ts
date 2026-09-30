@@ -25,6 +25,9 @@ vi.mock('@/components/planning/PlanningRunSuggestionChart.vue', () => ({
     template: '<div data-testid="run-suggestion-chart" :data-run-id="run?.runId" />',
   },
 }))
+vi.mock('@/components/planning/PlanningMaterialDeliveryPanel.vue', () => ({
+  default: { template: '<section />' },
+}))
 vi.mock('@/components/planning/PlanningForecastManagement.vue', () => ({
   default: { template: '<div data-testid="forecast-management" />' },
 }))

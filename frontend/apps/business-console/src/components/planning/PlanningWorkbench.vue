@@ -30,6 +30,7 @@ import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
+import PlanningMaterialDeliveryPanel from '@/components/planning/PlanningMaterialDeliveryPanel.vue'
 import PlanningForecastManagement from '@/components/planning/PlanningForecastManagement.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
@@ -415,13 +416,16 @@ const suggestionRun = computed(() =>
 const scopedSuggestions = computed(() =>
   suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
 )
-function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
-  if (!row.suggestionId) return
-  suggestionRunChoice.value = runSelection.runId
+function locatePlanningSuggestion(suggestionId: string, runId: string) {
+  suggestionRunChoice.value = runId
   suggestionFilters.status = 'all'
   suggestionTypeFilter.type = 'all'
-  focusedSuggestionId.value = row.suggestionId
+  focusedSuggestionId.value = suggestionId
   activeTab.value = 'suggestions'
+}
+function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
+  if (!row.suggestionId) return
+  locatePlanningSuggestion(row.suggestionId, runSelection.runId)
 }
 function focusPegging(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.runId) return
@@ -1374,10 +1378,19 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       >
       <NvTabsTrigger value="forecasts">预测管理</NvTabsTrigger>
       <NvTabsTrigger value="mps">MPS 主计划 ({{ mpsBuckets.length }})</NvTabsTrigger>
+      <NvTabsTrigger value="material-delivery">物料交付</NvTabsTrigger>
       <NvTabsTrigger value="phasing">时段视图</NvTabsTrigger>
       <NvTabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</NvTabsTrigger>
       <NvTabsTrigger value="suggestions">计划建议 ({{ scopedSuggestions.length }})</NvTabsTrigger>
     </NvTabsList>
+
+    <NvTabsContent value="material-delivery" class="grid gap-3">
+      <PlanningMaterialDeliveryPanel
+        :runs="mrpRuns"
+        :sku-label="skuLabel"
+        @locate-suggestion="locatePlanningSuggestion"
+      />
+    </NvTabsContent>
 
     <NvTabsContent value="demands" class="grid gap-3">
       <NvToolbar
