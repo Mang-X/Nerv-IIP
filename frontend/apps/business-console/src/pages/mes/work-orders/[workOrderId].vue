@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WorkOrderSourceFacts from '@/components/mes/WorkOrderSourceFacts.vue'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type {
   EntityPickerOption,
@@ -1145,6 +1146,13 @@ function formatStatus(value?: string | null) {
       <p class="text-sm text-destructive">{{ workOrderReadScopeMessage }}</p>
       <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
     </div>
+
+    <WorkOrderSourceFacts
+      v-if="detail"
+      :source="detail.sourcePlanReference"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+    />
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <NvMetricCard

@@ -5,6 +5,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
 import WorkOrdersListPage from './index.vue'
+vi.mock('@nerv-iip/ui', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/ui')>()),
+  NvRowActions: { template: '<div><slot /></div>' },
+  NvDropdownMenuItem: {
+    props: ['disabled'],
+    template: '<button :disabled="disabled"><slot /></button>',
+  },
+}))
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
@@ -148,7 +156,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
 }))
 
-function mountList() {
+function mountList(permissions: string[] = []) {
   const pinia = createPinia()
   useAuthStore(pinia).$patch({
     principal: {
@@ -157,7 +165,7 @@ function mountList() {
       organizationId: 'org',
       environmentId: 'dev',
       loginName: 'operator',
-      permissionCodes: ['business.mes.work-orders.read'],
+      permissionCodes: ['business.mes.work-orders.read', ...permissions],
     },
   })
   return mount(WorkOrdersListPage, {
@@ -166,13 +174,19 @@ function mountList() {
       stubs: {
         // 行内工单抽屉自带一整套 MES 查询，本用例只看紧急度徽章，整体桩掉。
         WorkOrderDetailSheet: true,
+        SingleOrderSchedulingDialog: {
+          props: ['workOrderId', 'contextLabel', 'open'],
+          emits: ['scheduled'],
+          template:
+            '<div data-testid="scheduling-target">{{ workOrderId }} {{ contextLabel }}</div>',
+        },
         BusinessLayout: { template: '<main><slot /></main>' },
         NvPageHeader: { template: '<header><slot name="actions" /></header>' },
         NvToolbar: { template: '<div><slot name="filters" /><slot name="actions" /></div>' },
         NvDataTable: {
           props: ['rows', 'columns'],
           template:
-            '<div><div v-for="(row, i) in rows" :key="i" data-testid="work-order-row" :data-status="row.status"><slot name="cell-status" :row="row" /><slot name="cell-urgency" :row="row" /></div></div>',
+            '<div><div v-for="(row, i) in rows" :key="i" data-testid="work-order-row" :data-status="row.status"><slot name="cell-status" :row="row" /><slot name="cell-urgency" :row="row" /><slot name="cell-completedQuantity" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
         },
         NvStatusBadge: { props: ['value', 'label'], template: '<span>{{ label ?? value }}</span>' },
         NvButton: { template: '<button><slot /></button>' },
@@ -261,5 +275,45 @@ describe('工单列表需求变更标记', () => {
     expect(rows[1].text()).not.toContain('需求已变更')
     expect(rows[2].text()).not.toContain('需求已变更')
     expect(rows[2].text()).not.toContain('需求已取消')
+  })
+})
+
+describe('工单列表完成量与排产', () => {
+  it('展示服务端完成量和拆合中文状态', () => {
+    workOrders.items = [
+      { workOrderId: 'WO-SPLIT', status: 'split', completedQuantity: 37.5 },
+      { workOrderId: 'WO-MERGED', status: 'merged', completedQuantity: 0 },
+    ]
+    const rows = mountList().findAll('[data-testid="work-order-row"]')
+    expect(rows[0].text()).toContain('37.5')
+    expect(rows[0].text()).toContain('已拆分')
+    expect(rows[1].text()).toContain('已合并')
+    expect(rows[1].text()).toContain('0')
+  })
+  it('有权限时固定当前行工单打开既有排产弹窗', async () => {
+    workOrders.items = [
+      {
+        workOrderId: 'WO-20260930-003',
+        workOrderNo: 'WO-20260930-003',
+        productionVersionId: 'PV-FG-1000',
+        status: 'released',
+      },
+    ]
+    const wrapper = mountList(['business.scheduling.plans.manage'])
+    const button = wrapper.findAll('button').find((button) => button.text().includes('对该单排产'))!
+    expect(button.element.disabled).toBe(false)
+    await button.trigger('click')
+    expect(wrapper.get('[data-testid="scheduling-target"]').text()).toContain('WO-20260930-003')
+  })
+  it('只有读取权限时不允许列表发起排产', () => {
+    workOrders.items = [
+      { workOrderId: 'WO-20260930-003', productionVersionId: 'PV-FG-1000', status: 'released' },
+    ]
+    const wrapper = mountList()
+    expect(
+      wrapper.findAll('button').find((button) => button.text().includes('对该单排产'))!.element
+        .disabled,
+    ).toBe(true)
+    expect(wrapper.find('[data-testid="scheduling-target"]').exists()).toBe(false)
   })
 })

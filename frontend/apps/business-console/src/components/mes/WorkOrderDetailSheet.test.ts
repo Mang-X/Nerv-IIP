@@ -78,6 +78,7 @@ function mountSheet() {
         NvDataTable: { props: ['rows'], template: '<div />' },
         NvButton: slotStub,
         DispatchAssignDialog: true,
+        WorkOrderSourceFacts: true,
       },
     },
   })
