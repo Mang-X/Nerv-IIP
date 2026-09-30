@@ -222,7 +222,8 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null,
     IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null,
     IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null,
-    IReadOnlyCollection<SchedulePlanMaterialShortageSummaryContract>? MaterialShortageSummary = null);
+    IReadOnlyCollection<SchedulePlanMaterialShortageSummaryContract>? MaterialShortageSummary = null,
+    SchedulePlanValidationContextContract? ValidationContext = null);
 
 public sealed record SchedulePlanMaterialShortageSummaryContract(
     string MaterialId,
@@ -232,6 +233,45 @@ public sealed record SchedulePlanMaterialShortageSummaryContract(
     IReadOnlyCollection<SchedulePlanMaterialAffectedOperationContract> AffectedOperations);
 
 public sealed record SchedulePlanMaterialAffectedOperationContract(string OrderId, string OperationId);
+
+/// <summary>
+/// 方案依据的只读校验事实。缺少问题快照时为 null；日历和不可用窗口复用方案已有字段。
+/// 工作中心容量由同中心资源的 Math.Max(1, CapacityUnits) 求和，资源占用按 UtilizationRate 换算；
+/// IsFixed 工序及 FixedReservations 使用实际冻结区间，不作利用率或 setup 扩展。
+/// </summary>
+public sealed record SchedulePlanValidationContextContract(
+    DateTimeOffset HorizonStartUtc,
+    DateTimeOffset HorizonEndUtc,
+    IReadOnlyCollection<SchedulePlanResourceContextContract> Resources,
+    IReadOnlyCollection<SchedulePlanOperationContextContract> Operations,
+    IReadOnlyCollection<SchedulePlanFixedReservationContract> FixedReservations);
+
+public sealed record SchedulePlanResourceContextContract(
+    string ResourceId,
+    string WorkCenterId,
+    string CalendarId,
+    int CapacityUnits,
+    decimal UtilizationRate);
+
+public sealed record SchedulePlanOperationContextContract(
+    string OrderId,
+    string OperationId,
+    IReadOnlyCollection<string> PredecessorOperationIds,
+    DateTimeOffset DueUtc,
+    int DurationMinutes,
+    int SetupMinutes,
+    bool IsFixed);
+
+/// <summary>
+/// 包含本方案固定工序及未列入本方案工序的外部占用；ResourceId 缺失时仍占工作中心容量。
+/// </summary>
+public sealed record SchedulePlanFixedReservationContract(
+    string OrderId,
+    string OperationId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string? ResourceId);
 
 /// <summary>
 /// 设备数据风险(软约束):工序已排到这台设备上,但该设备在计划窗口内没有可信的运行时状态

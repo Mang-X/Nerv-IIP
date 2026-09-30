@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 
@@ -155,11 +156,11 @@ public sealed class GetSchedulePlanDetailQueryHandler(
 
         // 工作日历与不可用窗口存在问题快照里(排程输入),读面顺带投影出来,不新增端点。
         // 快照缺失(历史数据)时按无日历返回,读面自行退化,不编造。
-        var problem = await LoadProblemAsync(request, plan.ProblemId, cancellationToken);
-        return SchedulePlanContractMapper.ToContract(plan, problem);
+        var (problem, reservations) = await LoadProblemAsync(request, plan.ProblemId, cancellationToken);
+        return SchedulePlanContractMapper.ToContract(plan, problem, reservations);
     }
 
-    private async Task<SchedulingProblemContract?> LoadProblemAsync(
+    private async Task<(SchedulingProblemContract? Problem, IReadOnlyCollection<FixedWorkCenterReservation> Reservations)> LoadProblemAsync(
         GetSchedulePlanDetailQuery request,
         string problemId,
         CancellationToken cancellationToken)
@@ -173,25 +174,26 @@ public sealed class GetSchedulePlanDetailQueryHandler(
         if (snapshot is null)
         {
             logger.LogInformation(
-                "Schedule problem snapshot is absent; plan detail is returned without calendars. PlanId = {PlanId}, ProblemId = {ProblemId}",
+                "Schedule problem snapshot is absent; plan detail is returned without snapshot context. PlanId = {PlanId}, ProblemId = {ProblemId}",
                 request.PlanId,
                 problemId);
-            return null;
+            return (null, []);
         }
 
         try
         {
-            return JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options);
+            return (JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options),
+                SchedulingFrozenOccupancy.ReadSnapshot(snapshot.ProblemJson));
         }
         catch (JsonException exception)
         {
             // 快照读不动不该让整个方案读面挂掉,但必须留痕:否则甘特"突然没有日历"无从排障。
             logger.LogWarning(
                 exception,
-                "Schedule problem snapshot could not be deserialized; plan detail is returned without calendars. PlanId = {PlanId}, ProblemId = {ProblemId}",
+                "Schedule problem snapshot could not be deserialized; plan detail is returned without snapshot context. PlanId = {PlanId}, ProblemId = {ProblemId}",
                 request.PlanId,
                 problemId);
-            return null;
+            return (null, []);
         }
     }
 }

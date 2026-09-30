@@ -12,7 +12,11 @@ public static class SchedulePlanContractMapper
     /// 该计划所依据的排程问题(快照)。给出时把工作日历与不可用窗口一并投影到读面;
     /// 缺失时读面不带这两组事实(而不是编造一份日历)。
     /// </param>
-    public static SchedulePlanContract ToContract(SchedulePlan plan, SchedulingProblemContract? problem = null)
+    /// <param name="fixedReservations">与问题快照一起持久化的固定及外部占用。</param>
+    public static SchedulePlanContract ToContract(
+        SchedulePlan plan,
+        SchedulingProblemContract? problem = null,
+        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null)
     {
         var status = ToContractStatus(plan.Status);
         var materialRisks = DeserializeRiskCollection<SchedulePlanMaterialRiskContract>(plan.MaterialRisksJson);
@@ -145,7 +149,8 @@ public static class SchedulePlanContractMapper
         // 问题快照里的 UnavailabilityWindows 恒为空(适配发生在落库之后),#1409。
         // 落库前生成的历史方案没有这份数据,退化回问题快照投影,不编造。
         var persistedBlockWindows = DeserializeRiskCollection<SchedulePlanBlockWindowContract>(plan.BlockWindowsJson);
-        var withCalendars = SchedulePlanCalendarProjector.Attach(contract, problem);
+        var withCalendars = SchedulePlanValidationContextProjector.Attach(
+            SchedulePlanCalendarProjector.Attach(contract, problem), problem, fixedReservations ?? []);
         return persistedBlockWindows.Count > 0
             ? withCalendars with { BlockWindows = persistedBlockWindows }
             : withCalendars;

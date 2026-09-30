@@ -166,7 +166,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
             Orders = orders,
             LockedAssignments = normalizedLocks,
         };
-        var basePlan = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem);
+        var basePlan = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem, fixedReservations);
         var impact = await LoadLatestImpactAsync(request, baseProblem, basePlan, cancellationToken);
         var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem, fixedReservations), cancellationToken);
         return new SchedulePlanRevisionContract(candidate, impact, Compare(basePlan, candidate));

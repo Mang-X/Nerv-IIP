@@ -53,6 +53,7 @@ public class SchedulingContractSerializationTests
 
         Assert.NotNull(roundTrip);
         Assert.Equal("aps-lite-v1", roundTrip!.AlgorithmVersion);
+        Assert.Null(roundTrip.ValidationContext);
         Assert.NotEmpty(roundTrip.Assignments);
         Assert.NotEmpty(roundTrip.ResourceLoads);
         Assert.NotEmpty(roundTrip.GanttItems);

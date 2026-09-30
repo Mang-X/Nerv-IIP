@@ -93,6 +93,8 @@
 BusinessGateway 新增两个公开两跳契约:`POST /api/business-console/v1/scheduling/workbench/plans` 从最多 500 个 MES 工单生成首版；`POST /api/business-console/v1/scheduling/plans/{planId}/revisions` 从持久化 base problem + included orders + explicit locks 生成修订版、失效影响与方案对比。既有 `list` / detail / gantt / release / revoke 继续承担历史和版本治理。
 读取经 `@nerv-iip/api-client` 生成 SDK + curated barrel(`SchedulePlanContract` 等)→ `@nerv-iip/scheduling` 的 `toModel` 归一化。
 
+Scheduling owner 的首版创建、修订 candidate 和 detail 响应提供可空的 `validationContext`：资源/工作中心映射、日历标识、容量与利用率；所有快照工序的真实前序、工序交期、时长、setup 和固定身份；以及包含外部工序的冻结占用区间与方案 horizon。事实来自该方案持久化问题快照，日历和不可用窗口复用已有 `calendars` / `blockWindows`。历史快照缺失时不提供上下文，不以当前主数据、已排条或通用作息补造依据。本票沿真实 producer 同步 console OpenAPI 与 generated client 的机械派生物；Gateway 三种响应透传、稳定类型导出及消费验收由 #4042 承接，浏览器即时反馈由后续消费票承接。
+
 ## 6. 技术落点(引擎可替换)
 
 详见 `frontend/packages/scheduling/README.md`。两层:Vue 组件层(稳定契约)→ `SchedulingEngine` 适配器 / 包内只读时间轴(无商业引擎时)→ `ScheduleModel` + `aps-mapper`。
