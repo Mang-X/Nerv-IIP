@@ -188,8 +188,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(json);
-        var payload = document.RootElement.GetProperty("data");
-        return payload.Deserialize<MesAssemblyChildWorkOrdersResponse>(SchedulingJson.Options)!.AssemblyChildWorkOrderIds;
+        return document.RootElement.Deserialize<MesAssemblyChildWorkOrdersResponse>(SchedulingJson.Options)!.AssemblyChildWorkOrderIds;
     }
 
     private async Task<MesWorkOrderItem?> FindWorkOrderByIdAsync(

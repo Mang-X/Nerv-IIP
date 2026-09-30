@@ -577,7 +577,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         string workCenterCode,
         CancellationToken cancellationToken)
     {
-        var detail = await GetResourceDetailAsync(
+        var detail = await GetResourceDetailAsync<MasterDataWorkCenterDetailResponse>(
             organizationId,
             environmentId,
             "work-center",
@@ -600,7 +600,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         DateTimeOffset horizonEndUtc,
         CancellationToken cancellationToken)
     {
-        var calendar = await GetResourceDetailAsync(organizationId, environmentId, "work-calendar", calendarCode, cancellationToken);
+        var calendar = await GetResourceDetailAsync<MasterDataResourceDetailResponse>(organizationId, environmentId, "work-calendar", calendarCode, cancellationToken);
         var shifts = await GetShiftDetailsAsync(organizationId, environmentId, cancellationToken);
         var windows = BuildShiftWindows(calendar, shifts, horizonStartUtc, horizonEndUtc);
         return new SchedulingProblemCalendarSnapshot(calendar.Code, windows);
@@ -689,18 +689,19 @@ public sealed class HttpSchedulingProblemMasterDataClient(
 
         var shifts = await Task.WhenAll(response.Resources
             .Where(x => x.Active)
-            .Select(x => GetResourceDetailAsync(organizationId, environmentId, "shift", x.Code, cancellationToken)));
+            .Select(x => GetResourceDetailAsync<MasterDataResourceDetailResponse>(organizationId, environmentId, "shift", x.Code, cancellationToken)));
         return shifts;
     }
 
-    private async Task<MasterDataResourceDetailResponse> GetResourceDetailAsync(
+    private async Task<T> GetResourceDetailAsync<T>(
         string organizationId,
         string environmentId,
         string resourceType,
         string code,
         CancellationToken cancellationToken)
+        where T : class
     {
-        return await SendAsync<MasterDataResourceDetailResponse>(
+        return await SendAsync<T>(
             "/api/business/v1/master-data/resources/" +
             $"{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}?" +
             SchedulingProblemHttp.Query(("organizationId", organizationId), ("environmentId", environmentId)),
@@ -823,6 +824,13 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         string? WorkCenterCode = null,
         string? DeviceAssetId = null);
 
+    private sealed record MasterDataWorkCenterDetailResponse(
+        string Code,
+        string? DefaultCalendarCode = null,
+        int? NumberOfCapacities = null,
+        decimal EfficiencyRate = 1m,
+        decimal UtilizationRate = 1m);
+
     private sealed record MasterDataResourceDetailResponse(
         string ResourceType,
         string Code,
@@ -837,10 +845,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         string? DefaultCalendarCode = null,
         IReadOnlyCollection<WorkCalendarWorkingTimeResponse>? WorkingTimes = null,
         IReadOnlyCollection<WorkCalendarHolidayResponse>? Holidays = null,
-        IReadOnlyCollection<WorkCalendarExceptionResponse>? Exceptions = null,
-        int? NumberOfCapacities = null,
-        decimal EfficiencyRate = 1m,
-        decimal UtilizationRate = 1m);
+        IReadOnlyCollection<WorkCalendarExceptionResponse>? Exceptions = null);
 
     private sealed record WorkCalendarWorkingTimeResponse(DayOfWeek DayOfWeek);
     private sealed record WorkCalendarHolidayResponse(DateOnly Date, string Name);

@@ -831,7 +831,7 @@ public sealed partial class SchedulingWorkbenchTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/assembly-children", StringComparison.Ordinal)
-                ? Json(new { data = new { assemblyChildWorkOrderIds = assemblyChildOrderIds ?? [] } })
+                ? Json(new { assemblyChildWorkOrderIds = assemblyChildOrderIds ?? [] })
                 : responseFactory(request));
     }
 

@@ -118,6 +118,8 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
         productionVersionId: 'pv-001',
       },
     ]),
+    priorityScopeReady: shallowRef(true),
+    saveOrderPriority: vi.fn(),
     candidatesError: shallowRef(undefined),
     candidatesPending: shallowRef(false),
     // #1288 待排池 scope gate 事实：本文件不测未就绪分支，按就绪打桩。
