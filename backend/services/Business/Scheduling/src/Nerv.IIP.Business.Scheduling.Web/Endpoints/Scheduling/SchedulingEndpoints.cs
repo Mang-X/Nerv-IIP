@@ -114,7 +114,7 @@ public sealed record RestoreOrderUrgencyArchiveRequest(
     string BatchId,
     string Reason);
 
-public sealed class PreviewSchedulePlanEndpoint(ISender sender)
+public sealed class PreviewSchedulePlanEndpoint(ISender sender, ScheduleAssignmentCurrentExecutionReader executionReader)
     : SchedulingEndpoint<PreviewSchedulePlanRequest, ResponseData<SchedulePlanContract>>
 {
     public override void Configure()
@@ -125,11 +125,12 @@ public sealed class PreviewSchedulePlanEndpoint(ISender sender)
     public override async Task HandleAsync(PreviewSchedulePlanRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new PreviewSchedulePlanCommand(req.Problem), ct);
+        response = await executionReader.ReadAsync(response, req.Problem.OrganizationId, req.Problem.EnvironmentId, ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class CreateSchedulePlanEndpoint(ISender sender)
+public sealed class CreateSchedulePlanEndpoint(ISender sender, ScheduleAssignmentCurrentExecutionReader executionReader)
     : SchedulingEndpoint<CreateSchedulePlanRequest, ResponseData<SchedulePlanContract>>
 {
     public override void Configure()
@@ -140,11 +141,12 @@ public sealed class CreateSchedulePlanEndpoint(ISender sender)
     public override async Task HandleAsync(CreateSchedulePlanRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new CreateSchedulePlanCommand(req.Problem), ct);
+        response = await executionReader.ReadAsync(response, req.Problem.OrganizationId, req.Problem.EnvironmentId, ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class CreateSchedulingWorkbenchPlanEndpoint(ISender sender)
+public sealed class CreateSchedulingWorkbenchPlanEndpoint(ISender sender, ScheduleAssignmentCurrentExecutionReader executionReader)
     : SchedulingEndpoint<CreateSchedulingWorkbenchPlanRequest, ResponseData<SchedulePlanContract>>
 {
     public override void Configure() =>
@@ -158,11 +160,12 @@ public sealed class CreateSchedulingWorkbenchPlanEndpoint(ISender sender)
             req.HorizonStartUtc,
             req.HorizonEndUtc,
             req.Orders), ct);
+        response = await executionReader.ReadAsync(response, req.OrganizationId, req.EnvironmentId, ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class PreviewSchedulingWorkbenchPlanEndpoint(ISender sender)
+public sealed class PreviewSchedulingWorkbenchPlanEndpoint(ISender sender, ScheduleAssignmentCurrentExecutionReader executionReader)
     : SchedulingEndpoint<CreateSchedulingWorkbenchPlanRequest, ResponseData<SchedulePlanContract>>
 {
     public override void Configure() =>
@@ -176,11 +179,12 @@ public sealed class PreviewSchedulingWorkbenchPlanEndpoint(ISender sender)
             req.HorizonStartUtc,
             req.HorizonEndUtc,
             req.Orders), ct);
+        response = await executionReader.ReadAsync(response, req.OrganizationId, req.EnvironmentId, ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class CreateSchedulePlanRevisionEndpoint(ISender sender)
+public sealed class CreateSchedulePlanRevisionEndpoint(ISender sender, ScheduleAssignmentCurrentExecutionReader executionReader)
     : SchedulingEndpoint<CreateSchedulePlanRevisionRequest, ResponseData<SchedulePlanRevisionContract>>
 {
     public override void Configure() =>
@@ -194,6 +198,7 @@ public sealed class CreateSchedulePlanRevisionEndpoint(ISender sender)
             req.EnvironmentId,
             req.IncludedOrderIds,
             req.LockedAssignments), ct);
+        response = response with { Candidate = await executionReader.ReadAsync(response.Candidate, req.OrganizationId, req.EnvironmentId, ct) };
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -263,7 +268,7 @@ public sealed class ListSchedulePlanHistoryRequestValidator : Validator<ListSche
     }
 }
 
-public sealed class GetSchedulePlanEndpoint(ISender sender)
+public sealed class GetSchedulePlanEndpoint(ISender sender, ScheduleAssignmentCurrentExecutionReader executionReader)
     : SchedulingEndpoint<GetSchedulePlanRequest, ResponseData<SchedulePlanContract>>
 {
     public override void Configure()
@@ -277,6 +282,7 @@ public sealed class GetSchedulePlanEndpoint(ISender sender)
             req.PlanId,
             req.OrganizationId,
             req.EnvironmentId), ct);
+        response = await executionReader.ReadAsync(response, req.OrganizationId, req.EnvironmentId, ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

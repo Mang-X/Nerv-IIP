@@ -116,6 +116,8 @@ try
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<SchedulingWorkbenchPlanAssembler>();
+    builder.Services.AddScoped<HttpSchedulingMaterialReadinessProvider>();
+    builder.Services.AddScoped<ScheduleAssignmentCurrentExecutionReader>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
     builder.Services.AddScoped<OrderUrgencyService>();
     builder.Services.AddScoped<WorldHistorySeedService>();

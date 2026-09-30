@@ -9224,7 +9224,7 @@ public sealed class BusinessGatewayProxyTests
     [InlineData("create")]
     [InlineData("detail")]
     [InlineData("revision")]
-    public async Task Scheduling_facade_preserves_frozen_validation_context_through_http_client(string route)
+    public async Task Scheduling_facade_preserves_frozen_context_and_current_execution_through_http_client(string route)
     {
         var start = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
         var context = new SchedulePlanValidationContextContract(
@@ -9233,7 +9233,9 @@ public sealed class BusinessGatewayProxyTests
             [new("order-001", "op-002", ["op-001"], start.AddHours(7), 90, 15, true)],
             [new("external-order", "external-op", "wc-001", start.AddHours(1), start.AddHours(2), null),
              new("order-001", "op-002", "wc-001", start.AddHours(3), start.AddHours(4), "res-001")]);
-        var plan = CreateSchedulePlan() with { ValidationContext = context };
+        var original = CreateSchedulePlan();
+        var execution = new ScheduleAssignmentCurrentExecutionContract(start, new(25m, 100m), null, false, "faulted", start.AddMinutes(-5), true);
+        var plan = original with { ValidationContext = context, Assignments = original.Assignments.Select(x => x with { CurrentExecution = execution }).ToArray() };
         var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK,
             request.RequestUri!.AbsolutePath.EndsWith("/revisions", StringComparison.Ordinal)
                 ? new { data = (object)new SchedulePlanRevisionContract(
@@ -9270,6 +9272,8 @@ public sealed class BusinessGatewayProxyTests
         var returnedPlan = route == "revision" ? body["candidate"]! : body;
         var expected = JsonSerializer.SerializeToNode(context, SchedulingJson.Options);
         Assert.True(JsonNode.DeepEquals(expected, returnedPlan["validationContext"]));
+        Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(execution, SchedulingJson.Options),
+            returnedPlan["assignments"]![0]!["currentExecution"]));
         Assert.Equal("internal-test-token", Assert.Single(handler.Requests).Headers.Authorization?.Parameter);
     }
 

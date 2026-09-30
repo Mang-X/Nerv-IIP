@@ -33,6 +33,57 @@ public sealed class SchedulingEndpointContractTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
 
+    [Fact]
+    public async Task Preview_and_historical_detail_return_current_execution_without_persisting_it()
+    {
+        await using var baseFactory = new SchedulingLiveHttpTestFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new CurrentExecutionSourceHandler());
+            services.AddHttpClient(HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new CurrentExecutionSourceHandler());
+        }));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var previewResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans/preview",
+            new PreviewSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()), SchedulingJson.Options);
+        previewResponse.EnsureSuccessStatusCode();
+        var preview = await previewResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options);
+        Assert.NotEmpty(preview!.Data.Assignments);
+        Assert.All(preview.Data.Assignments, assignment => Assert.Equal(new ScheduleWorkOrderProgressContract(25m, 100m), assignment.CurrentExecution!.WorkOrderProgress));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePersistedPlan("current-read", "historical-problem", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var detail = await client.GetFromJsonAsync<ResponseData<SchedulePlanContract>>(
+            "/api/business/v1/scheduling/plans/current-read?organizationId=org-001&environmentId=prod", SchedulingJson.Options);
+        var current = Assert.Single(detail!.Data.Assignments).CurrentExecution!;
+        Assert.Equal(new ScheduleWorkOrderProgressContract(25m, 100m), current.WorkOrderProgress);
+        Assert.Equal("faulted", current.EquipmentState);
+        Assert.True(current.IsEquipmentSourceFresh);
+        Assert.Null(current.IsMaterialReady);
+        Assert.Null(current.MaterialReadyUtc);
+        using var checkScope = factory.Services.CreateScope();
+        var stored = await checkScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SchedulePlans.Include(x => x.Assignments).SingleAsync();
+        Assert.Null(SchedulePlanContractMapper.ToContract(stored).Assignments.Single().CurrentExecution);
+    }
+
+    private sealed class CurrentExecutionSourceHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal("test-internal-token", request.Headers.Authorization?.Parameter);
+            if (request.Method == HttpMethod.Post) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable));
+            object payload = request.RequestUri!.AbsolutePath.Contains("/mes/", StringComparison.Ordinal)
+                ? new { quantity = 100m, completedQuantity = 25m }
+                : new { data = new { currentState = "faulted", stateOccurredAtUtc = FixedNow, isSourceFresh = true } };
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = JsonContent.Create(payload) });
+        }
+    }
+
     [Theory]
     [InlineData(SchedulePlanStatusContract.Generated)]
     [InlineData(SchedulePlanStatusContract.Released)]

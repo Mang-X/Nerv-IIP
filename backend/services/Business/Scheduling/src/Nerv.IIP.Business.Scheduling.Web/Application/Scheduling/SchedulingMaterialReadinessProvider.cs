@@ -51,7 +51,7 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             return [];
         }
 
-        var readiness = await QueryBatchAsync(problem, workOrderIds, cancellationToken);
+        var readiness = await QueryOrdersAsync(problem.OrganizationId, problem.EnvironmentId, workOrderIds, cancellationToken);
         return readiness
             .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
             .ThenBy(x => x.ScopeId, StringComparer.Ordinal)
@@ -60,8 +60,9 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             .ToArray();
     }
 
-    private async Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryBatchAsync(
-        SchedulingProblemContract problem,
+    public async Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryOrdersAsync(
+        string organizationId,
+        string environmentId,
         string[] workOrderIds,
         CancellationToken cancellationToken)
     {
@@ -70,7 +71,7 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             "/api/business/v1/mes/work-orders/material-readiness/batch")
         {
             Content = JsonContent.Create(new BatchMaterialReadinessRequest(
-                problem.OrganizationId, problem.EnvironmentId, workOrderIds), options: SchedulingJson.Options)
+                organizationId, environmentId, workOrderIds), options: SchedulingJson.Options)
         };
         var bearerToken = internalTokenProvider?.BearerToken;
         if (!string.IsNullOrWhiteSpace(bearerToken))
@@ -89,8 +90,8 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                     .SetEquals(workOrderIds))
             {
                 logger.LogWarning(
-                    "Scheduling material readiness source MES returned an incomplete batch for problem {ProblemId}.",
-                    problem.ProblemId);
+                    "Scheduling material readiness source MES returned an incomplete batch for organization {OrganizationId}.",
+                    organizationId);
                 return SourceUnavailable(workOrderIds);
             }
 
@@ -100,24 +101,24 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
         {
             logger.LogWarning(
                 exception,
-                "Scheduling material readiness source MES was unavailable for problem {ProblemId}.",
-                problem.ProblemId);
+                "Scheduling material readiness source MES was unavailable for organization {OrganizationId}.",
+                organizationId);
             return SourceUnavailable(workOrderIds);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
                 exception,
-                "Scheduling material readiness source MES timed out for problem {ProblemId}.",
-                problem.ProblemId);
+                "Scheduling material readiness source MES timed out for organization {OrganizationId}.",
+                organizationId);
             return SourceUnavailable(workOrderIds);
         }
         catch (JsonException exception)
         {
             logger.LogWarning(
                 exception,
-                "Scheduling material readiness source MES returned an invalid response for problem {ProblemId}.",
-                problem.ProblemId);
+                "Scheduling material readiness source MES returned an invalid response for organization {OrganizationId}.",
+                organizationId);
             return SourceUnavailable(workOrderIds);
         }
     }
