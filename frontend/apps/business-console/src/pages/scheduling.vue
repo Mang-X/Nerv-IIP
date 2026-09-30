@@ -11,7 +11,10 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { formatDateTime } from '@/utils/format'
-import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
+import {
+  useBusinessScheduling,
+  useSchedulingPlanSummary,
+} from '@/composables/useBusinessScheduling'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -139,6 +142,7 @@ const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlan
 const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPlansRelease))
 const workbench = useSchedulingWorkbench()
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
+const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
 const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
@@ -256,22 +260,12 @@ const detailFeedback = computed(() => {
   if (detailSelection.planId) return '未返回方案明细。'
   return '请选择一个排程方案查看明细。'
 })
-// 历史表的分页窗口不决定已选方案的操作能力。保留已选摘要中的失效信息，
-// 状态始终以独立加载的方案明细为准；切换选中方案时不沿用上一方案摘要。
-const selectedHistorySummary = shallowRef<BusinessConsoleSchedulingPlanSummaryResponse>()
-watch(
-  [() => detailSelection.planId, actionablePlans],
-  ([planId, availablePlans]) => {
-    const summary = availablePlans.find((plan) => plan.planId === planId)
-    if (summary || selectedHistorySummary.value?.planId !== planId)
-      selectedHistorySummary.value = summary
-  },
-  { immediate: true },
-)
+// 查阅方案和草案各按自身 planId 获取摘要，历史表筛选/分页不决定发布能力。
+const { summary: selectedPlanStatus } = useSchedulingPlanSummary(() => detailSelection.planId)
 const selectedPlanSummary = computed(() =>
   planDetail.value
     ? {
-        ...selectedHistorySummary.value,
+        ...selectedPlanStatus.value,
         planId: planDetail.value.planId,
         status: planDetail.value.status,
       }
@@ -579,10 +573,25 @@ const repreviewDisabledReason = computed(
   () => repreviewBlockedReason.value ?? '保持已锁定工序不动，重排其余工序生成新版本',
 )
 
+// 后台刷新只读取版本状态，不重新加载用户正在编辑的草案。
+const draftInvalidationReason = computed(() =>
+  draftPlanSummary.value?.isInvalidated
+    ? `方案已失效（${describeScheduleInvalidationReason(draftPlanSummary.value.latestInvalidationReasonCode)}），请重排后再发布`
+    : undefined,
+)
+const draftTerminalReason = computed(() =>
+  schedulingPlanTerminalReleaseReason(draftPlanSummary.value?.status),
+)
+
 const publishCandidateBlockedReason = computed(() =>
   firstBlockingReason([
     { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
     { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
+    {
+      blocked: Boolean(draftInvalidationReason.value),
+      reason: draftInvalidationReason.value ?? '',
+    },
+    { blocked: Boolean(draftTerminalReason.value), reason: draftTerminalReason.value ?? '' },
     { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
   ]),
 )
@@ -750,6 +759,13 @@ function reasonLabel(reason?: string | null) {
           role="status"
         >
           当前账号只有读取权限，可查看历史方案但不能编辑或生成新版本。
+        </p>
+        <p
+          v-if="draftInvalidationReason"
+          class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
+          role="status"
+        >
+          {{ draftInvalidationReason }}
         </p>
         <div
           v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
