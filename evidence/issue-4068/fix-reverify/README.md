@@ -1,6 +1,6 @@
 # #4068 两项布局修复视觉复验
 
-基线 `3e1bde5e51db18c222afcfc1e65c3f06e28aa7fe`；产品 head `4c4a1e29066b9ea7ac28df23ff6830d24e4005de`。PNG 由本次工作树当前代码重新采集，逐张人工打开审视；旧验收记录仍在上级目录，不能作为本 head 新验证。
+当前运行基线 `7959d3428ade61705c879dea98e96107a787e998`；产品 head `392a1eee2d4825e4f40f6ed0a2a02b06cae3a9f9`。20 张 after PNG 已在 rebase 后重新执行并逐张亲看。before-D1/D2 是原反例基线 `3e1bde5e51db18c222afcfc1e65c3f06e28aa7fe`，未冒充当前基线 before。after PNG 由本次工作树当前代码重新采集，逐张人工打开审视；旧验收记录仍在上级目录，不能作为本 head 新验证。
 
 运行：Business Console Vite +真实 DHTMLX，HTTP fixture 沿用仓库 `e2e/issue4043-draft-feedback.spec.ts` 的同一 APS-260930-001 三工序/单资源数据。非真实后端数据或端到端发布证据。T3 preview_status/open 曾成功，但实际操作返回 `No preview automation host is available ... use a headless browser ... such as Playwright` 后，改本机 Google Chrome + Playwright；未伪造拖拽事件。
 
@@ -16,7 +16,7 @@
 
 限定：DHTMLX trial 通知会在换刻度/重绘后出现；通过正常UI尝试关闭，截图如仍存在保留事实，不改厂商通知DOM。D1动态图面缩窄后旧悬浮tooltip节点仍产生scrollWidth1283，但board/detail均在1024内；03实际详情完整，不声称全页所有悬浮层均无溢出。本次修复不扩展到厂商tooltip生命周期。初始四类反馈/未知依据完整验收在上级旧基线记录；本次只复验布局相关的正常、资源resize占用/延期反馈，不把旧截图声明成本head新证据。未复验真实后端/发布及日历/前序/未知反馈。
 
-本地门禁（相同产品内容）：fmt check通过；2文件lint通过（SchedulingPlanGantt.vue131原有unicorn warning未改）；Console build含vue-tsc通过；Console全包246files/2893tests通过；git diff --check通过。无新增CSS形状测试或产品功能。
+本地门禁（相同产品内容）：fmt check通过；2文件lint通过（SchedulingPlanGantt.vue131原有unicorn warning未改）；Console build含vue-tsc通过；旧base Console全包246files/2893tests通过；当前base Console全包正在重跑，最终结果以PR更新为准；新base Scheduling108passed/4existing skipped；git diff --check通过。无新增CSS形状测试或产品功能。
 
 文件清单（每张均人工打开）：
 
