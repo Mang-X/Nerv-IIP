@@ -90,7 +90,8 @@ public sealed class CreateSchedulePlanCommandHandler(
                 ?? throw new KnownException($"排程问题快照已存在但未找到生成方案，请重新生成，问题 ID = {request.Problem.ProblemId}");
             var persistedProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(existingSnapshot.ProblemJson, SchedulingJson.Options);
             var existingPlanContract = SchedulePlanContractMapper.ToContract(
-                existingPlan, persistedProblem, SchedulingFrozenOccupancy.ReadSnapshot(existingSnapshot.ProblemJson));
+                existingPlan, persistedProblem, SchedulingFrozenOccupancy.ReadSnapshot(existingSnapshot.ProblemJson),
+                SchedulingFrozenOccupancy.ReadFreezeSnapshot(existingSnapshot.ProblemJson));
             await urgencyService.CapturePlanAsync(
                 schedulingProblem,
                 existingPlanContract,
@@ -104,7 +105,11 @@ public sealed class CreateSchedulePlanCommandHandler(
         var preview = scheduler.ScheduleNormalized(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc,
                 planReservations, externalReservations,
                 SchedulingFrozenOccupancy.ExternalFrozenAssignments(request.Freeze, schedulingProblem, fixedReservations))
-            with { ProblemFingerprint = problemFingerprint };
+            with
+            {
+                ProblemFingerprint = problemFingerprint,
+                FreezeContext = SchedulingFrozenOccupancy.ToContract(request.Freeze)
+            };
         var generated = SchedulePlanValidationContextProjector.Attach(
             SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated),
             schedulingProblem, fixedReservations);

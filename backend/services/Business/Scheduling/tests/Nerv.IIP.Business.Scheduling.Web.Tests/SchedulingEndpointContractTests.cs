@@ -205,6 +205,52 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task Revision_http_returns_snapshot_freeze_context_and_detail_preserves_it()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(problem.HorizonStartUtc));
+            services.RemoveAll<SchedulingFreezeSettings>();
+            services.AddSingleton(new SchedulingFreezeSettings(TimeSpan.FromHours(2), new Dictionary<string, TimeSpan>()));
+        }));
+        using var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var seedResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans",
+            new CreateSchedulePlanRequest(problem), SchedulingJson.Options);
+        seedResponse.EnsureSuccessStatusCode();
+        var baseline = (await seedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options))!.Data!;
+        Assert.Null(baseline.FreezeContext);
+
+        using var response = await client.PostAsJsonAsync($"/api/business/v1/scheduling/plans/{baseline.PlanId}/revisions",
+            new CreateSchedulePlanRevisionRequest(baseline.PlanId, problem.OrganizationId, problem.EnvironmentId,
+                problem.Orders.Select(x => x.OrderId).ToArray(), []), SchedulingJson.Options);
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var candidate = document.RootElement.GetProperty("data").GetProperty("candidate");
+        var context = candidate.GetProperty("freezeContext");
+        Assert.Equal(problem.HorizonStartUtc, context.GetProperty("asOfUtc").GetDateTimeOffset());
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), context.GetProperty("defaultWindowEndUtc").GetDateTimeOffset());
+        Assert.NotEmpty(context.GetProperty("assignments").EnumerateArray());
+        Assert.All(context.GetProperty("assignments").EnumerateArray(), assignment =>
+            Assert.Contains("stableWindow", assignment.GetProperty("reasons").EnumerateArray().Select(x => x.GetString())));
+        var candidatePlan = candidate.Deserialize<SchedulePlanContract>(SchedulingJson.Options)!;
+        Assert.NotNull(candidatePlan.FreezeContext);
+        foreach (var frozen in candidatePlan.FreezeContext.Assignments)
+        {
+            Assert.Equal(baseline.Assignments.Single(x => x.AssignmentId == frozen.Assignment.AssignmentId)
+                with { CurrentExecution = null }, frozen.Assignment);
+        }
+        using var detailResponse = await client.GetAsync(
+            $"/api/business/v1/scheduling/plans/{candidatePlan.PlanId}?organizationId={problem.OrganizationId}&environmentId={problem.EnvironmentId}");
+        detailResponse.EnsureSuccessStatusCode();
+        using var detailDocument = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+        Assert.Equal(context.GetRawText(), detailDocument.RootElement.GetProperty("data").GetProperty("freezeContext").GetRawText());
+    }
+
+    [Fact]
     public async Task Workbench_preview_http_freezes_execution_and_preserves_business_records()
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();

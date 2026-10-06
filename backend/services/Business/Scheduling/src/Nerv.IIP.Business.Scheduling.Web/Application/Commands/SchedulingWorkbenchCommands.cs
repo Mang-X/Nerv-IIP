@@ -159,8 +159,8 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
             throw new KnownException($"所选工单不在基础方案中，请刷新后重新选择：{string.Join(", ", missingOrders)}");
         }
 
-        var baseline = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem, snapshotReservations);
         var priorFreeze = SchedulingFrozenOccupancy.ReadFreezeSnapshot(snapshot.ProblemJson);
+        var baseline = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem, snapshotReservations, priorFreeze);
         var baselineKeys = baseline.Assignments.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
         var baselineAssignments = baseline.Assignments
             .Concat((priorFreeze?.Assignments.Select(x => x.Assignment) ?? [])
