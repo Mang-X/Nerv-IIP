@@ -1,4 +1,6 @@
 using DotNetCore.CAP;
+using DotNetCore.CAP.Messages;
+using DotNetCore.CAP.Transport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -38,7 +40,8 @@ public sealed class AssetUnavailableRedisCapTransportTests
             await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.MigrateAsync();
         }
 
-        await using var factory = CreateFactory();
+        var subscription = new FirstPublishSubscription();
+        await using var factory = CreateFactory(subscription);
         using var client = factory.CreateClient();
         using (var scope = factory.Services.CreateScope())
         {
@@ -46,6 +49,24 @@ public sealed class AssetUnavailableRedisCapTransportTests
             db.SchedulePlans.Add(CreatePlanWithAssignment());
             await db.SaveChangesAsync();
         }
+
+        await TestTimeout.RunAsync("Scheduling target Subscribe entered", async token =>
+            await subscription.Entered.Task.WaitAsync(token), TimeSpan.FromSeconds(30));
+        var ready = TestTimeout.RunAsync("Scheduling before-first-publish: actual target Subscribe completed", async token =>
+            await subscription.Completed.Task.WaitAsync(token), TimeSpan.FromSeconds(30));
+        try
+        {
+            Assert.False(ready.IsCompleted);
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(0, await db.Database.SqlQuery<int>(
+                $"SELECT count(*)::int AS \"Value\" FROM cap.published").SingleAsync());
+        }
+        finally
+        {
+            subscription.Release.TrySetResult();
+        }
+        await ready;
 
         var integrationEvent = Event("evt-poison", "asset-unavailable:wo-1:2026-06-01T09:00:00.0000000+00:00");
         using (var scope = factory.Services.CreateScope())
@@ -98,7 +119,7 @@ public sealed class AssetUnavailableRedisCapTransportTests
         await AssertCountsEventuallyAsync(factory, 2, 2, "wrong-key mutation defeats business deduplication");
     }
 
-    private static WebApplicationFactory<Program> CreateFactory()
+    private static WebApplicationFactory<Program> CreateFactory(FirstPublishSubscription subscription)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -124,6 +145,11 @@ public sealed class AssetUnavailableRedisCapTransportTests
             foreach (var (key, value) in settings) builder.UseSetting(key, value);
             builder.ConfigureServices(services =>
             {
+                var consumerFactory = services.Single(x => x.ServiceType == typeof(IConsumerClientFactory));
+                services.Remove(consumerFactory);
+                services.AddSingleton<IConsumerClientFactory>(provider => new FirstPublishConsumerFactory(
+                    (IConsumerClientFactory)ActivatorUtilities.CreateInstance(provider, consumerFactory.ImplementationType!),
+                    subscription, provider.GetRequiredService<IOptions<CapOptions>>().Value));
                 services.AddSingleton<PoisonState>();
                 services.Replace(ServiceDescriptor.Scoped<IAssetUnavailableCanonicalProcessor>(sp =>
                     new PoisonProcessor(sp.GetRequiredService<AssetUnavailableCanonicalProcessor>(), sp.GetRequiredService<PoisonState>())));
@@ -192,6 +218,49 @@ public sealed class AssetUnavailableRedisCapTransportTests
             UnscheduledOperations: [],
             ChangeSummary: [],
             GanttItems: [])));
+
+    private sealed class FirstPublishSubscription
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Completed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class FirstPublishConsumerFactory(IConsumerClientFactory inner, FirstPublishSubscription subscription, CapOptions options)
+        : IConsumerClientFactory
+    {
+        public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+        {
+            var client = await inner.CreateAsync(groupName, groupConcurrent);
+            var prefix = string.IsNullOrEmpty(options.GroupNamePrefix) ? "" : options.GroupNamePrefix + ".";
+            var target = prefix + AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName + "." + options.Version;
+            return groupName == target ? new FirstPublishConsumer(client, subscription, options) : client;
+        }
+    }
+
+    private sealed class FirstPublishConsumer(IConsumerClient inner, FirstPublishSubscription subscription, CapOptions options)
+        : IConsumerClient
+    {
+        public BrokerAddress BrokerAddress => inner.BrokerAddress;
+        public Func<TransportMessage, object?, Task>? OnMessageCallback { get => inner.OnMessageCallback; set => inner.OnMessageCallback = value; }
+        public Action<LogMessageEventArgs>? OnLogCallback { get => inner.OnLogCallback; set => inner.OnLogCallback = value; }
+        public Task<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topics) => inner.FetchTopicsAsync(topics);
+        public async Task SubscribeAsync(IEnumerable<string> topics)
+        {
+            var actualTopics = topics.ToArray();
+            var prefix = string.IsNullOrEmpty(options.TopicNamePrefix) ? "" : options.TopicNamePrefix + ".";
+            Assert.Contains(prefix + Topic, actualTopics);
+            subscription.Entered.TrySetResult();
+            await TestTimeout.RunAsync("Scheduling controlled actual Subscribe release", async token =>
+                await subscription.Release.Task.WaitAsync(token), TimeSpan.FromSeconds(30));
+            await inner.SubscribeAsync(actualTopics);
+            subscription.Completed.TrySetResult();
+        }
+        public Task ListeningAsync(TimeSpan timeout, CancellationToken token) => inner.ListeningAsync(timeout, token);
+        public Task CommitAsync(object? sender) => inner.CommitAsync(sender);
+        public Task RejectAsync(object? sender) => inner.RejectAsync(sender);
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+    }
 
     private sealed class PoisonState { public volatile bool Allow; }
     private sealed class PoisonProcessor(IAssetUnavailableCanonicalProcessor inner, PoisonState state) : IAssetUnavailableCanonicalProcessor
