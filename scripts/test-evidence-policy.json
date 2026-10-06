@@ -1149,7 +1149,7 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
       ],
-      "expectedRuntimeTestCount": 21
+      "expectedRuntimeTestCount": 22
     },
     {
       "id": "scheduling-postgres-redis",
