@@ -9,12 +9,15 @@ using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
@@ -37,6 +40,68 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
     private const string V1LegacyTopic = "AssetUnavailableIntegrationEvent";
     private const string V2DevelopmentTopic = "nerv-iip.development.business-maintenance.maintenance.asset-unavailable.v2";
     private const string WorkOrderOpenedTopic = "MaintenanceWorkOrderOpenedIntegrationEvent";
+
+    /// <summary>#4126 / ADR 0032 §2：旧工单不伪造 ETR，预测的持久化不改变实际停机或生命周期。</summary>
+    [MaintenanceAssetUnavailableV2PostgresFact]
+    public async Task Nullable_ETR_migration_preserves_legacy_work_orders_and_round_trips_predictions_on_postgres()
+    {
+        await ResetMaintenanceSchemaAsync();
+        await using var db = CreateDbContext();
+        await db.GetService<IMigrator>().MigrateAsync("20260928075938_AddSparePartIssueLocation");
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO maintenance.maintenance_work_orders
+                (id, organization_id, environment_id, device_asset_id, priority, opened_by, status,
+                 opened_at_utc, alarm_cleared, asset_unavailable, asset_unavailable_from_utc,
+                 asset_unavailable_reason, accepted_at_utc, repair_started_at_utc, completed_at_utc,
+                 verified_at_utc, closed_at_utc, completion_result, downtime_reason_code, downtime_minutes, version)
+            VALUES
+                ('00000000-0000-0000-0000-000000004126', 'org-001', 'env-dev', 'ETR-ACTIVE', 'high', 'operator',
+                 'InProgress', '2026-10-01 08:00:00Z', false, true, '2026-10-01 08:00:00Z', 'breakdown',
+                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', NULL, NULL, NULL, NULL, NULL, NULL, 2),
+                ('00000000-0000-0000-0000-000000004127', 'org-001', 'env-dev', 'ETR-CLOSED', 'high', 'operator',
+                 'Closed', '2026-10-01 08:00:00Z', true, true, '2026-10-01 08:00:00Z', 'breakdown',
+                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', '2026-10-01 09:00:00Z',
+                 '2026-10-01 09:01:00Z', '2026-10-01 09:02:00Z', 'repaired', 'DT-MECH', 60, 5);
+            """);
+        var before = await db.Database.SqlQueryRaw<string>("""
+            SELECT to_jsonb(w)::text AS "Value" FROM maintenance.maintenance_work_orders w ORDER BY id
+            """).ToListAsync();
+
+        await db.Database.MigrateAsync();
+
+        var after = await db.Database.SqlQueryRaw<string>("""
+            SELECT (to_jsonb(w) - 'expected_restore_at_utc')::text AS "Value"
+            FROM maintenance.maintenance_work_orders w ORDER BY id
+            """).ToListAsync();
+        Assert.Equal(before, after);
+        var orders = await db.MaintenanceWorkOrders.OrderBy(x => x.Id).ToListAsync();
+        Assert.All(orders, order => Assert.Null(db.Entry(order).Property("ExpectedRestoreAtUtc").CurrentValue));
+        var active = orders.Single(x => x.Status == MaintenanceWorkOrderStatus.InProgress);
+        var prediction = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
+        // 本票只准备持久化；通过 EF 设置私有属性，不增加业务写入口。
+        db.Entry(active).Property("ExpectedRestoreAtUtc").CurrentValue = prediction;
+        await db.SaveChangesAsync();
+
+        await using (var reload = CreateDbContext())
+        {
+            var persisted = await reload.MaintenanceWorkOrders.SingleAsync(x => x.Id == active.Id);
+            Assert.Equal(prediction, reload.Entry(persisted).Property("ExpectedRestoreAtUtc").CurrentValue);
+            Assert.True(persisted.AssetUnavailable);
+            Assert.Equal(MaintenanceWorkOrderStatus.InProgress, persisted.Status);
+            Assert.Null(persisted.CompletedAtUtc);
+            Assert.Equal(2, persisted.Version);
+            reload.Entry(persisted).Property("ExpectedRestoreAtUtc").CurrentValue = null;
+            await reload.SaveChangesAsync();
+        }
+
+        await using var cleared = CreateDbContext();
+        var clearedOrders = await cleared.MaintenanceWorkOrders.ToListAsync();
+        Assert.All(clearedOrders, order => Assert.Null(cleared.Entry(order).Property("ExpectedRestoreAtUtc").CurrentValue));
+        Assert.Equal(before, await cleared.Database.SqlQueryRaw<string>("""
+            SELECT (to_jsonb(w) - 'expected_restore_at_utc')::text AS "Value"
+            FROM maintenance.maintenance_work_orders w ORDER BY id
+            """).ToListAsync());
+    }
 
     [MaintenanceAssetUnavailableV2PostgresFact]
     public async Task V2_exact_code_commits_work_order_with_v1_companion_and_v2_canonical_outbox_rows_in_one_transaction()
