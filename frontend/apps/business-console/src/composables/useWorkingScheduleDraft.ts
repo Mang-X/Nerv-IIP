@@ -41,6 +41,7 @@ interface DraftSnapshot {
 
 export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = false) {
   const orders = shallowRef<WorkingScheduleOrder[]>([])
+  let candidateOrders: WorkingScheduleOrder[] = []
   const model = shallowRef<ScheduleModel>()
   const baselineTasks = shallowRef(new Map<string, ScheduleTask>())
   const baselineLinks = shallowRef<ScheduleModel['links']>([])
@@ -71,20 +72,18 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
 
   function setOrders(candidates: Array<{ workOrderId?: string; priority?: number }>) {
     const existing = new Map(orders.value.map((order) => [order.workOrderId, order]))
-    const candidateIds = new Set(candidates.map((candidate) => candidate.workOrderId))
-    orders.value = candidates
+    candidateOrders = candidates
       .filter((candidate): candidate is { workOrderId: string; priority?: number } =>
         Boolean(candidate.workOrderId?.trim()),
       )
-      .map(
-        (candidate) =>
-          existing.get(candidate.workOrderId) ?? {
-            workOrderId: candidate.workOrderId,
-            priority: candidate.priority ?? 100,
-            isRush: false,
-            included: false,
-          },
-      )
+      .map((candidate) => ({
+        workOrderId: candidate.workOrderId,
+        priority: candidate.priority ?? 100,
+        isRush: false,
+        included: false,
+      }))
+    const candidateIds = new Set(candidateOrders.map((order) => order.workOrderId))
+    orders.value = candidateOrders.map((order) => existing.get(order.workOrderId) ?? order)
     orders.value = [
       ...orders.value,
       ...[...existing.values()].filter(
@@ -308,12 +307,24 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
 
   function restoreSaved(plan: BusinessConsoleSchedulePlan, state: SchedulingWorkingDraftState) {
     loadPlan(plan)
-    orders.value = state.orders!.map((order) => ({
-      workOrderId: order.workOrderId!,
-      priority: order.priority!,
-      isRush: order.isRush!,
-      included: order.included!,
-    }))
+    const savedOrders = new Map(
+      state.orders!.map((order) => [
+        order.workOrderId!,
+        {
+          workOrderId: order.workOrderId!,
+          priority: order.priority!,
+          isRush: order.isRush!,
+          included: order.included!,
+        },
+      ]),
+    )
+    orders.value = [
+      ...candidateOrders.map((order) => savedOrders.get(order.workOrderId) ?? order),
+      ...[...savedOrders.values()].filter(
+        (order) =>
+          !candidateOrders.some((candidate) => candidate.workOrderId === order.workOrderId),
+      ),
+    ]
     const savedTasks = new Map(state.tasks!.map((task) => [task.taskId!, task]))
     const tasks = model
       .value!.tasks.filter(

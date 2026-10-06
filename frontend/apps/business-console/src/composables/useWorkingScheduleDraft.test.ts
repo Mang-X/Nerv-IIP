@@ -368,3 +368,19 @@ it('restores persisted edits against the original plan and keeps selected orders
   expect(reopened.modifiedUnlockedTaskIds.value).toContain('assignment-001')
   expect(reopened.canRedo.value).toBe(false)
 })
+
+it('keeps newly available candidates selectable when the candidate query finishes before recovery', () => {
+  const reopened = useWorkingScheduleDraft()
+  reopened.setOrders([{ workOrderId: 'WO-001' }, { workOrderId: 'WO-NEW' }])
+  reopened.restoreSaved(plan, {
+    contractVersion: 1,
+    orders: [{ workOrderId: 'WO-001', priority: 90, isRush: true, included: true }],
+    tasks: [],
+    pendingOperations: [],
+  })
+  reopened.setIncluded(['WO-NEW'], true)
+  expect(reopened.includedOrders.value.map((order) => order.workOrderId).sort()).toEqual([
+    'WO-001',
+    'WO-NEW',
+  ])
+})

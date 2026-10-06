@@ -43,6 +43,7 @@ import {
 } from '@/composables/schedulingHorizon'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
+import SchedulingDraftClearDialog from '@/components/scheduling/SchedulingDraftClearDialog.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
@@ -156,6 +157,7 @@ const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlansManage))
 const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPlansRelease))
 const workbench = useSchedulingWorkbench()
+const clearDraftConfirmOpen = ref(false)
 const draftReady = shallowRef(false)
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value || !draftReady.value))
 const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
@@ -888,7 +890,7 @@ function reasonLabel(reason?: string | null) {
               variant="ghost"
               :disabled="!canManage || persistence.busy.value || !draft.model.value"
               title="清空当前方案的个人草稿，方案和其它草稿仍保留"
-              @click="persistence.clear"
+              @click="clearDraftConfirmOpen = true"
               >清空草稿</NvButton
             >
           </div>
@@ -1191,6 +1193,11 @@ function reasonLabel(reason?: string | null) {
     <!-- 撤销发布二次确认：说明 MES 侧后果，避免误触。
          v-if 按需挂载：关闭时完全不渲染 reka AlertDialog 树，也避免与页面测试针对
          NvSheet 的全局 DialogRoot stub 相互干扰（stub 会剥掉 AlertDialog 的注入上下文）。 -->
+    <SchedulingDraftClearDialog
+      v-model:open="clearDraftConfirmOpen"
+      :pending="persistence.status.value === 'clearing'"
+      :clear="persistence.clear"
+    />
     <NvAlertDialog v-if="revokeConfirmOpen" v-model:open="revokeConfirmOpen">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>

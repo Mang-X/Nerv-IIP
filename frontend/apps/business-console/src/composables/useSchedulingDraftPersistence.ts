@@ -146,14 +146,14 @@ export function useSchedulingDraftPersistence(options: Options) {
 
   async function clear() {
     const planId = draft.model.value?.meta.planId
-    if (!planId) return
+    if (!planId) return false
     ready.value = false
     status.value = 'clearing'
     requestVersion++
     const identity = identityVersion
     const context = toValue(options.context)
     await queue
-    if (identity !== identityVersion) return
+    if (identity !== identityVersion) return false
     try {
       const { data } = await clearBusinessConsoleSchedulingWorkingDraft({
         path: { planId },
@@ -161,17 +161,19 @@ export function useSchedulingDraftPersistence(options: Options) {
         throwOnError: true,
       })
       assertEnvelopeSuccess(data, '草稿清空失败')
-      if (identity !== identityVersion) return
+      if (identity !== identityVersion) return false
       draft.clear()
       baseline.value = undefined
       savedDrafts.value = savedDrafts.value.filter((item) => item.planId !== planId)
       savedAtUtc.value = undefined
       status.value = 'empty'
+      return true
     } catch (error) {
-      if (identity !== identityVersion) return
+      if (identity !== identityVersion) return false
       status.value = 'error'
       retryOperation = clear
       notifyOperationFailure('草稿清空失败', error, '草稿未清空，请重试。')
+      return false
     } finally {
       if (identity === identityVersion) ready.value = true
     }
