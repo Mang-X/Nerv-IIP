@@ -1,4 +1,7 @@
 using MediatR;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Microsoft.EntityFrameworkCore;
 using System.Data.Common;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
@@ -13,65 +16,71 @@ public sealed class WorkOrderTransformationPostgresTests
     [MesRealPostgresFact]
     public async Task Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation()
     {
-        await MesPostgresLaneDatabase.ResetSchemaAsync();
-        var options = MesPostgresLaneDatabase.CreateOptions();
-        var occurredAtUtc = DateTimeOffset.Parse("2026-08-25T10:00:00Z");
-
-        await using (var setup = CreateContext(options))
+        foreach (var isRush in new[] { true, false })
         {
-            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
-            await setup.Database.MigrateAsync(CancellationToken.None);
+            await MesPostgresLaneDatabase.ResetSchemaAsync();
+            var options = MesPostgresLaneDatabase.CreateOptions();
+            var occurredAtUtc = DateTimeOffset.Parse("2026-08-25T10:00:00Z");
 
-            var parent = WorkOrder.Create(
-                "org-001", "env-dev", "WO-PARENT-001", "SKU-001", "PV-001", 10m, 10,
-                occurredAtUtc.AddHours(4), "PCS");
-            var child1 = WorkOrder.Create(
-                "org-001", "env-dev", "WO-CHILD-001", "SKU-001", "PV-001", 4m, 10,
-                occurredAtUtc.AddHours(4), "PCS");
-            var child2 = WorkOrder.Create(
-                "org-001", "env-dev", "WO-CHILD-002", "SKU-001", "PV-001", 6m, 10,
-                occurredAtUtc.AddHours(4), "PCS");
-            var transformation = WorkOrderTransformation.CreateSplit(
-                "org-001",
-                "env-dev",
-                Snapshot(parent),
-                [Snapshot(child1), Snapshot(child2)],
-                "split-postgres-001",
-                "fingerprint-postgres-001",
-                "user:planner-001",
-                "按生产批次拆分",
-                occurredAtUtc);
-
-            parent.MarkSplit();
-            setup.WorkOrders.AddRange(parent, child1, child2);
-            setup.WorkOrderTransformations.Add(transformation);
-            await setup.SaveChangesAsync(CancellationToken.None);
-        }
-
-        await using (var assertion = CreateContext(options))
-        {
-            var parent = await assertion.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-PARENT-001");
-            var transformation = await assertion.WorkOrderTransformations
-                .Include(x => x.Lines)
-                .SingleAsync(x => x.IdempotencyKey == "split-postgres-001");
-
-            Assert.Equal(WorkOrder.SplitStatus, parent.Status);
-            Assert.Equal(2, parent.Version);
-            Assert.Equal(WorkOrderTransformationStatus.Applied, transformation.Status);
-            Assert.Equal("fingerprint-postgres-001", transformation.RequestFingerprint);
-            Assert.Equal("user:planner-001", transformation.ActorId);
-            Assert.Equal("按生产批次拆分", transformation.Reason);
-            Assert.Equal(occurredAtUtc, transformation.OccurredAtUtc);
-            Assert.Equal(10m, transformation.Lines.Sum(x => x.Quantity));
-            Assert.Equal(2, transformation.Lines.Count);
-            Assert.All(transformation.Lines, line =>
+            await using (var setup = CreateContext(options))
             {
-                Assert.Equal(WorkOrderLineageType.Split, line.LineageType);
-                Assert.Equal("WO-PARENT-001", line.SourceWorkOrderId);
-                Assert.Equal("PCS", line.UomCode);
-                Assert.Equal(1, line.SourceVersion);
-                Assert.Equal(1, line.TargetVersion);
-            });
+                MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+                await setup.Database.MigrateAsync(CancellationToken.None);
+
+                var parent = WorkOrder.Create(
+                    "org-001", "env-dev", "WO-PARENT-001", "SKU-001", "PV-001", 10m, 10,
+                    occurredAtUtc.AddHours(4), "PCS", isRush: isRush);
+                setup.WorkOrders.Add(parent);
+                setup.OperationTasks.Add(OperationTask.Queue("org-001", "env-dev", parent.WorkOrderIdValue,
+                    "OP-PARENT-001", 10, "WC-001", [], occurredAtUtc, TimeSpan.FromMinutes(20), "SKU-001", "PCS", 10m));
+                await setup.SaveChangesAsync(CancellationToken.None);
+                var command = new SplitWorkOrderCommand("org-001", "env-dev", parent.WorkOrderIdValue,
+                    [new("WO-CHILD-001", 4m), new("WO-CHILD-002", 6m)], "按生产批次拆分",
+                    "split-postgres-001", "user:planner-001", occurredAtUtc);
+                await new SplitWorkOrderCommandHandler(setup).Handle(command, CancellationToken.None);
+                await setup.SaveChangesAsync(CancellationToken.None);
+            }
+
+            await using (var assertion = CreateContext(options))
+            {
+                var parent = await assertion.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-PARENT-001");
+                var transformation = await assertion.WorkOrderTransformations
+                    .Include(x => x.Lines)
+                    .SingleAsync(x => x.IdempotencyKey == "split-postgres-001");
+
+                Assert.Equal(WorkOrder.SplitStatus, parent.Status);
+                Assert.Equal(2, parent.Version);
+                Assert.Equal(WorkOrderTransformationStatus.Applied, transformation.Status);
+                var replay = await new SplitWorkOrderCommandHandler(assertion).Handle(
+                    new("org-001", "env-dev", "WO-PARENT-001", [new("WO-CHILD-001", 4m), new("WO-CHILD-002", 6m)],
+                        "按生产批次拆分", "split-postgres-001", "user:planner-001", occurredAtUtc), CancellationToken.None);
+                Assert.True(replay.IsIdempotentReplay);
+                Assert.Equal(transformation.Id, replay.TransformationId);
+                Assert.Equal(3, await assertion.WorkOrders.CountAsync());
+                foreach (var childId in replay.TargetWorkOrderIds)
+                {
+                    var persisted = await assertion.WorkOrders.AsNoTracking().SingleAsync(x => x.WorkOrderIdValue == childId);
+                    Assert.Equal(10, persisted.Priority);
+                    Assert.Equal(isRush, persisted.IsRush);
+                    var detail = await new GetMesWorkOrderDetailQueryHandler(assertion).Handle(
+                        new("org-001", "env-dev", childId), CancellationToken.None);
+                    Assert.Equal(persisted.Priority, detail.Priority);
+                    Assert.Equal(persisted.IsRush, detail.IsRush);
+                }
+                Assert.Equal("user:planner-001", transformation.ActorId);
+                Assert.Equal("按生产批次拆分", transformation.Reason);
+                Assert.Equal(occurredAtUtc, transformation.OccurredAtUtc);
+                Assert.Equal(10m, transformation.Lines.Sum(x => x.Quantity));
+                Assert.Equal(2, transformation.Lines.Count);
+                Assert.All(transformation.Lines, line =>
+                {
+                    Assert.Equal(WorkOrderLineageType.Split, line.LineageType);
+                    Assert.Equal("WO-PARENT-001", line.SourceWorkOrderId);
+                    Assert.Equal("PCS", line.UomCode);
+                    Assert.Equal(1, line.SourceVersion);
+                    Assert.Equal(1, line.TargetVersion);
+                });
+            }
         }
     }
 
