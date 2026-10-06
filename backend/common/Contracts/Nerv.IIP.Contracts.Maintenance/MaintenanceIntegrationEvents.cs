@@ -110,7 +110,9 @@ public sealed record AssetUnavailableIntegrationEvent(
 public sealed record AssetUnavailablePayload(
     string DeviceAssetId,
     string Reason,
-    DateTimeOffset FromUtc);
+    DateTimeOffset FromUtc,
+    // Recovery prediction; never substitutes for an AssetRestored fact.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 [JsonConverter(typeof(AssetUnavailableV2IntegrationEventJsonConverter))]
 public sealed record AssetUnavailableV2IntegrationEvent(
@@ -133,7 +135,9 @@ public sealed record AssetUnavailableV2IntegrationEvent(
 public sealed record AssetUnavailableV2Payload(
     string DeviceAssetId,
     string ReasonCode,
-    DateTimeOffset FromUtc);
+    DateTimeOffset FromUtc,
+    // Recovery prediction; never substitutes for an AssetRestored fact.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 internal static class AssetUnavailableV2WireContract
 {

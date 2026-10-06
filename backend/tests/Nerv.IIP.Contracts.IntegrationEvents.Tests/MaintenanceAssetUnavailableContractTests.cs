@@ -14,6 +14,55 @@ public sealed class MaintenanceAssetUnavailableContractTests
         {"eventId":"evt-v2-001","eventType":"maintenance.AssetUnavailable","eventVersion":2,"occurredAtUtc":"2026-08-31T01:02:03+00:00","sourceService":"business-maintenance","correlationId":"corr-v2-001","causationId":"","organizationId":"org-001","environmentId":"env-dev","actor":"system:maintenance","idempotencyKey":"asset-unavailable:WO-001:2026-08-31T01:02:03.0000000\u002B00:00","payload":{"deviceAssetId":"DEVICE-001","reasonCode":"planned-maintenance","fromUtc":"2026-08-31T01:02:03+00:00"}}
         """;
 
+    // PublicContract: #4125 and ADR 0032 §2 keep recovery predictions separate from downtime facts.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Asset_unavailable_versions_preserve_optional_expected_restore_without_changing_downtime_facts(int version)
+    {
+        var root = JsonNode.Parse(FixedV2Json)!.AsObject();
+        root["eventVersion"] = version;
+        if (version == 1)
+        {
+            root["sourceService"] = "maintenance";
+            root["payload"]!.AsObject().Remove("reasonCode");
+            root["payload"]!["reason"] = "planned-maintenance";
+        }
+        root["payload"]!["expectedRestoreAtUtc"] = "2026-08-31T03:02:03+00:00";
+        var json = root.ToJsonString(JsonOptions);
+
+        var roundTrip = version == 1
+            ? JsonSerializer.Serialize(JsonSerializer.Deserialize<AssetUnavailableIntegrationEvent>(json, JsonOptions), JsonOptions)
+            : JsonSerializer.Serialize(JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(json, JsonOptions), JsonOptions);
+
+        Assert.True(JsonNode.DeepEquals(root, JsonNode.Parse(roundTrip)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Asset_unavailable_versions_read_legacy_or_null_prediction_as_unknown(bool explicitNull)
+    {
+        var root = JsonNode.Parse(FixedV2Json)!.AsObject();
+        if (explicitNull)
+            root["payload"]!["expectedRestoreAtUtc"] = null;
+        var v2 = JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(root.ToJsonString(), JsonOptions)!;
+        root["eventVersion"] = 1;
+        root["sourceService"] = "maintenance";
+        root["payload"]!.AsObject().Remove("reasonCode");
+        root["payload"]!["reason"] = "planned-maintenance";
+        var v1 = JsonSerializer.Deserialize<AssetUnavailableIntegrationEvent>(root.ToJsonString(), JsonOptions)!;
+
+        Assert.Null(v1.Payload.ExpectedRestoreAtUtc);
+        Assert.Null(v2.Payload.ExpectedRestoreAtUtc);
+        Assert.Equal(v1.Payload.DeviceAssetId, v2.Payload.DeviceAssetId);
+        Assert.Equal(v1.Payload.FromUtc, v2.Payload.FromUtc);
+        Assert.Equal(v1.Payload.Reason, v2.Payload.ReasonCode);
+        Assert.Equal(v1.IdempotencyKey, v2.IdempotencyKey);
+        Assert.DoesNotContain("expectedRestoreAtUtc", JsonSerializer.Serialize(v1, JsonOptions), StringComparison.Ordinal);
+        Assert.DoesNotContain("expectedRestoreAtUtc", JsonSerializer.Serialize(v2, JsonOptions), StringComparison.Ordinal);
+    }
+
     public static TheoryData<string> RequiredEnvelopeStringProperties =>
         new()
         {
