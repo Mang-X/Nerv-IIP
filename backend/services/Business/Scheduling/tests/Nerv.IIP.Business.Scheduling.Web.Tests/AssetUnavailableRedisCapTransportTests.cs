@@ -29,12 +29,20 @@ public sealed class AssetUnavailableRedisCapTransportTests
     public async Task Redis_cap_poison_exhausts_to_dlq_and_replay_preserves_identity_without_duplicate_claim()
     {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var migrationServices = new ServiceCollection();
+        migrationServices.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        migrationServices.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        await using (var migrationProvider = migrationServices.BuildServiceProvider())
+        {
+            await using var scope = migrationProvider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.MigrateAsync();
+        }
+
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.MigrateAsync();
             db.SchedulePlans.Add(CreatePlanWithAssignment());
             await db.SaveChangesAsync();
         }

@@ -37,7 +37,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Excluded($"{SchedulingWebRoot}/Application/Commands/AssembleSchedulingProblemCommand.cs", "AssembleSchedulingProblemCommandHandler", "Handle", 3, "deferred/no-facade；若 facade matrix 转为 exposed，必须重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs", "RevokeSchedulePlanCommandHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs", "CreateSchedulePlanCommandHandler", "Handle", 2),
-        Target($"{SchedulingWebRoot}/Application/Queries/GetScheduleFirstPlanJobQuery.cs", "GetScheduleFirstPlanJobQueryHandler", "Handle", 1),
+        Excluded($"{SchedulingWebRoot}/Application/Queries/GetScheduleFirstPlanJobQuery.cs", "GetScheduleFirstPlanJobQueryHandler", "Handle", 1, "deferred/no-facade；#4136 交付 facade 时重新分类"),
         Target($"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs", "GetSchedulePlanDetailQueryHandler", "Handle", 1),
         Excluded($"{SchedulingWebRoot}/Application/Queries/GetMaterialDeliverySourcesQuery.cs", "GetMaterialDeliverySourcesQueryHandler", "Handle", 1, "internal：仅 DemandPlanning 物料交付服务消费，不通过 Gateway 暴露"),
         Target($"{SchedulingWebRoot}/Application/Queries/GetSchedulePlanOverridesQuery.cs", "GetSchedulePlanOverridesQueryHandler", "Handle", 2),
@@ -76,9 +76,9 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(45, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
+        Assert.Equal(44, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(6, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
+        Assert.Equal(7, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
 
         var discovered = SchedulingUserMessageSourceAnalyzer.Discover(documents);
