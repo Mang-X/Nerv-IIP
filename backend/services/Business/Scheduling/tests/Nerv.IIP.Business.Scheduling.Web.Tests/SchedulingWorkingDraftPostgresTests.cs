@@ -72,6 +72,14 @@ public sealed class SchedulingWorkingDraftPostgresTests
             JsonSerializer.Serialize(discovered.Single(x => x.PlanId == baseline.PlanId).State, SchedulingJson.Options));
         var otherUser = Assert.Single(await Read(userB, problem));
         Assert.Empty(otherUser.State.Orders);
+        // B clears first while A's earlier row still exists. An unscoped FirstOrDefault delete must fail this invariant.
+        using var userBCleared = await userB.DeleteAsync($"/api/business/v1/scheduling/plans/{baseline.PlanId}/working-draft?organizationId={problem.OrganizationId}&environmentId={problem.EnvironmentId}");
+        userBCleared.EnsureSuccessStatusCode();
+        Assert.Empty(await Read(userB, problem, baseline.PlanId));
+        var userAAfterOtherUserClear = Assert.Single(await Read(userA, problem, baseline.PlanId));
+        Assert.Equal(JsonSerializer.Serialize(state, SchedulingJson.Options),
+            JsonSerializer.Serialize(userAAfterOtherUserClear.State, SchedulingJson.Options));
+        await Save(userB, baseline.PlanId, state with { Orders = [] }, problem);
         Assert.Single((await Read(userA, problem, baseline.PlanId)));
         Assert.Empty(await Read(userA, problem with { EnvironmentId = "other-env" }));
         Assert.Empty(await Read(userA, problem with { OrganizationId = "other-org" }));
