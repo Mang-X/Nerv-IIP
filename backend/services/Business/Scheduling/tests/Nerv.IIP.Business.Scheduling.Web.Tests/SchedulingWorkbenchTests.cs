@@ -665,33 +665,50 @@ public sealed partial class SchedulingWorkbenchTests
     private sealed class StubProductEngineeringClient(SchedulingProblemRoutingSnapshot? routing = null)
         : ISchedulingProblemProductEngineeringClient
     {
+        public int RoutingReads { get; private set; }
+        public int ProductionVersionReads { get; private set; }
+
         public Task<SchedulingProblemRoutingSnapshot> GetRoutingAsync(
             string organizationId,
             string environmentId,
             string routingVersionId,
-            CancellationToken cancellationToken) => Task.FromResult(
-                routing ?? throw new NotSupportedException());
+            CancellationToken cancellationToken)
+        {
+            RoutingReads++;
+            return Task.FromResult(routing ?? throw new NotSupportedException());
+        }
 
         public Task<SchedulingProblemProductionVersionSnapshot> GetProductionVersionRoutingAsync(
             string organizationId,
             string environmentId,
             string productionVersionId,
-            CancellationToken cancellationToken) => Task.FromResult(
-                new SchedulingProblemProductionVersionSnapshot(productionVersionId, "SKU-001", "ROUTE-001:A"));
+            CancellationToken cancellationToken)
+        {
+            ProductionVersionReads++;
+            return Task.FromResult(new SchedulingProblemProductionVersionSnapshot(productionVersionId, "SKU-001", "ROUTE-001:A"));
+        }
     }
 
     private sealed class StubMasterDataClient(
         DateTimeOffset start,
         IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>? toolingFacts = null) : ISchedulingProblemMasterDataClient
     {
+        public int WorkCenterReads { get; private set; }
+        public int CalendarReads { get; private set; }
+        public int DeviceReads { get; private set; }
+        public int ToolingReads { get; private set; }
+
         public IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> Transitions { get; private set; } = [];
 
         public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
             string organizationId,
             string environmentId,
             string workCenterCode,
-            CancellationToken cancellationToken) => Task.FromResult(
-                new SchedulingProblemWorkCenterSnapshot(workCenterCode, "CAL-001", 1, ["cutting"]));
+            CancellationToken cancellationToken)
+        {
+            WorkCenterReads++;
+            return Task.FromResult(new SchedulingProblemWorkCenterSnapshot(workCenterCode, "CAL-001", 1, ["cutting"]));
+        }
 
         public Task<SchedulingProblemCalendarSnapshot> GetCalendarAsync(
             string organizationId,
@@ -699,16 +716,22 @@ public sealed partial class SchedulingWorkbenchTests
             string calendarCode,
             DateTimeOffset horizonStartUtc,
             DateTimeOffset horizonEndUtc,
-            CancellationToken cancellationToken) => Task.FromResult(
-                new SchedulingProblemCalendarSnapshot(
-                    calendarCode,
-                    [new SchedulingProblemShiftWindowSnapshot(start, start.AddHours(8), "day-shift")]));
+            CancellationToken cancellationToken)
+        {
+            CalendarReads++;
+            return Task.FromResult(new SchedulingProblemCalendarSnapshot(calendarCode,
+                [new SchedulingProblemShiftWindowSnapshot(start, start.AddHours(8), "day-shift")]));
+        }
 
         public Task<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>> ListDeviceAssetsAsync(
             string organizationId,
             string environmentId,
             string workCenterCode,
-            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>>([]);
+            CancellationToken cancellationToken)
+        {
+            DeviceReads++;
+            return Task.FromResult<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>>([]);
+        }
 
         public Task<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>> ResolveToolingFactsAsync(
             string organizationId,
@@ -716,6 +739,7 @@ public sealed partial class SchedulingWorkbenchTests
             IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
             CancellationToken cancellationToken)
         {
+            ToolingReads++;
             Transitions = transitions;
             return Task.FromResult(toolingFacts ?? []);
         }
@@ -833,10 +857,15 @@ public sealed partial class SchedulingWorkbenchTests
         Func<HttpRequestMessage, HttpResponseMessage> responseFactory,
         IReadOnlyCollection<string>? assemblyChildOrderIds = null) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("/assembly-children", StringComparison.Ordinal)
-                ? Json(new { assemblyChildWorkOrderIds = assemblyChildOrderIds ?? [] })
-                : responseFactory(request));
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (!request.RequestUri!.AbsolutePath.EndsWith("/assembly-children/batch", StringComparison.Ordinal))
+                return responseFactory(request);
+
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            return Json(new { items = body.RootElement.GetProperty("workOrderIds").EnumerateArray()
+                .Select(id => new { workOrderId = id.GetString(), assemblyChildWorkOrderIds = assemblyChildOrderIds ?? [] }).ToArray() });
+        }
     }
 
     private static HttpResponseMessage Json(object value) => new(HttpStatusCode.OK)
