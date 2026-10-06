@@ -349,6 +349,76 @@ public sealed partial class SchedulingWorkbenchTests
     }
 
     [Fact]
+    public async Task Revision_keeps_excluded_started_operation_after_stable_window_expires()
+    {
+        await using var db = CreateDbContext();
+        var template = ShockAbsorberSchedulingFixture.CreateProblem();
+        var excluded = template.Orders.First();
+        var included = template.Orders.Last();
+        var excludedOperation = excluded.Operations.First();
+        var includedOperation = included.Operations.First();
+        var start = template.HorizonStartUtc;
+        var problem = template with
+        {
+            Orders = [
+                excluded with { Operations = [excludedOperation] },
+                included with { Operations = [includedOperation] }
+            ]
+        };
+        var basePlan = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().Schedule(problem, "plan-excluded-started-base", start),
+            SchedulePlanStatusContract.Generated);
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(problem.OrganizationId, problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+        db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+            problem.ProblemId, problem.ContractVersion, problem.OrganizationId, problem.EnvironmentId,
+            "fingerprint", SchedulingFrozenOccupancy.SerializeSnapshot(problem, []),
+            problem.HorizonStartUtc, problem.HorizonEndUtc, start));
+        await db.SaveChangesAsync();
+
+        var settings = new SchedulingFreezeSettings(TimeSpan.FromMinutes(1), new Dictionary<string, TimeSpan>());
+        var firstSender = new CapturingPlanSender(start);
+        var first = await new CreateSchedulePlanRevisionCommandHandler(
+            db, firstSender, new FreezeTestTimeProvider(start), settings).Handle(
+            new CreateSchedulePlanRevisionCommand(basePlan.PlanId, problem.OrganizationId,
+                problem.EnvironmentId, [included.OrderId], []), CancellationToken.None);
+        Assert.Equal(start.AddHours(1), Assert.Single(first.Candidate.Assignments).StartUtc);
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            db, new FiniteCapacityScheduler(), new FreezeTestTimeProvider(start),
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db),
+            new OrderUrgencyService(db, new FreezeTestTimeProvider(start)),
+            SchedulingEquipmentUnknownModeOption.Default);
+        var savedCandidate = await createHandler.Handle(firstSender.LastCommand!, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var resource = problem.Resources.Single(x => x.ResourceId == excludedOperation.PrimaryResourceId);
+        var actualStart = start.AddMinutes(5);
+        var execution = OperationExecutionProjection.Create(problem.OrganizationId, problem.EnvironmentId,
+            excluded.OrderId, excludedOperation.OperationId, excludedOperation.OperationSequence,
+            resource.WorkCenterId, actualStart, "event-create-external");
+        execution.ApplyStarted(actualStart, "event-start-external");
+        db.OperationExecutionProjections.Add(execution);
+        await db.SaveChangesAsync();
+
+        var secondSender = new CapturingPlanSender(start.AddHours(3));
+        await new CreateSchedulePlanRevisionCommandHandler(
+            db, secondSender, new FreezeTestTimeProvider(start.AddHours(3)), settings).Handle(
+            new CreateSchedulePlanRevisionCommand(savedCandidate.PlanId, problem.OrganizationId,
+                problem.EnvironmentId, [included.OrderId], []), CancellationToken.None);
+
+        var input = secondSender.LastCommand!;
+        var frozen = Assert.Single(input.Freeze!.Assignments, x => x.Assignment.OrderId == excluded.OrderId);
+        Assert.True(((SchedulingFreezeReason)frozen.Reasons).HasFlag(SchedulingFreezeReason.Started));
+        var reservation = Assert.Single(input.FixedReservations!, x => x.OrderId == excluded.OrderId);
+        Assert.Equal(actualStart, reservation.StartUtc);
+        Assert.Equal(problem.HorizonEndUtc, reservation.EndUtc);
+        var generated = await createHandler.Handle(input, CancellationToken.None);
+        Assert.DoesNotContain(generated.Assignments, x =>
+            x.StartUtc < reservation.EndUtc && x.EndUtc > reservation.StartUtc);
+    }
+
+    [Fact]
     public async Task Revision_replays_frozen_snapshot_and_excludes_it_from_moved_count()
     {
         await using var db = CreateDbContext();

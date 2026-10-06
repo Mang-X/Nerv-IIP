@@ -166,7 +166,9 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
             .Concat((priorFreeze?.Assignments.Select(x => x.Assignment) ?? [])
                 .Where(x => !baselineKeys.Contains((x.OrderId, x.OperationId))))
             .ToArray();
-        var baselineOrderIds = baseProblem.Orders.Select(x => x.OrderId).ToArray();
+        var baselineOrderIds = baseProblem.Orders.Select(x => x.OrderId)
+            .Concat(priorFreeze?.Assignments.Select(x => x.Assignment.OrderId) ?? [])
+            .Distinct(StringComparer.Ordinal).ToArray();
         var execution = await dbContext.OperationExecutionProjections.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
@@ -175,17 +177,26 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         var operations = baseProblem.Orders.SelectMany(order => order.Operations.Select(operation =>
             (Key: (order.OrderId, operation.OperationId), Operation: operation)))
             .ToDictionary(x => x.Key, x => x.Operation);
+        var priorFrozenAssignments = priorFreeze?.Assignments.ToDictionary(
+            x => (x.Assignment.OrderId, x.Assignment.OperationId), x => x.Assignment) ?? [];
         var reservationsByOperation = snapshotReservations
             .ToDictionary(x => (x.OrderId, x.OperationId));
-        foreach (var projection in execution.Where(x => x.ActualStartedAtUtc.HasValue &&
-                     operations.ContainsKey((x.WorkOrderId, x.OperationId))))
+        foreach (var projection in execution.Where(x => x.ActualStartedAtUtc.HasValue))
         {
+            var key = (projection.WorkOrderId, projection.OperationId);
+            var hasOperation = operations.TryGetValue(key, out var operation);
+            var hasPriorAssignment = priorFrozenAssignments.TryGetValue(key, out var priorAssignment);
+            if (!hasOperation && !hasPriorAssignment)
+            {
+                continue;
+            }
             reservationsByOperation[(projection.WorkOrderId, projection.OperationId)] = new FixedWorkCenterReservation(
                 projection.WorkOrderId, projection.OperationId,
-                operations[(projection.WorkOrderId, projection.OperationId)].OperationSequence,
-                projection.WorkCenterId ?? baseProblem.Resources.First(resource =>
-                    operations[(projection.WorkOrderId, projection.OperationId)].EligibleResourceIds.Contains(
-                        resource.ResourceId, StringComparer.Ordinal)).WorkCenterId,
+                operation?.OperationSequence ?? priorAssignment!.OperationSequence,
+                projection.WorkCenterId ?? (operation is null
+                    ? priorAssignment!.WorkCenterId
+                    : baseProblem.Resources.First(resource => operation.EligibleResourceIds.Contains(
+                        resource.ResourceId, StringComparer.Ordinal)).WorkCenterId),
                 projection.ActualStartedAtUtc!.Value,
                 projection.ActualCompletedAtUtc ?? baseProblem.HorizonEndUtc,
                 null);
