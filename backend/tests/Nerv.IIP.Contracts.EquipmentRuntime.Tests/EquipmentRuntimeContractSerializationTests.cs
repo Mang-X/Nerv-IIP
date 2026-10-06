@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 
 namespace Nerv.IIP.Contracts.EquipmentRuntime.Tests;
@@ -16,6 +17,33 @@ public sealed class EquipmentRuntimeContractSerializationTests
         var item = document.RootElement.GetProperty("items")[0];
         Assert.Equal("unavailable", item.GetProperty("availabilityStatus").GetString());
         Assert.Equal("alarm", item.GetProperty("sourceType").GetString());
+    }
+
+    // PublicContract: #4125 and ADR 0032 §2; ETR does not become the actual window end.
+    [Fact]
+    public void Availability_window_preserves_expected_restore_separately_from_window_bounds()
+    {
+        var root = JsonNode.Parse(JsonSerializer.Serialize(CreateAvailabilityResponse(), EquipmentRuntimeJson.Options))!;
+        root["items"]![0]!["expectedRestoreAtUtc"] = "2026-06-01T09:00:00+00:00";
+
+        var response = JsonSerializer.Deserialize<EquipmentRuntimeAvailabilityResponse>(root.ToJsonString(), EquipmentRuntimeJson.Options);
+        var roundTrip = JsonSerializer.Serialize(response, EquipmentRuntimeJson.Options);
+
+        Assert.True(JsonNode.DeepEquals(root, JsonNode.Parse(roundTrip)));
+    }
+
+    [Fact]
+    public void Availability_window_without_prediction_keeps_existing_bounds_and_unknown_recovery()
+    {
+        var response = CreateAvailabilityResponse();
+        var json = JsonSerializer.Serialize(response, EquipmentRuntimeJson.Options);
+        var roundTrip = JsonSerializer.Deserialize<EquipmentRuntimeAvailabilityResponse>(json, EquipmentRuntimeJson.Options)!;
+        var item = Assert.Single(roundTrip.Items);
+
+        Assert.Null(item.ExpectedRestoreAtUtc);
+        Assert.Equal(response.Items.Single().StartUtc, item.StartUtc);
+        Assert.Equal(response.Items.Single().EndUtc, item.EndUtc);
+        Assert.DoesNotContain("expectedRestoreAtUtc", json, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -186,7 +186,9 @@ public sealed record EquipmentRuntimeAvailabilityWindowContract(
     // SourceReferenceId 多数情况下是聚合 GUID，整个窗口对象里再无第二个可读字段，界面「来源引用」
     // 列只能把 GUID 原样上屏，前端无从兜底。各 provider 必须回带本域的业务标识；确实没有业务编号
     // 可回时留 null，由界面显示占位而不是显示 GUID。
-    string? SourceReferenceLabel = null);
+    string? SourceReferenceLabel = null,
+    // Recovery prediction from the source, independent of the availability window bounds.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed record EquipmentRuntimeCurrentStateResponse(
     int ContractVersion,
