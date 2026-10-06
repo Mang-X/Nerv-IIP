@@ -391,7 +391,7 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(23, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingMaterialDeliverySources");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
