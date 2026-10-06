@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -816,7 +817,7 @@ public sealed class CompositePlanningScheduledReceiptSnapshotClient(
     }
 }
 
-public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient httpClient) : IPlanningScheduledReceiptSourceClient
+public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient httpClient, ApplicationDbContext dbContext) : IPlanningScheduledReceiptSourceClient
 {
     public string SourceName => "erp-purchase-orders";
 
@@ -840,7 +841,6 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
                 "/api/business/v1/erp/purchase-orders?" + PlanningHttpQuery.Query(
                     ("organizationId", request.OrganizationId),
                     ("environmentId", request.EnvironmentId),
-                    ("status", "Released"),
                     ("skip", skip),
                     ("take", PageSize)));
             if (!string.IsNullOrWhiteSpace(internalBearerToken))
@@ -867,6 +867,7 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
             .Select(x => $"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}")
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var receipts = orders
+            .Where(order => order.Status == "Released")
             .SelectMany(order => order.Lines
                 .Select(line => new
                 {
@@ -894,7 +895,60 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
                 $"{x.PurchaseOrderNo}:{x.LineNo}"))
             .ToArray();
 
-        return new PlanningScheduledReceiptSnapshot($"erp-purchase-orders:{receipts.Length}", receipts);
+        var accepted = await dbContext.PlanningSuggestions.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId
+                && x.Status == PlanningSuggestionStatus.Accepted && x.SuggestionType == "planned-purchase"
+                && x.RequiredDate <= request.HorizonEnd)
+            .ToArrayAsync(cancellationToken);
+        accepted = accepted.Where(x => itemKeys.Contains($"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}")).ToArray();
+        var commitments = new List<ScheduledReceiptSnapshot>();
+        if (accepted.Length > 0)
+        {
+            var requisitions = new List<ErpPlanningPurchaseRequisitionItem>();
+            skip = 0;
+            while (true)
+            {
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Get,
+                    "/api/business/v1/erp/purchase-requisitions?" + PlanningHttpQuery.Query(
+                        ("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId),
+                        ("skip", skip), ("take", PageSize)));
+                if (!string.IsNullOrWhiteSpace(internalBearerToken))
+                {
+                    httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+                }
+                using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                var body = await OptionalPlanningSnapshotHttp.ReadEnvelopeDataAsync<ErpPlanningPurchaseRequisitionsResponse>(
+                    response, "ERP returned an invalid purchase requisition response.",
+                    "ERP returned an empty purchase requisition response envelope.", cancellationToken);
+                requisitions.AddRange(body.Items);
+                skip += PageSize;
+                if (body.Items.Count == 0 || skip >= body.Total)
+                {
+                    break;
+                }
+            }
+
+            var requisitionBySuggestion = requisitions.ToDictionary(x => x.SuggestionId, StringComparer.Ordinal);
+            var orderByNumber = orders.ToDictionary(x => x.PurchaseOrderNo, StringComparer.Ordinal);
+            foreach (var suggestion in accepted)
+            {
+                // Released/terminal PO owns supply from now on, even when fully received or closed.
+                // Until then the accepted suggestion remains the commitment, not the pending PO quantity.
+                if (requisitionBySuggestion.TryGetValue(suggestion.Id.ToString(), out var requisition)
+                    && requisition.ConvertedPurchaseOrderNo is { } orderNo
+                    && orderByNumber.TryGetValue(orderNo, out var order)
+                    && order.Status != "PendingApproval")
+                {
+                    continue;
+                }
+                commitments.Add(new ScheduledReceiptSnapshot(suggestion.SkuCode, suggestion.UomCode, suggestion.SiteCode,
+                    suggestion.Quantity, suggestion.RequiredDate, "demand-planning", "planning-suggestion", suggestion.Id.ToString()));
+            }
+        }
+
+        return new PlanningScheduledReceiptSnapshot(
+            $"erp-purchase-orders:{receipts.Length};accepted-purchases:{commitments.Count}", [.. receipts, .. commitments]);
     }
 }
 
@@ -1411,6 +1465,10 @@ internal sealed record InventoryAvailabilityResponse(
     decimal OnHandQuantity,
     decimal ReservedQuantity,
     decimal AvailableQuantity);
+
+internal sealed record ErpPlanningPurchaseRequisitionsResponse(IReadOnlyCollection<ErpPlanningPurchaseRequisitionItem> Items, int Total);
+
+internal sealed record ErpPlanningPurchaseRequisitionItem(string SuggestionId, string? ConvertedPurchaseOrderNo);
 
 internal sealed record ErpPurchaseOrdersResponse(IReadOnlyCollection<ErpPurchaseOrderItem> Items, int Total);
 
