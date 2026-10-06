@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.DemandPlanning;
 using Prometheus;
 using static Nerv.IIP.Business.DemandPlanning.Web.Application.Planning.PlanningHttpQuery;
 
@@ -897,7 +898,7 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
 
         var accepted = await dbContext.PlanningSuggestions.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId
-                && x.Status == PlanningSuggestionStatus.Accepted && x.SuggestionType == "planned-purchase"
+                && x.Status == PlanningSuggestionStatus.Accepted && x.SuggestionType == DemandPlanningSuggestionTypes.PlannedPurchase
                 && x.RequiredDate <= request.HorizonEnd)
             .ToArrayAsync(cancellationToken);
         accepted = accepted.Where(x => itemKeys.Contains($"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}")).ToArray();
