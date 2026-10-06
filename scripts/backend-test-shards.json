@@ -31,6 +31,7 @@
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests",
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingWorkingDraftPostgresTests",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests",

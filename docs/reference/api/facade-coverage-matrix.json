@@ -6301,6 +6301,22 @@
       "operationId": "clearSchedulingWorkingDraft",
       "classification": "deferred",
       "followUp": "#4143：BusinessGateway 草稿 facade、可信用户透传与生成链。"
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/first-plan-jobs",
+      "operationId": "acceptSchedulingFirstPlanJob",
+      "classification": "deferred",
+      "followUp": "#4136：交付异步首版作业的 BusinessGateway facade 与生成客户端。"
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/workbench/first-plan-jobs/{jobId}",
+      "operationId": "getSchedulingFirstPlanJob",
+      "classification": "deferred",
+      "followUp": "#4136：交付异步首版作业的 BusinessGateway facade 与生成客户端。"
     }
   ]
 }
