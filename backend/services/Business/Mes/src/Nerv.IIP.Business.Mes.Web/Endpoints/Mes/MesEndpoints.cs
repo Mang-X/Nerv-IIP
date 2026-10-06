@@ -892,6 +892,31 @@ public sealed class GetAssemblyChildWorkOrdersEndpoint(ISender sender)
     }
 }
 
+public sealed class BatchAssemblyChildWorkOrdersRequestValidator : Validator<BatchAssemblyChildWorkOrdersRequest>
+{
+    public BatchAssemblyChildWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
+        RuleFor(x => x.WorkOrderIds).NotNull().Must(x => x is { Count: > 0 and <= 500 })
+            .WithMessage("工单数量须在 1 到 500 之间");
+        RuleForEach(x => x.WorkOrderIds).NotEmpty();
+    }
+}
+
+public sealed class GetBatchAssemblyChildWorkOrdersEndpoint(ISender sender)
+    : MesEndpoint<BatchAssemblyChildWorkOrdersRequest, BatchAssemblyChildWorkOrdersResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetBatchAssemblyChildWorkOrdersEndpoint>());
+
+    public override async Task HandleAsync(BatchAssemblyChildWorkOrdersRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetBatchAssemblyChildWorkOrdersQuery(
+            req.OrganizationId, req.EnvironmentId, req.WorkOrderIds), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetMesWorkOrderDetailEndpoint(ISender sender)
     : MesEndpoint<WorkOrderContextRequest, MesWorkOrderDetailResponse>
 {
@@ -2066,6 +2091,7 @@ public static class MesEndpointContracts
         new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
         new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
         new(typeof(GetAssemblyChildWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/assembly-children", MesPermissionCodes.WorkOrdersRead, "getBusinessMesAssemblyChildWorkOrders"),
+        new(typeof(GetBatchAssemblyChildWorkOrdersEndpoint), "POST", "/api/business/v1/mes/work-orders/assembly-children/batch", MesPermissionCodes.WorkOrdersRead, "getBusinessMesBatchAssemblyChildWorkOrders"),
         new(typeof(SplitWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/split", MesPermissionCodes.WorkOrdersManage, "splitBusinessMesWorkOrder"),
         new(typeof(MergeWorkOrdersEndpoint), "POST", "/api/business/v1/mes/work-orders/merge", MesPermissionCodes.WorkOrdersManage, "mergeBusinessMesWorkOrders"),
         new(typeof(GetWorkOrderTransformationEndpoint), "GET", "/api/business/v1/mes/work-order-transformations/{transformationId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderTransformation"),
