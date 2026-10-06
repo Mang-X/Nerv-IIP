@@ -12,7 +12,8 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
 public sealed record CreateSchedulePlanCommand(
     SchedulingProblemContract Problem,
-    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null) : ICommand<SchedulePlanContract>;
+    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null,
+    SchedulingFreezeSnapshot? Freeze = null) : ICommand<SchedulePlanContract>;
 
 public sealed class CreateSchedulePlanCommandValidator : AbstractValidator<CreateSchedulePlanCommand>
 {
@@ -61,7 +62,7 @@ public sealed class CreateSchedulePlanCommandHandler(
         var externalReservations = fixedReservations
             .Where(x => !operationKeys.Contains((x.OrderId, x.OperationId)))
             .ToArray();
-        var problemFingerprint = CalculateProblemFingerprint(schedulingProblem, fixedReservations);
+        var problemFingerprint = CalculateProblemFingerprint(schedulingProblem, fixedReservations, request.Freeze);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.OrganizationId == overlaidProblem.OrganizationId &&
@@ -101,7 +102,8 @@ public sealed class CreateSchedulePlanCommandHandler(
 
         var generatedAtUtc = timeProvider.GetUtcNow();
         var preview = scheduler.ScheduleNormalized(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc,
-                planReservations, externalReservations)
+                planReservations, externalReservations,
+                SchedulingFrozenOccupancy.ExternalFrozenAssignments(request.Freeze, schedulingProblem, fixedReservations))
             with { ProblemFingerprint = problemFingerprint };
         var generated = SchedulePlanValidationContextProjector.Attach(
             SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated),
@@ -112,7 +114,7 @@ public sealed class CreateSchedulePlanCommandHandler(
             overlaidProblem.OrganizationId,
             overlaidProblem.EnvironmentId,
             problemFingerprint,
-            SchedulingFrozenOccupancy.SerializeSnapshot(schedulingProblem, fixedReservations),
+            SchedulingFrozenOccupancy.SerializeSnapshot(schedulingProblem, fixedReservations, request.Freeze),
             overlaidProblem.HorizonStartUtc,
             overlaidProblem.HorizonEndUtc,
             generatedAtUtc));
@@ -125,12 +127,13 @@ public sealed class CreateSchedulePlanCommandHandler(
         return generated;
     }
 
-    private static string CalculateProblemFingerprint(
+    internal static string CalculateProblemFingerprint(
         SchedulingProblemContract problem,
-        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations)
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
+        SchedulingFreezeSnapshot? freeze = null)
     {
         var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
-        var json = SchedulingFrozenOccupancy.SerializeSnapshot(normalizedProblem, fixedReservations);
+        var json = SchedulingFrozenOccupancy.SerializeSnapshot(normalizedProblem, fixedReservations, freeze);
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

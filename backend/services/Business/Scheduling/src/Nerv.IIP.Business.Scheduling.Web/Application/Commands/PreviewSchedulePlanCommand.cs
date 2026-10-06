@@ -6,7 +6,8 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
 public sealed record PreviewSchedulePlanCommand(
     SchedulingProblemContract Problem,
-    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null) : ICommand<SchedulePlanContract>;
+    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null,
+    SchedulingFreezeSnapshot? Freeze = null) : ICommand<SchedulePlanContract>;
 
 public sealed class PreviewSchedulePlanCommandValidator : AbstractValidator<PreviewSchedulePlanCommand>
 {
@@ -49,7 +50,13 @@ public sealed class PreviewSchedulePlanCommandHandler(
             .ToHashSet();
         var plan = scheduler.ScheduleNormalized(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow(),
             fixedReservations.Where(x => operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
-            fixedReservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray());
+            fixedReservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+            SchedulingFrozenOccupancy.ExternalFrozenAssignments(request.Freeze, schedulingProblem, fixedReservations))
+            with
+            {
+                ProblemFingerprint = CreateSchedulePlanCommandHandler.CalculateProblemFingerprint(
+                    schedulingProblem, fixedReservations, request.Freeze)
+            };
         return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);
     }
 }

@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
@@ -698,7 +700,9 @@ public sealed class PlanningInputAdapterTests
             }
             """));
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.test") };
-        var client = new HttpPlanningErpScheduledReceiptSnapshotClient(httpClient);
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var client = new HttpPlanningErpScheduledReceiptSnapshotClient(httpClient, scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
 
         var exception = await Assert.ThrowsAsync<OptionalPlanningSnapshotException>(() => client.GetScheduledReceiptsAsync(
             "token",
@@ -790,13 +794,71 @@ public sealed class PlanningInputAdapterTests
         Assert.Equal("SKU-RM-1000", parameter.SkuCode);
     }
 
+    [Theory]
+    [InlineData(null, 10, "planning-suggestion")]
+    [InlineData("PendingApproval", 10, "planning-suggestion")]
+    [InlineData("Released", 7, "purchase-order")]
+    public async Task Accepted_purchase_supply_is_counted_once_until_released_order_takes_over(
+        string? orderStatus, decimal expectedQuantity, string expectedDocumentType)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var due = new DateOnly(2026, 6, 1);
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new MrpRunId(Guid.NewGuid()),
+            "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 10m, due, due, "net-requirement");
+        suggestion.Accept("BusinessErp", "PurchaseRequisition", "PR-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        // Same item in another tenant or an unaccepted suggestion cannot cover this demand.
+        var otherTenant = PlanningSuggestion.Create("org-other", "env-dev", suggestion.MrpRunId,
+            "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 99m, due, due, "net-requirement");
+        otherTenant.Accept("BusinessErp", "PurchaseRequisition", "PR-OTHER");
+        dbContext.PlanningSuggestions.Add(otherTenant);
+        dbContext.PlanningSuggestions.Add(PlanningSuggestion.Create("org-001", "env-dev", suggestion.MrpRunId,
+            "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 99m, due, due, "net-requirement"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("purchase-requisitions", StringComparison.Ordinal))
+            {
+                return JsonResponse(JsonSerializer.Serialize(new { success = true, data = new { total = 1, items = new[] {
+                    new { requisitionNo = "PR-001", suggestionId = suggestion.Id.ToString(),
+                        convertedPurchaseOrderNo = orderStatus is null ? null : "PO-001" }
+                } } }, JsonOptions));
+            }
+            var items = orderStatus is null ? Array.Empty<object>() : new object[] {
+                new { purchaseOrderNo = "PO-001", supplierCode = "SUP-001", siteCode = "SITE-01",
+                    status = orderStatus, totalAmount = 10m, lines = new[] {
+                        new { lineNo = "10", skuCode = "SKU-RM-1000", uomCode = "pcs", orderedQuantity = 10m,
+                            receivedQuantity = 3m, openQuantity = 7m, finalDelivery = false, unitPrice = 1m,
+                            promisedDate = due }
+                    } }
+            };
+            return JsonResponse(JsonSerializer.Serialize(new { success = true, data = new { total = items.Length, items } }, JsonOptions));
+        });
+        var client = new HttpPlanningErpScheduledReceiptSnapshotClient(new HttpClient(handler) { BaseAddress = new Uri("http://erp.test") }, dbContext);
+        var snapshot = await client.GetScheduledReceiptsAsync("token", new PlanningScheduledReceiptSnapshotRequest(
+            "org-001", "env-dev", due.AddDays(-1), due.AddDays(30),
+            [new PlanningScheduledReceiptSnapshotItem("SKU-RM-1000", "pcs", "SITE-01")]), CancellationToken.None);
+
+        var receipt = Assert.Single(snapshot.ScheduledReceipts);
+        Assert.Equal(expectedQuantity, receipt.Quantity);
+        Assert.Equal(expectedDocumentType, receipt.SourceDocumentType);
+        var rerun = MrpCalculator.Calculate(new MrpCalculationInput("org-001", "env-dev", due.AddDays(-1), due.AddDays(30),
+            [new DemandSnapshot("SO-001", "SKU-RM-1000", "pcs", "SITE-01", 10m, due)],
+            [new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", orderStatus == "Released" ? 3m : 0m)],
+            [], [], snapshot.ScheduledReceipts,
+            [new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 0, 0m, null, null, null, "buy")], []));
+        Assert.DoesNotContain(rerun, x => x.SuggestionType == "planned-purchase");
+    }
+
     [Fact]
     public async Task Erp_scheduled_receipt_client_maps_open_purchase_order_lines_across_pages()
     {
         var handler = new StubHttpMessageHandler(request =>
         {
-            Assert.Contains("status=Released", request.RequestUri!.Query, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("take=500", request.RequestUri.Query, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("take=500", request.RequestUri!.Query, StringComparison.OrdinalIgnoreCase);
 
             if (request.RequestUri.Query.Contains("skip=500", StringComparison.OrdinalIgnoreCase))
             {
@@ -852,7 +914,9 @@ public sealed class PlanningInputAdapterTests
                 """);
         });
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.test") };
-        var client = new HttpPlanningErpScheduledReceiptSnapshotClient(httpClient);
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var client = new HttpPlanningErpScheduledReceiptSnapshotClient(httpClient, scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
 
         var snapshot = await client.GetScheduledReceiptsAsync(
             "token",
@@ -864,7 +928,7 @@ public sealed class PlanningInputAdapterTests
                 [new PlanningScheduledReceiptSnapshotItem("sku-rm-1000", "PCS", "site-01")]),
             CancellationToken.None);
 
-        Assert.Equal("erp-purchase-orders:2", snapshot.SnapshotSource);
+        Assert.Equal("erp-purchase-orders:2;accepted-purchases:0", snapshot.SnapshotSource);
         Assert.Equal(2, handler.Requests.Count);
         Assert.Equal([7m, 7m], snapshot.ScheduledReceipts.Select(x => x.Quantity).ToArray());
         Assert.Contains(snapshot.ScheduledReceipts, x =>
@@ -970,6 +1034,8 @@ public sealed class PlanningInputAdapterTests
     {
         var requests = new List<Uri>();
         var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase($"receipt-registration-{Guid.NewGuid():N}"));
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new CaptureHttpMessageHandlerBuilderFilter(request =>
         {
             requests.Add(request.RequestUri!);

@@ -3785,6 +3785,14 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/assembly-children/batch",
+      "operationId": "getBusinessMesBatchAssemblyChildWorkOrders",
+      "classification": "internal",
+      "rationale": "#4132 为 Scheduling 一次读取最多 500 个父工单的装配子件提供服务间查询；不面向 BusinessGateway 页面公开。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/split",
       "operationId": "splitBusinessMesWorkOrder",
       "classification": "exposed",
