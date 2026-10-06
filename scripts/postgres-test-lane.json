@@ -96,12 +96,13 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingWorkingDraftPostgresTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests",
       "databasePrefix": "nerv_iip_scheduling",
       "diagnosticSchemas": [
         "scheduling"
       ],
       "expectedTestIdentities": [
+        "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingWorkingDraftPostgresTests.Migration_and_http_requests_restore_isolated_edits_without_mutating_plans",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests.Migration_preserves_legacy_override_and_manual_replacements_track_source_plan",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests.Migration_and_concurrent_consumers_persist_one_projection_without_lost_quantity",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL",

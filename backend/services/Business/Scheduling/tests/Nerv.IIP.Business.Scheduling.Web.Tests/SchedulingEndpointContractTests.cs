@@ -34,6 +34,25 @@ public sealed class SchedulingEndpointContractTests
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task Working_draft_discovery_requires_internal_authentication_and_forwarded_user()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        const string route = "/api/business/v1/scheduling/working-drafts?organizationId=org-001&environmentId=prod";
+        using var anonymous = await client.GetAsync(route);
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var missingUser = await client.GetAsync(route);
+        var error = await missingUser.Content.ReadAsStringAsync();
+        Assert.Contains("用户", error);
+        client.DefaultRequestHeaders.Add("X-Scheduling-User-Id", "planner-a");
+        using var discovered = await client.GetAsync(route);
+        discovered.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await discovered.Content.ReadAsStringAsync());
+        Assert.Empty(document.RootElement.GetProperty("data").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Preview_and_historical_detail_return_current_execution_without_persisting_it()
     {
         await using var baseFactory = new SchedulingLiveHttpTestFactory();
@@ -372,7 +391,7 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(23, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingMaterialDeliverySources");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");

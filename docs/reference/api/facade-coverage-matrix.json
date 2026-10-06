@@ -6277,6 +6277,30 @@
       "operationId": "getSchedulingMaterialDeliverySources",
       "classification": "internal",
       "rationale": "DemandPlanning 物料交付读面按显式 planId 与建议/工单身份消费；不经 Gateway 暴露。"
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/working-drafts",
+      "operationId": "listSchedulingWorkingDrafts",
+      "classification": "deferred",
+      "followUp": "#4143：BusinessGateway 草稿 facade、可信用户透传与生成链。"
+    },
+    {
+      "service": "Scheduling",
+      "method": "PUT",
+      "route": "/api/business/v1/scheduling/plans/{planId}/working-draft",
+      "operationId": "saveSchedulingWorkingDraft",
+      "classification": "deferred",
+      "followUp": "#4143：BusinessGateway 草稿 facade、可信用户透传与生成链。"
+    },
+    {
+      "service": "Scheduling",
+      "method": "DELETE",
+      "route": "/api/business/v1/scheduling/plans/{planId}/working-draft",
+      "operationId": "clearSchedulingWorkingDraft",
+      "classification": "deferred",
+      "followUp": "#4143：BusinessGateway 草稿 facade、可信用户透传与生成链。"
     }
   ]
 }
