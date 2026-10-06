@@ -3221,3 +3221,27 @@ export type {
   NervIipContractsSchedulingSchedulingFirstPlanJobContract as BusinessConsoleSchedulingFirstPlanJob,
   NervIipContractsSchedulingSchedulingFirstPlanJobStatusContract as BusinessConsoleSchedulingFirstPlanJobStatus,
 } from './generated/business-console'
+
+export {
+  saveBusinessConsoleSchedulingWorkingDraft,
+  saveBusinessConsoleSchedulingWorkingDraftMutationOptions,
+  listBusinessConsoleSchedulingWorkingDrafts,
+  listBusinessConsoleSchedulingWorkingDraftsQueryOptions,
+  clearBusinessConsoleSchedulingWorkingDraft,
+  clearBusinessConsoleSchedulingWorkingDraftMutationOptions,
+} from './generated/business-console'
+
+export type {
+  SaveBusinessConsoleSchedulingWorkingDraftData,
+  SaveBusinessConsoleSchedulingWorkingDraftResponse,
+  ListBusinessConsoleSchedulingWorkingDraftsData,
+  ListBusinessConsoleSchedulingWorkingDraftsResponse,
+  ClearBusinessConsoleSchedulingWorkingDraftData,
+  ClearBusinessConsoleSchedulingWorkingDraftResponse,
+  NervIipContractsSchedulingSchedulingWorkingDraftContract as SchedulingWorkingDraft,
+  NervIipContractsSchedulingSchedulingWorkingDraftStateContract as SchedulingWorkingDraftState,
+  NervIipContractsSchedulingSchedulingWorkingDraftOrderContract as SchedulingWorkingDraftOrder,
+  NervIipContractsSchedulingSchedulingWorkingDraftTaskContract as SchedulingWorkingDraftTask,
+  NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract as SchedulingWorkingDraftPendingOperation,
+  NervIipContractsSchedulingSchedulingWorkingDraftPendingSource as SchedulingWorkingDraftPendingSource,
+} from './generated/business-console'

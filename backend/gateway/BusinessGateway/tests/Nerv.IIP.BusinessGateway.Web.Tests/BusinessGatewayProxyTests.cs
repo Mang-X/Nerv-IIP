@@ -20692,6 +20692,10 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
     public Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
         string token, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+    public Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(string token, BusinessConsoleSaveSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
+    public Task<IReadOnlyList<SchedulingWorkingDraftContract>> ListWorkingDraftsAsync(string token, BusinessConsoleListSchedulingWorkingDraftsRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
+    public Task ClearWorkingDraftAsync(string token, BusinessConsoleClearSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
+
     public int ListCallCount { get; private set; }
 
     public int GetPlanCallCount { get; private set; }
