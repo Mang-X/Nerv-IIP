@@ -86,7 +86,9 @@ public sealed class SchedulePlanValidationContextTests
         var basePlan = await createHandler.Handle(new CreateSchedulePlanCommand(problem, [frozen]), CancellationToken.None);
         await db.SaveChangesAsync();
 
-        var result = await new CreateSchedulePlanRevisionCommandHandler(db, new CreatePlanSender(createHandler)).Handle(
+        var result = await new CreateSchedulePlanRevisionCommandHandler(db, new CreatePlanSender(createHandler),
+            TimeProvider.System,
+            new SchedulingFreezeSettings(TimeSpan.Zero, new Dictionary<string, TimeSpan>())).Handle(
             new CreateSchedulePlanRevisionCommand(basePlan.PlanId, problem.OrganizationId, problem.EnvironmentId,
                 [includedOrder.OrderId], []), CancellationToken.None);
 

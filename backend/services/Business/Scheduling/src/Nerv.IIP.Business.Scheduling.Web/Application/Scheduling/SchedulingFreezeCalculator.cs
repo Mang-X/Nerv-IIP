@@ -7,6 +7,29 @@ internal sealed record SchedulingFreezePolicy(
     TimeSpan DefaultWindow,
     IReadOnlyDictionary<string, TimeSpan> WorkCenterWindows);
 
+public sealed record SchedulingFreezeSettings(
+    TimeSpan DefaultWindow,
+    IReadOnlyDictionary<string, TimeSpan> WorkCenterWindows)
+{
+    internal SchedulingFreezePolicy At(DateTimeOffset asOfUtc) =>
+        new(asOfUtc, DefaultWindow, WorkCenterWindows);
+
+    public static SchedulingFreezeSettings Resolve(IConfiguration configuration)
+    {
+        const string section = "Scheduling:Freeze";
+        var defaultMinutes = configuration.GetValue<int?>($"{section}:DefaultWindowMinutes") ?? 0;
+        ArgumentOutOfRangeException.ThrowIfNegative(defaultMinutes);
+        var workCenterMinutes = configuration.GetSection($"{section}:WorkCenterWindowMinutes")
+            .Get<Dictionary<string, int>>() ?? new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var minutes in workCenterMinutes.Values)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(minutes);
+        }
+        return new SchedulingFreezeSettings(TimeSpan.FromMinutes(defaultMinutes),
+            workCenterMinutes.ToDictionary(x => x.Key, x => TimeSpan.FromMinutes(x.Value), StringComparer.Ordinal));
+    }
+}
+
 internal sealed record SchedulingFreezeExecutionFact(
     string OrderId,
     string OperationId,
