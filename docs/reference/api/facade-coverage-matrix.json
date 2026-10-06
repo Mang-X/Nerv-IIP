@@ -6283,24 +6283,27 @@
       "method": "GET",
       "route": "/api/business/v1/scheduling/working-drafts",
       "operationId": "listSchedulingWorkingDrafts",
-      "classification": "deferred",
-      "followUp": "#4143：BusinessGateway 草稿 facade、可信用户透传与生成链。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleSchedulingWorkingDrafts"]
     },
     {
       "service": "Scheduling",
       "method": "PUT",
       "route": "/api/business/v1/scheduling/plans/{planId}/working-draft",
       "operationId": "saveSchedulingWorkingDraft",
-      "classification": "deferred",
-      "followUp": "#4143：BusinessGateway 草稿 facade、可信用户透传与生成链。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["saveBusinessConsoleSchedulingWorkingDraft"]
     },
     {
       "service": "Scheduling",
       "method": "DELETE",
       "route": "/api/business/v1/scheduling/plans/{planId}/working-draft",
       "operationId": "clearSchedulingWorkingDraft",
-      "classification": "deferred",
-      "followUp": "#4143：BusinessGateway 草稿 facade、可信用户透传与生成链。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["clearBusinessConsoleSchedulingWorkingDraft"]
     },
     {
       "service": "Scheduling",

@@ -2087,6 +2087,78 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     expiresAtUtc?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingWorkingDraftContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftContract = {
+    planId?: string;
+    savedAtUtc?: string;
+    state?: NervIipContractsSchedulingSchedulingWorkingDraftStateContract;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftStateContract = {
+    contractVersion?: number;
+    orders?: Array<NervIipContractsSchedulingSchedulingWorkingDraftOrderContract>;
+    tasks?: Array<NervIipContractsSchedulingSchedulingWorkingDraftTaskContract>;
+    pendingOperations?: Array<NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftOrderContract = {
+    workOrderId?: string;
+    priority?: number;
+    isRush?: boolean;
+    included?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftTaskContract = {
+    taskId?: string;
+    orderId?: string;
+    operationId?: string;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    locked?: boolean;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract = {
+    id?: string;
+    orderId?: string;
+    operationId?: string;
+    source?: NervIipContractsSchedulingSchedulingWorkingDraftPendingSource;
+    message?: string;
+    canRestore?: boolean;
+    taskId?: string | null;
+    reasonCode?: string | null;
+    task?: NervIipContractsSchedulingSchedulingWorkingDraftTaskContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftPendingSource = 'unscheduled' | 'invalidated' | 'removed';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSaveSchedulingWorkingDraftRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    state?: NervIipContractsSchedulingSchedulingWorkingDraftStateContract;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyListOfSchedulingWorkingDraftContract = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsSchedulingSchedulingWorkingDraftContract> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListSchedulingWorkingDraftsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfObject = NetCorePalExtensionsDtoResponseData & {
+    data?: unknown;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleClearSchedulingWorkingDraftRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionPlanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionPlanResponse | null;
 };
@@ -12855,6 +12927,98 @@ export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponses = {
 };
 
 export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponse = SetBusinessConsoleOrderUrgencyBusinessPriorityResponses[keyof SetBusinessConsoleOrderUrgencyBusinessPriorityResponses];
+
+export type ClearBusinessConsoleSchedulingWorkingDraftData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/working-draft';
+};
+
+export type ClearBusinessConsoleSchedulingWorkingDraftErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ClearBusinessConsoleSchedulingWorkingDraftResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfObject;
+};
+
+export type ClearBusinessConsoleSchedulingWorkingDraftResponse = ClearBusinessConsoleSchedulingWorkingDraftResponses[keyof ClearBusinessConsoleSchedulingWorkingDraftResponses];
+
+export type SaveBusinessConsoleSchedulingWorkingDraftData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSaveSchedulingWorkingDraftRequest;
+    path: {
+        planId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/scheduling/plans/{planId}/working-draft';
+};
+
+export type SaveBusinessConsoleSchedulingWorkingDraftErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SaveBusinessConsoleSchedulingWorkingDraftResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract;
+};
+
+export type SaveBusinessConsoleSchedulingWorkingDraftResponse = SaveBusinessConsoleSchedulingWorkingDraftResponses[keyof SaveBusinessConsoleSchedulingWorkingDraftResponses];
+
+export type ListBusinessConsoleSchedulingWorkingDraftsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        planId?: string | null;
+    };
+    url: '/api/business-console/v1/scheduling/working-drafts';
+};
+
+export type ListBusinessConsoleSchedulingWorkingDraftsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleSchedulingWorkingDraftsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyListOfSchedulingWorkingDraftContract;
+};
+
+export type ListBusinessConsoleSchedulingWorkingDraftsResponse = ListBusinessConsoleSchedulingWorkingDraftsResponses[keyof ListBusinessConsoleSchedulingWorkingDraftsResponses];
 
 export type ListBusinessConsoleQualityInspectionPlansData = {
     body?: never;
