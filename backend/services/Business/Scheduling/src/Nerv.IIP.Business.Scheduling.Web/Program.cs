@@ -117,6 +117,7 @@ try
     builder.Services.AddSingleton(SchedulingFreezeSettings.Resolve(builder.Configuration));
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<SchedulingWorkbenchPlanAssembler>();
+    builder.Services.AddSingleton<ScheduleFirstPlanJobQueue>();
     builder.Services.AddScoped<HttpSchedulingMaterialReadinessProvider>();
     builder.Services.AddScoped<ScheduleAssignmentCurrentExecutionReader>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
@@ -148,6 +149,7 @@ try
     {
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
         builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
+        builder.Services.AddHostedService<ScheduleFirstPlanJobWorker>();
         builder.Services.AddHostedService<OrderUrgencyRefreshWorker>();
         builder.Services.AddHostedService<OrderUrgencyRetentionWorker>();
     }

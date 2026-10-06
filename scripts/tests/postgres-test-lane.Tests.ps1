@@ -324,6 +324,10 @@ try {
 
     $schedulingMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-postgres-profile' -RepositoryRoot $repoRoot
     $schedulingIdentities = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Acceptance_commits_before_blocked_500_order_calculation_and_completed_plan_is_readable',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Completion_write_failure_rolls_back_plan_and_input_before_committing_failed',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Real_calculation_failure_commits_failed_reason_without_plan_or_retry',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Acceptance_validates_async_capacity_and_scope_without_expanding_sync_preview_or_revision',
         'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingWorkingDraftPostgresTests.Migration_and_http_requests_restore_isolated_edits_without_mutating_plans',
         'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests.Migration_preserves_legacy_override_and_manual_replacements_track_source_plan',
         'Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests.Migration_and_concurrent_consumers_persist_one_projection_without_lost_quantity',
@@ -343,8 +347,9 @@ try {
     Assert-Contract ([string]::Equals([string]$schedulingMember.service, 'Scheduling', [StringComparison]::Ordinal)) 'The second checklist-three batch must register Scheduling as its own lane member.'
     Assert-Contract ([string]::Equals([string]$schedulingMember.project, 'backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The Scheduling member must target the owning test project.'
     Assert-Contract (@($schedulingMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$schedulingMember.diagnosticSchemas[0], 'scheduling', [StringComparison]::Ordinal)) 'The Scheduling member must own its restricted diagnostic schema declaration.'
-    Assert-Contract ([string]::Equals((@($schedulingMember.expectedTestIdentities) -join "`n"), ($schedulingIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling member must freeze exactly the thirteen governed profile, capacity, override source and working draft identities.'
+    Assert-Contract ([string]::Equals((@($schedulingMember.expectedTestIdentities) -join "`n"), ($schedulingIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling member must freeze exactly the seventeen governed profile, capacity, override source, working draft and first-plan job identities.'
     $schedulingFilterClasses = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests',
         'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingWorkingDraftPostgresTests',
         'Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests',
         'Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests',

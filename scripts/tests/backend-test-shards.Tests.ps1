@@ -874,7 +874,8 @@ $excludedSelectors = @(
 # #3650 的 MES 安灯聚合持久化证明类整类交给 postgres lane，总数为 89。
 # #3721 的 Scheduling 工序执行投影 PostgreSQL 证明类整类交给 postgres lane，总数为 90。
 # #4142 的 Scheduling 工作草稿 HTTP 持久化证明类整类交给 postgres lane，总数为 94。
-Assert-Contract ($excludedSelectors.Count -eq 94) '所有已排除的真实依赖测试选择器必须显式分类。'
+# #4135 的 Scheduling 异步首版计划任务证明类整类交给 postgres lane，总数为 95。
+Assert-Contract ($excludedSelectors.Count -eq 95) '所有已排除的真实依赖测试选择器必须显式分类。'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 foreach ($selector in @('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests')) {
     Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]$selector)) "The Quality periodic-inspection PostgreSQL class '$selector' must be excluded from the fast shard and owned by the real PostgreSQL lane."
