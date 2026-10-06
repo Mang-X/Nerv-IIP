@@ -43,8 +43,10 @@ public sealed class WorkOrderTransformationApplicationTests
         Assert.Empty(db.ChangeTracker.Entries());
     }
 
-    [Fact]
-    public async Task Split_persists_lineage_and_replays_the_same_idempotency_key()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Split_persists_lineage_and_replays_the_same_idempotency_key(bool isRush)
     {
         await using var db = CreateContext();
         var occurredAtUtc = DateTimeOffset.Parse("2026-08-26T02:00:00Z");
@@ -52,7 +54,7 @@ public sealed class WorkOrderTransformationApplicationTests
             "org-001", "env-dev", "WO-SPLIT-PARENT", "SKU-001", "PV-001", 10m, 10,
             occurredAtUtc.AddHours(4), "PCS",
             new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-CHILD", "SO-1",
-                assemblyParentSuggestionIds: ["SUG-ASSEMBLY"])));
+                assemblyParentSuggestionIds: ["SUG-ASSEMBLY"]), isRush: isRush));
         db.OperationTasks.Add(OperationTask.Queue("org-001", "env-dev", "WO-SPLIT-PARENT", "SOURCE-OP",
             10, "WC-1", ["WC-2"], occurredAtUtc, TimeSpan.FromMinutes(20), "SKU-001", "PCS", 20m, true, "CUT", "SKILL-1"));
         await db.SaveChangesAsync();
@@ -143,6 +145,11 @@ public sealed class WorkOrderTransformationApplicationTests
         Assert.Equal(WorkOrder.SplitStatus, parent.Status);
         Assert.Equal(2, parent.Version);
         Assert.Equal([4m, 6m], children.Select(x => x.Quantity));
+        Assert.All(children, child =>
+        {
+            Assert.Equal(10, child.Priority);
+            Assert.Equal(isRush, child.IsRush);
+        });
         Assert.All(children, child => Assert.Equal(["SUG-ASSEMBLY"],
             child.SourcePlanReference?.AssemblyParentSuggestionIds));
         foreach (var child in children)
