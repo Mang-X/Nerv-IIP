@@ -571,7 +571,7 @@ public sealed partial class SchedulingWorkbenchTests
             original.EndUtc.AddMinutes(1),
             "ui");
         var sender = new SchedulingCreateSender(problem.HorizonStartUtc);
-        var handler = new CreateSchedulePlanRevisionCommandHandler(db, sender);
+        var handler = RevisionHandler(db, sender, problem.HorizonStartUtc);
 
         var result = await handler.Handle(new CreateSchedulePlanRevisionCommand(
             basePlan.PlanId,
@@ -628,7 +628,9 @@ public sealed partial class SchedulingWorkbenchTests
         await db.SaveChangesAsync();
         var handler = new CreateSchedulePlanRevisionCommandHandler(
             db,
-            new SchedulingCreateSender(problem.HorizonStartUtc));
+            new SchedulingCreateSender(problem.HorizonStartUtc),
+            new FreezeTestTimeProvider(problem.HorizonStartUtc),
+            new SchedulingFreezeSettings(TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
         var repeatedOperationId = basePlan.Assignments.First().OperationId;
         var locks = basePlan.Assignments
             .Where(assignment => assignment.OperationId == repeatedOperationId)

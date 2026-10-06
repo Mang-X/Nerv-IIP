@@ -11,9 +11,6 @@ public sealed record SchedulingFreezeSettings(
     TimeSpan DefaultWindow,
     IReadOnlyDictionary<string, TimeSpan> WorkCenterWindows)
 {
-    public static SchedulingFreezeSettings Default { get; } = new(
-        TimeSpan.Zero, new Dictionary<string, TimeSpan>(StringComparer.Ordinal));
-
     internal SchedulingFreezePolicy At(DateTimeOffset asOfUtc) =>
         new(asOfUtc, DefaultWindow, WorkCenterWindows);
 

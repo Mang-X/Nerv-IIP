@@ -123,8 +123,8 @@ public sealed class CreateSchedulePlanRevisionCommandValidator
 public sealed class CreateSchedulePlanRevisionCommandHandler(
     ApplicationDbContext dbContext,
     ISender sender,
-    TimeProvider? timeProvider = null,
-    SchedulingFreezeSettings? freezeSettings = null) : ICommandHandler<CreateSchedulePlanRevisionCommand, SchedulePlanRevisionContract>
+    TimeProvider timeProvider,
+    SchedulingFreezeSettings freezeSettings) : ICommandHandler<CreateSchedulePlanRevisionCommand, SchedulePlanRevisionContract>
 {
     public async Task<SchedulePlanRevisionContract> Handle(
         CreateSchedulePlanRevisionCommand request,
@@ -170,28 +170,37 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         var operations = baseProblem.Orders.SelectMany(order => order.Operations.Select(operation =>
             (Key: (order.OrderId, operation.OperationId), Operation: operation)))
             .ToDictionary(x => x.Key, x => x.Operation);
-        var snapshotFixedKeys = snapshotReservations.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
-        var fixedReservations = snapshotReservations.Concat(execution
-            .Where(x => x.ActualStartedAtUtc.HasValue &&
-                operations.ContainsKey((x.WorkOrderId, x.OperationId)) &&
-                !snapshotFixedKeys.Contains((x.WorkOrderId, x.OperationId)))
-            .Select(x => new FixedWorkCenterReservation(
-                x.WorkOrderId, x.OperationId,
-                operations[(x.WorkOrderId, x.OperationId)].OperationSequence,
-                x.WorkCenterId ?? baseProblem.Resources.First(resource =>
-                    operations[(x.WorkOrderId, x.OperationId)].EligibleResourceIds.Contains(
+        var reservationsByOperation = snapshotReservations
+            .ToDictionary(x => (x.OrderId, x.OperationId));
+        foreach (var projection in execution.Where(x => x.ActualStartedAtUtc.HasValue &&
+                     operations.ContainsKey((x.WorkOrderId, x.OperationId))))
+        {
+            reservationsByOperation[(projection.WorkOrderId, projection.OperationId)] = new FixedWorkCenterReservation(
+                projection.WorkOrderId, projection.OperationId,
+                operations[(projection.WorkOrderId, projection.OperationId)].OperationSequence,
+                projection.WorkCenterId ?? baseProblem.Resources.First(resource =>
+                    operations[(projection.WorkOrderId, projection.OperationId)].EligibleResourceIds.Contains(
                         resource.ResourceId, StringComparer.Ordinal)).WorkCenterId,
-                x.ActualStartedAtUtc!.Value, x.ActualCompletedAtUtc ?? baseProblem.HorizonEndUtc,
-                null))).ToArray();
-        var policy = (freezeSettings ?? SchedulingFreezeSettings.Default)
-            .At((timeProvider ?? TimeProvider.System).GetUtcNow());
+                projection.ActualStartedAtUtc!.Value,
+                projection.ActualCompletedAtUtc ?? baseProblem.HorizonEndUtc,
+                null);
+        }
+        var fixedReservations = reservationsByOperation.Values.ToArray();
+        var policy = freezeSettings.At(timeProvider.GetUtcNow());
+        var priorManualLocks = SchedulingFrozenOccupancy.ReadFreezeSnapshot(snapshot.ProblemJson)?
+            .Assignments.Where(x => ((SchedulingFreezeReason)x.Reasons).HasFlag(SchedulingFreezeReason.ManualLock))
+            .Select(x => (x.Assignment.OrderId, x.Assignment.OperationId)) ?? [];
+        var manualLocks = baseProblem.LockedAssignments
+            .Where(x => x.LockReasonCode != SchedulingFrozenOccupancy.BaselineLockReasonCode)
+            .Select(x => (x.OrderId, x.OperationId))
+            .Concat(priorManualLocks)
+            .Distinct()
+            .ToArray();
         var frozen = SchedulingFreezeCalculator.Calculate(
             baselineAssignments,
             execution.Select(x => new SchedulingFreezeExecutionFact(
                 x.WorkOrderId, x.OperationId, x.ActualStartedAtUtc, x.ActualCompletedAtUtc)).ToArray(),
-            baseProblem.LockedAssignments
-                .Where(x => x.LockReasonCode != SchedulingFrozenOccupancy.BaselineLockReasonCode)
-                .Select(x => (x.OrderId, x.OperationId)).ToArray(),
+            manualLocks,
             policy);
         var fixedKeys = fixedReservations.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
         var frozenLocks = frozen
