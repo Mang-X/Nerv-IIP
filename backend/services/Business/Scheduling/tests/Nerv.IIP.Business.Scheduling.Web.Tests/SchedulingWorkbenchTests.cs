@@ -765,7 +765,9 @@ public sealed partial class SchedulingWorkbenchTests
                 new FiniteCapacityScheduler().ScheduleNormalized(
                     SchedulingProblemNormalizer.Normalize(LastCommand.Problem), "plan-candidate", generatedAtUtc,
                     reservations.Where(x => operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
-                    reservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray()),
+                    reservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+                    SchedulingFrozenOccupancy.ExternalFrozenAssignments(
+                        LastCommand.Freeze, LastCommand.Problem, reservations)),
                 SchedulePlanStatusContract.Generated);
             return Task.FromResult((TResponse)(object)plan);
         }

@@ -148,12 +148,13 @@ public sealed class FiniteCapacityScheduler(
         string planId,
         DateTimeOffset generatedAtUtc,
         IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null,
-        IReadOnlyCollection<FixedWorkCenterReservation>? externalReservations = null)
+        IReadOnlyCollection<FixedWorkCenterReservation>? externalReservations = null,
+        IReadOnlyCollection<ScheduleAssignmentContract>? externalFrozenAssignments = null)
     {
         ArgumentNullException.ThrowIfNull(normalizedProblem);
 
         var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode,
-            fixedReservations ?? [], externalReservations ?? []);
+            fixedReservations ?? [], externalReservations ?? [], externalFrozenAssignments ?? []);
         state.ReserveFixedWorkCenterOccupancy();
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
@@ -469,6 +470,7 @@ file sealed class SchedulerState
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private readonly SchedulingQualityConstraintModeContract qualityConstraintMode;
     private readonly IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations;
+    private readonly IReadOnlyCollection<ScheduleAssignmentContract> externalFrozenAssignments;
     private readonly HashSet<OperationKey> fixedOperationKeys;
     private readonly Dictionary<string, int> workCenterCapacity;
     private int conflictNumber;
@@ -480,7 +482,8 @@ file sealed class SchedulerState
         SchedulingMaterialConstraintModeContract materialConstraintMode,
         SchedulingQualityConstraintModeContract qualityConstraintMode,
         IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
-        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations)
+        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations,
+        IReadOnlyCollection<ScheduleAssignmentContract> externalFrozenAssignments)
     {
         this.problem = problem;
         this.planId = planId;
@@ -488,9 +491,7 @@ file sealed class SchedulerState
         this.materialConstraintMode = materialConstraintMode;
         this.qualityConstraintMode = qualityConstraintMode;
         this.fixedReservations = fixedReservations;
-        externalOccupancies = externalReservations.Select(ExternalOccupancy).ToArray();
-        externalOccupanciesByResource = externalOccupancies.ToLookup(x => x.ResourceId, StringComparer.Ordinal);
-        externalOccupanciesByWorkCenter = externalOccupancies.ToLookup(x => x.WorkCenterId, StringComparer.Ordinal);
+        this.externalFrozenAssignments = externalFrozenAssignments;
         fixedOperationKeys = fixedReservations
             .Select(x => new OperationKey(x.OrderId, x.OperationId))
             .ToHashSet();
@@ -505,6 +506,11 @@ file sealed class SchedulerState
                 Key: new OperationKey(order.OrderId, operation.OperationId),
                 Operation: operation)))
             .ToDictionary(x => x.Key, x => x.Operation);
+        externalOccupancies = externalReservations.Select(ExternalOccupancy)
+            .Concat(BuildResourceOccupancies(externalFrozenAssignments))
+            .ToArray();
+        externalOccupanciesByResource = externalOccupancies.ToLookup(x => x.ResourceId, StringComparer.Ordinal);
+        externalOccupanciesByWorkCenter = externalOccupancies.ToLookup(x => x.WorkCenterId, StringComparer.Ordinal);
     }
 
     public static SchedulerState From(
@@ -514,10 +520,11 @@ file sealed class SchedulerState
         SchedulingMaterialConstraintModeContract materialConstraintMode,
         SchedulingQualityConstraintModeContract qualityConstraintMode,
         IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
-        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations)
+        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations,
+        IReadOnlyCollection<ScheduleAssignmentContract> externalFrozenAssignments)
     {
         return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode, qualityConstraintMode,
-            fixedReservations, externalReservations);
+            fixedReservations, externalReservations, externalFrozenAssignments);
     }
 
     public void ReserveFixedWorkCenterOccupancy()
