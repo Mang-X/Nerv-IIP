@@ -25,6 +25,9 @@ public abstract class SchedulingEndpoint<TRequest, TResponse> : Endpoint<TReques
             case "POST":
                 Post(contract.Route);
                 break;
+            case "DELETE":
+                Delete(contract.Route);
+                break;
             case "PUT":
                 Put(contract.Route);
                 break;
@@ -600,6 +603,9 @@ public static class SchedulingEndpointContracts
 {
     public static readonly IReadOnlyCollection<SchedulingEndpointContract> All =
     [
+        new(typeof(SaveScheduleWorkingDraftEndpoint), "PUT", "/api/business/v1/scheduling/plans/{planId}/working-draft", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "saveSchedulingWorkingDraft"),
+        new(typeof(ListScheduleWorkingDraftsEndpoint), "GET", "/api/business/v1/scheduling/working-drafts", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingWorkingDrafts"),
+        new(typeof(ClearScheduleWorkingDraftEndpoint), "DELETE", "/api/business/v1/scheduling/plans/{planId}/working-draft", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "clearSchedulingWorkingDraft"),
         new(typeof(GetMaterialDeliverySourcesEndpoint), "POST", "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingMaterialDeliverySources"),
         new(typeof(PreviewSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingPlan"),
         new(typeof(CreateSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlan"),
