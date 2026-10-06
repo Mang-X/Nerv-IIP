@@ -571,7 +571,7 @@ public sealed partial class SchedulingWorkbenchTests
             original.EndUtc.AddMinutes(1),
             "ui");
         var sender = new SchedulingCreateSender(problem.HorizonStartUtc);
-        var handler = new CreateSchedulePlanRevisionCommandHandler(db, sender);
+        var handler = RevisionHandler(db, sender, problem.HorizonStartUtc);
 
         var result = await handler.Handle(new CreateSchedulePlanRevisionCommand(
             basePlan.PlanId,
@@ -628,7 +628,9 @@ public sealed partial class SchedulingWorkbenchTests
         await db.SaveChangesAsync();
         var handler = new CreateSchedulePlanRevisionCommandHandler(
             db,
-            new SchedulingCreateSender(problem.HorizonStartUtc));
+            new SchedulingCreateSender(problem.HorizonStartUtc),
+            new FreezeTestTimeProvider(problem.HorizonStartUtc),
+            new SchedulingFreezeSettings(TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
         var repeatedOperationId = basePlan.Assignments.First().OperationId;
         var locks = basePlan.Assignments
             .Where(assignment => assignment.OperationId == repeatedOperationId)
@@ -765,7 +767,9 @@ public sealed partial class SchedulingWorkbenchTests
                 new FiniteCapacityScheduler().ScheduleNormalized(
                     SchedulingProblemNormalizer.Normalize(LastCommand.Problem), "plan-candidate", generatedAtUtc,
                     reservations.Where(x => operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
-                    reservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray()),
+                    reservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+                    SchedulingFrozenOccupancy.ExternalFrozenAssignments(
+                        LastCommand.Freeze, LastCommand.Problem, reservations)),
                 SchedulePlanStatusContract.Generated);
             return Task.FromResult((TResponse)(object)plan);
         }

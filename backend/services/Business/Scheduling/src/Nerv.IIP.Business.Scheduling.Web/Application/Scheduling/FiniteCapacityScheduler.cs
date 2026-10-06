@@ -148,12 +148,13 @@ public sealed class FiniteCapacityScheduler(
         string planId,
         DateTimeOffset generatedAtUtc,
         IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null,
-        IReadOnlyCollection<FixedWorkCenterReservation>? externalReservations = null)
+        IReadOnlyCollection<FixedWorkCenterReservation>? externalReservations = null,
+        IReadOnlyCollection<ScheduleAssignmentContract>? externalFrozenAssignments = null)
     {
         ArgumentNullException.ThrowIfNull(normalizedProblem);
 
         var state = SchedulerState.From(normalizedProblem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode,
-            fixedReservations ?? [], externalReservations ?? []);
+            fixedReservations ?? [], externalReservations ?? [], externalFrozenAssignments ?? []);
         state.ReserveFixedWorkCenterOccupancy();
         state.ReserveLockedAssignments();
         state.ScheduleOpenOperations();
@@ -469,6 +470,7 @@ file sealed class SchedulerState
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private readonly SchedulingQualityConstraintModeContract qualityConstraintMode;
     private readonly IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations;
+    private readonly IReadOnlyCollection<ScheduleAssignmentContract> externalFrozenAssignments;
     private readonly HashSet<OperationKey> fixedOperationKeys;
     private readonly Dictionary<string, int> workCenterCapacity;
     private int conflictNumber;
@@ -480,7 +482,8 @@ file sealed class SchedulerState
         SchedulingMaterialConstraintModeContract materialConstraintMode,
         SchedulingQualityConstraintModeContract qualityConstraintMode,
         IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
-        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations)
+        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations,
+        IReadOnlyCollection<ScheduleAssignmentContract> externalFrozenAssignments)
     {
         this.problem = problem;
         this.planId = planId;
@@ -488,9 +491,7 @@ file sealed class SchedulerState
         this.materialConstraintMode = materialConstraintMode;
         this.qualityConstraintMode = qualityConstraintMode;
         this.fixedReservations = fixedReservations;
-        externalOccupancies = externalReservations.Select(ExternalOccupancy).ToArray();
-        externalOccupanciesByResource = externalOccupancies.ToLookup(x => x.ResourceId, StringComparer.Ordinal);
-        externalOccupanciesByWorkCenter = externalOccupancies.ToLookup(x => x.WorkCenterId, StringComparer.Ordinal);
+        this.externalFrozenAssignments = externalFrozenAssignments;
         fixedOperationKeys = fixedReservations
             .Select(x => new OperationKey(x.OrderId, x.OperationId))
             .ToHashSet();
@@ -505,6 +506,11 @@ file sealed class SchedulerState
                 Key: new OperationKey(order.OrderId, operation.OperationId),
                 Operation: operation)))
             .ToDictionary(x => x.Key, x => x.Operation);
+        externalOccupancies = externalReservations.Select(ExternalOccupancy)
+            .Concat(BuildResourceOccupancies(externalFrozenAssignments))
+            .ToArray();
+        externalOccupanciesByResource = externalOccupancies.ToLookup(x => x.ResourceId, StringComparer.Ordinal);
+        externalOccupanciesByWorkCenter = externalOccupancies.ToLookup(x => x.WorkCenterId, StringComparer.Ordinal);
     }
 
     public static SchedulerState From(
@@ -514,10 +520,11 @@ file sealed class SchedulerState
         SchedulingMaterialConstraintModeContract materialConstraintMode,
         SchedulingQualityConstraintModeContract qualityConstraintMode,
         IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
-        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations)
+        IReadOnlyCollection<FixedWorkCenterReservation> externalReservations,
+        IReadOnlyCollection<ScheduleAssignmentContract> externalFrozenAssignments)
     {
         return new SchedulerState(problem, planId, generatedAtUtc, materialConstraintMode, qualityConstraintMode,
-            fixedReservations, externalReservations);
+            fixedReservations, externalReservations, externalFrozenAssignments);
     }
 
     public void ReserveFixedWorkCenterOccupancy()
@@ -554,25 +561,6 @@ file sealed class SchedulerState
                      .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
                      .ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
-            var hasResource = resources.TryGetValue(locked.ResourceId, out var resource);
-            var reservedEndUtc = hasResource
-                ? locked.StartUtc + ReservedDuration(locked.EndUtc - locked.StartUtc, resource!.UtilizationRate)
-                : locked.EndUtc;
-            var invalidLock = !hasResource
-                || locked.StartUtc < problem.HorizonStartUtc
-                || (locked.Segments is { Count: > 0 }
-                    ? locked.Segments.Any(segment =>
-                    {
-                        var segmentReservedEnd = segment.StartUtc + ReservedDuration(
-                            segment.EndUtc - segment.StartUtc, resource!.UtilizationRate);
-                        return segmentReservedEnd > problem.HorizonEndUtc
-                            || !IsInsideCalendar(resource, segment.StartUtc, segmentReservedEnd)
-                            || IsUnavailable(resource, segment.StartUtc, segmentReservedEnd);
-                    })
-                    : reservedEndUtc > problem.HorizonEndUtc
-                        || !IsInsideCalendar(resource!, locked.StartUtc, reservedEndUtc)
-                        || IsUnavailable(resource!, locked.StartUtc, reservedEndUtc));
-
             var assignment = new ScheduleAssignmentContract(
                 AssignmentId: locked.AssignmentId,
                 OrderId: locked.OrderId,
@@ -592,16 +580,7 @@ file sealed class SchedulerState
                 ScheduleChangeTypeContract.Preserved,
                 "锁定工序已按原计划保留，未参与本次重排。"));
 
-            if (invalidLock)
-            {
-                AddConflict(
-                    ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
-                    ScheduleConflictSeverityContract.Error,
-                    locked.OrderId,
-                    locked.OperationId,
-                    locked.ResourceId,
-                    "锁定工序落在排程窗口、班次日历或可用资源之外，无法保留。");
-            }
+            ReportInvalidLockedAssignment(assignment);
 
             // 锁定工序同样带设备数据风险:它已经占住这台设备的时段,状态盲区一样要提示。
             AddEquipmentRisk(
@@ -629,7 +608,43 @@ file sealed class SchedulerState
             }
         }
 
+        foreach (var assignment in externalFrozenAssignments)
+        {
+            ReportInvalidLockedAssignment(assignment);
+        }
         ReportLockedCapacityConflicts();
+    }
+
+    private void ReportInvalidLockedAssignment(ScheduleAssignmentContract assignment)
+    {
+        var hasResource = resources.TryGetValue(assignment.ResourceId, out var resource);
+        var reservedEndUtc = hasResource
+            ? assignment.StartUtc + ReservedDuration(assignment.EndUtc - assignment.StartUtc, resource!.UtilizationRate)
+            : assignment.EndUtc;
+        var invalidLock = !hasResource
+            || assignment.StartUtc < problem.HorizonStartUtc
+            || (assignment.Segments is { Count: > 0 }
+                ? assignment.Segments.Any(segment =>
+                {
+                    var segmentReservedEnd = segment.StartUtc + ReservedDuration(
+                        segment.EndUtc - segment.StartUtc, resource!.UtilizationRate);
+                    return segmentReservedEnd > problem.HorizonEndUtc
+                        || !IsInsideCalendar(resource, segment.StartUtc, segmentReservedEnd)
+                        || IsUnavailable(resource, segment.StartUtc, segmentReservedEnd);
+                })
+                : reservedEndUtc > problem.HorizonEndUtc
+                    || !IsInsideCalendar(resource!, assignment.StartUtc, reservedEndUtc)
+                    || IsUnavailable(resource!, assignment.StartUtc, reservedEndUtc));
+        if (invalidLock)
+        {
+            AddConflict(
+                ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
+                ScheduleConflictSeverityContract.Error,
+                assignment.OrderId,
+                assignment.OperationId,
+                assignment.ResourceId,
+                "锁定工序落在排程窗口、班次日历或可用资源之外，无法保留。");
+        }
     }
 
     public void ScheduleOpenOperations()
@@ -1543,6 +1558,7 @@ file sealed class SchedulerState
     {
         var lockedAssignments = assignments
             .Where(x => x.IsLocked)
+            .Concat(externalFrozenAssignments)
             .ToList();
         var overbookedAssignmentIds = new HashSet<string>(StringComparer.Ordinal);
 

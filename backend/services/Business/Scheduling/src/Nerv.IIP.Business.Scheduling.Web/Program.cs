@@ -114,6 +114,7 @@ try
     builder.Services.AddSingleton(SchedulingExecutionDeviationToleranceResolver.Resolve(
         builder.Configuration[SchedulingExecutionDeviationToleranceResolver.ConfigurationKey]));
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton(SchedulingFreezeSettings.Resolve(builder.Configuration));
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<SchedulingWorkbenchPlanAssembler>();
     builder.Services.AddScoped<HttpSchedulingMaterialReadinessProvider>();
