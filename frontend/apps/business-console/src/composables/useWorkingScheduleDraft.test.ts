@@ -337,3 +337,34 @@ describe('useWorkingScheduleDraft', () => {
     expect(() => draft.setIncluded(['WO-001'], true)).toThrow(/read-only/)
   })
 })
+
+it('restores persisted edits against the original plan and keeps selected orders when candidates arrive', () => {
+  const draft = useWorkingScheduleDraft()
+  draft.setOrders([{ workOrderId: 'WO-001' }, { workOrderId: 'WO-003' }])
+  draft.setIncluded(['WO-001'], true)
+  draft.loadPlan(plan)
+  draft.updateTask('assignment-001', {
+    resourceId: 'RES-2',
+    startUtc: '2026-07-24T11:00:00Z',
+    endUtc: '2026-07-24T12:00:00Z',
+  })
+  draft.setLocked('assignment-001', true)
+  draft.moveTaskToPending('assignment-002')
+  const state = draft.exportState()
+  const reopened = useWorkingScheduleDraft()
+  reopened.restoreSaved(plan, state)
+  reopened.setOrders([{ workOrderId: 'WO-003' }])
+  expect(reopened.includedOrders.value.map((order) => order.workOrderId)).toEqual(['WO-001'])
+  expect(reopened.lockedAssignments.value[0]).toMatchObject({
+    resourceId: 'RES-2',
+    startUtc: '2026-07-24T11:00:00Z',
+  })
+  expect(reopened.model.value?.tasks.some((task) => task.id === 'assignment-002')).toBe(false)
+  reopened.restorePendingTask('assignment-002')
+  expect(reopened.model.value?.tasks.find((task) => task.id === 'assignment-002')?.startUtc).toBe(
+    '2026-07-24T09:00:00Z',
+  )
+  reopened.setLocked('assignment-001', false)
+  expect(reopened.modifiedUnlockedTaskIds.value).toContain('assignment-001')
+  expect(reopened.canRedo.value).toBe(false)
+})
