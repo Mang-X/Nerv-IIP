@@ -167,9 +167,15 @@ public sealed partial class SchedulingWorkbenchTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Freeze_read_context_matches_preview_create_idempotency_and_persisted_detail(bool hasSnapshot)
+    [InlineData(true, 1, "completed")]
+    [InlineData(true, 2, "started")]
+    [InlineData(true, 4, "manualLock")]
+    [InlineData(true, 8, "stableWindow")]
+    [InlineData(true, 6, "started,manualLock")]
+    [InlineData(true, 15, "completed,started,manualLock,stableWindow")]
+    [InlineData(false, 0, "")]
+    public async Task Freeze_read_context_matches_preview_create_idempotency_and_persisted_detail(
+        bool hasSnapshot, int snapshotReasons, string expectedReasons)
     {
         await using var db = CreateDbContext();
         var problem = ShockAbsorberSchedulingFixture.CreateProblem() with { UnavailabilityWindows = [] };
@@ -180,7 +186,7 @@ public sealed partial class SchedulingWorkbenchTests
         var freeze = hasSnapshot ? new SchedulingFreezeSnapshot(problem.HorizonStartUtc,
             TimeSpan.FromHours(2),
             new Dictionary<string, TimeSpan> { [baseline.WorkCenterId] = TimeSpan.Zero },
-            [new SchedulingFrozenAssignmentSnapshot(baseline, 15)]) : null;
+            [new SchedulingFrozenAssignmentSnapshot(baseline, snapshotReasons)]) : null;
         var preview = new PreviewSchedulePlanCommandHandler(
             new FiniteCapacityScheduler(), clock,
             new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
@@ -222,7 +228,7 @@ public sealed partial class SchedulingWorkbenchTests
             Assert.Equal(freeze.AsOfUtc, window.GetProperty("endUtc").GetDateTimeOffset());
             var assignment = Assert.Single(context.GetProperty("assignments").EnumerateArray());
             Assert.Equal(JsonSerializer.Serialize(baseline, SchedulingJson.Options), assignment.GetProperty("assignment").GetRawText());
-            Assert.Equal(new[] { "completed", "started", "manualLock", "stableWindow" },
+            Assert.Equal(expectedReasons.Split(','),
                 assignment.GetProperty("reasons").EnumerateArray().Select(x => x.GetString()));
             contextJson ??= context.GetRawText();
             Assert.Equal(contextJson, context.GetRawText());

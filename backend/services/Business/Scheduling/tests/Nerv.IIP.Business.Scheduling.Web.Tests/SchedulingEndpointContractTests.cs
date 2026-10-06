@@ -235,7 +235,7 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal(problem.HorizonStartUtc.AddHours(2), context.GetProperty("defaultWindowEndUtc").GetDateTimeOffset());
         Assert.NotEmpty(context.GetProperty("assignments").EnumerateArray());
         Assert.All(context.GetProperty("assignments").EnumerateArray(), assignment =>
-            Assert.Contains("stableWindow", assignment.GetProperty("reasons").EnumerateArray().Select(x => x.GetString())));
+            Assert.Equal(new[] { "stableWindow" }, assignment.GetProperty("reasons").EnumerateArray().Select(x => x.GetString())));
         var candidatePlan = candidate.Deserialize<SchedulePlanContract>(SchedulingJson.Options)!;
         Assert.NotNull(candidatePlan.FreezeContext);
         foreach (var frozen in candidatePlan.FreezeContext.Assignments)
