@@ -1,3 +1,4 @@
+using FastEndpoints;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -1663,6 +1664,12 @@ public sealed class SchedulingEndpointContractTests
             ConfigureRequiredUpstreamBaseUrls(builder);
             builder.ConfigureTestServices(services =>
             {
+                services.AddFastEndpoints(options =>
+                {
+                    options.Assemblies = [typeof(Program).Assembly];
+                    options.DisableAutoDiscovery = true;
+                    options.IncludeAbstractValidators = true;
+                });
                 services.RemoveAll<ApplicationDbContext>();
                 services.RemoveAll<DbContextOptions>();
                 services.RemoveAll<DbContextOptions<ApplicationDbContext>>();

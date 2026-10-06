@@ -1,3 +1,5 @@
+using FastEndpoints;
+using Microsoft.AspNetCore.TestHost;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -135,6 +137,15 @@ public sealed class SchedulingWorkingDraftPostgresTests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddFastEndpoints(options =>
+                {
+                    options.Assemblies = [typeof(Program).Assembly];
+                    options.DisableAutoDiscovery = true;
+                    options.IncludeAbstractValidators = true;
+                });
+            });
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             builder.UseSetting("ConnectionStrings:PostgreSQL", SchedulingPostgresLaneDatabase.ConnectionString);

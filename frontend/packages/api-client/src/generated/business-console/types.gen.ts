@@ -2087,6 +2087,42 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     expiresAtUtc?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingFirstPlanJobContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingFirstPlanJobContract = {
+    jobId?: string;
+    status?: NervIipContractsSchedulingSchedulingFirstPlanJobStatusContract;
+    input?: NervIipContractsSchedulingSchedulingFirstPlanInputContract;
+    createdAtUtc?: string;
+    startedAtUtc?: string | null;
+    finishedAtUtc?: string | null;
+    planId?: string | null;
+    failureReason?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingFirstPlanJobStatusContract = 'created' | 'running' | 'completed' | 'failed';
+
+export type NervIipContractsSchedulingSchedulingFirstPlanInputContract = {
+    organizationId?: string;
+    environmentId?: string;
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    orders?: Array<NervIipContractsSchedulingSchedulingFirstPlanOrderContract>;
+    contractVersion?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingFirstPlanOrderContract = {
+    workOrderId?: string;
+    priority?: number;
+    isRush?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingFirstPlanJobRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionPlanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionPlanResponse | null;
 };
@@ -12855,6 +12891,65 @@ export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponses = {
 };
 
 export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponse = SetBusinessConsoleOrderUrgencyBusinessPriorityResponses[keyof SetBusinessConsoleOrderUrgencyBusinessPriorityResponses];
+
+export type AcceptBusinessConsoleSchedulingFirstPlanJobData = {
+    body: NervIipContractsSchedulingSchedulingFirstPlanInputContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/first-plan-jobs';
+};
+
+export type AcceptBusinessConsoleSchedulingFirstPlanJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type AcceptBusinessConsoleSchedulingFirstPlanJobResponses = {
+    /**
+     * Accepted
+     */
+    202: NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract;
+};
+
+export type AcceptBusinessConsoleSchedulingFirstPlanJobResponse = AcceptBusinessConsoleSchedulingFirstPlanJobResponses[keyof AcceptBusinessConsoleSchedulingFirstPlanJobResponses];
+
+export type GetBusinessConsoleSchedulingFirstPlanJobData = {
+    body?: never;
+    path: {
+        jobId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/workbench/first-plan-jobs/{jobId}';
+};
+
+export type GetBusinessConsoleSchedulingFirstPlanJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingFirstPlanJobResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract;
+};
+
+export type GetBusinessConsoleSchedulingFirstPlanJobResponse = GetBusinessConsoleSchedulingFirstPlanJobResponses[keyof GetBusinessConsoleSchedulingFirstPlanJobResponses];
 
 export type ListBusinessConsoleQualityInspectionPlansData = {
     body?: never;

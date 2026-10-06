@@ -6307,16 +6307,18 @@
       "method": "POST",
       "route": "/api/business/v1/scheduling/workbench/first-plan-jobs",
       "operationId": "acceptSchedulingFirstPlanJob",
-      "classification": "deferred",
-      "followUp": "#4136：交付异步首版作业的 BusinessGateway facade 与生成客户端。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["acceptBusinessConsoleSchedulingFirstPlanJob"]
     },
     {
       "service": "Scheduling",
       "method": "GET",
       "route": "/api/business/v1/scheduling/workbench/first-plan-jobs/{jobId}",
       "operationId": "getSchedulingFirstPlanJob",
-      "classification": "deferred",
-      "followUp": "#4136：交付异步首版作业的 BusinessGateway facade 与生成客户端。"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleSchedulingFirstPlanJob"]
     }
   ]
 }

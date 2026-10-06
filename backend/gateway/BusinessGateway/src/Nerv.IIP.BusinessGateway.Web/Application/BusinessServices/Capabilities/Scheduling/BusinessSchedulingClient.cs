@@ -6,6 +6,12 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
+        string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken);
+
+    Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
+        string internalBearerToken, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken);
+
     Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
@@ -97,6 +103,17 @@ public interface IBusinessSchedulingClient
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
 {
+    public Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
+        string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken) =>
+        SendAsync<SchedulingFirstPlanJobContract>(internalBearerToken, HttpMethod.Post,
+            "/api/business/v1/scheduling/workbench/first-plan-jobs", input, cancellationToken, SchedulingJson.Options);
+
+    public Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
+        string internalBearerToken, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken) =>
+        SendAsync<SchedulingFirstPlanJobContract>(internalBearerToken, HttpMethod.Get,
+            $"/api/business/v1/scheduling/workbench/first-plan-jobs/{request.JobId}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null, cancellationToken, SchedulingJson.Options);
+
     public Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
