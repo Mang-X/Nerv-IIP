@@ -286,6 +286,69 @@ public sealed partial class SchedulingWorkbenchTests
     }
 
     [Fact]
+    public async Task Revision_preserves_excluded_manual_lock_across_saved_candidates()
+    {
+        await using var db = CreateDbContext();
+        var template = ShockAbsorberSchedulingFixture.CreateProblem();
+        var excluded = template.Orders.First();
+        var included = template.Orders.Last();
+        var excludedOperation = excluded.Operations.First();
+        var includedOperation = included.Operations.First();
+        var start = template.HorizonStartUtc;
+        var end = start.AddMinutes(20);
+        var resource = template.Resources.Single(x => x.ResourceId == excludedOperation.PrimaryResourceId);
+        var problem = template with
+        {
+            Orders = [
+                excluded with { Operations = [excludedOperation] },
+                included with { Operations = [includedOperation] }
+            ],
+            LockedAssignments = [new SchedulingLockedAssignmentContract(
+                "excluded-manual-lock", excluded.OrderId, excludedOperation.OperationId,
+                excludedOperation.OperationSequence, resource.ResourceId, resource.WorkCenterId,
+                start, end, "planner-draft-lock")]
+        };
+        var basePlan = SchedulePlanContractMapper.WithStatus(
+            new FiniteCapacityScheduler().Schedule(problem, "plan-excluded-manual-base", start),
+            SchedulePlanStatusContract.Generated);
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(problem.OrganizationId, problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(basePlan)));
+        db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+            problem.ProblemId, problem.ContractVersion, problem.OrganizationId, problem.EnvironmentId,
+            "fingerprint", SchedulingFrozenOccupancy.SerializeSnapshot(problem, []),
+            problem.HorizonStartUtc, problem.HorizonEndUtc, start));
+        await db.SaveChangesAsync();
+
+        var firstSender = new CapturingPlanSender(start);
+        var first = await RevisionHandler(db, firstSender, start).Handle(
+            new CreateSchedulePlanRevisionCommand(basePlan.PlanId, problem.OrganizationId,
+                problem.EnvironmentId, [included.OrderId], []), CancellationToken.None);
+        Assert.True(Assert.Single(first.Candidate.Assignments).StartUtc >= end);
+        var firstInput = firstSender.LastCommand!;
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            db, new FiniteCapacityScheduler(), new FreezeTestTimeProvider(start),
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db),
+            new OrderUrgencyService(db, new FreezeTestTimeProvider(start)),
+            SchedulingEquipmentUnknownModeOption.Default);
+        var savedCandidate = await createHandler.Handle(firstInput, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var secondSender = new CapturingPlanSender(start.AddHours(3));
+        var second = await RevisionHandler(db, secondSender, start.AddHours(3)).Handle(
+            new CreateSchedulePlanRevisionCommand(savedCandidate.PlanId, problem.OrganizationId,
+                problem.EnvironmentId, [included.OrderId], []), CancellationToken.None);
+
+        var retained = Assert.Single(secondSender.LastCommand!.Freeze!.Assignments,
+            x => x.Assignment.OrderId == excluded.OrderId);
+        Assert.Equal("excluded-manual-lock", retained.Assignment.AssignmentId);
+        Assert.True(((SchedulingFreezeReason)retained.Reasons).HasFlag(SchedulingFreezeReason.ManualLock));
+        Assert.True(Assert.Single(second.Candidate.Assignments).StartUtc >= end);
+        var secondGenerated = await createHandler.Handle(secondSender.LastCommand, CancellationToken.None);
+        Assert.True(Assert.Single(secondGenerated.Assignments).StartUtc >= end);
+    }
+
+    [Fact]
     public async Task Revision_replays_frozen_snapshot_and_excludes_it_from_moved_count()
     {
         await using var db = CreateDbContext();

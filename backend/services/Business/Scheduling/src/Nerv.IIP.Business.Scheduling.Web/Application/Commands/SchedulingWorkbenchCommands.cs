@@ -160,7 +160,12 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         }
 
         var baseline = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem, snapshotReservations);
-        var baselineAssignments = baseline.Assignments;
+        var priorFreeze = SchedulingFrozenOccupancy.ReadFreezeSnapshot(snapshot.ProblemJson);
+        var baselineKeys = baseline.Assignments.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        var baselineAssignments = baseline.Assignments
+            .Concat((priorFreeze?.Assignments.Select(x => x.Assignment) ?? [])
+                .Where(x => !baselineKeys.Contains((x.OrderId, x.OperationId))))
+            .ToArray();
         var baselineOrderIds = baseProblem.Orders.Select(x => x.OrderId).ToArray();
         var execution = await dbContext.OperationExecutionProjections.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId &&
@@ -187,7 +192,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         }
         var fixedReservations = reservationsByOperation.Values.ToArray();
         var policy = freezeSettings.At(timeProvider.GetUtcNow());
-        var priorManualLocks = SchedulingFrozenOccupancy.ReadFreezeSnapshot(snapshot.ProblemJson)?
+        var priorManualLocks = priorFreeze?
             .Assignments.Where(x => ((SchedulingFreezeReason)x.Reasons).HasFlag(SchedulingFreezeReason.ManualLock))
             .Select(x => (x.Assignment.OrderId, x.Assignment.OperationId)) ?? [];
         var manualLocks = baseProblem.LockedAssignments
