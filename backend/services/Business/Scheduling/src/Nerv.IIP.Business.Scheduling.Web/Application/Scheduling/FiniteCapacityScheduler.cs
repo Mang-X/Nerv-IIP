@@ -451,6 +451,15 @@ file sealed class SchedulerState
     private readonly Dictionary<OperationKey, SchedulingOperationContract> operationByKey;
     private readonly Dictionary<string, string> skuByOrderId;
     private readonly List<ScheduleAssignmentContract> assignments = [];
+    private readonly Dictionary<OperationKey, ScheduleAssignmentContract> assignmentByOperation = [];
+    private readonly Dictionary<string, List<ScheduleAssignmentContract>> assignmentsByResource = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> resourceIdsByWorkCenter = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<ScheduleAssignmentContract>> assignmentsByTooling = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyCollection<ResourceOccupancy>> occupanciesByResource = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyCollection<ResourceOccupancy>> capacityOccupanciesByWorkCenter = new(StringComparer.Ordinal);
+    private readonly IReadOnlyCollection<ResourceOccupancy> externalOccupancies;
+    private readonly ILookup<string, ResourceOccupancy> externalOccupanciesByResource;
+    private readonly ILookup<string, ResourceOccupancy> externalOccupanciesByWorkCenter;
     private readonly List<ScheduleConflictContract> conflicts = [];
     private readonly List<UnscheduledOperationContract> unscheduledOperations = [];
     private readonly List<ScheduleChangeContract> changeSummary = [];
@@ -460,10 +469,8 @@ file sealed class SchedulerState
     private readonly SchedulingMaterialConstraintModeContract materialConstraintMode;
     private readonly SchedulingQualityConstraintModeContract qualityConstraintMode;
     private readonly IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations;
-    private readonly IReadOnlyCollection<FixedWorkCenterReservation> externalReservations;
     private readonly HashSet<OperationKey> fixedOperationKeys;
     private readonly Dictionary<string, int> workCenterCapacity;
-    private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
 
     private SchedulerState(
@@ -481,7 +488,9 @@ file sealed class SchedulerState
         this.materialConstraintMode = materialConstraintMode;
         this.qualityConstraintMode = qualityConstraintMode;
         this.fixedReservations = fixedReservations;
-        this.externalReservations = externalReservations;
+        externalOccupancies = externalReservations.Select(ExternalOccupancy).ToArray();
+        externalOccupanciesByResource = externalOccupancies.ToLookup(x => x.ResourceId, StringComparer.Ordinal);
+        externalOccupanciesByWorkCenter = externalOccupancies.ToLookup(x => x.WorkCenterId, StringComparer.Ordinal);
         fixedOperationKeys = fixedReservations
             .Select(x => new OperationKey(x.OrderId, x.OperationId))
             .ToHashSet();
@@ -739,8 +748,7 @@ file sealed class SchedulerState
         foreach (var (item, locked) in lockedOperations)
         {
             var predecessorKeys = AssemblyPredecessorKeys(item).ToArray();
-            var predecessors = predecessorKeys.Select(key => assignments.FirstOrDefault(assignment =>
-                assignment.OrderId == key.OrderId && assignment.OperationId == key.OperationId)).ToArray();
+            var predecessors = predecessorKeys.Select(key => assignmentByOperation.GetValueOrDefault(key)).ToArray();
             if (HasMissingAssemblyChild(item) || predecessors.Any(assignment => assignment is null))
             {
                 AddConflict(ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
@@ -1076,8 +1084,7 @@ file sealed class SchedulerState
     private DateTimeOffset LatestPredecessorEnd(OperationWorkItem item)
     {
         var predecessorEnds = PredecessorKeys(item)
-            .Select(key => assignments.FirstOrDefault(x =>
-                x.OrderId == key.OrderId && x.OperationId == key.OperationId)?.EndUtc)
+            .Select(key => assignmentByOperation.GetValueOrDefault(key)?.EndUtc)
             .Where(x => x.HasValue)
             .Select(x => x!.Value);
         return predecessorEnds.DefaultIfEmpty(problem.HorizonStartUtc).Max();
@@ -1251,12 +1258,11 @@ file sealed class SchedulerState
 
         var remaining = TimeSpan.FromMinutes(item.Operation.DurationMinutes);
         var segments = new List<ScheduleAssignmentSegmentContract>();
-        var workCenterOccupancies = GetResourceOccupancies(assignments)
-            .Where(x => x.WorkCenterId == resource.WorkCenterId).ToArray();
+        var workCenterOccupancies = WorkCenterCapacityOccupancies(resource.WorkCenterId).ToArray();
         var occupancies = workCenterOccupancies
             .Where(x => x.ResourceId == resource.ResourceId).ToArray();
         var candidateTooling = (selectedOperation.RequiredToolingIds ?? []).ToHashSet(StringComparer.Ordinal);
-        var toolingAssignments = assignments
+        var toolingAssignments = ToolingAssignments(candidateTooling)
             .Where(x => operationByKey.TryGetValue(OperationKey.From(x), out var operation)
                 && (EffectiveAssignedOperation(x, operation).RequiredToolingIds ?? []).Any(candidateTooling.Contains))
             .SelectMany(AssignmentSegments).ToArray();
@@ -1328,8 +1334,7 @@ file sealed class SchedulerState
     {
         if (item.Operation.Changeovers is null) return item.Operation;
 
-        var predecessor = assignments
-            .Where(x => x.ResourceId == resource.ResourceId)
+        var predecessor = ResourceAssignments(resource.ResourceId)
             .SelectMany(x => AssignmentSegments(x)
                 .Where(segment => segment.EndUtc <= candidate)
                 .Select(segment => (Assignment: x, segment.EndUtc)))
@@ -1364,11 +1369,10 @@ file sealed class SchedulerState
     {
         var calendar = calendars[resource.CalendarId];
         var candidateTooling = selectedOperation.RequiredToolingIds ?? [];
-        var hasCandidatePredecessor = assignments
-            .Where(x => x.ResourceId == resource.ResourceId)
+        var hasCandidatePredecessor = ResourceAssignments(resource.ResourceId)
             .SelectMany(AssignmentSegments)
             .Any(x => x.EndUtc <= candidateSegments[0].StartUtc);
-        foreach (var next in assignments.Where(x => x.ResourceId == resource.ResourceId)
+        foreach (var next in ResourceAssignments(resource.ResourceId)
                      .OrderBy(x => x.StartUtc).ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
             if (fixedOperationKeys.Contains(OperationKey.From(next))
@@ -1378,8 +1382,8 @@ file sealed class SchedulerState
                 .Where(x => x.EndUtc <= next.StartUtc)
                 .Select(x => (DateTimeOffset?)x.EndUtc).Max();
             if (!candidatePredecessor.HasValue) continue;
-            var existingPredecessor = assignments
-                .Where(x => x.ResourceId == resource.ResourceId && x.AssignmentId != next.AssignmentId)
+            var existingPredecessor = ResourceAssignments(resource.ResourceId)
+                .Where(x => x.AssignmentId != next.AssignmentId)
                 .SelectMany(AssignmentSegments)
                 .Where(x => x.EndUtc <= next.StartUtc)
                 .Select(x => (DateTimeOffset?)x.EndUtc).Max();
@@ -1387,8 +1391,7 @@ file sealed class SchedulerState
 
             var nextEffective = WithChangeover(nextOperation, item.Order.SkuCode);
             var setupStart = next.StartUtc - TimeSpan.FromMinutes(nextEffective.SetupMinutes);
-            var otherOccupancies = BuildCapacityOccupancies(assignments.Where(x => x.AssignmentId != next.AssignmentId)
-                .ToArray()).ToList();
+            var otherOccupancies = CapacityOccupanciesExcluding(resource, next.AssignmentId).ToList();
             otherOccupancies.AddRange(candidateSegments.Select((segment, index) => new ResourceOccupancy(
                 resource.ResourceId, resource.WorkCenterId,
                 index == 0 && hasCandidatePredecessor
@@ -1421,7 +1424,7 @@ file sealed class SchedulerState
                 (decimal)duration.Ticks / TimeSpan.TicksPerMinute / utilizationRate));
 
     private DateTimeOffset? NextResourceSegmentEnd(SchedulingResourceContract resource, DateTimeOffset after) =>
-        assignments.Where(x => x.ResourceId == resource.ResourceId)
+        ResourceAssignments(resource.ResourceId)
             .SelectMany(AssignmentSegments)
             .Where(x => x.EndUtc > after)
             .Select(x => (DateTimeOffset?)x.EndUtc).Min();
@@ -1436,8 +1439,7 @@ file sealed class SchedulerState
             return candidate;
         }
 
-        var previousEnd = assignments
-            .Where(x => x.ResourceId == resource.ResourceId)
+        var previousEnd = ResourceAssignments(resource.ResourceId)
             .SelectMany(AssignmentSegments)
             .Where(x => x.EndUtc <= candidate)
             .Select(x => (DateTimeOffset?)x.EndUtc).Max();
@@ -1460,8 +1462,7 @@ file sealed class SchedulerState
             return candidate;
         }
 
-        var hasPreviousAssignment = assignments
-            .Where(x => x.ResourceId == resource.ResourceId)
+        var hasPreviousAssignment = ResourceAssignments(resource.ResourceId)
             .SelectMany(AssignmentSegments)
             .Any(x => x.EndUtc <= candidate);
         return hasPreviousAssignment ? candidate - setup : candidate;
@@ -1474,7 +1475,7 @@ file sealed class SchedulerState
         DateTimeOffset blockingEnd)
     {
         var hasPreviousAssignment = setup > TimeSpan.Zero
-            && assignments.Where(x => x.ResourceId == resource.ResourceId)
+            && ResourceAssignments(resource.ResourceId)
                 .SelectMany(AssignmentSegments).Any(x => x.EndUtc <= candidate);
         return hasPreviousAssignment ? blockingEnd + setup : blockingEnd;
     }
@@ -1530,11 +1531,10 @@ file sealed class SchedulerState
         DateTimeOffset endUtc)
     {
         var capacity = Math.Max(1, resource.CapacityUnits);
-        var occupancies = GetResourceOccupancies(assignments);
         return new[]
         {
-            CapacityBlockEnd(occupancies.Where(x => x.ResourceId == resource.ResourceId), startUtc, endUtc, capacity),
-            CapacityBlockEnd(occupancies.Where(x => x.WorkCenterId == resource.WorkCenterId),
+            CapacityBlockEnd(ResourceCapacityOccupancies(resource.ResourceId), startUtc, endUtc, capacity),
+            CapacityBlockEnd(WorkCenterCapacityOccupancies(resource.WorkCenterId),
                 startUtc, endUtc, workCenterCapacity[resource.WorkCenterId])
         }.Min();
     }
@@ -1776,7 +1776,7 @@ file sealed class SchedulerState
     {
         var required = (operation.RequiredToolingIds ?? []).ToHashSet(StringComparer.Ordinal);
         if (required.Count == 0) return null;
-        return assignments
+        return ToolingAssignments(required)
             .Where(x => excludedOperation is null || OperationKey.From(x) != excludedOperation.Value)
             .Where(x => operationByKey.TryGetValue(OperationKey.From(x), out var assignedOperation)
                 && (EffectiveAssignedOperation(x, assignedOperation).RequiredToolingIds ?? []).Any(required.Contains))
@@ -2000,26 +2000,91 @@ file sealed class SchedulerState
     private void AddAssignment(ScheduleAssignmentContract assignment)
     {
         assignments.Add(assignment);
-        resourceOccupancyCache = null;
-    }
-
-    private IReadOnlyCollection<ResourceOccupancy> GetResourceOccupancies(IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
-    {
-        if (ReferenceEquals(orderedAssignments, assignments))
+        // 与旧 FirstOrDefault 一致：重复锁定工序仍以首次写入作为前序事实。
+        assignmentByOperation.TryAdd(OperationKey.From(assignment), assignment);
+        if (!assignmentsByResource.TryGetValue(assignment.ResourceId, out var resourceAssignments))
         {
-            return resourceOccupancyCache ??= BuildCapacityOccupancies(orderedAssignments);
+            resourceAssignments = [];
+            assignmentsByResource.Add(assignment.ResourceId, resourceAssignments);
+        }
+        resourceAssignments.Add(assignment);
+        occupanciesByResource.Remove(assignment.ResourceId);
+        foreach (var workCenterId in resourceAssignments.Select(x => x.WorkCenterId).Distinct(StringComparer.Ordinal))
+        {
+            capacityOccupanciesByWorkCenter.Remove(workCenterId);
         }
 
-        return BuildCapacityOccupancies(orderedAssignments);
+        if (!resourceIdsByWorkCenter.TryGetValue(assignment.WorkCenterId, out var resourceIds))
+        {
+            resourceIds = new(StringComparer.Ordinal);
+            resourceIdsByWorkCenter.Add(assignment.WorkCenterId, resourceIds);
+        }
+        resourceIds.Add(assignment.ResourceId);
+
+        if (operationByKey.TryGetValue(OperationKey.From(assignment), out var operation))
+        {
+            // 插入到已有工序之前会改变其换型工装；索引覆盖所有可能工装，读取时仍算实际换型。
+            var possibleTooling = (operation.RequiredToolingIds ?? [])
+                .Concat((operation.Changeovers ?? []).SelectMany(x => x.RequiredToolingIds))
+                .Distinct(StringComparer.Ordinal);
+            foreach (var toolingId in possibleTooling)
+            {
+                if (!assignmentsByTooling.TryGetValue(toolingId, out var toolingAssignments))
+                {
+                    toolingAssignments = [];
+                    assignmentsByTooling.Add(toolingId, toolingAssignments);
+                }
+                toolingAssignments.Add(assignment);
+            }
+        }
     }
 
-    private IReadOnlyCollection<ResourceOccupancy> BuildCapacityOccupancies(
-        IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments) =>
-        BuildResourceOccupancies(orderedAssignments)
-            .Concat(externalReservations
-                .Select(x => new ResourceOccupancy(
-                    x.ResourceId ?? string.Empty, x.WorkCenterId, x.StartUtc, x.EndUtc, x.EndUtc)))
-            .ToArray();
+    private IReadOnlyCollection<ScheduleAssignmentContract> ResourceAssignments(string resourceId) =>
+        assignmentsByResource.TryGetValue(resourceId, out var timeline) ? timeline : [];
+
+    private IEnumerable<ScheduleAssignmentContract> ToolingAssignments(IEnumerable<string> toolingIds) =>
+        toolingIds.SelectMany(id => assignmentsByTooling.TryGetValue(id, out var indexed) ? indexed : [])
+            .Distinct();
+
+    private IReadOnlyCollection<ResourceOccupancy> ResourceOccupancies(string resourceId)
+    {
+        if (!occupanciesByResource.TryGetValue(resourceId, out var occupancies))
+        {
+            occupancies = BuildResourceOccupancies(ResourceAssignments(resourceId));
+            occupanciesByResource.Add(resourceId, occupancies);
+        }
+        return occupancies;
+    }
+
+    private IEnumerable<ResourceOccupancy> ResourceCapacityOccupancies(string resourceId) =>
+        ResourceOccupancies(resourceId).Concat(externalOccupanciesByResource[resourceId]);
+
+    private IReadOnlyCollection<ResourceOccupancy> WorkCenterCapacityOccupancies(string workCenterId)
+    {
+        if (!capacityOccupanciesByWorkCenter.TryGetValue(workCenterId, out var occupancies))
+        {
+            occupancies = (resourceIdsByWorkCenter.TryGetValue(workCenterId, out var resourceIds)
+                ? resourceIds.SelectMany(ResourceOccupancies).Where(x => x.WorkCenterId == workCenterId)
+                : [])
+                .Concat(externalOccupanciesByWorkCenter[workCenterId]).ToArray();
+            capacityOccupanciesByWorkCenter.Add(workCenterId, occupancies);
+        }
+        return occupancies;
+    }
+
+    private IEnumerable<ResourceOccupancy> CapacityOccupanciesExcluding(
+        SchedulingResourceContract resource, string excludedAssignmentId) =>
+        (resourceIdsByWorkCenter.TryGetValue(resource.WorkCenterId, out var resourceIds) ? resourceIds : [])
+            .Append(resource.ResourceId).Distinct(StringComparer.Ordinal)
+            .SelectMany(id => BuildResourceOccupancies(ResourceAssignments(id)
+                .Where(x => x.AssignmentId != excludedAssignmentId).ToArray()))
+            .Where(x => x.WorkCenterId == resource.WorkCenterId || x.ResourceId == resource.ResourceId)
+            .Concat(externalOccupancies.Where(x =>
+                x.WorkCenterId == resource.WorkCenterId || x.ResourceId == resource.ResourceId));
+
+    private static ResourceOccupancy ExternalOccupancy(FixedWorkCenterReservation reservation) =>
+        new(reservation.ResourceId ?? string.Empty, reservation.WorkCenterId,
+            reservation.StartUtc, reservation.EndUtc, reservation.EndUtc);
 
     private IReadOnlyCollection<ResourceOccupancy> BuildResourceOccupancies(
         IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
