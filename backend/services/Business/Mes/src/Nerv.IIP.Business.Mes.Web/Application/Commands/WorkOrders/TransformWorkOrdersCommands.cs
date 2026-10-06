@@ -70,7 +70,7 @@ public sealed class SplitWorkOrderCommandHandler(ApplicationDbContext dbContext)
 
         var sourceSnapshot = WorkOrderTransformationCommandSupport.Snapshot(source);
         var targets = request.Targets.Select(target => WorkOrderTransformationCommandSupport.CreateTarget(
-            source, target.WorkOrderId, target.Quantity)).ToArray();
+            source, target.WorkOrderId, target.Quantity, source.IsRush)).ToArray();
         var targetSnapshots = targets.Select(WorkOrderTransformationCommandSupport.Snapshot).ToArray();
         WorkOrderTransformation transformation;
         try
@@ -188,7 +188,7 @@ public sealed class MergeWorkOrdersCommandHandler(ApplicationDbContext dbContext
         await WorkOrderTransformationCommandSupport.EnsureTargetsAreNewAsync(
             dbContext, request.OrganizationId, request.EnvironmentId, [request.TargetWorkOrderId], cancellationToken);
         var target = WorkOrderTransformationCommandSupport.CreateTarget(
-            sources[0], request.TargetWorkOrderId, sources.Sum(x => x.Quantity));
+            sources[0], request.TargetWorkOrderId, sources.Sum(x => x.Quantity), isRush: false);
         WorkOrderTransformation transformation;
         try
         {
@@ -342,7 +342,7 @@ internal static class WorkOrderTransformationCommandSupport
         }
     }
 
-    public static WorkOrder CreateTarget(WorkOrder source, string targetWorkOrderId, decimal quantity) =>
+    public static WorkOrder CreateTarget(WorkOrder source, string targetWorkOrderId, decimal quantity, bool isRush) =>
         WorkOrder.Create(
             source.OrganizationId,
             source.EnvironmentId,
@@ -354,7 +354,8 @@ internal static class WorkOrderTransformationCommandSupport
             source.DueUtc,
             source.UomCode,
             CopySourcePlanReference(source.SourcePlanReference),
-            source.OverReceiptTolerancePercent);
+            source.OverReceiptTolerancePercent,
+            isRush);
 
     public static WorkOrderTransformationWorkOrderSnapshot Snapshot(WorkOrder workOrder) =>
         new(workOrder.WorkOrderIdValue, workOrder.SkuId, workOrder.ProductionVersionId, workOrder.UomCode,
