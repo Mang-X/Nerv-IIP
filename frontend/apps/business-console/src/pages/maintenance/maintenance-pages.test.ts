@@ -512,6 +512,13 @@ describe('maintenance work orders page', () => {
     reasonInput!.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
 
+    const predictionInput = document.body.querySelector<HTMLInputElement>(
+      '#mwo-create-expected-restore',
+    )!
+    predictionInput.value = '2026-10-10T13:30'
+    predictionInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
     const form = reasonInput!.closest('form')!
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
@@ -520,6 +527,7 @@ describe('maintenance work orders page', () => {
     expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
       deviceAssetId: 'DEV-PRESS-01',
       assetUnavailableReasonCode: 'Line-A.Spindle',
+      expectedRestoreAtUtc: new Date('2026-10-10T13:30').toISOString(),
     })
     expect(state.createWorkOrder.mock.calls[0][0]).not.toHaveProperty('assetUnavailableReason')
   })
@@ -1751,7 +1759,7 @@ describe('维修工单预计恢复', () => {
     expect(state.updateExpectedRestore).toHaveBeenLastCalledWith(state.workOrders[0], null)
   })
 
-  it('其他技师不可编辑，服务端拒绝通过 toast 反馈且保留输入', async () => {
+  it('其他技师不可编辑预测', async () => {
     state.query = {}
     mount(WorkOrdersPage, mountOptions())
     await flushPromises()

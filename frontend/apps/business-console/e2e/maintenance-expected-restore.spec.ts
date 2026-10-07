@@ -41,6 +41,7 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
   )
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
+    if (!url.pathname.startsWith('/api/')) return route.continue()
     let data: unknown = { items: [], total: 0 }
     if (url.pathname.endsWith('/auth/refresh')) data = session
     else if (url.pathname.endsWith('/me/work-context')) {
@@ -72,6 +73,8 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
           outcome: 'confirmed',
           stateConfirmed: true,
           readbackRequired: false,
+          changedAtUtc: '2026-10-07T02:10:00Z',
+          resourceStatus: row.status,
         },
       }
     } else if (url.pathname.endsWith('/work-orders/wo-etr-01')) {
