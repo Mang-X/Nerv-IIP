@@ -104,7 +104,8 @@
       "excludedTestClasses": [
         "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests",
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests",
-        "Nerv.IIP.Caching.Tests.RedisAppCacheTests"
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests",
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests"
       ],
       "excludedTests": [
         "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics",

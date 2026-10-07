@@ -11,10 +11,23 @@ namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Cache;
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class InvalidateGatewayCacheEndpoint(IAppCache cache) : EndpointWithoutRequest
 {
-    public override Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(CancellationToken ct)
     {
-        cache.RemoveByTag(NervIipCacheTags.Gateway);
+        try
+        {
+            cache.RemoveByTag(NervIipCacheTags.Gateway);
+        }
+        catch (Exception)
+        {
+            // The adapter logs safe operation metadata. Do not let provider exceptions reach
+            // the HTTP server's exception logger, which includes raw Redis keys and errors.
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                HttpContext, StatusCodes.Status503ServiceUnavailable,
+                "Gateway cache invalidation unavailable.", ct);
+            return;
+        }
+
+        // Submission succeeded; subscribers process the backplane notification asynchronously.
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
-        return Task.CompletedTask;
     }
 }
