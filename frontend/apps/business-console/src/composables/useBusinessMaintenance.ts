@@ -301,7 +301,7 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
           {
             expectedOperationType: scope.operationType,
             expectedIdempotencyKey: pending.idempotencyKey,
-            expectedResourceId: row.workOrderId,
+            expectedResourceId: row.workOrderId!,
           },
         ),
       )
