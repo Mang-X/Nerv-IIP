@@ -11,81 +11,59 @@
 #     - Ruby with the yaml and json standard libraries
 
 <#
-#3300 的发现式 runner。
-
-它不持有任何测试名单：要跑什么由 scripts/lib/ScriptTestSelection.ps1 从
-`glob(scripts/tests/*.Tests.ps1) - 工作流点名 - 显式出界登记` 算出来。因此新增一个契约测试
-的默认归宿是「被这一步跑到」，而不是「静默不跑」。
-
-失败即 exit 1，并把每条失败测试的 stdout/stderr 末尾打出来。本脚本按 CI 约定独占一个 run step：
-`exit` 版的退出码只有在独占 step 时才不会被后续命令吞掉。
+默认执行现有发现式补集；ScriptPath 模式执行调用方给出的原命令，供 workflow 组织稳定 suite。
+每个脚本仍是独立、有界的 PowerShell 子进程。累计全部失败后 exit 1，后续成功不能覆盖失败。
 #>
 
 [CmdletBinding()]
 param(
-    # 单个测试的上限，不是整步的上限。必须**明显小于** ci.yml 给本步的 step 预算（当前 15m），
-    # 否则一个挂死的测试会把预算吃光、由 GitHub 的 step timeout 收场，而 GitHub 杀步时不会打印
-    # 本 runner 的 FAIL 诊断与该测试的 stdout/stderr 尾巴 —— 最需要诊断的那次反而什么都拿不到。
-    # 300s 的来源：CI 上单测试实测最大 41.1s（erp-sales-order-demand-planning-verify-script），
-    # 取其约 7 倍；第六名就掉到 6.5s，分布极陡，300s 不会误杀。
-    #
-    # 与 15m（900s）step 预算的算术，把界说全而不是只算一次：
-    #   一次挂死：300 + 176（其余测试 CI 实测合计）= 476s  < 900s ⇒ 本 runner 自报红，诊断齐全。
-    #   两次挂死：600 + 176 = 776s                        < 900s ⇒ 仍能自报。
-    #   三次挂死：900 + 176 = 1076s                       > 900s ⇒ 退回 GitHub 杀步，拿不到本
-    #             runner 的 FAIL 行与 stdout/stderr 尾巴。三次并发挂死时诊断能力确实会掉，
-    #             这是已知边界，不是被覆盖的情形。
     [ValidateRange(1, 2147483)] [int] $TimeoutSeconds = 300,
-    [int] $FailureOutputLineCount = 40
+    [ValidateRange(1, 2147483647)] [int] $FailureOutputLineCount = 40,
+    [string[]] $ScriptPath,
+    [string] $RepositoryRoot = (Join-Path $PSScriptRoot '..')
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptTestSelection.ps1')
 
-$plan = Get-NervScriptTestSelectionPlan -RepositoryRoot $repoRoot
-
-Write-Host "Script contract test selection (#3300 complement selection):"
-Write-Host "  discovered under scripts/tests: $($plan.All.Count)"
-Write-Host "  selected by a workflow run body: $($plan.WorkflowSelected.Count)"
-Write-Host "  registered out of band: $($plan.OutOfBand.Count)"
-foreach ($entry in $plan.OutOfBand) {
-    $entryTracking = Get-NervScriptTestRegistryField -Entry $entry -Name 'Tracking'
-    $tracking = if ([string]::IsNullOrWhiteSpace($entryTracking)) { '' } else { " (tracking $entryTracking)" }
-    Write-Host "    [$($entry.Kind)]$tracking $($entry.Name) — $($entry.Reason)"
+if ($PSBoundParameters.ContainsKey('ScriptPath')) {
+    if ($ScriptPath.Count -eq 0) { throw 'An explicit script suite must not be empty.' }
+    $selected = @($ScriptPath)
+    $selectionSummary = "explicit=$($selected.Count)"
 }
-$quarantined = @($plan.OutOfBand | Where-Object { [string]::Equals((Get-NervScriptTestRegistryField -Entry $_ -Name 'Kind'), 'quarantine', [StringComparison]::Ordinal) })
-Write-Host "  of which quarantined against a tracking issue: $($quarantined.Count)"
-foreach ($entry in $quarantined) {
-    Write-Host "    quarantined $(Get-NervScriptTestRegistryField -Entry $entry -Name 'Name') tracking $(Get-NervScriptTestRegistryField -Entry $entry -Name 'Tracking')"
+else {
+    $plan = Get-NervScriptTestSelectionPlan -RepositoryRoot $repoRoot
+    $selected = @($plan.RunnerSelected | ForEach-Object { "scripts/tests/$_" })
+    $selectionSummary = "discovered=$($plan.All.Count) workflow=$($plan.WorkflowSelected.Count) out-of-band=$($plan.OutOfBand.Count) complement=$($selected.Count)"
+    foreach ($entry in $plan.OutOfBand) {
+        Write-Host "  [$($entry.Kind)] $($entry.Name) — $($entry.Reason)"
+    }
 }
-Write-Host "  selected by this discovery runner: $($plan.RunnerSelected.Count)"
-
-if ($plan.RunnerSelected.Count -eq 0) {
-    Write-Host 'The discovery runner selected no test. Every scripts/tests contract test is either named by a workflow step or registered out of band.'
-    exit 0
-}
+Write-Host "Script contract suite selection: $selectionSummary"
+foreach ($path in $selected) { Write-Host "  selected $path" }
 
 $failures = [Collections.Generic.List[string]]::new()
 $passedCount = 0
 $runRoot = New-ScriptAutomationLogDirectory -Name 'script-contract-tests'
 
-foreach ($name in $plan.RunnerSelected) {
-    $scriptPath = Join-Path (Join-Path $repoRoot 'scripts/tests') $name
-    $logDirectory = Join-Path $runRoot ([IO.Path]::GetFileNameWithoutExtension($name))
+foreach ($path in $selected) {
+    $name = $path
+    $testPath = Join-Path $repoRoot $path
+    $logDirectory = Join-Path $runRoot ([IO.Path]::GetFileNameWithoutExtension($path))
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
     try {
         # -NonInteractive matters: a test whose parameters cannot be bound would otherwise prompt and
         # look like a hang with no output at all instead of failing with its real reason.
         Invoke-NativeCommandWithTimeout `
             -Command 'pwsh' `
-            -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath) `
+            -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $testPath) `
             -WorkingDirectory $repoRoot `
             -TimeoutSeconds $TimeoutSeconds `
-            -Name "script-contract-$([IO.Path]::GetFileNameWithoutExtension($name))" `
+            -Name "script-contract-$([IO.Path]::GetFileNameWithoutExtension($path))" `
             -LogDirectory $logDirectory | Out-Null
         $stopwatch.Stop()
         $passedCount++
@@ -108,12 +86,9 @@ foreach ($name in $plan.RunnerSelected) {
 }
 
 Write-Host ''
-Write-Host "Script contract test discovery runner: passed=$passedCount skipped=$($plan.OutOfBand.Count) total=$($plan.All.Count) failed=$($failures.Count) (skipped = $(@($plan.OutOfBand).Count - $quarantined.Count) nested/excluded + $($quarantined.Count) quarantined)"
-
+Write-Host "Script contract suite: passed=$passedCount failed=$($failures.Count) $selectionSummary"
 if ($failures.Count -gt 0) {
     Write-Host "Failed script contract tests: $($failures -join ', ')"
     exit 1
 }
-
-Write-Host "Discovered script contract tests passed: $passedCount of $($plan.All.Count) files, $($plan.WorkflowSelected.Count) run by named workflow steps, $($plan.OutOfBand.Count) registered out of band ($($quarantined.Count) quarantined against a tracking issue)."
 exit 0
