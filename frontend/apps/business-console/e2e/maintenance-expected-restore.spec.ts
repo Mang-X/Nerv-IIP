@@ -107,6 +107,7 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
   await page.screenshot({
     path: path.join(requireBrowserEvidenceOutputDir(), 'expected-restore-readback.png'),
     fullPage: true,
+    animations: 'disabled',
   })
   reject = true
   await page.locator('#mwo-expected-restore').fill('2026-10-10T14:00')
@@ -116,6 +117,7 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
   await page.screenshot({
     path: path.join(requireBrowserEvidenceOutputDir(), 'expected-restore-error.png'),
     fullPage: true,
+    animations: 'disabled',
   })
   reject = false
   await page.locator('#mwo-expected-restore').fill('')
