@@ -112,3 +112,31 @@ FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部�
 - 数据库步骤失败：按 [`database-release.md`](database-release.md) 判断前滚、恢复或备份回退，禁止盲目重放非幂等动作。
 - AppHost/资源启动失败：使用 `status`、`describe`、`logs` 和 [`local-development.md`](local-development.md) 定位资源级失败。
 - 交付验收记录 commit/release、目标环境、实际 producer/命令、验证结果和日志位置；不得记录 secret 明文。
+
+## Maintenance 停机超阈值升级通知
+
+给 **Maintenance 服务进程**注入 `Maintenance:DowntimeEscalation` 配置；生产者为 `MaintenanceDowntimeEscalationOptions` / `MaintenanceDowntimeEscalationScheduler` / `MaintenanceDowntimeEscalationScanner`。没有 `Scopes` 时不扫描，日志报告未配置组织范围及计划员，不得宣称停机升级已启用。
+
+```json
+{
+  "Maintenance": {
+    "DowntimeEscalation": {
+      "Threshold": "02:00:00",
+      "ScanInterval": "00:05:00",
+      "Scopes": [
+        {
+          "OrganizationId": "org-001",
+          "EnvironmentId": "env-dev",
+          "PlannerRecipientRefs": ["user:planner-user-id"]
+        }
+      ]
+    }
+  }
+}
+```
+
+阈值和扫描间隔必须为正；每个组织/环境仅配置一项，计划员引用必须为 `user:<IAM user id>`。示例阈值应替换为业务确认值，计划员必须属于对应组织/环境。配置在启动时加载，修改后重启服务。环境变量对应 `Maintenance__DowntimeEscalation__Scopes__0__OrganizationId` 等键。
+
+通过现有部署入口启动前，配置 `Notification:BaseUrl` 为可达的 Notification 服务地址，并让 Maintenance 与 Notification 使用既有内部服务认证配置。客户端复用 `IInternalServiceTokenProvider`；不在配置示例写入密钥。Notification 未就绪、认证失败或 intent 提交失败会使扫描失败并保留异常，修正地址/认证/服务状态后重启 Maintenance；不增加专用重试机制。
+
+扫描以实际 `AssetUnavailableFromUtc` 起算，严格超过阈值且尚未完成/取消恢复时提交站内消息；预计恢复时间、报警解除与维修开工不结束实际停机。重复扫描及重启使用同一工单和实际停机起点生成的稳定 `DedupeKey`，由 Notification 的现有持久化去重边界处理。收件人配置修改不会改写已提交的通知。停用时移除 `Scopes` 并重启，不删除历史消息。验收须分别检查 Maintenance 扫描日志及对应组织/环境的计划员通知列表，不能把扫描启动当作消息投递成功。

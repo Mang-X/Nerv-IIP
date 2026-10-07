@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Net.Http.Headers;
+using Nerv.IIP.Sdk.Notification;
 using System.Text.Json;
 using FastEndpoints;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.DeadLetters;
@@ -94,6 +96,26 @@ try
     builder.Services.AddScoped<ICommandLock<UpdateMaintenancePlanCommand>, UpdateMaintenancePlanCommandLock>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<MaintenancePlanDueScheduler>();
+    builder.Services.AddOptions<MaintenanceDowntimeEscalationOptions>()
+        .Bind(builder.Configuration.GetSection("Maintenance:DowntimeEscalation"))
+        .Validate(x => x.Threshold > TimeSpan.Zero && x.ScanInterval > TimeSpan.Zero,
+            "Downtime escalation threshold and scan interval must be positive.")
+        .Validate(x => x.Scopes.All(s => !string.IsNullOrWhiteSpace(s.OrganizationId)
+            && !string.IsNullOrWhiteSpace(s.EnvironmentId) && s.PlannerRecipientRefs.Length > 0
+            && s.PlannerRecipientRefs.All(r => r.StartsWith("user:", StringComparison.Ordinal) && r.Length > 5)),
+            "Each downtime escalation scope requires organization, environment and user planner recipients.")
+        .Validate(x => x.Scopes.Select(s => (s.OrganizationId, s.EnvironmentId)).Distinct().Count() == x.Scopes.Count,
+            "Downtime escalation scopes must be unique by organization and environment.")
+        .ValidateOnStart();
+    builder.Services.AddHttpClient<INotificationClient, HttpNotificationClient>((services, client) =>
+    {
+        client.BaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+            builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken);
+    }).UseHttpClientMetrics();
+    builder.Services.AddScoped<MaintenanceDowntimeEscalationScanner>();
+    builder.Services.AddHostedService<MaintenanceDowntimeEscalationScheduler>();
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))
