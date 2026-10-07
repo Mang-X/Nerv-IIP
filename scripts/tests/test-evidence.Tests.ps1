@@ -2985,7 +2985,6 @@ $frontendPackage = Get-Content (Join-Path $repoRoot 'frontend/package.json') -Ra
 $compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/check-script-compatibility.ps1') -Raw
 $reviewWiringGaps = [Collections.Generic.List[string]]::new()
 if (-not $collectorSource.Contains('#   Category: check, generate', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('collector composite category') }
-if (-not $workflow.Contains('- name: Run test evidence contract tests', [StringComparison]::Ordinal) -or -not $workflow.Contains('run: ./scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('Script Governance CI runner') }
 if (-not $compatibilitySource.Contains('scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('compat-fast runner') }
 if ($workflow.Contains('-HeadBranch ${{ github.head_ref || github.ref_name }}', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('direct HeadBranch expression interpolation') }
 if (-not $workflow.Contains('HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}', [StringComparison]::Ordinal) -or -not $workflow.Contains('-HeadBranch $env:HEAD_BRANCH', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('HeadBranch environment transport') }

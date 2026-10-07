@@ -297,49 +297,6 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
         })
     Assert-Contract ($impactUploads.Count -eq 1 -and [string]::Equals([string]$impactUploads[0].with.name, '${{ steps.impact-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and $null -eq $impactUploads[0].with.PSObject.Properties['overwrite']) 'Impact-plan upload must use its immutable producer identity without overwrite.'
-    $scriptGovernanceProperty = $parsedWorkflow.jobs.PSObject.Properties['script-governance']
-    Assert-Contract ($null -ne $scriptGovernanceProperty) 'CI must retain the script-governance job.'
-    $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
-    $scriptGovernanceStepTimeouts = @($scriptGovernanceSteps | ForEach-Object { [int]$_.'timeout-minutes' })
-    $scriptGovernanceStepBudgetMinutes = ($scriptGovernanceStepTimeouts | Measure-Object -Sum).Sum
-    # #3300：这里原本写死「checkout 之外全是 5m」，于是任何一个非 5m 的 step 都会让这条注释契约
-    # 无法被如实满足，反过来把 step 预算钉成一个值。改成按预算分组生成期望文本：形态不再被假设，
-    # 注释仍必须与实际 step 预算逐项相符。既有全 5m 的形态生成的字符串与改动前逐字相同。
-    # SortedDictionary[int, int] 而不是 Group-Object/Sort-Object：分组键是分钟数，必须按数值升序，
-    # 而那两个 cmdlet 的键比较是 culture collation（scripts/tests/ordinal-comparison-layers.Tests.ps1）。
-    $scriptGovernanceTailMinuteCounts = [Collections.Generic.SortedDictionary[int, int]]::new()
-    foreach ($tailTimeout in @($scriptGovernanceStepTimeouts | Select-Object -Skip 1)) {
-        $tailMinutes = [int]$tailTimeout
-        if ($scriptGovernanceTailMinuteCounts.ContainsKey($tailMinutes)) { $scriptGovernanceTailMinuteCounts[$tailMinutes] += 1 }
-        else { $scriptGovernanceTailMinuteCounts[$tailMinutes] = 1 }
-    }
-    $workflowSource = [IO.File]::ReadAllText($Path)
-    $expectedBudgetHeadline = "step 预算合计 $($scriptGovernanceStepBudgetMinutes)m（$($scriptGovernanceSteps.Count) 个 step：3m checkout"
-    $expectedBudgetContinuation = "+ $(@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { "$($_.Value) × $($_.Key)m" }) -join ' + ')；"
-    $contractSteps = @($scriptGovernanceSteps | Where-Object {
-            [string]::Equals([string]$_.name, 'Test acceptance scenario matrix contract', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($contractSteps.Count -eq 1) 'Script Governance must contain exactly one independent acceptance scenario matrix contract step.'
-    $contractStep = $contractSteps[0]
-    Assert-Contract ([string]::Equals([string]$contractStep.shell, 'pwsh', [StringComparison]::Ordinal)) 'The acceptance scenario matrix contract step must use the pwsh shell.'
-    Assert-Contract ([string]::Equals([string]$contractStep.run, './scripts/tests/acceptance-scenario-matrix.Tests.ps1', [StringComparison]::Ordinal)) 'The acceptance scenario matrix contract step must run only the pure fixture contract.'
-    Assert-Contract ([int]$contractStep.'timeout-minutes' -eq 5) 'The acceptance scenario matrix contract step must have a 5-minute budget.'
-    Assert-Contract ($null -eq $contractStep.PSObject.Properties['if']) 'The acceptance scenario matrix contract step must not have its own condition.'
-
-    $runtimeContractSteps = @($scriptGovernanceSteps | Where-Object {
-            [string]::Equals([string]$_.name, 'Test acceptance canonical result contract', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($runtimeContractSteps.Count -eq 1) 'Script Governance must contain exactly one independent acceptance canonical result contract step.'
-    $runtimeContractStep = $runtimeContractSteps[0]
-    Assert-Contract ([string]::Equals([string]$runtimeContractStep.shell, 'pwsh', [StringComparison]::Ordinal)) 'The acceptance canonical result contract step must use the pwsh shell.'
-    Assert-Contract ([string]::Equals([string]$runtimeContractStep.run, './scripts/tests/acceptance-canonical-result.Tests.ps1', [StringComparison]::Ordinal)) 'The acceptance canonical result contract step must run only the pure canonical fixture contract.'
-    Assert-Contract ([int]$runtimeContractStep.'timeout-minutes' -eq 5) 'The acceptance canonical result contract step must have a 5-minute budget.'
-    Assert-Contract ($null -eq $runtimeContractStep.PSObject.Properties['if']) 'The acceptance canonical result contract step must not have its own condition.'
-
-    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and @($scriptGovernanceStepTimeouts | Where-Object { $_ -le 0 }).Count -eq 0) 'Script Governance budget comment contract expects one three-minute checkout and a positive explicit timeout on every step.'
-    Assert-Contract ((@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { $_.Key * $_.Value }) | Measure-Object -Sum).Sum + 3 -eq $scriptGovernanceStepBudgetMinutes) 'The Script Governance budget breakdown must add up to the declared step budget sum.'
-    Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
-    Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
 
 }
 
@@ -1061,7 +1018,6 @@ finally {
 
 $workflow = [IO.File]::ReadAllText($workflowPath)
 Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan job.'
-Assert-Contract ($workflow.Contains('run: ./scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance must run the CI impact-plan contract tests.'
 Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
 Assert-RedisCapActiveSelectionWorkflowContract -Path $workflowPath
 
@@ -1139,56 +1095,43 @@ Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
-    $acceptanceScenarioContractStep = @'
+    # #4204：内部治理接线不是公开合同。改名、重排、合并 run 体与删除预算注释
+    # 不改变 impact 选取与 artifact 身份；这些稳定行为仍须通过同一合同。
+    $governanceStart = $workflow.IndexOf('  script-governance:', [StringComparison]::Ordinal)
+    $governanceEnd = $workflow.IndexOf('  ci-summary:', $governanceStart, [StringComparison]::Ordinal)
+    $governanceSource = $workflow.Substring($governanceStart, $governanceEnd - $governanceStart)
+    $scenarioStep = @'
       - name: Test acceptance scenario matrix contract
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/acceptance-scenario-matrix.Tests.ps1
 
 '@
-    $workflowWithoutAcceptanceScenarioContract = $workflow.Replace($acceptanceScenarioContractStep, '')
-    Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceScenarioContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance scenario matrix workflow mutation must remove the canonical contract step.'
-    $workflowWithoutAcceptanceScenarioContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-scenario-contract.yml'
-    [IO.File]::WriteAllText($workflowWithoutAcceptanceScenarioContractPath, $workflowWithoutAcceptanceScenarioContract, [Text.UTF8Encoding]::new($false))
-    $workflowContractFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceScenarioContractPath } catch { $workflowContractFailure = $_ }
-    Assert-Contract ($null -ne $workflowContractFailure) 'Removing the acceptance scenario matrix Script Governance step must fail the workflow contract.'
-
-    $acceptanceRuntimeContractStep = @'
+    $canonicalStep = @'
       - name: Test acceptance canonical result contract
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/acceptance-canonical-result.Tests.ps1
 
 '@
-    $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
-        'step 预算合计 203m（39 个 step：3m checkout',
-        'step 预算合计 198m（38 个 step：3m checkout').Replace(
-        '+ 37 × 5m + 1 × 15m；',
-        '+ 36 × 5m + 1 × 15m；')
-    Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance canonical workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 198m（38 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 36 × 5m + 1 × 15m；', [StringComparison]::Ordinal)) 'Acceptance canonical workflow mutation must keep its budget comment truthful at 38 steps and 198m.'
-    $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-canonical-contract.yml'
-    [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
-    $runtimeWorkflowContractFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceRuntimeContractPath } catch { $runtimeWorkflowContractFailure = $_ }
-    $expectedRuntimeStepDiagnostic = 'Script Governance must contain exactly one independent acceptance canonical result contract step.'
-    $observedRuntimeStepDiagnostic = if ($null -eq $runtimeWorkflowContractFailure) { '<none>' } else { [string]$runtimeWorkflowContractFailure.Exception.Message }
-    Assert-Contract ([string]::Equals($observedRuntimeStepDiagnostic, $expectedRuntimeStepDiagnostic, [StringComparison]::Ordinal)) "Removing the canonical result Script Governance fixture step must fail with the exact runtime-step uniqueness diagnostic. Observed: $observedRuntimeStepDiagnostic"
+    $combinedStep = @'
+      - name: Acceptance fixtures
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          ./scripts/tests/acceptance-canonical-result.Tests.ps1
+          ./scripts/tests/acceptance-scenario-matrix.Tests.ps1
 
-    $workflowWithIncorrectBudgetComment = $workflow.Replace(
-        'step 预算合计 203m（39 个 step：3m checkout',
-        'step 预算合计 198m（38 个 step：3m checkout').Replace(
-        '+ 37 × 5m + 1 × 15m；',
-        '+ 36 × 5m + 1 × 15m；')
-    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 39-step/203m comment.'
-    $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
-    [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
-    $budgetCommentContractFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
-    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 39-step/203m structure.'
-    $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
-    Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
+'@
+    $rearrangedGovernance = $governanceSource.Replace($scenarioStep, '').Replace($canonicalStep, $combinedStep)
+    $rearrangedGovernance = [regex]::Replace($rearrangedGovernance, '(?m)^      - name: [^\n]+', '      - name: Renamed governance entry')
+    $rearrangedGovernance = [regex]::Replace($rearrangedGovernance, '(?m)^    #[^\n]*\n', '')
+    Assert-Contract (-not [string]::Equals($rearrangedGovernance, $governanceSource, [StringComparison]::Ordinal)) 'The legal rearrangement control must change governance wiring.'
+    $rearrangedWorkflowPath = Join-Path $workflowMutationRoot 'rearranged-governance.yml'
+    [IO.File]::WriteAllText($rearrangedWorkflowPath, $workflow.Replace($governanceSource, $rearrangedGovernance), [Text.UTF8Encoding]::new($false))
+    Assert-ConditionalRoutingWorkflow -Path $rearrangedWorkflowPath
+    Assert-AcceptanceScenarioMatrixWorkflowContract -Path $rearrangedWorkflowPath
+    Write-Output 'Governance wiring rearrangement control: PASS (renamed, merged, reversed fixture commands; no budget comments).'
 
     foreach ($mutation in @(
             @{
