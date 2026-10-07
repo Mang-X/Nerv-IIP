@@ -31,10 +31,8 @@ namespace Nerv.IIP.FileStorage.Web.Tests;
 
 public sealed partial class FileStorageRestartPersistenceTests
 {
-    [FileStorageRealPostgresFact]
-    public async Task Tus_bytes_offset_and_canonical_checksum_survive_host_restart()
+    private static async Task Verify_Tus_bytes_offset_and_canonical_checksum_survive_host_restart()
     {
-        await ResetFileStorageSchemaAsync();
         var root = Directory.CreateTempSubdirectory("nerv-tus-999-");
         var payload = Encoding.UTF8.GetBytes(new string('x', 8 * 1024 * 1024));
         CreateUploadSessionResponse created;
@@ -75,10 +73,8 @@ public sealed partial class FileStorageRestartPersistenceTests
         finally { root.Delete(recursive: true); }
     }
 
-    [FileStorageRealPostgresFact]
-    public async Task Tus_admitted_patch_is_rejected_after_complete_commits_intent()
+    private static async Task Verify_Tus_admitted_patch_is_rejected_after_complete_commits_intent()
     {
-        await ResetFileStorageSchemaAsync();
         var root = Directory.CreateTempSubdirectory("nerv-tus-999-race-");
         var barrier = new TransportMutationBarrier(beforeGate: true);
         var storage = new TransportCommitBarrier();
@@ -135,10 +131,8 @@ public sealed partial class FileStorageRestartPersistenceTests
         finally { barrier.Release.TrySetResult(); storage.Release.TrySetResult(); root.Delete(recursive: true); }
     }
 
-    [FileStorageRealPostgresFact]
-    public async Task Tus_concurrent_patches_preserve_offset_and_complete_drains_mutation()
+    private static async Task Verify_Tus_concurrent_patches_preserve_offset_and_complete_drains_mutation()
     {
-        await ResetFileStorageSchemaAsync();
         var root = Directory.CreateTempSubdirectory("nerv-tus-999-drain-");
         var barrier = new TransportMutationBarrier(beforeGate: false);
         try
