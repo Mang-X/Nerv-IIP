@@ -45,9 +45,6 @@ export interface SingleOrderSchedulingRequest {
  * 窗口由调用方给定——没有新增后端端点，也没有第二条生成路径。
  *
  * 语义：这里生成的是**一个只含该单的新方案**，不会把该单插进已有方案。
- * TODO(MAN-674 / #1241)：插入现有方案需要后端的插单预览（dry-run）能力，
- * 目前 `POST /scheduling/plans/preview` 要求前端提交完整 SchedulingProblemContract，
- * 而 problem 只能由后端 SchedulingWorkbenchSourceProvider 从工单选择组装，前端无法自造。
  */
 export function useSingleOrderScheduling() {
   const context = bindBusinessContext(reactive({ organizationId: '', environmentId: '' }))
@@ -95,9 +92,4 @@ export function useSingleOrderScheduling() {
     pending: mutation.isLoading,
     scheduleSingleOrder,
   }
-}
-
-/** 单单排产成功后的落点：排产工作台的方案明细，并高亮这张工单。 */
-export function singleOrderSchedulingResultRoute(planId: string, workOrderId: string) {
-  return { path: '/scheduling', query: { planId, orderReference: workOrderId } }
 }

@@ -4,19 +4,13 @@ import {
   resolveSchedulingHorizon,
 } from '@/composables/schedulingHorizon'
 import {
-  singleOrderSchedulingResultRoute,
   useCanScheduleSingleOrder,
   useSingleOrderScheduling,
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
 } from '@/composables/useSingleOrderScheduling'
 import SchedulingCandidatePicker from './SchedulingCandidatePicker.vue'
 import SchedulingHorizonFields from './SchedulingHorizonFields.vue'
-import {
-  friendlyErrorMessage,
-  notifyOperationFailure,
-  notifySuccess,
-  serverErrorMessage,
-} from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvCheckbox,
@@ -34,7 +28,9 @@ import {
 } from '@nerv-iip/ui'
 import { AlertTriangleIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import type { BusinessConsoleSchedulePlan } from '@nerv-iip/api-client'
+import SchedulingInsertionPreview from './SchedulingInsertionPreview.vue'
+import SchedulingPreviewResult from './SchedulingPreviewResult.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -57,20 +53,20 @@ const props = withDefaults(
   { workOrderId: null, contextLabel: '', initialKeyword: '' },
 )
 
-/** 服务端什么都没说时的领域兜底文案（弹窗内联与 toast 用同一句，不写两遍）。 */
+/** 服务端没有业务原因时使用统一排产反馈。 */
 const SUBMIT_FALLBACK = '排产失败，请检查工单生产版本与排程基础数据。'
 
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ scheduled: [planId: string] }>()
 
-const router = useRouter()
+const mode = ref('new')
+const generatedPlan = shallowRef<BusinessConsoleSchedulePlan>()
 const scheduling = useSingleOrderScheduling()
 
 const horizon = ref(createSchedulingHorizonInput())
 const priority = ref(100)
 const isRush = ref(false)
 const selectedWorkOrderId = shallowRef('')
-const submitError = shallowRef('')
 
 const fixedWorkOrderId = computed(() => props.workOrderId?.trim() ?? '')
 // 候选查询由 SchedulingCandidatePicker 自己持有，并且只在这里为 true 时才挂载：
@@ -85,10 +81,11 @@ watch(
   (isOpen) => {
     if (!isOpen) return
     // 每次打开都重置：上一次的窗口/优先级不该悄悄带到下一张单上。
+    mode.value = 'new'
+    generatedPlan.value = undefined
     horizon.value = createSchedulingHorizonInput()
     priority.value = 100
     isRush.value = false
-    submitError.value = ''
     selectedWorkOrderId.value = fixedWorkOrderId.value
   },
   { immediate: true },
@@ -109,8 +106,7 @@ const canSubmit = computed(() => disabledReason.value === '' && !scheduling.pend
 
 async function submit() {
   const resolved = resolvedHorizon.value
-  if (!canSubmit.value || !resolved.ok) return
-  submitError.value = ''
+  if (mode.value !== 'new' || !canSubmit.value || !resolved.ok) return
   try {
     const plan = await scheduling.scheduleSingleOrder({
       workOrderId: targetWorkOrderId.value,
@@ -122,17 +118,8 @@ async function submit() {
     const planId = plan.planId ?? ''
     notifySuccess(`已生成只含工单 ${targetWorkOrderId.value} 的排程方案。`)
     emit('scheduled', planId)
-    open.value = false
-    if (planId) {
-      await router.push(singleOrderSchedulingResultRoute(planId, targetWorkOrderId.value))
-    }
+    generatedPlan.value = plan
   } catch (error) {
-    // 失败留在弹窗里说清楚，用户改窗口就能重试；不要关窗后只剩一句 toast。
-    //
-    // 消息取法与 #1278 的 notifyOperationFailure 同源（serverErrorMessage → friendlyErrorMessage）：
-    // generated client 在 throwOnError 下抛的是响应体对象而不是 Error，`error instanceof Error`
-    // 会把所有 HTTP 失败吞成猜测文案；而英文 5xx 原文按反馈规范不能上屏，必须先过映射。
-    submitError.value = friendlyErrorMessage(serverErrorMessage(error) || error, SUBMIT_FALLBACK)
     notifyOperationFailure('排产失败', error, SUBMIT_FALLBACK)
   }
 }
@@ -140,18 +127,37 @@ async function submit() {
 
 <template>
   <NvDialog v-model:open="open">
-    <NvDialogContent class="sm:max-w-2xl" data-testid="single-order-scheduling-dialog">
+    <NvDialogContent
+      class="max-h-[90vh] overflow-y-auto sm:max-w-4xl"
+      data-testid="single-order-scheduling-dialog"
+    >
       <NvDialogHeader>
         <NvDialogTitle>对该单排产</NvDialogTitle>
         <NvDialogDescription>
-          {{
-            contextLabel ? `${contextLabel} · ` : ''
-          }}生成一个只含该单的新排程方案，不会改动任何已有方案。
+          {{ contextLabel ? `${contextLabel} · ` : '' }}在当前页面新建方案或插入现有方案重预览。
         </NvDialogDescription>
       </NvDialogHeader>
 
-      <!-- 语义必须写在界面上：新建只含该单的方案 ≠ 插进现有方案。 -->
+      <div class="flex gap-2" aria-label="排产方式">
+        <NvButton
+          type="button"
+          :variant="mode === 'new' ? 'default' : 'outline'"
+          :disabled="scheduling.pending.value"
+          :aria-pressed="mode === 'new'"
+          @click="mode = 'new'"
+          >新建方案</NvButton
+        >
+        <NvButton
+          type="button"
+          :variant="mode === 'insert' ? 'default' : 'outline'"
+          :disabled="scheduling.pending.value"
+          :aria-pressed="mode === 'insert'"
+          @click="mode = 'insert'"
+          >插入现有方案</NvButton
+        >
+      </div>
       <p
+        v-if="mode === 'new'"
         class="flex gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
         role="status"
         data-testid="single-order-scheduling-semantics"
@@ -177,12 +183,13 @@ async function submit() {
         </NvFieldGroup>
 
         <SchedulingHorizonFields
+          v-if="mode === 'new'"
           v-model="horizon"
           id-prefix="single-order-scheduling"
           :disabled="readOnly"
         />
 
-        <NvFieldGroup>
+        <NvFieldGroup v-if="mode === 'new'">
           <NvField>
             <NvFieldLabel for="single-order-scheduling-priority">优先级</NvFieldLabel>
             <NvInput
@@ -202,16 +209,32 @@ async function submit() {
           </NvField>
         </NvFieldGroup>
 
-        <p v-if="submitError" class="text-sm text-destructive" role="alert">{{ submitError }}</p>
+        <SchedulingInsertionPreview
+          v-if="open && mode === 'insert'"
+          :key="`${scheduling.context.organizationId}:${scheduling.context.environmentId}:${targetWorkOrderId}`"
+          :work-order-id="targetWorkOrderId"
+          :context="scheduling.context"
+          :can-manage="canSchedule"
+        />
+        <SchedulingPreviewResult v-if="mode === 'new' && generatedPlan" :plan="generatedPlan" />
 
         <NvDialogFooter>
-          <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
-          <NvButton type="submit" :disabled="!canSubmit" :title="disabledReason || undefined">
+          <NvButton type="button" variant="outline" @click="open = false">关闭</NvButton>
+          <NvButton
+            v-if="mode === 'new'"
+            type="submit"
+            :disabled="!canSubmit"
+            :title="disabledReason || undefined"
+          >
             <Spinner v-if="scheduling.pending.value" aria-hidden="true" />
             生成只含该单的方案
           </NvButton>
         </NvDialogFooter>
-        <p v-if="disabledReason" class="text-sm text-muted-foreground" role="status">
+        <p
+          v-if="mode === 'new' && disabledReason"
+          class="text-sm text-muted-foreground"
+          role="status"
+        >
           {{ disabledReason }}
         </p>
       </form>

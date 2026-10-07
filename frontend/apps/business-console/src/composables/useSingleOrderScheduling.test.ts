@@ -3,10 +3,7 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessContextStore } from '@/stores/businessContext'
-import {
-  singleOrderSchedulingResultRoute,
-  useSingleOrderScheduling,
-} from './useSingleOrderScheduling'
+import { useSingleOrderScheduling } from './useSingleOrderScheduling'
 
 const state = vi.hoisted(() => ({
   bodies: [] as unknown[],
@@ -132,12 +129,5 @@ describe('单单排产（MAN-694 / #1262）', () => {
         horizonEndUtc: '2026-08-02T00:00:00.000Z',
       }),
     ).rejects.toThrow('工单没有生产版本')
-  })
-
-  it('落点带上 planId 与工单号，工作台可直接定位刚生成的方案', () => {
-    expect(singleOrderSchedulingResultRoute('PLAN-1', 'WO-77')).toEqual({
-      path: '/scheduling',
-      query: { planId: 'PLAN-1', orderReference: 'WO-77' },
-    })
   })
 })
