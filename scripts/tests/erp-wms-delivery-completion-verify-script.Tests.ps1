@@ -50,7 +50,7 @@ Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must parse before exec
 & {
     # Regression: #3203 requires retained diagnostics to exclude Redis message bodies.
     . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
-    . (Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1')
+    . (Join-Path $repoRoot 'scripts/lib/AcceptanceCanonicalResult.ps1')
     foreach ($name in @('Write-Man527DiagnosticFile', 'Invoke-Man527DiagnosticCommand', 'Export-Man527FailureDiagnostics')) {
         $definition = $scriptAst.Find({ param($node)
             $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and

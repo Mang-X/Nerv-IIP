@@ -73,15 +73,9 @@ function Get-NervCiImpactPlan {
         [string[]]@(
             'scripts/acceptance-scenario-matrix.json'
             'scripts/lib/AcceptanceScenarioMatrix.ps1'
-            'scripts/plan-acceptance-scenario-matrix.ps1'
+            'scripts/lib/AcceptanceCanonicalResult.ps1'
+            'scripts/tests/acceptance-canonical-result.Tests.ps1'
             'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
-        ),
-        [StringComparer]::Ordinal)
-    $acceptanceScenarioMatrixRuntimeOwningPathSet = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@(
-            'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
-            'scripts/run-acceptance-scenario-matrix.ps1'
-            'scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1'
         ),
         [StringComparer]::Ordinal)
     $knownBusinessServices = @($knownBusinessServiceNames | ForEach-Object { ConvertTo-NervCiImpactServiceId -Name $_ })
@@ -442,10 +436,6 @@ function Get-NervCiImpactPlan {
         }
         if ($path.StartsWith('scripts/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'scripts' -Reason $reason
-            if ($acceptanceScenarioMatrixRuntimeOwningPathSet.Contains($path)) {
-                foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
-                continue
-            }
             if ($acceptanceScenarioMatrixOwningPathSet.Contains($path)) {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
                 continue
