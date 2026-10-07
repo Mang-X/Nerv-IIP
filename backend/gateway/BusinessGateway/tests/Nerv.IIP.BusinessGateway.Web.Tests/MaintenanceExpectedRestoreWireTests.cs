@@ -44,20 +44,45 @@ public sealed class MaintenanceExpectedRestoreWireTests
             .GetProperty("expectedRestoreAtUtc").GetDateTimeOffset());
     }
 
-    [Fact]
-    public async Task Estimate_replay_returns_the_original_receipt_after_a_later_state_transition()
+    [Theory]
+    [InlineData("Open")]
+    [InlineData("Accepted")]
+    [InlineData("InProgress")]
+    [InlineData("Paused")]
+    [InlineData("WaitingForParts")]
+    public async Task Estimate_replay_returns_the_original_receipt_after_a_later_state_transition(string historicalStatus)
     {
         var id = "019f0000-0000-7000-8000-000000000111";
         var expected = new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero);
-        var handler = new EstimateHandler(id, "InProgress", expected, currentVersion: 4, resultStatus: "Open");
+        var handler = new EstimateHandler(id, "InProgress", expected, currentVersion: 4, resultStatus: historicalStatus);
         using var http = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
         var client = new HttpBusinessMaintenanceClient(http);
         var result = await client.TransitionWorkOrderAsync("internal-token", id,
             new("org-001", "env-dev", BusinessConsoleMaintenanceWorkOrderAction.UpdateExpectedRestore,
                 "new estimate", "estimate", 2, "organization", "org-001", ExpectedRestoreAtUtc: expected),
             "tech-001", default);
-        Assert.Equal("Open", result.Status);
+        Assert.Equal(historicalStatus, result.Status);
         Assert.Equal(3, result.Version);
+    }
+
+    [Theory]
+    [InlineData("garbage")]
+    [InlineData("Completed")]
+    [InlineData("Verified")]
+    [InlineData("Closed")]
+    [InlineData("Cancelled")]
+    public async Task Estimate_replay_rejects_a_receipt_outside_the_owner_in_flight_status_contract(string historicalStatus)
+    {
+        var id = "019f0000-0000-7000-8000-000000000111";
+        var expected = new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero);
+        var handler = new EstimateHandler(id, "InProgress", expected, currentVersion: 4, resultStatus: historicalStatus);
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(http);
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.TransitionWorkOrderAsync("internal-token", id,
+            new("org-001", "env-dev", BusinessConsoleMaintenanceWorkOrderAction.UpdateExpectedRestore,
+                "new estimate", "estimate", 2, "organization", "org-001", ExpectedRestoreAtUtc: expected),
+            "tech-001", default));
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
     }
 
     private sealed class EstimateHandler(string id, string status, DateTimeOffset expected, int currentVersion = 2, string? resultStatus = null) : HttpMessageHandler

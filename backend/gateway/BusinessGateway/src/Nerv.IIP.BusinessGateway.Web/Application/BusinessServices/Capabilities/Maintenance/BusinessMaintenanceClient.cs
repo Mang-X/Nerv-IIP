@@ -642,8 +642,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             || parsedResponseId == Guid.Empty
             || !Guid.TryParse(workOrderId, out var parsedRequestId)
             || parsedRequestId != parsedResponseId
-            || string.IsNullOrWhiteSpace(response.Status)
-            || (expectedStatus is not null && !string.Equals(response.Status, expectedStatus, StringComparison.Ordinal))
+            || (expectedStatus is null
+                ? response.Status is not ("Open" or "Accepted" or "InProgress" or "Paused" or "WaitingForParts")
+                : !string.Equals(response.Status, expectedStatus, StringComparison.Ordinal))
             || expectedVersion < 0
             || expectedVersion == int.MaxValue
             || response.Version != expectedVersion + 1
