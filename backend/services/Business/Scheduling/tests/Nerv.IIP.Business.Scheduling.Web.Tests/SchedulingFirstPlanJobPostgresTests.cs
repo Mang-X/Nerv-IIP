@@ -276,6 +276,15 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             db.OperationExecutionProjections.Add(execution);
             await db.SaveChangesAsync();
         }
+        foreach (var orderId in new[] { "order-001", "order-002" })
+        {
+            using var moved = await client.PutAsJsonAsync(
+                $"/api/business/v1/scheduling/plans/{original.PlanId}/operations/{orderId}-op/override",
+                new { problem.OrganizationId, problem.EnvironmentId, resource.ResourceId,
+                    StartUtc = start.AddHours(2), EndUtc = start.AddHours(2).AddMinutes(10) }, SchedulingJson.Options);
+            Assert.Equal(HttpStatusCode.OK, moved.StatusCode);
+            Assert.True((await moved.Content.ReadFromJsonAsync<ResponseData<JsonElement>>(SchedulingJson.Options))!.Success);
+        }
         var before = await ReadInsertionBaseline(factory, original);
         using var worker = InsertionWorker(factory);
         await worker.StartAsync(CancellationToken.None);
