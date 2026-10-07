@@ -13,7 +13,8 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 public sealed record CreateSchedulePlanCommand(
     SchedulingProblemContract Problem,
     IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null,
-    SchedulingFreezeSnapshot? Freeze = null) : ICommand<SchedulePlanContract>;
+    SchedulingFreezeSnapshot? Freeze = null,
+    DateTimeOffset? AsOfUtc = null) : ICommand<SchedulePlanContract>;
 
 public sealed class CreateSchedulePlanCommandValidator : AbstractValidator<CreateSchedulePlanCommand>
 {
@@ -47,6 +48,9 @@ public sealed class CreateSchedulePlanCommandHandler(
     {
         var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
         var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+        // Ordinary scheduling uses its explicit horizon start; frozen revisions use the frozen AsOfUtc.
+        var equipmentInput = SchedulingEquipmentAvailabilitySnapshot.Create(availability,
+            request.AsOfUtc ?? request.Freeze?.AsOfUtc ?? overlaidProblem.HorizonStartUtc);
         var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
         var schedulingProblem = SchedulingProblemNormalizer.Normalize(
             MaterialReadinessSchedulingAdapter.Apply(
@@ -62,7 +66,7 @@ public sealed class CreateSchedulePlanCommandHandler(
         var externalReservations = fixedReservations
             .Where(x => !operationKeys.Contains((x.OrderId, x.OperationId)))
             .ToArray();
-        var problemFingerprint = CalculateProblemFingerprint(schedulingProblem, fixedReservations, request.Freeze);
+        var problemFingerprint = CalculateProblemFingerprint(schedulingProblem, fixedReservations, request.Freeze, equipmentInput);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.OrganizationId == overlaidProblem.OrganizationId &&
@@ -119,7 +123,7 @@ public sealed class CreateSchedulePlanCommandHandler(
             overlaidProblem.OrganizationId,
             overlaidProblem.EnvironmentId,
             problemFingerprint,
-            SchedulingFrozenOccupancy.SerializeSnapshot(schedulingProblem, fixedReservations, request.Freeze),
+            SchedulingFrozenOccupancy.SerializeSnapshot(schedulingProblem, fixedReservations, request.Freeze, equipmentInput),
             overlaidProblem.HorizonStartUtc,
             overlaidProblem.HorizonEndUtc,
             generatedAtUtc));
@@ -135,10 +139,11 @@ public sealed class CreateSchedulePlanCommandHandler(
     internal static string CalculateProblemFingerprint(
         SchedulingProblemContract problem,
         IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
-        SchedulingFreezeSnapshot? freeze = null)
+        SchedulingFreezeSnapshot? freeze = null,
+        SchedulingEquipmentAvailabilitySnapshot? equipmentAvailability = null)
     {
         var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
-        var json = SchedulingFrozenOccupancy.SerializeSnapshot(normalizedProblem, fixedReservations, freeze);
+        var json = SchedulingFrozenOccupancy.SerializeSnapshot(normalizedProblem, fixedReservations, freeze, equipmentAvailability);
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

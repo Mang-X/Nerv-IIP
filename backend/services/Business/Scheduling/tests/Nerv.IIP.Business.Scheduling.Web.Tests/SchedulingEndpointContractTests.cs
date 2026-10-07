@@ -671,7 +671,8 @@ public sealed class SchedulingEndpointContractTests
         Assert.Equal("MAT-A", shortage.MaterialId);
         Assert.Equal(FixedNow.AddHours(2), readiness.MaterialReadyUtc);
         Assert.Equal(
-            new FiniteCapacityScheduler().Schedule(persistedProblem, "fingerprint-proof", FixedNow).ProblemFingerprint,
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(snapshot.ProblemJson))).ToLowerInvariant(),
             snapshot.ProblemFingerprint);
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.Assignments).StartUtc);
         Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.MaterialRisks ?? []).MaterialReadyUtc);

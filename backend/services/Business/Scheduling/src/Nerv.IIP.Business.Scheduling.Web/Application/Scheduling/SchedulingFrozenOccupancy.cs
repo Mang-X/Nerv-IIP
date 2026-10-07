@@ -30,9 +30,10 @@ internal static class SchedulingFrozenOccupancy
     public static string SerializeSnapshot(
         SchedulingProblemContract problem,
         IReadOnlyCollection<FixedWorkCenterReservation> reservations,
-        SchedulingFreezeSnapshot? freeze = null)
+        SchedulingFreezeSnapshot? freeze = null,
+        SchedulingEquipmentAvailabilitySnapshot? equipmentAvailability = null)
     {
-        if (reservations.Count == 0 && freeze is null)
+        if (reservations.Count == 0 && freeze is null && equipmentAvailability is null)
         {
             return JsonSerializer.Serialize(problem, SchedulingJson.Options);
         }
@@ -58,6 +59,10 @@ internal static class SchedulingFrozenOccupancy
                     .ThenBy(x => x.Assignment.OperationId, StringComparer.Ordinal)
                     .ToArray()
             }, SchedulingJson.Options);
+        }
+        if (equipmentAvailability is not null)
+        {
+            snapshot["equipmentAvailability"] = JsonSerializer.SerializeToNode(equipmentAvailability, SchedulingJson.Options);
         }
         return snapshot.ToJsonString(SchedulingJson.Options);
     }
