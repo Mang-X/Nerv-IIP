@@ -16,15 +16,23 @@
 4. 缓存只优化读取，不承载命令事务、审计、动作生命周期或实例最终状态。
 5. 所有服务通过 backend/common/Caching 暴露的统一注册和策略使用 FusionCache，不在业务服务里各自散落配置。
 
-## 当前 L1 实现
+## 当前 provider 实现
 
-`AddNervIipCaching` 注册公共 `IAppCache`，由 `FusionAppCache` 封装 FusionCache L1。它使用独立的 `MemoryCache`，`Caching:L1MaxEntries` 默认 `10000`，必须大于零；预算单位为业务缓存项，每项 `Size=1`，库固定 tag 元数据 `Size=0`。容量准入与压缩由 MemoryCache 负责，满额时 factory 的结果仍正常交付；预算不表示字节数，也不承诺精确 LRU。
+`AddNervIipCaching` 注册公共 `IAppCache`，由 `FusionAppCache` 封装 FusionCache L1 和按配置选择的 Redis L2/backplane。它使用独立的 `MemoryCache`，`Caching:L1MaxEntries` 默认 `10000`，必须大于零；预算单位为业务缓存项，每项 `Size=1`，库固定 tag 元数据 `Size=0`。容量准入与压缩由 MemoryCache 负责，满额时 factory 的结果仍正常交付；预算不表示字节数，也不承诺精确 LRU。
 
 当前四个读取点为 PlatformGateway 实例列表/详情（5 秒）与双网关读授权（配置值，默认 10 秒）。授权键保留 token、组织、环境、权限、资源、主体 context 和 schema 版本的现有隔离；`RealtimeRequired` 始终实时向 IAM 校验。所有这些场景关闭 fail-safe、eager refresh 和超时 factory 后台完成，不配置 factory 软/硬超时。
 
-PlatformGateway 的实例读取与读授权使用固定 `gateway` tag。内部失效端点调用 `RemoveByTag`，只使该家族下次读取重新加载，不清除其他家族。`Clear` 则使整个独立 L1 失效。库 tag 失效采用库自身时间戳语义，不另建前缀键索引或清理 worker。
+PlatformGateway 的实例读取与读授权使用固定 `gateway` tag。内部失效端点调用 `RemoveByTag`，只使该家族下次读取重新加载，不清除其他家族。`Clear` 则使同一逻辑缓存身份下的 L1/L2 失效。库 tag 失效采用库自身时间戳语义，不另建前缀键索引或清理 worker。
 
-当前没有配置 Redis L2/backplane、序列化或 OpenTelemetry 集成；下面相关项说明 ADR 的后续目标。仅注册缓存而没有读调用的服务不会因此增加缓存场景。
+`Caching:Provider` 允许 `L1` 或 `Redis`。省略时，有非空 `Caching:Redis` 就选择 Redis，否则为 L1；显式 L1 与非空 Redis 配置冲突会在注册时失败。Redis 必须提供有效连接参数和部署环境：优先 `Caching:Environment`，再按 .NET host 的优先序读取 `DOTNET_ENVIRONMENT`、`ASPNETCORE_ENVIRONMENT`。缺失参数、未知 provider、无效容量均在启动时失败，错误不回显配置值。
+
+Redis 模式使用官方 `Microsoft.Extensions.Caching.StackExchangeRedis`、FusionCache `SystemTextJson` serializer 和 Redis backplane。逻辑身份为 `nerv-iip:<escaped-service>:<escaped-environment>:json-v1`，同时作为库 `CacheName`、业务及内部 tag/clear 的 `CacheKeyPrefix`、backplane channel 前缀。库自己的 wire-format 版本仍参与 L2 key 和 channel。租户隔离沿调用方的业务 key/tag；公共 provider 不从 key 推断租户。
+
+host 启动会实例化所选 provider，并等待官方 Redis backplane 的实际初次订阅完成。FusionCache 2.9 会捕获初次订阅失败，公共边界通过轻量委托检查订阅是否返回成功，失败则终止启动。后续传播异步到达其它实例，发布返回不代表所有订阅者已经处理；测试在真实订阅边沿后有界观察远端行为。Redis Pub/Sub 不持久保存断连期间的消息；StackExchange.Redis 负责恢复连接和订阅，但本组件关闭 FusionCache 自动重放，不能声称断连期间即时一致。恢复后的 L2 读取或原业务 TTL 到期会重建缓存事实。
+
+业务值及 tag/clear 元数据均关闭 fail-safe，分布式读写、序列化和 backplane 异常向调用方传播；分布式与发布操作不后台执行，circuit-breaker 不跳过失败请求。不新增 factory 超时、应用重试或 provider 降级。L2 提升到 L1 使用值原有逻辑到期，不按新读取的 TTL 延寿。分布式写与通知不构成事务：失败可能已有部分 L1/L2 副作用，调用方必须将失效异常视为失败；未过期的 L1 仍可命中，不承诺故障期间的线性一致性。
+
+观测通过宿主现有 `ILogger<FusionAppCache>` 记录命中、未命中及错误类型；不把业务 key、tag、异常正文、token 或连接串交给日志。库的完整 key 级日志未接入，专门的 FusionCache OTel exporter 接线仍未实施。仅注册缓存而没有读调用的服务不会因此增加缓存场景，也不代表业务写入失效链已经闭合。
 
 ## 首批适用场景
 
@@ -53,8 +61,8 @@ backend/common/Caching/Nerv.IIP.Caching 负责提供以下能力：
 2. Redis L2 分布式缓存配置。
 3. Redis backplane（失效通知总线）配置，用于多实例 L1 失效同步。
 4. System.Text.Json 序列化配置。
-5. FusionCache OpenTelemetry 集成。
-6. 默认缓存项选项（entry options），包括短 TTL、软超时、硬超时和 fail-safe（故障安全）边界。
+5. 缓存命中、未命中和错误的现有日志集成；FusionCache 专门的 OpenTelemetry 接线仍为后续目标。
+6. 默认缓存项选项（entry options）：调用方 TTL、禁用 fail-safe 与后台完成、同步分布式操作及异常传播，不另设 factory 软/硬超时。
 7. 缓存键和 tag（标签）的命名辅助方法。
 
 首批服务不直接引用 StackExchange.Redis 或 FusionCache backplane（失效通知总线）的实现细节；除 common/Caching 外，业务服务只使用统一的缓存抽象或扩展。
@@ -89,7 +97,7 @@ gateway:instance-detail:org-001:env-prod:instance:inst-456:v1
 3. IAM 用户、角色、权限或授权授予变化后，失效对应用户、角色、外部客户端和权限快照缓存。
 4. Gateway 聚合缓存的 TTL 必须短于其聚合来源中最短的业务容忍时间。
 5. 对安全敏感缓存，禁止长时间使用 fail-safe（故障安全）数据；权限变更后必须主动使其失效，不能只等待 TTL。
-6. PlatformGateway 的 `/internal/gateway/cache/invalidate` 只允许 InternalService 调用，并且只使当前进程内带 `gateway` tag 的缓存失效；在接入 Redis L2/backplane 前，它不是多实例广播失效机制。
+6. PlatformGateway 的 `/internal/gateway/cache/invalidate` 只允许 InternalService 调用，失效固定 `gateway` tag。L1 模式只作用于当前进程；Redis 模式更新同一服务/部署环境/序列化版本的 L2 tag 标记，并通过 backplane 通知其它实例。返回成功不代表每个订阅者已处理完成，也不代表 AppHub/IAM 的写入链已接线。
 
 ## 一致性边界
 
