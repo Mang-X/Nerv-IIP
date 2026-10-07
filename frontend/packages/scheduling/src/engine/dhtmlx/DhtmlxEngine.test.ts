@@ -56,6 +56,14 @@ function makeFakeGantt() {
       state.destroyed = true
     },
     showDate: (_d: Date) => {},
+    date: {
+      add: (date: Date, step: number, unit: string) => {
+        const result = new Date(date)
+        if (unit === 'day') result.setDate(result.getDate() + step)
+        else result.setHours(result.getHours() + step)
+        return result
+      },
+    },
     getTaskPosition: (_task: unknown, start: Date, end: Date) => ({
       left: start.getTime() / 3_600_000,
       width: (end.getTime() - start.getTime()) / 3_600_000,
@@ -75,6 +83,39 @@ const options = (): SchedulingEngineOptions => ({
 })
 
 describe('DhtmlxEngine (fake factory)', () => {
+  it('renders only the exact server window portion of a work-center cell, without blocking tasks', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), { ...options(), view: 'resource', groupBy: 'workCenter' })
+    engine.setData(
+      toModel({
+        ...samplePlan,
+        freezeContext: {
+          asOfUtc: '2026-06-10T06:00:00Z',
+          defaultWindowEndUtc: '2026-06-10T12:00:00Z',
+          workCenterWindows: [{ workCenterId: 'WC-CNC', endUtc: '2026-06-10T06:00:00Z' }],
+          assignments: [],
+        },
+      }),
+    )
+    const content = fake.state.templates.timeline_cell_content as (
+      row: { id: string },
+      date: Date,
+    ) => string
+    const html = content({ id: 'lane:WC-ASM' }, new Date('2026-06-10T00:00:00Z'))
+    const node = document.createElement('div')
+    node.innerHTML = html
+    const window = node.querySelector<HTMLElement>('[data-freeze-window]')!
+    expect(window.style.left).toBe('25%')
+    expect(window.style.width).toBe('25%')
+    expect(content({ id: 'lane:WC-CNC' }, new Date('2026-06-10T00:00:00Z'))).toBe('')
+    expect(content({ id: 'lane:WC-ASM' }, new Date('2026-06-11T00:00:00Z'))).toBe('')
+    expect(fake.state.parsed.data.some((task) => task.id.startsWith('block:'))).toBe(false)
+    engine.applyCommand({ kind: 'setGroupBy', groupBy: 'workshop' })
+    expect(content({ id: 'lane:WS-1' }, new Date('2026-06-10T00:00:00Z'))).toBe('')
+    engine.destroy()
+  })
+
   afterEach(() => vi.useRealTimers())
   it('shows work-order quantities in the grid and never invents zero operation progress', () => {
     const fake = makeFakeGantt()

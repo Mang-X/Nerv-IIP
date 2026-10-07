@@ -305,6 +305,7 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
         }
       : undefined,
     calendars: calendars.length ? calendars : undefined,
+    freezeContext: plan.freezeContext,
     links,
     resources: [...new Set(operations.map((o) => o.resourceId).filter(Boolean) as string[])].map(
       (id) => ({ id, text: id }),

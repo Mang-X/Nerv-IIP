@@ -783,6 +783,14 @@ function setLaneOrder(value: LaneOrder) {
 
       <div class="overflow-hidden rounded-lg border bg-card">
         <!-- 图例要知道当前刻度:班次边界在日级视图下一条都画不出来,不能照列(台账 #41)。 -->
+        <div
+          v-if="plan?.freezeContext"
+          class="flex flex-wrap items-center gap-2 border-t border-border/50 px-4 py-2 text-xs text-muted-foreground"
+        >
+          <span class="nv-scheduling-freeze-swatch" aria-hidden="true" />
+          <span>稳定窗口：保留已有工序位置，仍可安排新工序；不是停机时段。</span>
+          <span v-if="groupBy !== 'workCenter'">切换到工作中心查看各中心窗口。</span>
+        </div>
         <SchedulingLegend
           :categories="legendCategories"
           view="resource"

@@ -2,6 +2,7 @@
 import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import type { TimeScale } from '../engine/engine'
+import { freezeWindow, projectFreezeWindow } from '../model/freeze-window'
 import { taskFactRows } from '../model/task-facts'
 import { materialReadyLabel } from '../model/material-risk'
 import type { LaneOrder, ScheduleModel, ScheduleTask } from '../model/types'
@@ -39,6 +40,7 @@ interface TimelineLane {
   label: string
   tasks: PositionedTask[]
   rowCount: number
+  freeze?: ReturnType<typeof projectFreezeWindow>
 }
 
 const operationTasks = computed(() =>
@@ -203,11 +205,16 @@ const lanes = computed<TimelineLane[]>(() => {
         }
       })
 
+    const window =
+      props.view === 'resource' && props.groupBy === 'workCenter'
+        ? freezeWindow(props.model.freezeContext, id)
+        : undefined
     return {
       id,
       label: laneLabel(tasks[0], id),
       tasks: positioned,
       rowCount: Math.max(1, rowEnds.length),
+      freeze: window ? projectFreezeWindow(window, range.value.start, range.value.end) : undefined,
     }
   })
 })
@@ -343,6 +350,15 @@ function selectTask(task: ScheduleTask) {
             <span class="nv-timeline-label__count">{{ lane.tasks.length }} 道工序</span>
           </div>
           <div class="nv-timeline-track">
+            <span
+              v-if="lane.freeze"
+              class="nv-scheduling-freeze-window"
+              data-freeze-window
+              :data-start-utc="lane.freeze.startUtc"
+              :data-end-utc="lane.freeze.endUtc"
+              :style="{ left: `${lane.freeze.left}%`, width: `${lane.freeze.width}%` }"
+              aria-hidden="true"
+            />
             <span
               v-for="tick in ticks"
               :key="tick.key"

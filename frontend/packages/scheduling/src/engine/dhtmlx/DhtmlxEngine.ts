@@ -1,3 +1,4 @@
+import { freezeWindow, projectFreezeWindow } from '../../model/freeze-window'
 import { taskFactRows } from '../../model/task-facts'
 import type { ScheduleModel, ScheduleTask, TimeScale } from '../../model/types'
 import {
@@ -975,6 +976,24 @@ export class DhtmlxEngine implements SchedulingEngine {
     // ② 班次边界——单元格正好落在某个班次起点上时加一条竖线(nerv-shift-start);
     // ③ 资源时间块(维护/停机/换线/换型)——该行对应的资源在此时段有块 → 叠加斜纹底纹。
     // 三者都走单元格,恒在卡片之下、与格子融为一体、绝不覆盖卡片。
+    // 单元格内容天然在任务条下层，按真实格线裁剪，不将稳定窗口当不可用时间块。
+    inst.templates.timeline_cell_content = (task: { id?: string | number }, date: Date) => {
+      if (
+        this.options.view !== 'resource' ||
+        (this.options.groupBy ?? 'workCenter') !== 'workCenter'
+      )
+        return ''
+      const workCenterId = String(task.id ?? '').replace(/^lane:/, '')
+      const window = freezeWindow(this.model?.freezeContext, workCenterId)
+      if (!window) return ''
+      const scales = inst.config.scales as Array<{ unit: string; step: number }>
+      const scale = scales[scales.length - 1]!
+      const end = inst.date!.add(date, scale.step, scale.unit)
+      const projected = projectFreezeWindow(window, date.getTime(), end.getTime())
+      if (!projected) return ''
+      return `<span class="nv-scheduling-freeze-window" data-freeze-window style="left:${projected.left}%;width:${projected.width}%" aria-hidden="true"></span>`
+    }
+
     inst.templates.timeline_cell_class = (task: { id?: string | number }, date: Date) => {
       const classes: string[] = []
       const ts = date.getTime()
