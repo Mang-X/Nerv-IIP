@@ -3245,3 +3245,10 @@ export type {
   NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract as SchedulingWorkingDraftPendingOperation,
   NervIipContractsSchedulingSchedulingWorkingDraftPendingSource as SchedulingWorkingDraftPendingSource,
 } from './generated/business-console'
+
+export type {
+  NervIipContractsSchedulingSchedulePlanFreezeContextContract as SchedulePlanFreezeContextContract,
+  NervIipContractsSchedulingSchedulePlanFreezeWorkCenterWindowContract as SchedulePlanFreezeWorkCenterWindowContract,
+  NervIipContractsSchedulingSchedulePlanFrozenAssignmentContract as SchedulePlanFrozenAssignmentContract,
+  NervIipContractsSchedulingSchedulePlanFreezeReasonContract as SchedulePlanFreezeReasonContract,
+} from './generated/business-console/types.gen'
