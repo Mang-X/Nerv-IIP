@@ -21,6 +21,7 @@ public enum MaintenanceWorkOrderAction
     Verify = 7,
     Close = 8,
     Cancel = 9,
+    UpdateExpectedRestore = 10,
 }
 
 public enum MaintenanceWorkOrderStatus
@@ -388,7 +389,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         this.AddDomainEvent(new MaintenanceWorkOrderAlarmClearedDomainEvent(this, AlarmClearedAtUtc.Value));
     }
 
-    public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reason)
+    public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reason, DateTimeOffset? expectedRestoreAtUtc = null)
     {
         EnsureOpen();
         var normalizedReason = MaintenanceText.Required(reason, nameof(reason));
@@ -397,10 +398,11 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             return;
         }
 
+        ExpectedRestoreAtUtc = expectedRestoreAtUtc?.ToUniversalTime();
         AssetUnavailable = true;
         AssetUnavailableReason = normalizedReason;
         AssetUnavailableFromUtc = fromUtc;
-        this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReason, fromUtc));
+        this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReason, fromUtc, ExpectedRestoreAtUtc));
     }
 
     /// <summary>
@@ -408,7 +410,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     /// <c>downtime-reason</c> 目录精确命中；聚合原样保存请求原值——不 trim、不改大小写——并只抛出
     /// <see cref="AssetUnavailableByReasonCodeDomainEvent"/>，不复用 v1 自由文本事实。
     /// </summary>
-    public void MarkAssetUnavailableByReasonCode(DateTimeOffset fromUtc, string reasonCode)
+    public void MarkAssetUnavailableByReasonCode(DateTimeOffset fromUtc, string reasonCode, DateTimeOffset? expectedRestoreAtUtc = null)
     {
         EnsureOpen();
         if (string.IsNullOrWhiteSpace(reasonCode))
@@ -429,10 +431,25 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             return;
         }
 
+        ExpectedRestoreAtUtc = expectedRestoreAtUtc?.ToUniversalTime();
         AssetUnavailable = true;
         AssetUnavailableReason = reasonCode;
         AssetUnavailableFromUtc = fromUtc;
-        this.AddDomainEvent(new AssetUnavailableByReasonCodeDomainEvent(this, reasonCode, fromUtc));
+        this.AddDomainEvent(new AssetUnavailableByReasonCodeDomainEvent(this, reasonCode, fromUtc, ExpectedRestoreAtUtc));
+    }
+
+    public void UpdateExpectedRestore(DateTimeOffset? expectedRestoreAtUtc)
+    {
+        EnsureOpen();
+        if (!AssetUnavailable || AssetUnavailableFromUtc is null)
+        {
+            throw new InvalidOperationException("Only an unavailable asset can update its restoration prediction.");
+        }
+        ExpectedRestoreAtUtc = expectedRestoreAtUtc?.ToUniversalTime();
+        IncrementVersion();
+        this.AddDomainEvent(new AssetUnavailableDomainEvent(
+            this, AssetUnavailableReason!, AssetUnavailableFromUtc.Value, ExpectedRestoreAtUtc,
+            Version, DateTimeOffset.UtcNow));
     }
 
     /// <summary>与 <c>DowntimeReason.ReasonCode</c> 的持久化长度（100）一致；目录里不存在更长的码。</summary>
