@@ -872,7 +872,14 @@ describe('business MES composables', () => {
     }
     workOrderDetailQuery.mockResolvedValue({
       success: true,
-      data: { workOrderId: 'WO-COMPLETED', status: 'Completed', commercialSourceFacts },
+      data: {
+        workOrderId: 'WO-COMPLETED',
+        status: 'Completed',
+        quantity: 100,
+        completedQuantity: 100,
+        operationTasks: [{ operationTaskId: 'OP-10', status: 'Completed' }],
+        commercialSourceFacts,
+      },
     })
     const facts = useMesWorkOrderFacts(() => ['WO-COMPLETED', 'WO-COMPLETED'])
     const response = await coladaState.queryFactoriesById.get('schedulingWorkOrderFacts')!().query!(
@@ -882,7 +889,16 @@ describe('business MES composables', () => {
     )
     coladaState.queryDataRefById.get('schedulingWorkOrderFacts')!.value = response
     await nextTick()
-    expect(facts.workOrders.value).toEqual([{ workOrderId: 'WO-COMPLETED', commercialSourceFacts }])
+    expect(facts.workOrders.value).toEqual([
+      {
+        workOrderId: 'WO-COMPLETED',
+        executionStatus: 'Completed',
+        quantity: 100,
+        completedQuantity: 100,
+        operationTasks: [{ operationTaskId: 'OP-10', status: 'Completed' }],
+        commercialSourceFacts,
+      },
+    ])
     expect(workOrderDetailQuery).toHaveBeenCalledTimes(1)
   })
 

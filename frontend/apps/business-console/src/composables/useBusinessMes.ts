@@ -1033,6 +1033,10 @@ export function useMesProductionReporting() {
 }
 
 /** 方案关联工单按 ID 读取，包含不再进入待排池的完成/关闭工单。 */
+export type SchedulingWorkOrderFacts = BusinessConsoleMesWorkOrderItem & {
+  executionStatus?: string
+}
+
 export function useMesWorkOrderFacts(orderIds: MaybeRefOrGetter<readonly (string | undefined)[]>) {
   const filters = defaultWorkOrderContext()
   const scope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
@@ -1055,7 +1059,7 @@ export function useMesWorkOrderFacts(orderIds: MaybeRefOrGetter<readonly (string
   const query = useQuery(() => ({
     key: [{ _id: 'schedulingWorkOrderFacts' }, identity.value],
     enabled: enabled.value,
-    query: async (context: { signal: AbortSignal }): Promise<BusinessConsoleMesWorkOrderItem[]> => {
+    query: async (context: { signal: AbortSignal }): Promise<SchedulingWorkOrderFacts[]> => {
       const selectedScope = scope.selectedScope.value!
       return Promise.all(
         ids.value.map(async (workOrderId) => {
@@ -1070,7 +1074,14 @@ export function useMesWorkOrderFacts(orderIds: MaybeRefOrGetter<readonly (string
           const response = await options.query(context as Parameters<typeof options.query>[0])
           if (response?.success !== true || !response.data)
             throw new Error(response?.message ?? '关联工单事实读取失败')
-          return { workOrderId, commercialSourceFacts: response.data.commercialSourceFacts }
+          return {
+            workOrderId,
+            commercialSourceFacts: response.data.commercialSourceFacts,
+            executionStatus: response.data.status,
+            quantity: response.data.quantity,
+            completedQuantity: response.data.completedQuantity,
+            operationTasks: response.data.operationTasks,
+          }
         }),
       )
     },
