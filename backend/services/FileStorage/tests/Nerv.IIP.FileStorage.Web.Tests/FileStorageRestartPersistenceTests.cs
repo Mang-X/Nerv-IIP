@@ -147,6 +147,19 @@ public sealed partial class FileStorageRestartPersistenceTests
             using var last = TusPatch(created.Upload.Url, 5, Encoding.UTF8.GetBytes("world"));
             var writing = client.SendAsync(last);
             await barrier.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            using (var probeScope = factory.Services.CreateScope())
+            using (var cancellation = new CancellationTokenSource())
+            {
+                var registry = probeScope.ServiceProvider.GetRequiredService<UploadSessionGateRegistry>();
+                var probe = registry.EnterPatchCommitAsync(created.UploadSessionId, cancellation.Token).AsTask();
+                if (probe.IsCompletedSuccessfully)
+                {
+                    await using var unexpectedLease = await probe;
+                    Assert.Fail("Active PATCH must retain the application's PATCH/complete gate.");
+                }
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
+            }
             var completion = client.PostAsJsonAsync($"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
                 new CompleteUploadSessionRequest("org-tus", "production", "attachment", null, 10));
             barrier.Release.TrySetResult();
