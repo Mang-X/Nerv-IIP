@@ -7,7 +7,8 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 public sealed record PreviewSchedulePlanCommand(
     SchedulingProblemContract Problem,
     IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null,
-    SchedulingFreezeSnapshot? Freeze = null) : ICommand<SchedulePlanContract>;
+    SchedulingFreezeSnapshot? Freeze = null,
+    DateTimeOffset? AsOfUtc = null) : ICommand<SchedulePlanContract>;
 
 public sealed class PreviewSchedulePlanCommandValidator : AbstractValidator<PreviewSchedulePlanCommand>
 {
@@ -40,6 +41,9 @@ public sealed class PreviewSchedulePlanCommandHandler(
     {
         var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
         var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+        // Ordinary scheduling uses its explicit horizon start; frozen revisions use the frozen AsOfUtc.
+        var equipmentInput = SchedulingEquipmentAvailabilitySnapshot.Create(availability,
+            request.AsOfUtc ?? request.Freeze?.AsOfUtc ?? overlaidProblem.HorizonStartUtc);
         var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
         var schedulingProblem = SchedulingProblemNormalizer.Normalize(MaterialReadinessSchedulingAdapter.Apply(
             EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
@@ -55,7 +59,7 @@ public sealed class PreviewSchedulePlanCommandHandler(
             with
             {
                 ProblemFingerprint = CreateSchedulePlanCommandHandler.CalculateProblemFingerprint(
-                    schedulingProblem, fixedReservations, request.Freeze),
+                    schedulingProblem, fixedReservations, request.Freeze, equipmentInput),
                 FreezeContext = SchedulingFrozenOccupancy.ToContract(request.Freeze)
             };
         return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);
