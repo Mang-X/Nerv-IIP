@@ -34,16 +34,26 @@ internal static class SchedulingInsertionCalculator
         // 只把冻结项作为种子的不可移动占用；可移动队列的竞争由影响传播定位。
         var computeProblem = normalized with { LockedAssignments = normalized.LockedAssignments.Where(x => !baselineKeys.Contains((x.OrderId, x.OperationId))).ToArray() };
         var seed = scheduler.ScheduleNormalized(computeProblem, candidatePlanId, policy.AsOfUtc,
-            preservedAssignments: freeze.Select(x => x.Assignment).ToArray(), selectedOperations: insertedKeys);
+            preservedAssignments: freeze.Select(x => x.Assignment).ToArray(), selectedOperations: insertedKeys,
+            problemFingerprint: string.Empty); // 种子仅用于影响定位，其临时方案身份不返回。
         var deviations = seed.Assignments.Where(x => x.OrderId == insertedOrderId)
             .Select(x => (SchedulingDeviation)new SchedulingInsertedOperationDeviation($"insertion/{insertedOrderId}", "v1", policy.AsOfUtc, x.OrderId, x.OperationId)).ToArray();
-        var impact = ReschedulingImpactAnalyzer.Analyze(normalized,
+        var impact = ReschedulingImpactAnalyzer.AnalyzeNormalized(normalized,
             [.. baselineAssignments, .. seed.Assignments.Where(x => x.OrderId == insertedOrderId)], deviations,
             execution, allManualLocks, policy);
+        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ReschedulingImpactAnalyzer.CanonicalJson(new
+        {
+            impact.InputFingerprint,
+            BaselinePlanId = baseline.PlanId,
+            BaselineUnscheduled = baseline.UnscheduledOperations,
+            InsertedOrderId = insertedOrderId,
+            scheduler.MaterialConstraintMode,
+            scheduler.QualityConstraintMode,
+        })))).ToLowerInvariant();
         var recalculate = impact.RecalculateAssignments.Select(Key).Concat(insertedKeys).ToHashSet();
         var preserved = baselineAssignments.Where(x => !recalculate.Contains(Key(x))).ToArray();
         var candidate = scheduler.ScheduleNormalized(computeProblem, candidatePlanId, policy.AsOfUtc,
-            preservedAssignments: preserved, selectedOperations: recalculate);
+            preservedAssignments: preserved, selectedOperations: recalculate, problemFingerprint: fingerprint);
         var unscheduled = baseline.UnscheduledOperations.Concat(candidate.UnscheduledOperations).ToArray();
         candidate = candidate with
         {
@@ -59,16 +69,6 @@ internal static class SchedulingInsertionCalculator
             failures.Add(SchedulingInsertionFailure.IncompleteChain);
         if (candidate.Conflicts.Any(x => x.Severity == ScheduleConflictSeverityContract.Error))
             failures.Add(SchedulingInsertionFailure.BlockingConflict);
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ReschedulingImpactAnalyzer.CanonicalJson(new
-        {
-            impact.InputFingerprint,
-            BaselinePlanId = baseline.PlanId,
-            BaselineUnscheduled = baseline.UnscheduledOperations,
-            InsertedOrderId = insertedOrderId,
-            scheduler.MaterialConstraintMode,
-            scheduler.QualityConstraintMode,
-        })))).ToLowerInvariant();
-        candidate = candidate with { ProblemFingerprint = fingerprint };
         return new(fingerprint, candidate, impact,
             failures.Count == 0 ? candidate.Assignments.Where(x => x.OrderId == insertedOrderId).Max(x => x.EndUtc) : null, failures);
     }

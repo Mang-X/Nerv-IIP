@@ -50,8 +50,13 @@ internal static class ReschedulingImpactAnalyzer
         IReadOnlyCollection<ScheduleAssignmentContract> baseline, IReadOnlyCollection<SchedulingDeviation> deviations,
         IReadOnlyCollection<SchedulingFreezeExecutionFact> execution,
         IReadOnlyCollection<(string OrderId, string OperationId)> manualLocks, SchedulingFreezePolicy policy)
+        => AnalyzeNormalized(SchedulingProblemNormalizer.Normalize(problem), baseline, deviations, execution, manualLocks, policy);
+
+    internal static ReschedulingImpact AnalyzeNormalized(SchedulingProblemContract normalizedProblem,
+        IReadOnlyCollection<ScheduleAssignmentContract> baseline, IReadOnlyCollection<SchedulingDeviation> deviations,
+        IReadOnlyCollection<SchedulingFreezeExecutionFact> execution,
+        IReadOnlyCollection<(string OrderId, string OperationId)> manualLocks, SchedulingFreezePolicy policy)
     {
-        var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
         foreach (var deviation in deviations)
         {
             if (string.IsNullOrWhiteSpace(deviation.SourceReference) || string.IsNullOrWhiteSpace(deviation.SourceVersion)

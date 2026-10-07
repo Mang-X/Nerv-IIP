@@ -102,6 +102,33 @@ public class SchedulingInsertionCalculatorTests(ITestOutputHelper output)
         Assert.Contains(result.Candidate.Assignments, x => x.OrderId != "rush" && x.EndUtc == At.AddMinutes(90));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Preserved_capacity_conflicts_use_segment_windows_and_half_open_boundaries(int capacity)
+    {
+        var a = Order("a", Operation("op", "R1", 60));
+        var b = Order("b", Operation("op", "R1", 60));
+        var c = Order("c", Operation("op", "R1", 30));
+        var d = Order("d", Operation("op", "R1", 30));
+        var problem = Problem(a, b, c, d, Order("rush", Operation("op", "R2", 30, rush: true))) with
+        { Resources = Problem().Resources.Select(x => x.ResourceId == "R1" ? x with { CapacityUnits = capacity } : x).ToArray() };
+        var baseline = Baseline(problem, a, b, c, d);
+        baseline = baseline with { Assignments = baseline.Assignments.Select(x => x.OrderId switch
+        {
+            "a" => x with { StartUtc = At, EndUtc = At.AddMinutes(120), Segments = [new(At, At.AddMinutes(30)), new(At.AddMinutes(90), At.AddMinutes(120))] },
+            "b" => x with { StartUtc = At.AddMinutes(30), EndUtc = At.AddMinutes(90) },
+            "c" => x with { StartUtc = At.AddMinutes(100), EndUtc = At.AddMinutes(130) },
+            _ => x with { StartUtc = At.AddMinutes(130), EndUtc = At.AddMinutes(160) },
+        }).ToArray() };
+        var result = Calculate(problem, baseline, locks: [("a", "op"), ("b", "op"), ("c", "op"), ("d", "op")]);
+        foreach (var assignment in baseline.Assignments)
+            Assert.Equal(assignment, result.Candidate.Assignments.Single(x => x.OrderId == assignment.OrderId));
+        var conflicts = result.Candidate.Conflicts.Where(x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment).ToArray();
+        Assert.Equal(capacity == 1 ? ["a", "c"] : Array.Empty<string>(), conflicts.Select(x => x.OrderId).ToArray());
+        Assert.Equal(capacity == 1, result.PromiseUtc is null);
+    }
+
     [Fact]
     public void Frozen_segments_remain_identical_and_new_unavailability_is_a_visible_blocking_conflict()
     {
@@ -180,6 +207,7 @@ public class SchedulingInsertionCalculatorTests(ITestOutputHelper output)
         var first = Calculate(problem, baseline);
         Assert.Equal(JsonSerializer.Serialize(first), JsonSerializer.Serialize(Calculate(problem, baseline)));
         var reordered = problem with { Orders = problem.Orders.Reverse().ToArray(), Resources = problem.Resources.Reverse().ToArray() };
+        Assert.Equal(first.InputFingerprint, first.Candidate.ProblemFingerprint);
         Assert.Equal(first.InputFingerprint, Calculate(reordered, baseline).InputFingerprint);
         Assert.NotEqual(first.InputFingerprint, Calculate(problem, baseline, locks: [("existing", "op")]).InputFingerprint);
         Assert.NotEqual(first.InputFingerprint, Calculate(problem with { HorizonEndUtc = At.AddDays(3) }, baseline).InputFingerprint);
@@ -219,7 +247,7 @@ public class SchedulingInsertionCalculatorTests(ITestOutputHelper output)
                 predecessor: op == 0 ? null : $"OP-{op - 1}", rush: index == 499)).ToArray())).ToArray();
         var problem = Problem(orders) with { Resources = Enumerable.Range(1, 24).Select(index => new SchedulingResourceContract($"R{index}", $"WC{index}", ["cut"], 1, "CAL", $"{index:D2}")).ToArray() };
         var baseline = Baseline(problem, orders[..499]);
-        // 对两条路径同样预热，排除 tiered JIT 在测量窗口内升级代码的影响。
+        // 对两条路径同样预热；保留全部七次采样，不假定 tiered JIT 已稳定。
         for (var warmup = 0; warmup < 10; warmup++)
         {
             Calculate(problem, baseline);

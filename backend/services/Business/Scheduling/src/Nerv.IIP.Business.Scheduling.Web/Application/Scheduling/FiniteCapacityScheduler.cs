@@ -151,7 +151,8 @@ public sealed class FiniteCapacityScheduler(
         IReadOnlyCollection<FixedWorkCenterReservation>? externalReservations = null,
         IReadOnlyCollection<ScheduleAssignmentContract>? externalFrozenAssignments = null,
         IReadOnlyCollection<ScheduleAssignmentContract>? preservedAssignments = null,
-        IReadOnlySet<(string OrderId, string OperationId)>? selectedOperations = null)
+        IReadOnlySet<(string OrderId, string OperationId)>? selectedOperations = null,
+        string? problemFingerprint = null)
     {
         ArgumentNullException.ThrowIfNull(normalizedProblem);
 
@@ -164,7 +165,7 @@ public sealed class FiniteCapacityScheduler(
         state.ScheduleOpenOperations();
         state.ReportLockedAssemblyConflicts();
         state.ReportPreservedPredecessorConflicts();
-        return state.ToPlan();
+        return state.ToPlan(problemFingerprint);
     }
 
     internal SchedulePlanContract ScheduleRightShiftNormalized(
@@ -874,7 +875,8 @@ file sealed class SchedulerState
         }
     }
 
-    public SchedulePlanContract ToPlan(IReadOnlyCollection<ScheduleAssignmentContract>? preserved = null)
+    public SchedulePlanContract ToPlan(string? problemFingerprint = null,
+        IReadOnlyCollection<ScheduleAssignmentContract>? preserved = null)
     {
         var originals = (preserved ?? []).ToDictionary(OperationKey.From);
         var orderedAssignments = assignments.Select(x => originals.GetValueOrDefault(OperationKey.From(x), x))
@@ -908,7 +910,7 @@ file sealed class SchedulerState
             ContractVersion: problem.ContractVersion,
             PlanId: planId,
             ProblemId: problem.ProblemId,
-            ProblemFingerprint: Fingerprint(problem),
+            ProblemFingerprint: problemFingerprint ?? Fingerprint(problem),
             AlgorithmVersion: FiniteCapacityScheduler.AlgorithmVersion,
             Status: SchedulePlanStatusContract.Preview,
             GeneratedAtUtc: generatedAtUtc,
@@ -1693,33 +1695,28 @@ file sealed class SchedulerState
             }
 
             var capacity = Math.Max(1, resource.CapacityUnits);
-            var boundaries = resourceLocks
-                .SelectMany(x => new[] { x.StartUtc, x.ReservedEndUtc })
-                .Distinct()
-                .OrderBy(x => x)
-                .ToList();
-
-            for (var i = 0; i < boundaries.Count - 1; i++)
+            // 半开占用窗口的端点扫描；多段属于同一 assignment 时仍按段计容量。
+            var endpoints = resourceLocks.Where(x => x.StartUtc < x.ReservedEndUtc)
+                .SelectMany(x => new[]
+                {
+                    (At: x.StartUtc, Id: x.Assignment.AssignmentId, Delta: 1),
+                    (At: x.ReservedEndUtc, Id: x.Assignment.AssignmentId, Delta: -1),
+                })
+                .GroupBy(x => x.At).OrderBy(x => x.Key);
+            var active = new Dictionary<string, int>(StringComparer.Ordinal);
+            var concurrentCount = 0;
+            foreach (var endpoint in endpoints)
             {
-                var segmentStart = boundaries[i];
-                var segmentEnd = boundaries[i + 1];
-                if (segmentStart >= segmentEnd)
+                // 同一时刻结束与开始一并处理，再检查下一窗口，避免相接工序误报。
+                foreach (var change in endpoint)
                 {
-                    continue;
+                    var count = active.GetValueOrDefault(change.Id) + change.Delta;
+                    if (count == 0) active.Remove(change.Id);
+                    else active[change.Id] = count;
+                    concurrentCount += change.Delta;
                 }
-
-                var concurrentLocks = resourceLocks
-                    .Where(x => x.StartUtc < segmentEnd && x.ReservedEndUtc > segmentStart)
-                    .ToList();
-                if (concurrentLocks.Count <= capacity)
-                {
-                    continue;
-                }
-
-                foreach (var locked in concurrentLocks)
-                {
-                    overbookedAssignmentIds.Add(locked.Assignment.AssignmentId);
-                }
+                if (concurrentCount > capacity)
+                    overbookedAssignmentIds.UnionWith(active.Keys);
             }
         }
 
