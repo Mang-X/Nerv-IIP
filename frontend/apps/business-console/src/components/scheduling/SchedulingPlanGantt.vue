@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { SchedulingWorkOrderFacts } from '@/composables/useBusinessMes'
+import SchedulingPlanOrders from './SchedulingPlanOrders.vue'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import type {
   BusinessConsoleResourceItem,
@@ -53,7 +55,7 @@ const props = defineProps<{
    * APS 的 assignment 契约只有工单号/工序号/资源/起止，物料、数量、交期在工单上；
    * 工序详情要展示这些字段就只能在呈现层 join，join 不到的字段一律不上屏。
    */
-  workOrders?: BusinessConsoleMesWorkOrderItem[]
+  workOrders?: SchedulingWorkOrderFacts[]
   workOrderFactsUnavailable?: boolean
 }>()
 
@@ -379,6 +381,12 @@ function sendCommand(cmd: Parameters<NonNullable<typeof boardRef.value>['command
   boardRef.value?.command(cmd)
 }
 
+function selectPlanOperation(taskId: string) {
+  selectedTaskId.value = taskId
+  sendCommand({ kind: 'selectTask', taskId })
+  sendCommand({ kind: 'revealTask', taskId })
+}
+
 const search = shallowRef('')
 /**
  * 命中判定跨「工单号 / 工序号 / 条上标题 / 资源 / 工作中心人话名」五个字段。
@@ -633,6 +641,14 @@ function setLaneOrder(value: LaneOrder) {
 
       <!-- 宽窗甘特与详情并排，窄窗详情在图面下方展开；两者均保留完整查阅空间。 -->
       <div class="flex flex-col gap-3 xl:h-[34rem] xl:min-h-[28rem] xl:flex-row">
+        <SchedulingPlanOrders
+          v-if="model"
+          :model="model"
+          :work-orders="workOrders ?? []"
+          :selected-task-id="selectedTaskId"
+          :facts-unavailable="workOrderFactsUnavailable"
+          @select="selectPlanOperation"
+        />
         <div
           class="flex h-[34rem] min-w-0 flex-none flex-col overflow-hidden rounded-lg border bg-card xl:h-auto xl:flex-1"
         >

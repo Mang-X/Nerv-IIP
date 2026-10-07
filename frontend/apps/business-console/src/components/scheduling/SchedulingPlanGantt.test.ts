@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { computed, nextTick } from 'vue'
+import { computed, defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPlanGantt from './SchedulingPlanGantt.vue'
@@ -348,4 +348,37 @@ describe('SchedulingPlanGantt 分组维度', () => {
     expect(byName.length).toBe(allLanes)
     expect([...byName].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))).toEqual(byName)
   })
+})
+
+// DomainInvariant: #3628 侧栏点击经包内命令同时选中、定位甘特。
+it('销售单侧栏工序选择同步甘特选中和定位，不离开页面', async () => {
+  const command = vi.fn()
+  const boardStub = defineComponent({
+    setup(_, { expose }) {
+      expose({ command })
+      return () => null
+    },
+  })
+  const wrapper = mount(SchedulingPlanGantt, {
+    props: {
+      plan: { ...plan(), status: 'generated' },
+      workOrders: [
+        {
+          workOrderId: 'WO-2026-03008',
+          commercialSourceFacts: {
+            status: 'available',
+            salesOrders: [{ salesOrderNo: 'SO-08001' }],
+          },
+        },
+      ],
+    },
+    global: { plugins: [createPinia()], stubs: { ResourceSchedulerBoard: boardStub } },
+  })
+  await settle()
+  expect(wrapper.find('[aria-label="销售订单计划视角"]').exists()).toBe(true)
+  await wrapper.get('button[data-operation="a2"]').trigger('click')
+  expect(command).toHaveBeenCalledWith({ kind: 'selectTask', taskId: 'a2' })
+  expect(command).toHaveBeenCalledWith({ kind: 'revealTask', taskId: 'a2' })
+  expect(wrapper.get('button[data-operation="a2"]').attributes('aria-pressed')).toBe('true')
+  expect(wrapper.get('[data-testid="scheduling-task-detail"]').text()).toContain('OP-20')
 })
