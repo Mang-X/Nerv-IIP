@@ -6,6 +6,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -188,7 +189,45 @@ public sealed class BusinessGatewayAuthorizationClientTests
 
         Assert.True(first.IsAllowed);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, ex.StatusCode);
-        Assert.Equal(2, handler.Requests.Count);
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.CheckAsync(
+            "access-token-001", requirement, BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, CancellationToken.None));
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Http_authorization_cache_separates_every_authorization_dimension()
+    {
+        var handler = new RecordingHandler(_ => AuthorizationResponse(HttpStatusCode.OK, allowed: true));
+        var client = CreateClient(handler);
+        var requirement = new BusinessGatewayPermissionRequirement("read", "org", "env", "sku", "one");
+        await client.CheckAsync("token", requirement, CancellationToken.None);
+        await client.CheckAsync("other-token", requirement, CancellationToken.None);
+        foreach (var variant in new[]
+        {
+            requirement with { PermissionCode = "manage" },
+            requirement with { OrganizationId = "other-org" },
+            requirement with { EnvironmentId = "other-env" },
+            requirement with { ResourceType = "other-type" },
+            requirement with { ResourceId = "other-resource" },
+            requirement with { IncludePrincipalContext = true },
+        }) await client.CheckAsync("token", variant, CancellationToken.None);
+        await client.CheckAsync("token", requirement, CancellationToken.None);
+        Assert.Equal(8, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Http_authorization_expired_allow_does_not_hide_source_failure()
+    {
+        var fail = false;
+        var handler = new RecordingHandler(_ => fail ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : AuthorizationResponse(HttpStatusCode.OK, allowed: true));
+        var client = CreateClient(handler, new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 1 });
+        var requirement = new BusinessGatewayPermissionRequirement("read", "org", "env", null, null);
+        Assert.True((await client.CheckAsync("token", requirement, CancellationToken.None)).IsAllowed);
+        fail = true;
+        await Eventually.AssertAsync("BusinessGateway expired Allow fails closed", async _ =>
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.CheckAsync("token", requirement, CancellationToken.None)),
+            new EventuallyOptions(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(20), []));
     }
 
     [Fact]
@@ -215,7 +254,7 @@ public sealed class BusinessGatewayAuthorizationClientTests
         BusinessGatewayAuthorizationOptions? options = null) =>
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://iam.local") },
-            new MemoryAppCache(),
+            new FusionAppCache(),
             Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }),
             new BusinessGatewayDownstreamHealthState(TimeProvider.System));
 

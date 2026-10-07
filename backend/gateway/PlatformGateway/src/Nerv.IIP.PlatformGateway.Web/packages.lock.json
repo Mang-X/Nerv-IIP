@@ -513,7 +513,8 @@
       "nerv.iip.caching": {
         "type": "Project",
         "dependencies": {
-          "StackExchange.Redis": "[2.9.32, )"
+          "StackExchange.Redis": "[2.9.32, )",
+          "ZiggyCreatures.FusionCache": "[2.9.0, )"
         }
       },
       "nerv.iip.contracts.apphubqueries": {
@@ -735,6 +736,12 @@
         "dependencies": {
           "Pipelines.Sockets.Unofficial": "2.2.8"
         }
+      },
+      "ZiggyCreatures.FusionCache": {
+        "type": "CentralTransitive",
+        "requested": "[2.9.0, )",
+        "resolved": "2.9.0",
+        "contentHash": "m2z6LlE4yckDkE95Vha2NH/gPD+iM9PnCUMfe1nfkC+xaiq48S80HI7olnSblVOAHx5OP+VN9vhQoTdZAPZp0g=="
       }
     }
   }

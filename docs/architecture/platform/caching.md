@@ -16,6 +16,16 @@
 4. 缓存只优化读取，不承载命令事务、审计、动作生命周期或实例最终状态。
 5. 所有服务通过 backend/common/Caching 暴露的统一注册和策略使用 FusionCache，不在业务服务里各自散落配置。
 
+## 当前 L1 实现
+
+`AddNervIipCaching` 注册公共 `IAppCache`，由 `FusionAppCache` 封装 FusionCache L1。它使用独立的 `MemoryCache`，`Caching:L1MaxEntries` 默认 `10000`，必须大于零；预算单位为业务缓存项，每项 `Size=1`，库固定 tag 元数据 `Size=0`。容量准入与压缩由 MemoryCache 负责，满额时 factory 的结果仍正常交付；预算不表示字节数，也不承诺精确 LRU。
+
+当前四个读取点为 PlatformGateway 实例列表/详情（5 秒）与双网关读授权（配置值，默认 10 秒）。授权键保留 token、组织、环境、权限、资源、主体 context 和 schema 版本的现有隔离；`RealtimeRequired` 始终实时向 IAM 校验。所有这些场景关闭 fail-safe、eager refresh 和超时 factory 后台完成，不配置 factory 软/硬超时。
+
+PlatformGateway 的实例读取与读授权使用固定 `gateway` tag。内部失效端点调用 `RemoveByTag`，只使该家族下次读取重新加载，不清除其他家族。`Clear` 则使整个独立 L1 失效。库 tag 失效采用库自身时间戳语义，不另建前缀键索引或清理 worker。
+
+当前没有配置 Redis L2/backplane、序列化或 OpenTelemetry 集成；下面相关项说明 ADR 的后续目标。仅注册缓存而没有读调用的服务不会因此增加缓存场景。
+
 ## 首批适用场景
 
 优先用于：
@@ -79,7 +89,7 @@ gateway:instance-detail:org-001:env-prod:instance:inst-456:v1
 3. IAM 用户、角色、权限或授权授予变化后，失效对应用户、角色、外部客户端和权限快照缓存。
 4. Gateway 聚合缓存的 TTL 必须短于其聚合来源中最短的业务容忍时间。
 5. 对安全敏感缓存，禁止长时间使用 fail-safe（故障安全）数据；权限变更后必须主动使其失效，不能只等待 TTL。
-6. PlatformGateway 的 `/internal/gateway/cache/invalidate` 只允许 InternalService 调用，并且只使当前进程内带 `gateway:` 前缀的缓存失效；在接入 Redis L2/backplane 前，它不是多实例广播失效机制。
+6. PlatformGateway 的 `/internal/gateway/cache/invalidate` 只允许 InternalService 调用，并且只使当前进程内带 `gateway` tag 的缓存失效；在接入 Redis L2/backplane 前，它不是多实例广播失效机制。
 
 ## 一致性边界
 

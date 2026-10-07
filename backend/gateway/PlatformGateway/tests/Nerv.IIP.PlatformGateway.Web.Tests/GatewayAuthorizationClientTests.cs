@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Caching;
+using Nerv.IIP.Testing;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.Resilience;
@@ -46,7 +47,11 @@ public sealed class GatewayAuthorizationClientTests
         await client.CheckAsync("token-v8", requirement, CancellationToken.None);
         await client.CheckAsync("token-v8", requirement with { PermissionCode = "iam.users.manage" }, CancellationToken.None);
 
-        Assert.Equal(3, handler.CallCount);
+        await client.CheckAsync("token-v8", requirement with { OrganizationId = "org-002" }, CancellationToken.None);
+        await client.CheckAsync("token-v8", requirement with { EnvironmentId = "env-prod" }, CancellationToken.None);
+        await client.CheckAsync("token-v8", requirement with { ResourceType = "user" }, CancellationToken.None);
+        await client.CheckAsync("token-v8", requirement with { ResourceId = "user-002" }, CancellationToken.None);
+        Assert.Equal(7, handler.CallCount);
     }
 
     [Fact]
@@ -169,14 +174,46 @@ public sealed class GatewayAuthorizationClientTests
 
         Assert.True(first.IsAllowed);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, ex.StatusCode);
-        Assert.Equal(2, handler.CallCount);
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.CheckAsync(
+            "token-v7", requirement, GatewayAuthorizationContinuityMode.RealtimeRequired, CancellationToken.None));
+        Assert.Equal(3, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task CheckAsync_preserves_iam_denial(HttpStatusCode status)
+    {
+        var client = CreateClient(new DenyingHandler(status));
+        var result = await client.CheckAsync("token", new GatewayPermissionRequirement("read", "org", "env", null, null), CancellationToken.None);
+        Assert.False(result.IsAllowed);
+    }
+
+    [Fact]
+    public async Task CheckAsync_expired_allow_does_not_hide_source_failure()
+    {
+        using var cache = new FusionAppCache();
+        var handler = new FlakyAuthorizationHandler();
+        var client = CreateClient(handler, cache, Options.Create(new GatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 1 }));
+        var requirement = new GatewayPermissionRequirement("read", "org", "env", null, null);
+        Assert.True((await client.CheckAsync("token", requirement, CancellationToken.None)).IsAllowed);
+        handler.FailWithServiceUnavailable = true;
+        await Eventually.AssertAsync("PlatformGateway expired Allow fails closed", async _ =>
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.CheckAsync("token", requirement, CancellationToken.None)),
+            new EventuallyOptions(TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(20), []));
+    }
+
+    private sealed class DenyingHandler(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status));
     }
 
     private static HttpGatewayAuthorizationClient CreateClient(HttpMessageHandler handler)
     {
         return CreateClient(
             handler,
-            new MemoryAppCache(),
+            new FusionAppCache(),
             Options.Create(new GatewayAuthorizationOptions()));
     }
 
@@ -242,14 +279,14 @@ public sealed class GatewayAuthorizationClientTests
         public TimeSpan? LastTtl { get; private set; }
         public List<string> Keys { get; } = [];
 
-        public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl)
+        public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, string? tag = null)
         {
             Keys.Add(key);
             LastTtl = ttl;
             return await factory();
         }
 
-        public void InvalidatePrefix(string prefix)
+        public void RemoveByTag(string tag)
         {
         }
 
