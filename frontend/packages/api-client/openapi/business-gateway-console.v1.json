@@ -40759,6 +40759,19 @@
           "sourceReferenceLabel": {
             "type": "string",
             "nullable": true
+          },
+          "expectedRestoreAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "restorePredictionSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "restorePredictionSourceVersion": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -60507,6 +60520,11 @@
             "minimum": 0.0,
             "nullable": true,
             "exclusiveMinimum": true
+          },
+          "expectedRestoreAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -60618,6 +60636,11 @@
             "minimum": 0.0,
             "nullable": true,
             "exclusiveMinimum": true
+          },
+          "expectedRestoreAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -60919,6 +60942,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "expectedRestoreAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -61204,6 +61232,11 @@
             "maxLength": 10,
             "minLength": 0,
             "nullable": true
+          },
+          "expectedRestoreAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -61219,7 +61252,8 @@
           "Complete",
           "Verify",
           "Close",
-          "Cancel"
+          "Cancel",
+          "UpdateExpectedRestore"
         ],
         "enum": [
           "accept",
@@ -61230,7 +61264,8 @@
           "complete",
           "verify",
           "close",
-          "cancel"
+          "cancel",
+          "updateExpectedRestore"
         ]
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenancePlanResponse": {

@@ -444,7 +444,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 ActualTechnicianUserId: workOrder.ActualTechnicianUserId,
                 SourceReferenceId: workOrder.SourceReferenceId,
                 AssignedTeamId: workOrder.AssignedTeamId,
-                Version: workOrder.Version)).ToArray(),
+                Version: workOrder.Version,
+            ExpectedRestoreAtUtc: workOrder.ExpectedRestoreAtUtc)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -554,13 +555,26 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             request.ExpectedVersion);
     }
 
-    public Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
+    public async Task<BusinessConsoleMaintenanceWorkOrderActionResponse> TransitionWorkOrderAsync(
         string internalBearerToken,
         string workOrderId,
         BusinessConsoleTransitionMaintenanceWorkOrderRequest request,
         string actorPrincipalId,
-        CancellationToken cancellationToken) =>
-        SendLifecycleActionAsync(
+        CancellationToken cancellationToken)
+    {
+        string? expectedStatus;
+        if (request.Action == BusinessConsoleMaintenanceWorkOrderAction.UpdateExpectedRestore)
+        {
+            var before = await GetWorkOrderAsync(internalBearerToken, workOrderId,
+                new BusinessConsoleMaintenanceContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
+            // A fresh estimate retains state; a replay may return its historical receipt after later actions.
+            expectedStatus = before.Version > request.ExpectedVersion ? null : before.Status;
+        }
+        else
+        {
+            expectedStatus = ExpectedStatus(request.Action);
+        }
+        return await SendLifecycleActionAsync(
             internalBearerToken,
             workOrderId,
             "/actions",
@@ -579,12 +593,14 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 request.ActualLaborMinutes,
                 request.SparePartCostAmount,
                 request.ExternalServiceCostAmount,
-                request.CostCurrencyCode),
+                request.CostCurrencyCode,
+                request.ExpectedRestoreAtUtc),
             $"maintenance.work-order.{request.Action.ToString().ToLowerInvariant()}",
             request.IdempotencyKey,
-            ExpectedStatus(request.Action),
+            expectedStatus,
             request.ExpectedVersion,
             cancellationToken);
+    }
 
     private async Task<BusinessConsoleMaintenanceWorkOrderActionResponse> SendLifecycleActionAsync<TRequest>(
         string internalBearerToken,
@@ -593,7 +609,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         TRequest request,
         string operationType,
         string idempotencyKey,
-        string expectedStatus,
+        string? expectedStatus,
         int expectedVersion,
         CancellationToken cancellationToken)
     {
@@ -618,7 +634,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DownstreamMaintenanceWorkOrderActionResponse response,
         string operationType,
         string idempotencyKey,
-        string expectedStatus,
+        string? expectedStatus,
         int expectedVersion)
     {
         var responseId = FormatMaintenanceWorkOrderId(response.WorkOrderId);
@@ -626,7 +642,9 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             || parsedResponseId == Guid.Empty
             || !Guid.TryParse(workOrderId, out var parsedRequestId)
             || parsedRequestId != parsedResponseId
-            || !string.Equals(response.Status, expectedStatus, StringComparison.Ordinal)
+            || (expectedStatus is null
+                ? response.Status is not ("Open" or "Accepted" or "InProgress" or "Paused" or "WaitingForParts")
+                : !string.Equals(response.Status, expectedStatus, StringComparison.Ordinal))
             || expectedVersion < 0
             || expectedVersion == int.MaxValue
             || response.Version != expectedVersion + 1
@@ -724,7 +742,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             ActualTechnicianUserId: workOrder.ActualTechnicianUserId,
             SourceReferenceId: workOrder.SourceReferenceId,
             AssignedTeamId: workOrder.AssignedTeamId,
-            Version: workOrder.Version);
+            Version: workOrder.Version,
+            ExpectedRestoreAtUtc: workOrder.ExpectedRestoreAtUtc);
 
     public async Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
@@ -1084,7 +1103,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? ActualTechnicianUserId = null,
         string? SourceReferenceId = null,
         string? AssignedTeamId = null,
-        int Version = 0);
+        int Version = 0,
+        DateTimeOffset? ExpectedRestoreAtUtc = null);
 
     private sealed record DownstreamMaintenanceWorkOrderDetail(
         DownstreamMaintenanceWorkOrderListItem WorkOrder,
@@ -1142,7 +1162,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         int? ActualLaborMinutes,
         decimal? SparePartCostAmount,
         decimal? ExternalServiceCostAmount,
-        string? CostCurrencyCode);
+        string? CostCurrencyCode,
+        DateTimeOffset? ExpectedRestoreAtUtc);
 
     private sealed record DownstreamMaintenanceWorkOrderActionResponse(
         JsonElement WorkOrderId,

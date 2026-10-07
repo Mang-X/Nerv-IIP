@@ -960,7 +960,7 @@ public sealed class MaintenanceEndpointContractTests
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         dbContext.MaintenancePlans.Add(plan);
         await dbContext.SaveChangesAsync();
-        var handler = new GetMaintenanceAssetAvailabilityWindowsQueryHandler(dbContext);
+        var handler = new GetMaintenanceAssetAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions())));
 
         var response = await handler.Handle(new GetMaintenanceAssetAvailabilityWindowsQuery("org-001", "env-dev", "DEV-CNC-01", queryStart, queryEnd), CancellationToken.None);
 
@@ -1002,7 +1002,7 @@ public sealed class MaintenanceEndpointContractTests
         dbContext.MaintenanceInspections.Add(inspection);
         dbContext.MaintenanceInspections.Add(failInspection);
         await dbContext.SaveChangesAsync();
-        var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext);
+        var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions())));
         var request = new EquipmentRuntimeAvailabilityRequest("org-001", "env-dev", queryStart, queryEnd, ["DEV-CNC-01"], null);
 
         var response = await handler.Handle(new QueryMaintenanceAvailabilityWindowsQuery(request), CancellationToken.None);
@@ -1028,7 +1028,7 @@ public sealed class MaintenanceEndpointContractTests
     public async Task Availability_query_rejects_invalid_window_and_unresolved_work_centers()
     {
         await using var dbContext = CreateDbContext();
-        var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext);
+        var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions())));
         var start = DateTimeOffset.UtcNow;
 
         var invalidWindow = await Assert.ThrowsAsync<KnownException>(() =>
@@ -1054,7 +1054,7 @@ public sealed class MaintenanceEndpointContractTests
         dbContext.MaintenanceInspections.Add(MaintenanceInspection.RecordForPlan("org-001", "env-dev", failedPlan.Id, "inspector-001", "failed", queryStart.AddMinutes(30)));
         dbContext.MaintenanceInspections.Add(MaintenanceInspection.RecordForPlan("org-001", "env-dev", failedPlan.Id, "inspector-001", "blocked", queryStart.AddMinutes(40)));
         await dbContext.SaveChangesAsync();
-        var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext);
+        var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions())));
 
         var response = await handler.Handle(new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest("org-001", "env-dev", queryStart, queryEnd, ["DEV-CNC-01"], null)), CancellationToken.None);
 
@@ -1151,7 +1151,7 @@ public sealed class MaintenanceEndpointContractTests
         var localEnd = localStart.AddHours(1);
         await handler.Handle(new CreateMaintenancePlanCommand("org-001", "env-dev", "DEV-CNC-01", "PM-UTC", "P7D", DateOnly.FromDateTime(localStart.UtcDateTime), "maintenance", localStart, localEnd), CancellationToken.None);
         await dbContext.SaveChangesAsync();
-        var availability = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext);
+        var availability = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions())));
         var queryStart = localStart.ToUniversalTime().AddHours(-1);
         var queryEnd = localEnd.ToUniversalTime().AddHours(1);
 
@@ -1718,6 +1718,7 @@ public sealed class MaintenanceEndpointContractTests
         var probe = new QueryPipelineProbe();
         var services = new ServiceCollection();
         services.AddSingleton(dbContext);
+        services.AddOptions<MaintenanceRestorePredictionOptions>();
         services.AddSingleton(probe);
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(QueryPipelineProbeBehavior<,>));
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
@@ -1750,7 +1751,7 @@ public sealed class MaintenanceEndpointContractTests
         var localInspectedAt = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.FromHours(8));
         await inspectionHandler.Handle(new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", "fail", localInspectedAt), CancellationToken.None);
         await dbContext.SaveChangesAsync();
-        var availability = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext);
+        var availability = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions())));
         var queryStart = new DateTimeOffset(2026, 6, 1, 1, 0, 0, TimeSpan.Zero);
         var queryEnd = new DateTimeOffset(2026, 6, 1, 3, 0, 0, TimeSpan.Zero);
 

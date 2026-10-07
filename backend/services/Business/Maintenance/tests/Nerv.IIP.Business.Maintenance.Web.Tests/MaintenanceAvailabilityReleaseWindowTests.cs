@@ -134,7 +134,7 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
         DateTimeOffset windowStartUtc,
         DateTimeOffset windowEndUtc)
     {
-        return await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+        return await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions()))).Handle(
             new QueryMaintenanceAvailabilityWindowsQuery(
                 new EquipmentRuntimeAvailabilityRequest(
                     "org-001", "env-dev", windowStartUtc, windowEndUtc, ["DEV-CNC-01"], null)),
@@ -207,7 +207,7 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
             var query = Assert.IsType<QueryMaintenanceAvailabilityWindowsQuery>(request);
-            var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(query, cancellationToken);
+            var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions()))).Handle(query, cancellationToken);
             return (TResponse)(object)response;
         }
 
