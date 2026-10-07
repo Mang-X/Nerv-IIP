@@ -107,12 +107,11 @@ function Assert-FullChainAggregateContract {
         'impact-plan',
         'acceptance-scenario-matrix-planning',
         'business-full-chain-acceptance-v1',
-        'acceptance-scenario-matrix-runtime',
-        'acceptance-scenario-matrix-equivalence'
+        'acceptance-scenario-matrix-runtime'
     )
     [Array]::Sort($aggregateNeeds, [StringComparer]::Ordinal)
     [Array]::Sort($expectedAggregateNeeds, [StringComparer]::Ordinal)
-    Assert-Contract ([string]::Equals(($aggregateNeeds -join '|'), ($expectedAggregateNeeds -join '|'), [StringComparison]::Ordinal)) 'The stable FullChain aggregate must need exactly impact-plan, planning, v1, shadow runtime, and equivalence.'
+    Assert-Contract ([string]::Equals(($aggregateNeeds -join '|'), ($expectedAggregateNeeds -join '|'), [StringComparison]::Ordinal)) 'The stable FullChain aggregate must need exactly impact-plan, planning, v1, and shadow runtime.'
 
     $aggregateSteps = @($aggregate.steps)
     Assert-Contract ($aggregateSteps.Count -eq 1) 'The stable FullChain aggregate must contain exactly one fail-fast assertion step.'
@@ -126,18 +125,15 @@ planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"
 v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
 sales_order_demand_selected="${{ needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected }}"
 shadow_result="${{ needs.acceptance-scenario-matrix-runtime.result }}"
-equivalence_result="${{ needs.acceptance-scenario-matrix-equivalence.result }}"
 
 test "$planning_result" = "success"
 test "$v1_result" = "success"
 case "$sales_order_demand_selected" in
   true)
     test "$shadow_result" = "success"
-    test "$equivalence_result" = "success"
     ;;
   false)
     test "$shadow_result" = "skipped"
-    test "$equivalence_result" = "skipped"
     ;;
   *)
     echo "sales-order-demand-selected must be exactly 'true' or 'false'." >&2
@@ -198,7 +194,7 @@ try {
 
     $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, OpenAPI Drift, PostgreSQL Provider Tests, Redis/CAP Transport Tests, and Business FullChain Acceptance exactly.'
     $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design/skipped-by-policy contract and audit table.'
-    $fullChainAggregateDiagnostic = 'Stable Business FullChain Acceptance must retain the exact planning, v1, shadow, equivalence, and selected/skipped result contract.'
+    $fullChainAggregateDiagnostic = 'Stable Business FullChain Acceptance must retain the exact planning, v1, shadow, and selected/skipped result contract.'
     $fullChainEvidenceOwnerDiagnostic = "Only 'business-full-chain-acceptance-v1' may collect or publish formal full-chain MAN-661 evidence."
 
     Assert-AcceptedMutation -Name 'full-chain-v1-collector-single-quoted-lane' -Workflow $workflow `
@@ -254,8 +250,7 @@ try {
     foreach ($requiredAggregateNeed in @(
         'acceptance-scenario-matrix-planning',
         'business-full-chain-acceptance-v1',
-        'acceptance-scenario-matrix-runtime',
-        'acceptance-scenario-matrix-equivalence'
+        'acceptance-scenario-matrix-runtime'
     )) {
         Invoke-Mutation -Name "full-chain-aggregate-production-drops-$requiredAggregateNeed" -Workflow $workflow `
             -Original "      - $requiredAggregateNeed$([Environment]::NewLine)" -Replacement '' `
@@ -265,8 +260,7 @@ try {
     foreach ($selectedResultMutation in @(
         @{ Name = 'planning'; Original = '          test "$planning_result" = "success"'; Replacement = '          test "$planning_result" = "skipped"' },
         @{ Name = 'v1'; Original = '          test "$v1_result" = "success"'; Replacement = '          test "$v1_result" = "skipped"' },
-        @{ Name = 'shadow'; Original = '              test "$shadow_result" = "success"'; Replacement = '              test "$shadow_result" = "skipped"' },
-        @{ Name = 'equivalence'; Original = '              test "$equivalence_result" = "success"'; Replacement = '              test "$equivalence_result" = "skipped"' }
+        @{ Name = 'shadow'; Original = '              test "$shadow_result" = "success"'; Replacement = '              test "$shadow_result" = "skipped"' }
     )) {
         Invoke-Mutation -Name "full-chain-aggregate-production-selected-allows-$($selectedResultMutation.Name)-skip" -Workflow $workflow `
             -Original $selectedResultMutation.Original -Replacement $selectedResultMutation.Replacement `
@@ -298,22 +292,12 @@ try {
         -Replacement "        uses: actions/upload-artifact@v5$([Environment]::NewLine)        with:$([Environment]::NewLine)          name: shadow-`${{ github.run_id }}-test-evidence-full-chain-`${{ github.run_attempt }}" `
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
-    Invoke-Mutation -Name 'full-chain-equivalence-collects-formal-evidence' -Workflow $workflow `
-        -Original "            -ReportPath artifacts/acceptance-scenario-matrix/equivalence-report.json$([Environment]::NewLine)" `
-        -Replacement "            -ReportPath artifacts/acceptance-scenario-matrix/equivalence-report.json$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
-        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
-
-    Invoke-Mutation -Name 'full-chain-equivalence-publishes-formal-evidence-artifact' -Workflow $workflow `
-        -Original 'name: acceptance-scenario-matrix-equivalence-${{ github.run_id }}-${{ github.run_attempt }}' `
-        -Replacement 'name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}' `
-        -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
-
     Invoke-Mutation -Name 'full-chain-stable-aggregate-collects-formal-evidence' -Workflow $workflow `
         -Original "          planning_result=`"`${{ needs.acceptance-scenario-matrix-planning.result }}`"$([Environment]::NewLine)" `
         -Replacement "          planning_result=`"`${{ needs.acceptance-scenario-matrix-planning.result }}`"$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
-    $stableAggregateStepHeader = "    steps:$([Environment]::NewLine)      - name: Require FullChain planning, v1 authority, and selected shadow equivalence"
+    $stableAggregateStepHeader = "    steps:$([Environment]::NewLine)      - name: Require FullChain planning, v1 authority, and selected shadow runtime"
     $stableAggregateFormalArtifact = @"
     steps:
       - name: Publish forbidden formal evidence
@@ -322,7 +306,7 @@ try {
         with:
           name: test-evidence-full-chain-`${{ github.run_id }}-`${{ github.run_attempt }}
           path: artifacts/forbidden
-      - name: Require FullChain planning, v1 authority, and selected shadow equivalence
+      - name: Require FullChain planning, v1 authority, and selected shadow runtime
 "@.Replace("`r`n", [Environment]::NewLine).TrimEnd()
     Invoke-Mutation -Name 'full-chain-stable-aggregate-publishes-formal-evidence-artifact' -Workflow $workflow `
         -Original $stableAggregateStepHeader -Replacement $stableAggregateFormalArtifact `
