@@ -60,15 +60,17 @@ public sealed class AssetUnavailableIntegrationEventConverter
             EventIds.New(),
             MaintenanceIntegrationEventTypes.AssetUnavailable,
             MaintenanceIntegrationEventVersions.V1,
-            domainEvent.FromUtc,
+            domainEvent.ChangedAtUtc ?? domainEvent.FromUtc,
             MaintenanceIntegrationEventSources.Maintenance,
             workOrder.Id.ToString(),
             workOrder.SourceAlarmId ?? workOrder.Id.ToString(),
             workOrder.OrganizationId,
             workOrder.EnvironmentId,
             workOrder.OpenedBy,
-            $"asset-unavailable:{workOrder.Id}:{domainEvent.FromUtc:O}",
-            new AssetUnavailablePayload(workOrder.DeviceAssetId, domainEvent.Reason, domainEvent.FromUtc));
+            domainEvent.Revision is null
+                ? $"asset-unavailable:{workOrder.Id}:{domainEvent.FromUtc:O}"
+                : $"asset-unavailable:{workOrder.Id}:{domainEvent.FromUtc:O}:prediction:{domainEvent.Revision}",
+            new AssetUnavailablePayload(workOrder.DeviceAssetId, domainEvent.Reason, domainEvent.FromUtc, domainEvent.ExpectedRestoreAtUtc));
     }
 }
 

@@ -46,6 +46,12 @@ Maintenance 还拥有预防性维护计划、点检、故障、停机原因、�
 
 事件版本兼容不改变 Maintenance 对维修处置和可用性判定的所有权，也不允许消费者把报警原始事实复制为自己的主事实。
 
+### 预计恢复与停机 MTTR
+
+按 [ADR 0032 §2](../../adr/0032-scheduling-local-rescheduling-unfreeze.md)，Maintenance 保存维修人员显式填写的 ETR；创建与在途更新事件只携带这个显式输入，无显式输入时保持 null。预测更新沿用原停机开始时间，使用工单修订区分更新事实；完工或取消才形成实际恢复，预测不会解除停机。
+
+Maintenance owner 查询优先使用显式 ETR，否则取同组织、环境、设备的全历史已结束停机持续时间算术平均，无样本时取维护服务配置的默认时长。样本开始来自实际停机，结束来自完工或取消；报警清除不算结束，维修劳动时长不替代停机持续时间。查询结果包含选定预测、依据与该次来源输入的稳定版本；派生预测不写回显式 ETR 列。配置入口与默认值以 Maintenance `RestorePrediction` options 和 `appsettings.json` 为准。
+
 ## MES：执行侧工作中心投影
 
 MES 消费 Maintenance 的不可用/恢复事实，把设备资产解析到工作中心并维护 `WorkCenterUnavailability`。该投影只保存生产执行、派工避让、readiness 和产能影响所需的最小字段，例如设备资产引用、工作中心、原因、开始/恢复时间。
