@@ -314,6 +314,7 @@ describe('generated API client contract', () => {
       assetUnavailableReason?: string | null
       assignedTechnicianUserId?: string | null
       estimatedLaborMinutes?: number | null
+      expectedRestoreAtUtc?: string | null
     }>()
     expectTypeOf<BusinessConsoleCreateMaintenanceWorkOrderV2Request>().toEqualTypeOf<{
       organizationId: string
@@ -326,6 +327,7 @@ describe('generated API client contract', () => {
       assetUnavailableReasonCode?: string | null
       assignedTechnicianUserId?: string | null
       estimatedLaborMinutes?: number | null
+      expectedRestoreAtUtc?: string | null
     }>()
   })
 
@@ -426,6 +428,7 @@ describe('generated API client contract', () => {
       | 'verify'
       | 'close'
       | 'cancel'
+      | 'updateExpectedRestore'
     >()
     expectTypeOf<BusinessConsoleAssignMaintenanceWorkOrderRequest>().toMatchTypeOf<
       AssignBusinessConsoleMaintenanceWorkOrderData['body']
@@ -433,6 +436,18 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleTransitionMaintenanceWorkOrderRequest>().toMatchTypeOf<
       TransitionBusinessConsoleMaintenanceWorkOrderData['body']
     >()
+    expectTypeOf<
+      BusinessConsoleTransitionMaintenanceWorkOrderRequest['expectedRestoreAtUtc']
+    >().toEqualTypeOf<string | null | undefined>()
+    expectTypeOf<
+      businessConsoleClient.EquipmentRuntimeAvailabilityWindow['expectedRestoreAtUtc']
+    >().toEqualTypeOf<string | null | undefined>()
+    expectTypeOf<
+      businessConsoleClient.EquipmentRuntimeAvailabilityWindow['restorePredictionSource']
+    >().toEqualTypeOf<string | null | undefined>()
+    expectTypeOf<
+      businessConsoleClient.EquipmentRuntimeAvailabilityWindow['restorePredictionSourceVersion']
+    >().toEqualTypeOf<string | null | undefined>()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderActionResponse>().not.toBeNever()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>().not.toBeNever()
   })

@@ -907,6 +907,7 @@ internal static class MaintenanceActionOwnership
         BusinessConsoleMaintenanceWorkOrderAction.WaitForParts,
         BusinessConsoleMaintenanceWorkOrderAction.Resume,
         BusinessConsoleMaintenanceWorkOrderAction.Complete,
+        BusinessConsoleMaintenanceWorkOrderAction.UpdateExpectedRestore,
     ];
 
     public static IReadOnlyCollection<string> FilterAllowedActions(
@@ -933,7 +934,7 @@ internal static class MaintenanceActionOwnership
         string principalId)
     {
         if (!OwnerOnlyActions.Contains(action)
-            || (action == BusinessConsoleMaintenanceWorkOrderAction.Accept
+            || (action is BusinessConsoleMaintenanceWorkOrderAction.Accept or BusinessConsoleMaintenanceWorkOrderAction.UpdateExpectedRestore
                 && string.IsNullOrWhiteSpace(assignedTechnicianUserId))
             || string.Equals(assignedTechnicianUserId, principalId, StringComparison.Ordinal))
         {
@@ -1511,6 +1512,7 @@ public sealed class BusinessConsoleTransitionMaintenanceWorkOrderRequestValidato
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Action).IsInEnum();
+        RuleFor(x => x.ExpectedRestoreAtUtc).Null().When(x => x.Action != BusinessConsoleMaintenanceWorkOrderAction.UpdateExpectedRestore);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);

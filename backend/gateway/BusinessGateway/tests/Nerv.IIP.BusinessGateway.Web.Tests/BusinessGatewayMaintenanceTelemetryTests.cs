@@ -19,6 +19,54 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayMaintenanceTelemetryTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Expected_restore_update_uses_realtime_manage_permission_and_trusted_actor(bool allowed)
+    {
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant("membership", "org-001", "organization", "org-001",
+                [BusinessGatewayPermissions.MaintenanceWorkOrdersManage], OrganizationWide: true),
+        ]) : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope("organization", "org-001", "Organization", "organization", [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var expected = new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero);
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders/wo-maint-001/actions", new
+        {
+            organizationId = "org-001", environmentId = "env-dev", scopeKind = "organization", scopeId = "org-001",
+            action = "updateExpectedRestore", reason = "estimate", idempotencyKey = "etr-update", expectedVersion = 0,
+            expectedRestoreAtUtc = expected, actorPrincipalId = "untrusted-client",
+        });
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MaintenanceWorkOrdersManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        Assert.Equal(allowed ? 1 : 0, maintenance.TransitionCallCount);
+        if (allowed)
+        {
+            Assert.Equal(expected, maintenance.LastTransitionRequest!.ExpectedRestoreAtUtc);
+            Assert.Equal("org-001", maintenance.LastTransitionRequest.OrganizationId);
+            Assert.Equal("env-dev", maintenance.LastTransitionRequest.EnvironmentId);
+            Assert.Equal("user-admin", maintenance.LastTransitionActor);
+            Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        }
+    }
+
     [Fact]
     public async Task Connector_collection_health_authorizes_connector_scope_and_preserves_field_connection_loss()
     {
@@ -1446,8 +1494,10 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Null(maintenance.LastWorkOrderListRequest);
     }
 
-    [Fact]
-    public async Task Same_team_different_technician_cannot_read_or_execute_owner_only_actions()
+    [Theory]
+    [InlineData("start")]
+    [InlineData("updateExpectedRestore")]
+    public async Task Same_team_different_technician_cannot_read_or_execute_owner_only_actions(string action)
     {
         var grants = new[]
         {
@@ -1464,7 +1514,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     "wo-team-a", "DEV-001", "high", "Accepted", null, null, DateTimeOffset.UtcNow,
                     AssignedTechnicianUserId: "tech-a", AssignedTeamId: "team-a"),
             ],
-            WorkOrderDetailAllowedActions = ["start", "cancel"],
+            WorkOrderDetailAllowedActions = [action, "cancel"],
         };
         var masterData = new RecordingMasterDataClient
         {
@@ -1498,7 +1548,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             {
                 organizationId = "org-001",
                 environmentId = "env-dev",
-                action = "start",
+                action,
                 reason = "starting",
                 idempotencyKey = "start-tech-b",
                 expectedVersion = 2,
@@ -3358,6 +3408,8 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     public int AssignCallCount { get; private set; }
 
     public int TransitionCallCount { get; private set; }
+    public BusinessConsoleTransitionMaintenanceWorkOrderRequest? LastTransitionRequest { get; private set; }
+    public string? LastTransitionActor { get; private set; }
 
     public string? LastCreateWorkOrderVersion { get; private set; }
 
@@ -3434,6 +3486,9 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         CancellationToken cancellationToken)
     {
         TransitionCallCount++;
+        LastTransitionRequest = request;
+        LastTransitionActor = actorPrincipalId;
+        LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
             workOrderId, request.Action.ToString(), request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
             new BusinessConsoleOperationReceipt("transition-maintenance-work-order", "maintenance", "maintenance-work-order",

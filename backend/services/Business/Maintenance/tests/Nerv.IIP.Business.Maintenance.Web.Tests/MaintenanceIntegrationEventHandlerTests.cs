@@ -346,7 +346,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         dbContext.Entry(workOrder).Property(x => x.AssetUnavailableFromUtc).CurrentValue = raisedAtUtc;
         await dbContext.SaveChangesAsync();
 
-        var availability = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+        var availability = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions()))).Handle(
             new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest(
                 "org-001",
                 "env-dev",
@@ -524,7 +524,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
             if (request is QueryMaintenanceAvailabilityWindowsQuery query)
             {
-                var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext);
+                var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions())));
                 var response = await handler.Handle(query, cancellationToken);
                 return (TResponse)(object)response;
             }
