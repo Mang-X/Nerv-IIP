@@ -45,13 +45,14 @@ function Get-NervSourceSkipAssignments {
     $roots = @(
         (Join-Path $RepoRoot 'backend/tests'),
         (Join-Path $RepoRoot 'backend/services'),
+        (Join-Path $RepoRoot 'backend/gateway'),
         (Join-Path $RepoRoot 'connector-hosts/tests')
     )
     $files = foreach ($root in $roots) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
         Get-ChildItem -LiteralPath $root -Filter '*.cs' -File -Recurse | Where-Object {
             $relative = [IO.Path]::GetRelativePath($RepoRoot, $_.FullName).Replace('\', '/')
-            $relative -match '^(backend/tests/|backend/services/[^/]+/tests/|backend/services/Business/[^/]+/tests/|connector-hosts/tests/)'
+            $relative -match '^(backend/tests/|backend/services/[^/]+/tests/|backend/services/Business/[^/]+/tests/|backend/gateway/[^/]+/tests/|connector-hosts/tests/)'
         }
     }
 

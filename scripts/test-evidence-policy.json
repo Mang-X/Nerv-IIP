@@ -408,6 +408,12 @@
       "sourcePath": "backend/tests/Nerv.IIP.Caching.Tests/RedisAppCacheTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip\\ =\\ \"Set\\ NERV_IIP_TEST_REDIS\\ to\\ run\\ real\\ Redis\\ FusionCache\\ provider\\ tests\\.\";$"
+    },
+    {
+      "id": "platform-gateway-cache-invalidation-redis",
+      "sourcePath": "backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayRedisCacheInvalidationTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_REDIS to run real Redis dual PlatformGateway HTTP invalidation tests\\.\";$"
     }
   ],
   "rules": [
@@ -2018,6 +2024,27 @@
         "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Host_start_fails_when_real_backplane_subscription_is_denied"
       ],
       "expectedRuntimeTestCount": 5
+    },
+    {
+      "id": "platform-gateway-cache-invalidation-redis",
+      "sourceId": "platform-gateway-cache-invalidation-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.PlatformGateway\\.Web\\.Tests\\.GatewayRedisCacheInvalidationTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_REDIS to run real Redis dual PlatformGateway HTTP invalidation tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Existing_HTTP_invalidation_refreshes_all_gateway_families_and_preserves_other_services",
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.In_flight_old_factory_may_return_old_value_but_subsequent_HTTP_read_reloads_authority",
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Redis_write_and_notification_failures_return_failure_without_sensitive_logs_or_fake_204"
+      ],
+      "expectedRuntimeTestCount": 3
     }
   ]
 }
