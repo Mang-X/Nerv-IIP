@@ -1696,25 +1696,29 @@ file sealed class SchedulerState
 
             var capacity = Math.Max(1, resource.CapacityUnits);
             // 半开占用窗口的端点扫描；多段属于同一 assignment 时仍按段计容量。
-            var endpoints = resourceLocks.Where(x => x.StartUtc < x.ReservedEndUtc)
-                .SelectMany(x => new[]
-                {
-                    (At: x.StartUtc, Id: x.Assignment.AssignmentId, Delta: 1),
-                    (At: x.ReservedEndUtc, Id: x.Assignment.AssignmentId, Delta: -1),
-                })
-                .GroupBy(x => x.At).OrderBy(x => x.Key);
+            var endpoints = new List<(DateTimeOffset At, string Id, int Delta)>();
+            foreach (var item in resourceLocks)
+            {
+                if (item.StartUtc >= item.ReservedEndUtc) continue;
+                endpoints.Add((item.StartUtc, item.Assignment.AssignmentId, 1));
+                endpoints.Add((item.ReservedEndUtc, item.Assignment.AssignmentId, -1));
+            }
+            endpoints.Sort((left, right) => left.At.CompareTo(right.At));
             var active = new Dictionary<string, int>(StringComparer.Ordinal);
             var concurrentCount = 0;
-            foreach (var endpoint in endpoints)
+            var i = 0;
+            while (i < endpoints.Count)
             {
+                var at = endpoints[i].At;
                 // 同一时刻结束与开始一并处理，再检查下一窗口，避免相接工序误报。
-                foreach (var change in endpoint)
+                do
                 {
+                    var change = endpoints[i++];
                     var count = active.GetValueOrDefault(change.Id) + change.Delta;
                     if (count == 0) active.Remove(change.Id);
                     else active[change.Id] = count;
                     concurrentCount += change.Delta;
-                }
+                } while (i < endpoints.Count && endpoints[i].At == at);
                 if (concurrentCount > capacity)
                     overbookedAssignmentIds.UnionWith(active.Keys);
             }

@@ -86,7 +86,8 @@ internal static class ReschedulingImpactAnalyzer
         // 每个基线工序只允许一条 assignment；冻结、依赖与资源传播共享同一身份。
         var indices = assignments.Select((assignment, index) => (assignment, index))
             .ToDictionary(x => (x.assignment.OrderId, x.assignment.OperationId), x => x.index);
-        var normalizedDeviations = deviations.Distinct().OrderBy(x => CanonicalJson(x), StringComparer.Ordinal).ToArray();
+        var deviationKeys = deviations.Distinct().ToDictionary(x => x, CanonicalJson);
+        var normalizedDeviations = deviationKeys.OrderBy(x => x.Value, StringComparer.Ordinal).Select(x => x.Key).ToArray();
         var insertedDeviations = normalizedDeviations.OfType<SchedulingInsertedOperationDeviation>()
             .ToLookup(x => (x.OrderId, x.OperationId));
         var insertedIndices = assignments.Select((assignment, index) => (assignment, index))
@@ -176,7 +177,7 @@ internal static class ReschedulingImpactAnalyzer
             var assignment = assignments[index];
             var key = (assignment.OrderId, assignment.OperationId);
             affected.Add(new(assignment, reasonsByOperation[index].Distinct()
-                .OrderBy(x => x.Code).ThenBy(x => CanonicalJson(x.Source), StringComparer.Ordinal).ToArray(),
+                .OrderBy(x => x.Code).ThenBy(x => deviationKeys[x.Source], StringComparer.Ordinal).ToArray(),
                 frozenByOperation.TryGetValue(key, out var freeze) ? freeze.Reasons : SchedulingFreezeReason.None,
                 pathsByOperation[index].ToArray()));
         }
@@ -290,37 +291,43 @@ internal static class ReschedulingImpactAnalyzer
         var resourceId = assignments[current.Index].ResourceId;
         var capacity = Math.Max(1, resources[resourceId].CapacityUnits);
         var baseline = baselineByResource.GetValueOrDefault(resourceId) ?? [];
-        var potential = demands.Where(x => assignments[x.Index].ResourceId == resourceId)
-            .SelectMany(x => x.Segments.Select(segment => (x.Index, Segment: segment))).ToArray();
         var result = new Dictionary<int, (int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)>();
         foreach (var window in current.Segments)
         {
-            var events = baseline.SelectMany(x => Events(x.Index, x.Segment, true))
-                .Concat(potential.SelectMany(x => Events(x.Index, x.Segment, false)))
-                .GroupBy(x => x.At).OrderBy(x => x.Key).ToArray();
+            // 每轮仅收集与当前窗口相交的端点，避免给每个片段创建迭代器再分组。
+            var events = new List<(DateTimeOffset At, int Index, bool Actual, int Delta)>();
+            foreach (var item in baseline) AddEvents(item.Index, item.Segment, true);
+            foreach (var demand in demands)
+            {
+                if (assignments[demand.Index].ResourceId != resourceId) continue;
+                foreach (var segment in demand.Segments) AddEvents(demand.Index, segment, false);
+            }
+            events.Sort((left, right) => left.At.CompareTo(right.At));
             var actual = new Dictionary<int, int>();
             var occupied = new Dictionary<int, int>();
-            for (var i = 0; i + 1 < events.Length; i++)
+            var i = 0;
+            while (i < events.Count)
             {
-                foreach (var change in events[i])
+                var at = events[i].At;
+                do
                 {
+                    var change = events[i++];
                     Update(occupied, change.Index, change.Delta);
                     if (change.Actual) Update(actual, change.Index, change.Delta);
-                }
-                // 多个来源与原占用按同一工序身份合并；只为当前需求带来的新增容量传播。
-                if (actual.ContainsKey(current.Index) || occupied.Count <= capacity) continue;
+                } while (i < events.Count && events[i].At == at);
+                // 同一时刻全部端点先结算，保持半开区间与工序身份合并语义。
+                if (i == events.Count || actual.ContainsKey(current.Index) || occupied.Count <= capacity) continue;
                 foreach (var other in actual.Keys.Where(x => x != current.Index).Order())
-                    result.TryAdd(other, (other, new(events[i].Key, events[i + 1].Key), window.EndUtc, capacity));
+                    result.TryAdd(other, (other, new(at, events[i].At), window.EndUtc, capacity));
             }
 
-            IEnumerable<(DateTimeOffset At, int Index, bool Actual, int Delta)> Events(int index,
-                ScheduleAssignmentSegmentContract segment, bool isActual)
+            void AddEvents(int index, ScheduleAssignmentSegmentContract segment, bool isActual)
             {
                 var start = Max(segment.StartUtc, window.StartUtc);
                 var end = segment.EndUtc < window.EndUtc ? segment.EndUtc : window.EndUtc;
-                if (start >= end) yield break;
-                yield return (start, index, isActual, 1);
-                yield return (end, index, isActual, -1);
+                if (start >= end) return;
+                events.Add((start, index, isActual, 1));
+                events.Add((end, index, isActual, -1));
             }
         }
         return result.Values.OrderBy(x => x.Index).ToArray();
