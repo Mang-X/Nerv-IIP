@@ -1,4 +1,5 @@
 using FastEndpoints;
+using tusdotnet;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Minio;
 using Nerv.IIP.Caching;
@@ -79,7 +80,7 @@ builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
 builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
-    string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
+    string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"] ?? "tus", "tus", StringComparison.OrdinalIgnoreCase)
         ? new TusUploadProvider()
         : new ServerProxyUploadProvider());
 builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
@@ -119,7 +120,7 @@ var app = builder.Build();
 // 读 app.Configuration 而非 builder.Configuration：测试宿主的 ConfigureAppConfiguration 要到 Build() 才生效，
 // 与上面按 IConfiguration 惰性判定 provider 的口径一致。
 var tusRootPath = app.Configuration["FileStorage:Tus:RootPath"];
-if (string.Equals(app.Configuration["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
+if (string.Equals(app.Configuration["FileStorage:UploadProvider"] ?? "tus", "tus", StringComparison.OrdinalIgnoreCase)
     && (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathRooted(tusRootPath)))
 {
     // tus 盘承载已 complete 文件的字节，ADR 0024 §5 要求显式、绝对、持久的 root。这里只判前两项：
@@ -140,7 +141,27 @@ app.UseNervIipCorrelation();
 app.UseNervIipRequestLocalization();
 app.UseAuthentication();
 app.UseAuthorization();
+app.Use(async (context, next) =>
+{
+    if (context.GetEndpoint()?.DisplayName?.StartsWith("tus: ", StringComparison.Ordinal) == true
+        && context.Request.Method == "PATCH"
+        && !context.Request.Headers.ContainsKey("Tus-Resumable"))
+    {
+        context.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
+        context.Response.Headers["Tus-Resumable"] = "1.0.0";
+        return;
+    }
+    try { await next(context); }
+    catch (TusMutationRejectedException error)
+    {
+        context.Response.StatusCode = error.StatusCode;
+        context.Response.Headers["Tus-Resumable"] = "1.0.0";
+        await context.Response.WriteAsync(error.Message, context.RequestAborted);
+    }
+});
 app.UseFastEndpoints();
+app.MapTus("/api/files/v1/tus", TusTransport.CreateConfigurationAsync)
+    .RequireAuthorization(InternalServiceAuthorizationPolicy.Name);
 app.Run();
 
 static bool TryParseMinioEndpoint(string? value, out Uri? endpoint)

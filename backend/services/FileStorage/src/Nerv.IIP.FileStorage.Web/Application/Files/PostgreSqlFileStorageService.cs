@@ -9,7 +9,7 @@ using ContractOwnerReference = Nerv.IIP.Contracts.FileStorage.OwnerReference;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
-public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
+public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex
 {
     private readonly ApplicationDbContext dbContext;
     private readonly IFileStorageUploadProvider uploadProvider;
@@ -668,39 +668,6 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         {
             return 0;
         }
-    }
-
-    public Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken)
-    {
-        var now = timeProvider.GetUtcNow();
-        return dbContext.UploadSessions.AnyAsync(x =>
-            x.UploadSessionId == uploadSessionId
-            && x.Provider == TusUploadProvider.Name
-            && x.State == UploadSessionState.Open
-            && !x.LegacyCompleted
-            && x.ExpiresAtUtc > now,
-            cancellationToken);
-    }
-
-    public async Task<LocalTusUploadSession?> GetTusUploadSessionAsync(
-        string uploadSessionId,
-        string organizationId,
-        string environmentId,
-        CancellationToken cancellationToken)
-    {
-        return await dbContext.UploadSessions
-            .Where(x => x.UploadSessionId == uploadSessionId
-                && x.OrganizationId == organizationId
-                && x.EnvironmentId == environmentId
-                && x.Provider == TusUploadProvider.Name
-                && x.State == UploadSessionState.Open
-                && !x.LegacyCompleted)
-            .Select(x => new LocalTusUploadSession(
-                x.UploadSessionId,
-                x.ExpectedSizeBytes,
-                x.Checksum,
-                x.ExpiresAtUtc))
-            .SingleOrDefaultAsync(cancellationToken);
     }
 
     private static FileMetadataResponse ToResponse(StoredFileRecord file)

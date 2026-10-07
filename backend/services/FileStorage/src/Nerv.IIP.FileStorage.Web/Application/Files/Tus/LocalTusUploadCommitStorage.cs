@@ -1,7 +1,7 @@
 namespace Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 
 /// <summary>
-/// 本地 tus 部署下的提交存储：字节在 PATCH 时已由 <see cref="LocalTusFileStore"/> 落盘，下载授权内容端点
+/// 本地 tus 部署下的提交存储：字节在 PATCH 时已由 <see cref="LocalUploadByteStore"/> 落盘，下载授权内容端点
 /// 也从同一处读取，因此提交阶段只负责从实际字节读回 size 与 canonical SHA-256 作为提交证据，不搬运字节。
 /// 证据是否与冻结的提交意图一致由 <see cref="PostgreSqlFileStorageService"/> 判定，这里不重复比对。
 /// </summary>

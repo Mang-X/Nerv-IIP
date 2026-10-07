@@ -1660,7 +1660,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         dbContext.UploadSessions.Add(session);
     }
 
-    private static LocalTusFileStore CreateTusStore(string rootPath)
+    private static LocalUploadByteStore CreateTusStore(string rootPath)
     {
         var configuration = new ConfigurationBuilder()
             .AddConfiguration(FileStorageTestConfiguration.Default)
@@ -1669,16 +1669,16 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
                 ["FileStorage:Tus:RootPath"] = rootPath
             })
             .Build();
-        return new LocalTusFileStore(configuration);
+        return new LocalUploadByteStore(configuration);
     }
 
-    private static async Task WriteTusBytesAsync(LocalTusFileStore store, string uploadSessionId)
+    private static async Task WriteTusBytesAsync(LocalUploadByteStore store, string uploadSessionId)
     {
         await using var stream = new MemoryStream("hello"u8.ToArray());
         await store.AppendAsync(uploadSessionId, 0, stream, CancellationToken.None);
     }
 
-    private static async Task<long> WriteTusBytesAsync(LocalTusFileStore store, string uploadSessionId, byte[] bytes)
+    private static async Task<long> WriteTusBytesAsync(LocalUploadByteStore store, string uploadSessionId, byte[] bytes)
     {
         await using var stream = new MemoryStream(bytes);
         return await store.AppendAsync(uploadSessionId, 0, stream, CancellationToken.None);
@@ -1699,9 +1699,9 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         }
     }
 
-    private sealed class TestTusStoreAccessor(LocalTusFileStore localStore) : ILocalTusFileStoreAccessor
+    private sealed class TestTusStoreAccessor(LocalUploadByteStore localStore) : ILocalTusFileStoreAccessor
     {
-        public bool TryGet(out LocalTusFileStore store)
+        public bool TryGet(out LocalUploadByteStore store)
         {
             store = localStore;
             return true;
