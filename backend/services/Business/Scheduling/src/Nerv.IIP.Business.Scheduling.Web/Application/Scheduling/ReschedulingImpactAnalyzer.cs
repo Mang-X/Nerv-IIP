@@ -19,7 +19,7 @@ internal sealed record SchedulingOperationDeviation(string SourceReference, stri
 internal enum ReschedulingImpactReasonCode { OperationDeviation, ResourceUnavailable, PredecessorDependency, ResourceCapacity }
 internal sealed record ReschedulingImpactOperation(string OrderId, string OperationId);
 internal sealed record ReschedulingImpactStep(ReschedulingImpactOperation From, ReschedulingImpactOperation To,
-    ReschedulingImpactReasonCode Code);
+    ReschedulingImpactReasonCode Code, ScheduleAssignmentSegmentContract? CompetitionWindow = null, int? CapacityUnits = null);
 internal sealed record ReschedulingImpactPath(SchedulingDeviation Source, ReschedulingImpactOperation Root,
     IReadOnlyList<ReschedulingImpactStep> Steps);
 internal sealed record ReschedulingImpactReason(ReschedulingImpactReasonCode Code, SchedulingDeviation Source);
@@ -73,38 +73,60 @@ internal static class ReschedulingImpactAnalyzer
         var frozenByOperation = frozen.ToDictionary(x => (x.Assignment.OrderId, x.Assignment.OperationId));
         var operationDeviations = normalizedDeviations.OfType<SchedulingOperationDeviation>().ToLookup(x => (x.OrderId, x.OperationId));
         var resourceDeviations = normalizedDeviations.OfType<SchedulingResourceUnavailableDeviation>().ToLookup(x => x.ResourceId, StringComparer.Ordinal);
-        var edges = BuildEdges(normalizedProblem, assignments, indices);
+        var predecessors = BuildPredecessorEdges(normalizedProblem, indices);
+        var direct = assignments.SelectMany((assignment, index) => operationDeviations[(assignment.OrderId, assignment.OperationId)]
+            .Select(x => (Index: index, Reason: new ReschedulingImpactReason(ReschedulingImpactReasonCode.OperationDeviation, x)))
+            .Concat(resourceDeviations[assignment.ResourceId].Where(x => Occupies(assignment, x.StartUtc, x.EndUtc))
+                .Select(x => (Index: index, Reason: new ReschedulingImpactReason(ReschedulingImpactReasonCode.ResourceUnavailable, x)))))
+            .ToArray();
+        var rootDemands = direct.Select(x => InitialDemand(x.Index, assignments[x.Index], x.Reason,
+            normalizedProblem.HorizonEndUtc)).ToArray();
         var reasonsByOperation = assignments.Select(_ => new List<ReschedulingImpactReason>()).ToArray();
         var pathsByOperation = assignments.Select(_ => new List<ReschedulingImpactPath>()).ToArray();
-        for (var root = 0; root < assignments.Length; root++)
+        var resources = normalizedProblem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
+        foreach (var rootDemand in rootDemands)
         {
-            var assignment = assignments[root];
-            var directReasons = operationDeviations[(assignment.OrderId, assignment.OperationId)]
-                .Select(x => new ReschedulingImpactReason(ReschedulingImpactReasonCode.OperationDeviation, x))
-                .Concat(resourceDeviations[assignment.ResourceId]
-                    .Where(x => Occupies(assignment, x.StartUtc, x.EndUtc))
-                    .Select(x => new ReschedulingImpactReason(ReschedulingImpactReasonCode.ResourceUnavailable, x)));
-            foreach (var direct in directReasons)
+            // 每个来源/直接命中分别传播。窗口只表示潜在竞争，不是生成或选定的新 assignment。
+            var reached = new Dictionary<int, ImpactDemand> { [rootDemand.Index] = rootDemand };
+            var pending = new Queue<ImpactDemand>();
+            pending.Enqueue(rootDemand);
+            while (pending.TryDequeue(out var current))
             {
-                // 每个直接命中/来源保留一条确定性的最短路径；已访问集同时处理汇合与片段形成的环。
-                var visited = new HashSet<int> { root };
-                var pending = new Queue<(int Index, ReschedulingImpactPath Path, ReschedulingImpactReason Reason)>();
-                pending.Enqueue((root, new(direct.Source, Identity(assignment), []), direct));
-                while (pending.TryDequeue(out var current))
+                foreach (var next in predecessors[current.Index])
                 {
-                    reasonsByOperation[current.Index].Add(current.Reason);
-                    pathsByOperation[current.Index].Add(current.Path);
-                    foreach (var edge in edges[current.Index])
-                    {
-                        if (visited.Add(edge.To))
-                        {
-                            var step = new ReschedulingImpactStep(Identity(assignments[current.Index]),
-                                Identity(assignments[edge.To]), edge.Code);
-                            pending.Enqueue((edge.To, current.Path with { Steps = [.. current.Path.Steps, step] },
-                                new(edge.Code, direct.Source)));
-                        }
-                    }
+                    var assignment = assignments[next];
+                    var demand = current.Unquantified
+                        ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
+                        : ShiftRemaining(assignment, assignment.StartUtc,
+                            Max(assignment.StartUtc, Completion(current, assignments[current.Index])));
+                    Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
                 }
+                foreach (var competition in ResourceCompetitions(current, rootDemands.Concat(reached.Values), assignments, resources))
+                {
+                    var assignment = assignments[competition.Index];
+                    var demand = current.Unquantified
+                        ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
+                        : ShiftRemaining(assignment, competition.Window.StartUtc, competition.BlockingEndUtc);
+                    Follow(competition.Index, ReschedulingImpactReasonCode.ResourceCapacity, demand, competition.Window, competition.Capacity);
+                }
+
+                void Follow(int next, ReschedulingImpactReasonCode code, IReadOnlyList<ScheduleAssignmentSegmentContract> demand,
+                    ScheduleAssignmentSegmentContract? competition, int? capacity)
+                {
+                    var identity = Identity(assignments[next]);
+                    if (identity == current.Path.Root || current.Path.Steps.Any(x => x.To == identity)) return;
+                    var step = new ReschedulingImpactStep(Identity(assignments[current.Index]), identity, code, competition, capacity);
+                    var candidate = new ImpactDemand(next, demand,
+                        current.Path with { Steps = [.. current.Path.Steps, step] }, new(code, current.Reason.Source), current.Unquantified);
+                    if (reached.TryGetValue(next, out var existing) && Completion(candidate, assignments[next]) <= Completion(existing, assignments[next])) return;
+                    reached[next] = candidate;
+                    pending.Enqueue(candidate);
+                }
+            }
+            foreach (var current in reached.OrderBy(x => x.Key).Select(x => x.Value))
+            {
+                reasonsByOperation[current.Index].Add(current.Reason);
+                pathsByOperation[current.Index].Add(current.Path);
             }
         }
 
@@ -137,47 +159,96 @@ internal static class ReschedulingImpactAnalyzer
     private static ReschedulingImpactOperation Identity(ScheduleAssignmentContract assignment) =>
         new(assignment.OrderId, assignment.OperationId);
 
-    private static IReadOnlyList<(int To, ReschedulingImpactReasonCode Code)>[] BuildEdges(
-        SchedulingProblemContract problem, ScheduleAssignmentContract[] assignments,
+    private sealed record ImpactDemand(int Index, IReadOnlyList<ScheduleAssignmentSegmentContract> Segments,
+        ReschedulingImpactPath Path, ReschedulingImpactReason Reason, bool Unquantified);
+
+    private static ImpactDemand InitialDemand(int index, ScheduleAssignmentContract assignment,
+        ReschedulingImpactReason reason, DateTimeOffset horizonEnd)
+    {
+        var segments = reason.Source is SchedulingResourceUnavailableDeviation outage
+            ? ShiftRemaining(assignment, outage.StartUtc, outage.EndUtc)
+            : UnknownDemand(assignment, horizonEnd);
+        return new(index, segments, new(reason.Source, Identity(assignment), []), reason,
+            reason.Source is SchedulingOperationDeviation);
+    }
+
+    // 未量化偏差的窗口是需校验范围，不能据此读取实际延迟；第一次片段释放后可能影响后续容量。
+    private static IReadOnlyList<ScheduleAssignmentSegmentContract> UnknownDemand(ScheduleAssignmentContract assignment, DateTimeOffset horizonEnd)
+    {
+        var release = Segments(assignment).OrderBy(x => x.StartUtc).First().EndUtc;
+        return [new(release, Max(release, horizonEnd))];
+    }
+
+    // 保留实际片段之间的空档；剩余加工只取 from 之后的片段部分，不把包络空档计作加工量。
+    private static IReadOnlyList<ScheduleAssignmentSegmentContract> ShiftRemaining(ScheduleAssignmentContract assignment,
+        DateTimeOffset from, DateTimeOffset resume)
+    {
+        var remaining = Segments(assignment).Where(x => x.EndUtc > from).OrderBy(x => x.StartUtc)
+            .Select(x => new ScheduleAssignmentSegmentContract(Max(x.StartUtc, from), x.EndUtc)).ToArray();
+        var shift = Max(resume, remaining[0].StartUtc) - remaining[0].StartUtc;
+        return remaining.Select(x => new ScheduleAssignmentSegmentContract(x.StartUtc + shift, x.EndUtc + shift)).ToArray();
+    }
+
+    private static DateTimeOffset Completion(ImpactDemand demand, ScheduleAssignmentContract assignment) =>
+        Max(assignment.EndUtc, demand.Segments.Max(x => x.EndUtc));
+
+    private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a > b ? a : b;
+
+    private static IReadOnlyList<int>[] BuildPredecessorEdges(SchedulingProblemContract problem,
         Dictionary<(string OrderId, string OperationId), int> indices)
     {
-        var edges = assignments.Select(_ => new HashSet<(int To, ReschedulingImpactReasonCode Code)>()).ToArray();
+        var edges = Enumerable.Range(0, indices.Count).Select(_ => new HashSet<int>()).ToArray();
         foreach (var order in problem.Orders)
         foreach (var operation in order.Operations)
         {
             if (!indices.TryGetValue((order.OrderId, operation.OperationId), out var next)) continue;
             foreach (var predecessor in operation.PredecessorOperationIds)
             {
-                if (indices.TryGetValue((order.OrderId, predecessor), out var previous))
-                    edges[previous].Add((next, ReschedulingImpactReasonCode.PredecessorDependency));
+                if (indices.TryGetValue((order.OrderId, predecessor), out var previous)) edges[previous].Add(next);
             }
-        }
-
-        var byResource = assignments.Select((assignment, index) => (assignment, index))
-            .ToLookup(x => x.assignment.ResourceId, StringComparer.Ordinal);
-        foreach (var resource in problem.Resources)
-        {
-            var occupancies = byResource[resource.ResourceId]
-                .SelectMany(x => Segments(x.assignment).Select(segment => (x.index, Segment: segment))).ToArray();
-            foreach (var starting in occupancies.GroupBy(x => x.Segment.StartUtc))
+            // 与 FiniteCapacityScheduler.PredecessorKeys 一致：父单首序工序依赖所有子单工序。
+            if (operation.OperationSequence != order.Operations.Min(x => x.OperationSequence)) continue;
+            foreach (var dependency in (problem.AssemblyDependencies ?? []).Where(x => x.ParentOrderId == order.OrderId))
+            foreach (var child in problem.Orders.Where(x => x.OrderId == dependency.ChildOrderId))
+            foreach (var childOperation in child.Operations)
             {
-                var boundary = starting.Key;
-                // 基线在该边界已占满容量时，接续片段依赖刚结束片段释放容量。
-                // 半开区间与有限产能内核一致；只看实际 Segments，不把包络空档或归属当占用。
-                var occupied = occupancies.Where(x => x.Segment.StartUtc <= boundary && boundary < x.Segment.EndUtc)
-                    .Select(x => x.index).Distinct().Count();
-                if (occupied < Math.Max(1, resource.CapacityUnits)) continue;
-                var releasing = occupancies.Where(x => x.Segment.EndUtc == boundary);
-                foreach (var previous in releasing)
-                foreach (var next in starting)
-                {
-                    if (previous.index != next.index)
-                        edges[previous.index].Add((next.index, ReschedulingImpactReasonCode.ResourceCapacity));
-                }
+                if (indices.TryGetValue((child.OrderId, childOperation.OperationId), out var previous)) edges[previous].Add(next);
             }
         }
-        return edges.Select(x => (IReadOnlyList<(int To, ReschedulingImpactReasonCode Code)>)x
-            .OrderBy(edge => edge.To).ThenBy(edge => edge.Code).ToArray()).ToArray();
+        return edges.Select(x => (IReadOnlyList<int>)x.Order().ToArray()).ToArray();
+    }
+
+    private static IReadOnlyList<(int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)> ResourceCompetitions(
+        ImpactDemand current, IEnumerable<ImpactDemand> demands, ScheduleAssignmentContract[] assignments,
+        IReadOnlyDictionary<string, SchedulingResourceContract> resources)
+    {
+        var resourceId = assignments[current.Index].ResourceId;
+        var capacity = Math.Max(1, resources[resourceId].CapacityUnits);
+        var baseline = assignments.Select((assignment, index) => (assignment, index)).Where(x => x.assignment.ResourceId == resourceId)
+            .SelectMany(x => Segments(x.assignment).Select(segment => (Index: x.index, Segment: segment))).ToArray();
+        var potential = demands.Where(x => assignments[x.Index].ResourceId == resourceId)
+            .SelectMany(x => x.Segments.Select(segment => (x.Index, Segment: segment))).ToArray();
+        var result = new Dictionary<int, (int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)>();
+        foreach (var window in current.Segments)
+        {
+            var boundaries = baseline.Concat(potential).SelectMany(x => new[] { x.Segment.StartUtc, x.Segment.EndUtc })
+                .Append(window.StartUtc).Append(window.EndUtc).Where(x => x >= window.StartUtc && x <= window.EndUtc).Distinct().Order().ToArray();
+            for (var i = 0; i + 1 < boundaries.Length; i++)
+            {
+                var start = boundaries[i];
+                var end = boundaries[i + 1];
+                var actual = baseline.Where(x => x.Segment.StartUtc <= start && start < x.Segment.EndUtc).ToArray();
+                // 当前需求仍在自己的原占用内时没有新增容量，不能把其它来源的竞争归因给它。
+                if (actual.Any(x => x.Index == current.Index)) continue;
+                // 同一 assignment 原占用与潜在占用的重合只计一个单位；多个来源的共同竞争仍参与计数。
+                var occupied = actual.Select(x => x.Index).Concat(potential
+                    .Where(x => x.Segment.StartUtc <= start && start < x.Segment.EndUtc).Select(x => x.Index)).Distinct().Count();
+                if (occupied <= capacity) continue;
+                foreach (var other in actual.Where(x => x.Index != current.Index).OrderBy(x => x.Index))
+                    result.TryAdd(other.Index, (other.Index, new(start, end), window.EndUtc, capacity));
+            }
+        }
+        return result.Values.OrderBy(x => x.Index).ToArray();
     }
 
     private static IEnumerable<ScheduleAssignmentSegmentContract> Segments(ScheduleAssignmentContract assignment) =>
