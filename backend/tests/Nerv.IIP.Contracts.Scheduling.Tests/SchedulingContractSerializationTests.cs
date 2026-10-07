@@ -77,6 +77,31 @@ public class SchedulingContractSerializationTests
     }
 
     [Fact]
+    public void Schedule_plan_freeze_context_round_trips_and_legacy_response_has_no_snapshot()
+    {
+        var baseline = SchedulingContractSamples.CreateExpectedShockAbsorberPlan();
+        var assignment = baseline.Assignments.First();
+        var plan = baseline with
+        {
+            FreezeContext = new(assignment.StartUtc, assignment.StartUtc.AddHours(1),
+                [new(assignment.WorkCenterId, assignment.StartUtc)],
+                [new(assignment, [SchedulePlanFreezeReasonContract.Started, SchedulePlanFreezeReasonContract.ManualLock])])
+        };
+        var json = JsonSerializer.Serialize(plan, SchedulingJson.Options);
+        var reread = JsonSerializer.Deserialize<SchedulePlanContract>(json, SchedulingJson.Options)!;
+
+        Assert.Equal(plan.FreezeContext.AsOfUtc, reread.FreezeContext!.AsOfUtc);
+        Assert.Equal(plan.FreezeContext.DefaultWindowEndUtc, reread.FreezeContext.DefaultWindowEndUtc);
+        Assert.Equal(plan.FreezeContext.WorkCenterWindows, reread.FreezeContext.WorkCenterWindows);
+        Assert.Equal(assignment, Assert.Single(reread.FreezeContext.Assignments).Assignment);
+        Assert.Equal(new[] { SchedulePlanFreezeReasonContract.Started, SchedulePlanFreezeReasonContract.ManualLock },
+            reread.FreezeContext.Assignments.Single().Reasons);
+        var legacy = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        legacy.Remove("freezeContext");
+        Assert.Null(JsonSerializer.Deserialize<SchedulePlanContract>(legacy.ToJsonString(), SchedulingJson.Options)!.FreezeContext);
+    }
+
+    [Fact]
     public void Schedule_plan_invalidated_event_round_trips_reason_resources_and_operations()
     {
         var integrationEvent = new SchedulePlanInvalidatedIntegrationEvent(

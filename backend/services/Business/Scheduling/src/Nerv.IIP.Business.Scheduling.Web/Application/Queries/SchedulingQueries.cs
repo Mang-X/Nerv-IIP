@@ -156,11 +156,11 @@ public sealed class GetSchedulePlanDetailQueryHandler(
 
         // 工作日历与不可用窗口存在问题快照里(排程输入),读面顺带投影出来,不新增端点。
         // 快照缺失(历史数据)时按无日历返回,读面自行退化,不编造。
-        var (problem, reservations) = await LoadProblemAsync(request, plan.ProblemId, cancellationToken);
-        return SchedulePlanContractMapper.ToContract(plan, problem, reservations);
+        var (problem, reservations, freeze) = await LoadProblemAsync(request, plan.ProblemId, cancellationToken);
+        return SchedulePlanContractMapper.ToContract(plan, problem, reservations, freeze);
     }
 
-    private async Task<(SchedulingProblemContract? Problem, IReadOnlyCollection<FixedWorkCenterReservation> Reservations)> LoadProblemAsync(
+    private async Task<(SchedulingProblemContract? Problem, IReadOnlyCollection<FixedWorkCenterReservation> Reservations, SchedulingFreezeSnapshot? Freeze)> LoadProblemAsync(
         GetSchedulePlanDetailQuery request,
         string problemId,
         CancellationToken cancellationToken)
@@ -177,13 +177,14 @@ public sealed class GetSchedulePlanDetailQueryHandler(
                 "Schedule problem snapshot is absent; plan detail is returned without snapshot context. PlanId = {PlanId}, ProblemId = {ProblemId}",
                 request.PlanId,
                 problemId);
-            return (null, []);
+            return (null, [], null);
         }
 
         try
         {
             return (JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options),
-                SchedulingFrozenOccupancy.ReadSnapshot(snapshot.ProblemJson));
+                SchedulingFrozenOccupancy.ReadSnapshot(snapshot.ProblemJson),
+                SchedulingFrozenOccupancy.ReadFreezeSnapshot(snapshot.ProblemJson));
         }
         catch (JsonException exception)
         {
@@ -193,7 +194,7 @@ public sealed class GetSchedulePlanDetailQueryHandler(
                 "Schedule problem snapshot could not be deserialized; plan detail is returned without snapshot context. PlanId = {PlanId}, ProblemId = {ProblemId}",
                 request.PlanId,
                 problemId);
-            return (null, []);
+            return (null, [], null);
         }
     }
 }

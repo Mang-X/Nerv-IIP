@@ -78,6 +78,20 @@ internal static class SchedulingFrozenOccupancy
             : null;
     }
 
+    public static SchedulePlanFreezeContextContract? ToContract(SchedulingFreezeSnapshot? freeze) =>
+        freeze is null ? null : new(
+            freeze.AsOfUtc,
+            freeze.AsOfUtc + freeze.DefaultWindow,
+            freeze.WorkCenterWindows.OrderBy(x => x.Key, StringComparer.Ordinal)
+                .Select(x => new SchedulePlanFreezeWorkCenterWindowContract(x.Key, freeze.AsOfUtc + x.Value))
+                .ToArray(),
+            freeze.Assignments.OrderBy(x => x.Assignment.OrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.Assignment.OperationId, StringComparer.Ordinal)
+                .Select(x => new SchedulePlanFrozenAssignmentContract(x.Assignment,
+                    Enum.GetValues<SchedulePlanFreezeReasonContract>()
+                        .Where(reason => (x.Reasons & (int)reason) != 0).ToArray()))
+                .ToArray());
+
     public static IReadOnlyCollection<ScheduleAssignmentContract> ExternalFrozenAssignments(
         SchedulingFreezeSnapshot? freeze,
         SchedulingProblemContract problem,

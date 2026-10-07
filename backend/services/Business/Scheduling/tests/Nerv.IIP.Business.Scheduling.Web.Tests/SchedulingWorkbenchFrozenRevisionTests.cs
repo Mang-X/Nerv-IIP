@@ -166,6 +166,77 @@ public sealed partial class SchedulingWorkbenchTests
             CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData(true, 1, "completed")]
+    [InlineData(true, 2, "started")]
+    [InlineData(true, 4, "manualLock")]
+    [InlineData(true, 8, "stableWindow")]
+    [InlineData(true, 6, "started,manualLock")]
+    [InlineData(true, 15, "completed,started,manualLock,stableWindow")]
+    [InlineData(false, 0, "")]
+    public async Task Freeze_read_context_matches_preview_create_idempotency_and_persisted_detail(
+        bool hasSnapshot, int snapshotReasons, string expectedReasons)
+    {
+        await using var db = CreateDbContext();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem() with { UnavailabilityWindows = [] };
+        var clock = new FreezeTestTimeProvider(problem.HorizonStartUtc);
+        var baseline = new FiniteCapacityScheduler().Schedule(problem, "baseline", problem.HorizonStartUtc)
+            .Assignments.First();
+        baseline = baseline with { Segments = [new(baseline.StartUtc, baseline.EndUtc)] };
+        var freeze = hasSnapshot ? new SchedulingFreezeSnapshot(problem.HorizonStartUtc,
+            TimeSpan.FromHours(2),
+            new Dictionary<string, TimeSpan> { [baseline.WorkCenterId] = TimeSpan.Zero },
+            [new SchedulingFrozenAssignmentSnapshot(baseline, snapshotReasons)]) : null;
+        var preview = new PreviewSchedulePlanCommandHandler(
+            new FiniteCapacityScheduler(), clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db), SchedulingEquipmentUnknownModeOption.Default);
+        var create = new CreateSchedulePlanCommandHandler(
+            db, new FiniteCapacityScheduler(), clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db), new OrderUrgencyService(db, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        var previewPlan = await preview.Handle(new PreviewSchedulePlanCommand(problem, Freeze: freeze), CancellationToken.None);
+        var created = await create.Handle(new CreateSchedulePlanCommand(problem, Freeze: freeze), CancellationToken.None);
+        await db.SaveChangesAsync();
+        var reread = await new GetSchedulePlanDetailQueryHandler(db,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GetSchedulePlanDetailQueryHandler>.Instance)
+            .Handle(new GetSchedulePlanDetailQuery(created.PlanId, problem.OrganizationId, problem.EnvironmentId), CancellationToken.None);
+        // A later request clock must not rewrite the policy captured by the original generation.
+        var laterCreate = new CreateSchedulePlanCommandHandler(
+            db, new FiniteCapacityScheduler(), new FreezeTestTimeProvider(problem.HorizonStartUtc.AddDays(5)),
+            new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(),
+            new SchedulingOperationOverrideOverlay(db), new OrderUrgencyService(db, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+        var idempotent = await laterCreate.Handle(new CreateSchedulePlanCommand(problem, Freeze: freeze), CancellationToken.None);
+
+        string? contextJson = null;
+        foreach (var plan in new[] { previewPlan, created, reread, idempotent })
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(plan, SchedulingJson.Options));
+            var context = document.RootElement.GetProperty("freezeContext");
+            if (!hasSnapshot)
+            {
+                Assert.Equal(JsonValueKind.Null, context.ValueKind);
+                continue;
+            }
+            Assert.Equal(freeze!.AsOfUtc, context.GetProperty("asOfUtc").GetDateTimeOffset());
+            Assert.Equal(freeze.AsOfUtc.AddHours(2), context.GetProperty("defaultWindowEndUtc").GetDateTimeOffset());
+            var window = Assert.Single(context.GetProperty("workCenterWindows").EnumerateArray());
+            Assert.Equal(baseline.WorkCenterId, window.GetProperty("workCenterId").GetString());
+            Assert.Equal(freeze.AsOfUtc, window.GetProperty("endUtc").GetDateTimeOffset());
+            var assignment = Assert.Single(context.GetProperty("assignments").EnumerateArray());
+            Assert.Equal(JsonSerializer.Serialize(baseline, SchedulingJson.Options), assignment.GetProperty("assignment").GetRawText());
+            Assert.Equal(expectedReasons.Split(','),
+                assignment.GetProperty("reasons").EnumerateArray().Select(x => x.GetString()));
+            contextJson ??= context.GetRawText();
+            Assert.Equal(contextJson, context.GetRawText());
+            Assert.Empty(plan.BlockWindows ?? []);
+            Assert.Contains(plan.Assignments, x => x.StartUtc < freeze.AsOfUtc.AddHours(2));
+        }
+    }
+
     [Fact]
     public async Task Revision_stable_window_freezes_baseline_and_captures_policy_in_fingerprint()
     {

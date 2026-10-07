@@ -13,10 +13,12 @@ public static class SchedulePlanContractMapper
     /// 缺失时读面不带这两组事实(而不是编造一份日历)。
     /// </param>
     /// <param name="fixedReservations">与问题快照一起持久化的固定及外部占用。</param>
+    /// <param name="freeze">与问题快照一起持久化的冻结策略和依据。</param>
     public static SchedulePlanContract ToContract(
         SchedulePlan plan,
         SchedulingProblemContract? problem = null,
-        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null)
+        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null,
+        SchedulingFreezeSnapshot? freeze = null)
     {
         var status = ToContractStatus(plan.Status);
         var materialRisks = DeserializeRiskCollection<SchedulePlanMaterialRiskContract>(plan.MaterialRisksJson);
@@ -140,6 +142,7 @@ public static class SchedulePlanContractMapper
                     HasEquipmentRisk: equipmentRiskKeys.Contains(key));
             }).ToArray(),
             AssemblyDependencies: problem?.AssemblyDependencies,
+            FreezeContext: SchedulingFrozenOccupancy.ToContract(freeze),
             MaterialRisks: materialRisks,
             EquipmentRisks: equipmentRisks,
             MaterialShortageSummary: problem is null

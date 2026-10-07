@@ -55,7 +55,8 @@ public sealed class PreviewSchedulePlanCommandHandler(
             with
             {
                 ProblemFingerprint = CreateSchedulePlanCommandHandler.CalculateProblemFingerprint(
-                    schedulingProblem, fixedReservations, request.Freeze)
+                    schedulingProblem, fixedReservations, request.Freeze),
+                FreezeContext = SchedulingFrozenOccupancy.ToContract(request.Freeze)
             };
         return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);
     }

@@ -227,7 +227,35 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null,
     IReadOnlyCollection<SchedulePlanMaterialShortageSummaryContract>? MaterialShortageSummary = null,
     SchedulePlanValidationContextContract? ValidationContext = null,
-    IReadOnlyCollection<SchedulingAssemblyDependencyContract>? AssemblyDependencies = null);
+    IReadOnlyCollection<SchedulingAssemblyDependencyContract>? AssemblyDependencies = null,
+    SchedulePlanFreezeContextContract? FreezeContext = null);
+
+/// <summary>
+/// 生成方案时保存的冻结依据；旧方案无冻结快照时为 null，不按读取时钟补算。
+/// 默认稳定窗口为 [AsOfUtc, DefaultWindowEndUtc)，工作中心覆盖替换默认结束时刻。
+/// 冻结窗口仅保持已有 assignment，不是资源不可用窗口，允许安排新工序。
+/// </summary>
+public sealed record SchedulePlanFreezeContextContract(
+    DateTimeOffset AsOfUtc,
+    DateTimeOffset DefaultWindowEndUtc,
+    IReadOnlyCollection<SchedulePlanFreezeWorkCenterWindowContract> WorkCenterWindows,
+    IReadOnlyCollection<SchedulePlanFrozenAssignmentContract> Assignments);
+
+/// <summary>工作中心稳定窗口为 [FreezeContext.AsOfUtc, EndUtc)，结束等于起点表示 N = 0。</summary>
+public sealed record SchedulePlanFreezeWorkCenterWindowContract(string WorkCenterId, DateTimeOffset EndUtc);
+
+/// <summary>冻结依据包含该 assignment 的原始资源、时间和 Segments，可同时具有多个原因。</summary>
+public sealed record SchedulePlanFrozenAssignmentContract(
+    ScheduleAssignmentContract Assignment,
+    IReadOnlyCollection<SchedulePlanFreezeReasonContract> Reasons);
+
+public enum SchedulePlanFreezeReasonContract
+{
+    Completed = 1,
+    Started = 2,
+    ManualLock = 4,
+    StableWindow = 8
+}
 
 public sealed record SchedulePlanMaterialShortageSummaryContract(
     string MaterialId,
