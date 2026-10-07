@@ -1136,6 +1136,9 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_event_id_inbox_conflict_as_zero_rows",
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests.Save_changes_absorbs_idempotency_key_inbox_conflict_as_zero_rows",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Acceptance_commits_before_blocked_500_order_calculation_and_completed_plan_is_readable",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Insertion_preview_preserves_all_snapshot_orders_and_original_plan_without_saving_candidate",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Insertion_preview_accepts_500_deduplicates_and_rejects_501_missing_snapshot_or_wrong_scope",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Insertion_preview_failure_is_readable_and_does_not_change_saved_plans",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Real_calculation_failure_commits_failed_reason_without_plan_or_retry",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Completion_write_failure_rolls_back_plan_and_input_before_committing_failed",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests.Acceptance_validates_async_capacity_and_scope_without_expanding_sync_preview_or_revision",
@@ -1154,7 +1157,7 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
       ],
-      "expectedRuntimeTestCount": 27
+      "expectedRuntimeTestCount": 30
     },
     {
       "id": "scheduling-postgres-redis",

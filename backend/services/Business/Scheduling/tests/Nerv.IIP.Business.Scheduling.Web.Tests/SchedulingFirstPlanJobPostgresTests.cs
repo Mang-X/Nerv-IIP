@@ -20,6 +20,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleFirstPlanJobAg
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
+using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Testing;
 using NetCorePal.Extensions.Dto;
@@ -171,6 +172,159 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             sync.EnvironmentId, sync.Orders.Select(x => x.WorkOrderId).ToArray(), []))).IsValid);
         await using var scope = factory.Services.CreateAsyncScope();
         Assert.Single(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScheduleFirstPlanJobs.ToArrayAsync());
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Insertion_preview_preserves_all_snapshot_orders_and_original_plan_without_saving_candidate()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var source = new ControlledSource();
+        await using var factory = new JobFactory(source);
+        await Migrate(factory);
+        using var client = Client(factory);
+        var original = await SeedInsertionPlan(factory, 11);
+        Assert.DoesNotContain(original.Assignments, x => x.OrderId == "order-011");
+        Assert.Contains(original.UnscheduledOperations, x => x.OrderId == "order-011");
+        var before = await ReadInsertionBaseline(factory, original);
+        using var worker = InsertionWorker(factory);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var input = InsertionInput(original, "order-012");
+            using var response = await TestTimeout.RunAsync("insertion acceptance before source completes",
+                async ct => await client.PostAsJsonAsync(InsertionRoute, input, SchedulingJson.Options, ct), Budget);
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Created, accepted.Status);
+            Assert.Null(accepted.Preview);
+            Assert.Equal(12, accepted.Input.WorkOrderIds.Count);
+            Assert.Contains("order-011", accepted.Input.WorkOrderIds);
+            Assert.Equal(Input(1).HorizonStartUtc, accepted.Input.HorizonStartUtc);
+            Assert.Equal(Input(1).HorizonEndUtc, accepted.Input.HorizonEndUtc);
+            await TestTimeout.RunAsync("insertion worker source entered", async ct => await source.Entered.Task.WaitAsync(ct), Budget);
+            Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Running, (await ReadInsertion(client, accepted.JobId)).Status);
+            foreach (var scope in new[] { "organizationId=other&environmentId=" + input.EnvironmentId,
+                "organizationId=" + input.OrganizationId + "&environmentId=other" })
+            {
+                using var missing = await client.GetAsync($"{InsertionRoute}/{accepted.JobId}?{scope}");
+                Assert.Contains("未找到", await missing.Content.ReadAsStringAsync());
+            }
+            source.Release.TrySetResult();
+            var completed = await TerminalInsertion(client, accepted.JobId);
+            Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Completed, completed.Status);
+            Assert.NotNull(completed.FinishedAtUtc);
+            Assert.Null(completed.FailureReason);
+            Assert.Equal(SchedulePlanStatusContract.Preview, completed.Preview!.Status);
+            Assert.Equal(12, completed.Preview.Assignments.Count);
+            Assert.Equal(before, await ReadInsertionBaseline(factory, original));
+            await using var scopeAfter = factory.Services.CreateAsyncScope();
+            var db = scopeAfter.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Single(await db.SchedulePlans.ToArrayAsync());
+            Assert.Single(await db.ScheduleProblems.ToArrayAsync());
+            Assert.Empty(await db.ScheduleFirstPlanJobs.ToArrayAsync());
+            Assert.Equal(1, source.Calls);
+        }
+        finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Insertion_preview_accepts_500_deduplicates_and_rejects_501_missing_snapshot_or_wrong_scope()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = new JobFactory(new ControlledSource());
+        await Migrate(factory);
+        using var client = Client(factory);
+        var original = await SeedInsertionPlan(factory, 500);
+        using var acceptedResponse = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, " order-500 "), SchedulingJson.Options);
+        Assert.Equal(HttpStatusCode.Accepted, acceptedResponse.StatusCode);
+        var accepted = (await acceptedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+        Assert.Equal(500, accepted.Input.WorkOrderIds.Count);
+        Assert.Equal(500, accepted.Input.WorkOrderIds.Distinct().Count());
+        foreach (var input in new[] { InsertionInput(original, "new-order"),
+            InsertionInput(original, "order-001") with { OrganizationId = "other" },
+            InsertionInput(original, "order-001") with { EnvironmentId = "other" } })
+        {
+            using var rejected = await client.PostAsJsonAsync(InsertionRoute, input, SchedulingJson.Options);
+            Assert.Contains(input.WorkOrderId == "new-order" ? "500" : "未找到", await rejected.Content.ReadAsStringAsync());
+        }
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ScheduleProblems.Remove(await db.ScheduleProblems.SingleAsync());
+            await db.SaveChangesAsync();
+        }
+        using var historical = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-001"), SchedulingJson.Options);
+        Assert.Contains("缺少完整排程问题快照", await historical.Content.ReadAsStringAsync());
+        await using var after = factory.Services.CreateAsyncScope();
+        Assert.Single(await after.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScheduleInsertionPreviewJobs.ToArrayAsync());
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Insertion_preview_failure_is_readable_and_does_not_change_saved_plans()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var source = new ControlledSource { Failure = new KnownException("工艺路线不可用，请重新选择工单。") };
+        source.Release.TrySetResult();
+        await using var factory = new JobFactory(source);
+        await Migrate(factory);
+        using var client = Client(factory);
+        var original = await SeedInsertionPlan(factory, 11);
+        var before = await ReadInsertionBaseline(factory, original);
+        using var worker = InsertionWorker(factory);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            using var response = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-012"), SchedulingJson.Options);
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            var failed = await TerminalInsertion(client, accepted.JobId);
+            Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Failed, failed.Status);
+            Assert.Equal(source.Failure.Message, failed.FailureReason);
+            Assert.Null(failed.Preview);
+            Assert.NotNull(failed.FinishedAtUtc);
+            Assert.Equal(before, await ReadInsertionBaseline(factory, original));
+            Assert.Equal(1, source.Calls);
+        }
+        finally { await worker.StopAsync(CancellationToken.None); }
+    }
+
+    private const string InsertionRoute = "/api/business/v1/scheduling/workbench/insertion-preview-jobs";
+    private static SchedulingInsertionPreviewRequestContract InsertionInput(SchedulePlanContract plan, string orderId) =>
+        new(Input(1).OrganizationId, Input(1).EnvironmentId, plan.PlanId, orderId);
+    private static async Task<string> ReadInsertionBaseline(JobFactory factory, SchedulePlanContract original)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var plan = await scope.ServiceProvider.GetRequiredService<ISender>().Send(new GetSchedulePlanDetailQuery(
+            original.PlanId, Input(1).OrganizationId, Input(1).EnvironmentId));
+        var snapshot = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScheduleProblems.AsNoTracking().SingleAsync();
+        return JsonSerializer.Serialize(new { Plan = plan, snapshot.ProblemJson }, SchedulingJson.Options);
+    }
+    private static ScheduleInsertionPreviewJobWorker InsertionWorker(JobFactory factory) => new(
+        factory.Services.GetRequiredService<ScheduleInsertionPreviewJobQueue>(), factory.Services.GetRequiredService<IServiceScopeFactory>(),
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<ScheduleInsertionPreviewJobWorker>.Instance);
+    private static async Task<SchedulingInsertionPreviewJobContract> ReadInsertion(HttpClient client, Guid id) =>
+        (await client.GetFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(
+            $"{InsertionRoute}/{id}?organizationId={Input(1).OrganizationId}&environmentId={Input(1).EnvironmentId}", SchedulingJson.Options))!.Data;
+    private static ValueTask<SchedulingInsertionPreviewJobContract> TerminalInsertion(HttpClient client, Guid id) =>
+        Eventually.WaitAsync("insertion preview terminal commit", async _ => await ReadInsertion(client, id),
+            x => x.Status is SchedulingInsertionPreviewJobStatusContract.Completed or SchedulingInsertionPreviewJobStatusContract.Failed,
+            x => $"{x.Status}: {x.FailureReason}", new EventuallyOptions(Budget, TimeSpan.FromMilliseconds(50), []));
+    private static async Task<SchedulePlanContract> SeedInsertionPlan(JobFactory factory, int count)
+    {
+        var sample = ShockAbsorberSchedulingFixture.CreateProblem();
+        var order = sample.Orders.First();
+        var operation = order.Operations.First();
+        var problem = sample with
+        {
+            ProblemId = "original-insertion-plan", AssemblyDependencies = [], LockedAssignments = [], QualityBlocks = [],
+            Orders = Enumerable.Range(1, count).Select(i => order with
+            {
+                OrderId = $"order-{i:D3}", Operations = [operation with { OperationId = $"order-{i:D3}-op",
+                    DurationMinutes = i == count ? 100000 : 1 }]
+            }).ToArray()
+        };
+        await using var scope = factory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ISender>().Send(new CreateSchedulePlanCommand(problem));
     }
 
     private static SchedulingFirstPlanInputContract Input(int count)
