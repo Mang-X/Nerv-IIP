@@ -70,6 +70,30 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             unavailability.DeviceAssetId));
     }
 
+    public Task<bool> UnavailabilityExistsAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset fromUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (dbContext.WorkCenterUnavailabilities.Local.Any(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.DeviceAssetId == deviceAssetId &&
+                x.FromUtc == fromUtc))
+        {
+            return Task.FromResult(true);
+        }
+
+        return dbContext.WorkCenterUnavailabilities.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.DeviceAssetId == deviceAssetId &&
+            x.FromUtc == fromUtc,
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
     {
         return await dbContext.WorkOrders

@@ -15,11 +15,13 @@ public interface IMesAssetUnavailableInboxClaimCoordinator
     Task<bool> TryClaimAsync(
         string consumerName,
         IIntegrationEventEnvelope integrationEvent,
+        string deviceAssetId,
+        DateTimeOffset fromUtc,
         CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// PostgreSQL 上先在当前 UoW 事务内按序数顺序拿两把 <c>pg_advisory_xact_lock</c>（事件实例身份与业务事实身份各一把），
+/// PostgreSQL 上先在当前 UoW 事务内按序数顺序拿 <c>pg_advisory_xact_lock</c>（两项投递身份及实际停机事实各一把），
 /// 把并发竞争者挡在 claim 这一行而不是唯一索引上；锁随事务提交/回滚释放，落败者随后看到已提交的收件箱行并返回 false。
 /// 两条唯一索引仍是最后一道防线。非 PostgreSQL provider 只保留读-写检查，供 provider-light 用例使用；姿势同本目录其它 *Coordinator。
 /// </summary>
@@ -29,6 +31,8 @@ public sealed class PostgreSqlMesAssetUnavailableInboxClaimCoordinator(Applicati
     public async Task<bool> TryClaimAsync(
         string consumerName,
         IIntegrationEventEnvelope integrationEvent,
+        string deviceAssetId,
+        DateTimeOffset fromUtc,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(consumerName);
@@ -48,6 +52,8 @@ public sealed class PostgreSqlMesAssetUnavailableInboxClaimCoordinator(Applicati
             {
                 $"mes-asset-unavailable:event:{consumerName}:{integrationEvent.EventId}",
                 $"mes-asset-unavailable:business:{consumerName}:{integrationEvent.IdempotencyKey}",
+                // Npgsql 按微秒存储时间：初始事件的 100ns 值与持久化读回的预测值属于同一事实。
+                $"mes-asset-unavailable:fact:{integrationEvent.OrganizationId}:{integrationEvent.EnvironmentId}:{deviceAssetId}:{fromUtc.UtcTicks / TimeSpan.TicksPerMicrosecond}",
             };
             foreach (var lockKey in lockKeys.Order(StringComparer.Ordinal))
             {
