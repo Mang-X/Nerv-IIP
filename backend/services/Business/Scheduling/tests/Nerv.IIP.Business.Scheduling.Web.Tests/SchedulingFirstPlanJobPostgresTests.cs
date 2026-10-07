@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleFirstPlanJobAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -225,6 +226,119 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             Assert.Equal(1, source.Calls);
         }
         finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
+        // DomainInvariant: ADR 0032 §3 / #4208. Same registered HTTP → worker → PostgreSQL seam.
+        foreach (var window in new[] { TimeSpan.FromMinutes(20), TimeSpan.Zero })
+            await VerifyInsertionFreeze(window);
+    }
+
+    private static async Task VerifyInsertionFreeze(TimeSpan window)
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var sample = ShockAbsorberSchedulingFixture.CreateProblem();
+        var start = sample.HorizonStartUtc;
+        var template = sample.Orders.First();
+        var operation = template.Operations.First();
+        var resource = sample.Resources.First();
+        var segments = new[] { new ScheduleAssignmentSegmentContract(start.AddMinutes(20), start.AddMinutes(25)),
+            new ScheduleAssignmentSegmentContract(start.AddMinutes(30), start.AddMinutes(35)) };
+        var problem = sample with
+        {
+            ProblemId = "insertion-freeze-baseline", AssemblyDependencies = [], QualityBlocks = [], UnavailabilityWindows = [],
+            Orders = Enumerable.Range(1, 3).Select(i => template with
+            {
+                OrderId = $"order-{i:D3}", IsRush = false, Priority = 0,
+                Operations = [operation with { OperationId = $"order-{i:D3}-op", DurationMinutes = 10,
+                    IsRush = false, Priority = 0, SplitPolicy = ScheduleSplitPolicyContract.Interruptible,
+                    EarliestStartUtc = i == 3 ? start.AddMinutes(60) : start }]
+            }).ToArray(),
+            LockedAssignments = [new SchedulingLockedAssignmentContract("manual-lock", "order-001", "order-001-op",
+                operation.OperationSequence, resource.ResourceId, resource.WorkCenterId, segments[0].StartUtc,
+                segments[1].EndUtc, "planner-lock", segments)]
+        };
+        var source = new ControlledSource { InsertionProblem = problem };
+        var clock = new InsertionClock(start);
+        await using var factory = new JobFactory(source, clock: clock,
+            freezeSettings: new SchedulingFreezeSettings(window / 2,
+                new Dictionary<string, TimeSpan> { [resource.WorkCenterId] = window }));
+        await Migrate(factory);
+        using var client = Client(factory);
+        SchedulePlanContract original;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            original = await scope.ServiceProvider.GetRequiredService<ISender>().Send(new CreateSchedulePlanCommand(problem));
+            var execution = OperationExecutionProjection.Create(problem.OrganizationId, problem.EnvironmentId,
+                "order-003", "order-003-op", operation.OperationSequence, resource.WorkCenterId,
+                start.AddMinutes(60), "created");
+            execution.ApplyStarted(start.AddMinutes(60), "started");
+            if (window > TimeSpan.Zero) execution.ApplyCompleted(start.AddMinutes(70), "completed");
+            else execution.ApplyPaused(start.AddMinutes(65), "paused");
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.OperationExecutionProjections.Add(execution);
+            await db.SaveChangesAsync();
+        }
+        var before = await ReadInsertionBaseline(factory, original);
+        using var worker = InsertionWorker(factory);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            using var response = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-004"), SchedulingJson.Options);
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            await TestTimeout.RunAsync("freeze insertion source entered", async ct => await source.Entered.Task.WaitAsync(ct), Budget);
+            source.Release.TrySetResult();
+            var completed = await TerminalInsertion(client, accepted.JobId);
+            Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Completed, completed.Status);
+            var preview = completed.Preview!;
+            Assert.Equal(SchedulePlanStatusContract.Preview, preview.Status);
+            var manual = Assert.Single(preview.Assignments, x => x.OrderId == "order-001");
+            var baselineManual = Assert.Single(original.Assignments, x => x.OrderId == "order-001");
+            Assert.Equal((baselineManual.ResourceId, baselineManual.StartUtc, baselineManual.EndUtc),
+                (manual.ResourceId, manual.StartUtc, manual.EndUtc));
+            Assert.Equal(segments, manual.Segments);
+            var stable = Assert.Single(preview.Assignments, x => x.OrderId == "order-002");
+            var baselineStable = Assert.Single(original.Assignments, x => x.OrderId == "order-002");
+            if (window > TimeSpan.Zero)
+            {
+                Assert.Equal(baselineStable.Segments, stable.Segments);
+                Assert.Equal((baselineStable.ResourceId, baselineStable.StartUtc, baselineStable.EndUtc),
+                    (stable.ResourceId, stable.StartUtc, stable.EndUtc));
+            }
+            else Assert.NotEqual(baselineStable.StartUtc, stable.StartUtc);
+            var actual = Assert.Single(preview.Assignments, x => x.OrderId == "order-003");
+            Assert.Equal(start.AddMinutes(60), actual.StartUtc);
+            Assert.Equal(window > TimeSpan.Zero ? start.AddMinutes(70) : problem.HorizonEndUtc, actual.EndUtc);
+            var inserted = Assert.Single(preview.Assignments, x => x.OrderId == "order-004");
+            Assert.True(inserted.EndUtc <= manual.StartUtc || inserted.StartUtc >= manual.EndUtc);
+            Assert.Contains(preview.Conflicts, x => x.OrderId == manual.OrderId &&
+                x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment);
+            Assert.NotNull(preview.FreezeContext);
+            Assert.Equal(start, preview.FreezeContext.AsOfUtc);
+            Assert.Equal(start + window / 2, preview.FreezeContext.DefaultWindowEndUtc);
+            Assert.Contains(preview.FreezeContext.WorkCenterWindows, x => x.WorkCenterId == resource.WorkCenterId &&
+                x.EndUtc == start + window);
+            Assert.Contains(preview.FreezeContext.Assignments, x => x.Assignment.OrderId == manual.OrderId &&
+                x.Reasons.Contains(SchedulePlanFreezeReasonContract.ManualLock));
+            Assert.Contains(preview.FreezeContext.Assignments, x => x.Assignment.OrderId == actual.OrderId &&
+                x.Reasons.Contains(window > TimeSpan.Zero ? SchedulePlanFreezeReasonContract.Completed : SchedulePlanFreezeReasonContract.Started));
+            var manualFreeze = Assert.Single(preview.FreezeContext.Assignments, x => x.Assignment.OrderId == manual.OrderId);
+            Assert.DoesNotContain(SchedulePlanFreezeReasonContract.StableWindow, manualFreeze.Reasons);
+            if (window == TimeSpan.Zero)
+                Assert.DoesNotContain(preview.FreezeContext.Assignments, x => x.Reasons.Contains(SchedulePlanFreezeReasonContract.StableWindow));
+            clock.Now = start.AddDays(1);
+            Assert.Equal(JsonSerializer.Serialize(preview, SchedulingJson.Options),
+                JsonSerializer.Serialize((await ReadInsertion(client, accepted.JobId)).Preview, SchedulingJson.Options));
+            Assert.Equal(before, await ReadInsertionBaseline(factory, original));
+            await using var after = factory.Services.CreateAsyncScope();
+            Assert.Single(await after.ServiceProvider.GetRequiredService<ApplicationDbContext>().SchedulePlans.ToArrayAsync());
+            Assert.Single(await after.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScheduleProblems.ToArrayAsync());
+        }
+        finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
+    }
+
+    private sealed class InsertionClock(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 
     [SchedulingPostgresFact]
@@ -407,7 +521,8 @@ public sealed class SchedulingFirstPlanJobPostgresTests
                 requirement.OrganizationId, requirement.EnvironmentId));
     }
 
-    private sealed class JobFactory(ControlledSource source, SaveChangesInterceptor? interceptor = null) : WebApplicationFactory<Program>
+    private sealed class JobFactory(ControlledSource source, SaveChangesInterceptor? interceptor = null,
+        TimeProvider? clock = null, SchedulingFreezeSettings? freezeSettings = null) : WebApplicationFactory<Program>
     {
         public JobFailureLogger FailureLog { get; } = new();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -432,6 +547,8 @@ public sealed class SchedulingFirstPlanJobPostgresTests
                 services.RemoveAll<ISchedulingProblemProducer>();
                 services.AddSingleton<ISchedulingWorkbenchSourceProvider>(source);
                 services.AddSingleton<ISchedulingProblemProducer>(source);
+                if (clock is not null) { services.RemoveAll<TimeProvider>(); services.AddSingleton(clock); }
+                if (freezeSettings is not null) { services.RemoveAll<SchedulingFreezeSettings>(); services.AddSingleton(freezeSettings); }
                 if (interceptor is not null) services.AddDbContext<ApplicationDbContext>(options => options.AddInterceptors(interceptor));
             });
         }
@@ -469,6 +586,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public KnownException? Failure { get; init; }
         public int Calls { get; private set; }
+        public SchedulingProblemContract? InsertionProblem { get; init; }
         public async Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(string org, string env,
             DateTimeOffset start, IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken ct)
         {
@@ -482,9 +600,19 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         public Task<SchedulingProblemContract> AssembleAsync(AssembleSchedulingProblemRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<SchedulingProblemContract> AssembleWorkbenchAsync(AssembleSchedulingWorkbenchProblemRequest request, CancellationToken ct)
         {
-            var sample = ShockAbsorberSchedulingFixture.CreateProblem();
+            var sample = InsertionProblem ?? ShockAbsorberSchedulingFixture.CreateProblem();
             var order = sample.Orders.First();
             var operation = order.Operations.First();
+            if (InsertionProblem is not null)
+                return Task.FromResult(sample with
+                {
+                    ProblemId = request.ProblemId,
+                    Orders = sample.Orders.Append(order with { OrderId = "order-004", Priority = 1000,
+                        Operations = [operation with { OperationId = "order-004-op", Priority = 1000 }] }).ToArray(),
+                    LockedAssignments = [],
+                    UnavailabilityWindows = [new SchedulingUnavailabilityWindowContract(sample.Resources.First().ResourceId,
+                        null, sample.HorizonStartUtc.AddMinutes(20), sample.HorizonStartUtc.AddMinutes(25), "maintenance")]
+                });
             return Task.FromResult(sample with
             {
                 ProblemId = request.ProblemId, OrganizationId = request.OrganizationId, EnvironmentId = request.EnvironmentId,
