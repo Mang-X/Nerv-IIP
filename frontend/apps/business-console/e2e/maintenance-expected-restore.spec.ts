@@ -49,6 +49,7 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
       data = {
         authorizedScopes: [
           { kind: 'work-center', id: 'WC-B', displayName: '冲压中心' },
+          { kind: 'self', id: 'maintenance-engineer', displayName: '本人' },
           { kind: 'team', id: 'TEAM-A', displayName: '维修一班' },
         ],
       }
@@ -97,6 +98,11 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
     await page.getByRole('menuitem', { name: '更新预计恢复时间' }).click()
   }
   await open()
+  await expect(page.locator('#mwo-expected-restore-scope')).toContainText('维修一班')
+  await page.locator('#mwo-expected-restore-scope').click()
+  await expect(page.getByRole('option', { name: '冲压中心' })).toHaveCount(0)
+  await expect(page.getByRole('option', { name: '本人' })).toBeVisible()
+  await page.keyboard.press('Escape')
   await page.locator('#mwo-expected-restore').fill('2026-10-10T13:30')
   await page.getByRole('button', { name: '保存预计恢复时间' }).click()
   await expect(page.getByText('预计恢复时间已保存', { exact: true })).toBeVisible()

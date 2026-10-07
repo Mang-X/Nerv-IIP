@@ -552,7 +552,9 @@ async function openExpectedRestore(row: WorkOrderRow) {
   expectedRestoreScopeKey.value = ''
   expectedRestoreOpen.value = true
   try {
-    const scopes = await readExpectedRestoreScopes()
+    const scopes = (await readExpectedRestoreScopes()).filter(
+      (scope) => scope.kind === 'organization' || scope.kind === 'self' || scope.kind === 'team',
+    )
     expectedRestoreScopes.value = scopes
     const selected =
       scopes.find(

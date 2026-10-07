@@ -1797,12 +1797,13 @@ describe('维修工单预计恢复', () => {
   })
 })
 
-it('多授权范围维修人员可按工单团队更新，也可切换另一授权范围', async () => {
+it('多授权范围维修人员可按工单团队更新，并只选择 Maintenance 支持的范围', async () => {
   state.query = {}
   state.workOrders[0]!.assignedTechnicianUserId = 'user-admin'
   state.workOrders[0]!.assignedTeamId = 'TEAM-A'
   state.expectedRestoreScopes = [
     { kind: 'work-center', id: 'WC-B', displayName: '冲压中心' },
+    { kind: 'self', id: 'user-admin', displayName: '本人' },
     { kind: 'team', id: 'TEAM-A', displayName: '维修一班' },
   ]
   mount(WorkOrdersPage, mountOptions())
@@ -1817,9 +1818,9 @@ it('多授权范围维修人员可按工单团队更新，也可切换另一授�
   expect(picker.textContent).toContain('维修一班')
   picker.click()
   await flushPromises()
-  ;[...document.body.querySelectorAll<HTMLElement>('[role="option"]')]
-    .find((el) => el.textContent?.includes('冲压中心'))!
-    .click()
+  const options = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')]
+  expect(options.some((el) => el.textContent?.includes('冲压中心'))).toBe(false)
+  options.find((el) => el.textContent?.includes('本人'))!.click()
   await flushPromises()
   document.body
     .querySelector('#mwo-expected-restore')!
@@ -1827,8 +1828,8 @@ it('多授权范围维修人员可按工单团队更新，也可切换另一授�
     .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   await flushPromises()
   expect(state.updateExpectedRestore).toHaveBeenCalledWith(state.workOrders[0], null, {
-    kind: 'work-center',
-    id: 'WC-B',
-    displayName: '冲压中心',
+    kind: 'self',
+    id: 'user-admin',
+    displayName: '本人',
   })
 })
