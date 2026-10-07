@@ -226,3 +226,45 @@ describe('待排池急单与优先级保存', () => {
     ).toBeUndefined()
   })
 })
+
+describe('异步首版 500 单容量（#4137 DomainInvariant）', () => {
+  it('可加入第 500 单，到达容量后阻止第 501 单与超限全部加入，仍能移出', async () => {
+    setActivePinia(createPinia())
+    const draftOrders = Array.from({ length: 499 }, (_, i) => ({
+      workOrderId: `WO-${i}`,
+      included: true,
+      priority: 100,
+      isRush: false,
+    }))
+    const wrapper = mount(SchedulingOrderPool, {
+      props: { candidates: [{ workOrderId: 'WO-499' }, { workOrderId: 'WO-500' }], draftOrders },
+    })
+    try {
+      const check = () => wrapper.find('button[aria-label="加入工单 WO-499"]')
+      expect(check().attributes('disabled')).toBeUndefined()
+      expect(
+        wrapper
+          .findAll('button')
+          .find((b) => b.text() === '全部加入')!
+          .attributes('disabled'),
+      ).toBeDefined()
+      await check().trigger('click')
+      expect(wrapper.emitted('include')?.at(-1)).toEqual([['WO-499'], true])
+      await wrapper.setProps({
+        draftOrders: [
+          ...draftOrders,
+          { workOrderId: 'WO-499', included: true, priority: 100, isRush: false },
+        ],
+      })
+      expect(wrapper.text()).toContain('最多选择 500 单')
+      expect(
+        wrapper.find('button[aria-label="加入工单 WO-500"]').attributes('disabled'),
+      ).toBeDefined()
+      expect(check().attributes('disabled')).toBeUndefined()
+      await check().trigger('click')
+      expect(wrapper.emitted('include')?.at(-1)).toEqual([['WO-499'], false])
+    } finally {
+      wrapper.unmount()
+    }
+  })
+})

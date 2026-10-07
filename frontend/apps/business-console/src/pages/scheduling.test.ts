@@ -104,6 +104,8 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
 const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
 const associatedError = shallowRef<unknown>()
 const candidatesEmpty = shallowRef(false)
+const generatedPlan = shallowRef()
+const capacityCandidates = shallowRef<BusinessConsoleMesWorkOrderItem[]>()
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrderFacts: () => ({ workOrders: associatedOrders, error: associatedError }),
 }))
@@ -134,20 +136,28 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     candidatesScopeReady: computed(() => true),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     generatePending: shallowRef(false),
-    generatePlan: stub.generatePlan,
+    firstPlanJob: shallowRef(),
+    generatedPlan: generatedPlan,
+    generationError: shallowRef(),
+    generatePlan: async (body: unknown) => {
+      generatedPlan.value = await stub.generatePlan(body)
+    },
     refreshCandidates: vi.fn(),
     revisionPending: shallowRef(false),
     revisePlan: stub.revisePlan,
     // 草案工作区要有可选工单才能生成首版方案（持久化 override 用例的前置条件）。
-    schedulableCandidates: computed(() => [
-      {
-        workOrderId: 'WO-20260701-001',
-        productionVersionId: 'PV-001',
-        skuCode: 'SKU-PISTON-ROD',
-        status: 'released',
-        priority: 100,
-      },
-    ]),
+    schedulableCandidates: computed(
+      () =>
+        capacityCandidates.value ?? [
+          {
+            workOrderId: 'WO-20260701-001',
+            productionVersionId: 'PV-001',
+            skuCode: 'SKU-PISTON-ROD',
+            status: 'released',
+            priority: 100,
+          },
+        ],
+    ),
   }),
 }))
 
@@ -462,6 +472,8 @@ beforeEach(() => {
   })
   stub.upsertOperationOverride.mockClear()
   stub.upsertOperationOverride.mockResolvedValue({ success: true, data: {} })
+  capacityCandidates.value = undefined
+  generatedPlan.value = undefined
   stub.generatePlan.mockClear()
   stub.generatePlan.mockResolvedValue(planOne)
   stub.toastError.mockClear()
@@ -1657,5 +1669,54 @@ describe('排产三级权限', () => {
     await flushPromises()
     expect(stub.toastError).toHaveBeenCalledWith('发布失败：没有权限执行此操作。')
     wrapper.unmount()
+  })
+})
+
+describe('异步首版页面选择容量（#4137 DomainInvariant）', () => {
+  it('单选与全部加入拒绝第 501 单，500 单提交使用完整选单', async () => {
+    capacityCandidates.value = Array.from({ length: 501 }, (_, i) => ({
+      workOrderId: `WO-${i}`,
+      productionVersionId: 'PV-001',
+      status: 'released',
+      priority: 100,
+    }))
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    try {
+      await flushPromises()
+      const pool = wrapper.findComponent({ name: 'SchedulingOrderPool' })
+      const generate = () => wrapper.findAll('button').find((b) => b.text().includes('生成首版'))!
+      pool.vm.$emit(
+        'include',
+        capacityCandidates.value.map((o) => o.workOrderId!),
+        true,
+      )
+      await flushPromises()
+      expect(stub.toastError).toHaveBeenCalledWith('首版排程最多选择 500 单，请先移出超出的工单')
+      expect(generate().attributes('disabled')).toBeDefined()
+      pool.vm.$emit(
+        'include',
+        capacityCandidates.value.slice(0, 500).map((o) => o.workOrderId!),
+        true,
+      )
+      await flushPromises()
+      pool.vm.$emit('include', ['WO-500'], true)
+      await flushPromises()
+      expect(
+        pool.props('draftOrders').filter((o: { included: boolean }) => o.included),
+      ).toHaveLength(500)
+      await generate().trigger('click')
+      await flushPromises()
+      expect(stub.generatePlan.mock.calls.at(-1)?.[0].orders).toHaveLength(500)
+      expect(
+        wrapper
+          .findComponent({ name: 'SchedulingDraftBoard' })
+          .props('model')
+          .tasks.some((task: { orderId: string }) => task.orderId === 'WO-20260701-001'),
+      ).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
   })
 })

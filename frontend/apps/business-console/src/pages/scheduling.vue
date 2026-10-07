@@ -42,6 +42,10 @@ import {
   resolveSchedulingHorizon,
 } from '@/composables/schedulingHorizon'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import {
+  firstPlanCapacityReason,
+  firstPlanSelectionReason,
+} from '@/composables/schedulingFirstPlanCapacity'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
 import SchedulingDraftClearDialog from '@/components/scheduling/SchedulingDraftClearDialog.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
@@ -486,7 +490,7 @@ async function generateWorkbenchPlan() {
   // 类型收窄；能走到这里说明窗口原因没有命中。
   if (!resolvedHorizon.ok) return
   try {
-    const plan = await workbench.generatePlan({
+    await workbench.generatePlan({
       organizationId: schedulingFilters.organizationId,
       environmentId: schedulingFilters.environmentId,
       horizonStartUtc: resolvedHorizon.horizonStartUtc,
@@ -495,15 +499,45 @@ async function generateWorkbenchPlan() {
         workOrderId: order.workOrderId,
       })),
     })
-    persistedDraftPlan.value = plan
-    draft.loadPlan(plan)
-    detailSelection.planId = plan.planId ?? ''
-    revisionResult.value = undefined
-    toast.success('首版排程方案已生成')
   } catch (error) {
     notifyOperationFailure('生成失败', error, '生成失败，请检查工单生产版本与排程基础数据')
   }
 }
+
+watch(workbench.generatedPlan, (plan) => {
+  if (!plan) return
+  persistedDraftPlan.value = plan
+  draft.loadPlan(plan)
+  detailSelection.planId = plan.planId ?? ''
+  revisionResult.value = undefined
+  toast.success('首版排程方案已生成')
+})
+watch(workbench.generationError, (error) => {
+  if (error) notifyOperationFailure('生成失败', error, '首版排程生成或方案加载失败')
+})
+
+function includeWorkbenchOrders(ids: string[], included: boolean) {
+  const reason = included && firstPlanSelectionReason(draft.orders.value, ids)
+  if (reason) {
+    toast.error(reason)
+    return
+  }
+  draft.setIncluded(ids, included)
+}
+
+const firstPlanProgress = computed(() => {
+  if (workbench.generationError.value) return '首版排程未完成，请查看失败通知后重新生成'
+  const status = workbench.firstPlanJob.value?.status
+  return status === 'created'
+    ? '首版排程排队中'
+    : status === 'running'
+      ? '首版排程生成中'
+      : status === 'completed'
+        ? workbench.generatePending.value
+          ? '首版排程已完成，正在加载方案'
+          : '首版排程已完成'
+        : ''
+})
 
 async function repreviewLockedDraft() {
   const planId = draft.model.value?.meta.planId
@@ -652,6 +686,10 @@ const generateBlockedReason = computed(() =>
       blocked: draft.includedOrders.value.length === 0,
       reason: '还没有选中工单：先在待排工单池里勾选要排的工单',
     },
+    {
+      blocked: Boolean(firstPlanCapacityReason(draft.includedOrders.value.length)),
+      reason: firstPlanCapacityReason(draft.includedOrders.value.length) ?? '',
+    },
     // 窗口非法（起止倒置 / 缺值 / 跨度超上限）按 #1278 的口径并进原因表：
     // 按钮直接灰掉并说明改哪里，而不是点下去才弹一句 toast（MAN-694 / #1262）。
     {
@@ -674,6 +712,11 @@ const repreviewBlockedReason = computed(() =>
     { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能重预览' },
     { blocked: !draftReady.value, reason: '正在处理草稿，请稍候' },
     { blocked: !draft.model.value, reason: '还没有草案方案：先生成首版方案，再做锁定重预览' },
+    { blocked: workbench.generatePending.value, reason: '正在生成首版方案，请稍候' },
+    {
+      blocked: draft.includedOrders.value.length > 10,
+      reason: '锁定重预览最多支持 10 单，500 单仅用于异步首版',
+    },
     { blocked: workbench.revisionPending.value, reason: '正在按锁定约束重预览，请稍候' },
     {
       blocked: draft.modifiedUnlockedTaskIds.value.length > 0,
@@ -940,6 +983,9 @@ function reasonLabel(reason?: string | null) {
             >锁定全部修改</NvButton
           >
         </div>
+        <p v-if="firstPlanProgress" role="status" class="text-sm text-muted-foreground">
+          {{ firstPlanProgress }}
+        </p>
         <SchedulingOrderPool
           :candidates="workbench.schedulableCandidates.value"
           :draft-orders="draft.orders.value"
@@ -947,8 +993,8 @@ function reasonLabel(reason?: string | null) {
           :error="workbench.candidatesError.value"
           :scope-ready="workbench.candidatesScopeReady.value"
           :scope-message="workbench.candidatesScopeMessage.value"
-          :read-only="!canManage || !draftReady"
-          @include="draft.setIncluded"
+          :read-only="!canManage || !draftReady || workbench.generatePending.value"
+          @include="includeWorkbenchOrders"
           :can-edit-priority="
             permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
           "
@@ -964,7 +1010,7 @@ function reasonLabel(reason?: string | null) {
           :feedback="draft.feedback.value"
           :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"
-          :read-only="!canManage || !draftReady"
+          :read-only="!canManage || !draftReady || workbench.generatePending.value"
           :persisted-operation-keys="persistedOperationKeys"
           :persist-pending="upsertOperationOverridePending"
           @persist-override="persistOperationOverride"
