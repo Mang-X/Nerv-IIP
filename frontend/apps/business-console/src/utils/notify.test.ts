@@ -234,6 +234,17 @@ describe('notifyOperationFailure', () => {
       '插单预览失败，请稍后重试。',
     )
     expect(toastError).toHaveBeenCalledWith(`插单预览失败：${message}`)
+    expect(friendlyErrorMessage(message)).toBe(message)
+  })
+
+  it('已受理但回读技术失败仍显示完整的未确认操作指引', () => {
+    const error = new Error(
+      '请求已受理，但权威状态尚未确认（downstream-invalid-response）。请保留当前意图键，按回读地址刷新后再重试。',
+    )
+    notifyOperationFailure('报工失败', error, '报工失败，请稍后重试。')
+    expect(toastError).toHaveBeenCalledWith(
+      '报工失败：操作结果尚未确认，请保留当前操作并刷新列表核实；确认未生效后再重试。',
+    )
   })
 
   it.each([

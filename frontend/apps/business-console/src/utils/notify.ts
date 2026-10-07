@@ -54,9 +54,9 @@ export function friendlyErrorMessage(
     return '服务暂时不可用，请稍后重试；写操作请先刷新核实结果'
   }
   if (
-    /downstream-invalid-response|\b502\b|bad ?gateway|\b503\b|service unavailable|\b500\b/i.test(
-      raw,
-    )
+    /downstream-invalid-response|\b502\b|bad ?gateway|\b503\b|service unavailable/i.test(raw) ||
+    // 中文领域消息中的 500 是业务数量；明确技术失败仍走上面的 canonical 分类。
+    (!/[一-龥]/.test(raw) && /\b500\b/.test(raw))
   ) {
     return '服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。'
   }
@@ -235,10 +235,7 @@ function resolveLayeredMessage(
   reasonContext?: WmsReasonContext,
 ) {
   const raw = serverErrorMessage(error)
-  // 业务消息中的数量（例如 500 单）不是 HTTP 状态码；服务端中文先按领域信息透传。
-  const message = /[一-龥]/.test(raw)
-    ? raw
-    : friendlyErrorMessage(raw || error, fallback, reasonContext)
+  const message = friendlyErrorMessage(raw || error, fallback, reasonContext)
   if (raw && message !== raw) {
     // 没上屏的原文留给排障：控制台能看到后端到底说了什么。
     console.error(`[${logLabel}] 服务端原始错误：`, raw, error)
