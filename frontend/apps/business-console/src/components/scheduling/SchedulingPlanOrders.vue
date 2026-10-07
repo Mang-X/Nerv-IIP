@@ -2,7 +2,7 @@
 import type { SchedulingWorkOrderFacts } from '@/composables/useBusinessMes'
 import type { ScheduleModel, ScheduleTask } from '@nerv-iip/scheduling'
 import { operationTaskStatusLabel, workOrderStatusLabel } from '@nerv-iip/business-core'
-import { NvDataTable, type NvDataTableColumn } from '@nerv-iip/ui'
+import { NvDataTable, NvStatusBadge, type NvDataTableColumn } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -124,7 +124,9 @@ function progress(order: SchedulingWorkOrderFacts | undefined, tasks: ScheduleTa
               前序 {{ row.predecessors.join('、') }}
             </p>
           </template>
-          <template #cell-status="{ row }">{{ operationStatus(row, order.order) }}</template>
+          <template #cell-status="{ row }">
+            <NvStatusBadge :label="operationStatus(row, order.order)" tone="neutral" />
+          </template>
         </NvDataTable>
       </div>
     </section>
