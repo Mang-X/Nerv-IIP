@@ -39,18 +39,16 @@ beforeEach(() => {
   vi.useFakeTimers()
   backend.accept.mockReset().mockResolvedValue(job('created'))
   backend.status.mockReset().mockResolvedValue(job('running'))
-  backend.detail
-    .mockReset()
-    .mockResolvedValue({
+  backend.detail.mockReset().mockResolvedValue({
+    data: {
+      success: true,
       data: {
-        success: true,
-        data: {
-          planId: 'plan-001',
-          assignments: [{ orderId: 'WO-001', operationId: 'OP-10' }],
-          materialShortageSummary: [],
-        },
+        planId: 'plan-001',
+        assignments: [{ orderId: 'WO-001', operationId: 'OP-10' }],
+        materialShortageSummary: [],
       },
-    })
+    },
+  })
 })
 afterEach(() => vi.useRealTimers())
 function setup() {

@@ -103,11 +103,15 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
 
 const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
 const associatedError = shallowRef<unknown>()
+let associatedOrderIds: () => (string | undefined)[]
 const candidatesEmpty = shallowRef(false)
 const generatedPlan = shallowRef()
 const capacityCandidates = shallowRef<BusinessConsoleMesWorkOrderItem[]>()
 vi.mock('@/composables/useBusinessMes', () => ({
-  useMesWorkOrderFacts: () => ({ workOrders: associatedOrders, error: associatedError }),
+  useMesWorkOrderFacts: (ids: () => (string | undefined)[]) => {
+    associatedOrderIds = ids
+    return { workOrders: associatedOrders, error: associatedError }
+  },
 }))
 
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
@@ -116,7 +120,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     candidates: computed(() =>
       candidatesEmpty.value
         ? []
-        : [
+        : (capacityCandidates.value ?? [
             {
               workOrderId: 'WO-20260701-001',
               skuCode: 'SKU-PISTON-01',
@@ -125,7 +129,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
               status: 'released',
               productionVersionId: 'pv-001',
             },
-          ],
+          ]),
     ),
     priorityScopeReady: shallowRef(true),
     saveOrderPriority: vi.fn(),
@@ -1715,6 +1719,38 @@ describe('异步首版页面选择容量（#4137 DomainInvariant）', () => {
           .props('model')
           .tasks.some((task: { orderId: string }) => task.orderId === 'WO-20260701-001'),
       ).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+})
+
+describe('500 单首版关联事实复用（#4137 Regression）', () => {
+  it('使用待排池已返回的商业来源，历史池外工单仍按 ID 读取', async () => {
+    capacityCandidates.value = [
+      {
+        workOrderId: 'WO-20260701-001',
+        productionVersionId: 'PV-001',
+        status: 'released',
+        commercialSourceFacts: null,
+      },
+    ]
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    try {
+      await flushPromises()
+      wrapper
+        .findComponent({ name: 'SchedulingOrderPool' })
+        .vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('生成首版'))!
+        .trigger('click')
+      await flushPromises()
+      expect(associatedOrderIds()).not.toContain('WO-20260701-001')
+      expect(associatedOrderIds()).toContain('WO-20260701-002')
     } finally {
       wrapper.unmount()
     }

@@ -165,12 +165,20 @@ const clearDraftConfirmOpen = ref(false)
 const draftReady = shallowRef(false)
 const draft = useWorkingScheduleDraft(computed(() => !canManage.value || !draftReady.value))
 const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
-const associatedWorkOrders = useMesWorkOrderFacts(() => [
-  ...(draft.model.value?.tasks
-    .filter((task) => task.type === 'operation' && !task.blockKind)
-    .map((task) => task.orderId) ?? []),
-  ...(planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId),
-])
+const associatedWorkOrders = useMesWorkOrderFacts(() => {
+  // 待排池已带出权威商业来源（null 表示没有来源）；500 单首版不再逐单重读同一事实。
+  const known = new Set(
+    workbench.candidates.value
+      .filter((order) => order.commercialSourceFacts !== undefined)
+      .map((order) => order.workOrderId),
+  )
+  return [
+    ...(draft.model.value?.tasks
+      .filter((task) => task.type === 'operation' && !task.blockKind)
+      .map((task) => task.orderId) ?? []),
+    ...(planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId),
+  ].filter((id) => !known.has(id))
+})
 watch(
   associatedWorkOrders.error,
   (error) => {
