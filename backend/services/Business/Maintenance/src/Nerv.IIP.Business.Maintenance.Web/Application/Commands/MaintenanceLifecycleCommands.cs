@@ -32,7 +32,8 @@ public sealed record TransitionMaintenanceWorkOrderCommand(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    string? CostCurrencyCode = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class AssignMaintenanceWorkOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AssignMaintenanceWorkOrderCommand, MaintenanceWorkOrderCommandResult>
@@ -139,7 +140,9 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
         TransitionMaintenanceWorkOrderCommand request,
         CancellationToken cancellationToken)
     {
-        var fingerprint = Fingerprint(request);
+        var fingerprint = request.Action == MaintenanceWorkOrderAction.UpdateExpectedRestore
+            ? MaintenanceIdempotencyFingerprints.Hash(new { Legacy = Fingerprint(request), request.ExpectedRestoreAtUtc })
+            : Fingerprint(request);
         var replay = await LifecycleReplay.FindAsync(
             dbContext, request.OrganizationId, request.EnvironmentId, request.IdempotencyKey, fingerprint, cancellationToken);
         if (replay is not null)
@@ -181,6 +184,9 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
     {
         switch (request.Action)
         {
+            case MaintenanceWorkOrderAction.UpdateExpectedRestore:
+                workOrder.UpdateExpectedRestore(request.ExpectedRestoreAtUtc);
+                break;
             case MaintenanceWorkOrderAction.Accept:
                 workOrder.Accept(request.ActorPrincipalId);
                 break;
@@ -346,6 +352,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandValidator : AbstractVal
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkOrderId).NotEmpty();
         RuleFor(x => x.Action).IsInEnum().NotEqual(MaintenanceWorkOrderAction.Assign);
+        RuleFor(x => x.ExpectedRestoreAtUtc).Null().When(x => x.Action != MaintenanceWorkOrderAction.UpdateExpectedRestore);
         RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
