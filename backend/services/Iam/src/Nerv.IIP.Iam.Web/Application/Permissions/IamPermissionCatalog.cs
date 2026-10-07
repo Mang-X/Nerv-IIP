@@ -11,6 +11,7 @@ public static class IamPermissionCatalog
 {
     private static readonly IReadOnlyDictionary<string, string> Descriptions = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        [NervIipPermissionCodes.InternalGatewayCacheInvalidate] = "Invalidate one organization/environment of PlatformGateway read caches via a scoped internal caller.",
         [NervIipPermissionCodes.IamUsersRead] = "Read IAM users.",
         [NervIipPermissionCodes.IamUsersManage] = "Create, update, disable and reset IAM users.",
         [NervIipPermissionCodes.IamRolesRead] = "Read IAM roles and permission catalog.",

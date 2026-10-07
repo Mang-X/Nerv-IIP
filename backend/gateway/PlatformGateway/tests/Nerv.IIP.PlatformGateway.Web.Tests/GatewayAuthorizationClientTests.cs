@@ -279,7 +279,7 @@ public sealed class GatewayAuthorizationClientTests
         public TimeSpan? LastTtl { get; private set; }
         public List<string> Keys { get; } = [];
 
-        public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, string? tag = null)
+        public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, params string[] tags)
         {
             Keys.Add(key);
             LastTtl = ttl;

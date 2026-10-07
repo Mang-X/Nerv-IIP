@@ -166,7 +166,7 @@
       "tier": "core",
       "status": "active",
       "project": "backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj",
-      "filter": "FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Existing_HTTP_invalidation_refreshes_all_gateway_families_and_preserves_other_services|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.In_flight_old_factory_may_return_old_value_but_subsequent_HTTP_read_reloads_authority|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Redis_write_and_notification_failures_return_failure_without_sensitive_logs_or_fake_204",
+      "filter": "FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Existing_HTTP_invalidation_refreshes_all_gateway_families_and_preserves_other_services|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.In_flight_old_factory_may_return_old_value_but_subsequent_HTTP_read_reloads_authority|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Redis_write_and_notification_failures_return_failure_without_sensitive_logs_or_fake_204|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Scoped_HTTP_invalidation_refreshes_only_one_org_environment_and_rejects_untrusted_inputs|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Scoped_invalidation_during_old_factory_does_not_renew_stale_value|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Scoped_invalidation_write_and_notification_failures_never_report_204|FullyQualifiedName=Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Cancelled_in_flight_read_during_scoped_invalidation_cannot_publish_old_value",
       "databasePrefix": "nerv_iip_platform_gateway",
       "capVersionPrefix": "n4172gateway",
       "diagnosticSchemas": [
@@ -175,7 +175,11 @@
       "expectedTestIdentities": [
         "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Existing_HTTP_invalidation_refreshes_all_gateway_families_and_preserves_other_services",
         "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.In_flight_old_factory_may_return_old_value_but_subsequent_HTTP_read_reloads_authority",
-        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Redis_write_and_notification_failures_return_failure_without_sensitive_logs_or_fake_204"
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Redis_write_and_notification_failures_return_failure_without_sensitive_logs_or_fake_204",
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Scoped_HTTP_invalidation_refreshes_only_one_org_environment_and_rejects_untrusted_inputs",
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Scoped_invalidation_during_old_factory_does_not_renew_stale_value",
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Scoped_invalidation_write_and_notification_failures_never_report_204",
+        "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Cancelled_in_flight_read_during_scoped_invalidation_cannot_publish_old_value"
       ]
     }
   ]

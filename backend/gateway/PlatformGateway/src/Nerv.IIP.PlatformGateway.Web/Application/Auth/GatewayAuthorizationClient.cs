@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Caching;
+using Nerv.IIP.PlatformGateway.Web.Application.Caching;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.PlatformGateway.Web.Application.Resilience;
 
@@ -53,7 +54,7 @@ public sealed class HttpGatewayAuthorizationClient(
         return await cache.GetOrCreateAsync(
             cacheKey,
             () => CheckRemoteAsync(bearerToken, requirement, cancellationToken),
-            AuthorizationCacheTtl, NervIipCacheTags.Gateway);
+            AuthorizationCacheTtl, NervIipCacheTags.Gateway, GatewayCacheScope.Tag(requirement.OrganizationId, requirement.EnvironmentId));
     }
 
     private async Task<GatewayAuthorizationResult> CheckRemoteAsync(
