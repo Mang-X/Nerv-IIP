@@ -18,7 +18,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
-$runtimeRunner = Join-Path $repoRoot 'scripts/run-acceptance-scenario-matrix.ps1'
 $fixtureScript = Join-Path $repoRoot 'scripts/tests/fixtures/man703-http-fixture.ps1'
 $governanceScript = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
 $ciWorkflow = Join-Path $repoRoot '.github/workflows/ci.yml'
@@ -27,7 +26,6 @@ if (-not (Test-Path -LiteralPath $verifyScript)) {
 }
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
-$runtimeRunnerContent = Get-Content -LiteralPath $runtimeRunner -Raw
 $fixtureContent = Get-Content -LiteralPath $fixtureScript -Raw
 $workflowContent = Get-Content -LiteralPath $ciWorkflow -Raw
 $tokens = $null
@@ -923,10 +921,6 @@ $canonicalWriteIndex = $content.LastIndexOf('Write-NervAcceptanceCanonicalJson',
 $acceptanceRethrowIndexForCanonical = $content.LastIndexOf('throw $acceptanceFailure', [StringComparison]::Ordinal)
 $cleanupThrowIndexForCanonical = $content.LastIndexOf('throw "MAN-517 cleanup failed:', [StringComparison]::Ordinal)
 Assert-Contract ($canonicalWriteIndex -gt $acceptanceRethrowIndexForCanonical -and $canonicalWriteIndex -gt $cleanupThrowIndexForCanonical) 'Canonical success may be atomically written only after acceptance and cleanup failures have been rejected.'
-Assert-Contract ($runtimeRunnerContent.Contains('Invoke-PwshScript', [StringComparison]::Ordinal)) 'The default runtime action must invoke the governed ERP verifier adapter exactly once.'
-Assert-Contract ($runtimeRunnerContent.Contains('-TimeoutSeconds ([int]$Contract.requiredSeconds)', [StringComparison]::Ordinal)) 'The default runtime adapter must preserve the full checked readiness, execution, diagnostics, cleanup, evidence, and safety budget.'
-Assert-Contract ($runtimeRunnerContent.Contains('CanonicalResultPath', [StringComparison]::Ordinal)) 'The default runtime adapter must supply a caller-selected canonical result path.'
-Assert-Contract ($runtimeRunnerContent.Contains('Read-NervAcceptanceRuntimeJsonSnapshot', [StringComparison]::Ordinal)) 'The default runtime adapter must consume the canonical result without reimplementing business steps.'
 Assert-Contract ($content.Contains('lastHttpStatus', [StringComparison]::Ordinal)) 'Wait-Demand must preserve the last HTTP status.'
 Assert-Contract ($content.Contains('lastResponseBody', [StringComparison]::Ordinal)) 'Wait-Demand must preserve the last HTTP response body.'
 Assert-Contract ($content.Contains('lastRequestException', [StringComparison]::Ordinal)) 'Wait-Demand must preserve the last request exception.'
@@ -1183,7 +1177,7 @@ try {
                 '-PostgresAdminConnectionString', '',
                 '-RedisConnectionString', '',
                 '-CanonicalResultPath', $canonicalFailureResultPath,
-                '-TrackIdentifier', 'shadow',
+                '-TrackIdentifier', 'authority',
                 '-Repository', 'Mang-X/Nerv-IIP',
                 '-RunId', '123456789',
                 '-RunAttempt', '2',

@@ -19,13 +19,11 @@ $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $acceptanceScenarioMatrixOwningPaths = @(
     'scripts/acceptance-scenario-matrix.json'
     'scripts/lib/AcceptanceScenarioMatrix.ps1'
-    'scripts/plan-acceptance-scenario-matrix.ps1'
     'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
 )
-$acceptanceScenarioMatrixRuntimeOwningPaths = @(
-    'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
-    'scripts/run-acceptance-scenario-matrix.ps1'
-    'scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1'
+$acceptanceCanonicalOwningPaths = @(
+    'scripts/lib/AcceptanceCanonicalResult.ps1'
+    'scripts/tests/acceptance-canonical-result.Tests.ps1'
 )
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
@@ -175,8 +173,8 @@ function Assert-ConditionalRoutingWorkflow {
             'backend-test-shard-governance', 'backend-tests-business-gateway', 'backend-tests-platform',
             'backend-tests-business-core-a', 'backend-tests-business-core-b', 'backend-tests',
             'connector-host-tests', 'openapi-client-drift',
-            'postgres-provider-tests', 'redis-cap-transport-tests', 'acceptance-scenario-matrix-planning',
-            'business-full-chain-acceptance', 'script-governance', 'ci-summary'
+            'postgres-provider-tests', 'redis-cap-transport-tests',
+            'business-full-chain-acceptance', 'business-full-chain-acceptance-v1', 'script-governance', 'ci-summary'
         ),
         [StringComparer]::Ordinal)
     foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
@@ -329,210 +327,20 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ($null -eq $contractStep.PSObject.Properties['if']) 'The acceptance scenario matrix contract step must not have its own condition.'
 
     $runtimeContractSteps = @($scriptGovernanceSteps | Where-Object {
-            [string]::Equals([string]$_.name, 'Test acceptance scenario matrix runtime contract', [StringComparison]::Ordinal)
+            [string]::Equals([string]$_.name, 'Test acceptance canonical result contract', [StringComparison]::Ordinal)
         })
-    Assert-Contract ($runtimeContractSteps.Count -eq 1) 'Script Governance must contain exactly one independent acceptance scenario matrix runtime contract step.'
+    Assert-Contract ($runtimeContractSteps.Count -eq 1) 'Script Governance must contain exactly one independent acceptance canonical result contract step.'
     $runtimeContractStep = $runtimeContractSteps[0]
-    Assert-Contract ([string]::Equals([string]$runtimeContractStep.shell, 'pwsh', [StringComparison]::Ordinal)) 'The acceptance scenario matrix runtime contract step must use the pwsh shell.'
-    Assert-Contract ([string]::Equals([string]$runtimeContractStep.run, './scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1', [StringComparison]::Ordinal)) 'The acceptance scenario matrix runtime contract step must run only the pure runtime fixture contract.'
-    Assert-Contract ([int]$runtimeContractStep.'timeout-minutes' -eq 5) 'The acceptance scenario matrix runtime contract step must have a 5-minute budget.'
-    Assert-Contract ($null -eq $runtimeContractStep.PSObject.Properties['if']) 'The acceptance scenario matrix runtime contract step must not have its own condition.'
+    Assert-Contract ([string]::Equals([string]$runtimeContractStep.shell, 'pwsh', [StringComparison]::Ordinal)) 'The acceptance canonical result contract step must use the pwsh shell.'
+    Assert-Contract ([string]::Equals([string]$runtimeContractStep.run, './scripts/tests/acceptance-canonical-result.Tests.ps1', [StringComparison]::Ordinal)) 'The acceptance canonical result contract step must run only the pure canonical fixture contract.'
+    Assert-Contract ([int]$runtimeContractStep.'timeout-minutes' -eq 5) 'The acceptance canonical result contract step must have a 5-minute budget.'
+    Assert-Contract ($null -eq $runtimeContractStep.PSObject.Properties['if']) 'The acceptance canonical result contract step must not have its own condition.'
 
     Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and @($scriptGovernanceStepTimeouts | Where-Object { $_ -le 0 }).Count -eq 0) 'Script Governance budget comment contract expects one three-minute checkout and a positive explicit timeout on every step.'
     Assert-Contract ((@($scriptGovernanceTailMinuteCounts.GetEnumerator() | ForEach-Object { $_.Key * $_.Value }) | Measure-Object -Sum).Sum + 3 -eq $scriptGovernanceStepBudgetMinutes) 'The Script Governance budget breakdown must add up to the declared step budget sum.'
     Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
     Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
 
-    $planningJobProperties = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
-            [string]::Equals([string]$_.Name, 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($planningJobProperties.Count -eq 1) 'CI must define exactly one acceptance-scenario-matrix-planning job.'
-    $planningJob = $planningJobProperties[0].Value
-    Assert-Contract ([string]::Equals([string]$planningJob.name, 'Business FullChain Acceptance / Planning', [StringComparison]::Ordinal)) 'The planning job must retain its physical Actions name.'
-    Assert-Contract ([string]::Equals([string]$planningJob.'runs-on', 'ubuntu-latest', [StringComparison]::Ordinal)) 'The planning job must run on ubuntu-latest.'
-    $planningNeeds = @($planningJob.needs | ForEach-Object { [string]$_ })
-    Assert-Contract ($planningNeeds.Count -eq 1 -and [string]::Equals($planningNeeds[0], 'impact-plan', [StringComparison]::Ordinal)) 'The planning job must need exactly impact-plan.'
-    $fullChainSelectionPolicy = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
-    Assert-Contract ([string]::Equals([string]$planningJob.if, $fullChainSelectionPolicy, [StringComparison]::Ordinal)) 'The planning job must preserve conservative FullChain selection and skip only explicit full_chain=false on a successful PR impact plan.'
-    $expectedPlanningOutputs = [ordered]@{
-        'sales-order-demand-selected' = '${{ steps.plan.outputs.sales-order-demand-selected }}'
-        'tested-sha' = '${{ steps.plan.outputs.tested-sha }}'
-        'manifest-digest' = '${{ steps.plan.outputs.manifest-digest }}'
-        'artifact-digest' = '${{ steps.plan.outputs.artifact-digest }}'
-        'artifact-name' = '${{ steps.planning-artifact-identity.outputs.artifact-name }}'
-        'producer-run-attempt' = '${{ steps.planning-artifact-identity.outputs.producer-run-attempt }}'
-    }
-    foreach ($outputName in $expectedPlanningOutputs.Keys) {
-        $outputProperty = $planningJob.outputs.PSObject.Properties[$outputName]
-        Assert-Contract ($null -ne $outputProperty -and [string]::Equals([string]$outputProperty.Value, [string]$expectedPlanningOutputs[$outputName], [StringComparison]::Ordinal)) "Planning output '$outputName' must come from the generated planning artifact step."
-    }
-
-    $planningSteps = @($planningJob.steps)
-    Assert-Contract ($planningSteps.Count -eq 7) 'The planning job must contain only checkout, .NET setup, impact identity validation/download, planning, producer identity, and planning-artifact upload.'
-    Assert-Contract (@($planningSteps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every planning job step must have a positive explicit timeout.'
-    $planningStepBudget = (@($planningSteps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
-    Assert-Contract ([int]$planningJob.'timeout-minutes' -gt $planningStepBudget) 'The planning job timeout must strictly exceed the sum of explicit step budgets so action post steps retain margin.'
-
-    $checkoutSteps = @($planningSteps | Where-Object {
-            $usesProperty = $_.PSObject.Properties['uses']
-            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/checkout@v4', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($checkoutSteps.Count -eq 1) 'The planning job must checkout the tested repository exactly once.'
-    $dotnetSetupSteps = @($planningSteps | Where-Object {
-            $usesProperty = $_.PSObject.Properties['uses']
-            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/setup-dotnet@v4', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($dotnetSetupSteps.Count -eq 1 -and [string]::Equals([string]$dotnetSetupSteps[0].with.'dotnet-version', '10.0.302', [StringComparison]::Ordinal)) 'The planning job must setup the exact governed .NET SDK 10.0.302 exactly once.'
-    $impactDownloadSteps = @($planningSteps | Where-Object {
-            $usesProperty = $_.PSObject.Properties['uses']
-            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/download-artifact@v4', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($impactDownloadSteps.Count -eq 1) 'The planning job must conditionally download the CI impact-plan artifact exactly once.'
-    $impactDownloadStep = $impactDownloadSteps[0]
-    Assert-Contract ([string]::Equals([string]$impactDownloadStep.if, "`${{ github.event_name == 'pull_request' && needs.impact-plan.result == 'success' }}", [StringComparison]::Ordinal)) 'The planning job must download impact-plan only for a PR whose impact plan succeeded.'
-    Assert-Contract ([string]::Equals([string]$impactDownloadStep.with.name, '${{ needs.impact-plan.outputs.artifact-name }}', [StringComparison]::Ordinal)) 'The planning job must download the exact artifact identity published by the impact-plan producer.'
-    Assert-Contract ([string]::Equals([string]$impactDownloadStep.with.path, 'artifacts/ci-impact-plan', [StringComparison]::Ordinal)) 'The planning job must download impact-plan into its governed repository artifact path.'
-    $impactIdentityValidationSteps = @($planningSteps | Where-Object { [string]::Equals([string]$_.name, 'Validate CI impact-plan artifact identity', [StringComparison]::Ordinal) })
-    Assert-Contract ($impactIdentityValidationSteps.Count -eq 1 -and [string]::Equals([string]$impactIdentityValidationSteps[0].if, [string]$impactDownloadStep.if, [StringComparison]::Ordinal) -and [Array]::IndexOf($planningSteps, $impactIdentityValidationSteps[0]) -lt [Array]::IndexOf($planningSteps, $impactDownloadStep)) 'Planning must fail closed on the upstream impact artifact identity before download.'
-    $impactIdentityValidationRun = [string]$impactIdentityValidationSteps[0].run
-    Assert-Contract ($impactIdentityValidationRun.Contains('ci-impact-plan-${GITHUB_RUN_ID}-${PRODUCER_RUN_ATTEMPT}', [StringComparison]::Ordinal) -and
-        $impactIdentityValidationRun.Contains('*[!0-9]*|0|0*', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$impactIdentityValidationSteps[0].env.ARTIFACT_NAME, '${{ needs.impact-plan.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$impactIdentityValidationSteps[0].env.PRODUCER_RUN_ATTEMPT, '${{ needs.impact-plan.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'Planning must reject empty or noncanonical reused impact artifact outputs.'
-
-    $planningRunSteps = @($planningSteps | Where-Object { [string]::Equals([string]$_.name, 'Plan acceptance scenario matrix', [StringComparison]::Ordinal) })
-    Assert-Contract ($planningRunSteps.Count -eq 1) 'The planning job must contain exactly one Plan acceptance scenario matrix step.'
-    $planningRunStep = $planningRunSteps[0]
-    Assert-Contract (([int]$planningRunStep.'timeout-minutes' * 60) -gt 1500) 'The planning step timeout must strictly contain the current 1500-second one-project worst case.'
-    Assert-Contract ([string]::Equals([string]$planningRunStep.shell, 'pwsh', [StringComparison]::Ordinal)) 'The planning step must use pwsh.'
-    Assert-Contract (([string]$planningRunStep.run).Contains('scripts/plan-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)) 'The planning step must invoke scripts/plan-acceptance-scenario-matrix.ps1.'
-    $planningManifest = Import-NervAcceptanceScenarioMatrixManifest `
-        -ManifestPath (Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json') `
-        -V1ManifestPath (Join-Path $repoRoot 'scripts/full-chain-test-lane.json') `
-        -RepositoryRoot $repoRoot
-    $planningProjects = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($scenario in @($planningManifest.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) })) {
-        foreach ($testProject in @($scenario.testProjects)) { [void]$planningProjects.Add([string]$testProject.path) }
-    }
-    Assert-Contract ($planningProjects.Count -eq 1) 'The current active/core planning selection must still aggregate to one unique test project.'
-    $planningWorkflowBudget = Get-NervAcceptancePlanningWorkflowBudget `
-        -WorkflowPath $Path `
-        -JobName 'acceptance-scenario-matrix-planning' `
-        -StepName 'Plan acceptance scenario matrix'
-    [void](Assert-NervAcceptancePlanningBudgetFits `
-        -PlanningBudget $planningManifest.planningBudget `
-        -UniqueProjectCount $planningProjects.Count `
-        -StepTimeoutSeconds $planningWorkflowBudget.stepTimeoutSeconds)
-
-    $planningIdentitySteps = @($planningSteps | Where-Object {
-            $idProperty = $_.PSObject.Properties['id']
-            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'planning-artifact-identity', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($planningIdentitySteps.Count -eq 1 -and
-        ([string]$planningIdentitySteps[0].run).Contains('artifact-name=acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
-        ([string]$planningIdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Planning must single-source its physical artifact name and producer attempt.'
-    $planningUploads = @($planningSteps | Where-Object {
-            $usesProperty = $_.PSObject.Properties['uses']
-            $null -ne $usesProperty -and
-            [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal) -and
-            [string]::Equals([string]$_.with.name, '${{ steps.planning-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($planningUploads.Count -eq 1) 'The planning job must upload exactly one producer-identified planning artifact.'
-    Assert-Contract ([string]::Equals([string]$planningUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and [int]$planningUploads[0].with.'retention-days' -eq 14 -and $null -eq $planningUploads[0].with.PSObject.Properties['overwrite']) 'The planning artifact must fail closed, retain for 14 days, and preserve immutable attempt evidence.'
-
-    $planningRunSurface = (@($planningSteps | ForEach-Object {
-                $runProperty = $_.PSObject.Properties['run']
-                if ($null -ne $runProperty) { [string]$runProperty.Value }
-            }) -join "`n")
-    foreach ($forbiddenPlanningCommand in @('docker', 'psql', 'redis-cli', 'aspire', 'nerv.ps1', 'run-full-chain-test-lane.ps1', 'run-acceptance-scenario-matrix.ps1')) {
-        Assert-Contract (-not $planningRunSurface.Contains($forbiddenPlanningCommand, [StringComparison]::OrdinalIgnoreCase)) "The pure planning job must not invoke '$forbiddenPlanningCommand'."
-    }
-
-    $runtimeJobProperty = $parsedWorkflow.jobs.PSObject.Properties['acceptance-scenario-matrix-runtime']
-    Assert-Contract ($null -ne $runtimeJobProperty) 'CI must define the hosted acceptance-scenario-matrix-runtime job.'
-    $runtimeJob = $runtimeJobProperty.Value
-    Assert-Contract ([string]::Equals([string]$runtimeJob.name, 'Business FullChain Acceptance / sales-order-demand', [StringComparison]::Ordinal)) 'The hosted runtime must expose the exact sales-order-demand Actions name.'
-    Assert-Contract ([string]::Equals([string]$runtimeJob.needs, 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal)) 'The hosted runtime must need planning.'
-    Assert-Contract ([string]::Equals([string]$runtimeJob.if, "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}", [StringComparison]::Ordinal)) 'The hosted runtime must run only for a successful plan that selected sales-order-demand.'
-    $runtimeSteps = @($runtimeJob.steps)
-    Assert-Contract (@($runtimeSteps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every hosted runtime step must have a positive explicit timeout.'
-    $runtimeImageSteps = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Prepare shadow dependency images', [StringComparison]::Ordinal) })
-    Assert-Contract ($runtimeImageSteps.Count -eq 1) 'The hosted shadow runtime must prepare its PostgreSQL and Redis images exactly once before the governed runner.'
-    $runtimeImageStep = $runtimeImageSteps[0]
-    Assert-Contract ([int]$runtimeImageStep.'timeout-minutes' -eq 10 -and
-        [string]::Equals([string]$runtimeImageStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'The hosted shadow image preparation must use one fail-fast ten-minute bash step.'
-    $runtimeImageMatches = @([regex]::Matches([string]$runtimeImageStep.run, '(?:docker image inspect|docker pull) (?<image>[a-z]+:[^\s;]+)') | ForEach-Object { [string]$_.Groups['image'].Value })
-    Assert-Contract ([string]::Equals(($runtimeImageMatches -join '|'), 'postgres:18|postgres:18|redis:8|redis:8', [StringComparison]::Ordinal)) 'The hosted shadow image preparation must inspect/pull exactly postgres:18 and redis:8.'
-    foreach ($boundedRetryFragment in @('timeout --kill-after=10 75 docker pull postgres:18', 'timeout --kill-after=10 75 docker pull redis:8', 'if [ "${docker_attempt}" -ge 3 ]', 'sleep 15')) {
-        Assert-Contract (([string]$runtimeImageStep.run).Contains($boundedRetryFragment, [StringComparison]::Ordinal)) "The hosted shadow image preparation is missing bounded retry fragment '$boundedRetryFragment'."
-    }
-    $runtimeStepBudget = (@($runtimeSteps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
-    Assert-Contract ($runtimeStepBudget -eq 100 -and [int]$runtimeJob.'timeout-minutes' -eq 110 -and ([int]$runtimeJob.'timeout-minutes' - $runtimeStepBudget) -eq 10) 'The hosted runtime must retain the complete 100-minute explicit budget inside a 110-minute job with 10 minutes for action setup/post overhead.'
-    $runtimeRunStep = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Run acceptance scenario matrix', [StringComparison]::Ordinal) })
-    Assert-Contract ($runtimeRunStep.Count -eq 1 -and ([int]$runtimeRunStep[0].'timeout-minutes' * 60) -gt 2220) 'The hosted runtime step timeout must strictly exceed the governed 2220-second scenario budget.'
-    Assert-Contract ([Array]::IndexOf($runtimeSteps, $runtimeImageStep) -lt [Array]::IndexOf($runtimeSteps, $runtimeRunStep[0])) 'The hosted shadow dependency images must be prepared before the governed runtime starts.'
-    $runtimeRun = [string]$runtimeRunStep[0].run
-    Assert-Contract ($runtimeRun.Contains("`$artifactPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/planning.json')", [StringComparison]::Ordinal) -and
-        $runtimeRun.Contains('-ArtifactPath $artifactPath', [StringComparison]::Ordinal)) 'The hosted shadow adapter must pass one canonical absolute planning artifact path to the raw runtime boundary.'
-    foreach ($requiredRuntimeArgument in @(
-            '-ArtifactPath $artifactPath',
-            '-ExpectedArtifactDigest $artifactDigest',
-            '-ExpectedManifestDigest $manifestDigest',
-            "-Repository '`${{ github.repository }}'",
-            "-TestedSha '`${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}'",
-            "-RunId '`${{ github.run_id }}'",
-            "-RunAttempt '`${{ github.run_attempt }}'",
-            "-PlanningRunAttempt '`${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}'",
-            "-Event '`${{ github.event_name }}'",
-            '-SummaryPath artifacts/acceptance-scenario-matrix/shadow/runtime-summary.json',
-            '-CanonicalResultPath artifacts/acceptance-scenario-matrix/shadow/sales-order-demand-result.json',
-            "-TrackIdentifier 'shadow'"
-        )) {
-        Assert-Contract ($runtimeRun.Contains($requiredRuntimeArgument, [StringComparison]::Ordinal)) "Hosted runtime invocation is missing '$requiredRuntimeArgument'."
-    }
-    $runtimeUploads = @($runtimeSteps | Where-Object {
-            $usesProperty = $_.PSObject.Properties['uses']
-            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($runtimeUploads.Count -ge 4 -and @($runtimeUploads | Where-Object { -not [string]::Equals([string]$_.with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -or [int]$_.with.'retention-days' -ne 14 }).Count -eq 0) 'Hosted runtime summary, canonical, business/cleanup, and failure diagnostics uploads must fail closed and retain 14 days.'
-    $runtimePlanningDownloads = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Download acceptance scenario matrix plan', [StringComparison]::Ordinal) })
-    Assert-Contract ($runtimePlanningDownloads.Count -eq 1 -and [string]::Equals([string]$runtimePlanningDownloads[0].with.name, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', [StringComparison]::Ordinal)) 'Shadow runtime must download the exact planning artifact identity from needs outputs.'
-    $runtimePlanningIdentityValidation = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Validate planning artifact identity', [StringComparison]::Ordinal) })
-    Assert-Contract ($runtimePlanningIdentityValidation.Count -eq 1 -and [Array]::IndexOf($runtimeSteps, $runtimePlanningIdentityValidation[0]) -lt [Array]::IndexOf($runtimeSteps, $runtimePlanningDownloads[0]) -and
-        ([string]$runtimePlanningIdentityValidation[0].run).Contains('acceptance-scenario-matrix-plan-${GITHUB_RUN_ID}-${PRODUCER_RUN_ATTEMPT}', [StringComparison]::Ordinal) -and
-        ([string]$runtimePlanningIdentityValidation[0].run).Contains('*[!0-9]*|0|0*', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$runtimePlanningIdentityValidation[0].env.ARTIFACT_NAME, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$runtimePlanningIdentityValidation[0].env.PRODUCER_RUN_ATTEMPT, '${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'Shadow runtime must reject an empty or noncanonical planning artifact identity before download.'
-    $shadowCanonicalUploads = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Upload shadow canonical result', [StringComparison]::Ordinal) })
-    Assert-Contract ($shadowCanonicalUploads.Count -eq 1 -and [string]::Equals([string]$shadowCanonicalUploads[0].with.name, 'acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and $null -eq $shadowCanonicalUploads[0].with.PSObject.Properties['overwrite']) 'Shadow canonical evidence must retain immutable per-run identity.'
-
-    $plannerInvocations = @(
-        foreach ($jobProperty in $parsedWorkflow.jobs.PSObject.Properties) {
-            foreach ($step in @($jobProperty.Value.steps)) {
-                $runProperty = $step.PSObject.Properties['run']
-                if ($null -ne $runProperty -and ([string]$runProperty.Value).Contains('scripts/plan-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)) {
-                    [pscustomobject]@{ Job = $jobProperty.Name; Step = [string]$step.name }
-                }
-            }
-        }
-    )
-    Assert-Contract ($plannerInvocations.Count -eq 1 -and
-        [string]::Equals([string]$plannerInvocations[0].Job, 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$plannerInvocations[0].Step, 'Plan acceptance scenario matrix', [StringComparison]::Ordinal)) 'Only the physical planning job may execute the acceptance scenario matrix planner.'
-
-    $runtimeInvocations = @(
-        foreach ($jobProperty in $parsedWorkflow.jobs.PSObject.Properties) {
-            foreach ($step in @($jobProperty.Value.steps)) {
-                $runProperty = $step.PSObject.Properties['run']
-                if ($null -ne $runProperty -and ([string]$runProperty.Value).Contains('scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)) {
-                    [pscustomobject]@{ Job = $jobProperty.Name; Step = [string]$step.name }
-                }
-            }
-        }
-    )
-    Assert-Contract ($runtimeInvocations.Count -eq 1 -and
-        [string]::Equals([string]$runtimeInvocations[0].Job, 'acceptance-scenario-matrix-runtime', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$runtimeInvocations[0].Step, 'Run acceptance scenario matrix', [StringComparison]::Ordinal)) 'Only the hosted shadow job may execute the acceptance scenario matrix runtime runner.'
 }
 
 function Assert-ImpactCase {
@@ -717,12 +525,12 @@ function Assert-AcceptanceScenarioMatrixOwningPathsRoute {
     }
 }
 
-function Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute {
+function Assert-AcceptanceCanonicalOwningPathsRoute {
     $expectedSelectedFlags = [Collections.Generic.HashSet[string]]::new(
         [string[]]@('scripts', 'backend', 'full_chain'),
         [StringComparer]::Ordinal)
 
-    foreach ($owningPath in $acceptanceScenarioMatrixRuntimeOwningPaths) {
+    foreach ($owningPath in $acceptanceCanonicalOwningPaths) {
         $plan = Get-NervCiImpactPlan -ChangedPaths @($owningPath)
         foreach ($flag in @($plan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
             Assert-ImpactFlag -Plan $plan -Name ([string]$flag.Name) -Expected $expectedSelectedFlags.Contains([string]$flag.Name)
@@ -731,8 +539,8 @@ function Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute {
     }
 }
 
-function Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners {
-    foreach ($owningPath in $acceptanceScenarioMatrixRuntimeOwningPaths) {
+function Assert-AcceptanceCanonicalPathMutationsDoNotAliasOwners {
+    foreach ($owningPath in $acceptanceCanonicalOwningPaths) {
         $leafIndex = $owningPath.LastIndexOf('/', [StringComparison]::Ordinal) + 1
         $firstLeafCharacter = [string]$owningPath[$leafIndex]
         $wrongCaseCharacter = if ([char]::IsUpper($firstLeafCharacter[0])) { $firstLeafCharacter.ToLowerInvariant() } else { $firstLeafCharacter.ToUpperInvariant() }
@@ -1004,8 +812,8 @@ Assert-RedisCapLaneOwningPathsRoute
 Assert-FullChainLaneOwningPathsRoute
 Assert-FullChainProjectReferenceCoverage
 Assert-AcceptanceScenarioMatrixOwningPathsRoute
-Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute
-Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners
+Assert-AcceptanceCanonicalOwningPathsRoute
+Assert-AcceptanceCanonicalPathMutationsDoNotAliasOwners
 
 Assert-ImpactCase -Name 'platform-gateway-openapi' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpenApi/GatewayOperationIdConvention.cs') -Flags @{
     backend = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true
@@ -1184,11 +992,11 @@ finally {
     if (Test-Path -LiteralPath $acceptanceScenarioMutationRoot) { Remove-Item -LiteralPath $acceptanceScenarioMutationRoot -Recurse -Force }
 }
 
-$acceptanceRuntimeMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-acceptance-runtime-$([Guid]::NewGuid().ToString('N'))"
+$acceptanceRuntimeMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-acceptance-canonical-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($acceptanceRuntimeMutationRoot) | Out-Null
     $runtimeMutationIndex = 0
-    foreach ($owningPath in $acceptanceScenarioMatrixRuntimeOwningPaths) {
+    foreach ($owningPath in $acceptanceCanonicalOwningPaths) {
         $leafIndex = $owningPath.LastIndexOf('/', [StringComparison]::Ordinal) + 1
         $firstLeafCharacter = [string]$owningPath[$leafIndex]
         $wrongCaseCharacter = if ([char]::IsUpper($firstLeafCharacter[0])) { $firstLeafCharacter.ToLowerInvariant() } else { $firstLeafCharacter.ToUpperInvariant() }
@@ -1201,14 +1009,14 @@ try {
             )) {
             $routingEntry = "            '$owningPath'`n"
             $weakenedImpactLibrary = $canonicalImpactLibrary.Replace($routingEntry, [string]$mutation.Replacement)
-            Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) "Acceptance runtime $($mutation.Name) mutation must change owning path '$owningPath'."
+            Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) "Acceptance canonical $($mutation.Name) mutation must change owning path '$owningPath'."
             $runtimeMutationIndex++
             $mutationPath = Join-Path $acceptanceRuntimeMutationRoot "$runtimeMutationIndex.CiImpactPlan.ps1"
             [IO.File]::WriteAllText($mutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
             . $mutationPath
             $mutationFailure = $null
-            try { Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute } catch { $mutationFailure = $_ }
-            Assert-Contract ($null -ne $mutationFailure) "Acceptance runtime $($mutation.Name) mutation for owning path '$owningPath' must fail the behavioral contract."
+            try { Assert-AcceptanceCanonicalOwningPathsRoute } catch { $mutationFailure = $_ }
+            Assert-Contract ($null -ne $mutationFailure) "Acceptance canonical $($mutation.Name) mutation for owning path '$owningPath' must fail the behavioral contract."
         }
     }
 }
@@ -1279,8 +1087,6 @@ $expectedDotNetJobNames = @(
     'backend-tests-business-core-b'
     'postgres-provider-tests'
     'redis-cap-transport-tests'
-    'acceptance-scenario-matrix-planning'
-    'acceptance-scenario-matrix-runtime'
     'business-full-chain-acceptance-v1'
     'connector-host-tests'
     'openapi-client-drift'
@@ -1333,88 +1139,6 @@ Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
-    foreach ($planningMutation in @(
-            @{
-                Name = 'planning-job-missing'
-                Original = "  acceptance-scenario-matrix-planning:`n"
-                Replacement = "  acceptance-scenario-matrix-planning-missing:`n"
-            },
-            @{
-                Name = 'planning-command-drift'
-                Original = 'scripts/plan-acceptance-scenario-matrix.ps1'
-                Replacement = 'scripts/plan-acceptance-scenario-matrix-drift.ps1'
-            },
-            @{
-                Name = 'planning-policy-treats-missing-signal-as-unselected'
-                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
-                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain == 'true') }}"
-            }
-        )) {
-        $mutatedPlanningWorkflow = $workflow.Replace([string]$planningMutation.Original, [string]$planningMutation.Replacement)
-        Assert-Contract (-not [string]::Equals($mutatedPlanningWorkflow, $workflow, [StringComparison]::Ordinal)) "Planning workflow mutation '$($planningMutation.Name)' must match the canonical workflow."
-        $planningMutationPath = Join-Path $workflowMutationRoot "$($planningMutation.Name).yml"
-        [IO.File]::WriteAllText($planningMutationPath, $mutatedPlanningWorkflow, [Text.UTF8Encoding]::new($false))
-        $planningMutationFailure = $null
-        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $planningMutationPath } catch { $planningMutationFailure = $_ }
-        Assert-Contract ($null -ne $planningMutationFailure) "Planning workflow mutation '$($planningMutation.Name)' must be rejected."
-    }
-
-    foreach ($artifactDownloadMutation in @(
-            @{
-                Name = 'impact-download-uses-consumer-attempt'
-                Original = 'name: ${{ needs.impact-plan.outputs.artifact-name }}'
-                Replacement = 'name: ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}'
-            },
-            @{
-                Name = 'planning-download-uses-consumer-attempt'
-                Original = 'name: ${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}'
-                Replacement = 'name: acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}'
-            }
-        )) {
-        $mutatedArtifactDownloadWorkflow = $workflow.Replace([string]$artifactDownloadMutation.Original, [string]$artifactDownloadMutation.Replacement)
-        Assert-Contract (-not [string]::Equals($mutatedArtifactDownloadWorkflow, $workflow, [StringComparison]::Ordinal)) "Artifact download mutation '$($artifactDownloadMutation.Name)' must match the canonical workflow."
-        $mutatedArtifactDownloadPath = Join-Path $workflowMutationRoot "$($artifactDownloadMutation.Name).yml"
-        [IO.File]::WriteAllText($mutatedArtifactDownloadPath, $mutatedArtifactDownloadWorkflow, [Text.UTF8Encoding]::new($false))
-        $mutatedArtifactDownloadFailure = $null
-        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $mutatedArtifactDownloadPath } catch { $mutatedArtifactDownloadFailure = $_ }
-        Assert-Contract ($null -ne $mutatedArtifactDownloadFailure) "Artifact download mutation '$($artifactDownloadMutation.Name)' must be rejected."
-    }
-
-    $workflowWithoutShadowImages = [regex]::Replace(
-        $workflow,
-        '(?ms)^      - name: Prepare shadow dependency images\n.*?(?=^      - name: Run acceptance scenario matrix\n)',
-        '')
-    Assert-Contract (-not [string]::Equals($workflowWithoutShadowImages, $workflow, [StringComparison]::Ordinal)) 'Shadow image preparation deletion mutation must remove the complete governed step.'
-    $workflowWithoutShadowImagesPath = Join-Path $workflowMutationRoot 'shadow-runtime-drops-dependency-images.yml'
-    [IO.File]::WriteAllText($workflowWithoutShadowImagesPath, $workflowWithoutShadowImages, [Text.UTF8Encoding]::new($false))
-    $shadowImagesDeletionFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutShadowImagesPath } catch { $shadowImagesDeletionFailure = $_ }
-    Assert-Contract ($null -ne $shadowImagesDeletionFailure) 'Deleting the hosted shadow dependency image step must fail the workflow contract.'
-
-    $workflowWithRelativeRuntimeArtifact = $workflow.Replace(
-        "`$artifactPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/planning.json')",
-        "`$artifactPath = 'artifacts/acceptance-scenario-matrix/planning.json'",
-        [StringComparison]::Ordinal)
-    Assert-Contract (-not [string]::Equals($workflowWithRelativeRuntimeArtifact, $workflow, [StringComparison]::Ordinal)) 'Shadow runtime relative artifact mutation must alter the canonical workflow adapter.'
-    $workflowWithRelativeRuntimeArtifactPath = Join-Path $workflowMutationRoot 'shadow-runtime-relative-planning-artifact.yml'
-    [IO.File]::WriteAllText($workflowWithRelativeRuntimeArtifactPath, $workflowWithRelativeRuntimeArtifact, [Text.UTF8Encoding]::new($false))
-    $relativeRuntimeArtifactFailure = $null
-    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithRelativeRuntimeArtifactPath } catch { $relativeRuntimeArtifactFailure = $_ }
-    Assert-Contract ($null -ne $relativeRuntimeArtifactFailure) 'Passing a relative planning artifact path from the hosted shadow adapter must fail the workflow contract.'
-
-    foreach ($imageMutation in @(
-            @{ Name = 'wrong-postgres-image'; Original = 'postgres:18'; Replacement = 'postgres:17' },
-            @{ Name = 'wrong-redis-image'; Original = 'redis:8'; Replacement = 'redis:7' }
-        )) {
-        $workflowWithWrongImage = $workflow.Replace([string]$imageMutation.Original, [string]$imageMutation.Replacement)
-        Assert-Contract (-not [string]::Equals($workflowWithWrongImage, $workflow, [StringComparison]::Ordinal)) "Shadow image mutation '$($imageMutation.Name)' must alter the workflow."
-        $workflowWithWrongImagePath = Join-Path $workflowMutationRoot "$($imageMutation.Name).yml"
-        [IO.File]::WriteAllText($workflowWithWrongImagePath, $workflowWithWrongImage, [Text.UTF8Encoding]::new($false))
-        $wrongImageFailure = $null
-        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithWrongImagePath } catch { $wrongImageFailure = $_ }
-        Assert-Contract ($null -ne $wrongImageFailure) "Shadow image mutation '$($imageMutation.Name)' must fail the workflow contract."
-    }
-
     $acceptanceScenarioContractStep = @'
       - name: Test acceptance scenario matrix contract
         timeout-minutes: 5
@@ -1431,10 +1155,10 @@ try {
     Assert-Contract ($null -ne $workflowContractFailure) 'Removing the acceptance scenario matrix Script Governance step must fail the workflow contract.'
 
     $acceptanceRuntimeContractStep = @'
-      - name: Test acceptance scenario matrix runtime contract
+      - name: Test acceptance canonical result contract
         timeout-minutes: 5
         shell: pwsh
-        run: ./scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1
+        run: ./scripts/tests/acceptance-canonical-result.Tests.ps1
 
 '@
     $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
@@ -1442,15 +1166,15 @@ try {
         'step 预算合计 198m（38 个 step：3m checkout').Replace(
         '+ 37 × 5m + 1 × 15m；',
         '+ 36 × 5m + 1 × 15m；')
-    Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 198m（38 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 36 × 5m + 1 × 15m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 38 steps and 198m.'
-    $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
+    Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance canonical workflow mutation must remove the canonical pure fixture contract step.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 198m（38 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 36 × 5m + 1 × 15m；', [StringComparison]::Ordinal)) 'Acceptance canonical workflow mutation must keep its budget comment truthful at 38 steps and 198m.'
+    $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-canonical-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceRuntimeContractPath } catch { $runtimeWorkflowContractFailure = $_ }
-    $expectedRuntimeStepDiagnostic = 'Script Governance must contain exactly one independent acceptance scenario matrix runtime contract step.'
+    $expectedRuntimeStepDiagnostic = 'Script Governance must contain exactly one independent acceptance canonical result contract step.'
     $observedRuntimeStepDiagnostic = if ($null -eq $runtimeWorkflowContractFailure) { '<none>' } else { [string]$runtimeWorkflowContractFailure.Exception.Message }
-    Assert-Contract ([string]::Equals($observedRuntimeStepDiagnostic, $expectedRuntimeStepDiagnostic, [StringComparison]::Ordinal)) "Removing the acceptance runtime Script Governance fixture step must fail with the exact runtime-step uniqueness diagnostic. Observed: $observedRuntimeStepDiagnostic"
+    Assert-Contract ([string]::Equals($observedRuntimeStepDiagnostic, $expectedRuntimeStepDiagnostic, [StringComparison]::Ordinal)) "Removing the canonical result Script Governance fixture step must fail with the exact runtime-step uniqueness diagnostic. Observed: $observedRuntimeStepDiagnostic"
 
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
         'step 预算合计 203m（39 个 step：3m checkout',

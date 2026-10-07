@@ -66,7 +66,7 @@ function Get-NervCiRequiredSummaryFindings {
             return @($findings)
         }
 
-        $fullChainAggregateDiagnostic = 'Stable Business FullChain Acceptance must retain the exact planning, v1, shadow, and selected/skipped result contract.'
+        $fullChainAggregateDiagnostic = 'Stable Business FullChain Acceptance must retain the exact real authority result contract.'
         $fullChainAggregateValid = $true
         $fullChainAggregateProperty = $jobs.PSObject.Properties['business-full-chain-acceptance']
         if ($null -eq $fullChainAggregateProperty) {
@@ -76,9 +76,7 @@ function Get-NervCiRequiredSummaryFindings {
             $fullChainAggregate = $fullChainAggregateProperty.Value
             $expectedFullChainNeeds = @(
                 'impact-plan',
-                'acceptance-scenario-matrix-planning',
-                'business-full-chain-acceptance-v1',
-                'acceptance-scenario-matrix-runtime'
+                'business-full-chain-acceptance-v1'
             )
             $actualFullChainNeeds = @($fullChainAggregate.needs | ForEach-Object { [string] $_ })
             $expectedFullChainNeedSet = Get-NervStringSet -Values $expectedFullChainNeeds -Comparer ([StringComparer]::Ordinal)
@@ -102,32 +100,16 @@ function Get-NervCiRequiredSummaryFindings {
             else {
                 $fullChainStep = $fullChainSteps[0]
                 $fullChainAggregateValid = $fullChainAggregateValid -and
-                    [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'name'), 'Require FullChain planning, v1 authority, and selected shadow runtime', [StringComparison]::Ordinal) -and
+                    [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'name'), 'Require FullChain authority', [StringComparison]::Ordinal) -and
                     [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'timeout-minutes'), '3', [StringComparison]::Ordinal) -and
                     [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'shell'), 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal) -and
                     $null -eq $fullChainStep.PSObject.Properties['if'] -and
                     $null -eq $fullChainStep.PSObject.Properties['continue-on-error']
 
                 $expectedFullChainRun = @'
-planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"
 v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
-sales_order_demand_selected="${{ needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected }}"
-shadow_result="${{ needs.acceptance-scenario-matrix-runtime.result }}"
 
-test "$planning_result" = "success"
 test "$v1_result" = "success"
-case "$sales_order_demand_selected" in
-  true)
-    test "$shadow_result" = "success"
-    ;;
-  false)
-    test "$shadow_result" = "skipped"
-    ;;
-  *)
-    echo "sales-order-demand-selected must be exactly 'true' or 'false'." >&2
-    exit 1
-    ;;
-esac
 '@
                 $actualFullChainRun = Get-NervCiRequiredSummaryStringValue -Object $fullChainStep -PropertyName 'run'
                 $fullChainAggregateValid = $fullChainAggregateValid -and [string]::Equals(

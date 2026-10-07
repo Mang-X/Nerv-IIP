@@ -252,12 +252,8 @@ function Assert-FullChainV1WorkflowContract {
     Assert-Contract ([int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the governed 225-minute job budget.'
     Assert-Contract ([string]::Equals([string]$v1Job.'runs-on', 'ubuntu-latest', [StringComparison]::Ordinal)) 'The physical v1 worker must run on ubuntu-latest.'
     $v1Needs = @($v1Job.needs | ForEach-Object { [string]$_ })
-    Assert-Contract ($v1Needs.Count -eq 1 -and [string]::Equals($v1Needs[0], 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal)) 'The physical v1 worker must need only acceptance-scenario-matrix-planning.'
-    $allowedV1Conditions = [Collections.Generic.HashSet[string]]::new([string[]]@(
-            "`${{ needs.acceptance-scenario-matrix-planning.result == 'success' }}",
-            "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' }}"
-        ), [StringComparer]::Ordinal)
-    Assert-Contract ($allowedV1Conditions.Contains([string]$v1Job.if)) 'The physical v1 worker must start only after planning succeeds.'
+    Assert-Contract ($v1Needs.Count -eq 1 -and [string]::Equals($v1Needs[0], 'impact-plan', [StringComparison]::Ordinal)) 'The physical v1 worker must need only impact-plan.'
+    Assert-Contract ([string]::Equals([string]$v1Job.if, "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}", [StringComparison]::Ordinal)) 'The physical authority must preserve conservative FullChain selection and skip only explicit full_chain=false on a successful PR impact plan.'
     $v1Steps = @($v1Job.steps)
     $expectedStepNames = @(
         'Checkout',
@@ -303,7 +299,7 @@ function Assert-FullChainV1WorkflowContract {
             }
         }
     )
-    Assert-Contract ($allFullChainCollectors.Count -eq 1 -and [string]::Equals([string]$allFullChainCollectors[0].Job, 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal)) 'v1 must remain the sole formal full-chain evidence owner; shadow must not attach a MAN-661 collector.'
+    Assert-Contract ($allFullChainCollectors.Count -eq 1 -and [string]::Equals([string]$allFullChainCollectors[0].Job, 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal)) 'The real authority must remain the sole formal full-chain evidence owner.'
 
     return $parsedWorkflow
 }
@@ -682,7 +678,7 @@ try {
     foreach ($requiredWorkflowFragment in @(
         'business-full-chain-acceptance-v1:',
         'name: Business FullChain Acceptance / v1 Authority',
-        "needs.acceptance-scenario-matrix-planning.result == 'success'",
+        "needs.impact-plan.outputs.full_chain != 'false'",
         'bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6',
         'pnpm -C frontend install --frozen-lockfile',
         'pnpm -C frontend --filter @nerv-iip/business-console exec playwright install chromium',

@@ -44,7 +44,7 @@ $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
-. (Join-Path $root 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1')
+. (Join-Path $root 'scripts/lib/AcceptanceCanonicalResult.ps1')
 
 $canonicalResultEnabled = -not [string]::IsNullOrWhiteSpace($CanonicalResultPath)
 $canonicalResultFullPath = $null
