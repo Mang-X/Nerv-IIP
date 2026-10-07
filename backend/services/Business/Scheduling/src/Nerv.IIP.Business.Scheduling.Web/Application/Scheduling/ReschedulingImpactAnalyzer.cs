@@ -84,50 +84,58 @@ internal static class ReschedulingImpactAnalyzer
         var reasonsByOperation = assignments.Select(_ => new List<ReschedulingImpactReason>()).ToArray();
         var pathsByOperation = assignments.Select(_ => new List<ReschedulingImpactPath>()).ToArray();
         var resources = normalizedProblem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
-        foreach (var rootDemand in rootDemands)
+        // 所有来源共享潜在需求，容量按工序身份计数；root 标签保留各自的来源和路径。
+        var reached = rootDemands.Select((demand, root) => (Key: (Root: root, demand.Index), Demand: demand))
+            .ToDictionary(x => x.Key, x => x.Demand);
+        var pending = new Queue<(int Root, int Index)>();
+        var queued = new HashSet<(int Root, int Index)>();
+        foreach (var key in reached.Keys) Enqueue(key);
+        while (pending.TryDequeue(out var key))
         {
-            // 每个来源/直接命中分别传播。窗口只表示潜在竞争，不是生成或选定的新 assignment。
-            var reached = new Dictionary<int, ImpactDemand> { [rootDemand.Index] = rootDemand };
-            var pending = new Queue<ImpactDemand>();
-            pending.Enqueue(rootDemand);
-            while (pending.TryDequeue(out var current))
+            queued.Remove(key);
+            var current = reached[key];
+            foreach (var next in predecessors[current.Index])
             {
-                foreach (var next in predecessors[current.Index])
-                {
-                    var assignment = assignments[next];
-                    var demand = current.Unquantified
-                        ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
-                        : ShiftRemaining(assignment, assignment.StartUtc,
-                            Max(assignment.StartUtc, Completion(current, assignments[current.Index])));
-                    Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
-                }
-                foreach (var competition in ResourceCompetitions(current, rootDemands.Concat(reached.Values), assignments, resources))
-                {
-                    var assignment = assignments[competition.Index];
-                    var demand = current.Unquantified
-                        ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
-                        : ShiftRemaining(assignment, competition.Window.StartUtc, competition.BlockingEndUtc);
-                    Follow(competition.Index, ReschedulingImpactReasonCode.ResourceCapacity, demand, competition.Window, competition.Capacity);
-                }
+                var assignment = assignments[next];
+                var demand = current.Unquantified
+                    ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
+                    : ShiftRemaining(assignment, assignment.StartUtc,
+                        Max(assignment.StartUtc, Completion(current, assignments[current.Index])));
+                Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
+            }
+            foreach (var competition in ResourceCompetitions(current, reached.Values, assignments, resources))
+            {
+                var assignment = assignments[competition.Index];
+                var demand = current.Unquantified
+                    ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
+                    : ShiftRemaining(assignment, competition.Window.StartUtc, competition.BlockingEndUtc);
+                Follow(competition.Index, ReschedulingImpactReasonCode.ResourceCapacity, demand, competition.Window, competition.Capacity);
+            }
 
-                void Follow(int next, ReschedulingImpactReasonCode code, IReadOnlyList<ScheduleAssignmentSegmentContract> demand,
-                    ScheduleAssignmentSegmentContract? competition, int? capacity)
-                {
-                    var identity = Identity(assignments[next]);
-                    if (identity == current.Path.Root || current.Path.Steps.Any(x => x.To == identity)) return;
-                    var step = new ReschedulingImpactStep(Identity(assignments[current.Index]), identity, code, competition, capacity);
-                    var candidate = new ImpactDemand(next, demand,
-                        current.Path with { Steps = [.. current.Path.Steps, step] }, new(code, current.Reason.Source), current.Unquantified);
-                    if (reached.TryGetValue(next, out var existing) && Completion(candidate, assignments[next]) <= Completion(existing, assignments[next])) return;
-                    reached[next] = candidate;
-                    pending.Enqueue(candidate);
-                }
-            }
-            foreach (var current in reached.OrderBy(x => x.Key).Select(x => x.Value))
+            void Follow(int next, ReschedulingImpactReasonCode code, IReadOnlyList<ScheduleAssignmentSegmentContract> demand,
+                ScheduleAssignmentSegmentContract? competition, int? capacity)
             {
-                reasonsByOperation[current.Index].Add(current.Reason);
-                pathsByOperation[current.Index].Add(current.Path);
+                var identity = Identity(assignments[next]);
+                if (identity == current.Path.Root || current.Path.Steps.Any(x => x.To == identity)) return;
+                var step = new ReschedulingImpactStep(Identity(assignments[current.Index]), identity, code, competition, capacity);
+                var candidate = new ImpactDemand(next, demand,
+                    current.Path with { Steps = [.. current.Path.Steps, step] }, new(code, current.Reason.Source), current.Unquantified);
+                if (reached.TryGetValue((key.Root, next), out var existing) && Completion(candidate, assignments[next]) <= Completion(existing, assignments[next])) return;
+                reached[(key.Root, next)] = candidate;
+                // 新后继需求可能使其它来源的既有需求共同超容量，重新校验同资源上的需求。
+                foreach (var changed in reached.Keys.Where(x => assignments[x.Index].ResourceId == assignments[next].ResourceId)
+                    .OrderBy(x => x.Root).ThenBy(x => x.Index)) Enqueue(changed);
             }
+        }
+        foreach (var current in reached.OrderBy(x => x.Key.Root).ThenBy(x => x.Key.Index).Select(x => x.Value))
+        {
+            reasonsByOperation[current.Index].Add(current.Reason);
+            pathsByOperation[current.Index].Add(current.Path);
+        }
+
+        void Enqueue((int Root, int Index) key)
+        {
+            if (queued.Add(key)) pending.Enqueue(key);
         }
 
         var affected = new List<ReschedulingAffectedOperation>();

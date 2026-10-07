@@ -278,6 +278,56 @@ public class ReschedulingImpactAnalyzerTests
         }
     }
 
+    [Theory]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public void Joint_successor_demands_share_capacity_and_preserve_both_source_paths(int capacity, bool competing)
+    {
+        var a = Assignment("a", "DEV-1", 0, 60) with { OrderId = "A" };
+        var d = Assignment("d", "DEV-2", 0, 60) with { OrderId = "D" };
+        var b = Assignment("b", "DEV-3", 60, 120) with { OrderId = "A" };
+        var e = Assignment("e", "DEV-3", 60, 120) with { OrderId = "D" };
+        var c = Assignment("c", "DEV-3", 320, 380) with { OrderId = "C" };
+        var problem = Problem() with
+        {
+            Orders = [Order("A", Operation("a"), Operation("b", "a") with { EligibleResourceIds = ["DEV-3"] }),
+                Order("D", Operation("d"), Operation("e", "d") with { EligibleResourceIds = ["DEV-3"] }),
+                Order("C", Operation("c") with { EligibleResourceIds = ["DEV-3"] })],
+            Resources = [.. Problem().Resources, new("DEV-3", "WC", ["cut"], capacity, "CAL", "3")]
+        };
+        SchedulingDeviation[] deviations = [Downtime(40, 300),
+            Downtime(40, 300) with { ResourceId = "DEV-2", SourceReference = "equipment/outage-2" }];
+        ScheduleAssignmentContract[] baseline = [a, b, c, d, e];
+        var policy = new SchedulingFreezePolicy(At, TimeSpan.Zero, new Dictionary<string, TimeSpan>());
+        ReschedulingImpact Calculate(bool shuffle) => ReschedulingImpactAnalyzer.Analyze(shuffle ? problem with
+        {
+            Orders = problem.Orders.Reverse().Select(order => order with { Operations = order.Operations.Reverse().ToArray() }).ToArray(),
+            Resources = problem.Resources.Reverse().ToArray()
+        } : problem, shuffle ? baseline.Reverse().ToArray() : baseline, shuffle ? deviations.Reverse().ToArray() : deviations,
+            [], [], policy);
+        var result = Calculate(false);
+        Assert.Equal(competing ? ["A/a", "A/b", "C/c", "D/d", "D/e"] : new[] { "A/a", "A/b", "D/d", "D/e" },
+            result.AffectedOperations.Select(x => $"{x.Assignment.OrderId}/{x.Assignment.OperationId}"));
+        Assert.Equal(result.AffectedOperations.Select(x => x.Assignment), result.RecalculateAssignments);
+        Assert.Empty(result.FrozenAssignments);
+        if (competing)
+        {
+            var hit = result.AffectedOperations.Single(x => x.Assignment == c);
+            Assert.Equal(deviations.OrderBy(x => x.SourceReference), hit.Reasons.Select(x => x.Source).OrderBy(x => x.SourceReference));
+            Assert.Equal(2, hit.Paths.Count);
+            Assert.Equal([new ReschedulingImpactOperation("A", "a"), new("D", "d")], hit.Paths.Select(x => x.Root));
+            Assert.All(hit.Paths, path =>
+            {
+                Assert.Equal([ReschedulingImpactReasonCode.PredecessorDependency, ReschedulingImpactReasonCode.ResourceCapacity],
+                    path.Steps.Select(x => x.Code));
+                Assert.Equal(new(At.AddMinutes(320), At.AddMinutes(380)), path.Steps[^1].CompetitionWindow);
+                Assert.Equal(capacity, path.Steps[^1].CapacityUnits);
+            });
+        }
+        Assert.Equal(CompleteResult(result), CompleteResult(Calculate(false)));
+        Assert.Equal(CompleteResult(result), CompleteResult(Calculate(true)));
+    }
+
     [Fact]
     public void Assembly_parent_first_operations_reuse_all_child_operation_dependencies()
     {
