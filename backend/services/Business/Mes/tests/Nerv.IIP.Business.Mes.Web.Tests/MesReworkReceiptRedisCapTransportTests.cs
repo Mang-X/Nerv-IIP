@@ -4,6 +4,7 @@ using DotNetCore.CAP.Filter;
 using DotNetCore.CAP.Internal;
 using DotNetCore.CAP.Persistence;
 using DotNetCore.CAP.Messages;
+using DotNetCore.CAP.Transport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -65,6 +66,8 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
                 Assert.Equal(
                     [firstEvent.EventId, secondEvent.EventId],
                     concurrencyGate.EventIds.Order(StringComparer.Ordinal).ToArray());
+                factory.Services.GetRequiredService<NcrTransportStartup>()
+                    .AssertCompleted(concurrencyGate.ConcurrentMessageIds());
                 var rework = await db.WorkOrders.AsNoTracking()
                     .SingleAsync(x => x.SourceNcrId == "ncr-001", token);
                 Assert.Equal(WorkOrder.ReworkType, rework.WorkOrderType);
@@ -84,6 +87,7 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
             },
             options: new EventuallyOptions(TimeSpan.FromSeconds(90), TimeSpan.FromMilliseconds(250), [])).AsTask(),
             () => CaptureAsync(factory), output.WriteLine);
+        output.WriteLine(await CaptureAsync(factory));
 
     }
 
@@ -226,7 +230,8 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
     {
         using var scope = factory.Services.CreateScope();
         var rows = await ReadReceivedAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(), CancellationToken.None);
-        return factory.Services.GetRequiredService<DistinctNcrDeliveryGate>().Describe(rows);
+        return factory.Services.GetRequiredService<DistinctNcrDeliveryGate>().Describe(rows)
+            + Environment.NewLine + factory.Services.GetRequiredService<NcrTransportStartup>().Describe();
     }
 
     private static void AssertReceivedSucceeded(string[] statuses)
@@ -270,6 +275,13 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
                 services.AddScoped<IMesMaterialRequirementSnapshotProvider>(_ => NoRequirementsSnapshotProvider.Instance);
                 services.AddSingleton<ReworkReceiptTransportProbe>();
                 services.AddSingleton<DistinctNcrDeliveryGate>();
+                services.AddSingleton<NcrTransportStartup>();
+                var consumerFactory = services.Single(x => x.ServiceType == typeof(IConsumerClientFactory));
+                services.Remove(consumerFactory);
+                services.AddSingleton<IConsumerClientFactory>(provider => new NcrConsumerFactory(
+                    (IConsumerClientFactory)ActivatorUtilities.CreateInstance(provider, consumerFactory.ImplementationType!),
+                    provider.GetRequiredService<NcrTransportStartup>(),
+                    provider.GetRequiredService<IOptions<CapOptions>>().Value));
                 services.AddSingleton<ISubscribeFilter>(provider =>
                     provider.GetRequiredService<DistinctNcrDeliveryGate>());
                 services.PostConfigure<CapOptions>(options =>
@@ -375,6 +387,17 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
             }
         }
 
+        public string[] ConcurrentMessageIds()
+        {
+            lock (eventIds)
+            {
+                var firstPassed = observations.First(x => x.Stage == "filter-passed").Sequence;
+                var entered = observations.Where(x => x.Stage == "filter-enter" && x.Sequence < firstPassed).ToArray();
+                Assert.Equal(["input-first", "input-second"], entered.Select(x => x.Category).Order(StringComparer.Ordinal).ToArray());
+                return entered.Select(x => x.MessageId).Order(StringComparer.Ordinal).ToArray();
+            }
+        }
+
         public IReadOnlyCollection<string> EventIds
         {
             get
@@ -432,6 +455,101 @@ public sealed class MesReworkReceiptRedisCapTransportTests(ITestOutputHelper out
             Observe(context, stage, context.Exception);
             return Task.CompletedTask;
         }
+    }
+
+    // 本 Fact 证明业务 subscriber 的并发幂等；先 ACK 两个输入，再启动第二个
+    // transport listener，避免 startup pending 重读同一输入先占满两个 subscriber 槽。
+    private sealed class NcrTransportStartup
+    {
+        private readonly TaskCompletionSource bothAcknowledged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly HashSet<string> acknowledged = new(StringComparer.Ordinal);
+        private readonly List<string> phases = [];
+        private string[]? acknowledgedBeforeSecondListener;
+        private int listeners;
+
+        public int NextListener() => Interlocked.Increment(ref listeners);
+        public Task WaitForAcknowledgementsAsync(CancellationToken token) => bothAcknowledged.Task.WaitAsync(token);
+
+        public void ListeningStarted(int listener)
+        {
+            lock (acknowledged)
+            {
+                if (listener == 2)
+                    acknowledgedBeforeSecondListener = acknowledged.Order(StringComparer.Ordinal).ToArray();
+                phases.Add($"listener={listener} listening-begin distinct-acks={acknowledged.Count}");
+            }
+        }
+
+        public void Acknowledged(int listener, string messageId)
+        {
+            lock (acknowledged)
+            {
+                if (!acknowledged.Add(messageId)) return;
+                phases.Add($"listener={listener} ack-completed distinct-acks={acknowledged.Count}");
+                if (acknowledged.Count == 2) bothAcknowledged.SetResult();
+            }
+        }
+
+        public void AssertCompleted(string[] originalMessageIds)
+        {
+            lock (acknowledged)
+            {
+                Assert.Equal(2, listeners);
+                Assert.Equal(originalMessageIds, acknowledgedBeforeSecondListener);
+                Assert.Equal(originalMessageIds, acknowledged.Order(StringComparer.Ordinal).ToArray());
+            }
+        }
+
+        public string Describe()
+        {
+            lock (acknowledged) return "ncr-transport-startup" + Environment.NewLine + string.Join(Environment.NewLine, phases);
+        }
+    }
+
+    private sealed class NcrConsumerFactory(IConsumerClientFactory inner, NcrTransportStartup startup, CapOptions options)
+        : IConsumerClientFactory
+    {
+        public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+        {
+            var client = await inner.CreateAsync(groupName, groupConcurrent);
+            var prefix = string.IsNullOrEmpty(options.GroupNamePrefix) ? "" : options.GroupNamePrefix + ".";
+            var targetGroup = prefix + NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.ConsumerName + "." + options.Version;
+            return groupName == targetGroup ? new NcrConsumer(client, startup) : client;
+        }
+    }
+
+    private sealed class NcrConsumer(IConsumerClient inner, NcrTransportStartup startup) : IConsumerClient
+    {
+        private readonly ConcurrentDictionary<object, string> pendingMessages = new();
+        private int listener;
+        public BrokerAddress BrokerAddress => inner.BrokerAddress;
+        public Func<TransportMessage, object?, Task>? OnMessageCallback
+        {
+            get => inner.OnMessageCallback;
+            set => inner.OnMessageCallback = async (message, sender) =>
+            {
+                pendingMessages[sender!] = message.GetId();
+                await value!(message, sender);
+            };
+        }
+        public Action<LogMessageEventArgs>? OnLogCallback { get => inner.OnLogCallback; set => inner.OnLogCallback = value; }
+        public Task<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topics) => inner.FetchTopicsAsync(topics);
+        public Task SubscribeAsync(IEnumerable<string> topics) => inner.SubscribeAsync(topics);
+        public async Task ListeningAsync(TimeSpan timeout, CancellationToken token)
+        {
+            listener = startup.NextListener();
+            if (listener == 2) await startup.WaitForAcknowledgementsAsync(token);
+            startup.ListeningStarted(listener);
+            await inner.ListeningAsync(timeout, token);
+        }
+        public async Task CommitAsync(object? sender)
+        {
+            await inner.CommitAsync(sender);
+            startup.Acknowledged(listener, pendingMessages[sender!]);
+            pendingMessages.TryRemove(sender!, out _);
+        }
+        public Task RejectAsync(object? sender) => inner.RejectAsync(sender);
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
 
     private sealed class NoRequirementsSnapshotProvider : IMesMaterialRequirementSnapshotProvider
