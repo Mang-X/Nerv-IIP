@@ -4,12 +4,12 @@ using System.Text;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 
-public sealed class LocalTusFileStore
+public sealed class LocalUploadByteStore
 {
     private readonly string rootPath;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> uploadLocks = new(StringComparer.Ordinal);
 
-    public LocalTusFileStore(IConfiguration configuration)
+    public LocalUploadByteStore(IConfiguration configuration)
     {
         // 不回落系统 temp：该目录承载已 complete 文件的字节（ADR 0024 §5）。缺配置由 Program.cs 在启动时拒绝。
         rootPath = configuration["FileStorage:Tus:RootPath"]!;
@@ -104,6 +104,12 @@ public sealed class LocalTusFileStore
         {
             uploadLock.Release();
         }
+    }
+
+    internal FileStream OpenWrite(string uploadSessionId)
+    {
+        Directory.CreateDirectory(rootPath);
+        return new FileStream(GetUploadPath(uploadSessionId), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
     }
 
     public FileStream OpenRead(string uploadSessionId)

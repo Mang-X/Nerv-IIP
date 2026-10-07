@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Builder;
 using System.Net;
 using System.Text;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -30,6 +31,27 @@ namespace Nerv.IIP.FileStorage.Web.Tests;
 
 public sealed partial class FileStorageRestartPersistenceTests
 {
+    [FileStorageRealPostgresFact]
+    public async Task Tus_bytes_offset_and_canonical_checksum_survive_host_restart()
+    {
+        await ResetFileStorageSchemaAsync();
+        await Verify_Tus_bytes_offset_and_canonical_checksum_survive_host_restart();
+    }
+
+    [FileStorageRealPostgresFact]
+    public async Task Tus_admitted_patch_is_rejected_after_complete_commits_intent()
+    {
+        await ResetFileStorageSchemaAsync();
+        await Verify_Tus_admitted_patch_is_rejected_after_complete_commits_intent();
+    }
+
+    [FileStorageRealPostgresFact]
+    public async Task Tus_concurrent_patches_preserve_offset_and_complete_drains_mutation()
+    {
+        await ResetFileStorageSchemaAsync();
+        await Verify_Tus_concurrent_patches_preserve_offset_and_complete_drains_mutation();
+    }
+
     [FileStorageRealPostgresFact]
     public async Task Metadata_usage_and_download_grant_survive_web_host_restart()
     {

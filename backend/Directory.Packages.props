@@ -41,6 +41,7 @@
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.8.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.21.0" />
+    <PackageVersion Include="tusdotnet" Version="2.12.0" />
     <PackageVersion Include="Minio" Version="7.0.0" />
     <PackageVersion Include="NetCorePal.Context.AspNetCore" Version="3.3.0" />
     <PackageVersion Include="NetCorePal.Context.CAP" Version="3.3.0" />

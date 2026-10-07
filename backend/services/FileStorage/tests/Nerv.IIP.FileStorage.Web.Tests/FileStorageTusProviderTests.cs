@@ -21,7 +21,7 @@ using FileStorageFileStatus = Nerv.IIP.FileStorage.Domain.FileStorageFileStatus;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
-public sealed class FileStorageTusProviderTests
+public sealed partial class FileStorageTusProviderTests
 {
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -38,6 +38,138 @@ public sealed class FileStorageTusProviderTests
         Assert.Equal("tus", upload.Headers["x-nerv-upload-mode"]);
         Assert.DoesNotContain(upload.Headers, header => header.Key.Contains("object", StringComparison.OrdinalIgnoreCase));
         AssertObjectKeyIsNotExposed(upload);
+    }
+
+    [Fact]
+    public async Task CreateUploadSession_WithoutExplicitTransport_UsesWorkingTus()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(root).WithWebHostBuilder(builder =>
+                builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["FileStorage:UploadProvider"] = null })));
+            using var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 10);
+            Assert.Equal("tus", created.Provider);
+            await PatchTusBytesAsync(client, created.Upload.Url, 0, Encoding.UTF8.GetBytes("hello"));
+            Assert.Equal(5, GetUploadOffset(await SendTusHeadAsync(client, created.Upload.Url)));
+        }
+        finally { DeleteTempDirectory(root); }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_AdmittedPatch_RechecksDurableOpenBeforeMutation()
+    {
+        var root = CreateTempDirectory();
+        var barrier = new AdmissionMutationBarrier();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(root).WithWebHostBuilder(builder =>
+                builder.ConfigureServices(services => services.AddSingleton<IUploadSessionMutationGate>(provider =>
+                    barrier.Initialize(new UploadSessionMutationGate(
+                        provider.GetRequiredService<IServiceScopeFactory>(),
+                        provider.GetRequiredService<UploadSessionGateRegistry>())))));
+            using var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 10);
+            using var patch = CreateTusPatchRequest(created.Upload.Url, 0, Encoding.UTF8.GetBytes("hello"));
+            var writing = client.SendAsync(patch);
+            await Task.WhenAny(barrier.Entered.Task, writing).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.True(barrier.Entered.Task.IsCompleted, "PATCH did not enter the application mutation gate.");
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var session = await db.UploadSessions.SingleAsync(x => x.UploadSessionId == created.UploadSessionId);
+                db.Entry(session).Property(x => x.State).CurrentValue = UploadSessionState.Committing;
+                await db.SaveChangesAsync();
+            }
+            barrier.Release.TrySetResult();
+            Assert.Equal(StatusCodes.Status409Conflict, (int)(await writing).StatusCode);
+            Assert.Equal(0, CreateTusStore(root).GetOffset(created.UploadSessionId));
+        }
+        finally { barrier.Release.TrySetResult(); DeleteTempDirectory(root); }
+    }
+
+    private sealed class AdmissionMutationBarrier : IUploadSessionMutationGate
+    {
+        private IUploadSessionMutationGate inner = null!;
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public AdmissionMutationBarrier Initialize(IUploadSessionMutationGate value) { inner = value; return this; }
+        public async Task<UploadSessionMutationResult> ExecutePatchMutationAsync(
+            string id, Func<CancellationToken, Task> mutation, CancellationToken cancellationToken)
+        {
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return await inner.ExecutePatchMutationAsync(id, mutation, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task TusUploadEndpoint_Termination_RemovesBytesAndReservationWithoutTransportCreation()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(root);
+            using var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 10);
+            await PatchTusBytesAsync(client, created.Upload.Url, 0, Encoding.UTF8.GetBytes("hello"));
+            using var options = new HttpRequestMessage(HttpMethod.Options, "/api/files/v1/tus");
+            var capabilities = await client.SendAsync(options);
+            Assert.Equal(System.Net.HttpStatusCode.NoContent, capabilities.StatusCode);
+            Assert.DoesNotContain("creation", string.Join(',', capabilities.Headers.GetValues("Tus-Extension")), StringComparison.Ordinal);
+            using var deletion = new HttpRequestMessage(HttpMethod.Delete, created.Upload.Url);
+            deletion.Headers.Add("Tus-Resumable", "1.0.0");
+            AddDefaultTransferHeaders(deletion);
+            Assert.Equal(System.Net.HttpStatusCode.NoContent, (await client.SendAsync(deletion)).StatusCode);
+            using var scope = factory.Services.CreateScope();
+            Assert.False(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UploadSessions
+                .AnyAsync(x => x.UploadSessionId == created.UploadSessionId));
+            Assert.Empty(Directory.EnumerateFiles(root));
+            using var creation = new HttpRequestMessage(HttpMethod.Post, "/api/files/v1/tus");
+            creation.Headers.Add("Tus-Resumable", "1.0.0");
+            creation.Headers.Add("Upload-Length", "5");
+            Assert.False((await client.SendAsync(creation)).IsSuccessStatusCode);
+        }
+        finally { DeleteTempDirectory(root); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TusStore_FailedStream_PreservesErrorAndReleasesMutationResources(bool cancelled)
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(root);
+            using var client = CreateInternalServiceClient(factory);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 10);
+            using var scope = factory.Services.CreateScope();
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Upload-Offset"] = "0";
+            var adapter = new ApplicationTusStore(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                scope.ServiceProvider.GetRequiredService<ILocalTusFileStoreAccessor>(),
+                scope.ServiceProvider.GetRequiredService<IUploadSessionMutationGate>(), TimeProvider.System, context);
+            Exception failure = cancelled ? new OperationCanceledException(new CancellationToken(true)) : new IOException("stream failed");
+            using var input = new FailedChunkStream(failure);
+            Assert.Same(failure, await Record.ExceptionAsync(() => adapter.AppendDataAsync(created.UploadSessionId, input, default)));
+            Assert.Equal(0, CreateTusStore(root).GetOffset(created.UploadSessionId));
+            Assert.Equal(5, await adapter.AppendDataAsync(created.UploadSessionId, new MemoryStream(Encoding.UTF8.GetBytes("hello")), default));
+        }
+        finally { DeleteTempDirectory(root); }
+    }
+
+    private sealed class UnknownLengthStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+    }
+
+    private sealed class FailedChunkStream(Exception failure) : MemoryStream(Encoding.UTF8.GetBytes("hello"))
+    {
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken token) =>
+            Position == 0 ? base.ReadAsync(buffer, offset, count, token) : Task.FromException<int>(failure);
     }
 
     [Fact]
@@ -222,6 +354,10 @@ public sealed class FileStorageTusProviderTests
             var response = await client.SendAsync(patchRequest);
 
             Assert.Equal(StatusCodes.Status413PayloadTooLarge, (int)response.StatusCode);
+            using var unbounded = CreateTusPatchRequest(created.Upload.Url, 0, []);
+            unbounded.Content = new StreamContent(new UnknownLengthStream(Encoding.UTF8.GetBytes("toolarge")));
+            unbounded.Content.Headers.ContentType = new("application/offset+octet-stream");
+            Assert.Equal(StatusCodes.Status413PayloadTooLarge, (int)(await client.SendAsync(unbounded)).StatusCode);
             var headAfter = await SendTusHeadAsync(client, created.Upload.Url);
             Assert.Equal(0, GetUploadOffset(headAfter));
         }
@@ -288,13 +424,13 @@ public sealed class FileStorageTusProviderTests
             await using var factory = CreateFactoryWithTusProvider(rootPath);
             var client = CreateInternalServiceClient(factory);
             var bytes = Encoding.UTF8.GetBytes("hello");
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: bytes.Length);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: bytes.Length, request: CreateTextAttachmentRequest());
             using var patchRequest = CreateTusPatchRequest(created.Upload.Url, offset: 0, bytes);
             patchRequest.Headers.Add("Upload-Checksum", $"sha256 {Convert.ToBase64String(SHA256.HashData(bytes))}");
 
             var response = await client.SendAsync(patchRequest);
 
-            Assert.Equal(StatusCodes.Status204NoContent, (int)response.StatusCode);
+            Assert.True(response.StatusCode == System.Net.HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync());
             Assert.Equal(bytes.Length, GetUploadOffset(response));
         }
         finally
@@ -317,7 +453,7 @@ public sealed class FileStorageTusProviderTests
                 rootPath,
                 timeProvider: timeProvider);
             var client = CreateInternalServiceClient(factory);
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 10);
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
 
             // Expiry is a comparison against the injected clock, not a timer, so advancing past the
@@ -473,7 +609,8 @@ public sealed class FileStorageTusProviderTests
                 client,
                 expectedSizeBytes: bytes.Length,
                 request: CreateUploadRequest() with { Checksum = expectedChecksum });
-            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, bytes);
+            using var patch = CreateTusPatchRequest(created.Upload.Url, offset: 0, bytes);
+            Assert.Equal(StatusCodes.Status400BadRequest, (int)(await client.SendAsync(patch)).StatusCode);
 
             var completeResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
@@ -812,7 +949,7 @@ public sealed class FileStorageTusProviderTests
         }
     }
 
-    private static LocalTusFileStore CreateTusStore(string rootPath)
+    private static LocalUploadByteStore CreateTusStore(string rootPath)
     {
         var configuration = new ConfigurationBuilder()
             .AddConfiguration(FileStorageTestConfiguration.Default)
@@ -821,12 +958,13 @@ public sealed class FileStorageTusProviderTests
                 ["FileStorage:Tus:RootPath"] = rootPath
             })
             .Build();
-        return new LocalTusFileStore(configuration);
+        return new LocalUploadByteStore(configuration);
     }
 
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
     {
         var request = new HttpRequestMessage(HttpMethod.Head, url);
+        request.Headers.Add("Tus-Resumable", "1.0.0");
         AddDefaultTransferHeaders(request);
         return client.SendAsync(request);
     }

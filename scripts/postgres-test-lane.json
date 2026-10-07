@@ -244,7 +244,10 @@
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Recovery_batch_prioritizes_never_attempted_intent_before_due_retries",
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_acceptance_replays_frozen_horizon_and_holds_content_and_legacy_gc_on_postgres",
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_concurrent_duplicate_waits_for_row_lock_and_rollback_is_atomic_on_postgres",
-        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_verifier_rejects_each_wire_and_resource_constraint_without_writes_on_postgres"
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Retirement_verifier_rejects_each_wire_and_resource_constraint_without_writes_on_postgres",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Tus_bytes_offset_and_canonical_checksum_survive_host_restart",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Tus_admitted_patch_is_rejected_after_complete_commits_intent",
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Tus_concurrent_patches_preserve_offset_and_complete_drains_mutation"
       ]
     },
     {

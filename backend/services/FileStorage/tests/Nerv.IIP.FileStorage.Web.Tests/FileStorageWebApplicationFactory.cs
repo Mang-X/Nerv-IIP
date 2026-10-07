@@ -21,6 +21,7 @@ public sealed class FileStorageWebApplicationFactory : WebApplicationFactory<Pro
     {
         builder.UseSetting("FileStorage:TemplateAssetRetirement:Secret", "ZmlsZXN0b3JhZ2UtcmV0aXJlbWVudC10ZXN0LWtleS0zMDQ0");
         builder.UseSetting("Persistence:Provider", "PostgreSQL");
+        builder.UseSetting("FileStorage:UploadProvider", "server-proxy");
         builder.UseSetting(
             "ConnectionStrings:FileStorageDb",
             "Host=localhost;Database=filestorage_web_tests;Username=nerv;Password=not-used");
@@ -46,8 +47,11 @@ public sealed class FileStorageWebApplicationFactory : WebApplicationFactory<Pro
 /// </summary>
 internal sealed class FileStorageUnconfiguredWebApplicationFactory : WebApplicationFactory<Program>
 {
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("FileStorage:UploadProvider", "server-proxy");
         builder.UseSetting("FileStorage:TemplateAssetRetirement:Secret", "ZmlsZXN0b3JhZ2UtcmV0aXJlbWVudC10ZXN0LWtleS0zMDQ0");
+    }
 
     protected override IHost CreateHost(IHostBuilder builder) =>
         FileStorageTestHostStartupGate.Build(() => base.CreateHost(builder));
