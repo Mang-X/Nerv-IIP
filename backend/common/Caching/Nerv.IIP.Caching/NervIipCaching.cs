@@ -47,6 +47,9 @@ public sealed class FusionAppCache : IAppCache, IDisposable
             AllowTimedOutFactoryBackgroundCompletion = false,
         }, tags: tag is null ? null : [tag]).AsTask();
 
+    // Includes FusionCache metadata; the capacity budget counts Size units, not raw entry count.
+    public int L1EntryCount => _memory.Count;
+
     public void RemoveByTag(string tag) => _cache.RemoveByTag(tag);
     public void Clear() => _cache.Clear(allowFailSafe: false);
 

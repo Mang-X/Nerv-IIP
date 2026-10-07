@@ -59,6 +59,7 @@ public sealed class AppCacheTests
         using var cache = new FusionAppCache(maxEntries: 4);
         for (var i = 0; i < 32; i++)
             Assert.Equal(i, await cache.GetOrCreateAsync($"key-{i}", () => Task.FromResult(i), TimeSpan.FromMinutes(1)));
+        Assert.InRange(cache.L1EntryCount, 0, 4);
         var hits = 0;
         for (var i = 0; i < 32; i++)
         {
