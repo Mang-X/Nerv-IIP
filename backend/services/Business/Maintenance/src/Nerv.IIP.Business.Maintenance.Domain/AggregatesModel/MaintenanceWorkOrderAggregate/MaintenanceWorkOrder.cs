@@ -127,6 +127,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public bool AssetUnavailable { get; private set; }
     public string? AssetUnavailableReason { get; private set; }
     public DateTimeOffset? AssetUnavailableFromUtc { get; private set; }
+    public DateTimeOffset? ExpectedRestoreAtUtc { get; private set; }
     public string? CompletionResult { get; private set; }
     public string? DowntimeReasonCode { get; private set; }
     public int? DowntimeMinutes { get; private set; }

@@ -34,6 +34,7 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.AssetUnavailable).HasColumnName("asset_unavailable").IsRequired().HasComment("Whether Maintenance marked the device unavailable.");
         builder.Property(x => x.AssetUnavailableReason).HasColumnName("asset_unavailable_reason").HasMaxLength(500).HasComment("Reason published with maintenance.AssetUnavailable.");
         builder.Property(x => x.AssetUnavailableFromUtc).HasColumnName("asset_unavailable_from_utc").HasComment("UTC start time of asset unavailability.");
+        builder.Property(x => x.ExpectedRestoreAtUtc).HasColumnName("expected_restore_at_utc").HasComment("Optional UTC expected asset restoration time; a prediction, not an actual restoration fact.");
         builder.Property(x => x.CompletionResult).HasColumnName("completion_result").HasMaxLength(1000).HasComment("Maintenance completion result.");
         builder.Property(x => x.DowntimeReasonCode).HasColumnName("downtime_reason_code").HasMaxLength(100).HasComment("Downtime reason attribution code.");
         builder.Property(x => x.DowntimeMinutes).HasColumnName("downtime_minutes").HasComment("Attributed downtime minutes.");
