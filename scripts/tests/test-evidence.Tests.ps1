@@ -673,6 +673,33 @@ internal sealed class QuoteScannerFixture
         Assert-Equal ($index + 1) $sourceQuoteAssignments[$index].sourceOrdinal 'The isolated source quote fixture ordinal must remain stable.'
         Assert-Equal $expectedSourceTexts[$index] $sourceQuoteAssignments[$index].sourceText 'The isolated source quote fixture text must remain byte-stable after whitespace normalization.'
     }
+
+    # #4172: Gateway tests have the same source registration obligation as service tests.
+    # Scan both gateways, while excluding a production file under that same root.
+    $gatewaySourceFixtureRoot = Join-Path $sourceQuoteFixtureRoot 'gateway-scope'
+    $gatewaySourcePaths = @(
+        'backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/SkipFixture.cs',
+        'backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/SkipFixture.cs'
+    )
+    foreach ($fixturePath in $gatewaySourcePaths + @('backend/gateway/PlatformGateway/src/SkipFixture.cs')) {
+        $fixtureFile = Join-Path $gatewaySourceFixtureRoot $fixturePath
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($fixtureFile)) | Out-Null
+        [IO.File]::WriteAllText($fixtureFile, 'Skip = "gateway source fixture";', [Text.UTF8Encoding]::new($false))
+    }
+    $gatewaySourceAssignments = @(Get-NervSourceSkipAssignments -RepoRoot $gatewaySourceFixtureRoot)
+    Assert-Equal 2 $gatewaySourceAssignments.Count 'Gateway discovery must include both test sources and exclude the production source.'
+    for ($index = 0; $index -lt $gatewaySourcePaths.Count; $index++) {
+        Assert-Equal $gatewaySourcePaths[$index] $gatewaySourceAssignments[$index].sourcePath 'Gateway discovery must return the exact test source.'
+        Assert-Equal 1 $gatewaySourceAssignments[$index].sourceOrdinal 'Each Gateway fixture has one Skip assignment.'
+        Assert-Equal 'Skip = "gateway source fixture";' $gatewaySourceAssignments[$index].sourceText 'Gateway Skip text must reach source registration unchanged.'
+    }
+    $unregisteredGatewayPolicy = [pscustomobject]@{ lanes = @(); sources = @(); rules = @() }
+    $gatewayRegistrationViolations = @(Test-NervTestEvidencePolicy -Policy $unregisteredGatewayPolicy -RepoRoot $gatewaySourceFixtureRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
+    Assert-Equal 2 $gatewayRegistrationViolations.Count 'Each unregistered Gateway test source must be rejected.'
+    for ($index = 0; $index -lt $gatewaySourcePaths.Count; $index++) {
+        Assert-Equal 'unregistered-skip' $gatewayRegistrationViolations[$index].code 'Missing Gateway source registration must fail closed.'
+        Assert-Equal "$($gatewaySourcePaths[$index]):1" $gatewayRegistrationViolations[$index].id 'The registration failure must identify its Gateway source.'
+    }
 }
 finally {
     if (Test-Path -LiteralPath $sourceQuoteFixtureRoot) { Remove-Item -LiteralPath $sourceQuoteFixtureRoot -Recurse -Force }
