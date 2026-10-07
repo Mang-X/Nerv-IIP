@@ -48,7 +48,7 @@ try {
     $marker = Join-Path $root 'scripts/tests/executed.txt'
     $control = @(& pwsh -NoProfile -NonInteractive -File $runner 2>&1) -join "`n"
     Assert-Runner ($LASTEXITCODE -eq 0) "Control suite must pass: $control"
-    Assert-Runner (([IO.File]::ReadAllText($marker).Trim() -split '\r?\n') -join ',' -ceq 'a,z-new') 'Discovery must execute exactly the two unregistered tests once, including the new test; named and out-of-band tests must not run again.'
+    Assert-Runner ([string]::Equals((([IO.File]::ReadAllText($marker).Trim() -split '\r?\n') -join ','), 'a,z-new', [StringComparison]::Ordinal)) 'Discovery must execute exactly the two unregistered tests once, including the new test; named and out-of-band tests must not run again.'
     Assert-Runner ($control.Contains('PASS', [StringComparison]::Ordinal) -and $control.Contains('z-new.Tests.ps1', [StringComparison]::Ordinal)) 'Every executed file must be identified.'
     Write-Host 'PASS control / exact discovery set / new unregistered contract'
 
@@ -56,7 +56,7 @@ try {
     Remove-Item -LiteralPath $marker
     $failed = @(& pwsh -NoProfile -NonInteractive -File $runner 2>&1) -join "`n"
     Assert-Runner ($LASTEXITCODE -ne 0) 'An earlier child failure must survive a later successful child.'
-    Assert-Runner ([IO.File]::ReadAllText($marker).Trim() -ceq 'z-new') 'The later successful child must actually execute.'
+    Assert-Runner ([string]::Equals([IO.File]::ReadAllText($marker).Trim(), 'z-new', [StringComparison]::Ordinal)) 'The later successful child must actually execute.'
     Assert-Runner ($failed.Contains('FAIL', [StringComparison]::Ordinal) -and $failed.Contains('fixture-original-error', [StringComparison]::Ordinal) -and $failed.Contains('z-new.Tests.ps1', [StringComparison]::Ordinal)) 'Failure must name its file and preserve the original error beside the later success.'
     Write-Host 'PASS earlier nonzero / later success / original diagnostic'
 
