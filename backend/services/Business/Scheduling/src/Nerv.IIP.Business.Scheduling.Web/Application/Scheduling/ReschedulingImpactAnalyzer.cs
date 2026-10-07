@@ -117,6 +117,9 @@ internal static class ReschedulingImpactAnalyzer
         // 所有来源共享潜在需求，容量按工序身份计数；root 标签保留各自的来源和路径。
         var reached = rootDemands.Select((demand, root) => (Key: (Root: root, demand.Index), Demand: demand))
             .ToDictionary(x => x.Key, x => x.Demand);
+        var demandsByResource = assignments.Select(x => x.ResourceId).Distinct(StringComparer.Ordinal)
+            .ToDictionary(x => x, _ => new Dictionary<(int Root, int Index), ImpactDemand>(), StringComparer.Ordinal);
+        foreach (var item in reached) demandsByResource[assignments[item.Key.Index].ResourceId].Add(item.Key, item.Value);
         var pending = new Queue<(int Root, int Index)>();
         var queued = new HashSet<(int Root, int Index)>();
         foreach (var key in reached.Keys) Enqueue(key);
@@ -133,7 +136,7 @@ internal static class ReschedulingImpactAnalyzer
                         Max(assignment.StartUtc, Completion(current, assignments[current.Index])));
                 Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
             }
-            foreach (var competition in ResourceCompetitions(current, reached.Values, assignments, resources, baselineByResource))
+            foreach (var competition in ResourceCompetitions(current, demandsByResource[assignments[current.Index].ResourceId].Values, assignments, resources, baselineByResource))
             {
                 var assignment = assignments[competition.Index];
                 var demand = current.Unquantified
@@ -145,18 +148,36 @@ internal static class ReschedulingImpactAnalyzer
             void Follow(int next, ReschedulingImpactReasonCode code, IReadOnlyList<ScheduleAssignmentSegmentContract> demand,
                 ScheduleAssignmentSegmentContract? competition, int? capacity)
             {
+                if (reached.TryGetValue((key.Root, next), out var existing)
+                    && Max(assignments[next].EndUtc, demand.Max(x => x.EndUtc)) <= Completion(existing, assignments[next])) return;
                 var identity = Identity(assignments[next]);
                 if (identity == current.Path.Root || current.Path.Steps.Any(x => x.To == identity)) return;
                 var step = new ReschedulingImpactStep(Identity(assignments[current.Index]), identity, code, competition, capacity);
                 var candidate = new ImpactDemand(next, demand,
                     current.Path with { Steps = [.. current.Path.Steps, step] }, new(code, current.Reason.Source), current.Unquantified);
-                if (reached.TryGetValue((key.Root, next), out var existing) && Completion(candidate, assignments[next]) <= Completion(existing, assignments[next])) return;
                 reached[(key.Root, next)] = candidate;
+                var resourceDemands = demandsByResource[assignments[next].ResourceId];
+                resourceDemands[(key.Root, next)] = candidate;
                 // 新后继需求可能使其它来源的既有需求共同超容量，重新校验同资源上的需求。
-                foreach (var changed in reached.Where(x => assignments[x.Key.Index].ResourceId == assignments[next].ResourceId
-                        && x.Value.Segments.Any(segment => candidate.Segments.Any(added =>
-                            segment.StartUtc < added.EndUtc && added.StartUtc < segment.EndUtc)))
-                    .Select(x => x.Key).OrderBy(x => x.Root).ThenBy(x => x.Index)) Enqueue(changed);
+                var changed = new List<(int Root, int Index)>();
+                foreach (var item in resourceDemands)
+                {
+                    var overlaps = false;
+                    foreach (var segment in item.Value.Segments)
+                    {
+                        foreach (var added in candidate.Segments)
+                        {
+                            if (segment.StartUtc >= added.EndUtc || added.StartUtc >= segment.EndUtc) continue;
+                            overlaps = true;
+                            break;
+                        }
+                        if (overlaps) break;
+                    }
+                    if (overlaps) changed.Add(item.Key);
+                }
+                changed.Sort((left, right) => left.Root != right.Root
+                    ? left.Root.CompareTo(right.Root) : left.Index.CompareTo(right.Index));
+                foreach (var changedKey in changed) Enqueue(changedKey);
             }
         }
         foreach (var current in reached.OrderBy(x => x.Key.Root).ThenBy(x => x.Key.Index).Select(x => x.Value))
@@ -299,7 +320,6 @@ internal static class ReschedulingImpactAnalyzer
             foreach (var item in baseline) AddEvents(item.Index, item.Segment, true);
             foreach (var demand in demands)
             {
-                if (assignments[demand.Index].ResourceId != resourceId) continue;
                 foreach (var segment in demand.Segments) AddEvents(demand.Index, segment, false);
             }
             events.Sort((left, right) => left.At.CompareTo(right.At));
