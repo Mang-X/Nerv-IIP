@@ -18,7 +18,7 @@ public sealed record ProcessAssetUnavailableCommand(
     string Reason,
     DateTimeOffset FromUtc) : ICommand<ProcessAssetUnavailableResult>;
 
-/// <param name="Claimed">true = 本次投递赢得双身份并执行了副作用；false = 事件实例或业务事实已被处理，本次无副作用。</param>
+/// <param name="Claimed">true = 本次投递赢得双身份；false = 该投递身份已处理。新预测投递可获 claim，但不重复登记实际停机。</param>
 public sealed record ProcessAssetUnavailableResult(bool Claimed);
 
 public sealed class ProcessAssetUnavailableCommandValidator : AbstractValidator<ProcessAssetUnavailableCommand>
@@ -51,12 +51,26 @@ public sealed class ProcessAssetUnavailableCommandHandler(
         if (!await claimCoordinator.TryClaimAsync(
                 AssetUnavailableIntegrationEventHandlerForReschedule.ConsumerName,
                 request.Envelope,
+                request.DeviceAssetId,
+                request.FromUtc,
                 cancellationToken))
         {
             return new ProcessAssetUnavailableResult(false);
         }
 
         var envelope = request.Envelope;
+        // 同一实际停机的预测更新/清除仅登记投递；已恢复的事实也不得重新打开。
+        // coordinator 持有事实锁直至 UoW 提交，初始事件与新 prediction 身份并发时仍只插入一次。
+        if (await store.UnavailabilityExistsAsync(
+                envelope.OrganizationId,
+                envelope.EnvironmentId,
+                request.DeviceAssetId,
+                request.FromUtc,
+                cancellationToken))
+        {
+            return new ProcessAssetUnavailableResult(true);
+        }
+
         // 设备归属的工作中心由 MasterData 拥有（#3878）。主数据不可用时 resolver 抛出，
         // 整个 UoW（含 claim）回滚，消息系统重试。
         var workCenterId = await workCenterResolver.ResolveAsync(

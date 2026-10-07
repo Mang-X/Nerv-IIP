@@ -45,6 +45,21 @@ public sealed class MaintenanceEventHandlerTests
             second: (scope, token) => scope.GetRequiredService<AssetUnavailableV2IntegrationEventHandlerForReschedule>().HandleAsync(v2, token),
             expectedWinnerEventId: v1.EventId,
             expectedIdempotencyKey: idempotencyKey);
+
+        // #4201：不同投递身份的初始停机与预测更新也必须按实际事实串行。
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var prediction = v2 with
+        {
+            EventId = "evt-race-prediction",
+            IdempotencyKey = idempotencyKey + ":prediction:1",
+            Payload = v2.Payload with { ExpectedRestoreAtUtc = fromUtc.AddHours(4) },
+        };
+        await RunClaimRaceAsync(
+            first: (scope, token) => scope.GetRequiredService<AssetUnavailableIntegrationEventHandlerForReschedule>().HandleAsync(v1, token),
+            second: (scope, token) => scope.GetRequiredService<AssetUnavailableV2IntegrationEventHandlerForReschedule>().HandleAsync(prediction, token),
+            expectedWinnerEventId: v1.EventId,
+            expectedIdempotencyKey: idempotencyKey,
+            expectedPredictionEventId: prediction.EventId);
     }
 
     /// <summary>
@@ -69,7 +84,8 @@ public sealed class MaintenanceEventHandlerTests
         Func<IServiceProvider, CancellationToken, Task> first,
         Func<IServiceProvider, CancellationToken, Task> second,
         string expectedWinnerEventId,
-        string expectedIdempotencyKey)
+        string expectedIdempotencyKey,
+        string? expectedPredictionEventId = null)
     {
         var gate = new ClaimRaceGate();
         await using var factory = CreatePipelineFactory(services =>
@@ -104,7 +120,14 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Equal(1, gate.SideEffectEntries);
         using var assertionScope = factory.Services.CreateScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var inbox = Assert.Single(await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync());
+        var rows = await db.ProcessedIntegrationEvents.AsNoTracking().ToArrayAsync();
+        Assert.Equal(expectedPredictionEventId is null ? 1 : 2, rows.Length);
+        if (expectedPredictionEventId is not null)
+        {
+            Assert.Contains(rows, x => x.EventId == expectedPredictionEventId &&
+                x.IdempotencyKey == expectedIdempotencyKey + ":prediction:1");
+        }
+        var inbox = Assert.Single(rows, x => x.EventId == expectedWinnerEventId);
         Assert.Equal(expectedWinnerEventId, inbox.EventId);
         Assert.Equal(expectedIdempotencyKey, inbox.IdempotencyKey);
         Assert.Equal(1, await db.WorkCenterUnavailabilities.AsNoTracking().CountAsync());

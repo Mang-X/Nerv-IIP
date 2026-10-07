@@ -57,6 +57,13 @@ public interface IMesPlanningStore
 
     void AddUnavailability(WorkCenterUnavailability unavailability);
 
+    Task<bool> UnavailabilityExistsAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset fromUtc,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<PlannedWorkOrder>> GetWorkOrdersAsync(CancellationToken cancellationToken = default);
 
     Task<bool> WorkOrderExistsAsync(
@@ -125,6 +132,21 @@ public sealed class InMemoryMesPlanningStore : IMesPlanningStore
     {
         ArgumentNullException.ThrowIfNull(unavailability);
         _unavailabilities.Add(unavailability);
+    }
+
+    public Task<bool> UnavailabilityExistsAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset fromUtc,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_unavailabilities.Any(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.DeviceAssetId == deviceAssetId &&
+            x.FromUtc == fromUtc));
     }
 
     public void CloseUnavailability(string deviceAssetId, DateTimeOffset restoredAtUtc)

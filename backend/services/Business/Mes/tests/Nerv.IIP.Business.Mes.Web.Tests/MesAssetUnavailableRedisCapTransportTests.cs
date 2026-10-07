@@ -172,6 +172,46 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
         // 稳定的一次业务结果：replay 到达后，v1 早先赢得的那条事实仍是唯一结果。
         await AssertOneEffectEventuallyAsync(factory, idempotencyKey);
 
+        // #4201 / ADR 0032 §2：预测更新不改变实际停机；投递身份不同仍属于同一事实。
+        var update = v2 with
+        {
+            EventId = "evt-4201-update",
+            IdempotencyKey = idempotencyKey + ":prediction:1",
+            Payload = v2.Payload with { ExpectedRestoreAtUtc = fromUtc.AddHours(4) },
+        };
+        var clear = update with
+        {
+            EventId = "evt-4201-clear",
+            IdempotencyKey = idempotencyKey + ":prediction:2",
+            Payload = update.Payload with { ExpectedRestoreAtUtc = null },
+        };
+        foreach (var prediction in new[] { update, clear })
+        {
+            await PublishAsync(factory, V2Topic, prediction);
+            await AssertPredictionSequenceAsync(factory, prediction.EventId, 1, fromUtc, null);
+            await PublishAsync(factory, V2Topic, prediction);
+            await AssertPredictionSequenceAsync(factory, prediction.EventId, 2, fromUtc, null);
+        }
+        await PublishAsync(factory, nameof(AssetUnavailableIntegrationEvent), v1);
+        await AssertPredictionSequenceAsync(factory, v1.EventId, 2, fromUtc, null);
+
+        var restoredAtUtc = fromUtc.AddHours(2);
+        var restored = new AssetRestoredIntegrationEvent(
+            "evt-4201-restored", MaintenanceIntegrationEventTypes.AssetRestored,
+            MaintenanceIntegrationEventVersions.V1, restoredAtUtc,
+            MaintenanceIntegrationEventSources.Maintenance, "corr-4201", "cause-4201",
+            "org-001", "env-dev", "maintenance", "maintenance.AssetRestored:4201",
+            new AssetRestoredPayload("ASSET-CNC-01", restoredAtUtc));
+        for (var delivery = 1; delivery <= 2; delivery++)
+        {
+            await PublishAsync(factory, nameof(AssetRestoredIntegrationEvent), restored);
+            await AssertPredictionSequenceAsync(factory, restored.EventId, delivery, fromUtc, restoredAtUtc);
+        }
+        // 迟到的新预测身份不能重新打开已实际恢复的停机。
+        var late = update with { EventId = "evt-4201-late", IdempotencyKey = idempotencyKey + ":prediction:3" };
+        await PublishAsync(factory, V2Topic, late);
+        await AssertPredictionSequenceAsync(factory, late.EventId, 1, fromUtc, restoredAtUtc);
+
         // 反例：换一个业务键（Maintenance 的业务键内嵌停机起点，另一个起点就是另一条停机事实）的投递不再被折叠，
         // 会产生第二条停机事实——证明上面的"一次结果"是靠业务键折叠，不是夹具本身只允许一条。
         var laterFromUtc = fromUtc.AddHours(1);
@@ -188,7 +228,7 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
             {
                 using var scope = factory.Services.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                Assert.Equal(2, await db.ProcessedIntegrationEvents.AsNoTracking().CountAsync(token));
+                Assert.Equal(6, await db.ProcessedIntegrationEvents.AsNoTracking().CountAsync(token));
                 Assert.Equal(2, await db.WorkCenterUnavailabilities.AsNoTracking().CountAsync(token));
             },
             options: new EventuallyOptions(TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(250), []));
@@ -418,6 +458,29 @@ public sealed class MesAssetUnavailableRedisCapTransportTests(ITestOutputHelper 
     {
         var value = ReadProperty(element, name);
         return value.ValueKind == JsonValueKind.String ? value.GetString()! : value.ToString();
+    }
+
+    private async Task AssertPredictionSequenceAsync(
+        WebApplicationFactory<Program> factory, string eventId, int deliveries,
+        DateTimeOffset fromUtc, DateTimeOffset? restoredAtUtc)
+    {
+        await Eventually.AssertAsync(
+            condition: $"MES CAP consumed prediction sequence event {eventId}, deliveries={deliveries}",
+            assertion: async token =>
+            {
+                using var scope = factory.Services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var received = await db.Database.SqlQuery<int>(
+                    $"SELECT count(*)::int AS \"Value\" FROM cap.received WHERE \"StatusName\" = 'Succeeded' AND \"Retries\" = 0 AND \"Content\" LIKE {'%' + eventId + '%'}")
+                    .SingleAsync(token);
+                Assert.Equal(deliveries, received);
+                var window = Assert.Single(await db.WorkCenterUnavailabilities.AsNoTracking().ToListAsync(token));
+                Assert.Equal(("org-001", "env-dev", "WC-A", "ASSET-CNC-01", fromUtc, restoredAtUtc),
+                    (window.OrganizationId, window.EnvironmentId, window.WorkCenterId, window.DeviceAssetId, window.FromUtc, window.ToUtc));
+                Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync(x => x.EventId == eventId, token));
+            },
+            options: new EventuallyOptions(TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(250), []));
+        output.WriteLine($"#4201 consumer Succeeded/0 retries: {eventId}; deliveries={deliveries}; windows=1; FromUtc={fromUtc:O}; ToUtc={restoredAtUtc:O}");
     }
 
     private WebApplicationFactory<Program> CreateFactory(
