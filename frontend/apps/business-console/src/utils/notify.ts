@@ -235,7 +235,10 @@ function resolveLayeredMessage(
   reasonContext?: WmsReasonContext,
 ) {
   const raw = serverErrorMessage(error)
-  const message = friendlyErrorMessage(raw || error, fallback, reasonContext)
+  // 业务消息中的数量（例如 500 单）不是 HTTP 状态码；服务端中文先按领域信息透传。
+  const message = /[一-龥]/.test(raw)
+    ? raw
+    : friendlyErrorMessage(raw || error, fallback, reasonContext)
   if (raw && message !== raw) {
     // 没上屏的原文留给排障：控制台能看到后端到底说了什么。
     console.error(`[${logLabel}] 服务端原始错误：`, raw, error)

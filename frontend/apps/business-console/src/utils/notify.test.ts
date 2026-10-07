@@ -226,6 +226,25 @@ describe('notifyOperationFailure', () => {
     expect(toastError).toHaveBeenCalledWith('生成失败：工单缺少生产版本，无法排程')
   })
 
+  it('#4163 HTTP 400 中文容量消息里的 500 是工单上限，原样透传', () => {
+    const message = '合并后的工单数量不得超过 500，请调整选择后重试。'
+    notifyOperationFailure(
+      '插单预览失败',
+      { success: false, message, status: 400 },
+      '插单预览失败，请稍后重试。',
+    )
+    expect(toastError).toHaveBeenCalledWith(`插单预览失败：${message}`)
+  })
+
+  it.each([
+    { status: 500, title: 'Internal Server Error' },
+    { status: 503, title: 'Service Unavailable' },
+  ])('#4163 真正服务失败 $status 使用中文反馈，不透传英文', (error) => {
+    notifyOperationFailure('插单预览失败', error, '插单预览失败，请稍后重试。')
+    expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/^插单预览失败[：，]/))
+    expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining(error.title))
+  })
+
   it('英文通用 HTTP 文案不上屏：无可映射语义时退到调用方兜底，原文只进 console', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     notifyOperationFailure('发布失败', { title: 'Internal Server Error' }, '发布失败，请稍后重试')
