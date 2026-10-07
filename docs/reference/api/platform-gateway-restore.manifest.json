@@ -10,7 +10,7 @@
     },
     {
       "path": "backend/Directory.Packages.props",
-      "sha256": "4263101ca4c0ee94864d96c64ef4b3fe6f73950feb2f25aff26b2f451e2606ac"
+      "sha256": "5b2b7e7f87039738072d249fa2f230a61758b461e28cf0e9209862fa846d17d8"
     },
     {
       "path": "backend/Directory.Build.props",
@@ -22,7 +22,7 @@
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj",
-      "sha256": "258e14d1f86fb3006b540f1eff2f57e95e814386ceaafa12b876355e24cc30b2"
+      "sha256": "22c2abf0f7c8891b51260c5cdace084ffbda0199bd18afb0ec726bd10ef7ed43"
     },
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/Nerv.IIP.Contracts.AppHubQueries.csproj",
@@ -66,7 +66,7 @@
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/packages.lock.json",
-      "sha256": "4c9bcd577ba37678f265542968477215a86bb06ad4e25e835d9bf2c02e679267"
+      "sha256": "bdef8aefce4f6da3c539dc8e8335a6c2f602225a0dd2f3c734f59d5c3834d8ad"
     },
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/packages.lock.json",
@@ -110,7 +110,7 @@
     },
     {
       "path": "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/packages.lock.json",
-      "sha256": "b0cdc48fad94c47288b3e69bffaf28cb7bace42085f826ae593ece7a174d7615"
+      "sha256": "1953fe170218831b77239e25e30fc9227c2935a232e0d5a788674eec92d4bded"
     }
   ],
   "lock": {

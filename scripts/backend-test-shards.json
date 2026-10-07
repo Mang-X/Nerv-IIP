@@ -98,18 +98,21 @@
         "backend/tests/Nerv.IIP.ServiceAuth.Tests/Nerv.IIP.ServiceAuth.Tests.csproj",
         "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj",
         "backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj",
-        "backend/tests/Nerv.IIP.VocabularyGovernance.Tests/Nerv.IIP.VocabularyGovernance.Tests.csproj"
+        "backend/tests/Nerv.IIP.VocabularyGovernance.Tests/Nerv.IIP.VocabularyGovernance.Tests.csproj",
+        "backend/tests/Nerv.IIP.Caching.Tests/Nerv.IIP.Caching.Tests.csproj"
       ],
       "excludedTestClasses": [
         "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests",
-        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests"
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests"
       ],
       "excludedTests": [
         "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics",
         "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed"
       ],
       "excludedTestLanes": [
-        "real-postgres"
+        "real-postgres",
+        "redis-cap"
       ]
     },
     {
