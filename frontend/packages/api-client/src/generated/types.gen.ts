@@ -647,6 +647,11 @@ export type NervIipPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageReques
     [key: string]: never;
 };
 
+export type NervIipPlatformGatewayWebEndpointsCacheInvalidateGatewayCacheScopeRequest = {
+    organizationId: string;
+    environmentId: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse | null;
 };
@@ -1954,6 +1959,40 @@ export type InvalidateGatewayCacheEndpointResponses = {
 };
 
 export type InvalidateGatewayCacheEndpointResponse = InvalidateGatewayCacheEndpointResponses[keyof InvalidateGatewayCacheEndpointResponses];
+
+export type InvalidateGatewayCacheScopeData = {
+    body: NervIipPlatformGatewayWebEndpointsCacheInvalidateGatewayCacheScopeRequest;
+    path?: never;
+    query?: never;
+    url: '/internal/gateway/cache/invalidate-scope';
+};
+
+export type InvalidateGatewayCacheScopeErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+};
+
+export type InvalidateGatewayCacheScopeError = InvalidateGatewayCacheScopeErrors[keyof InvalidateGatewayCacheScopeErrors];
+
+export type InvalidateGatewayCacheScopeResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type InvalidateGatewayCacheScopeResponse = InvalidateGatewayCacheScopeResponses[keyof InvalidateGatewayCacheScopeResponses];
 
 export type LoginConsoleUserData = {
     body: NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest;

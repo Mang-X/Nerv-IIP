@@ -125,6 +125,17 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("HealthEndpoint", paths.GetProperty("/health").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("GetBuildInfoEndpoint", paths.GetProperty("/internal/gateway/v1/build-info").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("InvalidateGatewayCacheEndpoint", paths.GetProperty("/internal/gateway/cache/invalidate").GetProperty("post").GetProperty("operationId").GetString());
+
+        var scopedInvalidation = paths.GetProperty("/internal/gateway/cache/invalidate-scope").GetProperty("post");
+        Assert.Equal("invalidateGatewayCacheScope", scopedInvalidation.GetProperty("operationId").GetString());
+        Assert.True(scopedInvalidation.GetProperty("requestBody").GetProperty("required").GetBoolean());
+        var scopeSchemaRef = scopedInvalidation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var scopeSchema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty(scopeSchemaRef.Split('/').Last());
+        Assert.Equal(new[] { "environmentId", "organizationId" }, scopeSchema.GetProperty("required")
+            .EnumerateArray().Select(field => field.GetString()).OrderBy(field => field, StringComparer.Ordinal));
+        foreach (var status in new[] { "204", "400", "401", "403", "503" })
+            AssertResponseStatus(scopedInvalidation, status);
     }
 
     private static string FindGatewayProgramPath()

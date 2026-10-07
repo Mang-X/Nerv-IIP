@@ -98,6 +98,10 @@ gateway:instance-detail:org-001:env-prod:instance:inst-456:v1
 4. Gateway 聚合缓存的 TTL 必须短于其聚合来源中最短的业务容忍时间。
 5. 对安全敏感缓存，禁止长时间使用 fail-safe（故障安全）数据；权限变更后必须主动使其失效，不能只等待 TTL。
 6. PlatformGateway 的 `/internal/gateway/cache/invalidate` 只允许 InternalService 调用，失效固定 `gateway` tag。L1 模式只作用于当前进程；Redis 模式更新同一服务/部署环境/序列化版本的 L2 tag 标记，并通过 backplane 通知其它实例。返回成功不代表每个订阅者已处理完成，也不代表 AppHub/IAM 的写入链已接线。
+7. `/internal/gateway/cache/invalidate-scope` 是独立的精准操作，JSON body 必须携带非空、无首尾空白的 `organizationId` 与 `environmentId`。它复用共享 ScopedCallerAuthentication profile 和 `internal.gateway-cache.invalidate` permission policy，两个 body 字段必须分别匹配已认证 profile 的可信 claims；用户 JWT、旧 InternalService token 或裸 scope header 均不能扩大权限。未配置 scoped callers 时新操作拒绝，旧操作仍可使用。
+8. PlatformGateway 实例列表、详情和读侧授权条目同时挂 `gateway` 与 `gateway:scope:<escaped-org>:<escaped-env>` tag。精准操作只移除一个复合 tag，避免分别移除 org/env tag 形成并集误删；公共 adapter 直接把多 tag 传给 FusionCache，不解析任意业务 key，也不重建广播协议。授权 TTL 与写侧实时 IAM 检查保持原有合同。
+
+精准操作的配置与调用见 [`../../runbooks/local-development.md#platformgateway-精准缓存失效`](../../runbooks/local-development.md#platformgateway-精准缓存失效)。HTTP 204 只表示同步提交成功；Redis 写入或通知发布异常返回 503，部分提交失败不提供跨节点回滚保证。已在途 factory 可向原请求返回旧值，但失效边沿后的后续读取须重新加载；取消不撤销已提交的同步失效，也不承诺全节点瞬时完成。
 
 ## 一致性边界
 

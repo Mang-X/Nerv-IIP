@@ -103,6 +103,7 @@ public static class NervIipSeedPermissions
 {
     public static readonly string[] All =
     [
+        "internal.gateway-cache.invalidate",
         "iam.users.read",
         "iam.users.manage",
         "iam.roles.read",

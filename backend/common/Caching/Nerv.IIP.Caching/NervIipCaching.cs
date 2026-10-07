@@ -17,7 +17,7 @@ namespace Nerv.IIP.Caching;
 
 public interface IAppCache
 {
-    Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, string? tag = null);
+    Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, params string[] tags);
     void RemoveByTag(string tag);
     void Clear();
 }
@@ -75,7 +75,7 @@ public sealed class FusionAppCache : IAppCache, IDisposable
         }
     }
 
-    public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, string? tag = null)
+    public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, params string[] tags)
     {
         var options = new FusionCacheEntryOptions { Duration = ttl, Size = 1 };
         ApplyFailurePolicy(options);
@@ -83,7 +83,7 @@ public sealed class FusionAppCache : IAppCache, IDisposable
         try
         {
             var value = await _cache.GetOrSetAsync<T>(key, (_, _) => { loaded = true; return factory(); },
-                options: options, tags: tag is null ? null : [tag]);
+                options: options, tags: tags);
             _logger?.LogDebug("Cache {Outcome}", loaded ? "miss" : "hit");
             return value;
         }

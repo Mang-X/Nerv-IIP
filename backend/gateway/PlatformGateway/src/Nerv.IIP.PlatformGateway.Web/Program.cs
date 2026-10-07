@@ -40,6 +40,7 @@ builder.Services.AddNervIipObservability(builder.Configuration, "platform-gatewa
 builder.Services.AddVictoriaLogsClient(builder.Configuration);
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
+builder.Services.AddGatewayCacheInvalidationAuthorization(builder.Configuration);
 builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.AddSingleton<GatewayDownstreamHealthState>();
 builder.Services.AddHttpContextAccessor();

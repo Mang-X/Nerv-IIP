@@ -1,6 +1,7 @@
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Caching;
+using Nerv.IIP.PlatformGateway.Web.Application.Caching;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.OpenApi;
@@ -58,7 +59,7 @@ public sealed class ListInstancesEndpoint(
 
         try
         {
-            var response = await cache.GetOrCreateAsync(key, () => appHub.QueryInstancesAsync(query, ct), TimeSpan.FromSeconds(5), NervIipCacheTags.Gateway);
+            var response = await cache.GetOrCreateAsync(key, () => appHub.QueryInstancesAsync(query, ct), TimeSpan.FromSeconds(5), NervIipCacheTags.Gateway, GatewayCacheScope.Tag(req.OrganizationId, req.EnvironmentId));
             await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)
@@ -104,7 +105,7 @@ public sealed class GetInstanceDetailEndpoint(
 
         try
         {
-            var response = await cache.GetOrCreateAsync(key, () => appHub.GetInstanceAsync(req.OrganizationId, req.EnvironmentId, req.InstanceKey, ct), TimeSpan.FromSeconds(5), NervIipCacheTags.Gateway);
+            var response = await cache.GetOrCreateAsync(key, () => appHub.GetInstanceAsync(req.OrganizationId, req.EnvironmentId, req.InstanceKey, ct), TimeSpan.FromSeconds(5), NervIipCacheTags.Gateway, GatewayCacheScope.Tag(req.OrganizationId, req.EnvironmentId));
             await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)

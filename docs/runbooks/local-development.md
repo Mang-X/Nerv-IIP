@@ -125,6 +125,14 @@ Redis/CAP 用例的两个进程，需要从同一个唯一 session root 派生�
     AppHost build 门禁通过，Docker daemon/runtime 健康失败仍表示未发生真实运行（例如 0/3）。修复
     Docker Desktop 后重跑；绝不得放宽固定十秒（ten-second）deadline。
 
+## PlatformGateway 精准缓存失效
+
+按需为 PlatformGateway 配置 `Gateway:CacheInvalidation:ScopedCallers:Profiles`。每个 profile 使用现有共享 producer 的字段：`Name`、`BearerToken`、`Subject`、`OrganizationId`、`EnvironmentId` 与 `Permissions`；精准操作需要 `internal.gateway-cache.invalidate`。token 通过本机 user-secrets 或部署 secret 配置，不提交到配置文件。一个 profile 只授权一个组织/环境组合；空、重复或有歧义的 profile 在启动时由共享认证校验拒绝。缺少整个配置节时旧宿主仍能启动，新操作拒绝。
+
+调用 `POST /internal/gateway/cache/invalidate-scope`，使用 profile 的 Bearer token，并发送 `{"organizationId":"org-001","environmentId":"env-dev"}`。两个字段必须与该 profile 完全一致，缺字段/空值/首尾空白返回 400，目标不匹配或缺 permission 返回 403。成功提交返回 204；Redis 写入或通知失败返回 503，不能据此假定所有节点都已处理或失败时完全没有局部提交。调用方观察业务后续读取确认传播；不要重试来伪造同步事务。
+
+生成客户端从 `@nerv-iip/api-client` 稳定入口导出 `invalidateGatewayCacheScope` 与 `InvalidateGatewayCacheScopeRequest`；它是内部服务合同，需配置 scoped caller 凭据。旧 `/internal/gateway/cache/invalidate` 的无参数合同和 InternalService 身份保持原行为。当前没有由本票接入 AppHub/IAM 业务写调用者。
+
 ## 服务启动失败模式
 
 11. **CAP PostgreSQL profile 未注册 integration event publisher。** 含有

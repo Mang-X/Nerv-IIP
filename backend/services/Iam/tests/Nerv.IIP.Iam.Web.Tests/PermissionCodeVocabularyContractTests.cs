@@ -70,6 +70,7 @@ public sealed class PermissionCodeVocabularyContractTests
             ["InventoryLedgerRead"] = "business.inventory.ledger.read",
             ["InventoryLocationsManage"] = "business.inventory.locations.manage",
             ["InventoryMovementsCreate"] = "business.inventory.movements.create",
+            ["InternalGatewayCacheInvalidate"] = "internal.gateway-cache.invalidate",
             ["MaintenanceDowntimeReasonsRead"] = "business.maintenance.downtime-reasons.read",
             ["MaintenancePlansManage"] = "business.maintenance.plans.manage",
             ["MaintenancePlansRead"] = "business.maintenance.plans.read",

@@ -7,6 +7,9 @@ namespace Nerv.IIP.Contracts.Iam;
 /// </summary>
 public static class NervIipPermissionCodes
 {
+    // Internal scoped callers only; not a Console user action.
+    public const string InternalGatewayCacheInvalidate = "internal.gateway-cache.invalidate";
+
     // iam.*
     public const string IamUsersRead = "iam.users.read";
     public const string IamUsersManage = "iam.users.manage";

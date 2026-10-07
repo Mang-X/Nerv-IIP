@@ -24,6 +24,7 @@
 
 ### IAM / Platform
 
+- `internal.gateway-cache.invalidate`
 - `iam.users.read`
 - `iam.users.manage`
 - `iam.roles.read`
