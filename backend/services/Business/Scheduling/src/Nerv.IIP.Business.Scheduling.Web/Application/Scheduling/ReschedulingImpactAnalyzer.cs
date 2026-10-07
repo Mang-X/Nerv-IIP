@@ -16,7 +16,11 @@ internal sealed record SchedulingOperationDeviation(string SourceReference, stri
     DateTimeOffset OccurredAtUtc, string ReasonCode, string OrderId, string OperationId)
     : SchedulingDeviation(SourceReference, SourceVersion, OccurredAtUtc, ReasonCode);
 
-internal enum ReschedulingImpactReasonCode { OperationDeviation, ResourceUnavailable, PredecessorDependency, ResourceCapacity }
+internal sealed record SchedulingInsertedOperationDeviation(string SourceReference, string SourceVersion,
+    DateTimeOffset OccurredAtUtc, string OrderId, string OperationId)
+    : SchedulingDeviation(SourceReference, SourceVersion, OccurredAtUtc, "rush-insertion");
+
+internal enum ReschedulingImpactReasonCode { OperationDeviation, NewOperation, ResourceUnavailable, PredecessorDependency, ResourceCapacity }
 internal sealed record ReschedulingImpactOperation(string OrderId, string OperationId);
 internal sealed record ReschedulingImpactStep(ReschedulingImpactOperation From, ReschedulingImpactOperation To,
     ReschedulingImpactReasonCode Code, ScheduleAssignmentSegmentContract? CompetitionWindow = null, int? CapacityUnits = null);
@@ -32,6 +36,15 @@ internal sealed record ReschedulingImpact(string InputFingerprint,
 
 internal static class ReschedulingImpactAnalyzer
 {
+    private static readonly JsonSerializerOptions FingerprintJsonOptions = CreateFingerprintJsonOptions();
+
+    private static JsonSerializerOptions CreateFingerprintJsonOptions()
+    {
+        var options = new JsonSerializerOptions(SchedulingJson.Options);
+        options.Converters.Add(new UtcDateTimeOffsetConverter());
+        return options;
+    }
+
     // baseline 是方案的实际 assignment 快照，来源读取与显式计算时点由调用方提供。
     public static ReschedulingImpact Analyze(SchedulingProblemContract problem,
         IReadOnlyCollection<ScheduleAssignmentContract> baseline, IReadOnlyCollection<SchedulingDeviation> deviations,
@@ -69,13 +82,20 @@ internal static class ReschedulingImpactAnalyzer
         var indices = assignments.Select((assignment, index) => (assignment, index))
             .ToDictionary(x => (x.assignment.OrderId, x.assignment.OperationId), x => x.index);
         var normalizedDeviations = deviations.Distinct().OrderBy(x => CanonicalJson(x), StringComparer.Ordinal).ToArray();
-        var frozen = SchedulingFreezeCalculator.Calculate(assignments, execution, manualLocks, policy);
+        var insertedDeviations = normalizedDeviations.OfType<SchedulingInsertedOperationDeviation>()
+            .ToLookup(x => (x.OrderId, x.OperationId));
+        var insertedIndices = assignments.Select((assignment, index) => (assignment, index))
+            .Where(x => insertedDeviations.Contains((x.assignment.OrderId, x.assignment.OperationId)))
+            .Select(x => x.index).ToHashSet();
+        var frozen = SchedulingFreezeCalculator.Calculate(assignments.Where((_, index) => !insertedIndices.Contains(index)).ToArray(), execution, manualLocks, policy);
         var frozenByOperation = frozen.ToDictionary(x => (x.Assignment.OrderId, x.Assignment.OperationId));
         var operationDeviations = normalizedDeviations.OfType<SchedulingOperationDeviation>().ToLookup(x => (x.OrderId, x.OperationId));
         var resourceDeviations = normalizedDeviations.OfType<SchedulingResourceUnavailableDeviation>().ToLookup(x => x.ResourceId, StringComparer.Ordinal);
         var predecessors = BuildPredecessorEdges(normalizedProblem, indices);
         var direct = assignments.SelectMany((assignment, index) => operationDeviations[(assignment.OrderId, assignment.OperationId)]
             .Select(x => (Index: index, Reason: new ReschedulingImpactReason(ReschedulingImpactReasonCode.OperationDeviation, x)))
+            .Concat(insertedDeviations[(assignment.OrderId, assignment.OperationId)]
+                .Select(x => (Index: index, Reason: new ReschedulingImpactReason(ReschedulingImpactReasonCode.NewOperation, x))))
             .Concat(resourceDeviations[assignment.ResourceId].Where(x => Occupies(assignment, x.StartUtc, x.EndUtc))
                 .Select(x => (Index: index, Reason: new ReschedulingImpactReason(ReschedulingImpactReasonCode.ResourceUnavailable, x)))))
             .ToArray();
@@ -84,6 +104,10 @@ internal static class ReschedulingImpactAnalyzer
         var reasonsByOperation = assignments.Select(_ => new List<ReschedulingImpactReason>()).ToArray();
         var pathsByOperation = assignments.Select(_ => new List<ReschedulingImpactPath>()).ToArray();
         var resources = normalizedProblem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
+        var baselineByResource = assignments.Select((assignment, index) => (assignment, index))
+            .Where(x => !insertedIndices.Contains(x.index)).GroupBy(x => x.assignment.ResourceId, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.SelectMany(item => Segments(item.assignment)
+                .Select(segment => (Index: item.index, Segment: segment))).ToArray(), StringComparer.Ordinal);
         // 所有来源共享潜在需求，容量按工序身份计数；root 标签保留各自的来源和路径。
         var reached = rootDemands.Select((demand, root) => (Key: (Root: root, demand.Index), Demand: demand))
             .ToDictionary(x => x.Key, x => x.Demand);
@@ -103,7 +127,7 @@ internal static class ReschedulingImpactAnalyzer
                         Max(assignment.StartUtc, Completion(current, assignments[current.Index])));
                 Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
             }
-            foreach (var competition in ResourceCompetitions(current, reached.Values, assignments, resources))
+            foreach (var competition in ResourceCompetitions(current, reached.Values, assignments, resources, baselineByResource))
             {
                 var assignment = assignments[competition.Index];
                 var demand = current.Unquantified
@@ -123,8 +147,10 @@ internal static class ReschedulingImpactAnalyzer
                 if (reached.TryGetValue((key.Root, next), out var existing) && Completion(candidate, assignments[next]) <= Completion(existing, assignments[next])) return;
                 reached[(key.Root, next)] = candidate;
                 // 新后继需求可能使其它来源的既有需求共同超容量，重新校验同资源上的需求。
-                foreach (var changed in reached.Keys.Where(x => assignments[x.Index].ResourceId == assignments[next].ResourceId)
-                    .OrderBy(x => x.Root).ThenBy(x => x.Index)) Enqueue(changed);
+                foreach (var changed in reached.Where(x => assignments[x.Key.Index].ResourceId == assignments[next].ResourceId
+                        && x.Value.Segments.Any(segment => candidate.Segments.Any(added =>
+                            segment.StartUtc < added.EndUtc && added.StartUtc < segment.EndUtc)))
+                    .Select(x => x.Key).OrderBy(x => x.Root).ThenBy(x => x.Index)) Enqueue(changed);
             }
         }
         foreach (var current in reached.OrderBy(x => x.Key.Root).ThenBy(x => x.Key.Index).Select(x => x.Value))
@@ -150,18 +176,41 @@ internal static class ReschedulingImpactAnalyzer
                 pathsByOperation[index].ToArray()));
         }
 
-        var canonicalInput = CanonicalJson(new
+        var canonicalInput = JsonSerializer.SerializeToUtf8Bytes(new
         {
-            Problem = normalizedProblem,
-            Baseline = assignments,
+            Problem = normalizedProblem with
+            {
+                Orders = normalizedProblem.Orders.Select(order => order with
+                {
+                    Operations = order.Operations.Select(operation => operation with
+                    {
+                        Changeovers = operation.Changeovers?.Select(changeover => changeover with
+                        {
+                            RequiredToolingIds = changeover.RequiredToolingIds.Order(StringComparer.Ordinal).ToArray(),
+                        }).OrderBy(CanonicalJson, StringComparer.Ordinal).ToArray(),
+                    }).ToArray(),
+                }).ToArray(),
+                MaterialReadiness = normalizedProblem.MaterialReadiness.Select(material => material with
+                {
+                    Shortages = material.Shortages?.OrderBy(CanonicalJson, StringComparer.Ordinal).ToArray(),
+                }).OrderBy(CanonicalJson, StringComparer.Ordinal).ToArray(),
+                EquipmentDataRisks = normalizedProblem.EquipmentDataRisks?.OrderBy(CanonicalJson, StringComparer.Ordinal).ToArray(),
+            },
+            Baseline = assignments.Select(assignment => assignment with
+            {
+                Segments = assignment.Segments?.OrderBy(x => x.StartUtc).ThenBy(x => x.EndUtc).ToArray(),
+            }).ToArray(),
             Deviations = normalizedDeviations.Select(x => (object)x).ToArray(),
-            Execution = execution,
-            ManualLocks = manualLocks.Distinct().Select(x => new { x.OrderId, x.OperationId }).ToArray(),
-            Policy = policy,
-        });
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalInput))).ToLowerInvariant();
+            Execution = execution.OrderBy(x => x.OrderId, StringComparer.Ordinal).ThenBy(x => x.OperationId, StringComparer.Ordinal).ToArray(),
+            ManualLocks = manualLocks.Distinct().OrderBy(x => x.OrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.OperationId, StringComparer.Ordinal).Select(x => new { x.OrderId, x.OperationId }).ToArray(),
+            Policy = policy with { WorkCenterWindows = policy.WorkCenterWindows.OrderBy(x => x.Key, StringComparer.Ordinal)
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal) },
+        }, FingerprintJsonOptions);
+        var fingerprint = Convert.ToHexString(SHA256.HashData(canonicalInput)).ToLowerInvariant();
         return new ReschedulingImpact(fingerprint, affected, frozen,
-            affected.Where(x => x.FreezeReasons == SchedulingFreezeReason.None).Select(x => x.Assignment).ToArray());
+            affected.Where(x => x.FreezeReasons == SchedulingFreezeReason.None
+                && !insertedDeviations.Contains((x.Assignment.OrderId, x.Assignment.OperationId))).Select(x => x.Assignment).ToArray());
     }
 
     private static ReschedulingImpactOperation Identity(ScheduleAssignmentContract assignment) =>
@@ -173,6 +222,8 @@ internal static class ReschedulingImpactAnalyzer
     private static ImpactDemand InitialDemand(int index, ScheduleAssignmentContract assignment,
         ReschedulingImpactReason reason, DateTimeOffset horizonEnd)
     {
+        if (reason.Source is SchedulingInsertedOperationDeviation)
+            return new(index, Segments(assignment).ToArray(), new(reason.Source, Identity(assignment), []), reason, false);
         var segments = reason.Source is SchedulingResourceUnavailableDeviation outage
             ? ShiftRemaining(assignment, outage.StartUtc, outage.EndUtc)
             : UnknownDemand(assignment, horizonEnd);
@@ -228,35 +279,53 @@ internal static class ReschedulingImpactAnalyzer
 
     private static IReadOnlyList<(int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)> ResourceCompetitions(
         ImpactDemand current, IEnumerable<ImpactDemand> demands, ScheduleAssignmentContract[] assignments,
-        IReadOnlyDictionary<string, SchedulingResourceContract> resources)
+        IReadOnlyDictionary<string, SchedulingResourceContract> resources,
+        IReadOnlyDictionary<string, (int Index, ScheduleAssignmentSegmentContract Segment)[]> baselineByResource)
     {
         var resourceId = assignments[current.Index].ResourceId;
         var capacity = Math.Max(1, resources[resourceId].CapacityUnits);
-        var baseline = assignments.Select((assignment, index) => (assignment, index)).Where(x => x.assignment.ResourceId == resourceId)
-            .SelectMany(x => Segments(x.assignment).Select(segment => (Index: x.index, Segment: segment))).ToArray();
+        var baseline = baselineByResource.GetValueOrDefault(resourceId) ?? [];
         var potential = demands.Where(x => assignments[x.Index].ResourceId == resourceId)
             .SelectMany(x => x.Segments.Select(segment => (x.Index, Segment: segment))).ToArray();
         var result = new Dictionary<int, (int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)>();
         foreach (var window in current.Segments)
         {
-            var boundaries = baseline.Concat(potential).SelectMany(x => new[] { x.Segment.StartUtc, x.Segment.EndUtc })
-                .Append(window.StartUtc).Append(window.EndUtc).Where(x => x >= window.StartUtc && x <= window.EndUtc).Distinct().Order().ToArray();
-            for (var i = 0; i + 1 < boundaries.Length; i++)
+            var events = baseline.SelectMany(x => Events(x.Index, x.Segment, true))
+                .Concat(potential.SelectMany(x => Events(x.Index, x.Segment, false)))
+                .GroupBy(x => x.At).OrderBy(x => x.Key).ToArray();
+            var actual = new Dictionary<int, int>();
+            var occupied = new Dictionary<int, int>();
+            for (var i = 0; i + 1 < events.Length; i++)
             {
-                var start = boundaries[i];
-                var end = boundaries[i + 1];
-                var actual = baseline.Where(x => x.Segment.StartUtc <= start && start < x.Segment.EndUtc).ToArray();
-                // 当前需求仍在自己的原占用内时没有新增容量，不能把其它来源的竞争归因给它。
-                if (actual.Any(x => x.Index == current.Index)) continue;
-                // 同一 assignment 原占用与潜在占用的重合只计一个单位；多个来源的共同竞争仍参与计数。
-                var occupied = actual.Select(x => x.Index).Concat(potential
-                    .Where(x => x.Segment.StartUtc <= start && start < x.Segment.EndUtc).Select(x => x.Index)).Distinct().Count();
-                if (occupied <= capacity) continue;
-                foreach (var other in actual.Where(x => x.Index != current.Index).OrderBy(x => x.Index))
-                    result.TryAdd(other.Index, (other.Index, new(start, end), window.EndUtc, capacity));
+                foreach (var change in events[i])
+                {
+                    Update(occupied, change.Index, change.Delta);
+                    if (change.Actual) Update(actual, change.Index, change.Delta);
+                }
+                // 多个来源与原占用按同一工序身份合并；只为当前需求带来的新增容量传播。
+                if (actual.ContainsKey(current.Index) || occupied.Count <= capacity) continue;
+                foreach (var other in actual.Keys.Where(x => x != current.Index).Order())
+                    result.TryAdd(other, (other, new(events[i].Key, events[i + 1].Key), window.EndUtc, capacity));
+            }
+
+            IEnumerable<(DateTimeOffset At, int Index, bool Actual, int Delta)> Events(int index,
+                ScheduleAssignmentSegmentContract segment, bool isActual)
+            {
+                var start = Max(segment.StartUtc, window.StartUtc);
+                var end = segment.EndUtc < window.EndUtc ? segment.EndUtc : window.EndUtc;
+                if (start >= end) yield break;
+                yield return (start, index, isActual, 1);
+                yield return (end, index, isActual, -1);
             }
         }
         return result.Values.OrderBy(x => x.Index).ToArray();
+    }
+
+    private static void Update(Dictionary<int, int> active, int index, int delta)
+    {
+        var count = active.GetValueOrDefault(index) + delta;
+        if (count == 0) active.Remove(index);
+        else active[index] = count;
     }
 
     private static IEnumerable<ScheduleAssignmentSegmentContract> Segments(ScheduleAssignmentContract assignment) =>
@@ -269,9 +338,7 @@ internal static class ReschedulingImpactAnalyzer
 
     internal static string CanonicalJson(object value)
     {
-        var options = new JsonSerializerOptions(SchedulingJson.Options);
-        options.Converters.Add(new UtcDateTimeOffsetConverter());
-        return Canonicalize(JsonSerializer.SerializeToElement(value, options));
+        return Canonicalize(JsonSerializer.SerializeToElement(value, FingerprintJsonOptions));
     }
 
     // 输入中的数组均为集合；排序对象字段与集合元素，覆盖嵌套集合和策略字典。
