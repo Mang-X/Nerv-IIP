@@ -1,10 +1,7 @@
 import {
   adjustBusinessConsoleMesWorkOrderPriorityMutationOptions,
   createBusinessConsoleSchedulingPlanRevisionMutationOptions,
-  createBusinessConsoleSchedulingWorkbenchPlanMutationOptions,
   type BusinessConsoleCreateSchedulePlanRevisionRequest,
-  type BusinessConsoleCreateSchedulingWorkbenchPlanRequest,
-  type BusinessConsoleSchedulePlan,
   type BusinessConsoleSchedulingPlanRevision,
 } from '@nerv-iip/api-client'
 import { useMutation, useQueryCache } from '@pinia/colada'
@@ -12,6 +9,7 @@ import type { UseQueryEntry } from '@pinia/colada'
 import { computed } from 'vue'
 import { useMesWorkOrders, useMesPrincipalWorkScope } from './useBusinessMes'
 import { assertEnvelopeSuccess } from './serviceEnvelope'
+import { useSchedulingFirstPlan } from './useSchedulingFirstPlan'
 
 const SCHEDULING_IDS = [
   'listBusinessConsoleSchedulingPlanHistory',
@@ -62,11 +60,8 @@ export function useSchedulingWorkbench() {
         }),
       ),
     )
-  const generateMutation = useMutation({
-    ...createBusinessConsoleSchedulingWorkbenchPlanMutationOptions(),
-    onSuccess() {
-      void invalidatePlans()
-    },
+  const firstPlan = useSchedulingFirstPlan(() => {
+    void invalidatePlans()
   })
   const revisionMutation = useMutation({
     ...createBusinessConsoleSchedulingPlanRevisionMutationOptions(),
@@ -104,9 +99,11 @@ export function useSchedulingWorkbench() {
     candidatesScopeMessage: mes.workOrderReadScopeMessage,
     candidatesScopeReady: mes.workOrderReadScopeReady,
     filters: mes.filters,
-    generatePending: generateMutation.isLoading,
-    generatePlan: async (body: BusinessConsoleCreateSchedulingWorkbenchPlanRequest) =>
-      unwrap<BusinessConsoleSchedulePlan>(await generateMutation.mutateAsync({ body })),
+    generatePending: firstPlan.pending,
+    generatePlan: firstPlan.generatePlan,
+    firstPlanJob: firstPlan.job,
+    generatedPlan: firstPlan.plan,
+    generationError: firstPlan.error,
     refreshCandidates: mes.refreshWorkOrders,
     revisionPending: revisionMutation.isLoading,
     revisePlan: async (planId: string, body: BusinessConsoleCreateSchedulePlanRevisionRequest) =>

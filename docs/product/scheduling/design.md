@@ -32,6 +32,7 @@
 
 - **权威可编辑**:首版与修订版都由 BusinessScheduling 持久化生成；前端只编辑 assignment 草稿并提交显式锁定，不猜工序时长、冲突、未排原因或 KPI。
 - **个人草稿保存与恢复**：有基线方案的人工编辑自动保存到服务端，保存中与保存成功按真实请求结果显示，失败通过通知提示并可页内重试。重开排产页自动发现当前用户、组织和环境的草稿；默认恢复最近保存的方案，页内可选择其它已保存草稿。页面 URL 记录选中的草稿方案，刷新或重开该地址只恢复该方案。恢复订单选择、资源与时间编辑、锁定和待排工序，并从已持久化方案重建基线；撤销/重做历史不恢复。清空须先确认，成功后关闭确认框，失败可原地重试；只删除当前选中方案的个人草稿，保留方案及其它个人草稿；清空后刷新当前地址保持空工作台，进行中的旧保存不会重新写回。恢复期间暂不可编辑，已失效基线继续按既有 5 秒状态查询显示横幅和发布门禁。
+- **异步首版**：待排池最多选择 500 单，单选、全部加入和生成入口使用同一容量限制，超过上限须先移出工单。提交后在当前工作台展示真实排队中、生成中与完成状态；完成或失败后停止首版进度轮询。成功读取已保存方案并加载草案、关联明细，失败通过通知展示服务端原因。同步预览与锁定修订仍维持原有容量边界。
 - **单一草稿**:拖拽、资源改派、时间表格、锁定/解锁和撤销/重做共享 `WorkingScheduleDraft`，不存在视图间复制状态。
 - **方案状态自动刷新**：排产页每 5 秒重取历史方案、已选方案明细和当前草案版本摘要；查阅方案与草案摘要各按自身方案号从未筛选的历史查询读取，历史筛选和分页不影响失效提示与发布状态，查阅其它方案不改变草案状态；后端已完成失效（包括 MES 停机引发的方案失效）后，下一轮刷新更新失效提示与发布状态。后台刷新保留人工编辑草案，页面退出后停止轮询。
 - **草案即时反馈**：甘特移动、资源端点调整和表格编辑后，工序详情与表格行内即时展示日历外、资源/工作中心超容量、前序倒置或前序尚未排程，以及相对方案工序交期的提前/按期/延期分钟数。移动与端点调整自动选中该工序；移回/恢复待排、撤销/重做和加载新方案均随同一草案重新核对，已消除的提示随即清除。
@@ -111,7 +112,7 @@
 
 ## 5. 数据来源(facade 代码事实)
 
-BusinessGateway 新增两个公开两跳契约:`POST /api/business-console/v1/scheduling/workbench/plans` 从最多 500 个 MES 工单生成首版；`POST /api/business-console/v1/scheduling/plans/{planId}/revisions` 从持久化 base problem + included orders + explicit locks 生成修订版、失效影响与方案对比。既有 `list` / detail / gantt / release / revoke 继续承担历史和版本治理。
+BusinessGateway 的 `POST /api/business-console/v1/scheduling/workbench/first-plan-jobs` 受理最多 500 个 MES 工单的异步首版；`GET /api/business-console/v1/scheduling/workbench/first-plan-jobs/{jobId}` 返回真实进度与结果方案号，完成后从既有方案详情读取结果。同步 `POST /api/business-console/v1/scheduling/workbench/plans` 保留原有容量；`POST /api/business-console/v1/scheduling/plans/{planId}/revisions` 从持久化 base problem + included orders + explicit locks 生成修订版、失效影响与方案对比。既有 `list` / detail / gantt / release / revoke 继续承担历史和版本治理。
 读取经 `@nerv-iip/api-client` 生成 SDK + curated barrel(`SchedulePlanContract` 等)→ `@nerv-iip/scheduling` 的 `toModel` 归一化。
 
 Scheduling owner 的首版创建、修订 candidate 和 detail 响应提供可空的 `validationContext`：资源/工作中心映射、日历标识、容量与利用率；所有快照工序的真实前序、工序交期、时长、setup 和固定身份；以及包含外部工序的冻结占用区间与方案 horizon。事实来自该方案持久化问题快照，日历和不可用窗口复用已有 `calendars` / `blockWindows`。Gateway 三种响应透传，稳定生成类型经 `toModel` 进入草案即时反馈。历史快照缺失时不提供上下文，不以当前主数据、已排条或通用作息补造依据。
