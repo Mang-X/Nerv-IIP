@@ -13,7 +13,7 @@ public sealed class InvalidateGatewayCacheEndpoint(IAppCache cache) : EndpointWi
 {
     public override Task HandleAsync(CancellationToken ct)
     {
-        cache.InvalidatePrefix("gateway:");
+        cache.RemoveByTag(NervIipCacheTags.Gateway);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
         return Task.CompletedTask;
     }

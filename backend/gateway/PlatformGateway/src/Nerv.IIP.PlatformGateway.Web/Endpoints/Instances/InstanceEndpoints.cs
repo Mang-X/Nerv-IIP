@@ -58,7 +58,7 @@ public sealed class ListInstancesEndpoint(
 
         try
         {
-            var response = await cache.GetOrCreateAsync(key, () => appHub.QueryInstancesAsync(query, ct), TimeSpan.FromSeconds(5));
+            var response = await cache.GetOrCreateAsync(key, () => appHub.QueryInstancesAsync(query, ct), TimeSpan.FromSeconds(5), NervIipCacheTags.Gateway);
             await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)
@@ -104,7 +104,7 @@ public sealed class GetInstanceDetailEndpoint(
 
         try
         {
-            var response = await cache.GetOrCreateAsync(key, () => appHub.GetInstanceAsync(req.OrganizationId, req.EnvironmentId, req.InstanceKey, ct), TimeSpan.FromSeconds(5));
+            var response = await cache.GetOrCreateAsync(key, () => appHub.GetInstanceAsync(req.OrganizationId, req.EnvironmentId, req.InstanceKey, ct), TimeSpan.FromSeconds(5), NervIipCacheTags.Gateway);
             await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (HttpRequestException ex)
