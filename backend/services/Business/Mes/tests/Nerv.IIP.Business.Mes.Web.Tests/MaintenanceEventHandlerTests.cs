@@ -35,7 +35,7 @@ public sealed class MaintenanceEventHandlerTests
     public async Task PostgreSQL_v1_v2_concurrent_claims_commit_one_business_effect_across_independent_transactions()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
-        var fromUtc = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        var fromUtc = DateTimeOffset.Parse("2026-05-22T08:00:00.1234567Z");
         const string idempotencyKey = "maintenance.AssetUnavailable:ASSET-CNC-01:20260522080000";
         var v1 = CreateUnavailableEvent(fromUtc) with { EventId = "evt-race-v1", IdempotencyKey = idempotencyKey };
         var v2 = CreateUnavailableV2Event(fromUtc, idempotencyKey) with { EventId = "evt-race-v2" };
@@ -52,7 +52,12 @@ public sealed class MaintenanceEventHandlerTests
         {
             EventId = "evt-race-prediction",
             IdempotencyKey = idempotencyKey + ":prediction:1",
-            Payload = v2.Payload with { ExpectedRestoreAtUtc = fromUtc.AddHours(4) },
+            Payload = v2.Payload with
+            {
+                // Maintenance 初始事件使用 UtcNow 原值，后续预测使用持久化读回的微秒值。
+                FromUtc = DateTimeOffset.Parse("2026-05-22T08:00:00.1234560Z"),
+                ExpectedRestoreAtUtc = fromUtc.AddHours(4),
+            },
         };
         await RunClaimRaceAsync(
             first: (scope, token) => scope.GetRequiredService<AssetUnavailableIntegrationEventHandlerForReschedule>().HandleAsync(v1, token),

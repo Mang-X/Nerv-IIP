@@ -52,8 +52,8 @@ public sealed class PostgreSqlMesAssetUnavailableInboxClaimCoordinator(Applicati
             {
                 $"mes-asset-unavailable:event:{consumerName}:{integrationEvent.EventId}",
                 $"mes-asset-unavailable:business:{consumerName}:{integrationEvent.IdempotencyKey}",
-                // 预测事件有新的投递身份，但与初始事件共享同一个实际停机事实。
-                $"mes-asset-unavailable:fact:{integrationEvent.OrganizationId}:{integrationEvent.EnvironmentId}:{deviceAssetId}:{fromUtc.ToUniversalTime():O}",
+                // Npgsql 按微秒存储时间：初始事件的 100ns 值与持久化读回的预测值属于同一事实。
+                $"mes-asset-unavailable:fact:{integrationEvent.OrganizationId}:{integrationEvent.EnvironmentId}:{deviceAssetId}:{fromUtc.UtcTicks / TimeSpan.TicksPerMicrosecond}",
             };
             foreach (var lockKey in lockKeys.Order(StringComparer.Ordinal))
             {
