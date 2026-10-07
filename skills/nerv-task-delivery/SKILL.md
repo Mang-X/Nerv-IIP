@@ -72,6 +72,8 @@ GitHub Issue 是范围、spec 和子票的权威源。Linear key 沿现有 GitHu
 
 派单只给指针，不复述或预先解释票面：票号、worktree 绝对路径、《实施准则》整段。席位自己读取 GitHub Issue 和获批 plan，运行受影响门禁、push 并开中文 PR，正文带 `Fixes #<GitHub issue>`。跑门禁前先 `git add`，确保新增文件进入 `git ls-files`。实施席位不再派子代理。
 
+开 PR 前先按票号、分支和 Issue 交叉核对是否已有 PR。每票只开一张 PR：已有 PR 时更新该 PR，不另建重复 PR；若原 PR 已合并，不再新开同票 PR；按第 6–7 节核对合并记录和父级验收，未完成的代码修复沿批准后的恢复路径处理。**REQUIRED SUB-SKILL：** 新建或更新 PR 正文时调用 `/pr`，按其摘要、证据、合并风险结构，用中文呈现可核实事实。证据须绑定实际 head SHA；CI、审核和门禁仍按本技能流程独立完成，不能由 `/pr` 文案代替。更新正文时保留原 PR 的 base/head 与 draft/ready 状态；新 PR 的状态遵循用户或任务的明确要求。`/pr` 只负责正文，不改变一票一 PR、审核与 CI 顺序、合并权限或 `--admin` 授权边界。
+
 模型默认与宿主会话同模型、同思考程度。简单单端点、小 bug 或机械收敛可只给实施席位降档（Claude 用 sonnet，Codex 用 luna max）；审核侧不降档。架构、迁移、跨服务契约或大前端改动保持默认档。
 
 ### 实施准则
