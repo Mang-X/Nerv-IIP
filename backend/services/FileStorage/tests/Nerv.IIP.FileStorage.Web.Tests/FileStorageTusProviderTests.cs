@@ -21,7 +21,7 @@ using FileStorageFileStatus = Nerv.IIP.FileStorage.Domain.FileStorageFileStatus;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
-public sealed class FileStorageTusProviderTests
+public sealed partial class FileStorageTusProviderTests
 {
     private static readonly JsonSerializerOptions WebJsonOptions = new(JsonSerializerDefaults.Web);
 

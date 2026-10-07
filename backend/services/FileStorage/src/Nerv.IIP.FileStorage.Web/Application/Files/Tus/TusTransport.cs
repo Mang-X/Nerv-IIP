@@ -30,6 +30,7 @@ internal static class TusTransport
         return Task.FromResult(new DefaultTusConfiguration
         {
             Store = store,
+            AllowedExtensions = TusExtensions.All.Except(TusExtensions.ChecksumTrailer),
             Events = new Events
             {
                 OnAuthorizeAsync = async authorization =>
@@ -51,6 +52,11 @@ internal static class TusTransport
                     if (authorized is null)
                     {
                         authorization.FailRequest(HttpStatusCode.NotFound);
+                    }
+                    else if (authorization.Intent == IntentType.WriteFile && context.Request.Headers
+                        .GetCommaSeparatedValues("Trailer").Contains("Upload-Checksum", StringComparer.OrdinalIgnoreCase))
+                    {
+                        authorization.FailRequest(HttpStatusCode.BadRequest, "Checksum trailers are not supported. Use Upload-Checksum.");
                     }
                     else if (authorized.ExpiresAtUtc <= clock.GetUtcNow())
                     {
