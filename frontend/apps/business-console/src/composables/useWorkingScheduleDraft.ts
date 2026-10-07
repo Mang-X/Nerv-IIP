@@ -2,6 +2,8 @@ import type {
   BusinessConsoleSchedulePlan,
   BusinessConsoleSchedulingLockedAssignment,
   BusinessConsoleSchedulingPlanImpact,
+  SchedulingWorkingDraftState,
+  SchedulingWorkingDraftTask,
 } from '@nerv-iip/api-client'
 import {
   evaluateDraft,
@@ -39,10 +41,12 @@ interface DraftSnapshot {
 
 export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = false) {
   const orders = shallowRef<WorkingScheduleOrder[]>([])
+  let candidateOrders: WorkingScheduleOrder[] = []
   const model = shallowRef<ScheduleModel>()
   const baselineTasks = shallowRef(new Map<string, ScheduleTask>())
   const baselineLinks = shallowRef<ScheduleModel['links']>([])
   const pendingOperations = shallowRef<WorkingSchedulePendingOperation[]>([])
+  const changeVersion = shallowRef(0)
   const history = shallowRef<DraftSnapshot[]>([])
   const future = shallowRef<DraftSnapshot[]>([])
 
@@ -63,23 +67,29 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
     history.value = [...history.value, snapshot()]
     future.value = []
     change()
+    changeVersion.value++
   }
 
   function setOrders(candidates: Array<{ workOrderId?: string; priority?: number }>) {
     const existing = new Map(orders.value.map((order) => [order.workOrderId, order]))
-    orders.value = candidates
+    candidateOrders = candidates
       .filter((candidate): candidate is { workOrderId: string; priority?: number } =>
         Boolean(candidate.workOrderId?.trim()),
       )
-      .map(
-        (candidate) =>
-          existing.get(candidate.workOrderId) ?? {
-            workOrderId: candidate.workOrderId,
-            priority: candidate.priority ?? 100,
-            isRush: false,
-            included: false,
-          },
-      )
+      .map((candidate) => ({
+        workOrderId: candidate.workOrderId,
+        priority: candidate.priority ?? 100,
+        isRush: false,
+        included: false,
+      }))
+    const candidateIds = new Set(candidateOrders.map((order) => order.workOrderId))
+    orders.value = candidateOrders.map((order) => existing.get(order.workOrderId) ?? order)
+    orders.value = [
+      ...orders.value,
+      ...[...existing.values()].filter(
+        (order) => order.included && !candidateIds.has(order.workOrderId),
+      ),
+    ]
   }
 
   function setIncluded(workOrderIds: string[], included: boolean) {
@@ -113,6 +123,7 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
     baselineTasks.value = new Map(nextModel.tasks.map((task) => [task.id, structuredClone(task)]))
     baselineLinks.value = structuredClone(nextModel.links)
     pendingOperations.value = buildPendingOperations(nextModel, impact)
+    changeVersion.value++
   }
 
   function updateTask(
@@ -266,6 +277,7 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
     future.value = [snapshot(), ...future.value]
     history.value = history.value.slice(0, -1)
     restore(previous)
+    changeVersion.value++
   }
 
   function redo() {
@@ -275,6 +287,82 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
     history.value = [...history.value, snapshot()]
     future.value = future.value.slice(1)
     restore(next)
+    changeVersion.value++
+  }
+
+  function exportState(): SchedulingWorkingDraftState {
+    return structuredClone({
+      contractVersion: 1,
+      orders: orders.value,
+      tasks:
+        model.value?.tasks
+          .filter((task) => task.type === 'operation' && !task.blockKind)
+          .map(toSavedTask) ?? [],
+      pendingOperations: pendingOperations.value.map((item) => ({
+        ...item,
+        task: item.task ? toSavedTask(item.task) : undefined,
+      })),
+    })
+  }
+
+  function restoreSaved(plan: BusinessConsoleSchedulePlan, state: SchedulingWorkingDraftState) {
+    loadPlan(plan)
+    const savedOrders = new Map(
+      state.orders!.map((order) => [
+        order.workOrderId!,
+        {
+          workOrderId: order.workOrderId!,
+          priority: order.priority!,
+          isRush: order.isRush!,
+          included: order.included!,
+        },
+      ]),
+    )
+    orders.value = [
+      ...candidateOrders.map((order) => savedOrders.get(order.workOrderId) ?? order),
+      ...[...savedOrders.values()].filter(
+        (order) =>
+          !candidateOrders.some((candidate) => candidate.workOrderId === order.workOrderId),
+      ),
+    ]
+    const savedTasks = new Map(state.tasks!.map((task) => [task.taskId!, task]))
+    const tasks = model
+      .value!.tasks.filter(
+        (task) => task.type !== 'operation' || task.blockKind || savedTasks.has(task.id),
+      )
+      .map((task) =>
+        savedTasks.has(task.id) ? applySavedTask(task, savedTasks.get(task.id)!) : task,
+      )
+    model.value = {
+      ...model.value!,
+      tasks: recomputeOrderNodes(tasks),
+      links: visibleBaselineLinks(tasks, baselineLinks.value),
+    }
+    pendingOperations.value = state.pendingOperations!.map((item) => ({
+      id: item.id!,
+      orderId: item.orderId!,
+      operationId: item.operationId!,
+      source: item.source!,
+      message: item.message!,
+      canRestore: item.canRestore!,
+      taskId: item.taskId ?? undefined,
+      reasonCode: item.reasonCode ?? undefined,
+      task: item.task
+        ? applySavedTask(baselineTasks.value.get(item.task.taskId!)!, item.task)
+        : undefined,
+    }))
+    history.value = []
+    future.value = []
+  }
+
+  function clear() {
+    orders.value = orders.value.map((order) => ({ ...order, included: false }))
+    model.value = undefined
+    baselineTasks.value = new Map()
+    baselineLinks.value = []
+    pendingOperations.value = []
+    history.value = []
+    future.value = []
   }
 
   const includedOrders = computed(() => orders.value.filter((order) => order.included))
@@ -315,6 +403,10 @@ export function useWorkingScheduleDraft(readOnly: MaybeRefOrGetter<boolean> = fa
     canRedo: computed(() => future.value.length > 0),
     canUndo: computed(() => history.value.length > 0),
     includedOrders,
+    changeVersion,
+    clear,
+    exportState,
+    restoreSaved,
     loadPlan,
     lockModifiedTasks,
     lockedAssignments,
@@ -412,4 +504,37 @@ function recomputeOrderNodes(tasks: ScheduleTask[]) {
             .at(-1) ?? task.endUtc,
       }
     })
+}
+
+function toSavedTask(task: ScheduleTask): SchedulingWorkingDraftTask {
+  return {
+    taskId: task.id,
+    orderId: task.orderId,
+    operationId: task.operationId,
+    resourceId: task.resourceId,
+    workCenterId: task.workCenterId,
+    startUtc: task.startUtc,
+    endUtc: task.endUtc,
+    locked: task.locked,
+    segments: task.segments,
+  }
+}
+
+function applySavedTask(baseline: ScheduleTask, saved: SchedulingWorkingDraftTask): ScheduleTask {
+  return {
+    ...baseline,
+    resourceId: saved.resourceId!,
+    workCenterId: saved.workCenterId!,
+    startUtc: saved.startUtc!,
+    endUtc: saved.endUtc!,
+    locked: saved.locked!,
+    segments: saved.segments?.map((segment) => ({
+      startUtc: segment.startUtc!,
+      endUtc: segment.endUtc!,
+    })),
+    dimensions: {
+      ...baseline.dimensions,
+      workCenter: { id: saved.workCenterId!, label: saved.workCenterId! },
+    },
+  }
 }
