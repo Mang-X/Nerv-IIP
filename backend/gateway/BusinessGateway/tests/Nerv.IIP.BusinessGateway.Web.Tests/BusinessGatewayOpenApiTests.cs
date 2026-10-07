@@ -38,6 +38,28 @@ public sealed class BusinessGatewayOpenApiTests
     }
 
     [Fact]
+    public async Task Insertion_preview_job_openapi_matches_accepted_wire_response_and_query_contract()
+    {
+        // #4162 PublicContract: the accepted response is 202; state is the Scheduling camelCase enum.
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var paths = document.RootElement.GetProperty("paths");
+        var accept = paths.GetProperty("/api/business-console/v1/scheduling/workbench/insertion-preview-jobs").GetProperty("post");
+        Assert.Equal("acceptBusinessConsoleSchedulingInsertionPreviewJob", accept.GetProperty("operationId").GetString());
+        Assert.True(accept.GetProperty("responses").TryGetProperty("202", out _));
+        Assert.False(accept.GetProperty("responses").TryGetProperty("200", out _));
+        var query = paths.GetProperty("/api/business-console/v1/scheduling/workbench/insertion-preview-jobs/{jobId}").GetProperty("get");
+        Assert.Equal("getBusinessConsoleSchedulingInsertionPreviewJob", query.GetProperty("operationId").GetString());
+        var parameters = query.GetProperty("parameters").EnumerateArray().ToArray();
+        foreach (var (name, location) in new[] { ("jobId", "path"), ("organizationId", "query"), ("environmentId", "query") })
+        {
+            var parameter = Assert.Single(parameters, x => x.GetProperty("name").GetString() == name);
+            Assert.Equal(location, parameter.GetProperty("in").GetString());
+            Assert.True(parameter.GetProperty("required").GetBoolean());
+        }
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingSchedulingInsertionPreviewJobStatusContract", "created", "running", "completed", "failed");
+    }
+
+    [Fact]
     public async Task Scheduling_csv_openapi_exposes_a_binary_csv_download_without_a_json_envelope()
     {
         // #4084 PublicContract: stable operation and text/csv download, not ResponseData.

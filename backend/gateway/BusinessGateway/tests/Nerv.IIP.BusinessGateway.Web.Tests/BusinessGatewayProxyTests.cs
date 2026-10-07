@@ -9265,6 +9265,129 @@ public sealed class BusinessGatewayProxyTests
         Assert.Empty(handler.Requests);
     }
 
+    // #4162 PublicContract：公开合同要求异步首版受理/查询原样透传，权限分别沿管理/读取。
+    [Theory]
+    [InlineData(true, SchedulingInsertionPreviewJobStatusContract.Created)]
+    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Running)]
+    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Completed)]
+    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Failed)]
+    public async Task Insertion_preview_job_facade_preserves_owner_facts_and_internal_token(bool accept, SchedulingInsertionPreviewJobStatusContract status)
+    {
+        var start = new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero);
+        var input = new SchedulingInsertionPreviewInputContract("org-001", "env-dev", "plan-001", "WO-12", start, start.AddDays(2),
+            Enumerable.Range(1, 12).Select(i => $"WO-{i}").ToArray());
+        var request = new SchedulingInsertionPreviewRequestContract("org-001", "env-dev", "plan-001", "WO-12");
+        var sample = CreateSchedulePlan(SchedulePlanStatusContract.Preview);
+        var preview = sample with
+        {
+            Assignments = Enumerable.Range(1, 11).Select(i => sample.Assignments.Single() with
+                { AssignmentId = $"assign-{i}", OrderId = $"WO-{i}" }).ToArray(),
+            UnscheduledOperations = [new("WO-12", "OP-12", ScheduleConflictReasonCodeContract.Capacity, "资源容量不足")],
+            Conflicts = [new("conflict-12", ScheduleConflictReasonCodeContract.Capacity, ScheduleConflictSeverityContract.Warning, "WO-12", "OP-12", null, "资源容量不足")],
+        };
+        preview = preview with
+        {
+            FreezeContext = new(start, start.AddHours(4), [],
+                [new(preview.Assignments.First(), [SchedulePlanFreezeReasonContract.StableWindow])]),
+        };
+        var fact = new SchedulingInsertionPreviewJobContract(Guid.NewGuid(),
+            status,
+            input, start, accept ? null : start, accept ? null : start.AddMinutes(1), status == SchedulingInsertionPreviewJobStatusContract.Completed ? preview : null,
+            status == SchedulingInsertionPreviewJobStatusContract.Failed ? "工艺路线不可用，请重新选择工单。" : null);
+        var handler = new RecordingHandler(_ => JsonResponse(accept ? HttpStatusCode.Accepted : HttpStatusCode.OK, new { data = fact }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        const string route = "/api/business-console/v1/scheduling/workbench/insertion-preview-jobs";
+        using var response = accept
+            ? await client.PostAsJsonAsync(route, request, SchedulingJson.Options)
+            : await client.GetAsync($"{route}/{fact.JobId}?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(accept ? HttpStatusCode.Accepted : HttpStatusCode.OK, response.StatusCode);
+        var returned = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"];
+        Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(fact, SchedulingJson.Options), returned));
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal("internal-test-token", forwarded.Headers.Authorization?.Parameter);
+        Assert.Equal(accept ? HttpMethod.Post : HttpMethod.Get, forwarded.Method);
+        Assert.Equal(accept ? "/api/business/v1/scheduling/workbench/insertion-preview-jobs"
+            : $"/api/business/v1/scheduling/workbench/insertion-preview-jobs/{fact.JobId}?organizationId=org-001&environmentId=env-dev", forwarded.RequestUri!.PathAndQuery);
+        if (accept)
+            Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(request, SchedulingJson.Options), JsonNode.Parse(Assert.Single(handler.RequestBodies)!)));
+        Assert.Equal(accept ? BusinessGatewayPermissions.SchedulingPlansManage : BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal(("org-001", "env-dev"), (auth.LastRequirement.OrganizationId, auth.LastRequirement.EnvironmentId));
+        Assert.Equal(accept ? BusinessGatewayAuthorizationContinuityMode.RealtimeRequired : BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed, auth.LastContinuityMode);
+    }
+
+    [Theory]
+    [InlineData(true, "anonymous")]
+    [InlineData(false, "anonymous")]
+    [InlineData(true, "permission")]
+    [InlineData(false, "permission")]
+    [InlineData(true, "organization")]
+    [InlineData(false, "organization")]
+    [InlineData(true, "environment")]
+    [InlineData(false, "environment")]
+    public async Task Insertion_preview_job_facade_rejects_unauthorized_requests_before_forwarding(bool accept, string denial)
+    {
+        var auth = denial == "permission" ? FakeBusinessGatewayAuthorizationClient.Forbidden()
+            : FakeBusinessGatewayAuthorizationClient.Allowed();
+        var handler = new RecordingHandler(_ => throw new InvalidOperationException("Unauthorized request reached Scheduling"));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+        });
+        using var client = lease.CreateClient();
+        if (denial != "anonymous") BusinessGatewayTestHost.Authenticated(client);
+        var org = denial == "organization" ? "other" : "org-001";
+        var env = denial == "environment" ? "other" : "env-dev";
+        const string route = "/api/business-console/v1/scheduling/workbench/insertion-preview-jobs";
+        var start = new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero);
+        using var response = accept
+            ? await client.PostAsJsonAsync(route, new SchedulingInsertionPreviewRequestContract(org, env, "plan-001", "WO-12"), SchedulingJson.Options)
+            : await client.GetAsync($"{route}/{Guid.NewGuid()}?organizationId={org}&environmentId={env}");
+        Assert.Equal(denial == "anonymous" ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(handler.Requests);
+    }
+
+    // #4162 PublicContract: producer errors remain visible through the public HTTP envelope.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Insertion_preview_job_facade_preserves_failure_envelope(bool accept)
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.BadRequest, new
+        {
+            success = false, data = (object?)null,
+            message = "历史方案缺少必要问题快照，请重新生成方案。", code = 400,
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        const string route = "/api/business-console/v1/scheduling/workbench/insertion-preview-jobs";
+        using var response = accept
+            ? await client.PostAsJsonAsync(route, new SchedulingInsertionPreviewRequestContract("org-001", "env-dev", "plan-001", "WO-12"), SchedulingJson.Options)
+            : await client.GetAsync($"{route}/{Guid.NewGuid()}?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        Assert.False(body["success"]!.GetValue<bool>());
+        Assert.Equal(400, body["code"]!.GetValue<int>());
+        Assert.Equal("历史方案缺少必要问题快照，请重新生成方案。", body["message"]!.GetValue<string>());
+    }
+
     [Fact]
     public async Task Workbench_preview_facade_forwards_selection_with_internal_token()
     {
@@ -20691,6 +20814,12 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 
     public Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
         string token, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<SchedulingInsertionPreviewJobContract> AcceptInsertionPreviewJobAsync(
+        string token, SchedulingInsertionPreviewRequestContract input, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<SchedulingInsertionPreviewJobContract> GetInsertionPreviewJobAsync(
+        string token, BusinessConsoleSchedulingInsertionPreviewJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(string token, BusinessConsoleSaveSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<SchedulingWorkingDraftContract>> ListWorkingDraftsAsync(string token, BusinessConsoleListSchedulingWorkingDraftsRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();

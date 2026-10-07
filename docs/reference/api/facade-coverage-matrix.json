@@ -6328,16 +6328,18 @@
       "method": "POST",
       "route": "/api/business/v1/scheduling/workbench/insertion-preview-jobs",
       "operationId": "acceptSchedulingInsertionPreviewJob",
-      "classification": "deferred",
-      "followUp": "https://github.com/Mang-X/Nerv-IIP/issues/4162"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["acceptBusinessConsoleSchedulingInsertionPreviewJob"]
     },
     {
       "service": "Scheduling",
       "method": "GET",
       "route": "/api/business/v1/scheduling/workbench/insertion-preview-jobs/{jobId}",
       "operationId": "getSchedulingInsertionPreviewJob",
-      "classification": "deferred",
-      "followUp": "https://github.com/Mang-X/Nerv-IIP/issues/4162"
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleSchedulingInsertionPreviewJob"]
     }
   ]
 }

@@ -2146,6 +2146,46 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingInsertionPreviewJobContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewJobContract = {
+    jobId?: string;
+    status?: NervIipContractsSchedulingSchedulingInsertionPreviewJobStatusContract;
+    input?: NervIipContractsSchedulingSchedulingInsertionPreviewInputContract;
+    createdAtUtc?: string;
+    startedAtUtc?: string | null;
+    finishedAtUtc?: string | null;
+    preview?: NervIipContractsSchedulingSchedulePlanContract | null;
+    failureReason?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewJobStatusContract = 'created' | 'running' | 'completed' | 'failed';
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewInputContract = {
+    organizationId?: string;
+    environmentId?: string;
+    planId?: string;
+    workOrderId?: string;
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    workOrderIds?: Array<string>;
+    contractVersion?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewRequestContract = {
+    organizationId?: string;
+    environmentId?: string;
+    planId?: string;
+    workOrderId?: string;
+    contractVersion?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingInsertionPreviewJobRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsSchedulingSchedulingWorkingDraftContract | null;
 };
@@ -13049,6 +13089,65 @@ export type GetBusinessConsoleSchedulingFirstPlanJobResponses = {
 };
 
 export type GetBusinessConsoleSchedulingFirstPlanJobResponse = GetBusinessConsoleSchedulingFirstPlanJobResponses[keyof GetBusinessConsoleSchedulingFirstPlanJobResponses];
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobData = {
+    body: NervIipContractsSchedulingSchedulingInsertionPreviewRequestContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/insertion-preview-jobs';
+};
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses = {
+    /**
+     * Accepted
+     */
+    202: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract;
+};
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobResponse = AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses[keyof AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses];
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobData = {
+    body?: never;
+    path: {
+        jobId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/workbench/insertion-preview-jobs/{jobId}';
+};
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract;
+};
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobResponse = GetBusinessConsoleSchedulingInsertionPreviewJobResponses[keyof GetBusinessConsoleSchedulingInsertionPreviewJobResponses];
 
 export type ClearBusinessConsoleSchedulingWorkingDraftData = {
     body?: never;
