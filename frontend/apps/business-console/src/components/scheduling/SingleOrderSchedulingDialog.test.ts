@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   reject: null as Error | null,
   /** `useMesWorkOrders` 被实例化的次数——一实例化就会发候选查询。 */
   mesCalls: 0,
-  toasts: [] as { action: string; fallback: string }[],
+  toasts: [] as { action: string; fallback: string; error: unknown }[],
 }))
 
 vi.mock('@/composables/useSingleOrderScheduling', async () => {
@@ -66,8 +66,8 @@ vi.mock('@/utils/notify', async () => {
   const actual = await vi.importActual<typeof import('@/utils/notify')>('@/utils/notify')
   return {
     ...actual,
-    notifyOperationFailure: vi.fn((action: string, _error: unknown, fallback: string) => {
-      state.toasts.push({ action, fallback })
+    notifyOperationFailure: vi.fn((action: string, error: unknown, fallback: string) => {
+      state.toasts.push({ action, fallback, error })
     }),
     notifySuccess: vi.fn(),
   }
@@ -124,6 +124,9 @@ vi.mock('@nerv-iip/ui', async () => {
   }
 })
 
+vi.mock('./SchedulingPreviewResult.vue', () => ({
+  default: { props: ['plan'], template: '<div>已生成方案 {{ plan.planId }}</div>' },
+}))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
@@ -161,7 +164,7 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     expect(semantics).toContain('现有方案保持不变')
   })
 
-  it('提交时把用户指定的窗口与固定工单送进单单排产，并跳到该方案', async () => {
+  it('提交时把用户指定的窗口与固定工单送进单单排产，并在页内展示该方案', async () => {
     const wrapper = mountDialog({ workOrderId: 'WO-77' })
 
     await wrapper.get('form').trigger('submit')
@@ -176,10 +179,9 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
         new Date(String(request.horizonStartUtc)).getTime()) /
       86_400_000
     expect(span).toBe(7)
-    expect(state.pushed[0]).toEqual({
-      path: '/scheduling',
-      query: { planId: 'PLAN-SINGLE-1', orderReference: 'WO-77' },
-    })
+    expect(state.pushed).toHaveLength(0)
+    expect(wrapper.text()).toContain('已生成方案')
+    expect(wrapper.emitted('update:open')).toBeUndefined()
   })
 
   it('没有固定工单又没选中候选时不提交，并说明还差什么', async () => {
@@ -206,17 +208,21 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     expect(wrapper.text()).not.toContain('business.scheduling.plans.manage')
   })
 
-  it('服务端的中文领域拒绝理由原样留在弹窗里，用户改完就能重试', async () => {
+  it('服务端中文领域拒绝交给统一通知，弹窗保持打开可重试', async () => {
     state.reject = new Error('工单没有生产版本')
     const wrapper = mountDialog({ workOrderId: 'WO-77' })
 
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('工单没有生产版本')
+    expect(wrapper.emitted('update:open')).toBeUndefined()
     // 与 #1278 的分层透传同源：toast 也带动作前缀，不再各写一套错误取值。
     expect(state.toasts).toEqual([
-      { action: '排产失败', fallback: '排产失败，请检查工单生产版本与排程基础数据。' },
+      {
+        action: '排产失败',
+        fallback: '排产失败，请检查工单生产版本与排程基础数据。',
+        error: state.reject,
+      },
     ])
     expect(state.pushed).toHaveLength(0)
   })
@@ -229,6 +235,6 @@ describe('单单排产弹窗（MAN-694 / #1262）', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('Internal Server Error')
-    expect(wrapper.text()).toContain('排产失败，请检查工单生产版本与排程基础数据。')
+    expect(state.toasts[0]?.fallback).toBe('排产失败，请检查工单生产版本与排程基础数据。')
   })
 })
