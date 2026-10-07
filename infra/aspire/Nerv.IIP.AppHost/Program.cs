@@ -762,12 +762,15 @@ var businessMaintenance = WithNervIipTelemetry(WithAppHostEnvironment(builder.Ad
     .WithEnvironment("Maintenance__PmGeneration__Enabled", maintenancePmGenerationEnabled ? "true" : "false")
     .WithEnvironment("Maintenance__PmGeneration__OrganizationId", maintenancePmGenerationOrganizationId ?? string.Empty)
     .WithEnvironment("Maintenance__PmGeneration__EnvironmentId", maintenancePmGenerationEnvironmentId ?? string.Empty)
+    .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMaintenanceDatabase, "PostgreSQL")
+    .WithReference(notification)
     .WithReference(businessIndustrialTelemetry)
     .WaitFor(businessMaintenanceDatabase)
-    .WaitFor(businessIndustrialTelemetry);
+    .WaitFor(businessIndustrialTelemetry)
+    .WaitFor(notification);
 if (!string.IsNullOrWhiteSpace(maintenancePmGenerationInterval))
 {
     businessMaintenance = businessMaintenance.WithEnvironment("Maintenance__PmGeneration__Interval", maintenancePmGenerationInterval);
