@@ -14,6 +14,12 @@ public sealed record BusinessConsoleClearSchedulingWorkingDraftRequest([property
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
+        string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken);
+
+    Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
+        string internalBearerToken, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken);
+
     Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(
         string internalBearerToken,
         BusinessConsoleSaveSchedulingWorkingDraftRequest request,
@@ -123,6 +129,17 @@ public interface IBusinessSchedulingClient
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
 {
+    public Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
+        string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken) =>
+        SendAsync<SchedulingFirstPlanJobContract>(internalBearerToken, HttpMethod.Post,
+            "/api/business/v1/scheduling/workbench/first-plan-jobs", input, cancellationToken, SchedulingJson.Options);
+
+    public Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
+        string internalBearerToken, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken) =>
+        SendAsync<SchedulingFirstPlanJobContract>(internalBearerToken, HttpMethod.Get,
+            $"/api/business/v1/scheduling/workbench/first-plan-jobs/{request.JobId}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null, cancellationToken, SchedulingJson.Options);
+
     public Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(string token, BusinessConsoleSaveSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) =>
         SendAsync<SchedulingWorkingDraftContract>(token, HttpMethod.Put,
             $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/working-draft", request, ct, SchedulingJson.Options,

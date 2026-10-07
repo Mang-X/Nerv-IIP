@@ -1,3 +1,4 @@
+using FastEndpoints;
 using DotNetCore.CAP;
 using DotNetCore.CAP.Messages;
 using DotNetCore.CAP.Transport;
@@ -145,6 +146,12 @@ public sealed class AssetUnavailableRedisCapTransportTests
             foreach (var (key, value) in settings) builder.UseSetting(key, value);
             builder.ConfigureServices(services =>
             {
+                services.AddFastEndpoints(options =>
+                {
+                    options.Assemblies = [typeof(Program).Assembly];
+                    options.DisableAutoDiscovery = true;
+                    options.IncludeAbstractValidators = true;
+                });
                 var consumerFactory = services.Single(x => x.ServiceType == typeof(IConsumerClientFactory));
                 services.Remove(consumerFactory);
                 services.AddSingleton<IConsumerClientFactory>(provider => new FirstPublishConsumerFactory(

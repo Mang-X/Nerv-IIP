@@ -6069,3 +6069,8 @@ public sealed record BusinessConsoleMesSalesOrderLink(
     string SalesOrderNo,
     string SourceLineReference,
     string? CustomerCode);
+
+public sealed record BusinessConsoleSchedulingFirstPlanJobRequest(
+    [property: RouteParam] Guid JobId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);

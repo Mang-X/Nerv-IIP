@@ -7602,6 +7602,110 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/workbench/first-plan-jobs": {
+      "post": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "acceptBusinessConsoleSchedulingFirstPlanJob",
+        "requestBody": {
+          "x-name": "SchedulingFirstPlanInputContract",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingFirstPlanInputContract"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/scheduling/workbench/first-plan-jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleSchedulingFirstPlanJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/{planId}/working-draft": {
       "put": {
         "tags": [
@@ -43106,6 +43210,125 @@
             "nullable": true
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingFirstPlanJobContract"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingFirstPlanJobContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingFirstPlanJobStatusContract"
+          },
+          "input": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingFirstPlanInputContract"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finishedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "planId": {
+            "type": "string",
+            "nullable": true
+          },
+          "failureReason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingFirstPlanJobStatusContract": {
+        "type": "string",
+        "description": "",
+        "enum": [
+          "created",
+          "running",
+          "completed",
+          "failed"
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingFirstPlanInputContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "horizonStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "horizonEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingFirstPlanOrderContract"
+            }
+          },
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingFirstPlanOrderContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workOrderId": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isRush": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingFirstPlanJobRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract": {
         "allOf": [

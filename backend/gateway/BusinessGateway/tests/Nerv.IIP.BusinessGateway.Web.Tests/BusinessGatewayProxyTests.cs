@@ -9188,6 +9188,83 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(0, barcode.ResolveCallCount);
     }
 
+    // #4136：公开合同要求异步首版受理/查询原样透传，权限分别沿管理/读取。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task First_plan_job_facade_preserves_owner_facts_and_internal_token(bool accept)
+    {
+        var start = new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero);
+        var input = new SchedulingFirstPlanInputContract("org-001", "env-dev", start, start.AddDays(2),
+            Enumerable.Range(1, 500).Select(i => new SchedulingFirstPlanOrderContract($"WO-{i}", i % 5, false)).ToArray());
+        var fact = new SchedulingFirstPlanJobContract(Guid.NewGuid(),
+            accept ? SchedulingFirstPlanJobStatusContract.Created : SchedulingFirstPlanJobStatusContract.Failed,
+            input, start, accept ? null : start, accept ? null : start.AddMinutes(1), null,
+            accept ? null : "工艺路线不可用，请重新选择工单。");
+        var handler = new RecordingHandler(_ => JsonResponse(accept ? HttpStatusCode.Accepted : HttpStatusCode.OK, new { data = fact }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        const string route = "/api/business-console/v1/scheduling/workbench/first-plan-jobs";
+        using var response = accept
+            ? await client.PostAsJsonAsync(route, input, SchedulingJson.Options)
+            : await client.GetAsync($"{route}/{fact.JobId}?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(accept ? HttpStatusCode.Accepted : HttpStatusCode.OK, response.StatusCode);
+        var returned = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["data"];
+        Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(fact, SchedulingJson.Options), returned));
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal("internal-test-token", forwarded.Headers.Authorization?.Parameter);
+        Assert.Equal(accept ? HttpMethod.Post : HttpMethod.Get, forwarded.Method);
+        Assert.Equal(accept ? "/api/business/v1/scheduling/workbench/first-plan-jobs"
+            : $"/api/business/v1/scheduling/workbench/first-plan-jobs/{fact.JobId}?organizationId=org-001&environmentId=env-dev", forwarded.RequestUri!.PathAndQuery);
+        if (accept)
+            Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(input, SchedulingJson.Options), JsonNode.Parse(Assert.Single(handler.RequestBodies)!)));
+        Assert.Equal(accept ? BusinessGatewayPermissions.SchedulingPlansManage : BusinessGatewayPermissions.SchedulingPlansRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal(("org-001", "env-dev"), (auth.LastRequirement.OrganizationId, auth.LastRequirement.EnvironmentId));
+        Assert.Equal(accept ? BusinessGatewayAuthorizationContinuityMode.RealtimeRequired : BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed, auth.LastContinuityMode);
+    }
+
+    [Theory]
+    [InlineData(true, "anonymous")]
+    [InlineData(false, "anonymous")]
+    [InlineData(true, "permission")]
+    [InlineData(false, "permission")]
+    [InlineData(true, "organization")]
+    [InlineData(false, "organization")]
+    [InlineData(true, "environment")]
+    [InlineData(false, "environment")]
+    public async Task First_plan_job_facade_rejects_unauthorized_requests_before_forwarding(bool accept, string denial)
+    {
+        var auth = denial == "permission" ? FakeBusinessGatewayAuthorizationClient.Forbidden()
+            : FakeBusinessGatewayAuthorizationClient.Allowed();
+        var handler = new RecordingHandler(_ => throw new InvalidOperationException("Unauthorized request reached Scheduling"));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+        });
+        using var client = lease.CreateClient();
+        if (denial != "anonymous") BusinessGatewayTestHost.Authenticated(client);
+        var org = denial == "organization" ? "other" : "org-001";
+        var env = denial == "environment" ? "other" : "env-dev";
+        const string route = "/api/business-console/v1/scheduling/workbench/first-plan-jobs";
+        var start = new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero);
+        using var response = accept
+            ? await client.PostAsJsonAsync(route, new SchedulingFirstPlanInputContract(org, env, start, start.AddDays(1), [new("WO-1", 1, false)]), SchedulingJson.Options)
+            : await client.GetAsync($"{route}/{Guid.NewGuid()}?organizationId={org}&environmentId={env}");
+        Assert.Equal(denial == "anonymous" ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(handler.Requests);
+    }
+
     [Fact]
     public async Task Workbench_preview_facade_forwards_selection_with_internal_token()
     {
@@ -20609,6 +20686,12 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
 internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 {
+    public Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
+        string token, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
+        string token, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+
     public Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(string token, BusinessConsoleSaveSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<SchedulingWorkingDraftContract>> ListWorkingDraftsAsync(string token, BusinessConsoleListSchedulingWorkingDraftsRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
     public Task ClearWorkingDraftAsync(string token, BusinessConsoleClearSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
