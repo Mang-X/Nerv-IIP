@@ -22,7 +22,7 @@
 
 - backend 快速测试的物理分片、Connector Host、PostgreSQL、Redis/CAP 与 FullChain 的实际 job 绑定以 workflow、lane manifest 和 `Get-NervTestEvidenceLaneJobs` 为准。
 - 不执行测试的稳定 aggregate 只能汇总结果，不能认证一条从未由它执行的 evidence lane。
-- `full-chain` 的正式 evidence owner 是实际运行 v1 场景的物理 worker；planning、shadow、equivalence 和稳定 aggregate 各自只证明其声明的轨道/比较/汇总职责。
+- `full-chain` 的正式 evidence owner 是实际运行 v1 场景的物理 worker；planning、shadow 和稳定 aggregate 各自只证明其声明的选择/轨道/汇总职责。
 - 同一个 collector 调用只拥有一个物理 lane；不能用同级 selector 声称一次调用分别认证多个物理执行者。
 
 具体 producer 导航见 [`../../reference/testing/producers.md`](../../reference/testing/producers.md)。

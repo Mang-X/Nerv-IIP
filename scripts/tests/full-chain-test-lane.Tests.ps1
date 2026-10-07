@@ -49,7 +49,6 @@ function Assert-FullChainScriptLiveOutputContract {
     function Get-NervRuntimeMemorySnapshot { param($Phase) return @{} }
     function Write-NervFullChainSummarySnapshot { }
     $summary = @{ readiness = @{ postgres = 'passed'; redis = 'passed' } }
-    $canonicalResultEnabled = $false
     $scriptEntrypointTimeoutSeconds = 900
     foreach ($ids in @(
         @('new-script-a', 'ncr-rework-cost-closure', 'new-script-b'),
@@ -259,11 +258,6 @@ function Assert-FullChainV1WorkflowContract {
             "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' }}"
         ), [StringComparer]::Ordinal)
     Assert-Contract ($allowedV1Conditions.Contains([string]$v1Job.if)) 'The physical v1 worker must start only after planning succeeds.'
-    $v1OutputsProperty = $v1Job.PSObject.Properties['outputs']
-    Assert-Contract ($null -ne $v1OutputsProperty -and
-        [string]::Equals([string]$v1OutputsProperty.Value.'artifact-name', '${{ steps.v1-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$v1OutputsProperty.Value.'producer-run-attempt', '${{ steps.v1-artifact-identity.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'The physical v1 worker must publish its canonical artifact identity and physical producer attempt.'
-
     $v1Steps = @($v1Job.steps)
     $expectedStepNames = @(
         'Checkout',
@@ -277,8 +271,6 @@ function Assert-FullChainV1WorkflowContract {
         'Prepare FullChain dependency images',
         'Resolve FullChain evidence environment',
         'Run governed FullChain scenarios',
-        'Resolve v1 canonical artifact identity',
-        'Upload v1 sales-order-demand canonical result',
         'Collect FullChain evidence',
         'Upload FullChain normalized evidence',
         'Upload FullChain dependency summary',
@@ -291,29 +283,6 @@ function Assert-FullChainV1WorkflowContract {
     $runSteps = @($v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal) })
     Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
     $v1Run = [string]$runSteps[0].run
-    Assert-Contract ($v1Run.Contains("`$v1CanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json')", [StringComparison]::Ordinal) -and
-        $v1Run.Contains('-CanonicalResultPath $v1CanonicalResultPath', [StringComparison]::Ordinal)) 'The physical v1 worker must pass a canonical absolute repository path to the governed FullChain runner.'
-    foreach ($canonicalArgument in @("-TrackIdentifier 'v1'", "-Repository '`${{ github.repository }}'", "-RunId '`${{ github.run_id }}'", "-RunAttempt '`${{ github.run_attempt }}'", "-TestedSha '`${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}'", "-ManifestDigest '`${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}'", "-ScenarioId 'sales-order-demand'")) {
-        Assert-Contract ($v1Run.Contains($canonicalArgument, [StringComparison]::Ordinal)) "The v1 sales member canonical invocation is missing '$canonicalArgument'."
-    }
-    $canonicalUploads = @($v1Steps | Where-Object {
-            [string]::Equals([string]$_.name, 'Upload v1 sales-order-demand canonical result', [StringComparison]::Ordinal) -and
-            [string]::Equals([string]$_.uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($canonicalUploads.Count -eq 1) 'The v1 worker must upload exactly one sales-order-demand canonical artifact.'
-    $v1IdentitySteps = @($v1Steps | Where-Object {
-            $idProperty = $_.PSObject.Properties['id']
-            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'v1-artifact-identity', [StringComparison]::Ordinal)
-        })
-    Assert-Contract ($v1IdentitySteps.Count -eq 1 -and
-        ([string]$v1IdentitySteps[0].run).Contains('artifact-name=acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
-        ([string]$v1IdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'The v1 worker must single-source its canonical artifact name and physical producer attempt.'
-    Assert-Contract ([string]::Equals([string]$canonicalUploads[0].with.name, '${{ steps.v1-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$canonicalUploads[0].with.path, 'artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json', [StringComparison]::Ordinal) -and
-        [string]::Equals([string]$canonicalUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and
-        [int]$canonicalUploads[0].with.'retention-days' -eq 14 -and
-        $null -eq $canonicalUploads[0].with.PSObject.Properties['overwrite']) 'The v1 canonical artifact must be one exact immutable attempt file, fail closed when absent, and retain 14 days.'
-
     $collectorSteps = @($v1Steps | Where-Object {
             $runProperty = $_.PSObject.Properties['run']
             $null -ne $runProperty -and
@@ -684,8 +653,6 @@ try {
         "SetEnvironmentVariable('Persistence__Provider', 'PostgreSQL')",
         "dependencyEvidence = 'passed'",
         'Assert-NervFullChainMemberEvidence'
-        'CanonicalResultPath'
-        "'-TrackIdentifier', `$TrackIdentifier"
     )) {
         Assert-Contract ($runnerContent.Contains($requiredFragment, [StringComparison]::Ordinal)) "FullChain runner is missing required contract fragment '$requiredFragment'."
     }
@@ -741,19 +708,14 @@ try {
                 Replacement = '-JobName "Business FullChain Acceptance"'
             },
             @{
-                Name = 'v1-relative-canonical-result-path'
-                Original = '-CanonicalResultPath $v1CanonicalResultPath'
-                Replacement = '-CanonicalResultPath artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json'
-            },
-            @{
                 Name = 'v1-zero-step-timeout'
-                Original = "      - name: Resolve v1 canonical artifact identity`n        timeout-minutes: 1"
-                Replacement = "      - name: Resolve v1 canonical artifact identity`n        timeout-minutes: 0"
+                Original = "      - name: Resolve FullChain evidence environment`n        timeout-minutes: 3"
+                Replacement = "      - name: Resolve FullChain evidence environment`n        timeout-minutes: 0"
             },
             @{
                 Name = 'v1-step-budget-exhausts-job'
                 Original = "      - name: Checkout`n        timeout-minutes: 3"
-                Replacement = "      - name: Checkout`n        timeout-minutes: 8"
+                Replacement = "      - name: Checkout`n        timeout-minutes: 14"
             }
         )) {
         $mutatedV1Workflow = $workflowContent.Replace([string]$v1Mutation.Original, [string]$v1Mutation.Replacement)
