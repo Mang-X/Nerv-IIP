@@ -176,6 +176,16 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
         ClearedAtUtc = null;
     }
 
+    public void ClearForWorkOrderSplit(string sourceEventId, string actor, DateTimeOffset occurredAtUtc)
+    {
+        IsActive = false;
+        SourceEventId = Required(sourceEventId);
+        Actor = Required(actor);
+        UpdatedAtUtc = occurredAtUtc;
+        ClearedReasonCode = "work-order-split";
+        ClearedAtUtc = occurredAtUtc;
+    }
+
     private bool CanApplyMesFact(long sourceRevision, DateTimeOffset sourceOccurredAtUtc)
     {
         if (string.Equals(SourceType, ScheduleOperationOverrideSourceTypes.MesDispatch, StringComparison.Ordinal) &&

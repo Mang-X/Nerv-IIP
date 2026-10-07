@@ -481,8 +481,10 @@ public sealed partial class SchedulingWorkbenchTests
     /// #1400 的另一半:按可排状态过滤后就查不到终态工单了,所以「工单已终态」这条报错
     /// 必须靠一次按 id 的定向回查保住,不能退化成「工单不存在」。
     /// </summary>
-    [Fact]
-    public async Task Source_provider_still_reports_a_terminal_order_as_terminal()
+    [Theory]
+    [InlineData("closed")]
+    [InlineData("split")]
+    public async Task Source_provider_still_reports_a_terminal_order_as_terminal(string status)
     {
         var start = new DateTimeOffset(2026, 7, 24, 0, 0, 0, TimeSpan.Zero);
         var handler = new StubHandler(request =>
@@ -490,7 +492,7 @@ public sealed partial class SchedulingWorkbenchTests
             var query = request.RequestUri!.Query;
             // 可排状态页里没有它;只有按 id 定向查时才返回,且状态是 closed。
             var items = query.Contains("workOrderId=WO-900", StringComparison.Ordinal)
-                ? new[] { WorkOrder("WO-900", start, status: "closed") }
+                ? new[] { WorkOrder("WO-900", start, status: status) }
                 : Array.Empty<object>();
             return Json(new { items, total = items.Length });
         });

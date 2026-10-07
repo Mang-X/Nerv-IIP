@@ -110,6 +110,7 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingOverrideSourcePlanPostgresTests.Migration_preserves_legacy_override_and_manual_replacements_track_source_plan",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OperationExecutionProjectionPostgresProfileTests.Migration_and_concurrent_consumers_persist_one_projection_without_lost_quantity",
         "Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL",
+        "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_split_invalidates_only_mother_operations_migrates_locks_and_deduplicates",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_execution_deviation_replay_commits_projection_inbox_and_exact_invalidation_atomically",
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_material_eta_event_replay_converges_after_the_first_atomic_commit_fails",
