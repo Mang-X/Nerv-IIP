@@ -118,8 +118,8 @@ internal static class ReschedulingImpactAnalyzer
         var reached = rootDemands.Select((demand, root) => (Key: (Root: root, demand.Index), Demand: demand))
             .ToDictionary(x => x.Key, x => x.Demand);
         var demandsByResource = assignments.Select(x => x.ResourceId).Distinct(StringComparer.Ordinal)
-            .ToDictionary(x => x, _ => new Dictionary<(int Root, int Index), ImpactDemand>(), StringComparer.Ordinal);
-        foreach (var item in reached) demandsByResource[assignments[item.Key.Index].ResourceId].Add(item.Key, item.Value);
+            .ToDictionary(x => x, _ => new DemandResourceIndex(), StringComparer.Ordinal);
+        foreach (var item in reached) demandsByResource[assignments[item.Key.Index].ResourceId].Replace(item.Key, null, item.Value);
         var predecessorDemands = new Dictionary<(int Root, int Index), ImpactDemand>();
         var pending = new Queue<(int Root, int Index)>();
         var queued = new HashSet<(int Root, int Index)>();
@@ -142,7 +142,7 @@ internal static class ReschedulingImpactAnalyzer
                     Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
                 }
             }
-            foreach (var competition in ResourceCompetitions(current, demandsByResource[assignments[current.Index].ResourceId].Values, assignments, resources, baselineByResource))
+            foreach (var competition in ResourceCompetitions(current, demandsByResource[assignments[current.Index].ResourceId], assignments, resources, baselineByResource))
             {
                 var assignment = assignments[competition.Index];
                 var demand = current.Unquantified
@@ -163,27 +163,12 @@ internal static class ReschedulingImpactAnalyzer
                     current.Path with { Steps = [.. current.Path.Steps, step] }, new(code, current.Reason.Source), current.Unquantified);
                 reached[(key.Root, next)] = candidate;
                 var resourceDemands = demandsByResource[assignments[next].ResourceId];
-                resourceDemands[(key.Root, next)] = candidate;
-                // 新后继需求可能使其它来源的既有需求共同超容量，重新校验同资源上的需求。
-                var changed = new List<(int Root, int Index)>();
-                foreach (var item in resourceDemands)
-                {
-                    var overlaps = false;
-                    foreach (var segment in item.Value.Segments)
-                    {
-                        foreach (var added in candidate.Segments)
-                        {
-                            if (segment.StartUtc >= added.EndUtc || added.StartUtc >= segment.EndUtc) continue;
-                            overlaps = true;
-                            break;
-                        }
-                        if (overlaps) break;
-                    }
-                    if (overlaps) changed.Add(item.Key);
-                }
-                changed.Sort((left, right) => left.Root != right.Root
-                    ? left.Root.CompareTo(right.Root) : left.Index.CompareTo(right.Index));
-                foreach (var changedKey in changed) Enqueue(changedKey);
+                resourceDemands.Replace((key.Root, next), existing, candidate);
+                // 新后继需求可能使其它来源的既有需求共同超容量，重新校验同资源上的相交需求。
+                var changed = new HashSet<(int Root, int Index)>();
+                foreach (var window in candidate.Segments)
+                foreach (var entry in resourceDemands.Intersecting(window)) changed.Add(entry.Key);
+                foreach (var changedKey in changed.OrderBy(x => x.Root).ThenBy(x => x.Index)) Enqueue(changedKey);
             }
         }
         foreach (var current in reached.OrderBy(x => x.Key.Root).ThenBy(x => x.Key.Index).Select(x => x.Value))
@@ -328,22 +313,82 @@ internal static class ReschedulingImpactAnalyzer
             }
         }
 
-        public int FirstPotentialIndex(DateTimeOffset start)
+        public int FirstPotentialIndex(DateTimeOffset start) => ReschedulingImpactAnalyzer.FirstPotentialIndex(maximumEnds, start);
+    }
+
+    // 单次分析的潜在需求区间索引；每个来源/工序/片段独立保留，容量仍由原端点扫描按工序合并。
+    private sealed class DemandResourceIndex
+    {
+        public readonly record struct Entry((int Root, int Index) Key, int Ordinal, ScheduleAssignmentSegmentContract Segment);
+        private static readonly Comparer<Entry> EntryOrder = Comparer<Entry>.Create((left, right) =>
         {
-            var low = 0;
-            var high = maximumEnds.Length;
-            while (low < high)
+            var comparison = left.Segment.StartUtc.CompareTo(right.Segment.StartUtc);
+            if (comparison != 0) return comparison;
+            comparison = left.Segment.EndUtc.CompareTo(right.Segment.EndUtc);
+            if (comparison != 0) return comparison;
+            comparison = left.Key.Root.CompareTo(right.Key.Root);
+            if (comparison != 0) return comparison;
+            comparison = left.Key.Index.CompareTo(right.Key.Index);
+            return comparison != 0 ? comparison : left.Ordinal.CompareTo(right.Ordinal);
+        });
+        private readonly List<Entry> entries = [];
+        private readonly List<DateTimeOffset> maximumEnds = [];
+
+        public void Replace((int Root, int Index) key, ImpactDemand? previous, ImpactDemand current)
+        {
+            var firstChanged = entries.Count;
+            if (previous is not null)
             {
-                var middle = low + (high - low) / 2;
-                if (maximumEnds[middle] <= start) low = middle + 1;
-                else high = middle;
+                for (var ordinal = 0; ordinal < previous.Segments.Count; ordinal++)
+                {
+                    var index = entries.BinarySearch(new(key, ordinal, previous.Segments[ordinal]), EntryOrder);
+                    entries.RemoveAt(index);
+                    maximumEnds.RemoveAt(index);
+                    firstChanged = Math.Min(firstChanged, index);
+                }
             }
-            return low;
+            for (var ordinal = 0; ordinal < current.Segments.Count; ordinal++)
+            {
+                var entry = new Entry(key, ordinal, current.Segments[ordinal]);
+                var index = ~entries.BinarySearch(entry, EntryOrder);
+                entries.Insert(index, entry);
+                maximumEnds.Insert(index, entry.Segment.EndUtc);
+                firstChanged = Math.Min(firstChanged, index);
+            }
+            var end = firstChanged == 0 ? DateTimeOffset.MinValue : maximumEnds[firstChanged - 1];
+            for (var index = firstChanged; index < entries.Count; index++)
+            {
+                end = Max(end, entries[index].Segment.EndUtc);
+                maximumEnds[index] = end;
+            }
+        }
+
+        public IEnumerable<Entry> Intersecting(ScheduleAssignmentSegmentContract window)
+        {
+            for (var index = FirstPotentialIndex(maximumEnds, window.StartUtc);
+                 index < entries.Count && entries[index].Segment.StartUtc < window.EndUtc; index++)
+            {
+                var entry = entries[index];
+                if (entry.Segment.EndUtc > window.StartUtc) yield return entry;
+            }
         }
     }
 
+    private static int FirstPotentialIndex(IReadOnlyList<DateTimeOffset> maximumEnds, DateTimeOffset start)
+    {
+        var low = 0;
+        var high = maximumEnds.Count;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (maximumEnds[middle] <= start) low = middle + 1;
+            else high = middle;
+        }
+        return low;
+    }
+
     private static IReadOnlyList<(int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)> ResourceCompetitions(
-        ImpactDemand current, IEnumerable<ImpactDemand> demands, ScheduleAssignmentContract[] assignments,
+        ImpactDemand current, DemandResourceIndex demands, ScheduleAssignmentContract[] assignments,
         IReadOnlyDictionary<string, SchedulingResourceContract> resources,
         IReadOnlyDictionary<string, BaselineResourceIndex> baselineByResource)
     {
@@ -364,10 +409,7 @@ internal static class ReschedulingImpactAnalyzer
                     AddEvents(item.Index, item.Segment, true);
                 }
             }
-            foreach (var demand in demands)
-            {
-                foreach (var segment in demand.Segments) AddEvents(demand.Index, segment, false);
-            }
+            foreach (var entry in demands.Intersecting(window)) AddEvents(entry.Key.Index, entry.Segment, false);
             events.Sort((left, right) => left.At.CompareTo(right.At));
             var actual = new Dictionary<int, int>();
             var occupied = new Dictionary<int, int>();
