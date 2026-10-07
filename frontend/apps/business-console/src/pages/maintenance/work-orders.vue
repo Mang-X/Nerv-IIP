@@ -564,7 +564,11 @@ async function openExpectedRestore(row: WorkOrderRow) {
     if (selected) expectedRestoreScopeKey.value = formatWorkScopeKey(selected.kind!, selected.id!)
     else notifyError('当前没有可用的维修作业范围，请联系管理员。')
   } catch (error) {
-    notifyOperationFailure('维修作业范围读取失败', error)
+    notifyOperationFailure(
+      '维修作业范围读取失败',
+      error,
+      '维修作业范围读取失败，请关闭抽屉后重试。',
+    )
   }
 }
 async function submitExpectedRestore() {
