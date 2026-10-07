@@ -138,6 +138,30 @@ try {
     Assert-Selection ($shapeExpected.SetEquals([string[]] $shapePlan.RunnerSelected)) `
         'The discovery runner must select exactly the complement: both comment-only files and nothing else.'
 
+    # 合同执行 owner 可以在 workflow 与发现式补集之间移动，不能固定 step 名或排列。
+    $mergedWorkflow = @'
+name: Rearranged
+on: [push]
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Renamed and merged
+        run: |
+          ./scripts/tests/block.Tests.ps1
+          ./scripts/tests/inline.Tests.ps1
+'@
+    $shapeWorkflowPath = Join-Path $shapeRoot '.github/workflows/ci.yml'
+    [IO.File]::WriteAllText($shapeWorkflowPath, $mergedWorkflow, [Text.UTF8Encoding]::new($false))
+    $mergedPlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
+    Assert-Selection ($shapeExpected.SetEquals([string[]] $mergedPlan.RunnerSelected)) 'Renaming, reversing and merging steps must preserve the execution complement.'
+    [IO.File]::WriteAllText($shapeWorkflowPath, $mergedWorkflow.Replace('          ./scripts/tests/inline.Tests.ps1', ''), [Text.UTF8Encoding]::new($false))
+    $movedPlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
+    Assert-Selection ($movedPlan.RunnerSelected.Count -eq ($shapePlan.RunnerSelected.Count + 1) -and
+        @($movedPlan.RunnerSelected | Where-Object { [string]::Equals($_, 'inline.Tests.ps1', [StringComparison]::Ordinal) }).Count -eq 1) 'Removing a direct workflow invocation must transfer that test to the discovery runner exactly once.'
+    Write-Output 'Governance selection rearrangement control: PASS (renamed/merged/reversed; removed invocation rediscovered).'
+    [IO.File]::WriteAllText($shapeWorkflowPath, $shapeWorkflow, [Text.UTF8Encoding]::new($false))
+
     # 新增一个文件后，它必须自动落进 runner 集合 —— 这是「后来者不掉队」的直接证据，
     # 而不是「有人记得改名单」。
     [IO.File]::WriteAllText((Join-Path $shapeRoot 'scripts/tests/newcomer.Tests.ps1'), '# newcomer', [Text.UTF8Encoding]::new($false))
@@ -390,10 +414,8 @@ Assert-Selection ($covered.SetEquals([string[]] $plan.All)) `
 Assert-Selection ($plan.RunnerSelected.Count -gt 0) 'The discovery runner must select at least one test; an empty selection would make its CI step a no-op.'
 
 $workflowSource = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
-Assert-Selection ($workflowSource.Contains('run: ./scripts/run-script-contract-tests.ps1', [StringComparison]::Ordinal)) `
+Assert-Selection ($workflowSource.Contains('./scripts/run-script-contract-tests.ps1', [StringComparison]::Ordinal)) `
     'CI must run the discovery runner; without that step the whole selection closure is dead code.'
-Assert-Selection ($workflowSource.Contains('run: ./scripts/tests/script-test-selection.Tests.ps1', [StringComparison]::Ordinal)) `
-    'CI must run this selection contract; a coverage gate that is itself unselected proves nothing.'
 
 $runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-script-contract-tests.ps1'))
 Assert-Selection ($runnerSource.Contains('Get-NervScriptTestSelectionPlan', [StringComparison]::Ordinal)) `

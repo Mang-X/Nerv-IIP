@@ -21,7 +21,6 @@ $platformText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/ner
 $environmentExampleText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.production.env.example') -Raw
 $releaseRehearsalText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-production-release-rehearsal.ps1') -Raw
 $environmentArtifactVerifierText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-aspire-apphost-environment-artifacts.ps1') -Raw
-$ciWorkflowText = Get-Content -LiteralPath (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
 
 function Assert-ContainsOrdinal {
     param(
@@ -128,8 +127,7 @@ foreach ($contract in @(
     @($environmentExampleText, 'NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE=change-me-non-development-mfa-code', 'production env example must declare the MFA override'),
     @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_MODE=zpl-tcp', 'production env example must select zpl-tcp explicitly'),
     @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_HOST=', 'production env example must expose the site printer host without committing a real address'),
-    @($releaseRehearsalText, 'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping', 'release rehearsal must read the Redis password inside the container'),
-    @($ciWorkflowText, './scripts/tests/production-deployment-inputs.Tests.ps1', 'Script Governance must run the production deployment input contract tests')
+    @($releaseRehearsalText, 'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping', 'release rehearsal must read the Redis password inside the container')
 )) {
     Assert-ContainsOrdinal -Text $contract[0] -Expected $contract[1] -Message $contract[2]
 }

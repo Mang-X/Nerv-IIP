@@ -30,9 +30,7 @@ function Get-LayerProbeFindings([string] $Source) {
     finally { Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue }
 }
 
-$workflow = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
 $compatibility = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/check-script-compatibility.ps1'))
-Assert-Layer ($workflow.Contains('run: ./scripts/tests/ordinal-comparison-layers.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance CI must run the ordinal layer contract.'
 Assert-Layer ($compatibility.Contains('scripts/tests/ordinal-comparison-layers.Tests.ps1', [StringComparison]::Ordinal)) 'compat-fast must run the ordinal layer contract.'
 
 $softHyphen = [char]0x00AD
