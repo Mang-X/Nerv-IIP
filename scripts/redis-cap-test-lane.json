@@ -139,6 +139,26 @@
         "Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_connection_failure_at_subscribe_recovers_through_the_existing_transport_check_without_losing_or_duplicating_work",
         "Nerv.IIP.Messaging.CAP.Tests.RedisSubscriptionRecoveryRedisCapTests.Redis_cap_timeout_at_subscribe_never_reports_a_subscription_and_recovers_through_the_existing_transport_check"
       ]
+    },
+    {
+      "id": "caching-fusioncache-redis",
+      "service": "Caching",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Caching.Tests/Nerv.IIP.Caching.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Caching.Tests.RedisAppCacheTests.Redis_configuration_shares_serialized_values_with_existing_and_new_instances|FullyQualifiedName=Nerv.IIP.Caching.Tests.RedisAppCacheTests.Tag_and_clear_propagate_after_subscription_without_touching_other_tenants_services_or_environments|FullyQualifiedName=Nerv.IIP.Caching.Tests.RedisAppCacheTests.L2_promotion_does_not_extend_original_authorization_lifetime|FullyQualifiedName=Nerv.IIP.Caching.Tests.RedisAppCacheTests.Redis_read_write_and_backplane_faults_propagate_on_every_attempt_without_stale_authorization|FullyQualifiedName=Nerv.IIP.Caching.Tests.RedisAppCacheTests.Host_start_fails_when_real_backplane_subscription_is_denied",
+      "databasePrefix": "nerv_iip_caching",
+      "capVersionPrefix": "n2140cache",
+      "diagnosticSchemas": [
+        "public"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Redis_configuration_shares_serialized_values_with_existing_and_new_instances",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Tag_and_clear_propagate_after_subscription_without_touching_other_tenants_services_or_environments",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.L2_promotion_does_not_extend_original_authorization_lifetime",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Redis_read_write_and_backplane_faults_propagate_on_every_attempt_without_stale_authorization",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Host_start_fails_when_real_backplane_subscription_is_denied"
+      ]
     }
   ]
 }

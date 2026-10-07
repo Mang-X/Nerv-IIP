@@ -402,6 +402,12 @@
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamMemberAccountDirectoryPostgresTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL IAM member-account directory proof\\.\";$"
+    },
+    {
+      "id": "caching-fusioncache-redis",
+      "sourcePath": "backend/tests/Nerv.IIP.Caching.Tests/RedisAppCacheTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip\\ =\\ \"Set\\ NERV_IIP_TEST_REDIS\\ to\\ run\\ real\\ Redis\\ FusionCache\\ provider\\ tests\\.\";$"
     }
   ],
   "rules": [
@@ -1989,6 +1995,29 @@
         "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Production_planner_query_filters_role_scope_and_active_accounts_on_postgres"
       ],
       "expectedRuntimeTestCount": 2
+    },
+    {
+      "id": "caching-fusioncache-redis",
+      "sourceId": "caching-fusioncache-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Caching\\.Tests\\.RedisAppCacheTests\\..+$",
+      "reasonPattern": "^Set\\ NERV_IIP_TEST_REDIS\\ to\\ run\\ real\\ Redis\\ FusionCache\\ provider\\ tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Redis_configuration_shares_serialized_values_with_existing_and_new_instances",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Tag_and_clear_propagate_after_subscription_without_touching_other_tenants_services_or_environments",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.L2_promotion_does_not_extend_original_authorization_lifetime",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Redis_read_write_and_backplane_faults_propagate_on_every_attempt_without_stale_authorization",
+        "Nerv.IIP.Caching.Tests.RedisAppCacheTests.Host_start_fails_when_real_backplane_subscription_is_denied"
+      ],
+      "expectedRuntimeTestCount": 5
     }
   ]
 }

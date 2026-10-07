@@ -1513,7 +1513,8 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # UserRepository.ListMembersAsync，组织/环境成员关系子查询只有真库才执行（删掉组织或环境谓词，
 # 本机实测 InMemory 侧全绿、PostgreSQL 用例红）。⭐ 刻意不蹭 IAM 生产引导那条理由，一类一属性一规则。
 # MasterData 员工账号唯一冲突的真库用例复用既有 masterdata-postgres 属性与理由，不新增 source。增至 62。
-Assert-Equal 62 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #2140 新增独立 RealRedisCacheFact source（5 条真实 Redis ProviderBehavior 用例，一属性一规则），62 + 1 = 63。
+Assert-Equal 63 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
