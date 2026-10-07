@@ -236,8 +236,8 @@ public sealed class SchedulingMesOperationIdentityAcceptanceTests
                 ListMesWorkOrdersQuery query =>
                     await new ListMesWorkOrdersQueryHandler(db, new FixedTimeProvider(HorizonStart))
                         .Handle(query, cancellationToken),
-                GetAssemblyChildWorkOrdersQuery query =>
-                    await new GetAssemblyChildWorkOrdersQueryHandler(db)
+                GetBatchAssemblyChildWorkOrdersQuery query =>
+                    await new GetBatchAssemblyChildWorkOrdersQueryHandler(db)
                         .Handle(query, cancellationToken),
                 AssignDispatchTaskCommand command =>
                     await AssignAsync(command, cancellationToken),
@@ -350,6 +350,16 @@ public sealed class SchedulingMesOperationIdentityAcceptanceTests
             foreach (var header in request.Headers)
             {
                 forwarded.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            if (request.Content is not null)
+            {
+                var content = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+                forwarded.Content = new ByteArrayContent(content);
+                foreach (var header in request.Content.Headers)
+                {
+                    forwarded.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
             }
 
             return await mesClient.SendAsync(forwarded, cancellationToken);

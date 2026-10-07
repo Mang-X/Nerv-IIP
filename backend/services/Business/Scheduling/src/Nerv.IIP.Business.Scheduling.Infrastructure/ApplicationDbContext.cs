@@ -1,6 +1,8 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleFirstPlanJobAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleWorkingDraftAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
@@ -16,6 +18,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator)
     , IPostgreSqlCapDataStorage
 {
+    public DbSet<ScheduleFirstPlanJob> ScheduleFirstPlanJobs => Set<ScheduleFirstPlanJob>();
+    public DbSet<ScheduleWorkingDraft> ScheduleWorkingDrafts => Set<ScheduleWorkingDraft>();
     public DbSet<ScheduleProblemSnapshot> ScheduleProblems => Set<ScheduleProblemSnapshot>();
     public DbSet<SchedulePlan> SchedulePlans => Set<SchedulePlan>();
     public DbSet<SchedulePlanInvalidation> SchedulePlanInvalidations => Set<SchedulePlanInvalidation>();

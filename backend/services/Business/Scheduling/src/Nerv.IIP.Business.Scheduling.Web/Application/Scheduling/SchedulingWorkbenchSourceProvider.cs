@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Contracts.Mes;
@@ -40,11 +41,11 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         var requested = selections
             .Select(x => x with { WorkOrderId = x.WorkOrderId.Trim() })
             .ToArray();
-        if (requested.Length is < 1 or > SchedulingWorkbenchLimits.MaxOrderCount ||
+        if (requested.Length is < 1 or > MaxAssemblyBatchOrderCount ||
             requested.Any(x => string.IsNullOrWhiteSpace(x.WorkOrderId)) ||
             requested.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).Count() != requested.Length)
         {
-            throw new KnownException($"排程工作台需要 1 至 {SchedulingWorkbenchLimits.MaxOrderCount} 个不重复的工单。");
+            throw new KnownException($"排程工作台需要 1 至 {MaxAssemblyBatchOrderCount} 个不重复的工单。");
         }
 
         // 只翻「可排状态」的工单页:终态工单(closed/completed/...)占了 MES 工单表的绝大多数,
@@ -102,12 +103,8 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             throw new KnownException($"在请求范围内未找到 MES 工单，请检查工单状态后重试：{string.Join(", ", missing)}");
         }
 
-        var assemblyChildrenTask = Task.WhenAll(requested.Select(async selection => new
-        {
-            selection.WorkOrderId,
-            ChildOrderIds = await GetAssemblyChildOrderIdsAsync(
-                organizationId, environmentId, selection.WorkOrderId, cancellationToken)
-        }));
+        var assemblyChildrenTask = GetAssemblyChildrenAsync(
+            organizationId, environmentId, requested.Select(x => x.WorkOrderId).ToArray(), cancellationToken);
         var productionVersionIds = requested
             .Select(x => byId[x.WorkOrderId].ProductionVersionId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -124,8 +121,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                     cancellationToken)
         }));
         await Task.WhenAll(assemblyChildrenTask, routingResultsTask);
-        var assemblyChildrenByOrder = assemblyChildrenTask.Result.ToDictionary(
-            x => x.WorkOrderId, x => x.ChildOrderIds, StringComparer.Ordinal);
+        var assemblyChildrenByOrder = assemblyChildrenTask.Result;
         var routingsByVersion = routingResultsTask.Result.ToDictionary(
             x => x.ProductionVersionId,
             x => x.Routing,
@@ -170,15 +166,18 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         }).ToArray();
     }
 
-    private async Task<IReadOnlyCollection<string>> GetAssemblyChildOrderIdsAsync(
+    private async Task<IReadOnlyDictionary<string, IReadOnlyCollection<string>>> GetAssemblyChildrenAsync(
         string organizationId,
         string environmentId,
-        string workOrderId,
+        IReadOnlyCollection<string> workOrderIds,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"/api/business/v1/mes/work-orders/{Uri.EscapeDataString(workOrderId)}/assembly-children?" +
-            SchedulingProblemHttp.Query(("organizationId", organizationId), ("environmentId", environmentId)));
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/api/business/v1/mes/work-orders/assembly-children/batch")
+        {
+            Content = JsonContent.Create(new BatchAssemblyChildWorkOrdersRequest(
+                organizationId, environmentId, workOrderIds), options: SchedulingJson.Options)
+        };
         var bearerToken = internalTokenProvider?.BearerToken;
         if (!string.IsNullOrWhiteSpace(bearerToken))
         {
@@ -187,9 +186,9 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
 
         using var response = await mesClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        using var document = JsonDocument.Parse(json);
-        return document.RootElement.Deserialize<AssemblyChildWorkOrdersResponse>(SchedulingJson.Options)!.AssemblyChildWorkOrderIds;
+        var batch = await response.Content.ReadFromJsonAsync<BatchAssemblyChildWorkOrdersResponse>(
+            SchedulingJson.Options, cancellationToken);
+        return batch!.Items.ToDictionary(x => x.WorkOrderId, x => x.AssemblyChildWorkOrderIds, StringComparer.Ordinal);
     }
 
     private async Task<MesWorkOrderItem?> FindWorkOrderByIdAsync(
@@ -224,7 +223,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                 ("statuses", statuses),
                 ("workOrderId", workOrderId),
                 ("skip", skip),
-                ("take", SchedulingWorkbenchLimits.MaxOrderCount)));
+                ("take", SchedulingWorkbenchLimits.AuthoritativePageSize)));
         var bearerToken = internalTokenProvider?.BearerToken;
         if (!string.IsNullOrWhiteSpace(bearerToken))
         {
@@ -277,6 +276,9 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         "completed", "closed", "cancelled", "canceled", "scrapped"
     };
 
+    // MES assembly batch consumption supports the future asynchronous generation path.
+    // Synchronous HTTP entry points retain SchedulingWorkbenchLimits.MaxOrderCount.
+    private const int MaxAssemblyBatchOrderCount = 500;
     private const int MaxConcurrentMesLookups = 8;
 
     // TerminalStatuses 的补集,用来把候选翻页收敛到在制工单。两者必须同源:

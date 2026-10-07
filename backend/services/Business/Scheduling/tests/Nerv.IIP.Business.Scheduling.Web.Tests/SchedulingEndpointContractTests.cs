@@ -1,3 +1,4 @@
+using FastEndpoints;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -32,6 +33,37 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed class SchedulingEndpointContractTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task First_plan_job_accepts_without_waiting_for_source_assembly()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync("/api/business/v1/scheduling/workbench/first-plan-jobs",
+            new CreateSchedulingWorkbenchPlanRequest("org-001", "prod", FixedNow, FixedNow.AddDays(7),
+                [new("order-001", 1, false)]), SchedulingJson.Options);
+        Assert.Equal(System.Net.HttpStatusCode.Accepted, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Working_draft_discovery_requires_internal_authentication_and_forwarded_user()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        const string route = "/api/business/v1/scheduling/working-drafts?organizationId=org-001&environmentId=prod";
+        using var anonymous = await client.GetAsync(route);
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var missingUser = await client.GetAsync(route);
+        var error = await missingUser.Content.ReadAsStringAsync();
+        Assert.Contains("用户", error);
+        client.DefaultRequestHeaders.Add("X-Scheduling-User-Id", "planner-a");
+        using var discovered = await client.GetAsync(route);
+        discovered.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await discovered.Content.ReadAsStringAsync());
+        Assert.Empty(document.RootElement.GetProperty("data").EnumerateArray());
+    }
 
     [Fact]
     public async Task Preview_and_historical_detail_return_current_execution_without_persisting_it()
@@ -372,7 +404,9 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(25, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/first-plan-jobs" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptSchedulingFirstPlanJob");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/workbench/first-plan-jobs/{jobId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingFirstPlanJob");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingMaterialDeliverySources");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
@@ -1630,6 +1664,12 @@ public sealed class SchedulingEndpointContractTests
             ConfigureRequiredUpstreamBaseUrls(builder);
             builder.ConfigureTestServices(services =>
             {
+                services.AddFastEndpoints(options =>
+                {
+                    options.Assemblies = [typeof(Program).Assembly];
+                    options.DisableAutoDiscovery = true;
+                    options.IncludeAbstractValidators = true;
+                });
                 services.RemoveAll<ApplicationDbContext>();
                 services.RemoveAll<DbContextOptions>();
                 services.RemoveAll<DbContextOptions<ApplicationDbContext>>();

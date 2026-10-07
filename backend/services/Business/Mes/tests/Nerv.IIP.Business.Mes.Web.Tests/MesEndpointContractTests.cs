@@ -4,9 +4,11 @@ using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Time.Testing;
@@ -35,6 +37,85 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesEndpointContractTests
 {
+    // HttpApi / DomainInvariant: #4132 bulk assembly lookup preserves MES source and tenant semantics.
+    [Fact]
+    public async Task Batch_assembly_children_returns_scoped_relations_and_enforces_request_capacity()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    // This read-only HTTP fixture exercises no hosted workers or CAP transport.
+                    services.RemoveAll<IHostedService>();
+                    var databaseName = $"mes-assembly-batch-{Guid.NewGuid():N}";
+                    services.RemoveAll<DbContextOptions<Infrastructure.ApplicationDbContext>>();
+                    services.RemoveAll<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptionsConfiguration<Infrastructure.ApplicationDbContext>>();
+                    services.AddDbContext<Infrastructure.ApplicationDbContext>(options =>
+                        options.UseInMemoryDatabase(databaseName));
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+            var due = DateTimeOffset.Parse("2026-10-10T00:00:00Z");
+            WorkOrder Order(string id, SourcePlanReference? source = null,
+                string org = "org-4132", string env = "env-4132") =>
+                WorkOrder.Create(org, env, id, "SKU", "PV", 1m, 10, due, "PCS", source);
+            SourcePlanReference Source(string id, string[]? parents = null, string system = "DemandPlanning") =>
+                new(system, "PlanningSuggestion", id, null, assemblyParentSuggestionIds: parents);
+            db.WorkOrders.AddRange(
+                Order("P-A", Source("S-A")), Order("P-B", Source("S-B")),
+                Order("P-A-SPLIT", Source("S-A")), Order("ORDINARY"),
+                Order("CHILD-A", Source("S-CHILD-A", ["S-A"])),
+                Order("CHILD-B", Source("S-CHILD-B", ["S-B"])),
+                Order("CHILD-SHARED", Source("S-SHARED", ["S-A", "S-B"])),
+                Order("WRONG-SOURCE", Source("S-X", ["S-A"], "Erp")),
+                Order("OTHER-ORG", Source("S-X", ["S-A"]), org: "other"),
+                Order("OTHER-ENV", Source("S-X", ["S-A"]), env: "other"));
+            db.WorkOrders.AddRange(Enumerable.Range(1, 500)
+                .Select(x => Order($"BULK-{x}", Source("S-A"))));
+            await db.SaveChangesAsync();
+        }
+        const string route = "/api/business/v1/mes/work-orders/assembly-children/batch";
+        var ids = new[] { "P-A", "P-B", "P-A-SPLIT", "ORDINARY", "MISSING" };
+        var response = await client.PostAsJsonAsync(route,
+            new { organizationId = "org-4132", environmentId = "env-4132", workOrderIds = ids });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = body.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(ids, items.Select(x => x.GetProperty("workOrderId").GetString()));
+        var expected = new[] { new[] { "CHILD-A", "CHILD-SHARED" }, new[] { "CHILD-B", "CHILD-SHARED" },
+            new[] { "CHILD-A", "CHILD-SHARED" }, Array.Empty<string>(), Array.Empty<string>() };
+        for (var i = 0; i < ids.Length; i++)
+        {
+            Assert.Equal(expected[i], items[i].GetProperty("assemblyChildWorkOrderIds")
+                .EnumerateArray().Select(x => x.GetString()));
+            var single = await client.GetFromJsonAsync<AssemblyChildWorkOrdersResponse>(
+                $"/api/business/v1/mes/work-orders/{ids[i]}/assembly-children?organizationId=org-4132&environmentId=env-4132");
+            Assert.Equal(expected[i], single!.AssemblyChildWorkOrderIds);
+        }
+        foreach (var count in new[] { 1, 500, 0, 501 })
+        {
+            var capacity = await client.PostAsJsonAsync(route,
+                new { organizationId = "org-4132", environmentId = "env-4132",
+                    workOrderIds = Enumerable.Range(1, count).Select(x => $"BULK-{x}").ToArray() });
+            Assert.Equal(count is > 0 and <= 500 ? HttpStatusCode.OK : HttpStatusCode.BadRequest, capacity.StatusCode);
+            if (count == 500)
+            {
+                using var full = JsonDocument.Parse(await capacity.Content.ReadAsStringAsync());
+                Assert.Equal(500, full.RootElement.GetProperty("items").GetArrayLength());
+                Assert.All(full.RootElement.GetProperty("items").EnumerateArray(), item =>
+                    Assert.Equal(new[] { "CHILD-A", "CHILD-SHARED" },
+                        item.GetProperty("assemblyChildWorkOrderIds").EnumerateArray().Select(x => x.GetString())));
+            }
+        }
+    }
+
     [Fact]
     public async Task Batch_material_readiness_endpoint_accepts_orders_and_rejects_over_500()
     {
@@ -1019,7 +1100,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposePlanningAndRushOrderRoutes()
     {
-        Assert.Equal(75, MesEndpointContracts.All.Count);
+        Assert.Equal(76, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"

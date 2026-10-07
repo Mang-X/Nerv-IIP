@@ -122,7 +122,9 @@ public sealed class CreateSchedulePlanRevisionCommandValidator
 
 public sealed class CreateSchedulePlanRevisionCommandHandler(
     ApplicationDbContext dbContext,
-    ISender sender) : ICommandHandler<CreateSchedulePlanRevisionCommand, SchedulePlanRevisionContract>
+    ISender sender,
+    TimeProvider timeProvider,
+    SchedulingFreezeSettings freezeSettings) : ICommandHandler<CreateSchedulePlanRevisionCommand, SchedulePlanRevisionContract>
 {
     public async Task<SchedulePlanRevisionContract> Handle(
         CreateSchedulePlanRevisionCommand request,
@@ -148,7 +150,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
                 cancellationToken);
         var baseProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options)
             ?? throw new KnownException($"排程问题快照无效，请重新生成方案，问题 ID = {snapshot.ProblemId}");
-        var fixedReservations = SchedulingFrozenOccupancy.ReadSnapshot(snapshot.ProblemJson);
+        var snapshotReservations = SchedulingFrozenOccupancy.ReadSnapshot(snapshot.ProblemJson);
         var included = request.IncludedOrderIds.ToHashSet(StringComparer.Ordinal);
         var orders = baseProblem.Orders.Where(x => included.Contains(x.OrderId)).ToArray();
         var missingOrders = included.Except(orders.Select(x => x.OrderId), StringComparer.Ordinal).ToArray();
@@ -157,19 +159,90 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
             throw new KnownException($"所选工单不在基础方案中，请刷新后重新选择：{string.Join(", ", missingOrders)}");
         }
 
+        var baseline = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem, snapshotReservations);
+        var priorFreeze = SchedulingFrozenOccupancy.ReadFreezeSnapshot(snapshot.ProblemJson);
+        var baselineKeys = baseline.Assignments.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        var baselineAssignments = baseline.Assignments
+            .Concat((priorFreeze?.Assignments.Select(x => x.Assignment) ?? [])
+                .Where(x => !baselineKeys.Contains((x.OrderId, x.OperationId))))
+            .ToArray();
+        var baselineOrderIds = baseProblem.Orders.Select(x => x.OrderId)
+            .Concat(priorFreeze?.Assignments.Select(x => x.Assignment.OrderId) ?? [])
+            .Distinct(StringComparer.Ordinal).ToArray();
+        var execution = await dbContext.OperationExecutionProjections.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                baselineOrderIds.Contains(x.WorkOrderId))
+            .ToArrayAsync(cancellationToken);
+        var operations = baseProblem.Orders.SelectMany(order => order.Operations.Select(operation =>
+            (Key: (order.OrderId, operation.OperationId), Operation: operation)))
+            .ToDictionary(x => x.Key, x => x.Operation);
+        var priorFrozenAssignments = priorFreeze?.Assignments.ToDictionary(
+            x => (x.Assignment.OrderId, x.Assignment.OperationId), x => x.Assignment) ?? [];
+        var reservationsByOperation = snapshotReservations
+            .ToDictionary(x => (x.OrderId, x.OperationId));
+        foreach (var projection in execution.Where(x => x.ActualStartedAtUtc.HasValue))
+        {
+            var key = (projection.WorkOrderId, projection.OperationId);
+            var hasOperation = operations.TryGetValue(key, out var operation);
+            var hasPriorAssignment = priorFrozenAssignments.TryGetValue(key, out var priorAssignment);
+            if (!hasOperation && !hasPriorAssignment)
+            {
+                continue;
+            }
+            reservationsByOperation[(projection.WorkOrderId, projection.OperationId)] = new FixedWorkCenterReservation(
+                projection.WorkOrderId, projection.OperationId,
+                operation?.OperationSequence ?? priorAssignment!.OperationSequence,
+                projection.WorkCenterId ?? (operation is null
+                    ? priorAssignment!.WorkCenterId
+                    : baseProblem.Resources.First(resource => operation.EligibleResourceIds.Contains(
+                        resource.ResourceId, StringComparer.Ordinal)).WorkCenterId),
+                projection.ActualStartedAtUtc!.Value,
+                projection.ActualCompletedAtUtc ?? baseProblem.HorizonEndUtc,
+                null);
+        }
+        var fixedReservations = reservationsByOperation.Values.ToArray();
+        var policy = freezeSettings.At(timeProvider.GetUtcNow());
+        var priorManualLocks = priorFreeze?
+            .Assignments.Where(x => ((SchedulingFreezeReason)x.Reasons).HasFlag(SchedulingFreezeReason.ManualLock))
+            .Select(x => (x.Assignment.OrderId, x.Assignment.OperationId)) ?? [];
+        var manualLocks = baseProblem.LockedAssignments
+            .Where(x => x.LockReasonCode != SchedulingFrozenOccupancy.BaselineLockReasonCode)
+            .Select(x => (x.OrderId, x.OperationId))
+            .Concat(priorManualLocks)
+            .Distinct()
+            .ToArray();
+        var frozen = SchedulingFreezeCalculator.Calculate(
+            baselineAssignments,
+            execution.Select(x => new SchedulingFreezeExecutionFact(
+                x.WorkOrderId, x.OperationId, x.ActualStartedAtUtc, x.ActualCompletedAtUtc)).ToArray(),
+            manualLocks,
+            policy);
         var fixedKeys = fixedReservations.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        var frozenLocks = frozen
+            .Where(x => included.Contains(x.Assignment.OrderId) &&
+                !fixedKeys.Contains((x.Assignment.OrderId, x.Assignment.OperationId)))
+            .Select(x => new SchedulingLockedAssignmentContract(
+                x.Assignment.AssignmentId, x.Assignment.OrderId, x.Assignment.OperationId,
+                x.Assignment.OperationSequence, x.Assignment.ResourceId, x.Assignment.WorkCenterId,
+                x.Assignment.StartUtc, x.Assignment.EndUtc,
+                SchedulingFrozenOccupancy.BaselineLockReasonCode, x.Assignment.Segments))
+            .ToArray();
+        var frozenKeys = frozenLocks.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
         var normalizedLocks = ValidateLocks(baseProblem, orders,
-            request.LockedAssignments.Where(x => !fixedKeys.Contains((x.OrderId, x.OperationId))).ToArray());
+            request.LockedAssignments.Where(x =>
+                !fixedKeys.Contains((x.OrderId, x.OperationId)) &&
+                !frozenKeys.Contains((x.OrderId, x.OperationId))).ToArray());
         var revisionProblem = baseProblem with
         {
             ProblemId = $"revision-{Guid.CreateVersion7():N}",
             Orders = orders,
-            LockedAssignments = normalizedLocks,
+            LockedAssignments = frozenLocks.Concat(normalizedLocks).ToArray(),
         };
-        var basePlan = SchedulePlanContractMapper.ToContract(basePlanEntity, baseProblem, fixedReservations);
-        var impact = await LoadLatestImpactAsync(request, baseProblem, basePlan, cancellationToken);
-        var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem, fixedReservations), cancellationToken);
-        return new SchedulePlanRevisionContract(candidate, impact, Compare(basePlan, candidate));
+        var impact = await LoadLatestImpactAsync(request, baseProblem, baseline, cancellationToken);
+        var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem, fixedReservations,
+            SchedulingFreezeSnapshot.From(policy, frozen)), cancellationToken);
+        return new SchedulePlanRevisionContract(candidate, impact, Compare(baseline, candidate));
     }
 
     private static IReadOnlyCollection<SchedulingLockedAssignmentContract> ValidateLocks(
@@ -316,6 +389,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         var baseAssignments = basePlan.Assignments.ToDictionary(x => (x.OrderId, x.OperationId));
         var moved = candidate.Assignments.Count(x =>
             !string.Equals(x.ExplanationCode, "in-progress", StringComparison.Ordinal) &&
+            !string.Equals(x.ExplanationCode, SchedulingFrozenOccupancy.BaselineLockReasonCode, StringComparison.Ordinal) &&
             baseAssignments.TryGetValue((x.OrderId, x.OperationId), out var previous) &&
             (previous.ResourceId != x.ResourceId || previous.StartUtc != x.StartUtc || previous.EndUtc != x.EndUtc
                 || !(previous.Segments ?? []).SequenceEqual(x.Segments ?? [])));

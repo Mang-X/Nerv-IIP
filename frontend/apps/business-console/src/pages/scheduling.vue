@@ -42,11 +42,17 @@ import {
   resolveSchedulingHorizon,
 } from '@/composables/schedulingHorizon'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import {
+  firstPlanCapacityReason,
+  firstPlanSelectionReason,
+} from '@/composables/schedulingFirstPlanCapacity'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
+import SchedulingDraftClearDialog from '@/components/scheduling/SchedulingDraftClearDialog.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
+import { useSchedulingDraftPersistence } from '@/composables/useSchedulingDraftPersistence'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifyOperationFailure } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -83,7 +89,7 @@ import {
 } from '@nerv-iip/ui'
 import { EyeIcon, RefreshCwIcon, SendIcon, Undo2Icon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -155,14 +161,24 @@ const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManage = computed(() => permissionCodes.value.includes(P.schedulingPlansManage))
 const canPublish = computed(() => permissionCodes.value.includes(P.schedulingPlansRelease))
 const workbench = useSchedulingWorkbench()
-const draft = useWorkingScheduleDraft(computed(() => !canManage.value))
+const clearDraftConfirmOpen = ref(false)
+const draftReady = shallowRef(false)
+const draft = useWorkingScheduleDraft(computed(() => !canManage.value || !draftReady.value))
 const { summary: draftPlanSummary } = useSchedulingPlanSummary(() => draft.model.value?.meta.planId)
-const associatedWorkOrders = useMesWorkOrderFacts(() => [
-  ...(draft.model.value?.tasks
-    .filter((task) => task.type === 'operation' && !task.blockKind)
-    .map((task) => task.orderId) ?? []),
-  ...(planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId),
-])
+const associatedWorkOrders = useMesWorkOrderFacts(() => {
+  // 待排池已带出权威商业来源（null 表示没有来源）；500 单首版不再逐单重读同一事实。
+  const known = new Set(
+    workbench.candidates.value
+      .filter((order) => order.commercialSourceFacts !== undefined)
+      .map((order) => order.workOrderId),
+  )
+  return [
+    ...(draft.model.value?.tasks
+      .filter((task) => task.type === 'operation' && !task.blockKind)
+      .map((task) => task.orderId) ?? []),
+    ...(planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId),
+  ].filter((id) => !known.has(id))
+})
 watch(
   associatedWorkOrders.error,
   (error) => {
@@ -207,6 +223,44 @@ const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
 const route = useRoute()
+const router = useRouter()
+const persistence = useSchedulingDraftPersistence({
+  draft,
+  baseline: persistedDraftPlan,
+  context: () => ({
+    organizationId: schedulingFilters.organizationId,
+    environmentId: schedulingFilters.environmentId,
+  }),
+  userId: () => auth.principal?.principalId,
+  canManage,
+  selectedPlanId: () =>
+    typeof route.query.draftPlanId === 'string' ? route.query.draftPlanId : undefined,
+  selectPlan: (planId) => {
+    if (route.query.draftPlanId !== planId)
+      void router.replace({ query: { ...route.query, draftPlanId: planId } })
+  },
+})
+watch(
+  persistence.ready,
+  (value) => {
+    draftReady.value = value
+  },
+  { immediate: true },
+)
+const draftSaveStatus = computed(
+  () =>
+    ({
+      loading: '正在恢复草稿…',
+      empty: '尚无已保存草稿',
+      saving: '正在保存草稿…',
+      saved: persistence.savedAtUtc.value
+        ? `草稿已保存 · ${formatDateTime(persistence.savedAtUtc.value)}`
+        : '草稿已保存',
+      clearing: '正在清空草稿…',
+      error: '草稿操作未完成',
+    })[persistence.status.value],
+)
+
 const orderUrgencies = useOrderUrgencies(
   computed(() => (planDetail.value?.assignments ?? []).map((assignment) => assignment.orderId)),
 )
@@ -444,7 +498,7 @@ async function generateWorkbenchPlan() {
   // 类型收窄；能走到这里说明窗口原因没有命中。
   if (!resolvedHorizon.ok) return
   try {
-    const plan = await workbench.generatePlan({
+    await workbench.generatePlan({
       organizationId: schedulingFilters.organizationId,
       environmentId: schedulingFilters.environmentId,
       horizonStartUtc: resolvedHorizon.horizonStartUtc,
@@ -453,15 +507,55 @@ async function generateWorkbenchPlan() {
         workOrderId: order.workOrderId,
       })),
     })
-    persistedDraftPlan.value = plan
-    draft.loadPlan(plan)
-    detailSelection.planId = plan.planId ?? ''
-    revisionResult.value = undefined
-    toast.success('首版排程方案已生成')
   } catch (error) {
     notifyOperationFailure('生成失败', error, '生成失败，请检查工单生产版本与排程基础数据')
   }
 }
+
+watch(workbench.generatedPlan, (plan) => {
+  if (!plan) return
+  persistedDraftPlan.value = plan
+  draft.loadPlan(plan)
+  detailSelection.planId = plan.planId ?? ''
+  revisionResult.value = undefined
+  toast.success('首版排程方案已生成')
+})
+watch(workbench.generationError, (error) => {
+  if (error) {
+    const completed = workbench.firstPlanJob.value?.status === 'completed'
+    notifyOperationFailure(
+      completed ? '方案加载失败' : '生成失败',
+      error,
+      completed ? '首版排程已完成，请稍后从方案列表查看' : '首版排程生成失败',
+    )
+  }
+})
+
+function includeWorkbenchOrders(ids: string[], included: boolean) {
+  const reason = included && firstPlanSelectionReason(draft.orders.value, ids)
+  if (reason) {
+    toast.error(reason)
+    return
+  }
+  draft.setIncluded(ids, included)
+}
+
+const firstPlanProgress = computed(() => {
+  const status = workbench.firstPlanJob.value?.status
+  if (workbench.generationError.value)
+    return status === 'completed'
+      ? '首版排程已完成，方案加载失败，请稍后从方案列表查看'
+      : '首版排程未完成，请查看失败通知后重新生成'
+  return status === 'created'
+    ? '首版排程排队中'
+    : status === 'running'
+      ? '首版排程生成中'
+      : status === 'completed'
+        ? workbench.generatePending.value
+          ? '首版排程已完成，正在加载方案'
+          : '首版排程已完成'
+        : ''
+})
 
 async function repreviewLockedDraft() {
   const planId = draft.model.value?.meta.planId
@@ -485,6 +579,14 @@ async function repreviewLockedDraft() {
   } catch (error) {
     notifyOperationFailure('重预览失败', error, '重预览失败，请检查锁定资源与时间窗口')
   }
+}
+
+async function saveWorkbenchOrderPriority(
+  workOrderId: string,
+  values: { priority: number; isRush: boolean },
+) {
+  await workbench.saveOrderPriority(workOrderId, values)
+  if (canManage.value && draftReady.value) draft.updateOrder(workOrderId, values)
 }
 
 function onLockedDragAttempt() {
@@ -597,9 +699,14 @@ function firstBlockingReason(blockers: ActionBlocker[]) {
 const generateBlockedReason = computed(() =>
   firstBlockingReason([
     { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能生成排程方案' },
+    { blocked: !draftReady.value, reason: '正在处理草稿，请稍候' },
     {
       blocked: draft.includedOrders.value.length === 0,
       reason: '还没有选中工单：先在待排工单池里勾选要排的工单',
+    },
+    {
+      blocked: Boolean(firstPlanCapacityReason(draft.includedOrders.value.length)),
+      reason: firstPlanCapacityReason(draft.includedOrders.value.length) ?? '',
     },
     // 窗口非法（起止倒置 / 缺值 / 跨度超上限）按 #1278 的口径并进原因表：
     // 按钮直接灰掉并说明改哪里，而不是点下去才弹一句 toast（MAN-694 / #1262）。
@@ -621,7 +728,13 @@ const generateDisabledReason = computed(
 const repreviewBlockedReason = computed(() =>
   firstBlockingReason([
     { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能重预览' },
+    { blocked: !draftReady.value, reason: '正在处理草稿，请稍候' },
     { blocked: !draft.model.value, reason: '还没有草案方案：先生成首版方案，再做锁定重预览' },
+    { blocked: workbench.generatePending.value, reason: '正在生成首版方案，请稍候' },
+    {
+      blocked: draft.includedOrders.value.length > 10,
+      reason: '锁定重预览最多支持 10 单，500 单仅用于异步首版',
+    },
     { blocked: workbench.revisionPending.value, reason: '正在按锁定约束重预览，请稍候' },
     {
       blocked: draft.modifiedUnlockedTaskIds.value.length > 0,
@@ -646,6 +759,7 @@ const draftTerminalReason = computed(() =>
 const publishCandidateBlockedReason = computed(() =>
   firstBlockingReason([
     { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
+    { blocked: !draftReady.value, reason: '正在处理草稿，请稍候' },
     { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
     {
       blocked: Boolean(draftInvalidationReason.value),
@@ -653,6 +767,7 @@ const publishCandidateBlockedReason = computed(() =>
     },
     { blocked: Boolean(draftTerminalReason.value), reason: draftTerminalReason.value ?? '' },
     { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
+    { blocked: workbench.generatePending.value, reason: '正在生成首版排程，请稍候' },
   ]),
 )
 const publishCandidateDisabledReason = computed(
@@ -759,7 +874,7 @@ function reasonLabel(reason?: string | null) {
                 size="sm"
                 variant="ghost"
                 type="button"
-                :disabled="!draft.canUndo.value"
+                :disabled="!draftReady || workbench.generatePending.value || !draft.canUndo.value"
                 :title="draft.canUndo.value ? '撤销上一步草案修改' : '没有可撤销的草案修改'"
                 @click="draft.undo"
                 >撤销</NvButton
@@ -768,7 +883,7 @@ function reasonLabel(reason?: string | null) {
                 size="sm"
                 variant="ghost"
                 type="button"
-                :disabled="!draft.canRedo.value"
+                :disabled="!draftReady || workbench.generatePending.value || !draft.canRedo.value"
                 :title="draft.canRedo.value ? '重做刚撤销的草案修改' : '没有可重做的草案修改'"
                 @click="draft.redo"
                 >重做</NvButton
@@ -805,11 +920,54 @@ function reasonLabel(reason?: string | null) {
             </div>
           </div>
 
+          <div class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <span role="status" aria-live="polite">{{ draftSaveStatus }}</span>
+            <NvSelect
+              v-if="persistence.savedDrafts.value.length > 0"
+              :model-value="draft.model.value?.meta.planId ?? ''"
+              :disabled="persistence.busy.value || workbench.generatePending.value"
+              @update:model-value="(value) => persistence.select(String(value))"
+            >
+              <NvSelectTrigger class="w-64" aria-label="已保存草稿方案"
+                ><NvSelectValue placeholder="恢复已保存草稿"
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem
+                  v-for="saved in persistence.savedDrafts.value"
+                  :key="saved.planId"
+                  :value="saved.planId!"
+                  >{{ saved.planId }}</NvSelectItem
+                >
+              </NvSelectContent>
+            </NvSelect>
+            <NvButton
+              v-if="persistence.status.value === 'error'"
+              size="sm"
+              variant="outline"
+              :disabled="workbench.generatePending.value"
+              @click="persistence.retry"
+              >重试草稿操作</NvButton
+            >
+            <NvButton
+              size="sm"
+              variant="ghost"
+              :disabled="
+                !canManage ||
+                persistence.busy.value ||
+                workbench.generatePending.value ||
+                !draft.model.value
+              "
+              title="清空当前方案的个人草稿，方案和其它草稿仍保留"
+              @click="clearDraftConfirmOpen = true"
+              >清空草稿</NvButton
+            >
+          </div>
+
           <!-- 排程窗口由排产员指定（MAN-694 / #1262）；「生成首版」按这个窗口求解。 -->
           <SchedulingHorizonFields
             v-model="horizonInput"
             id-prefix="workbench-horizon"
-            :disabled="!canManage"
+            :disabled="!canManage || !draftReady || workbench.generatePending.value"
           />
         </div>
 
@@ -840,7 +998,7 @@ function reasonLabel(reason?: string | null) {
             size="sm"
             variant="outline"
             type="button"
-            :disabled="!canManage"
+            :disabled="!canManage || !draftReady || workbench.generatePending.value"
             :title="
               canManage
                 ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
@@ -850,6 +1008,9 @@ function reasonLabel(reason?: string | null) {
             >锁定全部修改</NvButton
           >
         </div>
+        <p v-if="firstPlanProgress" role="status" class="text-sm text-muted-foreground">
+          {{ firstPlanProgress }}
+        </p>
         <SchedulingOrderPool
           :candidates="workbench.schedulableCandidates.value"
           :draft-orders="draft.orders.value"
@@ -857,12 +1018,12 @@ function reasonLabel(reason?: string | null) {
           :error="workbench.candidatesError.value"
           :scope-ready="workbench.candidatesScopeReady.value"
           :scope-message="workbench.candidatesScopeMessage.value"
-          :read-only="!canManage"
-          @include="draft.setIncluded"
+          :read-only="!canManage || !draftReady || workbench.generatePending.value"
+          @include="includeWorkbenchOrders"
           :can-edit-priority="
             permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
           "
-          :save-order="workbench.saveOrderPriority"
+          :save-order="saveWorkbenchOrderPriority"
           @retry="workbench.refreshCandidates"
         >
           <template #scope>
@@ -874,7 +1035,7 @@ function reasonLabel(reason?: string | null) {
           :feedback="draft.feedback.value"
           :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"
-          :read-only="!canManage"
+          :read-only="!canManage || !draftReady || workbench.generatePending.value"
           :persisted-operation-keys="persistedOperationKeys"
           :persist-pending="upsertOperationOverridePending"
           @persist-override="persistOperationOverride"
@@ -1103,6 +1264,11 @@ function reasonLabel(reason?: string | null) {
     <!-- 撤销发布二次确认：说明 MES 侧后果，避免误触。
          v-if 按需挂载：关闭时完全不渲染 reka AlertDialog 树，也避免与页面测试针对
          NvSheet 的全局 DialogRoot stub 相互干扰（stub 会剥掉 AlertDialog 的注入上下文）。 -->
+    <SchedulingDraftClearDialog
+      v-model:open="clearDraftConfirmOpen"
+      :pending="persistence.status.value === 'clearing' || workbench.generatePending.value"
+      :clear="persistence.clear"
+    />
     <NvAlertDialog v-if="revokeConfirmOpen" v-model:open="revokeConfirmOpen">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
