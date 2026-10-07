@@ -717,7 +717,7 @@
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Tus_admitted_patch_is_rejected_after_complete_commits_intent",
         "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Tus_concurrent_patches_preserve_offset_and_complete_drains_mutation"
       ],
-      "expectedRuntimeTestCount": 8
+      "expectedRuntimeTestCount": 11
     },
     {
       "id": "demandplanning-postgres",
