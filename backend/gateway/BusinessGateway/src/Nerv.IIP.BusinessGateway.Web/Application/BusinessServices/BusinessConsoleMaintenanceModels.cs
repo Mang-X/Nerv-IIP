@@ -46,6 +46,7 @@ public enum BusinessConsoleMaintenanceWorkOrderAction
     Verify = 6,
     Close = 7,
     Cancel = 8,
+    UpdateExpectedRestore = 9,
 }
 
 public sealed record BusinessConsoleAssignMaintenanceWorkOrderRequest(
@@ -75,7 +76,8 @@ public sealed record BusinessConsoleTransitionMaintenanceWorkOrderRequest(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null);
+    string? CostCurrencyCode = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderActionResponse(
     string WorkOrderId,
@@ -102,7 +104,8 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string IdempotencyKey,
     string? AssetUnavailableReason = null,
     string? AssignedTechnicianUserId = null,
-    int? EstimatedLaborMinutes = null);
+    int? EstimatedLaborMinutes = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderResponse(
     string WorkOrderId,
@@ -124,7 +127,8 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Request(
     string IdempotencyKey,
     string? AssetUnavailableReasonCode = null,
     string? AssignedTechnicianUserId = null,
-    int? EstimatedLaborMinutes = null);
+    int? EstimatedLaborMinutes = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Response(
     string WorkOrderId,
@@ -231,7 +235,8 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     int Version = 0,
     IReadOnlyCollection<string>? AllowedActions = null,
     IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>? Lifecycle = null,
-    IReadOnlyCollection<string>? BlockReasons = null);
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderLifecycleEventItem(
     string Action,

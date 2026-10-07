@@ -1396,6 +1396,9 @@ export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowCo
     messageKey?: string;
     substituteDeviceAssetIds?: Array<string>;
     sourceReferenceLabel?: string | null;
+    expectedRestoreAtUtc?: string | null;
+    restorePredictionSource?: string | null;
+    restorePredictionSourceVersion?: string | null;
 };
 
 export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityStatus = 'available' | 'unavailable' | 'unknown';
@@ -6709,6 +6712,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     assetUnavailableReason?: string | null;
     assignedTechnicianUserId?: string | null;
     estimatedLaborMinutes?: number | null;
+    expectedRestoreAtUtc?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderV2Response = NetCorePalExtensionsDtoResponseData & {
@@ -6731,6 +6735,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     assetUnavailableReasonCode?: string | null;
     assignedTechnicianUserId?: string | null;
     estimatedLaborMinutes?: number | null;
+    expectedRestoreAtUtc?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteMaintenanceWorkOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6800,6 +6805,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     allowedActions?: Array<string> | null;
     lifecycle?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem> | null;
     blockReasons?: Array<string> | null;
+    expectedRestoreAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem = {
@@ -6867,9 +6873,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;
     costCurrencyCode?: string | null;
+    expectedRestoreAtUtc?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction = 'accept' | 'start' | 'pause' | 'waitForParts' | 'resume' | 'complete' | 'verify' | 'close' | 'cancel';
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction = 'accept' | 'start' | 'pause' | 'waitForParts' | 'resume' | 'complete' | 'verify' | 'close' | 'cancel' | 'updateExpectedRestore';
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenancePlanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenancePlanResponse | null;

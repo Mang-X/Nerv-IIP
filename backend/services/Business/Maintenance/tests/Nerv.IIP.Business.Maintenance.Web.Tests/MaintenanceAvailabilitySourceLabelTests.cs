@@ -63,7 +63,7 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
         dbContext.MaintenanceInspections.Add(inspection);
         await dbContext.SaveChangesAsync();
 
-        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions()))).Handle(
             new QueryMaintenanceAvailabilityWindowsQuery(
                 new EquipmentRuntimeAvailabilityRequest("org-001", "env-dev", queryStart, queryEnd, ["DEV-CNC-01"], null)),
             CancellationToken.None);
@@ -119,7 +119,7 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 
-        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions()))).Handle(
             new QueryMaintenanceAvailabilityWindowsQuery(
                 new EquipmentRuntimeAvailabilityRequest("org-001", "env-dev", queryStart, queryEnd, ["DEV-CNC-01"], null)),
             CancellationToken.None);
@@ -164,7 +164,7 @@ public sealed class MaintenanceAvailabilitySourceLabelTests
         dbContext.MaintenanceInspections.Add(inspection);
         await dbContext.SaveChangesAsync();
 
-        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions()))).Handle(
             new QueryMaintenanceAvailabilityWindowsQuery(
                 new EquipmentRuntimeAvailabilityRequest(
                     "org-001", "env-dev", queryStart, queryEnd, ["DEV-ALARM-01", "DEV-INSP-01"], null)),

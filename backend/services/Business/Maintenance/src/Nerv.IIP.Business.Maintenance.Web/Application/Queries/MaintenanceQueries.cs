@@ -1056,7 +1056,9 @@ public sealed class GetMaintenanceAssetAvailabilityWindowsQueryValidator : Abstr
     }
 }
 
-public sealed class GetMaintenanceAssetAvailabilityWindowsQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetMaintenanceAssetAvailabilityWindowsQueryHandler(
+    ApplicationDbContext dbContext,
+    IRequestHandler<GetMaintenanceRestorePredictionQuery, MaintenanceRestorePredictionResult> restorePredictions)
     : IQueryHandler<GetMaintenanceAssetAvailabilityWindowsQuery, EquipmentRuntimeAvailabilityResponse>
 {
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(GetMaintenanceAssetAvailabilityWindowsQuery request, CancellationToken cancellationToken)
@@ -1071,6 +1073,7 @@ public sealed class GetMaintenanceAssetAvailabilityWindowsQueryHandler(Applicati
                 [request.DeviceAssetId],
                 null,
                 request.FreshnessMaxAgeMinutes),
+            restorePredictions,
             cancellationToken);
     }
 }
@@ -1088,12 +1091,14 @@ public sealed class QueryMaintenanceAvailabilityWindowsQueryValidator : Abstract
     }
 }
 
-public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(ApplicationDbContext dbContext)
+public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(
+    ApplicationDbContext dbContext,
+    IRequestHandler<GetMaintenanceRestorePredictionQuery, MaintenanceRestorePredictionResult> restorePredictions)
     : IQueryHandler<QueryMaintenanceAvailabilityWindowsQuery, EquipmentRuntimeAvailabilityResponse>
 {
     public Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryMaintenanceAvailabilityWindowsQuery request, CancellationToken cancellationToken)
     {
-        return MaintenanceAvailabilityWindowCalculator.CalculateAsync(dbContext, request.Request, cancellationToken);
+        return MaintenanceAvailabilityWindowCalculator.CalculateAsync(dbContext, request.Request, restorePredictions, cancellationToken);
     }
 }
 
@@ -1102,6 +1107,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
     public static async Task<EquipmentRuntimeAvailabilityResponse> CalculateAsync(
         ApplicationDbContext dbContext,
         EquipmentRuntimeAvailabilityRequest originalContract,
+        IRequestHandler<GetMaintenanceRestorePredictionQuery, MaintenanceRestorePredictionResult> restorePredictions,
         CancellationToken cancellationToken)
     {
         if (originalContract.WindowEndUtc <= originalContract.WindowStartUtc)
@@ -1205,6 +1211,10 @@ internal static class MaintenanceAvailabilityWindowCalculator
         foreach (var workOrder in workOrders)
         {
             var endUtc = workOrder.ReleasedAtUtc ?? contract.WindowEndUtc;
+            var prediction = workOrder.ReleasedAtUtc is null
+                ? await restorePredictions.Handle(new GetMaintenanceRestorePredictionQuery(
+                    contract.OrganizationId, contract.EnvironmentId, workOrder.WorkOrderId), cancellationToken)
+                : null;
             AddWindow(
                 windows,
                 workOrder.DeviceAssetId,
@@ -1219,7 +1229,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
                     workOrder.SourceType,
                     workOrder.SourceAlarmId,
                     workOrder.SourceReferenceId,
-                    workOrder.SourcePlanCode));
+                    workOrder.SourcePlanCode),
+                prediction: prediction);
         }
 
         foreach (var plan in plans)
@@ -1295,7 +1306,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
         EquipmentRuntimeSourceType sourceType,
         string sourceReferenceId,
         EquipmentRuntimeAvailabilityRequest request,
-        string? sourceReferenceLabel = null)
+        string? sourceReferenceLabel = null,
+        MaintenanceRestorePredictionResult? prediction = null)
     {
         var clippedStartUtc = Max(startUtc, request.WindowStartUtc);
         var clippedEndUtc = Min(endUtc, request.WindowEndUtc);
@@ -1316,7 +1328,10 @@ internal static class MaintenanceAvailabilityWindowCalculator
             SourceReferenceId: sourceReferenceId,
             MessageKey: reasonCode,
             SubstituteDeviceAssetIds: [],
-            SourceReferenceLabel: sourceReferenceLabel));
+            SourceReferenceLabel: sourceReferenceLabel,
+            ExpectedRestoreAtUtc: prediction?.PredictedRestoreAtUtc,
+            RestorePredictionSource: prediction?.Source,
+            RestorePredictionSourceVersion: prediction?.SourceVersion));
     }
 
     private static string? ResolveInspectionDeviceAssetId(

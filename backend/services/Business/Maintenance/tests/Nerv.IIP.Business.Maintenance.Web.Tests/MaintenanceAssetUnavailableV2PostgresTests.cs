@@ -200,6 +200,20 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         Assert.True(detail.IsSuccessStatusCode, await detail.Content.ReadAsStringAsync());
         var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal(expectedRestore.AddHours(1), Get(Get(Get(detailJson, "data"), "workOrder"), "expectedRestoreAtUtc").GetDateTimeOffset());
+        // #4128: the public source window maps the owner estimate while actual downtime remains open.
+        var windowStart = workOrder.AssetUnavailableFromUtc!.Value;
+        var windowEnd = expectedRestore.AddHours(4);
+        var availability = await client.GetAsync("/api/business/v1/maintenance/availability-windows"
+            + "?organizationId=org-001&environmentId=env-dev&deviceAssetIds=DEV-CNC-01"
+            + "&windowStartUtc=" + Uri.EscapeDataString(windowStart.ToString("O"))
+            + "&windowEndUtc=" + Uri.EscapeDataString(windowEnd.ToString("O")));
+        Assert.True(availability.IsSuccessStatusCode, await availability.Content.ReadAsStringAsync());
+        using var availabilityJson = JsonDocument.Parse(await availability.Content.ReadAsStringAsync());
+        var window = Assert.Single(Get(Get(availabilityJson.RootElement, "data"), "items").EnumerateArray());
+        Assert.Equal(expectedRestore.AddHours(1), Get(window, "expectedRestoreAtUtc").GetDateTimeOffset());
+        Assert.Equal("explicit-etr", Get(window, "restorePredictionSource").GetString());
+        Assert.Equal(windowEnd, Get(window, "endUtc").GetDateTimeOffset());
+
         var clear = await client.PostAsJsonAsync($"/api/business/v1/maintenance/work-orders/{workOrderId}/actions",
             updateBody with { IdempotencyKey = "etr-clear", ExpectedVersion = workOrder.Version + 1, ExpectedRestoreAtUtc = null });
         Assert.True(clear.IsSuccessStatusCode, await clear.Content.ReadAsStringAsync());

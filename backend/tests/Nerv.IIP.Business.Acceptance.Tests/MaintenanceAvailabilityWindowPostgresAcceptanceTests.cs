@@ -35,7 +35,7 @@ public sealed class MaintenanceAvailabilityWindowPostgresAcceptanceTests
         var cancelledAtUtc = windowStartUtc.AddHours(3);
 
         var inFlight = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-PG-A", "high", "maintenance");
-        inFlight.MarkAssetUnavailable(unavailableFromUtc, "repair downtime");
+        inFlight.MarkAssetUnavailable(unavailableFromUtc, "repair downtime", unavailableFromUtc.AddHours(1));
         inFlight.Accept("tech-001");
         inFlight.StartWork();
 
@@ -55,7 +55,7 @@ public sealed class MaintenanceAvailabilityWindowPostgresAcceptanceTests
         dbContext.Entry(releasedBeforeWindow).Property(x => x.CompletedAtUtc).CurrentValue = windowStartUtc.AddHours(-3);
         await dbContext.SaveChangesAsync();
 
-        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext, new GetMaintenanceRestorePredictionQueryHandler(dbContext, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions()))).Handle(
             new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest(
                 "org-001",
                 "env-dev",
@@ -68,10 +68,15 @@ public sealed class MaintenanceAvailabilityWindowPostgresAcceptanceTests
         var inFlightWindow = Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-CNC-PG-A");
         Assert.Equal(unavailableFromUtc, inFlightWindow.StartUtc);
         Assert.Equal(windowEndUtc, inFlightWindow.EndUtc);
+        Assert.Equal(unavailableFromUtc.AddHours(1), inFlightWindow.ExpectedRestoreAtUtc);
+        Assert.Equal("explicit-etr", inFlightWindow.RestorePredictionSource);
+        Assert.False(string.IsNullOrWhiteSpace(inFlightWindow.RestorePredictionSourceVersion));
 
         var cancelledWindow = Assert.Single(response.Items, x => x.DeviceAssetId == "DEV-CNC-PG-B");
         Assert.Equal(unavailableFromUtc, cancelledWindow.StartUtc);
         Assert.Equal(cancelledAtUtc, cancelledWindow.EndUtc);
+        Assert.Null(cancelledWindow.ExpectedRestoreAtUtc);
+        Assert.Null(cancelledWindow.RestorePredictionSource);
 
         Assert.DoesNotContain(response.Items, x => x.DeviceAssetId == "DEV-CNC-PG-C");
     }

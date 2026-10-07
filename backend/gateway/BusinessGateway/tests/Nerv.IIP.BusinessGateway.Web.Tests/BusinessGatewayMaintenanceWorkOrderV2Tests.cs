@@ -24,21 +24,17 @@ public sealed class BusinessGatewayMaintenanceWorkOrderV2Tests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
         var client = new HttpBusinessMaintenanceClient(httpClient);
 
+        var request = JsonSerializer.Deserialize<BusinessConsoleCreateMaintenanceWorkOrderV2Request>("""
+            {"organizationId":"org-001","environmentId":"env-dev","deviceAssetId":"DEV-PRESS-01","priority":"high","openedBy":"user-admin","idempotencyKey":"repair-intent-v2-001","assetUnavailableReasonCode":"  Bearing-OVERHEAT  ","expectedRestoreAtUtc":"2026-10-07T09:00:00Z"}
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         var response = await client.CreateWorkOrderV2Async(
             "internal-token-001",
-            new BusinessConsoleCreateMaintenanceWorkOrderV2Request(
-                "org-001",
-                "env-dev",
-                "DEV-PRESS-01",
-                "high",
-                SourceAlarmId: null,
-                OpenedBy: "user-admin",
-                IdempotencyKey: "repair-intent-v2-001",
-                AssetUnavailableReasonCode: ReasonCode),
+            request,
             CancellationToken.None);
 
         Assert.Equal("/api/business/v2/maintenance/work-orders", handler.LastPath);
         Assert.Equal(ReasonCode, handler.LastBody.GetProperty("assetUnavailableReasonCode").GetString());
+        Assert.Equal(new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero), handler.LastBody.GetProperty("expectedRestoreAtUtc").GetDateTimeOffset());
         Assert.False(handler.LastBody.TryGetProperty("assetUnavailableReason", out _));
         Assert.Equal("019f0000-0000-7000-8000-000000000111", response.WorkOrderId);
         Assert.Equal("repair-intent-v2-001", response.OperationReceipt!.IdempotencyKey);
@@ -215,6 +211,7 @@ public sealed class BusinessGatewayMaintenanceWorkOrderV2Tests
             sourceAlarmId = (string?)null,
             openedBy = "untrusted-client",
             assetUnavailableReasonCode = ReasonCode,
+            expectedRestoreAtUtc = "2026-10-07T09:00:00Z",
             idempotencyKey = "maintenance-create-v2-test",
         });
 
@@ -223,6 +220,7 @@ public sealed class BusinessGatewayMaintenanceWorkOrderV2Tests
         Assert.Equal("internal-test-token", maintenance.LastInternalToken);
         Assert.Equal("user-admin", maintenance.LastCreateWorkOrderV2Request!.OpenedBy);
         Assert.Equal(ReasonCode, maintenance.LastCreateWorkOrderV2Request.AssetUnavailableReasonCode);
+        Assert.Equal(new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero), maintenance.LastCreateWorkOrderV2Request.ExpectedRestoreAtUtc);
         Assert.Contains(auth.Requirements, x =>
             x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersManage &&
             x.ResourceType == "maintenance-work-order" &&

@@ -12,6 +12,34 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 // ADR 0032 §2 / #4127: prediction is an explicit input, never an actual restore.
 public sealed class MaintenanceRestorePredictionTests
 {
+    [Theory]
+    [InlineData(true, "explicit-etr", 120)]
+    [InlineData(false, "configuration-default", 37)]
+    public async Task Availability_maps_the_owner_prediction_without_releasing_or_shortening_actual_downtime(bool explicitEtr, string source, int minutes)
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var from = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
+        var expected = from.AddMinutes(minutes);
+        var order = MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator");
+        order.MarkAssetUnavailable(from, "fault", explicitEtr ? expected : null);
+        db.MaintenanceWorkOrders.Add(order);
+        await db.SaveChangesAsync();
+        var response = await new QueryMaintenanceAvailabilityWindowsQueryHandler(db, new GetMaintenanceRestorePredictionQueryHandler(db, Microsoft.Extensions.Options.Options.Create(new MaintenanceRestorePredictionOptions { DefaultDowntimeMinutes = 37 }))).Handle(
+            new(new Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAvailabilityRequest(
+                "org", "env", from.AddHours(1), from.AddHours(6), ["device"], null)), default);
+        var item = Assert.Single(response.Items);
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(item, Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeJson.Options);
+        Assert.Equal(expected, json.GetProperty("expectedRestoreAtUtc").GetDateTimeOffset());
+        Assert.Equal(source, json.GetProperty("restorePredictionSource").GetString());
+        var owner = await new GetMaintenanceRestorePredictionQueryHandler(db, Options.Create(new MaintenanceRestorePredictionOptions { DefaultDowntimeMinutes = 37 }))
+            .Handle(new("org", "env", order.Id), default);
+        Assert.Equal(owner.SourceVersion, json.GetProperty("restorePredictionSourceVersion").GetString());
+        Assert.Equal(from.AddHours(1), item.StartUtc);
+        Assert.Equal(from.AddHours(6), item.EndUtc);
+        Assert.Null(order.CompletedAtUtc);
+        Assert.Empty(order.GetDomainEvents().OfType<AssetRestoredDomainEvent>());
+    }
+
     [Fact]
     public void Explicit_ETR_is_preserved_in_the_unavailable_event()
     {
