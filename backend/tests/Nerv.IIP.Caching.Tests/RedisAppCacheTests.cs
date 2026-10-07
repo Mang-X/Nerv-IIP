@@ -34,6 +34,10 @@ public sealed class RedisAppCacheTests
         Assert.Equal(42, received.Revision);
         using var newlyStarted = run.Build();
         Assert.Equal(42, (await Cache(newlyStarted).GetOrCreateAsync<PermissionValue>("value", () => throw new CacheMissException(), Ttl)).Revision);
+        await run.Database.HashSetAsync(run.RedisKey("gateway", run.Environment, "value"), "data", "{invalid-json");
+        using var corruptedReader = run.Build();
+        await Assert.ThrowsAsync<FusionCacheSerializationException>(() => Cache(corruptedReader).GetOrCreateAsync(
+            "value", () => Task.FromResult(new PermissionValue(false, [], 0)), Ttl));
     }
 
     [RealRedisCacheFact]
