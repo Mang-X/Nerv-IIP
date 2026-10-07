@@ -28,6 +28,7 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
     priority: 'high',
     status: 'InProgress',
     assignedTechnicianUserId: 'maintenance-engineer',
+    assignedTeamId: 'TEAM-A',
     version: 2,
     openedAtUtc: '2026-10-07T02:00:00Z',
     expectedRestoreAtUtc: null as string | null,
@@ -45,7 +46,12 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
     let data: unknown = { items: [], total: 0 }
     if (url.pathname.endsWith('/auth/refresh')) data = session
     else if (url.pathname.endsWith('/me/work-context')) {
-      data = { authorizedScopes: [{ kind: 'self', id: 'maintenance-engineer' }] }
+      data = {
+        authorizedScopes: [
+          { kind: 'work-center', id: 'WC-B', displayName: '冲压中心' },
+          { kind: 'team', id: 'TEAM-A', displayName: '维修一班' },
+        ],
+      }
     } else if (url.pathname.endsWith('/actions')) {
       const body = route.request().postDataJSON()
       requests.push(body)
@@ -97,8 +103,8 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
   expect(requests[0]).toMatchObject({
     action: 'updateExpectedRestore',
     expectedVersion: 2,
-    scopeKind: 'self',
-    scopeId: 'maintenance-engineer',
+    scopeKind: 'team',
+    scopeId: 'TEAM-A',
   })
   expect(detailReads).toBe(1)
   await page.reload()

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type {
+  BusinessConsoleAuthorizedWorkScope,
   BusinessConsoleMaintenanceSparePartInput,
   BusinessConsoleMaintenanceWorkOrderItem,
 } from '@nerv-iip/api-client'
 import {
+  formatWorkScopeKey,
   maintenancePriorityLabel,
   maintenancePriorityLabels,
   statusActionGate,
@@ -89,6 +91,7 @@ const {
   refreshWorkOrders,
   createWorkOrder,
   createWorkOrderPending,
+  readExpectedRestoreScopes,
   updateExpectedRestore,
   expectedRestorePending,
   completeWorkOrder,
@@ -513,6 +516,19 @@ async function submitCreate() {
 const expectedRestoreOpen = shallowRef(false)
 const expectedRestoreTarget = shallowRef<WorkOrderRow>()
 const expectedRestoreAtLocal = shallowRef('')
+const expectedRestoreScopes = shallowRef<BusinessConsoleAuthorizedWorkScope[]>([])
+const expectedRestoreScopeKey = shallowRef('')
+const expectedRestoreScopeOptions = computed(() =>
+  expectedRestoreScopes.value.map((scope) => ({
+    value: formatWorkScopeKey(scope.kind!, scope.id!),
+    label: scope.displayName ?? scope.id!,
+  })),
+)
+const expectedRestoreScope = computed(() =>
+  expectedRestoreScopes.value.find(
+    (scope) => formatWorkScopeKey(scope.kind!, scope.id!) === expectedRestoreScopeKey.value,
+  ),
+)
 function localDateTime(value?: string | null) {
   if (!value) return ''
   const date = new Date(value)
@@ -529,10 +545,27 @@ function canUpdateExpectedRestore(row: WorkOrderRow) {
     (!row.assignedTechnicianUserId || row.assignedTechnicianUserId === currentUserId.value)
   )
 }
-function openExpectedRestore(row: WorkOrderRow) {
+async function openExpectedRestore(row: WorkOrderRow) {
   expectedRestoreTarget.value = row
   expectedRestoreAtLocal.value = localDateTime(row.expectedRestoreAtUtc)
+  expectedRestoreScopes.value = []
+  expectedRestoreScopeKey.value = ''
   expectedRestoreOpen.value = true
+  try {
+    const scopes = await readExpectedRestoreScopes()
+    expectedRestoreScopes.value = scopes
+    const selected =
+      scopes.find(
+        (scope) => scope.kind === 'organization' && scope.id === filters.organizationId,
+      ) ??
+      scopes.find((scope) => scope.kind === 'team' && scope.id === row.assignedTeamId) ??
+      scopes.find((scope) => scope.kind === 'self' && scope.id === currentUserId.value) ??
+      scopes[0]
+    if (selected) expectedRestoreScopeKey.value = formatWorkScopeKey(selected.kind!, selected.id!)
+    else notifyError('当前没有可用的维修作业范围，请联系管理员。')
+  } catch (error) {
+    notifyOperationFailure('维修作业范围读取失败', error)
+  }
 }
 async function submitExpectedRestore() {
   const target = expectedRestoreTarget.value!
@@ -540,6 +573,7 @@ async function submitExpectedRestore() {
     const detail = await updateExpectedRestore(
       target,
       expectedRestoreAtLocal.value ? new Date(expectedRestoreAtLocal.value).toISOString() : null,
+      expectedRestoreScope.value!,
     )
     expectedRestoreTarget.value = detail
     expectedRestoreAtLocal.value = localDateTime(detail.expectedRestoreAtUtc)
@@ -1025,6 +1059,16 @@ watch(
               { label: '设备', value: deviceLabel(expectedRestoreTarget.deviceAssetId) },
             ]"
           />
+          <NvField v-if="expectedRestoreScopes.length > 1">
+            <NvFieldLabel for="mwo-expected-restore-scope">维修作业范围</NvFieldLabel>
+            <NvSearchSelect
+              id="mwo-expected-restore-scope"
+              v-model="expectedRestoreScopeKey"
+              :options="expectedRestoreScopeOptions"
+              :disabled="expectedRestorePending"
+              aria-label="维修作业范围"
+            />
+          </NvField>
           <NvField>
             <NvFieldLabel for="mwo-expected-restore">预计恢复时间</NvFieldLabel>
             <NvInput
@@ -1046,7 +1090,7 @@ watch(
               @click="expectedRestoreOpen = false"
               >取消</NvButton
             >
-            <NvButton type="submit" :disabled="expectedRestorePending">
+            <NvButton type="submit" :disabled="expectedRestorePending || !expectedRestoreScope">
               <Spinner v-if="expectedRestorePending" aria-hidden="true" />保存预计恢复时间
             </NvButton>
           </NvSheetFooter>

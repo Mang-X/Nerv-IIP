@@ -18,6 +18,7 @@ import {
   queryBusinessConsoleMaintenanceReliabilitySummaryQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
   updateBusinessConsoleMaintenancePlanMutationOptions,
+  type BusinessConsoleAuthorizedWorkScope,
   type BusinessConsoleCompleteMaintenanceWorkOrderRequest,
   type BusinessConsoleCreateMaintenancePlanRequest,
   type BusinessConsoleCreateMaintenanceSparePartRequest,
@@ -240,40 +241,38 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
   )
   const expectedRestorePending = shallowRef(false)
 
+  async function readExpectedRestoreScopes() {
+    const contextOptions = getBusinessConsolePrincipalWorkContextQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        permissionCode: 'business.maintenance.work-orders.manage',
+      },
+    })
+    const context = assertEnvelopeSuccess(
+      await contextOptions.query({ signal: new AbortController().signal } as Parameters<
+        typeof contextOptions.query
+      >[0]),
+      '无法读取维修作业范围。',
+    )
+    return context.data?.authorizedScopes ?? []
+  }
+
   async function updateExpectedRestore(
     row: BusinessConsoleMaintenanceWorkOrderItem,
     expectedRestoreAtUtc: string | null,
+    selection: BusinessConsoleAuthorizedWorkScope,
   ) {
     expectedRestorePending.value = true
     try {
-      const contextOptions = getBusinessConsolePrincipalWorkContextQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          permissionCode: 'business.maintenance.work-orders.manage',
-        },
-      })
-      const context = assertEnvelopeSuccess(
-        await contextOptions.query({ signal: new AbortController().signal } as Parameters<
-          typeof contextOptions.query
-        >[0]),
-        '无法读取维修作业范围。',
-      )
-      const scopes = context.data?.authorizedScopes ?? []
-      const selection =
-        scopes.find(
-          (scope) => scope.kind === 'organization' && scope.id === filters.organizationId,
-        ) ?? (scopes.length === 1 ? scopes[0] : undefined)
-      if (!selection?.kind || !selection.id)
-        throw new Error('当前没有唯一可用的维修作业范围，请联系管理员。')
       const intent = {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         action: 'updateExpectedRestore' as const,
         reason: expectedRestoreAtUtc ? '更新预计恢复时间' : '清除预计恢复时间',
         expectedVersion: row.version,
-        scopeKind: selection.kind,
-        scopeId: selection.id,
+        scopeKind: selection.kind!,
+        scopeId: selection.id!,
         expectedRestoreAtUtc,
       }
       const scope = {
@@ -310,8 +309,8 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          scopeKind: selection.kind,
-          scopeId: selection.id,
+          scopeKind: selection.kind!,
+          scopeId: selection.id!,
         },
       })
       const detail = assertEnvelopeSuccess(
@@ -453,6 +452,7 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
     createWorkOrder: createWithStableIntent,
     createWorkOrderPending: createMutation.isLoading,
     createWorkOrderError: createMutation.error,
+    readExpectedRestoreScopes,
     updateExpectedRestore,
     expectedRestorePending,
     completeWorkOrder,

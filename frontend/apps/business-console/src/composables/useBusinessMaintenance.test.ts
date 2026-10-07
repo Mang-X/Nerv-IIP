@@ -616,6 +616,7 @@ describe('预计恢复写后权威读回', () => {
     const saved = await hook.updateExpectedRestore(
       { workOrderId: 'wo-1', version: 2 },
       '2026-10-10T06:00:00Z',
+      { kind: 'self', id: 'technician-1' },
     )
     expect(
       coladaState.mutationCallsById.get('transitionBusinessConsoleMaintenanceWorkOrder')?.[0],

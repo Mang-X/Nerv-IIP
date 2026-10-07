@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   maintenanceFilters: { organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 },
   directory: { state: 'ok', message: '' },
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  expectedRestoreScopes: [] as Array<{ kind: string; id: string; displayName?: string }>,
   updateExpectedRestore: vi.fn(async () => ({})),
   createReason: vi.fn(async (_body: Record<string, unknown>): Promise<unknown> => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
@@ -68,6 +69,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     createWorkOrder: state.createWorkOrder,
     createWorkOrderPending: shallowRef(false),
     createWorkOrderError: shallowRef(),
+    readExpectedRestoreScopes: vi.fn(async () => state.expectedRestoreScopes),
     updateExpectedRestore: state.updateExpectedRestore,
     expectedRestorePending: shallowRef(false),
     completeWorkOrder: state.completeWorkOrder,
@@ -271,6 +273,7 @@ beforeEach(() => {
   })
   state.directory = reactive({ state: 'ok', message: '' })
   document.body.innerHTML = ''
+  state.expectedRestoreScopes = [{ kind: 'self', id: 'user-admin' }]
   state.updateExpectedRestore.mockReset()
   state.updateExpectedRestore.mockResolvedValue({})
   state.createWorkOrder.mockClear()
@@ -1747,6 +1750,7 @@ describe('维修工单预计恢复', () => {
     expect(state.updateExpectedRestore).toHaveBeenCalledWith(
       state.workOrders[0],
       new Date('2026-10-10T13:30').toISOString(),
+      { kind: 'self', id: 'user-admin' },
     )
     expect(state.toastSuccess).toHaveBeenCalled()
     await openPrediction()
@@ -1756,7 +1760,10 @@ describe('维修工单预计恢复', () => {
     await flushPromises()
     clear.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
-    expect(state.updateExpectedRestore).toHaveBeenLastCalledWith(state.workOrders[0], null)
+    expect(state.updateExpectedRestore).toHaveBeenLastCalledWith(state.workOrders[0], null, {
+      kind: 'self',
+      id: 'user-admin',
+    })
   })
 
   it('其他技师不可编辑预测', async () => {
@@ -1787,5 +1794,41 @@ describe('维修工单预计恢复', () => {
     expect(state.toastError).toHaveBeenCalled()
     expect(input.value).toBe('2026-10-10T13:30')
     expect(document.body.querySelector('#mwo-expected-restore')).not.toBeNull()
+  })
+})
+
+it('多授权范围维修人员可按工单团队更新，也可切换另一授权范围', async () => {
+  state.query = {}
+  state.workOrders[0]!.assignedTechnicianUserId = 'user-admin'
+  state.workOrders[0]!.assignedTeamId = 'TEAM-A'
+  state.expectedRestoreScopes = [
+    { kind: 'work-center', id: 'WC-B', displayName: '冲压中心' },
+    { kind: 'team', id: 'TEAM-A', displayName: '维修一班' },
+  ]
+  mount(WorkOrdersPage, mountOptions())
+  await flushPromises()
+  document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+  await flushPromises()
+  ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    .find((el) => el.textContent?.includes('预计恢复'))!
+    .click()
+  await flushPromises()
+  const picker = document.body.querySelector<HTMLButtonElement>('#mwo-expected-restore-scope')!
+  expect(picker.textContent).toContain('维修一班')
+  picker.click()
+  await flushPromises()
+  ;[...document.body.querySelectorAll<HTMLElement>('[role="option"]')]
+    .find((el) => el.textContent?.includes('冲压中心'))!
+    .click()
+  await flushPromises()
+  document.body
+    .querySelector('#mwo-expected-restore')!
+    .closest('form')!
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await flushPromises()
+  expect(state.updateExpectedRestore).toHaveBeenCalledWith(state.workOrders[0], null, {
+    kind: 'work-center',
+    id: 'WC-B',
+    displayName: '冲压中心',
   })
 })
