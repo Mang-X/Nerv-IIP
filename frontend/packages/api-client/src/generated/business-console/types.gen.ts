@@ -1504,6 +1504,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     materialShortageSummary?: Array<NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract> | null;
     validationContext?: NervIipContractsSchedulingSchedulePlanValidationContextContract | null;
     assemblyDependencies?: Array<NervIipContractsSchedulingSchedulingAssemblyDependencyContract> | null;
+    freezeContext?: NervIipContractsSchedulingSchedulePlanFreezeContextContract | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1716,6 +1717,25 @@ export type NervIipContractsSchedulingSchedulingAssemblyDependencyContract = {
     childOrderId?: string;
     parentOrderId?: string;
 };
+
+export type NervIipContractsSchedulingSchedulePlanFreezeContextContract = {
+    asOfUtc?: string;
+    defaultWindowEndUtc?: string;
+    workCenterWindows?: Array<NervIipContractsSchedulingSchedulePlanFreezeWorkCenterWindowContract>;
+    assignments?: Array<NervIipContractsSchedulingSchedulePlanFrozenAssignmentContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFreezeWorkCenterWindowContract = {
+    workCenterId?: string;
+    endUtc?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFrozenAssignmentContract = {
+    assignment?: NervIipContractsSchedulingScheduleAssignmentContract;
+    reasons?: Array<NervIipContractsSchedulingSchedulePlanFreezeReasonContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFreezeReasonContract = 'completed' | 'started' | 'manualLock' | 'stableWindow';
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
     problem: NervIipContractsSchedulingSchedulingProblemContract;

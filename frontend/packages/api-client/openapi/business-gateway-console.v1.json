@@ -41164,6 +41164,14 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingAssemblyDependencyContract"
             }
+          },
+          "freezeContext": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFreezeContextContract"
+              }
+            ]
           }
         }
       },
@@ -41875,6 +41883,76 @@
             "type": "string"
           }
         }
+      },
+      "NervIIPContractsSchedulingSchedulePlanFreezeContextContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "asOfUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "defaultWindowEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workCenterWindows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFreezeWorkCenterWindowContract"
+            }
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFrozenAssignmentContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanFreezeWorkCenterWindowContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workCenterId": {
+            "type": "string"
+          },
+          "endUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanFrozenAssignmentContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "assignment": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentContract"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFreezeReasonContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulePlanFreezeReasonContract": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Completed",
+          "Started",
+          "ManualLock",
+          "StableWindow"
+        ],
+        "enum": [
+          "completed",
+          "started",
+          "manualLock",
+          "stableWindow"
+        ]
       },
       "NervIIPBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest": {
         "type": "object",
