@@ -16,10 +16,15 @@ internal sealed record SchedulingOperationDeviation(string SourceReference, stri
     DateTimeOffset OccurredAtUtc, string ReasonCode, string OrderId, string OperationId)
     : SchedulingDeviation(SourceReference, SourceVersion, OccurredAtUtc, ReasonCode);
 
-internal enum ReschedulingImpactReasonCode { OperationDeviation, ResourceUnavailable }
+internal enum ReschedulingImpactReasonCode { OperationDeviation, ResourceUnavailable, PredecessorDependency, ResourceCapacity }
+internal sealed record ReschedulingImpactOperation(string OrderId, string OperationId);
+internal sealed record ReschedulingImpactStep(ReschedulingImpactOperation From, ReschedulingImpactOperation To,
+    ReschedulingImpactReasonCode Code);
+internal sealed record ReschedulingImpactPath(SchedulingDeviation Source, ReschedulingImpactOperation Root,
+    IReadOnlyList<ReschedulingImpactStep> Steps);
 internal sealed record ReschedulingImpactReason(ReschedulingImpactReasonCode Code, SchedulingDeviation Source);
 internal sealed record ReschedulingAffectedOperation(ScheduleAssignmentContract Assignment,
-    IReadOnlyList<ReschedulingImpactReason> Reasons, SchedulingFreezeReason FreezeReasons);
+    IReadOnlyList<ReschedulingImpactReason> Reasons, SchedulingFreezeReason FreezeReasons, IReadOnlyList<ReschedulingImpactPath> Paths);
 internal sealed record ReschedulingImpact(string InputFingerprint,
     IReadOnlyList<ReschedulingAffectedOperation> AffectedOperations,
     IReadOnlyList<SchedulingFrozenAssignment> FrozenAssignments,
@@ -27,7 +32,6 @@ internal sealed record ReschedulingImpact(string InputFingerprint,
 
 internal static class ReschedulingImpactAnalyzer
 {
-    // #4165：仅计算直接命中；工序依赖与资源传播由 #4168 接续此入口。
     // baseline 是方案的实际 assignment 快照，来源读取与显式计算时点由调用方提供。
     public static ReschedulingImpact Analyze(SchedulingProblemContract problem,
         IReadOnlyCollection<ScheduleAssignmentContract> baseline, IReadOnlyCollection<SchedulingDeviation> deviations,
@@ -61,28 +65,59 @@ internal static class ReschedulingImpactAnalyzer
 
         var assignments = baseline.OrderBy(x => x.OrderId, StringComparer.Ordinal)
             .ThenBy(x => x.OperationId, StringComparer.Ordinal).ToArray();
-        // 每个基线工序只允许一条 assignment；冻结与直接命中共享同一身份。
-        _ = assignments.ToDictionary(x => (x.OrderId, x.OperationId));
+        // 每个基线工序只允许一条 assignment；冻结、依赖与资源传播共享同一身份。
+        var indices = assignments.Select((assignment, index) => (assignment, index))
+            .ToDictionary(x => (x.assignment.OrderId, x.assignment.OperationId), x => x.index);
         var normalizedDeviations = deviations.Distinct().OrderBy(x => CanonicalJson(x), StringComparer.Ordinal).ToArray();
         var frozen = SchedulingFreezeCalculator.Calculate(assignments, execution, manualLocks, policy);
         var frozenByOperation = frozen.ToDictionary(x => (x.Assignment.OrderId, x.Assignment.OperationId));
         var operationDeviations = normalizedDeviations.OfType<SchedulingOperationDeviation>().ToLookup(x => (x.OrderId, x.OperationId));
         var resourceDeviations = normalizedDeviations.OfType<SchedulingResourceUnavailableDeviation>().ToLookup(x => x.ResourceId, StringComparer.Ordinal);
-        var affected = new List<ReschedulingAffectedOperation>();
-        foreach (var assignment in assignments)
+        var edges = BuildEdges(normalizedProblem, assignments, indices);
+        var reasonsByOperation = assignments.Select(_ => new List<ReschedulingImpactReason>()).ToArray();
+        var pathsByOperation = assignments.Select(_ => new List<ReschedulingImpactPath>()).ToArray();
+        for (var root = 0; root < assignments.Length; root++)
         {
-            var key = (assignment.OrderId, assignment.OperationId);
-            var reasons = operationDeviations[key]
+            var assignment = assignments[root];
+            var directReasons = operationDeviations[(assignment.OrderId, assignment.OperationId)]
                 .Select(x => new ReschedulingImpactReason(ReschedulingImpactReasonCode.OperationDeviation, x))
                 .Concat(resourceDeviations[assignment.ResourceId]
                     .Where(x => Occupies(assignment, x.StartUtc, x.EndUtc))
-                    .Select(x => new ReschedulingImpactReason(ReschedulingImpactReasonCode.ResourceUnavailable, x)))
-                .ToArray();
-            if (reasons.Length > 0)
+                    .Select(x => new ReschedulingImpactReason(ReschedulingImpactReasonCode.ResourceUnavailable, x)));
+            foreach (var direct in directReasons)
             {
-                affected.Add(new ReschedulingAffectedOperation(assignment, reasons,
-                    frozenByOperation.TryGetValue(key, out var freeze) ? freeze.Reasons : SchedulingFreezeReason.None));
+                // 每个直接命中/来源保留一条确定性的最短路径；已访问集同时处理汇合与片段形成的环。
+                var visited = new HashSet<int> { root };
+                var pending = new Queue<(int Index, ReschedulingImpactPath Path, ReschedulingImpactReason Reason)>();
+                pending.Enqueue((root, new(direct.Source, Identity(assignment), []), direct));
+                while (pending.TryDequeue(out var current))
+                {
+                    reasonsByOperation[current.Index].Add(current.Reason);
+                    pathsByOperation[current.Index].Add(current.Path);
+                    foreach (var edge in edges[current.Index])
+                    {
+                        if (visited.Add(edge.To))
+                        {
+                            var step = new ReschedulingImpactStep(Identity(assignments[current.Index]),
+                                Identity(assignments[edge.To]), edge.Code);
+                            pending.Enqueue((edge.To, current.Path with { Steps = [.. current.Path.Steps, step] },
+                                new(edge.Code, direct.Source)));
+                        }
+                    }
+                }
             }
+        }
+
+        var affected = new List<ReschedulingAffectedOperation>();
+        for (var index = 0; index < assignments.Length; index++)
+        {
+            if (reasonsByOperation[index].Count == 0) continue;
+            var assignment = assignments[index];
+            var key = (assignment.OrderId, assignment.OperationId);
+            affected.Add(new(assignment, reasonsByOperation[index].Distinct()
+                .OrderBy(x => x.Code).ThenBy(x => CanonicalJson(x.Source), StringComparer.Ordinal).ToArray(),
+                frozenByOperation.TryGetValue(key, out var freeze) ? freeze.Reasons : SchedulingFreezeReason.None,
+                pathsByOperation[index].ToArray()));
         }
 
         var canonicalInput = CanonicalJson(new
@@ -98,6 +133,55 @@ internal static class ReschedulingImpactAnalyzer
         return new ReschedulingImpact(fingerprint, affected, frozen,
             affected.Where(x => x.FreezeReasons == SchedulingFreezeReason.None).Select(x => x.Assignment).ToArray());
     }
+
+    private static ReschedulingImpactOperation Identity(ScheduleAssignmentContract assignment) =>
+        new(assignment.OrderId, assignment.OperationId);
+
+    private static IReadOnlyList<(int To, ReschedulingImpactReasonCode Code)>[] BuildEdges(
+        SchedulingProblemContract problem, ScheduleAssignmentContract[] assignments,
+        Dictionary<(string OrderId, string OperationId), int> indices)
+    {
+        var edges = assignments.Select(_ => new HashSet<(int To, ReschedulingImpactReasonCode Code)>()).ToArray();
+        foreach (var order in problem.Orders)
+        foreach (var operation in order.Operations)
+        {
+            if (!indices.TryGetValue((order.OrderId, operation.OperationId), out var next)) continue;
+            foreach (var predecessor in operation.PredecessorOperationIds)
+            {
+                if (indices.TryGetValue((order.OrderId, predecessor), out var previous))
+                    edges[previous].Add((next, ReschedulingImpactReasonCode.PredecessorDependency));
+            }
+        }
+
+        var byResource = assignments.Select((assignment, index) => (assignment, index))
+            .ToLookup(x => x.assignment.ResourceId, StringComparer.Ordinal);
+        foreach (var resource in problem.Resources)
+        {
+            var occupancies = byResource[resource.ResourceId]
+                .SelectMany(x => Segments(x.assignment).Select(segment => (x.index, Segment: segment))).ToArray();
+            foreach (var starting in occupancies.GroupBy(x => x.Segment.StartUtc))
+            {
+                var boundary = starting.Key;
+                // 基线在该边界已占满容量时，接续片段依赖刚结束片段释放容量。
+                // 半开区间与有限产能内核一致；只看实际 Segments，不把包络空档或归属当占用。
+                var occupied = occupancies.Where(x => x.Segment.StartUtc <= boundary && boundary < x.Segment.EndUtc)
+                    .Select(x => x.index).Distinct().Count();
+                if (occupied < Math.Max(1, resource.CapacityUnits)) continue;
+                var releasing = occupancies.Where(x => x.Segment.EndUtc == boundary);
+                foreach (var previous in releasing)
+                foreach (var next in starting)
+                {
+                    if (previous.index != next.index)
+                        edges[previous.index].Add((next.index, ReschedulingImpactReasonCode.ResourceCapacity));
+                }
+            }
+        }
+        return edges.Select(x => (IReadOnlyList<(int To, ReschedulingImpactReasonCode Code)>)x
+            .OrderBy(edge => edge.To).ThenBy(edge => edge.Code).ToArray()).ToArray();
+    }
+
+    private static IEnumerable<ScheduleAssignmentSegmentContract> Segments(ScheduleAssignmentContract assignment) =>
+        assignment.Segments is { Count: > 0 } ? assignment.Segments : [new(assignment.StartUtc, assignment.EndUtc)];
 
     private static bool Occupies(ScheduleAssignmentContract assignment, DateTimeOffset start, DateTimeOffset end) =>
         assignment.Segments is { Count: > 0 }

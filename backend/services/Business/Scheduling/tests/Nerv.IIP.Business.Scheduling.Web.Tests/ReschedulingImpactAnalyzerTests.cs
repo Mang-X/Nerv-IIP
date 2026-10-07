@@ -4,7 +4,7 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
-// DomainInvariant：#4165、#3616 获批规格修订 1、ADR 0014 §12/17/18、ADR 0032 §3。
+// DomainInvariant：#4168、#4165、#3616 获批规格修订 1、ADR 0014 §12/17/18、ADR 0032 §3。
 public class ReschedulingImpactAnalyzerTests
 {
     private static readonly DateTimeOffset At = new(2026, 10, 7, 8, 0, 0, TimeSpan.Zero);
@@ -130,6 +130,118 @@ public class ReschedulingImpactAnalyzerTests
     {
         Assert.Throws<ArgumentException>(() => Analyze([Assignment("op", "DEV-1", 0, 180)], [Downtime(140, 130)]));
     }
+
+    [Fact]
+    public void Deviation_reaches_predecessor_and_saturated_resource_chains_without_independent_orders()
+    {
+        var root = Assignment("root", "DEV-1", 0, 60);
+        var successor = Assignment("successor", "DEV-2", 60, 120);
+        var resourceNext = Assignment("next", "DEV-2", 120, 180) with { OrderId = "NEXT" };
+        var independent = Assignment("independent", "DEV-1", 240, 300) with { OrderId = "OTHER" };
+        var problem = Problem() with { Orders = [Order("WO", Operation("root"), Operation("successor", "root"))] };
+        var result = ReschedulingImpactAnalyzer.Analyze(problem, [independent, resourceNext, successor, root], [Downtime(10, 20)],
+            [], [("WO", "successor")], new(At, TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
+        Assert.Equal(["NEXT/next", "WO/root", "WO/successor"],
+            result.AffectedOperations.Select(x => $"{x.Assignment.OrderId}/{x.Assignment.OperationId}"));
+        Assert.Equal([resourceNext, root], result.RecalculateAssignments);
+        var frozen = Assert.Single(result.FrozenAssignments);
+        Assert.Same(successor, frozen.Assignment);
+        Assert.Equal(SchedulingFreezeReason.ManualLock, result.AffectedOperations.Single(x => x.Assignment == successor).FreezeReasons);
+        Assert.All(result.AffectedOperations, x => Assert.All(x.Reasons, reason => Assert.Equal(Downtime(10, 20), reason.Source)));
+        var path = Assert.Single(result.AffectedOperations.Single(x => x.Assignment == resourceNext).Paths);
+        Assert.Equal(new("WO", "root"), path.Root);
+        Assert.Equal(Downtime(10, 20), path.Source);
+        Assert.Equal([new ReschedulingImpactStep(new("WO", "root"), new("WO", "successor"), ReschedulingImpactReasonCode.PredecessorDependency),
+            new(new("WO", "successor"), new("NEXT", "next"), ReschedulingImpactReasonCode.ResourceCapacity)], path.Steps);
+        Assert.Equal([new ReschedulingImpactReason(ReschedulingImpactReasonCode.PredecessorDependency, Downtime(10, 20))],
+            result.AffectedOperations.Single(x => x.Assignment == successor).Reasons);
+    }
+
+    [Theory]
+    [InlineData(1, false, true)]
+    [InlineData(2, false, false)]
+    [InlineData(2, true, true)]
+    public void Resource_propagation_uses_segment_release_and_available_capacity(int capacity, bool addConcurrent, bool propagates)
+    {
+        var root = Assignment("root", "DEV-1", 0, 180) with
+        { Segments = [new(At, At.AddMinutes(60)), new(At.AddMinutes(120), At.AddMinutes(180))] };
+        var next = Assignment("next", "DEV-1", 60, 100);
+        var afterGap = Assignment("gap", "DEV-1", 200, 240);
+        var otherDevice = Assignment("other", "DEV-2", 60, 100);
+        var assignments = new List<ScheduleAssignmentContract> { root, next, afterGap, otherDevice };
+        if (addConcurrent) assignments.Add(Assignment("concurrent", "DEV-1", 0, 100));
+        var problem = Problem() with { Resources = Problem().Resources.Select(x => x with { CapacityUnits = capacity }).ToArray() };
+        var source = new SchedulingOperationDeviation("MES/root", "v2", At, "delay", "WO", "root");
+        var result = ReschedulingImpactAnalyzer.Analyze(problem, assignments, [source], [], [], new(At, TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
+        Assert.Equal(propagates ? new[] { "next", "root" } : ["root"], result.AffectedOperations.Select(x => x.Assignment.OperationId));
+        Assert.Equal(result.AffectedOperations.Select(x => x.Assignment), result.RecalculateAssignments);
+        Assert.Empty(result.FrozenAssignments);
+        Assert.Same(root, result.AffectedOperations.Single(x => x.Assignment.OperationId == "root").Assignment);
+        if (propagates)
+        {
+            var affected = result.AffectedOperations.Single(x => x.Assignment == next);
+            Assert.Equal([new ReschedulingImpactReason(ReschedulingImpactReasonCode.ResourceCapacity, source)], affected.Reasons);
+            Assert.Equal([new ReschedulingImpactStep(new("WO", "root"), new("WO", "next"), ReschedulingImpactReasonCode.ResourceCapacity)],
+                Assert.Single(affected.Paths).Steps);
+        }
+    }
+
+    [Fact]
+    public void Merged_sources_keep_their_paths_and_complete_result_is_deterministic()
+    {
+        var a = Assignment("a", "DEV-1", 0, 60);
+        var b = Assignment("b", "DEV-2", 0, 60);
+        var join = Assignment("join", "DEV-1", 60, 120) with { Segments = [new(At.AddMinutes(60), At.AddMinutes(90)), new(At.AddMinutes(100), At.AddMinutes(120))] };
+        var tail = Assignment("tail", "DEV-1", 120, 180);
+        var independent = Assignment("independent", "DEV-2", 240, 300) with { OrderId = "OTHER" };
+        var problem = Problem() with { Orders = [Order("WO", Operation("a"), Operation("b"), Operation("join", "a", "b"))] };
+        SchedulingDeviation[] deviations = [Downtime(10, 20), new SchedulingOperationDeviation("MES/b", "v3", At, "late", "WO", "b")];
+        ScheduleAssignmentContract[] baseline = [a, b, join, tail, independent];
+        var policy = new SchedulingFreezePolicy(At, TimeSpan.Zero, new Dictionary<string, TimeSpan>());
+        ReschedulingImpact Calculate(bool shuffle) => ReschedulingImpactAnalyzer.Analyze(shuffle ? problem with
+        {
+            Resources = problem.Resources.Reverse().ToArray(),
+            Orders = problem.Orders.Select(order => order with { Operations = order.Operations.Reverse().Select(operation => operation with
+                { PredecessorOperationIds = operation.PredecessorOperationIds.Reverse().ToArray() }).ToArray() }).ToArray()
+        } : problem, shuffle ? baseline.Reverse().Select(x => x with { Segments = x.Segments?.Reverse().ToArray() }).ToArray() : baseline,
+            shuffle ? deviations.Reverse().ToArray() : deviations, [], [("WO", "join")], policy);
+        var result = Calculate(false);
+        Assert.Equal(["a", "b", "join", "tail"], result.AffectedOperations.Select(x => x.Assignment.OperationId));
+        Assert.Equal([a, b, tail], result.RecalculateAssignments);
+        Assert.Same(join, Assert.Single(result.FrozenAssignments).Assignment);
+        var hit = result.AffectedOperations.Single(x => x.Assignment == join);
+        Assert.Equal(SchedulingFreezeReason.ManualLock, hit.FreezeReasons);
+        Assert.Equal(deviations.OrderBy(x => x.SourceReference), hit.Reasons.Select(x => x.Source).OrderBy(x => x.SourceReference));
+        Assert.Equal(2, hit.Paths.Count);
+        Assert.All(hit.Paths, path => Assert.Equal(ReschedulingImpactReasonCode.PredecessorDependency, Assert.Single(path.Steps).Code));
+        var propagated = result.AffectedOperations.Single(x => x.Assignment == tail);
+        Assert.Equal(2, propagated.Paths.Count);
+        Assert.Equal(deviations.OrderBy(x => x.SourceReference), propagated.Reasons.Select(x => x.Source).OrderBy(x => x.SourceReference));
+        Assert.All(propagated.Paths, path => Assert.Equal([ReschedulingImpactReasonCode.PredecessorDependency, ReschedulingImpactReasonCode.ResourceCapacity],
+            path.Steps.Select(x => x.Code)));
+        Assert.Equal(CompleteResult(result), CompleteResult(Calculate(false)));
+        Assert.Equal(CompleteResult(result), CompleteResult(Calculate(true)));
+    }
+
+    // Segments 是集合，返回的 assignment 仍原样保留；比较完整业务结果时仅规范化片段顺序。
+    private static string CompleteResult(ReschedulingImpact result)
+    {
+        ScheduleAssignmentContract Normalize(ScheduleAssignmentContract x) => x with
+            { Segments = x.Segments?.OrderBy(segment => segment.StartUtc).ThenBy(segment => segment.EndUtc).ToArray() };
+        return JsonSerializer.Serialize(result with
+        {
+            AffectedOperations = result.AffectedOperations.Select(x => x with { Assignment = Normalize(x.Assignment) }).ToArray(),
+            FrozenAssignments = result.FrozenAssignments.Select(x => x with { Assignment = Normalize(x.Assignment) }).ToArray(),
+            RecalculateAssignments = result.RecalculateAssignments.Select(Normalize).ToArray()
+        });
+    }
+
+    private static SchedulingOrderContract Order(string id, params SchedulingOperationContract[] operations) =>
+        new(id, "SKU", 10, At.AddDays(1), 0, false, operations);
+
+    private static SchedulingOperationContract Operation(string id, params string[] predecessors) =>
+        new(id, 10, predecessors, 60, "cut", ["DEV-1", "DEV-2"], null, At, At.AddDays(1), 0, false,
+            ScheduleSplitPolicyContract.NonSplittable, null, null, null);
 
     private static ReschedulingImpact Analyze(ScheduleAssignmentContract[] baseline, SchedulingDeviation[] deviations) =>
         ReschedulingImpactAnalyzer.Analyze(Problem(), baseline, deviations, [], [], new(At, TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
