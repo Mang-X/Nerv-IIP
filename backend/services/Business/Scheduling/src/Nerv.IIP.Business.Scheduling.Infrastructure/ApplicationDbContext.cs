@@ -1,4 +1,5 @@
 using MediatR;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleInsertionPreviewJobAggregate;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleFirstPlanJobAggregate;
@@ -18,6 +19,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator)
     , IPostgreSqlCapDataStorage
 {
+    public DbSet<ScheduleInsertionPreviewJob> ScheduleInsertionPreviewJobs => Set<ScheduleInsertionPreviewJob>();
     public DbSet<ScheduleFirstPlanJob> ScheduleFirstPlanJobs => Set<ScheduleFirstPlanJob>();
     public DbSet<ScheduleWorkingDraft> ScheduleWorkingDrafts => Set<ScheduleWorkingDraft>();
     public DbSet<ScheduleProblemSnapshot> ScheduleProblems => Set<ScheduleProblemSnapshot>();

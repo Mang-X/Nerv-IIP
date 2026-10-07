@@ -404,7 +404,9 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(25, contracts.Length);
+        Assert.Equal(27, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/insertion-preview-jobs" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptSchedulingInsertionPreviewJob");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/workbench/insertion-preview-jobs/{jobId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingInsertionPreviewJob");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/first-plan-jobs" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptSchedulingFirstPlanJob");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/workbench/first-plan-jobs/{jobId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingFirstPlanJob");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingMaterialDeliverySources");
