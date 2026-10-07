@@ -122,6 +122,29 @@ describe('异步首版进度（#4137 DomainInvariant / PublicContract，HTTP 桩
       wrapper.unmount()
     }
   })
+  it('完成后详情 GET 503 保留 completed 与 planId，停止轮询并报告加载错误', async () => {
+    const { first, wrapper, completed } = setup()
+    const failure = new Error('HTTP 503')
+    backend.detail.mockRejectedValue(failure)
+    try {
+      await first.generatePlan(input)
+      await flushPromises()
+      backend.status.mockResolvedValue(job('completed'))
+      await vi.advanceTimersByTimeAsync(1000)
+      await flushPromises()
+      expect(first.job.value).toMatchObject({ status: 'completed', planId: 'plan-001' })
+      expect(first.error.value).toBe(failure)
+      expect(first.plan.value).toBeUndefined()
+      expect(first.pending.value).toBe(false)
+      expect(completed).not.toHaveBeenCalled()
+      const calls = backend.status.mock.calls.length
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(backend.status).toHaveBeenCalledTimes(calls)
+      expect(backend.detail).toHaveBeenCalledTimes(1)
+    } finally {
+      wrapper.unmount()
+    }
+  })
   it('离开工作台后停止轮询', async () => {
     const { first, wrapper } = setup()
     await first.generatePlan(input)

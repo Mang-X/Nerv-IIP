@@ -521,7 +521,14 @@ watch(workbench.generatedPlan, (plan) => {
   toast.success('首版排程方案已生成')
 })
 watch(workbench.generationError, (error) => {
-  if (error) notifyOperationFailure('生成失败', error, '首版排程生成或方案加载失败')
+  if (error) {
+    const completed = workbench.firstPlanJob.value?.status === 'completed'
+    notifyOperationFailure(
+      completed ? '方案加载失败' : '生成失败',
+      error,
+      completed ? '首版排程已完成，请稍后从方案列表查看' : '首版排程生成失败',
+    )
+  }
 })
 
 function includeWorkbenchOrders(ids: string[], included: boolean) {
@@ -534,8 +541,11 @@ function includeWorkbenchOrders(ids: string[], included: boolean) {
 }
 
 const firstPlanProgress = computed(() => {
-  if (workbench.generationError.value) return '首版排程未完成，请查看失败通知后重新生成'
   const status = workbench.firstPlanJob.value?.status
+  if (workbench.generationError.value)
+    return status === 'completed'
+      ? '首版排程已完成，方案加载失败，请稍后从方案列表查看'
+      : '首版排程未完成，请查看失败通知后重新生成'
   return status === 'created'
     ? '首版排程排队中'
     : status === 'running'
@@ -757,6 +767,7 @@ const publishCandidateBlockedReason = computed(() =>
     },
     { blocked: Boolean(draftTerminalReason.value), reason: draftTerminalReason.value ?? '' },
     { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
+    { blocked: workbench.generatePending.value, reason: '正在生成首版排程，请稍候' },
   ]),
 )
 const publishCandidateDisabledReason = computed(
@@ -863,7 +874,7 @@ function reasonLabel(reason?: string | null) {
                 size="sm"
                 variant="ghost"
                 type="button"
-                :disabled="!draftReady || !draft.canUndo.value"
+                :disabled="!draftReady || workbench.generatePending.value || !draft.canUndo.value"
                 :title="draft.canUndo.value ? '撤销上一步草案修改' : '没有可撤销的草案修改'"
                 @click="draft.undo"
                 >撤销</NvButton
@@ -872,7 +883,7 @@ function reasonLabel(reason?: string | null) {
                 size="sm"
                 variant="ghost"
                 type="button"
-                :disabled="!draftReady || !draft.canRedo.value"
+                :disabled="!draftReady || workbench.generatePending.value || !draft.canRedo.value"
                 :title="draft.canRedo.value ? '重做刚撤销的草案修改' : '没有可重做的草案修改'"
                 @click="draft.redo"
                 >重做</NvButton
@@ -914,7 +925,7 @@ function reasonLabel(reason?: string | null) {
             <NvSelect
               v-if="persistence.savedDrafts.value.length > 0"
               :model-value="draft.model.value?.meta.planId ?? ''"
-              :disabled="persistence.busy.value"
+              :disabled="persistence.busy.value || workbench.generatePending.value"
               @update:model-value="(value) => persistence.select(String(value))"
             >
               <NvSelectTrigger class="w-64" aria-label="已保存草稿方案"
@@ -933,13 +944,19 @@ function reasonLabel(reason?: string | null) {
               v-if="persistence.status.value === 'error'"
               size="sm"
               variant="outline"
+              :disabled="workbench.generatePending.value"
               @click="persistence.retry"
               >重试草稿操作</NvButton
             >
             <NvButton
               size="sm"
               variant="ghost"
-              :disabled="!canManage || persistence.busy.value || !draft.model.value"
+              :disabled="
+                !canManage ||
+                persistence.busy.value ||
+                workbench.generatePending.value ||
+                !draft.model.value
+              "
               title="清空当前方案的个人草稿，方案和其它草稿仍保留"
               @click="clearDraftConfirmOpen = true"
               >清空草稿</NvButton
@@ -950,7 +967,7 @@ function reasonLabel(reason?: string | null) {
           <SchedulingHorizonFields
             v-model="horizonInput"
             id-prefix="workbench-horizon"
-            :disabled="!canManage || !draftReady"
+            :disabled="!canManage || !draftReady || workbench.generatePending.value"
           />
         </div>
 
@@ -981,7 +998,7 @@ function reasonLabel(reason?: string | null) {
             size="sm"
             variant="outline"
             type="button"
-            :disabled="!canManage || !draftReady"
+            :disabled="!canManage || !draftReady || workbench.generatePending.value"
             :title="
               canManage
                 ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
@@ -1249,7 +1266,7 @@ function reasonLabel(reason?: string | null) {
          NvSheet 的全局 DialogRoot stub 相互干扰（stub 会剥掉 AlertDialog 的注入上下文）。 -->
     <SchedulingDraftClearDialog
       v-model:open="clearDraftConfirmOpen"
-      :pending="persistence.status.value === 'clearing'"
+      :pending="persistence.status.value === 'clearing' || workbench.generatePending.value"
       :clear="persistence.clear"
     />
     <NvAlertDialog v-if="revokeConfirmOpen" v-model:open="revokeConfirmOpen">
