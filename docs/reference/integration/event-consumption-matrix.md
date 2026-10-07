@@ -96,6 +96,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | MES | V1 `MesOperationActualTimeSettlementVoidedIntegrationEvent`；V2 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` | MES | ERP：V1 精确冲销实际人工；V2 精确冲销机器制造费用 | `consumed-internally`（V1/V2） |
 | MES | `MesOperationTaskManuallyDispatchedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
 | MES | `MesOperationTaskManualDispatchClearedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
+| MES | `WorkOrderSplitIntegrationEvent` | MES | Scheduling：精确失效含母单的 Generated/Released 方案，并按子单数量与工序序号迁移母单锁定 | `consumed-internally` |
 | MES | `ProductionReportRecordedIntegrationEvent` | MES | IndustrialTelemetry、ERP、Quality、Scheduling | `consumed-internally` |
 | MES | `MesMaterialIssueRequestedIntegrationEvent` | MES | WMS | `consumed-internally` |
 | MES | `FinishedGoodsReceiptRequestedIntegrationEvent` | MES | Quality | `consumed-internally` |

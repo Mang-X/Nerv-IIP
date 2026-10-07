@@ -20,6 +20,13 @@ public sealed partial class RecordSchedulePlanInvalidationsPostgresProfileTests
     [SchedulingPostgresFact]
     public async Task Postgres_split_invalidates_only_mother_operations_migrates_locks_and_deduplicates()
     {
+        await AssertSplitFlowAsync(clearFirst: null);
+        await AssertSplitFlowAsync(clearFirst: true);
+        await AssertSplitFlowAsync(clearFirst: false);
+    }
+
+    private static async Task AssertSplitFlowAsync(bool? clearFirst)
+    {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         var source = new SplitSourceProvider();
         var publisher = new SplitPublisher();
@@ -37,15 +44,31 @@ public sealed partial class RecordSchedulePlanInvalidationsPostgresProfileTests
         // Another order in the same plan must not become an affected operation.
         var mixed = CreatePlanWithAssignmentIdentity("plan-split-other", "WO-OTHER", "OP-OTHER", "problem-other");
         db.SchedulePlans.AddRange(generated, released, mixed);
-        db.ScheduleOperationOverrides.Add(ScheduleOperationOverride.Create(
+        var parent = ScheduleOperationOverride.Create(
             "org-001", "env-dev", "WO-001", "OP-001", 10, "DEV-1", "WC-CNC",
             FixedNow, FixedNow.AddTicks(1000), "manual-override", "scheduling-api", null,
-            "user:test", FixedNow, FixedNow));
+            "user:test", FixedNow, FixedNow);
+        if (clearFirst.HasValue)
+        {
+            Assert.True(parent.TryApplyMesDispatch("DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000),
+                "dispatch-1", "user:test", 1, FixedNow, FixedNow));
+        }
+        db.ScheduleOperationOverrides.Add(parent);
         await db.SaveChangesAsync();
         var integrationEvent = SplitEvent("WO-001", "split-locked");
         var consumer = new WorkOrderSplitIntegrationEventHandlerForApplySplit(db,
             new InMemoryIntegrationEventDeadLetterStore(), scope.ServiceProvider.GetRequiredService<MediatR.ISender>());
+        var clearConsumer = new MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride(
+            db, new InMemoryIntegrationEventDeadLetterStore());
+        var clear = new MesOperationTaskManualDispatchClearedIntegrationEvent(
+            "split-clear", MesIntegrationEventTypes.OperationTaskManualDispatchCleared, 1, FixedNow,
+            MesIntegrationEventSources.BusinessMes, "corr-split", "cause-split", "org-001", "env-dev",
+            "user:test", "split-clear", new OperationTaskManualDispatchClearedPayload(
+                "WO-001", "OP-001", 10, "DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000),
+                2, MesManualDispatchClearReasonCodes.OperationCancelled, FixedNow));
+        if (clearFirst == true) await clearConsumer.HandleAsync(clear, default);
         await consumer.HandleAsync(integrationEvent, default);
+        if (clearFirst == false) await clearConsumer.HandleAsync(clear, default);
         db.ChangeTracker.Clear();
         await consumer.HandleAsync(integrationEvent, default);
         var invalidations = await db.SchedulePlanInvalidations.ToArrayAsync();
@@ -53,7 +76,6 @@ public sealed partial class RecordSchedulePlanInvalidationsPostgresProfileTests
         Assert.All(invalidations, invalidation =>
         {
             Assert.Equal("WO-001", invalidation.AffectedWorkOrderId);
-
         });
         var locks = await db.ScheduleOperationOverrides.OrderBy(x => x.WorkOrderId).ToArrayAsync();
         Assert.Equal(3, locks.Length);
@@ -73,12 +95,26 @@ public sealed partial class RecordSchedulePlanInvalidationsPostgresProfileTests
         Assert.Equal(FixedNow.AddTicks(1000), children[1].EndUtc);
         Assert.Equal(["CHILD-A-OP", "CHILD-B-OP"], children.Select(x => x.OperationId));
         Assert.All(children, child => { Assert.Equal("DEV-1", child.ResourceId); Assert.Equal("WC-CNC", child.WorkCenterId); });
-        Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Equal(clearFirst.HasValue ? 2 : 1, await db.ProcessedIntegrationEvents.CountAsync());
         Assert.Equal(1, source.ReadCount);
 
         // A split without a parent override does not invent any child lock or read MES operations.
         await consumer.HandleAsync(SplitEvent("WO-NO-LOCK", "split-unlocked"), default);
         Assert.Equal(3, await db.ScheduleOperationOverrides.CountAsync());
+        Assert.Equal(1, source.ReadCount);
+
+        // Earlier cancellations and ordinary device clears must remain revoked, even if a later split arrives.
+        db.ScheduleOperationOverrides.AddRange(
+            ScheduleOperationOverride.CreateClearedMesDispatch("org-001", "env-dev", "WO-CANCELLED", "OP-CANCELLED",
+                10, "DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000), "earlier-clear", "user:test", 2,
+                FixedNow.AddMinutes(-1), MesManualDispatchClearReasonCodes.OperationCancelled, FixedNow.AddMinutes(-1)),
+            ScheduleOperationOverride.CreateClearedMesDispatch("org-001", "env-dev", "WO-DEVICE-CLEARED", "OP-DEVICE-CLEARED",
+                10, "DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000), "device-clear", "user:test", 2,
+                FixedNow, MesManualDispatchClearReasonCodes.DeviceCleared, FixedNow));
+        await db.SaveChangesAsync();
+        await consumer.HandleAsync(SplitEvent("WO-CANCELLED", "split-earlier-cancelled"), default);
+        await consumer.HandleAsync(SplitEvent("WO-DEVICE-CLEARED", "split-device-cleared"), default);
+        Assert.Equal(5, await db.ScheduleOperationOverrides.CountAsync());
         Assert.Equal(1, source.ReadCount);
     }
 

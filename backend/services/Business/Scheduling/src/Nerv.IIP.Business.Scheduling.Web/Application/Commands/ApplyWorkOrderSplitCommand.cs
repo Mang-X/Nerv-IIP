@@ -19,10 +19,16 @@ public sealed class ApplyWorkOrderSplitCommandHandler(
         var invalidations = new RecordSchedulePlanInvalidationsCommandHandler(dbContext, timeProvider);
         foreach (var group in integrationEvent.Payload.Lines.GroupBy(x => x.SourceWorkOrderId))
         {
+            // MES Split cancels source operations at the same fact time as this event.
+            // Its clear consumer may arrive first; earlier cancellations and device clears stay revoked.
             var parentLocks = await dbContext.ScheduleOperationOverrides.Where(x =>
                 x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
-                x.WorkOrderId == group.Key && x.IsActive).ToArrayAsync(cancellationToken);
+                x.WorkOrderId == group.Key &&
+                (x.IsActive ||
+                    (x.SourceType == ScheduleOperationOverrideSourceTypes.MesDispatch &&
+                     x.ClearedReasonCode == MesManualDispatchClearReasonCodes.OperationCancelled &&
+                     x.ClearedAtUtc == integrationEvent.OccurredAtUtc))).ToArrayAsync(cancellationToken);
             if (parentLocks.Length > 0)
             {
                 var lines = group.OrderBy(x => x.TargetWorkOrderId, StringComparer.Ordinal).ToArray();
