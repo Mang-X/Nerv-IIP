@@ -36,6 +36,12 @@ public sealed class SchedulingOperationOverrideOverlay(ApplicationDbContext dbCo
         }
         foreach (var item in overrides.Where(x => validKeys.Contains((x.WorkOrderId, x.OperationId))))
         {
+            // ADR 0032 §3: a baseline freeze keeps its original position and segments.
+            if (merged.TryGetValue((item.WorkOrderId, item.OperationId), out var locked) &&
+                locked.LockReasonCode == SchedulingFrozenOccupancy.BaselineLockReasonCode)
+            {
+                continue;
+            }
             merged[(item.WorkOrderId, item.OperationId)] = new SchedulingLockedAssignmentContract(
                 $"override-{item.OperationId}", item.WorkOrderId, item.OperationId,
                 item.OperationSequence, item.ResourceId, item.WorkCenterId,

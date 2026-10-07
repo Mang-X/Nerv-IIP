@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleInsertionPreviewJobAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -44,17 +45,57 @@ public sealed class StartScheduleInsertionPreviewJobCommandHandler(ApplicationDb
 }
 public sealed record ExecuteScheduleInsertionPreviewJobCommand(ScheduleInsertionPreviewJobId JobId) : ICommand;
 public sealed class ExecuteScheduleInsertionPreviewJobCommandHandler(
-    ApplicationDbContext db, SchedulingWorkbenchPlanAssembler assembler, ISender sender, TimeProvider clock)
+    ApplicationDbContext db, SchedulingWorkbenchPlanAssembler assembler, ISender sender, TimeProvider clock,
+    SchedulingFreezeSettings freezeSettings)
     : ICommandHandler<ExecuteScheduleInsertionPreviewJobCommand>
 {
     public async Task Handle(ExecuteScheduleInsertionPreviewJobCommand request, CancellationToken ct)
     {
         var job = await db.ScheduleInsertionPreviewJobs.SingleAsync(x => x.Id == request.JobId, ct);
         var input = JsonSerializer.Deserialize<SchedulingInsertionPreviewInputContract>(job.InputJson, SchedulingJson.Options)!;
+        var policy = freezeSettings.At(clock.GetUtcNow());
+        var baseline = await sender.Send(new GetSchedulePlanDetailQuery(input.PlanId, input.OrganizationId, input.EnvironmentId), ct);
+        var snapshot = await db.ScheduleProblems.AsNoTracking().SingleAsync(x =>
+            x.ProblemId == baseline.ProblemId && x.OrganizationId == input.OrganizationId && x.EnvironmentId == input.EnvironmentId, ct);
+        var baselineProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options)!;
+        var priorFreeze = SchedulingFrozenOccupancy.ReadFreezeSnapshot(snapshot.ProblemJson);
+        var baselineKeys = baseline.Assignments.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        var baselineAssignments = baseline.Assignments.Concat((priorFreeze?.Assignments.Select(x => x.Assignment) ?? [])
+            .Where(x => !baselineKeys.Contains((x.OrderId, x.OperationId)))).ToArray();
         var assembled = await assembler.AssembleAsync(input.OrganizationId, input.EnvironmentId,
             input.HorizonStartUtc, input.HorizonEndUtc,
             input.WorkOrderIds.Select(x => new SchedulingWorkbenchOrderSelection(x, 0, false)).ToArray(), ct);
-        var plan = await sender.Send(new PreviewSchedulePlanCommand(assembled.Problem, assembled.FixedReservations), ct);
+        var baselineOrderIds = baselineAssignments.Select(x => x.OrderId).Distinct(StringComparer.Ordinal).ToArray();
+        var execution = await db.OperationExecutionProjections.AsNoTracking().Where(x =>
+            x.OrganizationId == input.OrganizationId && x.EnvironmentId == input.EnvironmentId &&
+            baselineOrderIds.Contains(x.WorkOrderId)).ToArrayAsync(ct);
+        var manualLocks = baselineProblem.LockedAssignments
+            .Where(x => x.LockReasonCode != SchedulingFrozenOccupancy.BaselineLockReasonCode)
+            .Select(x => (x.OrderId, x.OperationId))
+            .Concat(priorFreeze?.Assignments.Where(x =>
+                ((SchedulingFreezeReason)x.Reasons).HasFlag(SchedulingFreezeReason.ManualLock))
+                .Select(x => (x.Assignment.OrderId, x.Assignment.OperationId)) ?? [])
+            .Distinct().ToArray();
+        var frozen = SchedulingFreezeCalculator.Calculate(baselineAssignments,
+            execution.Select(x => new SchedulingFreezeExecutionFact(x.WorkOrderId, x.OperationId,
+                x.ActualStartedAtUtc, x.ActualCompletedAtUtc)).ToArray(), manualLocks, policy);
+        var fixedKeys = assembled.FixedReservations.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        var operationKeys = assembled.Problem.Orders.SelectMany(order =>
+            order.Operations.Select(operation => (order.OrderId, operation.OperationId))).ToHashSet();
+        var frozenLocks = frozen.Where(x => operationKeys.Contains((x.Assignment.OrderId, x.Assignment.OperationId)) &&
+            !fixedKeys.Contains((x.Assignment.OrderId, x.Assignment.OperationId)))
+            .Select(x => new SchedulingLockedAssignmentContract(x.Assignment.AssignmentId,
+                x.Assignment.OrderId, x.Assignment.OperationId, x.Assignment.OperationSequence,
+                x.Assignment.ResourceId, x.Assignment.WorkCenterId, x.Assignment.StartUtc, x.Assignment.EndUtc,
+                SchedulingFrozenOccupancy.BaselineLockReasonCode, x.Assignment.Segments)).ToArray();
+        var frozenKeys = frozenLocks.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        var problem = assembled.Problem with
+        {
+            LockedAssignments = frozenLocks.Concat(assembled.Problem.LockedAssignments.Where(x =>
+                !frozenKeys.Contains((x.OrderId, x.OperationId)) && !fixedKeys.Contains((x.OrderId, x.OperationId)))).ToArray()
+        };
+        var plan = await sender.Send(new PreviewSchedulePlanCommand(problem, assembled.FixedReservations,
+            SchedulingFreezeSnapshot.From(policy, frozen)), ct);
         job.Complete(JsonSerializer.Serialize(plan, SchedulingJson.Options), clock.GetUtcNow());
     }
 }
