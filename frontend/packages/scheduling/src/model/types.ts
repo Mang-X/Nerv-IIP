@@ -1,5 +1,6 @@
 import type {
   ScheduleAssignmentContract,
+  SchedulePlanFreezeContextContract,
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
 // 引擎无关的排程数据模型。所有字段为引擎可消费的归一化形态,不含任何引擎私有结构。
@@ -306,6 +307,8 @@ export interface ScheduleModel {
    * 无值时引擎退回「周末 + 夜间」的通用作息假设。
    */
   calendars?: ScheduleCalendar[]
+  /** 服务端冻结上下文，仅用于呈现稳定窗口，不在浏览器推导冻结集。 */
+  freezeContext?: SchedulePlanFreezeContextContract | null
   validationContext?: ScheduleValidationContext
   horizon: { startUtc: string; endUtc: string }
   meta: { planId: string; status: PlanStatus; algorithmVersion: string }

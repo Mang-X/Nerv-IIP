@@ -382,3 +382,51 @@ it('销售单侧栏工序选择同步甘特选中和定位，不离开页面', a
   expect(wrapper.get('button[data-operation="a2"]').attributes('aria-pressed')).toBe('true')
   expect(wrapper.get('[data-testid="scheduling-task-detail"]').text()).toContain('OP-20')
 })
+
+// #4124 / ADR 0032 §3: server windows are presentation facts, not downtime or a browser freeze set.
+describe('SchedulingPlanGantt 服务端稳定窗口', () => {
+  it('各中心使用覆盖或默认窗口，精确裁剪到时间轴；零窗口不画，工序仍可选', async () => {
+    const wrapper = mountGantt({
+      plan: plan({
+        assignments: GROUP_ASSIGNMENTS,
+        freezeContext: {
+          asOfUtc: '2026-08-01T01:00:00.000Z',
+          defaultWindowEndUtc: '2026-08-01T04:00:00.000Z',
+          workCenterWindows: [
+            { workCenterId: 'WC-ROD-01', endUtc: '2026-08-01T02:30:00.000Z' },
+            { workCenterId: 'WC-UNASSIGNED', endUtc: '2026-08-01T01:00:00.000Z' },
+          ],
+          assignments: [],
+        },
+      }),
+    })
+    await settle()
+    const rod = wrapper.get('[data-resource-lane="WC-ROD-01"] [data-freeze-window]')
+    const cnc = wrapper.get('[data-resource-lane="WC-CNC-02"] [data-freeze-window]')
+    expect(rod.attributes('data-start-utc')).toBe('2026-08-01T01:00:00.000Z')
+    expect(rod.attributes('data-end-utc')).toBe('2026-08-01T02:30:00.000Z')
+    expect(cnc.attributes('data-end-utc')).toBe('2026-08-01T04:00:00.000Z')
+    expect(parseFloat((cnc.element as HTMLElement).style.width)).toBeCloseTo(
+      parseFloat((rod.element as HTMLElement).style.width) * 2,
+    )
+    expect(wrapper.find('[data-resource-lane="WC-UNASSIGNED"] [data-freeze-window]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.text()).toContain('仍可安排新工序')
+    expect(taskCount(wrapper)).toBe(3)
+    await wrapper.get('[data-task-id="a1"]').trigger('click')
+    expect(wrapper.text()).toContain('工序详情')
+    await switchGroup(wrapper, 'workshop')
+    expect(wrapper.find('[data-freeze-window]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('切换到工作中心查看各中心窗口')
+    wrapper.unmount()
+  })
+
+  it('旧方案没有冻结信息时不宣称存在稳定窗口', async () => {
+    const wrapper = mountGantt({ plan: plan({ freezeContext: null }) })
+    await settle()
+    expect(wrapper.find('[data-freeze-window]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('仍可安排新工序')
+    wrapper.unmount()
+  })
+})
