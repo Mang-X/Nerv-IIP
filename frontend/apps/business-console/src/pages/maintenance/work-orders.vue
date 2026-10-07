@@ -89,6 +89,8 @@ const {
   refreshWorkOrders,
   createWorkOrder,
   createWorkOrderPending,
+  updateExpectedRestore,
+  expectedRestorePending,
   completeWorkOrder,
   completeWorkOrderPending,
   filters,
@@ -200,6 +202,7 @@ const createForm = reactive({
   estimatedLaborMinutes: '',
   assetUnavailableReasonCode: '',
   unavailabilityMode: 'none',
+  expectedRestoreAtLocal: '',
 })
 const createError = shallowRef('')
 const { alarmOptions, alarmsPending } = useEquipmentAlarmCatalog(() => createForm.deviceAssetId)
@@ -401,6 +404,11 @@ const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
     header: '技师',
     accessor: (r) => technicianLabel(r.assignedTechnicianUserId),
   },
+  {
+    key: 'expectedRestoreAtUtc',
+    header: '预计恢复',
+    accessor: (r) => formatDateTime(r.expectedRestoreAtUtc),
+  },
   { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
   ...(canManageWorkOrders.value
     ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
@@ -455,6 +463,7 @@ function openCreate(prefill: Partial<typeof createForm> = {}) {
   createForm.estimatedLaborMinutes = ''
   createForm.assetUnavailableReasonCode = ''
   createForm.unavailabilityMode = 'none'
+  createForm.expectedRestoreAtLocal = ''
   reasonKeyword.value = ''
   createError.value = ''
   createOpen.value = true
@@ -486,6 +495,10 @@ async function submitCreate() {
     assignedTechnicianUserId: createForm.assignedTechnicianUserId || undefined,
     assetUnavailableReasonCode:
       createForm.unavailabilityMode === 'reason' ? createForm.assetUnavailableReasonCode : null,
+    expectedRestoreAtUtc:
+      createForm.unavailabilityMode === 'reason' && createForm.expectedRestoreAtLocal
+        ? new Date(createForm.expectedRestoreAtLocal).toISOString()
+        : null,
     ...(estimatedLaborMinutes !== undefined ? { estimatedLaborMinutes } : {}),
   }
   try {
@@ -494,6 +507,46 @@ async function submitCreate() {
     notifySuccess('维护工单已创建')
   } catch (error) {
     notifyOperationFailure('维护工单创建失败', error, '维护工单创建失败，请稍后重试。')
+  }
+}
+
+const expectedRestoreOpen = shallowRef(false)
+const expectedRestoreTarget = shallowRef<WorkOrderRow>()
+const expectedRestoreAtLocal = shallowRef('')
+function localDateTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 19)
+}
+function canUpdateExpectedRestore(row: WorkOrderRow) {
+  return (
+    canManageWorkOrders.value &&
+    Boolean(row.workOrderId) &&
+    ['open', 'accepted', 'inprogress', 'paused', 'waitingforparts'].includes(
+      (row.status ?? '').toLowerCase(),
+    ) &&
+    (!row.assignedTechnicianUserId || row.assignedTechnicianUserId === currentUserId.value)
+  )
+}
+function openExpectedRestore(row: WorkOrderRow) {
+  expectedRestoreTarget.value = row
+  expectedRestoreAtLocal.value = localDateTime(row.expectedRestoreAtUtc)
+  expectedRestoreOpen.value = true
+}
+async function submitExpectedRestore() {
+  const target = expectedRestoreTarget.value!
+  try {
+    const detail = await updateExpectedRestore(
+      target,
+      expectedRestoreAtLocal.value ? new Date(expectedRestoreAtLocal.value).toISOString() : null,
+    )
+    expectedRestoreTarget.value = detail
+    expectedRestoreAtLocal.value = localDateTime(detail.expectedRestoreAtUtc)
+    expectedRestoreOpen.value = false
+    notifySuccess('预计恢复时间已保存')
+  } catch (error) {
+    notifyOperationFailure('预计恢复时间保存失败', error, '预计恢复时间保存失败，请刷新后重试。')
   }
 }
 
@@ -776,6 +829,12 @@ watch(
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`维护工单操作 ${workOrderNo(row)}`">
+          <NvDropdownMenuItem
+            :disabled="!canUpdateExpectedRestore(row)"
+            @click="openExpectedRestore(row)"
+          >
+            更新预计恢复时间
+          </NvDropdownMenuItem>
           <NvDropdownMenuItem :disabled="!canComplete(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成工单
@@ -924,6 +983,16 @@ watch(
                 </NvButton>
               </div>
             </NvField>
+            <NvField v-if="createForm.unavailabilityMode === 'reason'" class="sm:col-span-2">
+              <NvFieldLabel for="mwo-create-expected-restore">预计恢复时间</NvFieldLabel>
+              <NvInput
+                id="mwo-create-expected-restore"
+                v-model="createForm.expectedRestoreAtLocal"
+                type="datetime-local"
+                step="1"
+              />
+              <NvFieldDescription>可选，按本机时区填写；预测不代表设备已恢复。</NvFieldDescription>
+            </NvField>
           </NvFieldGroup>
 
           <NvFieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
@@ -933,6 +1002,52 @@ watch(
             <NvButton type="submit" :disabled="createWorkOrderPending">
               <Spinner v-if="createWorkOrderPending" aria-hidden="true" />
               创建维护工单
+            </NvButton>
+          </NvSheetFooter>
+        </form>
+      </NvSheetContent>
+    </NvSheet>
+
+    <NvSheet v-model:open="expectedRestoreOpen">
+      <NvSheetContent class="flex w-full flex-col sm:max-w-xl">
+        <NvSheetHeader>
+          <NvSheetTitle>更新预计恢复时间</NvSheetTitle>
+          <NvSheetDescription
+            >填写维修预测，留空可清除；不改变实际恢复或工单状态。</NvSheetDescription
+          >
+        </NvSheetHeader>
+        <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitExpectedRestore">
+          <CarriedContextSummary
+            v-if="expectedRestoreTarget"
+            label="维修工单"
+            :items="[
+              { label: '工单号', value: workOrderNo(expectedRestoreTarget) },
+              { label: '设备', value: deviceLabel(expectedRestoreTarget.deviceAssetId) },
+            ]"
+          />
+          <NvField>
+            <NvFieldLabel for="mwo-expected-restore">预计恢复时间</NvFieldLabel>
+            <NvInput
+              id="mwo-expected-restore"
+              v-model="expectedRestoreAtLocal"
+              type="datetime-local"
+              step="1"
+              :disabled="expectedRestorePending"
+            />
+            <NvFieldDescription
+              >按本机时区填写。仅已登记设备不可用的工单可更新。</NvFieldDescription
+            >
+          </NvField>
+          <NvSheetFooter class="px-0">
+            <NvButton
+              type="button"
+              variant="outline"
+              :disabled="expectedRestorePending"
+              @click="expectedRestoreOpen = false"
+              >取消</NvButton
+            >
+            <NvButton type="submit" :disabled="expectedRestorePending">
+              <Spinner v-if="expectedRestorePending" aria-hidden="true" />保存预计恢复时间
             </NvButton>
           </NvSheetFooter>
         </form>

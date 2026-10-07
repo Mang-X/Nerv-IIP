@@ -23,6 +23,7 @@ import {
 
 const coladaState = vi.hoisted(() => ({
   confirmOperation: vi.fn(),
+  predictionValue: null as string | null,
   maintenanceWorkOrderStatus: 'Open',
   mutationCallsById: new Map<string, unknown[]>(),
   mutationFailuresById: new Map<string, Error[]>(),
@@ -33,6 +34,16 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  transitionBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
+    key: [{ _id: 'transitionBusinessConsoleMaintenanceWorkOrder' }],
+    mutation: vi.fn(),
+  })),
+  getBusinessConsolePrincipalWorkContextQueryOptions: vi.fn(() => ({
+    query: vi.fn(async () => ({
+      success: true,
+      data: { authorizedScopes: [{ kind: 'self', id: 'technician-1' }] },
+    })),
+  })),
   confirmBusinessConsoleOperation: (...args: unknown[]) => coladaState.confirmOperation(...args),
   completeBusinessConsoleMaintenanceWorkOrderMutationOptions: vi.fn(() => ({
     key: [{ _id: 'completeBusinessConsoleMaintenanceWorkOrder' }],
@@ -57,7 +68,12 @@ vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleMaintenanceWorkOrderQueryOptions: vi.fn(() => ({
     query: vi.fn(async () => ({
       success: true,
-      data: { status: coladaState.maintenanceWorkOrderStatus },
+      data: {
+        status: coladaState.maintenanceWorkOrderStatus,
+        workOrderId: 'wo-1',
+        version: 3,
+        expectedRestoreAtUtc: coladaState.predictionValue,
+      },
     })),
   })),
   listBusinessConsoleMaintenanceInspectionsQueryOptions: vi.fn(() => ({
@@ -586,5 +602,44 @@ describe('business maintenance composables', () => {
         environmentId: 'env-maint-b',
       }),
     })
+  })
+})
+
+describe('预计恢复写后权威读回', () => {
+  it('携带当前授权范围和版本、使用预测动作回执，返回详情而非提交值', async () => {
+    setActivePinia(createPinia())
+    coladaState.mutationCallsById.clear()
+    coladaState.confirmOperation.mockImplementation(async (envelope) => envelope)
+    useBusinessContextStore().patchContext({ organizationId: 'org-a', environmentId: 'env-a' })
+    coladaState.predictionValue = '2026-10-10T07:00:00Z'
+    const hook = useMaintenanceWorkOrders()
+    const saved = await hook.updateExpectedRestore(
+      { workOrderId: 'wo-1', version: 2 },
+      '2026-10-10T06:00:00Z',
+    )
+    expect(
+      coladaState.mutationCallsById.get('transitionBusinessConsoleMaintenanceWorkOrder')?.[0],
+    ).toMatchObject({
+      path: { workOrderId: 'wo-1' },
+      body: {
+        action: 'updateExpectedRestore',
+        expectedVersion: 2,
+        scopeKind: 'self',
+        scopeId: 'technician-1',
+        expectedRestoreAtUtc: '2026-10-10T06:00:00Z',
+        organizationId: 'org-a',
+        environmentId: 'env-a',
+      },
+    })
+    expect(coladaState.confirmOperation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        expectedOperationType: 'maintenance.work-order.updateexpectedrestore',
+        expectedResourceId: 'wo-1',
+      }),
+    )
+    expect(saved.expectedRestoreAtUtc).toBe('2026-10-10T07:00:00Z')
+    expect(saved.version).toBe(3)
+    expect(hook.expectedRestorePending.value).toBe(false)
   })
 })
