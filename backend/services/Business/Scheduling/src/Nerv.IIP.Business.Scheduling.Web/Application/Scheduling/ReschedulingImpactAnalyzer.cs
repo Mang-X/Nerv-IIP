@@ -112,14 +112,15 @@ internal static class ReschedulingImpactAnalyzer
         var resources = normalizedProblem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
         var baselineByResource = assignments.Select((assignment, index) => (assignment, index))
             .Where(x => !insertedIndices.Contains(x.index)).GroupBy(x => x.assignment.ResourceId, StringComparer.Ordinal)
-            .ToDictionary(x => x.Key, x => x.SelectMany(item => Segments(item.assignment)
-                .Select(segment => (Index: item.index, Segment: segment))).ToArray(), StringComparer.Ordinal);
+            .ToDictionary(x => x.Key, x => new BaselineResourceIndex(x.SelectMany(item => Segments(item.assignment)
+                .Select(segment => (Index: item.index, Segment: segment)))), StringComparer.Ordinal);
         // 所有来源共享潜在需求，容量按工序身份计数；root 标签保留各自的来源和路径。
         var reached = rootDemands.Select((demand, root) => (Key: (Root: root, demand.Index), Demand: demand))
             .ToDictionary(x => x.Key, x => x.Demand);
         var demandsByResource = assignments.Select(x => x.ResourceId).Distinct(StringComparer.Ordinal)
             .ToDictionary(x => x, _ => new Dictionary<(int Root, int Index), ImpactDemand>(), StringComparer.Ordinal);
         foreach (var item in reached) demandsByResource[assignments[item.Key.Index].ResourceId].Add(item.Key, item.Value);
+        var predecessorDemands = new Dictionary<(int Root, int Index), ImpactDemand>();
         var pending = new Queue<(int Root, int Index)>();
         var queued = new HashSet<(int Root, int Index)>();
         foreach (var key in reached.Keys) Enqueue(key);
@@ -127,14 +128,19 @@ internal static class ReschedulingImpactAnalyzer
         {
             queued.Remove(key);
             var current = reached[key];
-            foreach (var next in predecessors[current.Index])
+            // 邻居需求变化只要求重查容量；前序推导仅依赖本工序的需求及固定输入。
+            if (!predecessorDemands.TryGetValue(key, out var previous) || !ReferenceEquals(previous, current))
             {
-                var assignment = assignments[next];
-                var demand = current.Unquantified
-                    ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
-                    : ShiftRemaining(assignment, assignment.StartUtc,
-                        Max(assignment.StartUtc, Completion(current, assignments[current.Index])));
-                Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
+                predecessorDemands[key] = current;
+                foreach (var next in predecessors[current.Index])
+                {
+                    var assignment = assignments[next];
+                    var demand = current.Unquantified
+                        ? UnknownDemand(assignment, normalizedProblem.HorizonEndUtc)
+                        : ShiftRemaining(assignment, assignment.StartUtc,
+                            Max(assignment.StartUtc, Completion(current, assignments[current.Index])));
+                    Follow(next, ReschedulingImpactReasonCode.PredecessorDependency, demand, null, null);
+                }
             }
             foreach (var competition in ResourceCompetitions(current, demandsByResource[assignments[current.Index].ResourceId].Values, assignments, resources, baselineByResource))
             {
@@ -304,20 +310,60 @@ internal static class ReschedulingImpactAnalyzer
         return edges.Select(x => (IReadOnlyList<int>)x.Order().ToArray()).ToArray();
     }
 
+    // 固定基线片段只索引一次；前缀最晚结束时间使早开始的长片段不会被后续短片段遮蔽。
+    private sealed class BaselineResourceIndex
+    {
+        public (int Index, ScheduleAssignmentSegmentContract Segment)[] Segments { get; }
+        private readonly DateTimeOffset[] maximumEnds;
+
+        public BaselineResourceIndex(IEnumerable<(int Index, ScheduleAssignmentSegmentContract Segment)> segments)
+        {
+            Segments = segments.OrderBy(x => x.Segment.StartUtc).ThenBy(x => x.Segment.EndUtc).ThenBy(x => x.Index).ToArray();
+            maximumEnds = new DateTimeOffset[Segments.Length];
+            var end = DateTimeOffset.MinValue;
+            for (var index = 0; index < Segments.Length; index++)
+            {
+                end = Max(end, Segments[index].Segment.EndUtc);
+                maximumEnds[index] = end;
+            }
+        }
+
+        public int FirstPotentialIndex(DateTimeOffset start)
+        {
+            var low = 0;
+            var high = maximumEnds.Length;
+            while (low < high)
+            {
+                var middle = low + (high - low) / 2;
+                if (maximumEnds[middle] <= start) low = middle + 1;
+                else high = middle;
+            }
+            return low;
+        }
+    }
+
     private static IReadOnlyList<(int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)> ResourceCompetitions(
         ImpactDemand current, IEnumerable<ImpactDemand> demands, ScheduleAssignmentContract[] assignments,
         IReadOnlyDictionary<string, SchedulingResourceContract> resources,
-        IReadOnlyDictionary<string, (int Index, ScheduleAssignmentSegmentContract Segment)[]> baselineByResource)
+        IReadOnlyDictionary<string, BaselineResourceIndex> baselineByResource)
     {
         var resourceId = assignments[current.Index].ResourceId;
         var capacity = Math.Max(1, resources[resourceId].CapacityUnits);
-        var baseline = baselineByResource.GetValueOrDefault(resourceId) ?? [];
+        var baseline = baselineByResource.GetValueOrDefault(resourceId);
         var result = new Dictionary<int, (int Index, ScheduleAssignmentSegmentContract Window, DateTimeOffset BlockingEndUtc, int Capacity)>();
         foreach (var window in current.Segments)
         {
             // 每轮仅收集与当前窗口相交的端点，避免给每个片段创建迭代器再分组。
             var events = new List<(DateTimeOffset At, int Index, bool Actual, int Delta)>();
-            foreach (var item in baseline) AddEvents(item.Index, item.Segment, true);
+            if (baseline is not null)
+            {
+                for (var index = baseline.FirstPotentialIndex(window.StartUtc);
+                     index < baseline.Segments.Length && baseline.Segments[index].Segment.StartUtc < window.EndUtc; index++)
+                {
+                    var item = baseline.Segments[index];
+                    AddEvents(item.Index, item.Segment, true);
+                }
+            }
             foreach (var demand in demands)
             {
                 foreach (var segment in demand.Segments) AddEvents(demand.Index, segment, false);

@@ -61,6 +61,28 @@ public class SchedulingInsertionCalculatorTests(ITestOutputHelper output)
         Assert.Equal(240, result.Candidate.Metrics.AssignedMinutes);
     }
 
+    [Fact]
+    public void Rush_capacity_window_reaches_long_occupancy_past_an_ended_short_assignment()
+    {
+        var longOrder = Order("long", Operation("op", "R1", 120));
+        var shortOrder = Order("short", Operation("op", "R1", 30, earliest: 30));
+        var laterOrder = Order("later", Operation("op", "R1", 90, earliest: 60));
+        var rush = Order("rush", Operation("op", "R1", 15, earliest: 90, rush: true));
+        var problem = Problem(longOrder, shortOrder, laterOrder, rush) with
+        {
+            Resources = Problem().Resources.Select(x => x.ResourceId == "R1" ? x with { CapacityUnits = 2 } : x).ToArray(),
+        };
+        var baseline = Baseline(problem, longOrder, shortOrder, laterOrder);
+        var result = Calculate(problem, baseline);
+        Assert.Equal(At.AddMinutes(105), result.PromiseUtc);
+        Assert.Equal(["later", "long", "rush"], result.Impact.AffectedOperations.Select(x => x.Assignment.OrderId));
+        var longHit = result.Impact.AffectedOperations.Single(x => x.Assignment.OrderId == "long");
+        var step = Assert.Single(Assert.Single(longHit.Paths).Steps);
+        Assert.Equal(new(At.AddMinutes(90), At.AddMinutes(105)), step.CompetitionWindow);
+        Assert.Equal(2, step.CapacityUnits);
+        Assert.Equal(baseline.Assignments.Single(x => x.OrderId == "short"), result.Candidate.Assignments.Single(x => x.OrderId == "short"));
+    }
+
     [Theory]
     [InlineData(1, true, false)]
     [InlineData(2, false, false)]
