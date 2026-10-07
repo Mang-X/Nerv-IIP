@@ -22,6 +22,10 @@
 
 当前规则分别从[测试证据治理](../governance/testing/evidence.md)和[脚本自动化治理](../governance/script-automation.md)进入；历史文字、旧命令和历史通过结果不能替代这些当前入口及其生产者。
 
+## Spike 调查
+
+- [GS1 解析库兼容与维护收益（2026-10-07）](spikes/gs1-parser-library-evaluation-2026-10-07.md)：固定官方候选与前后端合同矩阵，分别给出 go/no-go；只证明报告基线。
+
 ## 使用规则
 
 1. 报告中的提交、运行 ID、版本、数量和通过结果只对报告声明的基线与范围成立。
