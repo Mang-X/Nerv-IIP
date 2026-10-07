@@ -127,6 +127,14 @@ public sealed class MaintenanceRestorePredictionTests
         Assert.Equal("configuration-default", result.Source);
         Assert.Equal(75m, result.SelectedDowntimeMinutes);
         Assert.Equal(from.AddMinutes(75), result.PredictedRestoreAtUtc);
+        Assert.Equal(result, await handler.Handle(new("org", "env", order.Id), default));
+        var changedConfiguration = new GetMaintenanceRestorePredictionQueryHandler(db,
+            Options.Create(new MaintenanceRestorePredictionOptions { DefaultDowntimeMinutes = 90 }));
+        var changed = await changedConfiguration.Handle(new("org", "env", order.Id), default);
+        Assert.Equal("configuration-default", changed.Source);
+        Assert.Equal(90m, changed.SelectedDowntimeMinutes);
+        Assert.Equal(from.AddMinutes(90), changed.PredictedRestoreAtUtc);
+        Assert.NotEqual(result.SourceVersion, changed.SourceVersion);
         Assert.Null(result.ExplicitExpectedRestoreAtUtc);
         var (v1, v2) = AssetUnavailableV2IntegrationEventPublisher.Build(
             Assert.Single(order.GetDomainEvents().OfType<AssetUnavailableByReasonCodeDomainEvent>()));
