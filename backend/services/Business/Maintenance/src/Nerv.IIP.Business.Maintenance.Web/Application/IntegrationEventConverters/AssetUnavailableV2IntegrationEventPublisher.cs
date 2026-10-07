@@ -82,7 +82,7 @@ public sealed class AssetUnavailableV2IntegrationEventPublisher(
             workOrder.EnvironmentId,
             workOrder.OpenedBy,
             idempotencyKey,
-            new AssetUnavailablePayload(workOrder.DeviceAssetId, domainEvent.ReasonCode, fromUtc));
+            new AssetUnavailablePayload(workOrder.DeviceAssetId, domainEvent.ReasonCode, fromUtc, domainEvent.ExpectedRestoreAtUtc));
         var v2 = new AssetUnavailableV2IntegrationEvent(
             EventIds.New(),
             MaintenanceIntegrationEventTypes.AssetUnavailable,
@@ -95,7 +95,7 @@ public sealed class AssetUnavailableV2IntegrationEventPublisher(
             workOrder.EnvironmentId,
             workOrder.OpenedBy,
             idempotencyKey,
-            new AssetUnavailableV2Payload(workOrder.DeviceAssetId, domainEvent.ReasonCode, fromUtc));
+            new AssetUnavailableV2Payload(workOrder.DeviceAssetId, domainEvent.ReasonCode, fromUtc, domainEvent.ExpectedRestoreAtUtc));
         return (v1, v2);
     }
 }

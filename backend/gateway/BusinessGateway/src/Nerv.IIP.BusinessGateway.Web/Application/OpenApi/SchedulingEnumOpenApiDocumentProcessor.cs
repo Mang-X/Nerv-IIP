@@ -11,6 +11,7 @@ public sealed class SchedulingEnumOpenApiDocumentProcessor : IDocumentProcessor
 {
     private static readonly IReadOnlyDictionary<string, string[]> SchedulingEnums = new Dictionary<string, string[]>(StringComparer.Ordinal)
     {
+        ["NervIIPContractsSchedulingSchedulingFirstPlanJobStatusContract"] = EnumValues<SchedulingFirstPlanJobStatusContract>(),
         ["NervIIPContractsSchedulingSchedulePlanStatusContract"] = EnumValues<SchedulePlanStatusContract>(),
         ["NervIIPContractsSchedulingScheduleConflictReasonCodeContract"] = EnumValues<ScheduleConflictReasonCodeContract>(),
         ["NervIIPContractsSchedulingScheduleConflictSeverityContract"] = EnumValues<ScheduleConflictSeverityContract>(),

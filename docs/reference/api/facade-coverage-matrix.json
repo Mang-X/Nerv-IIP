@@ -3785,6 +3785,14 @@
     {
       "service": "Mes",
       "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/assembly-children/batch",
+      "operationId": "getBusinessMesBatchAssemblyChildWorkOrders",
+      "classification": "internal",
+      "rationale": "#4132 为 Scheduling 一次读取最多 500 个父工单的装配子件提供服务间查询；不面向 BusinessGateway 页面公开。"
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/split",
       "operationId": "splitBusinessMesWorkOrder",
       "classification": "exposed",
@@ -6269,6 +6277,51 @@
       "operationId": "getSchedulingMaterialDeliverySources",
       "classification": "internal",
       "rationale": "DemandPlanning 物料交付读面按显式 planId 与建议/工单身份消费；不经 Gateway 暴露。"
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/working-drafts",
+      "operationId": "listSchedulingWorkingDrafts",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleSchedulingWorkingDrafts"]
+    },
+    {
+      "service": "Scheduling",
+      "method": "PUT",
+      "route": "/api/business/v1/scheduling/plans/{planId}/working-draft",
+      "operationId": "saveSchedulingWorkingDraft",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["saveBusinessConsoleSchedulingWorkingDraft"]
+    },
+    {
+      "service": "Scheduling",
+      "method": "DELETE",
+      "route": "/api/business/v1/scheduling/plans/{planId}/working-draft",
+      "operationId": "clearSchedulingWorkingDraft",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["clearBusinessConsoleSchedulingWorkingDraft"]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/first-plan-jobs",
+      "operationId": "acceptSchedulingFirstPlanJob",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["acceptBusinessConsoleSchedulingFirstPlanJob"]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/workbench/first-plan-jobs/{jobId}",
+      "operationId": "getSchedulingFirstPlanJob",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleSchedulingFirstPlanJob"]
     }
   ]
 }

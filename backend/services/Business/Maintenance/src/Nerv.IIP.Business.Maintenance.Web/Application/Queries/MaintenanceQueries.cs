@@ -52,7 +52,8 @@ public sealed record MaintenanceWorkOrderListItem(
     string? CostCurrencyCode,
     string? SourceReferenceId = null,
     string? AssignedTeamId = null,
-    int Version = 0);
+    int Version = 0,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceWorkOrdersQuery, PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>
@@ -114,7 +115,8 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 x.CostCurrencyCode,
                 x.SourceReferenceId,
                 x.AssignedTeamId,
-                x.Version))
+                x.Version,
+                x.ExpectedRestoreAtUtc))
             .Skip(page.Skip)
             .Take(page.Take)
             .ToArrayAsync(cancellationToken);
@@ -216,7 +218,8 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
                     x.CostCurrencyCode,
                     x.SourceReferenceId,
                     x.AssignedTeamId,
-                    x.Version),
+                    x.Version,
+                    x.ExpectedRestoreAtUtc),
                 x.CompletionResult != null
                     && x.DowntimeReasonCode != null
                     && x.DowntimeMinutes != null

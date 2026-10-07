@@ -89,7 +89,8 @@ public sealed record CreateMaintenanceWorkOrderCommand(
     string? FailureCauseCode = null,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    string? IdempotencyKey = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    string? IdempotencyKey = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidator<CreateMaintenanceWorkOrderCommand>
 {
@@ -102,6 +103,7 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
         RuleFor(x => x.SourceAlarmId).MaximumLength(150);
         RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AssetUnavailableReason).MaximumLength(500);
+        RuleFor(x => x.AssetUnavailableReason).NotEmpty().When(x => x.ExpectedRestoreAtUtc is not null);
         RuleFor(x => x.DiagnosticDescription).MaximumLength(1000);
         RuleFor(x => x.FailureModeCode).MaximumLength(100);
         RuleFor(x => x.FailureCauseCode).MaximumLength(100);
@@ -121,7 +123,9 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
         CancellationToken cancellationToken)
     {
         var idempotencyKey = MaintenanceWorkOrderCreateIntents.NormalizeIdempotencyKey(request.IdempotencyKey);
-        var fingerprint = CreateFingerprint(request);
+        var fingerprint = request.ExpectedRestoreAtUtc is null
+            ? CreateFingerprint(request)
+            : MaintenanceIdempotencyFingerprints.Hash(new { Legacy = CreateFingerprint(request), request.ExpectedRestoreAtUtc });
         var receipt = idempotencyKey is null
             ? null
             : await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(
@@ -187,7 +191,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
 
         if (!string.IsNullOrWhiteSpace(request.AssetUnavailableReason))
         {
-            workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, request.AssetUnavailableReason);
+            workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, request.AssetUnavailableReason, request.ExpectedRestoreAtUtc);
         }
 
         dbContext.MaintenanceWorkOrders.Add(workOrder);
@@ -320,7 +324,8 @@ public sealed record CreateMaintenanceWorkOrderV2Command(
     string? AssetUnavailableReasonCode,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    string? IdempotencyKey = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    string? IdempotencyKey = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class CreateMaintenanceWorkOrderV2CommandValidator : AbstractValidator<CreateMaintenanceWorkOrderV2Command>
 {
@@ -333,6 +338,7 @@ public sealed class CreateMaintenanceWorkOrderV2CommandValidator : AbstractValid
         RuleFor(x => x.SourceAlarmId).MaximumLength(150);
         RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
         // null = 不标记不可用；非 null 必须是 1–100 字符的目录码。空字符串在这里失败，纯空白与近似值在目录精确命中处失败。
+        RuleFor(x => x.AssetUnavailableReasonCode).NotEmpty().When(x => x.ExpectedRestoreAtUtc is not null);
         RuleFor(x => x.AssetUnavailableReasonCode)
             .Length(1, MaintenanceWorkOrder.MaxAssetUnavailableReasonCodeLength)
             .When(x => x.AssetUnavailableReasonCode is not null)
@@ -358,7 +364,9 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
         CancellationToken cancellationToken)
     {
         var idempotencyKey = MaintenanceWorkOrderCreateIntents.NormalizeIdempotencyKey(request.IdempotencyKey);
-        var fingerprint = CreateFingerprint(request);
+        var fingerprint = request.ExpectedRestoreAtUtc is null
+            ? CreateFingerprint(request)
+            : MaintenanceIdempotencyFingerprints.Hash(new { Legacy = CreateFingerprint(request), request.ExpectedRestoreAtUtc });
         var receipt = idempotencyKey is null
             ? null
             : await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(
@@ -436,7 +444,7 @@ public sealed class CreateMaintenanceWorkOrderV2CommandHandler(ApplicationDbCont
 
         if (reasonCode is not null)
         {
-            workOrder.MarkAssetUnavailableByReasonCode(DateTimeOffset.UtcNow, reasonCode);
+            workOrder.MarkAssetUnavailableByReasonCode(DateTimeOffset.UtcNow, reasonCode, request.ExpectedRestoreAtUtc);
         }
 
         dbContext.MaintenanceWorkOrders.Add(workOrder);

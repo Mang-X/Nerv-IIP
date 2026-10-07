@@ -9,12 +9,17 @@ using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
@@ -38,6 +43,68 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
     private const string V2DevelopmentTopic = "nerv-iip.development.business-maintenance.maintenance.asset-unavailable.v2";
     private const string WorkOrderOpenedTopic = "MaintenanceWorkOrderOpenedIntegrationEvent";
 
+    /// <summary>#4126 / ADR 0032 §2：旧工单不伪造 ETR，预测的持久化不改变实际停机或生命周期。</summary>
+    [MaintenanceAssetUnavailableV2PostgresFact]
+    public async Task Nullable_ETR_migration_preserves_legacy_work_orders_and_round_trips_predictions_on_postgres()
+    {
+        await ResetMaintenanceSchemaAsync();
+        await using var db = CreateDbContext();
+        await db.GetService<IMigrator>().MigrateAsync("20260928075938_AddSparePartIssueLocation");
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO maintenance.maintenance_work_orders
+                (id, organization_id, environment_id, device_asset_id, priority, opened_by, status,
+                 opened_at_utc, alarm_cleared, asset_unavailable, asset_unavailable_from_utc,
+                 asset_unavailable_reason, accepted_at_utc, repair_started_at_utc, completed_at_utc,
+                 verified_at_utc, closed_at_utc, completion_result, downtime_reason_code, downtime_minutes, version)
+            VALUES
+                ('00000000-0000-0000-0000-000000004126', 'org-001', 'env-dev', 'ETR-ACTIVE', 'high', 'operator',
+                 'InProgress', '2026-10-01 08:00:00Z', false, true, '2026-10-01 08:00:00Z', 'breakdown',
+                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', NULL, NULL, NULL, NULL, NULL, NULL, 2),
+                ('00000000-0000-0000-0000-000000004127', 'org-001', 'env-dev', 'ETR-CLOSED', 'high', 'operator',
+                 'Closed', '2026-10-01 08:00:00Z', true, true, '2026-10-01 08:00:00Z', 'breakdown',
+                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', '2026-10-01 09:00:00Z',
+                 '2026-10-01 09:01:00Z', '2026-10-01 09:02:00Z', 'repaired', 'DT-MECH', 60, 5);
+            """);
+        var before = await db.Database.SqlQueryRaw<string>("""
+            SELECT to_jsonb(w)::text AS "Value" FROM maintenance.maintenance_work_orders w ORDER BY id
+            """).ToListAsync();
+
+        await db.Database.MigrateAsync();
+
+        var after = await db.Database.SqlQueryRaw<string>("""
+            SELECT (to_jsonb(w) - 'expected_restore_at_utc')::text AS "Value"
+            FROM maintenance.maintenance_work_orders w ORDER BY id
+            """).ToListAsync();
+        Assert.Equal(before, after);
+        var orders = await db.MaintenanceWorkOrders.OrderBy(x => x.Id).ToListAsync();
+        Assert.All(orders, order => Assert.Null(db.Entry(order).Property("ExpectedRestoreAtUtc").CurrentValue));
+        var active = orders.Single(x => x.Status == MaintenanceWorkOrderStatus.InProgress);
+        var prediction = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
+        // 本票只准备持久化；通过 EF 设置私有属性，不增加业务写入口。
+        db.Entry(active).Property("ExpectedRestoreAtUtc").CurrentValue = prediction;
+        await db.SaveChangesAsync();
+
+        await using (var reload = CreateDbContext())
+        {
+            var persisted = await reload.MaintenanceWorkOrders.SingleAsync(x => x.Id == active.Id);
+            Assert.Equal(prediction, reload.Entry(persisted).Property("ExpectedRestoreAtUtc").CurrentValue);
+            Assert.True(persisted.AssetUnavailable);
+            Assert.Equal(MaintenanceWorkOrderStatus.InProgress, persisted.Status);
+            Assert.Null(persisted.CompletedAtUtc);
+            Assert.Equal(2, persisted.Version);
+            reload.Entry(persisted).Property("ExpectedRestoreAtUtc").CurrentValue = null;
+            await reload.SaveChangesAsync();
+        }
+
+        await using var cleared = CreateDbContext();
+        var clearedOrders = await cleared.MaintenanceWorkOrders.ToListAsync();
+        Assert.All(clearedOrders, order => Assert.Null(cleared.Entry(order).Property("ExpectedRestoreAtUtc").CurrentValue));
+        Assert.Equal(before, await cleared.Database.SqlQueryRaw<string>("""
+            SELECT (to_jsonb(w) - 'expected_restore_at_utc')::text AS "Value"
+            FROM maintenance.maintenance_work_orders w ORDER BY id
+            """).ToListAsync());
+    }
+
     [MaintenanceAssetUnavailableV2PostgresFact]
     public async Task V2_exact_code_commits_work_order_with_v1_companion_and_v2_canonical_outbox_rows_in_one_transaction()
     {
@@ -47,7 +114,8 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         await InitializeCapAsync(factory);
         using var client = CreateClient(factory);
 
-        var response = await client.PostAsJsonAsync("/api/business/v2/maintenance/work-orders", V2Body("v2-pg-exact", ExactCode));
+        var expectedRestore = new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero);
+        var response = await client.PostAsJsonAsync("/api/business/v2/maintenance/work-orders", V2Body("v2-pg-exact", ExactCode, expectedRestore));
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.True(response.StatusCode == HttpStatusCode.OK, body);
@@ -94,8 +162,12 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         Assert.False(TryGet(Get(v2, "payload"), "reason", out _));
         Assert.Equal("DEV-CNC-01", Get(Get(v2, "payload"), "deviceAssetId").GetString());
 
+        Assert.Equal(expectedRestore, workOrder.ExpectedRestoreAtUtc);
+        Assert.Equal(expectedRestore, Get(Get(v1, "payload"), "expectedRestoreAtUtc").GetDateTimeOffset());
+        Assert.Equal(expectedRestore, Get(Get(v2, "payload"), "expectedRestoreAtUtc").GetDateTimeOffset());
+
         // 同一 key 重放：同一收据，工单与 outbox 都不再增加。
-        var replay = await client.PostAsJsonAsync("/api/business/v2/maintenance/work-orders", V2Body("v2-pg-exact", ExactCode));
+        var replay = await client.PostAsJsonAsync("/api/business/v2/maintenance/work-orders", V2Body("v2-pg-exact", ExactCode, expectedRestore));
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         Assert.Equal(workOrderId, JsonDocument.Parse(await replay.Content.ReadAsStringAsync()).RootElement.GetProperty("data").GetProperty("workOrderId").GetString());
         Assert.Equal(1, await db.MaintenanceWorkOrders.CountAsync());
@@ -106,6 +178,66 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         Assert.False(conflict.IsSuccessStatusCode);
         Assert.Equal(1, await db.MaintenanceWorkOrders.CountAsync());
         Assert.Equal(3, (await ReadOutboxAsync(db)).Count);
+
+        // #4127：沿真实 HTTP/UoW/outbox 更新和清除显式 ETR；不发布实际恢复。
+        var updateBody = new {
+            OrganizationId = "org-001", EnvironmentId = "env-dev", WorkOrderId = workOrderId,
+            Action = "UpdateExpectedRestore", ActorPrincipalId = "operator-001", Reason = "prediction update",
+            IdempotencyKey = "etr-update", ExpectedVersion = workOrder.Version,
+            ExpectedRestoreAtUtc = (DateTimeOffset?)expectedRestore.AddHours(1)
+        };
+        var update = await client.PostAsJsonAsync($"/api/business/v1/maintenance/work-orders/{workOrderId}/actions", updateBody);
+        Assert.True(update.IsSuccessStatusCode, await update.Content.ReadAsStringAsync());
+        var updateReplay = await client.PostAsJsonAsync($"/api/business/v1/maintenance/work-orders/{workOrderId}/actions", updateBody);
+        Assert.True(updateReplay.IsSuccessStatusCode, await updateReplay.Content.ReadAsStringAsync());
+        var updateRows = await ReadOutboxAsync(db);
+        Assert.Equal(4, updateRows.Count);
+        var updateEvent = Assert.Single(updateRows, x => x.Topic == V1LegacyTopic
+            && Get(x.Envelope, "idempotencyKey").GetString() != expectedKey).Envelope;
+        Assert.Equal(expectedRestore.AddHours(1), Get(Get(updateEvent, "payload"), "expectedRestoreAtUtc").GetDateTimeOffset());
+        Assert.Equal(workOrder.AssetUnavailableFromUtc, Get(Get(updateEvent, "payload"), "fromUtc").GetDateTimeOffset());
+        var detail = await client.GetAsync($"/api/business/v1/maintenance/work-orders/{workOrderId}?organizationId=org-001&environmentId=env-dev");
+        Assert.True(detail.IsSuccessStatusCode, await detail.Content.ReadAsStringAsync());
+        var detailJson = JsonDocument.Parse(await detail.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal(expectedRestore.AddHours(1), Get(Get(Get(detailJson, "data"), "workOrder"), "expectedRestoreAtUtc").GetDateTimeOffset());
+        var clear = await client.PostAsJsonAsync($"/api/business/v1/maintenance/work-orders/{workOrderId}/actions",
+            updateBody with { IdempotencyKey = "etr-clear", ExpectedVersion = workOrder.Version + 1, ExpectedRestoreAtUtc = null });
+        Assert.True(clear.IsSuccessStatusCode, await clear.Content.ReadAsStringAsync());
+        var owner = new GetMaintenanceRestorePredictionQueryHandler(db,
+            Options.Create(new MaintenanceRestorePredictionOptions { DefaultDowntimeMinutes = 75 }));
+        var predictionQuery = new GetMaintenanceRestorePredictionQuery("org-001", "env-dev", workOrder.Id);
+        var fallback = await owner.Handle(predictionQuery, default);
+        Assert.Equal("configuration-default", fallback.Source);
+        Assert.Equal(75m, fallback.SelectedDowntimeMinutes);
+        var from = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        foreach (var (org, env, device, minutes) in new[] {
+            ("org-001", "env-dev", "DEV-CNC-01", 30), ("org-001", "env-dev", "DEV-CNC-01", 90),
+            ("other", "env-dev", "DEV-CNC-01", 900), ("org-001", "other", "DEV-CNC-01", 900),
+            ("org-001", "env-dev", "other", 900) })
+        {
+            var sample = MaintenanceWorkOrder.OpenManual(org, env, device, "high", "operator");
+            sample.MarkAssetUnavailable(from, "fault");
+            sample.Cancel();
+            db.MaintenanceWorkOrders.Add(sample);
+            db.Entry(sample).Property(x => x.CancelledAtUtc).CurrentValue = from.AddMinutes(minutes);
+        }
+        await db.SaveChangesAsync();
+        var mean = await owner.Handle(predictionQuery, default);
+        Assert.Equal("device-mttr", mean.Source);
+        Assert.Equal(60m, mean.SelectedDowntimeMinutes);
+        Assert.Equal(workOrder.AssetUnavailableFromUtc!.Value.AddMinutes(60), mean.PredictedRestoreAtUtc);
+        Assert.Equal(mean, await owner.Handle(predictionQuery, default));
+        var persisted = await db.MaintenanceWorkOrders.AsNoTracking().SingleAsync(x => x.Id == workOrder.Id);
+        Assert.Null(persisted.ExpectedRestoreAtUtc);
+        Assert.Null(persisted.CompletedAtUtc);
+        Assert.Null(persisted.CancelledAtUtc);
+        var finalRows = await ReadOutboxAsync(db);
+        Assert.Equal(5, finalRows.Count);
+        var clearEvent = Assert.Single(finalRows, x => x.Topic == V1LegacyTopic
+            && Get(x.Envelope, "idempotencyKey").GetString()!.EndsWith(":prediction:2", StringComparison.Ordinal)).Envelope;
+        Assert.True(!TryGet(Get(clearEvent, "payload"), "expectedRestoreAtUtc", out var clearValue)
+            || clearValue.ValueKind == JsonValueKind.Null);
+
     }
 
     [MaintenanceAssetUnavailableV2PostgresFact]
@@ -373,7 +505,7 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         return client;
     }
 
-    private static object V2Body(string idempotencyKey, string? reasonCode) => new
+    private static object V2Body(string idempotencyKey, string? reasonCode, DateTimeOffset? expectedRestoreAtUtc = null) => new
     {
         organizationId = "org-001",
         environmentId = "env-dev",
@@ -382,6 +514,7 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         sourceAlarmId = (string?)null,
         openedBy = "operator-001",
         assetUnavailableReasonCode = reasonCode,
+        expectedRestoreAtUtc,
         idempotencyKey,
     };
 

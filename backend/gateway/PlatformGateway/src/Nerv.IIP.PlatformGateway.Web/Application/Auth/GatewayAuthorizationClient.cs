@@ -53,7 +53,7 @@ public sealed class HttpGatewayAuthorizationClient(
         return await cache.GetOrCreateAsync(
             cacheKey,
             () => CheckRemoteAsync(bearerToken, requirement, cancellationToken),
-            AuthorizationCacheTtl);
+            AuthorizationCacheTtl, NervIipCacheTags.Gateway);
     }
 
     private async Task<GatewayAuthorizationResult> CheckRemoteAsync(

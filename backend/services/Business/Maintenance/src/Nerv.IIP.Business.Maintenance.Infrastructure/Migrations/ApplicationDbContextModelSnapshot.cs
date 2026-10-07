@@ -448,6 +448,11 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("estimated_labor_minutes")
                         .HasComment("Estimated technician labor minutes.");
 
+                    b.Property<DateTimeOffset?>("ExpectedRestoreAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expected_restore_at_utc")
+                        .HasComment("Optional UTC expected asset restoration time; a prediction, not an actual restoration fact.");
+
                     b.Property<decimal?>("ExternalServiceCostAmount")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")

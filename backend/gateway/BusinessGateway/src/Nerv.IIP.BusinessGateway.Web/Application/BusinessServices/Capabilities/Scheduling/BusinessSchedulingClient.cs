@@ -1,11 +1,43 @@
 using System.Globalization;
+using FastEndpoints;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 
+public sealed record BusinessConsoleSaveSchedulingWorkingDraftRequest([property: RouteParam] string PlanId,
+    string OrganizationId, string EnvironmentId, SchedulingWorkingDraftStateContract State);
+public sealed record BusinessConsoleListSchedulingWorkingDraftsRequest([property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId, [property: QueryParam] string? PlanId = null);
+public sealed record BusinessConsoleClearSchedulingWorkingDraftRequest([property: RouteParam] string PlanId,
+    [property: QueryParam] string OrganizationId, [property: QueryParam] string EnvironmentId);
+
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
+        string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken);
+
+    Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
+        string internalBearerToken, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken);
+
+    Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(
+        string internalBearerToken,
+        BusinessConsoleSaveSchedulingWorkingDraftRequest request,
+        string userId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<SchedulingWorkingDraftContract>> ListWorkingDraftsAsync(
+        string internalBearerToken,
+        BusinessConsoleListSchedulingWorkingDraftsRequest request,
+        string userId,
+        CancellationToken cancellationToken);
+
+    Task ClearWorkingDraftAsync(
+        string internalBearerToken,
+        BusinessConsoleClearSchedulingWorkingDraftRequest request,
+        string userId,
+        CancellationToken cancellationToken);
+
     Task<SchedulePlanContract> PreviewWorkbenchPlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,
@@ -97,6 +129,32 @@ public interface IBusinessSchedulingClient
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
 {
+    public Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
+        string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken) =>
+        SendAsync<SchedulingFirstPlanJobContract>(internalBearerToken, HttpMethod.Post,
+            "/api/business/v1/scheduling/workbench/first-plan-jobs", input, cancellationToken, SchedulingJson.Options);
+
+    public Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
+        string internalBearerToken, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken) =>
+        SendAsync<SchedulingFirstPlanJobContract>(internalBearerToken, HttpMethod.Get,
+            $"/api/business/v1/scheduling/workbench/first-plan-jobs/{request.JobId}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null, cancellationToken, SchedulingJson.Options);
+
+    public Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(string token, BusinessConsoleSaveSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) =>
+        SendAsync<SchedulingWorkingDraftContract>(token, HttpMethod.Put,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/working-draft", request, ct, SchedulingJson.Options,
+            message => message.Headers.Add(SchedulingWorkingDraftHeaders.UserId, userId));
+
+    public Task<IReadOnlyList<SchedulingWorkingDraftContract>> ListWorkingDraftsAsync(string token, BusinessConsoleListSchedulingWorkingDraftsRequest request, string userId, CancellationToken ct) =>
+        SendAsync<IReadOnlyList<SchedulingWorkingDraftContract>>(token, HttpMethod.Get,
+            "/api/business/v1/scheduling/working-drafts?" + Query(("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId), ("planId", request.PlanId)),
+            null, ct, SchedulingJson.Options, message => message.Headers.Add(SchedulingWorkingDraftHeaders.UserId, userId));
+
+    public async Task ClearWorkingDraftAsync(string token, BusinessConsoleClearSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) =>
+        _ = await SendAsync<NetCorePal.Extensions.Dto.ResponseData>(token, HttpMethod.Delete,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/working-draft?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null, ct, SchedulingJson.Options, message => message.Headers.Add(SchedulingWorkingDraftHeaders.UserId, userId));
+
     public Task<SchedulePlanContract> CreateWorkbenchPlanAsync(
         string internalBearerToken,
         BusinessConsoleCreateSchedulingWorkbenchPlanRequest request,

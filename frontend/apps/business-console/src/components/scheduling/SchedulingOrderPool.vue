@@ -10,6 +10,10 @@ import { useSkuNames } from '@/composables/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
 import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
 import { computed, ref, reactive, shallowRef } from 'vue'
+import {
+  FIRST_PLAN_ORDER_LIMIT,
+  firstPlanSelectionReason,
+} from '@/composables/schedulingFirstPlanCapacity'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const props = withDefaults(
@@ -149,7 +153,8 @@ async function save(candidate: BusinessConsoleMesWorkOrderItem) {
       <div>
         <h2 class="font-semibold">待排工单池</h2>
         <p class="text-sm text-muted-foreground">
-          从 MES 权威工单中一次选择最多 10 条。批量越大排程耗时越长，超过上限会被拒绝。
+          异步首版最多选择 {{ FIRST_PLAN_ORDER_LIMIT }} 单；已选
+          {{ draftOrders.filter((order) => order.included).length }} 单。
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -190,11 +195,18 @@ async function save(candidate: BusinessConsoleMesWorkOrderItem) {
           size="sm"
           variant="outline"
           type="button"
-          :disabled="readOnly || scopeBlocked || failed || candidateIds.length === 0"
+          :disabled="
+            readOnly ||
+            scopeBlocked ||
+            failed ||
+            candidateIds.length === 0 ||
+            Boolean(firstPlanSelectionReason(draftOrders, candidateIds))
+          "
           :title="
-            search.trim()
+            firstPlanSelectionReason(draftOrders, candidateIds) ||
+            (search.trim()
               ? `把当前筛选出的 ${candidateIds.length} 张工单加入本次排程`
-              : '把池内全部工单加入本次排程'
+              : '把池内全部工单加入本次排程')
           "
           @click="emit('include', candidateIds, true)"
           >{{ search.trim() ? `加入筛选结果（${candidateIds.length}）` : '全部加入' }}</NvButton
@@ -308,7 +320,12 @@ async function save(candidate: BusinessConsoleMesWorkOrderItem) {
             <td class="p-2">
               <NvCheckbox
                 :model-value="byId.get(candidate.workOrderId ?? '')?.included ?? false"
-                :disabled="readOnly"
+                :disabled="
+                  readOnly ||
+                  (!byId.get(candidate.workOrderId ?? '')?.included &&
+                    Boolean(firstPlanSelectionReason(draftOrders, [candidate.workOrderId ?? ''])))
+                "
+                :title="firstPlanSelectionReason(draftOrders, [candidate.workOrderId ?? ''])"
                 :aria-label="`加入工单 ${candidate.workOrderId}`"
                 @update:model-value="
                   emit('include', [candidate.workOrderId ?? ''], Boolean($event))

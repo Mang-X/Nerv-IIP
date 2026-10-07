@@ -103,9 +103,18 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
 
 const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
 const associatedError = shallowRef<unknown>()
+let associatedOrderIds: () => (string | undefined)[]
 const candidatesEmpty = shallowRef(false)
+const generatedPlan = shallowRef()
+const generatePending = shallowRef(false)
+const firstPlanJob = shallowRef()
+const generationError = shallowRef()
+const capacityCandidates = shallowRef<BusinessConsoleMesWorkOrderItem[]>()
 vi.mock('@/composables/useBusinessMes', () => ({
-  useMesWorkOrderFacts: () => ({ workOrders: associatedOrders, error: associatedError }),
+  useMesWorkOrderFacts: (ids: () => (string | undefined)[]) => {
+    associatedOrderIds = ids
+    return { workOrders: associatedOrders, error: associatedError }
+  },
 }))
 
 vi.mock('@/composables/useSchedulingWorkbench', () => ({
@@ -114,7 +123,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     candidates: computed(() =>
       candidatesEmpty.value
         ? []
-        : [
+        : (capacityCandidates.value ?? [
             {
               workOrderId: 'WO-20260701-001',
               skuCode: 'SKU-PISTON-01',
@@ -123,7 +132,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
               status: 'released',
               productionVersionId: 'pv-001',
             },
-          ],
+          ]),
     ),
     priorityScopeReady: shallowRef(true),
     saveOrderPriority: vi.fn(),
@@ -133,21 +142,34 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     candidatesScopeMessage: computed(() => ''),
     candidatesScopeReady: computed(() => true),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
-    generatePending: shallowRef(false),
-    generatePlan: stub.generatePlan,
+    generatePending,
+    firstPlanJob,
+    generatedPlan: generatedPlan,
+    generationError,
+    generatePlan: async (body: unknown) => {
+      generatePending.value = true
+      try {
+        generatedPlan.value = await stub.generatePlan(body)
+      } finally {
+        generatePending.value = false
+      }
+    },
     refreshCandidates: vi.fn(),
     revisionPending: shallowRef(false),
     revisePlan: stub.revisePlan,
     // 草案工作区要有可选工单才能生成首版方案（持久化 override 用例的前置条件）。
-    schedulableCandidates: computed(() => [
-      {
-        workOrderId: 'WO-20260701-001',
-        productionVersionId: 'PV-001',
-        skuCode: 'SKU-PISTON-ROD',
-        status: 'released',
-        priority: 100,
-      },
-    ]),
+    schedulableCandidates: computed(
+      () =>
+        capacityCandidates.value ?? [
+          {
+            workOrderId: 'WO-20260701-001',
+            productionVersionId: 'PV-001',
+            skuCode: 'SKU-PISTON-ROD',
+            status: 'released',
+            priority: 100,
+          },
+        ],
+    ),
   }),
 }))
 
@@ -462,6 +484,11 @@ beforeEach(() => {
   })
   stub.upsertOperationOverride.mockClear()
   stub.upsertOperationOverride.mockResolvedValue({ success: true, data: {} })
+  capacityCandidates.value = undefined
+  generatedPlan.value = undefined
+  generatePending.value = false
+  firstPlanJob.value = undefined
+  generationError.value = undefined
   stub.generatePlan.mockClear()
   stub.generatePlan.mockResolvedValue(planOne)
   stub.toastError.mockClear()
@@ -1657,5 +1684,174 @@ describe('排产三级权限', () => {
     await flushPromises()
     expect(stub.toastError).toHaveBeenCalledWith('发布失败：没有权限执行此操作。')
     wrapper.unmount()
+  })
+})
+
+describe('异步首版页面选择容量（#4137 DomainInvariant）', () => {
+  it('单选与全部加入拒绝第 501 单，500 单提交使用完整选单', async () => {
+    capacityCandidates.value = Array.from({ length: 501 }, (_, i) => ({
+      workOrderId: `WO-${i}`,
+      productionVersionId: 'PV-001',
+      status: 'released',
+      priority: 100,
+    }))
+    const wrapper = mount(SchedulingPage, {
+      // 页面边界测完整选单与提交；真实 500/501 checkbox 由 SchedulingOrderPool.test.ts 覆盖。
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          ...layoutStub,
+          SchedulingOrderPool: {
+            name: 'SchedulingOrderPool',
+            props: ['candidates', 'draftOrders'],
+            emits: ['include'],
+            template: '<div />',
+          },
+          SchedulingDraftBoard: {
+            name: 'SchedulingDraftBoard',
+            props: ['model'],
+            template: '<div />',
+          },
+        },
+      },
+    })
+    try {
+      await flushPromises()
+      const pool = wrapper.findComponent({ name: 'SchedulingOrderPool' })
+      const generate = () => wrapper.findAll('button').find((b) => b.text().includes('生成首版'))!
+      pool.vm.$emit(
+        'include',
+        capacityCandidates.value.map((o) => o.workOrderId!),
+        true,
+      )
+      await flushPromises()
+      expect(stub.toastError).toHaveBeenCalledWith('首版排程最多选择 500 单，请先移出超出的工单')
+      expect(generate().attributes('disabled')).toBeDefined()
+      pool.vm.$emit(
+        'include',
+        capacityCandidates.value.slice(0, 500).map((o) => o.workOrderId!),
+        true,
+      )
+      await flushPromises()
+      pool.vm.$emit('include', ['WO-500'], true)
+      await flushPromises()
+      expect(
+        pool.props('draftOrders').filter((o: { included: boolean }) => o.included),
+      ).toHaveLength(500)
+      await generate().trigger('click')
+      await flushPromises()
+      expect(stub.generatePlan.mock.calls.at(-1)?.[0].orders).toHaveLength(500)
+      expect(
+        wrapper
+          .findComponent({ name: 'SchedulingDraftBoard' })
+          .props('model')
+          .tasks.some((task: { orderId: string }) => task.orderId === 'WO-20260701-001'),
+      ).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+})
+
+describe('500 单首版关联事实复用（#4137 Regression）', () => {
+  it('使用待排池已返回的商业来源，历史池外工单仍按 ID 读取', async () => {
+    capacityCandidates.value = [
+      {
+        workOrderId: 'WO-20260701-001',
+        productionVersionId: 'PV-001',
+        status: 'released',
+        commercialSourceFacts: null,
+      },
+    ]
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    try {
+      await flushPromises()
+      wrapper
+        .findComponent({ name: 'SchedulingOrderPool' })
+        .vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('生成首版'))!
+        .trigger('click')
+      await flushPromises()
+      expect(associatedOrderIds()).not.toContain('WO-20260701-001')
+      expect(associatedOrderIds()).toContain('WO-20260701-002')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+})
+
+describe('异步首版最终状态与草稿一致性（#4137 Regression）', () => {
+  it('完成后方案加载失败仍显示已完成，并提示查看已有方案', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    try {
+      await flushPromises()
+      firstPlanJob.value = { status: 'completed', planId: 'plan-001' }
+      generationError.value = new Error('HTTP 503')
+      await flushPromises()
+      expect(wrapper.text()).toContain('首版排程已完成，方案加载失败')
+      expect(wrapper.text()).not.toContain('重新生成')
+      expect(stub.toastError).toHaveBeenCalledWith(expect.stringContaining('方案加载失败'))
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('等待首版时禁止撤销选单、切换或清空草稿，完成后选单与任务一致', async () => {
+    let complete!: (plan: typeof planOne) => void
+    stub.generatePlan.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        }),
+    )
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    try {
+      await flushPromises()
+      const pool = wrapper.findComponent({ name: 'SchedulingOrderPool' })
+      pool.vm.$emit('include', ['WO-20260701-001'], true)
+      await flushPromises()
+      const button = (text: string) =>
+        wrapper.findAll('button').find((b) => b.text().trim() === text)!
+      expect(button('撤销').attributes('disabled')).toBeUndefined()
+      await button('生成首版').trigger('click')
+      await flushPromises()
+      expect(button('撤销').attributes('disabled')).toBeDefined()
+      expect(button('重做').attributes('disabled')).toBeDefined()
+      expect(button('清空草稿').attributes('disabled')).toBeDefined()
+      expect(pool.props('readOnly')).toBe(true)
+      await button('撤销').trigger('click')
+      expect(
+        pool.props('draftOrders').filter((o: { included: boolean }) => o.included),
+      ).toHaveLength(1)
+      complete({
+        ...planOne,
+        assignments: planOne.assignments.filter((a) => a.orderId === 'WO-20260701-001'),
+      })
+      await flushPromises()
+      expect(pool.props('readOnly')).toBe(false)
+      expect(button('生成首版').attributes('disabled')).toBeUndefined()
+      expect(
+        pool
+          .props('draftOrders')
+          .find((o: { workOrderId: string }) => o.workOrderId === 'WO-20260701-001').included,
+      ).toBe(true)
+      expect(
+        wrapper
+          .findComponent({ name: 'SchedulingDraftBoard' })
+          .props('model')
+          .tasks.some((t: { orderId: string }) => t.orderId === 'WO-20260701-001'),
+      ).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
   })
 })

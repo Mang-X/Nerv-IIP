@@ -20,12 +20,12 @@ public sealed class GatewayCacheInvalidationTests
         var response = await client.PostAsync("/internal/gateway/cache/invalidate", null);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Empty(cache.InvalidatedPrefixes);
+        Assert.Empty(cache.InvalidatedTags);
         Assert.Equal(0, cache.ClearCount);
     }
 
     [Fact]
-    public async Task Invalidate_gateway_cache_allows_internal_service_token_and_invalidates_gateway_prefix()
+    public async Task Invalidate_gateway_cache_allows_internal_service_token_and_invalidates_gateway_tag()
     {
         var cache = new RecordingCache();
         await using var factory = CreateFactory(cache);
@@ -36,7 +36,7 @@ public sealed class GatewayCacheInvalidationTests
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Equal(["gateway:"], cache.InvalidatedPrefixes);
+        Assert.Equal(["gateway"], cache.InvalidatedTags);
         Assert.Equal(0, cache.ClearCount);
     }
 
@@ -50,12 +50,12 @@ public sealed class GatewayCacheInvalidationTests
 
     private sealed class RecordingCache : IAppCache
     {
-        public List<string> InvalidatedPrefixes { get; } = [];
+        public List<string> InvalidatedTags { get; } = [];
         public int ClearCount { get; private set; }
 
-        public Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl) => factory();
+        public Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, string? tag = null) => factory();
 
-        public void InvalidatePrefix(string prefix) => InvalidatedPrefixes.Add(prefix);
+        public void RemoveByTag(string tag) => InvalidatedTags.Add(tag);
 
         public void Clear() => ClearCount++;
     }

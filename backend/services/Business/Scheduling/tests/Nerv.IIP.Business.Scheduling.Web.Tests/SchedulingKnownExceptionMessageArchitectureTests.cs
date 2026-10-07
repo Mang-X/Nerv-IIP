@@ -7,12 +7,15 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
     private static readonly IReadOnlyCollection<string> SourcePaths =
     [
+        $"{SchedulingWebRoot}/Application/Commands/ScheduleWorkingDraftCommands.cs",
+        $"{SchedulingWebRoot}/Endpoints/Scheduling/ScheduleWorkingDraftEndpoints.cs",
         $"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs",
         $"{SchedulingWebRoot}/Application/Commands/UpsertScheduleOperationOverrideCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/AssembleSchedulingProblemCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs",
+        $"{SchedulingWebRoot}/Application/Queries/GetScheduleFirstPlanJobQuery.cs",
         $"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs",
         $"{SchedulingWebRoot}/Application/Queries/GetSchedulePlanOverridesQuery.cs",
         $"{SchedulingWebRoot}/Application/Queries/GetMaterialDeliverySourcesQuery.cs",
@@ -24,6 +27,8 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
     private static readonly IReadOnlyCollection<SchedulingKnownExceptionSite> ExpectedSites =
     [
+        Excluded($"{SchedulingWebRoot}/Application/Commands/ScheduleWorkingDraftCommands.cs", "SaveScheduleWorkingDraftCommandHandler", "Handle", 1, "deferred/no-facade；#4143 交付 facade 时重新分类"),
+        Excluded($"{SchedulingWebRoot}/Endpoints/Scheduling/ScheduleWorkingDraftEndpoints.cs", "ScheduleWorkingDraftIdentity", "Read", 1, "deferred/no-facade；#4143 交付 facade 时重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "Handle", 3),
         Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "ValidateLocks", 3),
         Target($"{SchedulingWebRoot}/Application/Commands/UpsertScheduleOperationOverrideCommand.cs", "UpsertScheduleOperationOverrideCommandHandler", "Handle", 6),
@@ -32,6 +37,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Excluded($"{SchedulingWebRoot}/Application/Commands/AssembleSchedulingProblemCommand.cs", "AssembleSchedulingProblemCommandHandler", "Handle", 3, "deferred/no-facade；若 facade matrix 转为 exposed，必须重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs", "RevokeSchedulePlanCommandHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs", "CreateSchedulePlanCommandHandler", "Handle", 2),
+        Excluded($"{SchedulingWebRoot}/Application/Queries/GetScheduleFirstPlanJobQuery.cs", "GetScheduleFirstPlanJobQueryHandler", "Handle", 1, "deferred/no-facade；#4136 交付 facade 时重新分类"),
         Target($"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs", "GetSchedulePlanDetailQueryHandler", "Handle", 1),
         Excluded($"{SchedulingWebRoot}/Application/Queries/GetMaterialDeliverySourcesQuery.cs", "GetMaterialDeliverySourcesQueryHandler", "Handle", 1, "internal：仅 DemandPlanning 物料交付服务消费，不通过 Gateway 暴露"),
         Target($"{SchedulingWebRoot}/Application/Queries/GetSchedulePlanOverridesQuery.cs", "GetSchedulePlanOverridesQueryHandler", "Handle", 2),
@@ -72,7 +78,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(44, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(4, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
+        Assert.Equal(7, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
 
         var discovered = SchedulingUserMessageSourceAnalyzer.Discover(documents);

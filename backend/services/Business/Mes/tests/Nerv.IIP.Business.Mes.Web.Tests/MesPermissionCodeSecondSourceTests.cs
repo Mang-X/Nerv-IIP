@@ -42,6 +42,7 @@ public sealed class MesPermissionCodeSecondSourceTests
             ["listBusinessMesWorkOrders"] = "business.mes.work-orders.read", // GET /api/business/v1/mes/work-orders
             ["getBusinessMesWorkOrderDetail"] = "business.mes.work-orders.read", // GET /api/business/v1/mes/work-orders/{workOrderId}
             ["getBusinessMesAssemblyChildWorkOrders"] = "business.mes.work-orders.read", // GET /api/business/v1/mes/work-orders/{workOrderId}/assembly-children
+            ["getBusinessMesBatchAssemblyChildWorkOrders"] = "business.mes.work-orders.read", // POST /api/business/v1/mes/work-orders/assembly-children/batch
             ["splitBusinessMesWorkOrder"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/{workOrderId}/split
             ["mergeBusinessMesWorkOrders"] = "business.mes.work-orders.manage", // POST /api/business/v1/mes/work-orders/merge
             ["getBusinessMesWorkOrderTransformation"] = "business.mes.work-orders.read", // GET /api/business/v1/mes/work-order-transformations/{transformationId}
