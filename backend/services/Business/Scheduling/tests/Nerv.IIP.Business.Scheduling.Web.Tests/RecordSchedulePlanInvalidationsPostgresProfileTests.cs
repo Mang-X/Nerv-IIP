@@ -31,7 +31,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 // MES marking chain silently failed on a real database while EF InMemory (client evaluation) kept the
 // unit tests green. Gated on NERV_IIP_TEST_POSTGRES like the other *PostgresProfileTests.
 [Collection(SchedulingPostgresLaneDatabase.CollectionName)]
-public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
+public sealed partial class RecordSchedulePlanInvalidationsPostgresProfileTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
@@ -449,7 +449,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         Assert.Equal(2, await dbContext.SchedulePlanInvalidations.CountAsync());
     }
 
-    private static ServiceProvider BuildEventHandlerProvider()
+    private static ServiceProvider BuildEventHandlerProvider(ISchedulingWorkbenchSourceProvider? sourceProvider = null, IIntegrationEventPublisher? publisher = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
@@ -458,12 +458,13 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         services.AddScoped<ScheduleConflictDetectedIntegrationEventConverter>();
         services.AddScoped<SchedulePlanReleasedIntegrationEventConverter>();
         services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
-        services.AddSingleton<IIntegrationEventPublisher, NoOpIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(publisher ?? new NoOpIntegrationEventPublisher());
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssembly(typeof(Program).Assembly)
             .AddUnitOfWorkBehaviors());
         services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
         services.AddUnitOfWork<ApplicationDbContext>();
+        if (sourceProvider is not null) services.AddSingleton(sourceProvider);
         return services.BuildServiceProvider();
     }
 

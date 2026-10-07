@@ -15,6 +15,7 @@ public enum SchedulePlanInvalidationScope
     ExactWorkOrderOperation = 6,
     SnapshotWorkOrderOrSku = 7,
     SnapshotMaterial = 8,
+    WorkOrder = 9,
 }
 
 public enum SchedulePlanExecutionMilestone
@@ -222,6 +223,8 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
                 skuProblemIds.Contains(x.ProblemId)),
             SchedulePlanInvalidationScope.SnapshotWorkOrderOrSku or SchedulePlanInvalidationScope.SnapshotMaterial =>
                 query.Where(x => inputProblemIds.Contains(x.ProblemId)),
+            SchedulePlanInvalidationScope.WorkOrder => query.Where(x => x.Assignments.Any(assignment =>
+                assignment.WorkOrderId == normalizedScopeValue)),
             SchedulePlanInvalidationScope.WorkOrderOrOperation => query.Where(x => x.Assignments.Any(assignment =>
                 assignment.WorkOrderId == normalizedScopeValue ||
                 assignment.OperationId == normalizedScopeValue)),

@@ -273,7 +273,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
     // Service-side authority. The Business Console mirrors these values only to improve pool UX.
     private static readonly HashSet<string> TerminalStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
-        "completed", "closed", "cancelled", "canceled", "scrapped"
+        "completed", "closed", "cancelled", "canceled", "scrapped", "split"
     };
 
     // MES assembly batch consumption supports the future asynchronous generation path.
