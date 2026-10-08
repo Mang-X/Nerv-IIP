@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Executes FullChain probe preparation and sales-order-demand command boundaries with leaf fixtures
 #   Writes:
-#     - Owned temporary probe binaries and preparation receipts under the operating-system temp directory
+#     - Owned temporary probe binaries, preparation receipts and TRX fixtures under the operating-system temp directory
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:
@@ -12,6 +12,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/FullChainTestLane.ps1')
 function Assert-Contract([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 $fixture = Join-Path ([IO.Path]::GetTempPath()) "nerv-probe-preparation-$([Guid]::NewGuid().ToString('N'))"
@@ -22,9 +23,27 @@ $calls = [Collections.Generic.List[object]]::new()
 function Invoke-DotNet {
     param($Arguments, $WorkingDirectory, $TimeoutSeconds, $Name)
     $calls.Add([pscustomobject]@{ Arguments = $Arguments; Name = $Name })
-    if ($script:probeFailure -and [string]::Equals($Arguments[0], 'test', [StringComparison]::Ordinal)) { throw 'probe-exit-17' }
+    if ([string]::Equals($Arguments[1], $probeProject, [StringComparison]::Ordinal)) {
+        $configurationIndex = [Array]::IndexOf($Arguments, '--configuration')
+        $configuration = if ($configurationIndex -lt 0) { 'Debug' } else { $Arguments[$configurationIndex + 1] }
+        $commandBinary = Join-Path $fixture "bin/$configuration/net10.0/Probe.dll"
+        if ([string]::Equals($Arguments[0], 'build', [StringComparison]::Ordinal)) {
+            [IO.Directory]::CreateDirectory((Split-Path $commandBinary)) | Out-Null
+            [IO.File]::WriteAllText($commandBinary, "built-$configuration")
+        }
+        if ([string]::Equals($Arguments[0], 'test', [StringComparison]::Ordinal)) {
+            if ($script:probeFailure) { throw 'probe-exit-17' }
+            if (-not (Test-Path -LiteralPath $commandBinary)) { throw "No $configuration probe binary for test --no-build." }
+        }
+    }
 }
 $script:probeFailure = $false
+function Invoke-ProbeFixture {
+    Invoke-WithScopedEnvironment -Variables @{
+        NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY = $fixture
+        NERV_IIP_FULL_CHAIN_RESULT_FILE = 'probe.trx'
+    } -ScriptBlock { . ([scriptblock]::Create($probeTest.Extent.Text)) }
+}
 try {
     [IO.Directory]::CreateDirectory((Split-Path $binaryPath)) | Out-Null
     [IO.File]::WriteAllText($probeProject, '<Project />')
@@ -35,7 +54,14 @@ try {
     $serviceBuild = $ast.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and [string]::Equals($n.Clauses[0].Item1.Extent.Text, '-not $SkipBuild', [StringComparison]::Ordinal) }, $true)
     $probePreparation = $ast.Find({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and [string]::Equals($n.Left.Extent.Text, '$probeConfiguration', [StringComparison]::Ordinal) }, $true)
     Assert-Contract ($null -ne $probePreparation) 'Sales adapter must select configuration through preparation before probe execution.'
-    $probeTest = $ast.Find({ param($n) $n -is [Management.Automation.Language.CommandAst] -and [string]::Equals($n.GetCommandName(), 'Invoke-DotNet', [StringComparison]::Ordinal) -and $n.Extent.Text.Contains("'man517-out-of-order-probe'", [StringComparison]::Ordinal) }, $true)
+    # Execute the actual orchestration boundary, including any catch around the
+    # test command and the retained TRX verdict; a bare leaf command misses those.
+    $probeTest = $ast.Find({ param($n) $n -is [Management.Automation.Language.CommandAst] -and [string]::Equals($n.GetCommandName(), 'Invoke-WithScopedEnvironment', [StringComparison]::Ordinal) -and $n.Extent.Text.Contains("'man517-out-of-order-probe'", [StringComparison]::Ordinal) }, $true)
+    $counterFunction = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and [string]::Equals($n.Name, 'Get-Man517TrxCounter', [StringComparison]::Ordinal) }, $true)
+    . ([scriptblock]::Create($counterFunction.Extent.Text))
+    $databaseConnectionString = 'fixture-postgres'; $RedisConnectionString = 'fixture-redis'; $capVersion = 'fixture-cap'
+    # A pre-existing successful result cannot mask a nonzero probe exit.
+    [IO.File]::WriteAllText((Join-Path $fixture 'probe.trx'), '<TestRun><Results><UnitTestResult testName="Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events" outcome="Passed" /></Results><ResultSummary><Counters total="1" executed="1" passed="1" failed="0" /></ResultSummary></TestRun>')
     $root = $fixture
     $masterDataProject = 'MasterData.csproj'; $erpProject = 'Erp.csproj'; $demandPlanningProject = 'DemandPlanning.csproj'
     $SkipBuild = $false
@@ -43,7 +69,7 @@ try {
     $probeResultsDirectory = $fixture; $probeResultsFile = 'probe.trx'
     . ([scriptblock]::Create($serviceBuild.Extent.Text))
     . ([scriptblock]::Create($probePreparation.Extent.Text))
-    . ([scriptblock]::Create($probeTest.Extent.Text))
+    Invoke-ProbeFixture
     Assert-Contract ($calls.Count -eq 4) 'Prepared path must build three services and execute the probe once.'
     Assert-Contract (@($calls | Where-Object { $_.Arguments[0] -eq 'build' -and $_.Arguments[1] -eq $probeProject }).Count -eq 0) 'Prepared probe must not be rebuilt.'
     $probeCall = $calls[3].Arguments
@@ -51,7 +77,9 @@ try {
 
     $calls.Clear(); $PreparedProbePath = ''
     . ([scriptblock]::Create($probePreparation.Extent.Text))
-    Assert-Contract ($calls.Count -eq 1 -and $calls[0].Arguments[0] -eq 'build' -and $calls[0].Arguments[1] -eq $probeProject -and $probeConfiguration -eq 'Debug') 'Standalone adapter must build its own Debug probe.'
+    Assert-Contract ($calls.Count -eq 1 -and $calls[0].Arguments[0] -eq 'build' -and $calls[0].Arguments[1] -eq $probeProject -and [string]::Equals(($calls[0].Arguments[2..3] -join '|'), '--configuration|Debug', [StringComparison]::Ordinal) -and $probeConfiguration -eq 'Debug') 'Standalone adapter must build its own Debug probe.'
+    Invoke-ProbeFixture
+    Assert-Contract ($calls.Count -eq 2 -and [string]::Equals(($calls[1].Arguments[0..5] -join '|'), "test|$probeProject|--configuration|Debug|--no-build|--filter", [StringComparison]::Ordinal)) 'Standalone execution must consume the Debug binary it actually built.'
 
     foreach ($case in @('missing-receipt', 'missing-binary', 'changed-binary', 'wrong-project', 'wrong-configuration', 'expired-owner')) {
         New-NervFullChainProbePreparation -Project $probeProject -Configuration Release -Path $receiptPath
@@ -74,7 +102,7 @@ try {
     $PreparedProbePath = $receiptPath
     . ([scriptblock]::Create($probePreparation.Extent.Text))
     $script:probeFailure = $true; $failure = $null
-    try { . ([scriptblock]::Create($probeTest.Extent.Text)) } catch { $failure = $_ }
+    try { Invoke-ProbeFixture } catch { $failure = $_ }
     Assert-Contract ($null -ne $failure -and $failure.Exception.Message.Contains('probe-exit-17', [StringComparison]::Ordinal)) 'Probe failure must propagate out of the adapter command.'
     # Build-bearing discovery failure cannot produce a receipt or admit an adapter.
     Remove-Item $receiptPath

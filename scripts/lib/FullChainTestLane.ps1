@@ -8,6 +8,7 @@
 #   Writes:
 #     - Caller-defined outputs through the admitted member action
 #     - Caller-owned temporary probe preparation receipt
+#     - Probe bin/obj build outputs when an adapter prepares its standalone probe
 #   Cleanup:
 #     - The caller-supplied member action owns and restores its scoped resources
 #   Requires:
