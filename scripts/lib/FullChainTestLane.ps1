@@ -14,6 +14,20 @@
 #   Requires:
 #     - PowerShell 7
 
+function Get-NervFullChainProbeOwnerStartIdentity {
+    param([Parameter(Mandatory)] [int] $ProcessId)
+
+    if ($IsLinux) {
+        # /proc field 22 is the kernel start tick, independent of each process's
+        # conversion between uptime and wall-clock time (.NET StartTime).
+        $stat = [IO.File]::ReadAllText("/proc/$ProcessId/stat")
+        $commandEnd = $stat.LastIndexOf([string] ')', [StringComparison]::Ordinal)
+        $fieldsAfterCommand = $stat.Substring($commandEnd + 2).Split(' ', [StringSplitOptions]::RemoveEmptyEntries)
+        return "linux:$($fieldsAfterCommand[19])"
+    }
+    return "utc:$((Get-Process -Id $ProcessId -ErrorAction Stop).StartTime.ToUniversalTime().Ticks)"
+}
+
 # The receipt is owned by one live runner invocation and removed in its finally.
 # It is emitted only after the runner's build-bearing discovery succeeds.
 function New-NervFullChainProbePreparation {
@@ -25,13 +39,12 @@ function New-NervFullChainProbePreparation {
 
     $projectPath = [IO.Path]::GetFullPath($Project)
     $binaryPath = Join-Path (Split-Path $projectPath) "bin/$Configuration/net10.0/$([IO.Path]::GetFileNameWithoutExtension($Project)).dll"
-    $owner = Get-Process -Id $PID
     $receipt = [ordered]@{
         project = $projectPath
         configuration = $Configuration
         binarySha256 = (Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash
         ownerPid = $PID
-        ownerStartedUtcTicks = $owner.StartTime.ToUniversalTime().Ticks
+        ownerStartIdentity = Get-NervFullChainProbeOwnerStartIdentity -ProcessId $PID
     }
     [IO.File]::WriteAllText($Path, ($receipt | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
 }
@@ -53,8 +66,7 @@ function Invoke-NervFullChainProbePreparation {
         -not [string]::Equals([string]$receipt.configuration, 'Release', [StringComparison]::Ordinal)) {
         throw 'FullChain probe preparation does not match the requested project and Release configuration.'
     }
-    $owner = Get-Process -Id ([int]$receipt.ownerPid) -ErrorAction Stop
-    if ($owner.StartTime.ToUniversalTime().Ticks -ne [long]$receipt.ownerStartedUtcTicks) {
+    if (-not [string]::Equals((Get-NervFullChainProbeOwnerStartIdentity -ProcessId ([int]$receipt.ownerPid)), [string]$receipt.ownerStartIdentity, [StringComparison]::Ordinal)) {
         throw 'FullChain probe preparation owner has expired.'
     }
     $binaryPath = Join-Path (Split-Path $Project) "bin/Release/net10.0/$([IO.Path]::GetFileNameWithoutExtension($Project)).dll"

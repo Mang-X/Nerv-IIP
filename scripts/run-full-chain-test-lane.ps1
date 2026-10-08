@@ -246,7 +246,8 @@ try {
     Write-NervFullChainSummarySnapshot
     Invoke-DotNetOutput -Name 'full-chain-project-restore' -WorkingDirectory $repoRoot -TimeoutSeconds $restoreTimeoutSeconds -Arguments @('restore', $fullChainProject) | Out-Null
     $discovery = Invoke-DotNetOutput -Name 'full-chain-project-discovery' -WorkingDirectory $repoRoot -TimeoutSeconds $discoveryTimeoutSeconds -Arguments @('test', $fullChainProject, '--configuration', 'Release', '--no-restore', '--list-tests')
-    if ($selectedIdSet.Contains('sales-order-demand-planning')) {
+    $probeReuseMemberId = 'sales-order-demand-planning'
+    if ($selectedIdSet.Contains($probeReuseMemberId)) {
         New-NervFullChainProbePreparation -Project (Join-Path $repoRoot $fullChainProject) -Configuration Release -Path $preparedProbePath
     }
     $discoveryLines = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })

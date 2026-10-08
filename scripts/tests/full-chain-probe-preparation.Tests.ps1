@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Executes FullChain probe preparation and sales-order-demand command boundaries with leaf fixtures
 #   Writes:
-#     - Owned temporary probe binaries, preparation receipts and TRX fixtures under the operating-system temp directory
+#     - Owned temporary probe binaries, preparation receipts, TRX fixtures and a child consumer under the operating-system temp directory
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:
@@ -49,6 +49,15 @@ try {
     [IO.File]::WriteAllText($probeProject, '<Project />')
     [IO.File]::WriteAllText($binaryPath, 'fresh-release')
     New-NervFullChainProbePreparation -Project $probeProject -Configuration Release -Path $receiptPath
+    $childScript = Join-Path $fixture 'consume-prepared-probe.ps1'
+    [IO.File]::WriteAllText($childScript, @'
+param($LibraryPath, $Project, $Receipt)
+$ErrorActionPreference = 'Stop'
+. $LibraryPath
+Invoke-NervFullChainProbePreparation -Project $Project -WorkingDirectory (Split-Path $Project) -PreparedProbePath $Receipt
+'@)
+    $child = Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $childScript, (Join-Path $repoRoot 'scripts/lib/FullChainTestLane.ps1'), $probeProject, $receiptPath) -WorkingDirectory $fixture -Name 'full-chain-prepared-probe-child'
+    Assert-Contract ([string]::Equals($child.Stdout.Trim(), 'Release', [StringComparison]::Ordinal)) 'A child adapter must recognize the live preparation owner without clock conversion drift.'
     $content = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'))
     $ast = [Management.Automation.Language.Parser]::ParseInput($content, [ref]$null, [ref]$null)
     $serviceBuild = $ast.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and [string]::Equals($n.Clauses[0].Item1.Extent.Text, '-not $SkipBuild', [StringComparison]::Ordinal) }, $true)
@@ -71,27 +80,26 @@ try {
     . ([scriptblock]::Create($probePreparation.Extent.Text))
     Invoke-ProbeFixture
     Assert-Contract ($calls.Count -eq 4) 'Prepared path must build three services and execute the probe once.'
-    Assert-Contract (@($calls | Where-Object { $_.Arguments[0] -eq 'build' -and $_.Arguments[1] -eq $probeProject }).Count -eq 0) 'Prepared probe must not be rebuilt.'
+    Assert-Contract (@($calls | Where-Object { [string]::Equals($_.Arguments[0], 'build', [StringComparison]::Ordinal) -and [string]::Equals($_.Arguments[1], $probeProject, [StringComparison]::Ordinal) }).Count -eq 0) 'Prepared probe must not be rebuilt.'
     $probeCall = $calls[3].Arguments
     Assert-Contract ([string]::Equals(($probeCall[0..5] -join '|'), "test|$probeProject|--configuration|Release|--no-build|--filter", [StringComparison]::Ordinal)) 'Prepared probe must execute Release without rebuilding and retain its filter.'
 
     $calls.Clear(); $PreparedProbePath = ''
     . ([scriptblock]::Create($probePreparation.Extent.Text))
-    Assert-Contract ($calls.Count -eq 1 -and $calls[0].Arguments[0] -eq 'build' -and $calls[0].Arguments[1] -eq $probeProject -and [string]::Equals(($calls[0].Arguments[2..3] -join '|'), '--configuration|Debug', [StringComparison]::Ordinal) -and $probeConfiguration -eq 'Debug') 'Standalone adapter must build its own Debug probe.'
+    Assert-Contract ($calls.Count -eq 1 -and [string]::Equals($calls[0].Arguments[0], 'build', [StringComparison]::Ordinal) -and [string]::Equals($calls[0].Arguments[1], $probeProject, [StringComparison]::Ordinal) -and [string]::Equals(($calls[0].Arguments[2..3] -join '|'), '--configuration|Debug', [StringComparison]::Ordinal) -and [string]::Equals($probeConfiguration, 'Debug', [StringComparison]::Ordinal)) 'Standalone adapter must build its own Debug probe.'
     Invoke-ProbeFixture
     Assert-Contract ($calls.Count -eq 2 -and [string]::Equals(($calls[1].Arguments[0..5] -join '|'), "test|$probeProject|--configuration|Debug|--no-build|--filter", [StringComparison]::Ordinal)) 'Standalone execution must consume the Debug binary it actually built.'
 
     foreach ($case in @('missing-receipt', 'missing-binary', 'changed-binary', 'wrong-project', 'wrong-configuration', 'expired-owner')) {
         New-NervFullChainProbePreparation -Project $probeProject -Configuration Release -Path $receiptPath
         $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
-        switch ($case) {
-            'missing-receipt' { Remove-Item $receiptPath }
-            'missing-binary' { Remove-Item $binaryPath }
-            'changed-binary' { [IO.File]::WriteAllText($binaryPath, 'old-or-replaced-release') }
-            'wrong-project' { $receipt.project = Join-Path $fixture 'Other.csproj' }
-            'wrong-configuration' { $receipt.configuration = 'Debug' }
-            'expired-owner' { $receipt.ownerStartedUtcTicks = 0 }
-        }
+        if ([string]::Equals($case, 'missing-receipt', [StringComparison]::Ordinal)) { Remove-Item $receiptPath }
+        elseif ([string]::Equals($case, 'missing-binary', [StringComparison]::Ordinal)) { Remove-Item $binaryPath }
+        elseif ([string]::Equals($case, 'changed-binary', [StringComparison]::Ordinal)) { [IO.File]::WriteAllText($binaryPath, 'old-or-replaced-release') }
+        elseif ([string]::Equals($case, 'wrong-project', [StringComparison]::Ordinal)) { $receipt.project = Join-Path $fixture 'Other.csproj' }
+        elseif ([string]::Equals($case, 'wrong-configuration', [StringComparison]::Ordinal)) { $receipt.configuration = 'Debug' }
+        elseif ([string]::Equals($case, 'expired-owner', [StringComparison]::Ordinal)) { $receipt.ownerStartIdentity = 'expired-owner' }
+
         if (Test-Path $receiptPath) { $receipt | ConvertTo-Json | Set-Content $receiptPath }
         $PreparedProbePath = $receiptPath; $calls.Clear(); $failure = $null
         try { . ([scriptblock]::Create($probePreparation.Extent.Text)) } catch { $failure = $_ }
