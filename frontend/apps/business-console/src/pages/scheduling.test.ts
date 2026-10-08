@@ -9,6 +9,8 @@ import type {
   BusinessConsoleMesWorkOrderItem,
   BusinessConsoleSchedulingMaterialShortageSummary,
   SchedulingCandidateSelection,
+  BusinessConsoleSchedulePlan,
+  SchedulingWorkingDraft,
 } from '@nerv-iip/api-client'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
@@ -64,6 +66,7 @@ const routeStub = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
   useRoute: () => ({ query: routeStub.query }),
+  useRouter: () => ({ replace: vi.fn() }),
 }))
 
 vi.mock('@/composables/useOrderUrgency', () => ({
@@ -76,7 +79,10 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
       '<span data-testid="order-urgency" :data-ref="orderReference" :data-mode="mode">未计算</span>',
   },
 }))
-const authState = vi.hoisted(() => ({ permissionCodes: [] as string[] }))
+const authState = vi.hoisted(() => ({
+  permissionCodes: [] as string[],
+  principalId: undefined as string | undefined,
+}))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: authState }),
 }))
@@ -107,10 +113,6 @@ vi.mock('@/composables/useSchedulingCandidates', async (importOriginal) => {
     },
   }
 })
-vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
-  getBusinessConsoleSchedulingPlan: localCandidateCallback.readSelectedPlan,
-}))
 
 // #1288 作业范围选择入口是独立组件（自带 work-context 查询），页面测试不铺网络桩，整件打桩。
 vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
@@ -120,6 +122,29 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
   },
 }))
 
+const savedDrafts = shallowRef<SchedulingWorkingDraft[]>([])
+const savedPlans = new Map<string, BusinessConsoleSchedulePlan>()
+let pagePersistence: ReturnType<
+  typeof import('@/composables/useSchedulingDraftPersistence').useSchedulingDraftPersistence
+>
+vi.mock('@/composables/useSchedulingDraftPersistence', async (original) => {
+  const actual = await original<typeof import('@/composables/useSchedulingDraftPersistence')>()
+  return {
+    useSchedulingDraftPersistence: (
+      ...args: Parameters<typeof actual.useSchedulingDraftPersistence>
+    ) => {
+      pagePersistence = actual.useSchedulingDraftPersistence(...args)
+      return pagePersistence
+    },
+  }
+})
+vi.mock('@nerv-iip/api-client', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsoleSchedulingWorkingDrafts: async () => ({
+    data: { success: true, data: savedDrafts.value },
+  }),
+  getBusinessConsoleSchedulingPlan: localCandidateCallback.readSelectedPlan,
+}))
 const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
 const associatedError = shallowRef<unknown>()
 let associatedOrderIds: () => (string | undefined)[]
@@ -129,6 +154,25 @@ const generatePending = shallowRef(false)
 const firstPlanJob = shallowRef()
 const generationError = shallowRef()
 const capacityCandidates = shallowRef<BusinessConsoleMesWorkOrderItem[]>()
+const releasePending = shallowRef(false)
+const insertionJob =
+  shallowRef<import('@nerv-iip/api-client').BusinessConsoleSchedulingInsertionPreviewJob>()
+vi.mock('@/composables/useSchedulingRushInsertion', () => ({
+  useSchedulingRushInsertion: () => ({
+    task: {
+      job: insertionJob,
+      result: computed(() => insertionJob.value?.result),
+      pending: shallowRef(false),
+      error: shallowRef(),
+    },
+    reset: () => {
+      insertionJob.value = undefined
+    },
+    message: shallowRef(''),
+    retry: vi.fn(),
+    saveOrder: vi.fn(),
+  }),
+}))
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrderFacts: (ids: () => (string | undefined)[]) => {
     associatedOrderIds = ids
@@ -453,7 +497,7 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
     plansError: shallowRef(undefined),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
-    releasePlanPending: shallowRef(false),
+    releasePlanPending: releasePending,
     revokePlan: stub.revokePlan,
     revokePlanPending: shallowRef(false),
     upsertOperationOverride: stub.upsertOperationOverride,
@@ -478,6 +522,17 @@ const sheetStubs = {
 
 beforeEach(() => {
   localCandidateCallback.readSelectedPlan.mockReset()
+  localCandidateCallback.readSelectedPlan.mockImplementation(
+    async ({ path }: { path: { planId: string } }) => ({
+      data: { success: true, data: savedPlans.get(path.planId) },
+    }),
+  )
+  insertionJob.value = undefined
+  releasePending.value = false
+  authState.principalId = undefined
+  savedDrafts.value = []
+  savedPlans.clear()
+  stub.revisePlan.mockReset()
   associatedOrders.value = []
   associatedError.value = undefined
   candidatesEmpty.value = false
@@ -536,6 +591,140 @@ async function openPlanTable(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('APS scheduling workbench page', () => {
+  it.each(['confirm', 'switch', 'restore', 'cancel'])(
+    '选定保存实际插单候选并绑定确认身份：%s',
+    async (action) => {
+      const candidate = {
+        ...planOne,
+        planId: 'insertion-current',
+        status: 'generated' as const,
+        conflicts: [],
+        unscheduledOperations: [],
+      }
+      insertionJob.value = {
+        jobId: 'job-current',
+        status: 'completed',
+        input: {
+          ...historyFilters,
+          planId: 'plan-001',
+          workOrderId: 'WO-12',
+          workOrderIds: ['WO-12'],
+        },
+        result: {
+          baselinePlanId: 'plan-001',
+          candidatePlanId: candidate.planId,
+          candidate,
+          snapshot: {
+            baseline: { ...candidate, planId: 'plan-001' },
+            problem: {
+              organizationId: 'org-001',
+              environmentId: 'env-dev',
+              orders: [{ orderId: 'WO-11' }, { orderId: 'WO-12' }],
+            },
+          },
+        },
+      }
+      let finishRevision!: (revision: { candidate: BusinessConsoleSchedulePlan }) => void
+      if (action === 'restore') {
+        authState.principalId = 'user-1'
+        savedPlans.set('plan-001', { ...candidate, planId: 'plan-001' })
+        savedPlans.set('plan-other', { ...candidate, planId: 'plan-other' })
+        savedDrafts.value = ['plan-001', 'plan-other'].map((planId, i) => ({
+          planId,
+          savedAtUtc: `2026-10-08T0${2 - i}:00:00Z`,
+          state: { orders: [], tasks: [], pendingOperations: [] },
+        }))
+        stub.revisePlan.mockReturnValueOnce(
+          new Promise((resolve) => {
+            finishRevision = resolve
+          }),
+        )
+      } else stub.revisePlan.mockResolvedValueOnce({ candidate })
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: layoutStub },
+      })
+      await flushPromises()
+      expect(stub.releasePlan).not.toHaveBeenCalled()
+      expect(
+        wrapper
+          .findAll('button')
+          .find((b) => b.text().includes('发布新版'))!
+          .attributes('disabled'),
+      ).toBeDefined()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('选定候选并保存修订'))!
+        .trigger('click')
+      await flushPromises()
+      expect(stub.revisePlan).toHaveBeenCalledWith(
+        'insertion-current',
+        expect.objectContaining({ includedOrderIds: ['WO-11', 'WO-12'], lockedAssignments: [] }),
+      )
+      expect(stub.releasePlan).not.toHaveBeenCalled()
+      if (action === 'restore') {
+        await pagePersistence.select('plan-other')
+        await flushPromises()
+        expect(
+          wrapper.findComponent({ name: 'SchedulingDraftBoard' }).props('model').meta.planId,
+        ).toBe('plan-other')
+        finishRevision({ candidate })
+        await flushPromises()
+        expect(
+          wrapper.findComponent({ name: 'SchedulingDraftBoard' }).props('model').meta.planId,
+        ).toBe('plan-other')
+        expect(stub.toastSuccess).not.toHaveBeenCalledWith(
+          '所选插单候选已保存为修订，请核对后确认发布',
+        )
+        wrapper.unmount()
+        return
+      }
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('发布新版'))!
+        .trigger('click')
+      await flushPromises()
+      expect(stub.releasePlan).not.toHaveBeenCalled()
+      const confirm = [...document.body.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '确认发布',
+      )!
+      expect(confirm).toBeTruthy()
+      if (action === 'switch') {
+        generatedPlan.value = { ...candidate, planId: 'plan-other' }
+        await flushPromises()
+        expect(confirm.disabled).toBe(true)
+        confirm.click()
+        await flushPromises()
+        expect(stub.releasePlan).not.toHaveBeenCalled()
+        wrapper.unmount()
+        return
+      }
+      let finishRelease!: () => void
+      if (action === 'cancel')
+        stub.releasePlan.mockReturnValueOnce(
+          new Promise<void>((resolve) => {
+            finishRelease = resolve
+          }),
+        )
+      confirm.click()
+      await flushPromises()
+      expect(stub.releasePlan).toHaveBeenCalledWith('insertion-current')
+      if (action === 'cancel') {
+        releasePending.value = true
+        await flushPromises()
+        const cancel = [...document.body.querySelectorAll('button')].find(
+          (b) => b.textContent?.trim() === '取消',
+        )!
+        expect(cancel.disabled).toBe(false)
+        cancel.click()
+        await flushPromises()
+        expect(document.body.textContent).not.toContain('确认发布所选方案？')
+        finishRelease()
+        await flushPromises()
+      }
+      wrapper.unmount()
+    },
+  )
+
   it.each([true, false])(
     'shows the same batch shortages in draft and saved plan (shortage=%s)',
     async (hasShortage) => {
@@ -1463,6 +1652,54 @@ describe('APS scheduling workbench page', () => {
     // 引导入口要真的把人送回可编辑的地方，不是一句说明。
     expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
     expect(wrapper.text()).toContain('待排工单池')
+  })
+
+  it('选定右移候选后清除旧插单展示并允许确认当前所选方案', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    insertionJob.value = {
+      jobId: 'old-insertion',
+      status: 'completed',
+      result: { candidatePlanId: 'old-insertion-plan' },
+    }
+    await flushPromises()
+    expect(
+      wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('发布新版'))!
+        .attributes('disabled'),
+    ).toBeDefined()
+    const plan = {
+      ...planOne,
+      planId: 'selected-shift',
+      status: 'generated' as const,
+      conflicts: [],
+      unscheduledOperations: [],
+    }
+    savedPlans.set(plan.planId, plan)
+    await localCandidateCallback.onSelected!({
+      plan,
+      workingDraft: {
+        planId: plan.planId,
+        savedAtUtc: '2026-10-08T08:00:00Z',
+        state: { contractVersion: 1, orders: [], tasks: [], pendingOperations: [] },
+      },
+      comparison: { basePlanId: 'plan-001', candidatePlanId: plan.planId, movedOperationCount: 1 },
+    })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'SchedulingDraftBoard' }).props('model').meta.planId).toBe(
+      plan.planId,
+    )
+    expect(
+      wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('发布新版'))!
+        .attributes('disabled'),
+    ).toBeUndefined()
+    expect(stub.releasePlan).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('does not apply a selected candidate or report success when restoring its plan fails', async () => {

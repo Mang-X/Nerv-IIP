@@ -48,7 +48,7 @@ export function useSchedulingInsertionPreview(enabled: Ref<boolean>) {
   })
   onScopeDispose(reset)
   watch(statusQuery.data, (response) => {
-    if (!active.value || !response) return
+    if (!active.value || !response || response.data?.jobId !== job.value?.jobId) return
     try {
       assertEnvelopeSuccess(response, '插单预览进度读取失败')
       receive(response.data!)
@@ -62,6 +62,8 @@ export function useSchedulingInsertionPreview(enabled: Ref<boolean>) {
   return {
     job,
     error,
+    reset,
+    result: computed(() => job.value?.result ?? undefined),
     preview: computed(() => job.value?.preview ?? undefined),
     pending: computed(() => acceptance.isLoading.value || active.value),
     async start(body: BusinessConsoleSchedulingInsertionPreviewRequest) {
