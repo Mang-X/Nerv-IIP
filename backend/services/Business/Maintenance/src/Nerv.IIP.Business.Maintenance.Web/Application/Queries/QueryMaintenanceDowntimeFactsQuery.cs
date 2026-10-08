@@ -36,7 +36,7 @@ public sealed class QueryMaintenanceDowntimeFactsQueryHandler(
             var prediction = order.ReleasedAtUtc is null
                 ? await restorePredictions.Handle(new(request.OrganizationId, request.EnvironmentId, order.Id), cancellationToken)
                 : null;
-            facts.Add(new(order.DeviceAssetId, order.Id.ToString(), "maintenance", order.SourceType,
+            facts.Add(new(order.DeviceAssetId, order.Id.ToString(), MaintenanceIntegrationEventSources.Maintenance, order.SourceType,
                 order.SourceReferenceId, order.FromUtc, order.ReleasedAtUtc,
                 prediction?.ExplicitExpectedRestoreAtUtc, prediction?.PredictedRestoreAtUtc,
                 prediction?.Source, prediction?.SourceVersion));

@@ -34,7 +34,7 @@ public sealed class MaintenanceDowntimeFactsTests
         completed.Complete("fixed", "fault", 20, []);
         var cancelled = Order("org", "env", "device");
         cancelled.Cancel();
-        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", "device", "alarm", "high");
+        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", "device", "alarm", "high", sourceReferenceId: "MWO-FACT-001");
         clearedAlarm.MarkAssetUnavailable(From, "fault");
         clearedAlarm.MarkAlarmCleared(From.AddMinutes(30));
         db.MaintenanceWorkOrders.AddRange(active, completed, cancelled, clearedAlarm,
@@ -54,6 +54,7 @@ public sealed class MaintenanceDowntimeFactsTests
         Assert.Equal(completed.CompletedAtUtc, items.Single(x => x.GetProperty("workOrderId").GetString() == completed.Id.ToString()).GetProperty("releasedAtUtc").GetDateTimeOffset());
         Assert.Equal(cancelled.CancelledAtUtc, items.Single(x => x.GetProperty("workOrderId").GetString() == cancelled.Id.ToString()).GetProperty("releasedAtUtc").GetDateTimeOffset());
         Assert.Equal(JsonValueKind.Null, items.Single(x => x.GetProperty("workOrderId").GetString() == clearedAlarm.Id.ToString()).GetProperty("releasedAtUtc").ValueKind);
+        Assert.Equal("MWO-FACT-001", items.Single(x => x.GetProperty("workOrderId").GetString() == clearedAlarm.Id.ToString()).GetProperty("sourceReferenceId").GetString());
         active.UpdateExpectedRestore(From.AddHours(3));
         await db.SaveChangesAsync();
         fact = (await Read(client)).Single(x => x.GetProperty("workOrderId").GetString() == active.Id.ToString());
