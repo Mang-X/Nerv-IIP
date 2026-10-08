@@ -574,7 +574,13 @@ file sealed class SchedulerState
                     ApplicableEquipmentDataRisks(assignment.ResourceId, x.StartUtc, x.EndUtc)).ToArray());
             var qualityBlocks = ApplicableOperationQualityBlocks(item);
             if (resources.TryGetValue(assignment.ResourceId, out var resource))
+            {
+                if (!item.Operation.EligibleResourceIds.Contains(resource.ResourceId, StringComparer.Ordinal)
+                    || !RequiredCapabilityCodes(item.Operation).All(code => resource.CapabilityCodes.Contains(code, StringComparer.Ordinal)))
+                    AddConflict(ScheduleConflictReasonCodeContract.NoEligibleResource, ScheduleConflictSeverityContract.Error,
+                        assignment.OrderId, assignment.OperationId, assignment.ResourceId, "保持工序的资源不再具备所需资格，无法承诺该候选。");
                 qualityBlocks = qualityBlocks.Concat(ApplicableResourceQualityBlocks(item, resource));
+            }
             if (qualityBlocks.Any(x => x.BlockedUntilUtc is null || x.BlockedUntilUtc > assignment.StartUtc))
                 AddConflict(ScheduleConflictReasonCodeContract.Quality, ScheduleConflictSeverityContract.Error,
                     assignment.OrderId, assignment.OperationId, assignment.ResourceId, "保持工序与当前质量封锁冲突。");

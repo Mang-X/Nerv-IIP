@@ -182,6 +182,23 @@ public class SchedulingInsertionCalculatorTests(ITestOutputHelper output)
         Assert.Contains(result.Candidate.Conflicts, x => x.OrderId == "existing" && x.ReasonCode == ScheduleConflictReasonCodeContract.Quality);
     }
 
+    [Fact]
+    public void Frozen_assignment_losing_resource_qualification_is_preserved_but_blocks_promise()
+    {
+        var existing = Order("existing", Operation("op", "R1", 60));
+        var problem = Problem(existing, Order("rush", Operation("rush-op", "R2", 30, rush: true)));
+        var baseline = Baseline(problem, existing);
+        problem = problem with { Resources = problem.Resources.Select(x => x.ResourceId == "R1"
+            ? x with { CapabilityCodes = ["other"] } : x).ToArray() };
+        var result = Calculate(problem, baseline, locks: [("existing", "op")]);
+        Assert.Equal(baseline.Assignments.Single(), result.Candidate.Assignments.Single(x => x.OrderId == "existing"));
+        Assert.Null(result.PromiseUtc);
+        Assert.Contains(SchedulingInsertionFailure.BlockingConflict, result.Failures);
+        Assert.Contains(result.Candidate.Conflicts, x => x.OrderId == "existing" && x.OperationId == "op"
+            && x.ResourceId == "R1" && x.ReasonCode == ScheduleConflictReasonCodeContract.NoEligibleResource
+            && x.Severity == ScheduleConflictSeverityContract.Error);
+    }
+
     [Theory]
     [InlineData("qualification")]
     [InlineData("calendar")]
