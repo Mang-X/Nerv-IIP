@@ -39,6 +39,7 @@ param(
     [string]$TestedSha,
     [string]$ManifestDigest,
     [string]$ScenarioId,
+    [string]$PreparedProbePath,
     [switch]$SkipBuild
 )
 
@@ -49,6 +50,7 @@ $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $root 'scripts/lib/AcceptanceCanonicalResult.ps1')
+. (Join-Path $root 'scripts/lib/FullChainTestLane.ps1')
 
 $canonicalResultEnabled = -not [string]::IsNullOrWhiteSpace($CanonicalResultPath)
 $canonicalResultFullPath = $null
@@ -2287,10 +2289,12 @@ try {
     New-AcceptanceDatabase -ComposeFile $composeFile -DatabaseName $databaseName
 
     if (-not $SkipBuild) {
-        foreach ($project in @($masterDataProject, $erpProject, $demandPlanningProject, $probeProject)) {
+        foreach ($project in @($masterDataProject, $erpProject, $demandPlanningProject)) {
             Invoke-DotNet -Arguments @('build', $project, '-m:1', '-nr:false') -WorkingDirectory $root -TimeoutSeconds 600 -Name 'man517-build' | Out-Null
         }
     }
+
+    $probeConfiguration = Invoke-NervFullChainProbePreparation -Project $probeProject -WorkingDirectory $root -PreparedProbePath $PreparedProbePath
 
     $commonEnvironment = @{
         ASPNETCORE_ENVIRONMENT = 'Development'
@@ -2418,7 +2422,7 @@ try {
         $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "probe-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
         $script:probeResultsPath = [IO.Path]::GetFullPath($probeResults)
-        Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_injects_duplicate_and_out_of_order_sales_order_events', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-out-of-order-probe' | Out-Null
+        Invoke-DotNet -Arguments @('test', $probeProject, '--configuration', $probeConfiguration, '--no-build', '--filter', 'FullyQualifiedName~External_process_injects_duplicate_and_out_of_order_sales_order_events', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-out-of-order-probe' | Out-Null
         if (-not (Test-Path -LiteralPath $probeResults)) {
             throw 'MAN-517 fault-injection probe produced no TRX result; the selected test may be absent from a stale build.'
         }
