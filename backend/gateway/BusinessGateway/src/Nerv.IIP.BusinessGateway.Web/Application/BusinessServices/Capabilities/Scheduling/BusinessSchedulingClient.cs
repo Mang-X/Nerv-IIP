@@ -28,10 +28,10 @@ public interface IBusinessSchedulingClient
     Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
         string internalBearerToken, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken);
 
-    Task<SchedulingInsertionPreviewJobContract> AcceptInsertionPreviewJobAsync(
+    Task<SchedulingInsertionPreviewJobDetailContract> AcceptInsertionPreviewJobAsync(
         string internalBearerToken, SchedulingInsertionPreviewRequestContract input, CancellationToken cancellationToken);
 
-    Task<SchedulingInsertionPreviewJobContract> GetInsertionPreviewJobAsync(
+    Task<SchedulingInsertionPreviewJobDetailContract> GetInsertionPreviewJobAsync(
         string internalBearerToken, BusinessConsoleSchedulingInsertionPreviewJobRequest request, CancellationToken cancellationToken);
 
     Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(
@@ -160,14 +160,14 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             $"/api/business/v1/scheduling/workbench/first-plan-jobs/{request.JobId}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null, cancellationToken, SchedulingJson.Options);
 
-    public Task<SchedulingInsertionPreviewJobContract> AcceptInsertionPreviewJobAsync(
+    public Task<SchedulingInsertionPreviewJobDetailContract> AcceptInsertionPreviewJobAsync(
         string internalBearerToken, SchedulingInsertionPreviewRequestContract input, CancellationToken cancellationToken) =>
-        SendAsync<SchedulingInsertionPreviewJobContract>(internalBearerToken, HttpMethod.Post,
+        SendAsync<SchedulingInsertionPreviewJobDetailContract>(internalBearerToken, HttpMethod.Post,
             "/api/business/v1/scheduling/workbench/insertion-preview-jobs", input, cancellationToken, SchedulingJson.Options);
 
-    public Task<SchedulingInsertionPreviewJobContract> GetInsertionPreviewJobAsync(
+    public Task<SchedulingInsertionPreviewJobDetailContract> GetInsertionPreviewJobAsync(
         string internalBearerToken, BusinessConsoleSchedulingInsertionPreviewJobRequest request, CancellationToken cancellationToken) =>
-        SendAsync<SchedulingInsertionPreviewJobContract>(internalBearerToken, HttpMethod.Get,
+        SendAsync<SchedulingInsertionPreviewJobDetailContract>(internalBearerToken, HttpMethod.Get,
             $"/api/business/v1/scheduling/workbench/insertion-preview-jobs/{request.JobId}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null, cancellationToken, SchedulingJson.Options);
 

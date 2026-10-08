@@ -2340,11 +2340,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipContractsSchedulingSchedulingInsertionPreviewJobContract | null;
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingInsertionPreviewJobDetailContract | null;
 };
 
-export type NervIipContractsSchedulingSchedulingInsertionPreviewJobContract = {
+export type NervIipContractsSchedulingSchedulingInsertionPreviewJobDetailContract = {
     jobId?: string;
     status?: NervIipContractsSchedulingSchedulingInsertionPreviewJobStatusContract;
     input?: NervIipContractsSchedulingSchedulingInsertionPreviewInputContract;
@@ -2353,6 +2353,8 @@ export type NervIipContractsSchedulingSchedulingInsertionPreviewJobContract = {
     finishedAtUtc?: string | null;
     preview?: NervIipContractsSchedulingSchedulePlanContract | null;
     failureReason?: string | null;
+    result?: NervIipContractsSchedulingSchedulingInsertionPreviewResultContract | null;
+    acceptedBaseline?: NervIipContractsSchedulingSchedulingInsertionAcceptedBaselineContract | null;
 };
 
 export type NervIipContractsSchedulingSchedulingInsertionPreviewJobStatusContract = 'created' | 'running' | 'completed' | 'failed';
@@ -2366,6 +2368,139 @@ export type NervIipContractsSchedulingSchedulingInsertionPreviewInputContract = 
     horizonEndUtc?: string;
     workOrderIds?: Array<string>;
     contractVersion?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewResultContract = {
+    contractVersion?: number;
+    baselinePlanId?: string;
+    candidatePlanId?: string;
+    inputFingerprint?: string;
+    candidate?: NervIipContractsSchedulingSchedulePlanContract;
+    promiseUtc?: string | null;
+    failures?: Array<NervIipContractsSchedulingSchedulingInsertionFailureContract>;
+    snapshot?: NervIipContractsSchedulingSchedulingInsertionCalculationSnapshotContract;
+    kpis?: NervIipContractsSchedulingSchedulingInsertionKpisContract;
+    orders?: Array<NervIipContractsSchedulingSchedulingInsertionOrderImpactContract>;
+    operations?: Array<NervIipContractsSchedulingSchedulingInsertionOperationImpactContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionFailureContract = 'unknownMaterialEta' | 'incompleteChain' | 'blockingConflict';
+
+export type NervIipContractsSchedulingSchedulingInsertionCalculationSnapshotContract = {
+    problem?: NervIipContractsSchedulingSchedulingProblemContract;
+    baseline?: NervIipContractsSchedulingSchedulePlanContract;
+    calculationBaseline?: NervIipContractsSchedulingSchedulePlanContract;
+    freeze?: NervIipContractsSchedulingSchedulePlanFreezeContextContract;
+    execution?: Array<NervIipContractsSchedulingSchedulingInsertionExecutionFactContract>;
+    fixedReservations?: Array<NervIipContractsSchedulingSchedulePlanFixedReservationContract>;
+    materialMode?: NervIipContractsSchedulingSchedulingMaterialConstraintModeContract;
+    qualityMode?: NervIipContractsSchedulingSchedulingQualityConstraintModeContract;
+    equipmentUnknownMode?: NervIipContractsSchedulingSchedulingEquipmentUnknownModeContract;
+    equipmentAvailability?: NervIipContractsSchedulingSchedulingEquipmentAvailabilitySnapshotContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionExecutionFactContract = {
+    orderId?: string;
+    operationId?: string;
+    actualStartedAtUtc?: string | null;
+    actualCompletedAtUtc?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingMaterialConstraintModeContract = 'soft' | 'hard';
+
+export type NervIipContractsSchedulingSchedulingQualityConstraintModeContract = 'soft' | 'hard';
+
+export type NervIipContractsSchedulingSchedulingEquipmentUnknownModeContract = 'soft' | 'hard';
+
+export type NervIipContractsSchedulingSchedulingEquipmentAvailabilitySnapshotContract = {
+    asOfUtc?: string;
+    contractVersion?: number;
+    windows?: Array<NervIipContractsSchedulingSchedulingEquipmentAvailabilityInputContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingEquipmentAvailabilityInputContract = {
+    window?: NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract;
+    restorePredictionExpired?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionKpisContract = {
+    onTimeRate?: NervIipContractsSchedulingSchedulingInsertionRateComparisonContract;
+    lateOrderCount?: NervIipContractsSchedulingSchedulingInsertionCountComparisonContract;
+    movedOperationCount?: number;
+    resourceUtilization?: NervIipContractsSchedulingSchedulingInsertionUtilizationComparisonContract;
+    unscheduledOperationCount?: NervIipContractsSchedulingSchedulingInsertionCountComparisonContract;
+    lockRetention?: NervIipContractsSchedulingSchedulingInsertionLockRetentionContract;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionRateComparisonContract = {
+    baseline?: number;
+    candidate?: number;
+    delta?: number;
+    baselineDenominator?: number;
+    candidateDenominator?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionCountComparisonContract = {
+    baseline?: number;
+    candidate?: number;
+    delta?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionUtilizationComparisonContract = {
+    baseline?: number;
+    candidate?: number;
+    delta?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionLockRetentionContract = {
+    preserved?: number;
+    total?: number;
+    notPreserved?: Array<NervIipContractsSchedulingSchedulingInsertionOperationKeyContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionOperationKeyContract = {
+    orderId?: string;
+    operationId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionOrderImpactContract = {
+    orderId?: string;
+    isNew?: boolean;
+    status?: NervIipContractsSchedulingSchedulingInsertionOrderStatusContract;
+    baselineCompletionUtc?: string | null;
+    candidateCompletionUtc?: string | null;
+    delayDays?: number | null;
+    baselineLate?: boolean;
+    candidateLate?: boolean;
+    newlyLate?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionOrderStatusContract = 'unchanged' | 'delayed' | 'new' | 'unscheduled';
+
+export type NervIipContractsSchedulingSchedulingInsertionOperationImpactContract = {
+    orderId?: string;
+    operationId?: string;
+    dueUtc?: string;
+    baseline?: NervIipContractsSchedulingScheduleAssignmentContract | null;
+    candidate?: NervIipContractsSchedulingScheduleAssignmentContract | null;
+    reasonCodes?: Array<string>;
+    sourceReference?: string;
+    paths?: Array<Array<NervIipContractsSchedulingSchedulingInsertionPropagationStepContract>>;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPropagationStepContract = {
+    fromOrderId?: string;
+    fromOperationId?: string;
+    toOrderId?: string;
+    toOperationId?: string;
+    reasonCode?: string;
+    competitionWindow?: NervIipContractsSchedulingScheduleAssignmentSegmentContract | null;
+    capacityUnits?: number | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionAcceptedBaselineContract = {
+    baseline?: NervIipContractsSchedulingSchedulePlanContract;
+    problem?: NervIipContractsSchedulingSchedulingProblemContract;
 };
 
 export type NervIipContractsSchedulingSchedulingInsertionPreviewRequestContract = {
@@ -13314,7 +13449,7 @@ export type AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses = {
     /**
      * Accepted
      */
-    202: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract;
+    202: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract;
 };
 
 export type AcceptBusinessConsoleSchedulingInsertionPreviewJobResponse = AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses[keyof AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses];
@@ -13346,7 +13481,7 @@ export type GetBusinessConsoleSchedulingInsertionPreviewJobResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract;
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract;
 };
 
 export type GetBusinessConsoleSchedulingInsertionPreviewJobResponse = GetBusinessConsoleSchedulingInsertionPreviewJobResponses[keyof GetBusinessConsoleSchedulingInsertionPreviewJobResponses];
