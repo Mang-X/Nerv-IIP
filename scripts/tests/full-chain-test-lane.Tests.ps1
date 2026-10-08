@@ -147,10 +147,43 @@ function Write-FullChainRunnerWorkflowFixture {
 function New-FullChainRunnerFakeCommands {
     param(
         [Parameter(Mandatory)] [string] $Directory,
-        [Parameter(Mandatory)] [string[]] $DiscoveredIdentities
+        [Parameter(Mandatory)] [string[]] $DiscoveredIdentities,
+        [object[]] $TestCases = @()
     )
 
     [IO.Directory]::CreateDirectory($Directory) | Out-Null
+    # The fake leaf implements only dotnet discovery/filter/TRX output. Selection and
+    # accounting remain the production runner's responsibility.
+    if ($TestCases.Count -gt 0) {
+        $realPwshPath = [string](@(Get-Command pwsh -CommandType Application)[0].Source)
+        $leafPath = Join-Path $Directory 'dotnet-leaf.ps1'
+        [IO.File]::WriteAllText((Join-Path $Directory 'cases.json'), ($TestCases | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText((Join-Path $Directory 'discovery.json'), (ConvertTo-Json -InputObject @($DiscoveredIdentities)), [Text.UTF8Encoding]::new($false))
+        $leaf = @'
+$ErrorActionPreference = 'Stop'
+$cases = @(Get-Content (Join-Path $PSScriptRoot 'cases.json') -Raw | ConvertFrom-Json)
+$discovered = @(Get-Content (Join-Path $PSScriptRoot 'discovery.json') -Raw | ConvertFrom-Json)
+if ($args.Contains('--list-tests')) {
+    'The following Tests are available:'
+    foreach ($identity in $discovered) { "    $identity" }
+    exit 0
+}
+if (-not $args.Contains('--filter')) { exit 0 }
+$filter = [string]$args[[Array]::IndexOf($args, '--filter') + 1]
+$directory = [string]$args[[Array]::IndexOf($args, '--results-directory') + 1]
+$logger = [string]$args[[Array]::IndexOf($args, '--logger') + 1]
+$identities = @($filter.Split('|') | ForEach-Object { $_.Substring('FullyQualifiedName='.Length) })
+$selected = @($cases | Where-Object { $identities.Contains([string]$_.MethodIdentity) })
+foreach ($case in $selected) {
+    [IO.File]::AppendAllText($env:NERV_FULLCHAIN_FAKE_COMMAND_LOG, ('CASE ' + (ConvertTo-Json -InputObject @{ directory = $directory; identity = $case.Identity } -Compress) + "`n"))
+}
+[IO.Directory]::CreateDirectory($directory) | Out-Null
+New-FullChainResidualTrx -Path (Join-Path $directory $logger.Substring('trx;LogFileName='.Length)) -Cases $selected
+'@
+        # Functions must be defined before the fake command is evaluated.
+        $leaf = "function New-FullChainResidualTrx {`n${function:New-FullChainResidualTrx}`n}`n" + $leaf
+        [IO.File]::WriteAllText($leafPath, $leaf, [Text.UTF8Encoding]::new($false))
+    }
     if ($IsWindows) {
         $docker = @'
 @echo off
@@ -181,6 +214,7 @@ $identityOutput
 )
 exit /b 0
 "@
+        if ($TestCases.Count -gt 0) { $dotnet = "@echo off`r`n`"$realPwshPath`" -NoProfile -File `"$leafPath`" %*`r`nexit /b %errorlevel%`r`n" }
         $pwsh = @'
 @echo off
 >>"%NERV_FULLCHAIN_FAKE_COMMAND_LOG%" echo ENTRYPOINT pwsh %*
@@ -220,6 +254,7 @@ $identityOutput
 esac
 exit 0
 "@
+    if ($TestCases.Count -gt 0) { $dotnet = "#!/bin/sh`nexec '$realPwshPath' -NoProfile -File '$leafPath' `"`$@`"`n" }
     $pwsh = @'
 #!/bin/sh
 printf 'ENTRYPOINT pwsh %s\n' "$*" >> "$NERV_FULLCHAIN_FAKE_COMMAND_LOG"
@@ -1062,75 +1097,66 @@ try {
     catch { $residualDriftRejected = $_.Exception.Message.Contains('executed a different identity set', [StringComparison]::Ordinal) }
     Assert-Contract $residualDriftRejected 'Residual coverage must fail when it executes fewer identities than discovery reported.'
 
-    # --- runner 接线：residual 的 claimed 必须取全部 members ---------------------------------------
-    # 这是反直觉的一条：本地 `-MemberId one-member` 只跑一个成员时，另外 4 个重依赖成员**不该**落进
-    # residual 被无依赖重跑。后人很容易「顺手修正」成 $selectedMembers，那个错不会红、只会让人困惑，
-    # 所以在这里钉死，并配一条把它改回 $selectedMembers 的变异对照。
+    # #4238: replacement mapping: claim-source AST -> called identities; residual
+    # command/helper AST -> real leaf calls + TRX + terminal summary; total assignment
+    # AST -> lane totals. Failure propagation shape remains for #4239.
     $runnerSourcePath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
     $runnerSourceText = [IO.File]::ReadAllText($runnerSourcePath)
-    function Assert-FullChainResidualClaimSource {
-        param([Parameter(Mandatory)] [string] $SourceText, [Parameter(Mandatory)] [string] $Context)
-
-        $parseErrors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseInput($SourceText, [ref]$null, [ref]$parseErrors)
-        if ($parseErrors.Count -gt 0) { throw "$Context runner source does not parse." }
-        $assignments = @($ast.FindAll({
-            param($node)
-            $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-            $node.Left.Extent.Text.Contains('$claimedIdentities', [StringComparison]::Ordinal)
-        }, $true))
-        if ($assignments.Count -ne 1) { throw "$Context must assign `$claimedIdentities exactly once; observed $($assignments.Count)." }
-        $rightText = $assignments[0].Right.Extent.Text
-        if (-not $rightText.Contains('$manifest.members', [StringComparison]::Ordinal)) {
-            throw "$Context must derive FullChain residual claims from every manifest member."
-        }
-        if ($rightText.Contains('$selectedMembers', [StringComparison]::Ordinal)) {
-            throw "$Context must not derive FullChain residual claims from the -MemberId selection."
-        }
-    }
-    Assert-FullChainResidualClaimSource -SourceText $runnerSourceText -Context 'FullChain runner'
-    $claimMutations = @(
-        [pscustomobject]@{ Name = 'selected-members'; From = '$claimedIdentities = @($manifest.members'; To = '$claimedIdentities = @($selectedMembers' }
+    $selectionMember = @($manifest.members | Where-Object { [string]::Equals([string]$_.entrypoint.kind, 'dotnet', [StringComparison]::Ordinal) })[0]
+    $selectionResidual = @("$fullChainRootNamespace.ResidualFixtureTests.Fact_case", "$fullChainRootNamespace.ResidualFixtureTests.Theory_case")
+    $selectionCases = @($manifest.members.expectedTestIdentities | ForEach-Object { @{ MethodIdentity = [string]$_; Identity = [string]$_; Outcome = 'Passed' } }) + @(
+        @{ MethodIdentity = $selectionResidual[0]; Identity = $selectionResidual[0]; Outcome = 'Passed' },
+        @{ MethodIdentity = $selectionResidual[1]; Identity = "$($selectionResidual[1])(value: 1)"; Outcome = 'Passed' },
+        @{ MethodIdentity = $selectionResidual[1]; Identity = "$($selectionResidual[1])(value: 2)"; Outcome = 'Passed' }
     )
-    foreach ($claimMutation in $claimMutations) {
-        Assert-Contract ($runnerSourceText.IndexOf($claimMutation.From, [StringComparison]::Ordinal) -ge 0) "FullChain residual claim mutation '$($claimMutation.Name)' anchor must exist."
-        $mutatedRunner = $runnerSourceText.Replace($claimMutation.From, $claimMutation.To)
-        Assert-Contract (-not [string]::Equals($mutatedRunner, $runnerSourceText, [StringComparison]::Ordinal)) "FullChain residual claim mutation '$($claimMutation.Name)' must change the runner."
-        $claimMutationRejected = $false
-        try { Assert-FullChainResidualClaimSource -SourceText $mutatedRunner -Context 'FullChain runner mutation' }
-        catch { $claimMutationRejected = $true }
-        Assert-Contract $claimMutationRejected "FullChain residual claim mutation '$($claimMutation.Name)' must be rejected."
+    $selectionBin = Join-Path $fixtureRoot 'selection-bin'
+    $selectionLog = Join-Path $fixtureRoot 'selection-calls.log'
+    $selectionRoot = Join-Path $fixtureRoot 'selection-control'
+    $selectionSummaryPath = Join-Path $selectionRoot 'summary.json'
+    New-FullChainRunnerFakeCommands -Directory $selectionBin -DiscoveredIdentities (@($manifest.members.expectedTestIdentities) + $selectionResidual) -TestCases $selectionCases
+    $selectionSavedPath = [Environment]::GetEnvironmentVariable('PATH')
+    $selectionSavedLog = [Environment]::GetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG')
+    $selectionSavedPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
+    $selectionSavedRedis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
+    $selectionSavedFailure = [Environment]::GetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE')
+    $selectionWrites = [pscustomobject]@{ terminal = 0; resumable = 0 }
+    $selectionWriter = {
+        param([string] $Path, [string] $Payload, [string] $Phase)
+        $selectionWrites.$Phase++
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+        [IO.File]::WriteAllText($Path, $Payload, [Text.UTF8Encoding]::new($false))
+    }.GetNewClosure()
+    try {
+        [Environment]::SetEnvironmentVariable('PATH', "$selectionBin$([IO.Path]::PathSeparator)$selectionSavedPath")
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG', $selectionLog)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', 'Host=fake-postgres;Database=postgres')
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', 'fake-redis:6379')
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $null)
+        & $runnerSourcePath -MemberId $selectionMember.id -ResultsDirectory (Join-Path $selectionRoot 'results') -SummaryPath $selectionSummaryPath -SummaryFileWriter $selectionWriter 6>$null | Out-Null
+        $selectionCalls = @([IO.File]::ReadAllLines($selectionLog) | Where-Object { $_.StartsWith('CASE ', [StringComparison]::Ordinal) } | ForEach-Object { $_.Substring(5) | ConvertFrom-Json })
+        $residualCalls = @($selectionCalls | Where-Object { [string]::Equals((Split-Path -Leaf $_.directory), 'residual', [StringComparison]::Ordinal) })
+        $memberCalls = @($selectionCalls | Where-Object { -not [string]::Equals((Split-Path -Leaf $_.directory), 'residual', [StringComparison]::Ordinal) })
+        Assert-Contract ($memberCalls.Count -eq 1 -and [string]::Equals([string]$memberCalls[0].identity, [string]$selectionMember.expectedTestIdentities[0], [StringComparison]::Ordinal)) 'Partial selection must execute only the selected frozen member.'
+        $expectedCases = @($selectionCases | Where-Object { $selectionResidual.Contains([string]$_.MethodIdentity) } | ForEach-Object { [string]$_.Identity })
+        $actualCases = @($residualCalls | ForEach-Object { [string]$_.identity })
+        [Array]::Sort($actualCases, [StringComparer]::Ordinal)
+        [Array]::Sort($expectedCases, [StringComparer]::Ordinal)
+        Assert-Contract ([string]::Equals(($actualCases -join '|'), ($expectedCases -join '|'), [StringComparison]::Ordinal)) 'Partial selection residual must execute exactly the Fact and two Theory cases, never unselected frozen members.'
+        $selectionSummary = Get-Content $selectionSummaryPath -Raw | ConvertFrom-Json -Depth 20
+        Assert-Contract ($selectionWrites.terminal -eq 1) 'Selection control must persist exactly one terminal summary.'
+        Assert-Contract ([string]::Equals(($selectionSummary.residual.identities -join '|'), ($selectionResidual -join '|'), [StringComparison]::Ordinal) -and $selectionSummary.residual.projectDiscovered -eq ($manifest.members.Count + 2)) 'Terminal residual identities must contain two methods from complete project discovery.'
+        Assert-Contract ($selectionSummary.residual.expected -eq 2 -and $selectionSummary.residual.discovered -eq 2 -and $selectionSummary.residual.executed -eq 3 -and $selectionSummary.residual.passed -eq 3 -and $selectionSummary.residual.failed -eq 0 -and $selectionSummary.residual.skipped -eq 0 -and [string]::Equals([string]$selectionSummary.residual.outcome, 'passed', [StringComparison]::Ordinal)) 'Terminal residual summary must distinguish two methods from three successful cases.'
+        Assert-Contract ($selectionSummary.expected -eq 3 -and $selectionSummary.discovered -eq 3 -and $selectionSummary.passed -eq 4 -and $selectionSummary.failed -eq 0 -and $selectionSummary.skipped -eq 0) 'Terminal lane totals must include residual method counts and all executed cases.'
+        Assert-Contract ($selectionSummary.members.Count -eq 1 -and [string]::Equals([string]$selectionSummary.members[0].memberId, [string]$selectionMember.id, [StringComparison]::Ordinal) -and [string]::Equals([string]$selectionSummary.cleanup, 'passed', [StringComparison]::Ordinal)) 'Terminal selection must retain the selected member and completed cleanup.'
     }
-
-    # residual 的执行、记账与失败语义必须真的写在 runner 里；删掉任何一条都不会让成员断言变红。
-    #
-    # 这里刻意走 AST 而不是文本 IndexOf：本票实测过，`# ` 注释掉整行时文本锚点仍然命中（那一行
-    # 还在文件里，只是不再执行），两个变异 R1/R2 因此存活。AST 只看真正会被求值的命令与赋值，
-    # 注释掉即消失。
+    finally {
+        [Environment]::SetEnvironmentVariable('PATH', $selectionSavedPath)
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG', $selectionSavedLog)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $selectionSavedPostgres)
+        [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $selectionSavedRedis)
+        [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $selectionSavedFailure)
+    }
     $runnerAst = [System.Management.Automation.Language.Parser]::ParseInput($runnerSourceText, [ref]$null, [ref]$null)
-    function Get-RunnerCommandNames {
-        param([Parameter(Mandatory)] $Ast)
-        return @($Ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) |
-            ForEach-Object { [string]$_.GetCommandName() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    }
-    $runnerCommandNames = @(Get-RunnerCommandNames -Ast $runnerAst)
-    foreach ($requiredCommand in @('Get-NervFullChainDiscoveredTestIdentities', 'Get-NervFullChainResidualTestIdentities', 'Assert-NervFullChainDiscoveryClosure', 'Get-NervFullChainResidualTrxResult')) {
-        Assert-Contract (@($runnerCommandNames | Where-Object { [string]::Equals($_, $requiredCommand, [StringComparison]::Ordinal) }).Count -ge 1) "The FullChain runner must actually invoke '$requiredCommand', not merely mention it."
-    }
-    $residualDotnetCommands = @($runnerAst.FindAll({
-        param($node)
-        $node -is [System.Management.Automation.Language.CommandAst] -and
-        [string]::Equals([string]$node.GetCommandName(), 'Invoke-DotNetOutput', [StringComparison]::Ordinal) -and
-        $node.Extent.Text.Contains('full-chain-residual-coverage', [StringComparison]::Ordinal)
-    }, $true))
-    Assert-Contract ($residualDotnetCommands.Count -eq 1) 'The FullChain runner must execute residual coverage through exactly one governed dotnet invocation.'
-    $residualTotalAssignments = @($runnerAst.FindAll({
-        param($node)
-        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-        $node.Left.Extent.Text.Contains('$summary.discovered', [StringComparison]::Ordinal) -and
-        $node.Right.Extent.Text.Contains('$summary.residual.discovered', [StringComparison]::Ordinal)
-    }, $true))
-    Assert-Contract ($residualTotalAssignments.Count -eq 1) 'The FullChain runner must fold residual coverage into the lane-level discovered count so CI logs report tests actually run, not names registered.'
     # 断言必须落在 **条件子树** 上：本票实测过，只看整个 if 的 extent 时，把条件改成 `$false`
     # 仍然绿——因为 body 里的失败消息本身就含那两个字符串。这是「相邻同型守卫兜住变异」的同族。
     $residualOutcomeGuards = @($runnerAst.FindAll({
