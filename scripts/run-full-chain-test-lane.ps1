@@ -247,7 +247,8 @@ try {
     Invoke-DotNetOutput -Name 'full-chain-project-restore' -WorkingDirectory $repoRoot -TimeoutSeconds $restoreTimeoutSeconds -Arguments @('restore', $fullChainProject) | Out-Null
     $discovery = Invoke-DotNetOutput -Name 'full-chain-project-discovery' -WorkingDirectory $repoRoot -TimeoutSeconds $discoveryTimeoutSeconds -Arguments @('test', $fullChainProject, '--configuration', 'Release', '--no-restore', '--list-tests')
     $probeReuseMemberId = 'sales-order-demand-planning'
-    if ($selectedIdSet.Contains($probeReuseMemberId)) {
+    $deliveryProbeReuseMemberId = 'erp-wms-delivery-completion'
+    if ($selectedIdSet.Contains($probeReuseMemberId) -or $selectedIdSet.Contains($deliveryProbeReuseMemberId)) {
         New-NervFullChainProbePreparation -Project (Join-Path $repoRoot $fullChainProject) -Configuration Release -Path $preparedProbePath
     }
     $discoveryLines = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -358,7 +359,7 @@ foreach ($member in $selectedMembers) {
             }
             elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) {
                 $scriptArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot ([string]$member.entrypoint.path)))
-                if ([string]::Equals($admittedMemberId, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
+                if ([string]::Equals($admittedMemberId, 'sales-order-demand-planning', [StringComparison]::Ordinal) -or [string]::Equals($admittedMemberId, 'erp-wms-delivery-completion', [StringComparison]::Ordinal)) {
                     $scriptArguments += @('-PreparedProbePath', $preparedProbePath)
                 }
                 Invoke-NativeCommandWithTimeout -Command 'pwsh' -Arguments $scriptArguments -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" -LiveOutput | Out-Null

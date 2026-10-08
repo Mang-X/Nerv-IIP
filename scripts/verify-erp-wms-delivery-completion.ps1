@@ -28,6 +28,7 @@ param(
     [string]$PostgresAdminConnectionString = $env:NERV_IIP_TEST_POSTGRES,
     [string]$RedisConnectionString = $env:NERV_IIP_TEST_REDIS,
     [switch]$SkipBuild,
+    [string]$PreparedProbePath,
     [string]$CanonicalResultPath,
     [string]$TrackIdentifier,
     [string]$Repository,
@@ -45,6 +46,7 @@ $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 Set-Location $root
 . (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $root 'scripts/lib/AcceptanceCanonicalResult.ps1')
+. (Join-Path $root 'scripts/lib/FullChainTestLane.ps1')
 
 $canonicalResultEnabled = -not [string]::IsNullOrWhiteSpace($CanonicalResultPath)
 $canonicalResultFullPath = $null
@@ -661,10 +663,12 @@ try {
     $databaseCreated = $true
 
     if (-not $SkipBuild) {
-        foreach ($project in @($erpProject, $wmsProject, $inventoryProject, $probeProject)) {
+        foreach ($project in @($erpProject, $wmsProject, $inventoryProject)) {
             Invoke-DotNet -Arguments @('build', $project, '-m:1', '-nr:false', '/p:UseSharedCompilation=false') -WorkingDirectory $root -TimeoutSeconds 600 -Name 'man527-build' | Out-Null
         }
     }
+
+    $probeConfiguration = Invoke-NervFullChainProbePreparation -Project $probeProject -WorkingDirectory $root -PreparedProbePath $PreparedProbePath
 
     $commonEnvironment = @{
         ASPNETCORE_ENVIRONMENT = 'Development'
@@ -935,7 +939,7 @@ try {
         $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "replay-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
         $script:probeResultsPath = [IO.Path]::GetFullPath($probeResults)
-        Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man527-replay-probe' | Out-Null
+        Invoke-DotNet -Arguments @('test', $probeProject, '--configuration', $probeConfiguration, '--no-build', '--filter', 'FullyQualifiedName~External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man527-replay-probe' | Out-Null
         if (-not (Test-Path -LiteralPath $probeResults)) {
             throw 'MAN-527 replay probe produced no TRX result; the selected test may be absent from a stale build.'
         }
