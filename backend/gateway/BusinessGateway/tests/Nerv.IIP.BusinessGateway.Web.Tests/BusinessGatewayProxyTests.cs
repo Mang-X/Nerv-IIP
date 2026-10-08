@@ -9267,11 +9267,12 @@ public sealed class BusinessGatewayProxyTests
 
     // #4162 PublicContract：公开合同要求异步首版受理/查询原样透传，权限分别沿管理/读取。
     [Theory]
-    [InlineData(true, SchedulingInsertionPreviewJobStatusContract.Created)]
-    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Running)]
-    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Completed)]
-    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Failed)]
-    public async Task Insertion_preview_job_facade_preserves_owner_facts_and_internal_token(bool accept, SchedulingInsertionPreviewJobStatusContract status)
+    [InlineData(true, SchedulingInsertionPreviewJobStatusContract.Created, false)]
+    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Running, false)]
+    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Completed, false)]
+    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Completed, true)]
+    [InlineData(false, SchedulingInsertionPreviewJobStatusContract.Failed, false)]
+    public async Task Insertion_preview_job_facade_preserves_owner_facts_and_internal_token(bool accept, SchedulingInsertionPreviewJobStatusContract status, bool canPromise)
     {
         var start = new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero);
         var input = new SchedulingInsertionPreviewInputContract("org-001", "env-dev", "plan-001", "WO-12", start, start.AddDays(2),
@@ -9290,10 +9291,27 @@ public sealed class BusinessGatewayProxyTests
             FreezeContext = new(start, start.AddHours(4), [],
                 [new(preview.Assignments.First(), [SchedulePlanFreezeReasonContract.StableWindow])]),
         };
-        var fact = new SchedulingInsertionPreviewJobContract(Guid.NewGuid(),
+        // #4187：Gateway 必须传递 producer 的 CTP、影响及受理快照，不重算业务事实。
+        var baseline = sample with { PlanId = "plan-001" };
+        var problem = new SchedulingProblemContract(1, "problem-001", "org-001", "env-dev", start, start.AddDays(2),
+            [], [], [], [], [], [], []);
+        var snapshot = new SchedulingInsertionCalculationSnapshotContract(problem, baseline, baseline, preview.FreezeContext!,
+            [new("WO-1", "OP-1", start, null)], [], SchedulingMaterialConstraintModeContract.Hard,
+            SchedulingQualityConstraintModeContract.Hard, SchedulingEquipmentUnknownModeContract.Soft);
+        var result = new SchedulingInsertionPreviewResultContract(1, "plan-001", preview.PlanId, "fingerprint-owner", preview,
+            canPromise ? start.AddHours(36) : null,
+            canPromise ? [] : [SchedulingInsertionFailureContract.UnknownMaterialEta, SchedulingInsertionFailureContract.IncompleteChain, SchedulingInsertionFailureContract.BlockingConflict], snapshot,
+            new(new(0.8m, 0.6m, -0.2m, 10, 10), new(1, 2, 1), 3, new(0.4m, 0.7m, 0.3m), new(0, 1, 1), new(1, 1, [])),
+            [new("WO-1", false, SchedulingInsertionOrderStatusContract.Delayed, start.AddHours(8), start.AddHours(32), 1m, false, true, true),
+             new("WO-12", true, SchedulingInsertionOrderStatusContract.Unscheduled, null, null, null, false, false, false)],
+            [new("WO-1", "OP-1", start.AddHours(10), sample.Assignments.Single(), preview.Assignments.First(),
+                ["capacity"], "owner-reference", [[new("WO-12", "OP-12", "WO-1", "OP-1", "capacity", new(start, start.AddHours(1)), 1)]])]);
+        var fact = new SchedulingInsertionPreviewJobDetailContract(Guid.NewGuid(),
             status,
             input, start, accept ? null : start, accept ? null : start.AddMinutes(1), status == SchedulingInsertionPreviewJobStatusContract.Completed ? preview : null,
-            status == SchedulingInsertionPreviewJobStatusContract.Failed ? "工艺路线不可用，请重新选择工单。" : null);
+            status == SchedulingInsertionPreviewJobStatusContract.Failed ? "工艺路线不可用，请重新选择工单。" : null,
+            status == SchedulingInsertionPreviewJobStatusContract.Completed ? result : null,
+            new(baseline, problem));
         var handler = new RecordingHandler(_ => JsonResponse(accept ? HttpStatusCode.Accepted : HttpStatusCode.OK, new { data = fact }));
         using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -20815,10 +20833,10 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
     public Task<SchedulingFirstPlanJobContract> GetFirstPlanJobAsync(
         string token, BusinessConsoleSchedulingFirstPlanJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-    public Task<SchedulingInsertionPreviewJobContract> AcceptInsertionPreviewJobAsync(
+    public Task<SchedulingInsertionPreviewJobDetailContract> AcceptInsertionPreviewJobAsync(
         string token, SchedulingInsertionPreviewRequestContract input, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-    public Task<SchedulingInsertionPreviewJobContract> GetInsertionPreviewJobAsync(
+    public Task<SchedulingInsertionPreviewJobDetailContract> GetInsertionPreviewJobAsync(
         string token, BusinessConsoleSchedulingInsertionPreviewJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<SchedulingWorkingDraftContract> SaveWorkingDraftAsync(string token, BusinessConsoleSaveSchedulingWorkingDraftRequest request, string userId, CancellationToken ct) => throw new NotSupportedException();
