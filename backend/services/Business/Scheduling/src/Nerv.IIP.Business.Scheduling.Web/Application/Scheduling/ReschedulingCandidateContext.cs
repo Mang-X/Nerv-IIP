@@ -7,7 +7,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 internal sealed record ReschedulingCandidateInput(SchedulingProblemContract Problem, SchedulePlanContract Baseline,
     IReadOnlyCollection<SchedulingDeviation> Deviations, IReadOnlyCollection<SchedulingFreezeExecutionFact> Execution,
     IReadOnlyCollection<(string OrderId, string OperationId)> ManualLocks, SchedulingFreezePolicy Policy,
-    SchedulingEquipmentAvailabilitySnapshot? EquipmentAvailability = null,
+    SchedulingEquipmentAvailabilitySnapshotContract? EquipmentAvailability = null,
     SchedulingMaterialConstraintModeContract MaterialMode = SchedulingMaterialConstraintModeContract.Soft,
     SchedulingQualityConstraintModeContract QualityMode = SchedulingQualityConstraintModeContract.Soft,
     SchedulingEquipmentUnknownModeContract EquipmentUnknownMode = SchedulingEquipmentUnknownModeContract.Soft);
@@ -17,11 +17,11 @@ internal sealed record ReschedulingCandidateExplanation(string OrderId, string O
     IReadOnlyList<ReschedulingImpactReason> Reasons, IReadOnlyList<ReschedulingImpactPath> Paths);
 internal sealed record ReschedulingCandidate(string InputFingerprint, SchedulePlanContract Plan, ReschedulingImpact Impact,
     IReadOnlyList<ReschedulingCandidateMovement> Movements, IReadOnlyList<ReschedulingCandidateExplanation> Explanations,
-    SchedulingEquipmentAvailabilitySnapshot? EquipmentAvailability, IReadOnlyList<ReschedulingResourceTransfer> Transfers);
+    SchedulingEquipmentAvailabilitySnapshotContract? EquipmentAvailability, IReadOnlyList<ReschedulingResourceTransfer> Transfers);
 internal sealed record ReschedulingResourceTransfer(string OrderId, string OperationId,
     string OriginalResourceId, string ResourceId, int SetupMinutes, IReadOnlyList<SchedulingSubstituteDeviceFact> DeviceSources);
 internal sealed record SchedulingSubstituteDeviceFact(string ResourceId, string SubstituteResourceId,
-    SchedulingEquipmentAvailabilityInput Source);
+    SchedulingEquipmentAvailabilityInputContract Source);
 
 /// <summary>两策略共用影响、冻结、完整输入指纹及局部结果解释。</summary>
 internal sealed record ReschedulingCandidateContext(ReschedulingCandidateInput Input, SchedulingProblemContract Problem,

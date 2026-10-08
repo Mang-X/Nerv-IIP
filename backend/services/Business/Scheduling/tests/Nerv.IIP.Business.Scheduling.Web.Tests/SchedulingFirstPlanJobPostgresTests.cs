@@ -23,6 +23,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Testing;
 using NetCorePal.Extensions.Dto;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -246,6 +247,53 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         foreach (var window in new[] { TimeSpan.FromMinutes(20), TimeSpan.Zero })
             await VerifyInsertionFreeze(window);
         await VerifyExistingRushInsertion();
+        await VerifyEquipmentSourceSnapshot();
+    }
+
+    private static async Task VerifyEquipmentSourceSnapshot()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var sample = ShockAbsorberSchedulingFixture.CreateProblem();
+        var source = new ControlledSource();
+        source.Release.TrySetResult();
+        var equipment = new VersionedEquipment();
+        await using var factory = new JobFactory(source, clock: new InsertionClock(sample.HorizonStartUtc), equipment: equipment);
+        await Migrate(factory);
+        using var client = Client(factory);
+        var original = await SeedInsertionPlan(factory, 2);
+        using var worker = InsertionWorker(factory);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            string? firstProblem = null;
+            foreach (var version in new[] { "v1", "v2" })
+            {
+                equipment.Version = version;
+                using var response = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-003"), SchedulingJson.Options);
+                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+                var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobDetailContract>>(SchedulingJson.Options))!.Data;
+                var completed = await TerminalInsertion(client, accepted.JobId);
+                Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Completed, completed.Status);
+                var readback = (await ReadInsertion(client, accepted.JobId)).Result!;
+                using var snapshot = JsonDocument.Parse(JsonSerializer.Serialize(readback.Snapshot, SchedulingJson.Options));
+                // #4186 / ADR 0032：同实际窗但不同恢复来源版本必须从持久化结果区分。
+                Assert.True(snapshot.RootElement.TryGetProperty("equipmentAvailability", out var retained));
+                Assert.Equal(sample.HorizonStartUtc, retained.GetProperty("asOfUtc").GetDateTimeOffset());
+                Assert.Equal(1, retained.GetProperty("contractVersion").GetInt32());
+                var item = Assert.Single(retained.GetProperty("windows").EnumerateArray());
+                var window = item.GetProperty("window");
+                Assert.Equal(version, window.GetProperty("restorePredictionSourceVersion").GetString());
+                Assert.Equal("device-mttr", window.GetProperty("restorePredictionSource").GetString());
+                Assert.Equal(sample.HorizonStartUtc.AddMinutes(-1), window.GetProperty("expectedRestoreAtUtc").GetDateTimeOffset());
+                Assert.Equal("source-maintenance", window.GetProperty("sourceReferenceId").GetString());
+                Assert.True(item.GetProperty("restorePredictionExpired").GetBoolean());
+                Assert.Equal(new[] { "substitute-a", "substitute-z" }, window.GetProperty("substituteDeviceAssetIds").EnumerateArray().Select(x => x.GetString()));
+                var problem = JsonSerializer.Serialize(readback.Snapshot.Problem, SchedulingJson.Options);
+                if (firstProblem is null) firstProblem = problem;
+                else Assert.Equal(firstProblem, problem);
+            }
+        }
+        finally { await worker.StopAsync(CancellationToken.None); }
     }
 
     private static async Task VerifyExistingRushInsertion()
@@ -595,7 +643,8 @@ public sealed class SchedulingFirstPlanJobPostgresTests
     }
 
     private sealed class JobFactory(ControlledSource source, SaveChangesInterceptor? interceptor = null,
-        TimeProvider? clock = null, SchedulingFreezeSettings? freezeSettings = null) : WebApplicationFactory<Program>
+        TimeProvider? clock = null, SchedulingFreezeSettings? freezeSettings = null,
+        ISchedulingEquipmentAvailabilityProvider? equipment = null) : WebApplicationFactory<Program>
     {
         public JobFailureLogger FailureLog { get; } = new();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -620,11 +669,25 @@ public sealed class SchedulingFirstPlanJobPostgresTests
                 services.RemoveAll<ISchedulingProblemProducer>();
                 services.AddSingleton<ISchedulingWorkbenchSourceProvider>(source);
                 services.AddSingleton<ISchedulingProblemProducer>(source);
+                if (equipment is not null) { services.RemoveAll<ISchedulingEquipmentAvailabilityProvider>(); services.AddSingleton(equipment); }
                 if (clock is not null) { services.RemoveAll<TimeProvider>(); services.AddSingleton(clock); }
                 if (freezeSettings is not null) { services.RemoveAll<SchedulingFreezeSettings>(); services.AddSingleton(freezeSettings); }
                 if (interceptor is not null) services.AddDbContext<ApplicationDbContext>(options => options.AddInterceptors(interceptor));
             });
         }
+    }
+    private sealed class VersionedEquipment : ISchedulingEquipmentAvailabilityProvider
+    {
+        public string Version { get; set; } = "v1";
+        public Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(SchedulingProblemContract problem, CancellationToken ct) =>
+            Task.FromResult(new EquipmentRuntimeAvailabilityResponse(1, problem.OrganizationId, problem.EnvironmentId,
+                problem.HorizonStartUtc, problem.HorizonEndUtc,
+                [new(problem.Resources.First().ResourceId, null, EquipmentRuntimeAvailabilityStatus.Unavailable,
+                    EquipmentRuntimeReasonCodes.Downtime, EquipmentRuntimeSeverity.Blocked,
+                    problem.HorizonEndUtc.AddMinutes(-1), problem.HorizonEndUtc,
+                    EquipmentRuntimeSourceType.Downtime, "source-maintenance", "equipment.downtime", ["substitute-z", "substitute-a"],
+                    ExpectedRestoreAtUtc: problem.HorizonStartUtc.AddMinutes(-1), RestorePredictionSource: "device-mttr",
+                    RestorePredictionSourceVersion: Version)]));
     }
     // This provider lane proves Scheduling persistence/HTTP/worker behavior; CAP transport has its own lane.
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

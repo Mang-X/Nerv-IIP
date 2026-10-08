@@ -35,13 +35,17 @@ public class SchedulingInsertionResultProjectorTests
     [Fact]
     public void Due_boundaries_are_strict_order_scoped_and_kpis_include_locked_late_orders_but_exclude_them_from_on_time_denominator()
     {
-        var problem = Problem(Order("equal", "same"), Order("new-late", "same"), Order("already-late", "same"), Order("rush", "same"));
-        var baseline = Plan(problem, "base", [A("equal", "same", 0, 24), A("new-late", "same", 23, 24),
+        var equal = Order("equal", "same");
+        var problem = Problem(equal with { DueUtc = At.AddHours(26),
+            Operations = equal.Operations.Select(x => x with { DueUtc = At.AddHours(26) }).ToArray() },
+            Order("new-late", "same"), Order("already-late", "same"), Order("rush", "same"));
+        var baseline = Plan(problem, "base", [A("equal", "same", 0, 26), A("new-late", "same", 23, 24),
             A("already-late", "same", 24, 25) with { IsLocked = true }]);
-        var candidate = Plan(problem, "candidate", [A("equal", "same", 0, 24), A("new-late", "same", 24, 25),
+        var candidate = Plan(problem, "candidate", [A("equal", "same", 0, 26), A("new-late", "same", 24, 25),
             A("already-late", "same", 24, 25) with { IsLocked = true }, A("rush", "same", 0, 1)]);
         var result = Project(problem, baseline, candidate);
         Assert.False(result.Orders.Single(x => x.OrderId == "equal").CandidateLate);
+        Assert.Equal(At.AddHours(24), result.Operations.Single(x => x.OrderId == "new-late").DueUtc);
         Assert.True(result.Orders.Single(x => x.OrderId == "new-late").NewlyLate);
         var old = result.Orders.Single(x => x.OrderId == "already-late");
         Assert.True(old.BaselineLate);

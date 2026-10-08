@@ -136,9 +136,9 @@ public sealed class ExecuteScheduleInsertionPreviewJobCommandHandler(
                 x.ActualStartedAtUtc, x.ActualCompletedAtUtc)).ToArray(),
             assembled.FixedReservations.Select(x => new SchedulePlanFixedReservationContract(x.OrderId, x.OperationId,
                 x.WorkCenterId, x.StartUtc, x.EndUtc, x.ResourceId)).ToArray(), scheduler.MaterialConstraintMode,
-            scheduler.QualityConstraintMode, equipmentUnknownMode.Mode);
+            scheduler.QualityConstraintMode, equipmentUnknownMode.Mode, equipmentInput);
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            ReschedulingImpactAnalyzer.CanonicalJson(new { Snapshot = calculationSnapshot, Equipment = equipmentInput, result.InputFingerprint })))).ToLowerInvariant();
+            ReschedulingImpactAnalyzer.CanonicalJson(new { Snapshot = calculationSnapshot, result.InputFingerprint })))).ToLowerInvariant();
         result = result with { InputFingerprint = fingerprint,
             Candidate = result.Candidate with { ProblemFingerprint = fingerprint, Status = SchedulePlanStatusContract.Preview, FreezeContext = freeze } };
         var projected = SchedulingInsertionResultProjector.Project(result, calculationSnapshot, input.WorkOrderId, scheduler);

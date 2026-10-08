@@ -1,4 +1,11 @@
+using Nerv.IIP.Contracts.EquipmentRuntime;
+
 namespace Nerv.IIP.Contracts.Scheduling;
+
+public sealed record SchedulingEquipmentAvailabilitySnapshotContract(DateTimeOffset AsOfUtc, int ContractVersion,
+    IReadOnlyCollection<SchedulingEquipmentAvailabilityInputContract> Windows);
+public sealed record SchedulingEquipmentAvailabilityInputContract(EquipmentRuntimeAvailabilityWindowContract Window,
+    bool RestorePredictionExpired);
 
 public enum SchedulingInsertionFailureContract { UnknownMaterialEta, IncompleteChain, BlockingConflict }
 public enum SchedulingInsertionOrderStatusContract { Unchanged, Delayed, New, Unscheduled }
@@ -10,7 +17,8 @@ public sealed record SchedulingInsertionCalculationSnapshotContract(
     IReadOnlyCollection<SchedulingInsertionExecutionFactContract> Execution,
     IReadOnlyCollection<SchedulePlanFixedReservationContract> FixedReservations,
     SchedulingMaterialConstraintModeContract MaterialMode, SchedulingQualityConstraintModeContract QualityMode,
-    SchedulingEquipmentUnknownModeContract EquipmentUnknownMode);
+    SchedulingEquipmentUnknownModeContract EquipmentUnknownMode,
+    SchedulingEquipmentAvailabilitySnapshotContract? EquipmentAvailability = null);
 public sealed record SchedulingInsertionOrderImpactContract(string OrderId, bool IsNew,
     SchedulingInsertionOrderStatusContract Status, DateTimeOffset? BaselineCompletionUtc,
     DateTimeOffset? CandidateCompletionUtc, decimal? DelayDays,

@@ -76,7 +76,7 @@ public sealed class SchedulingRestorePredictionTests
         var json = SchedulingFrozenOccupancy.SerializeSnapshot(problem, [], equipmentAvailability: expired);
         using var snapshot = JsonDocument.Parse(json);
         var restored = snapshot.RootElement.GetProperty("equipmentAvailability")
-            .Deserialize<SchedulingEquipmentAvailabilitySnapshot>(SchedulingJson.Options)!;
+            .Deserialize<SchedulingEquipmentAvailabilitySnapshotContract>(SchedulingJson.Options)!;
         Assert.Equal(AsOf.AddHours(1), restored.AsOfUtc);
         var prediction = Assert.Single(restored.Windows, x => x.Window.SourceReferenceId == "maintenance");
         Assert.True(prediction.RestorePredictionExpired);
