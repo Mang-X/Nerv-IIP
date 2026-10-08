@@ -7732,7 +7732,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract"
                 }
               }
             }
@@ -7791,7 +7791,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract"
                 }
               }
             }
@@ -43525,7 +43525,7 @@
         "type": "object",
         "additionalProperties": false
       },
-      "NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobContract": {
+      "NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract": {
         "allOf": [
           {
             "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
@@ -43538,7 +43538,7 @@
                 "nullable": true,
                 "oneOf": [
                   {
-                    "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionPreviewJobContract"
+                    "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionPreviewJobDetailContract"
                   }
                 ]
               }
@@ -43546,7 +43546,7 @@
           }
         ]
       },
-      "NervIIPContractsSchedulingSchedulingInsertionPreviewJobContract": {
+      "NervIIPContractsSchedulingSchedulingInsertionPreviewJobDetailContract": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -43585,6 +43585,22 @@
           "failureReason": {
             "type": "string",
             "nullable": true
+          },
+          "result": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionPreviewResultContract"
+              }
+            ]
+          },
+          "acceptedBaseline": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionAcceptedBaselineContract"
+              }
+            ]
           }
         }
       },
@@ -43637,6 +43653,478 @@
           "contractVersion": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionPreviewResultContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "baselinePlanId": {
+            "type": "string"
+          },
+          "candidatePlanId": {
+            "type": "string"
+          },
+          "inputFingerprint": {
+            "type": "string"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanContract"
+          },
+          "promiseUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionFailureContract"
+            }
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionCalculationSnapshotContract"
+          },
+          "kpis": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionKpisContract"
+          },
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionOrderImpactContract"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionOperationImpactContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionFailureContract": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "UnknownMaterialEta",
+          "IncompleteChain",
+          "BlockingConflict"
+        ],
+        "enum": [
+          "unknownMaterialEta",
+          "incompleteChain",
+          "blockingConflict"
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionCalculationSnapshotContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "problem": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingProblemContract"
+          },
+          "baseline": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanContract"
+          },
+          "calculationBaseline": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanContract"
+          },
+          "freeze": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFreezeContextContract"
+          },
+          "execution": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionExecutionFactContract"
+            }
+          },
+          "fixedReservations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanFixedReservationContract"
+            }
+          },
+          "materialMode": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingMaterialConstraintModeContract"
+          },
+          "qualityMode": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingQualityConstraintModeContract"
+          },
+          "equipmentUnknownMode": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingEquipmentUnknownModeContract"
+          },
+          "equipmentAvailability": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingEquipmentAvailabilitySnapshotContract"
+              }
+            ]
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionExecutionFactContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "actualStartedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualCompletedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingMaterialConstraintModeContract": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Soft",
+          "Hard"
+        ],
+        "enum": [
+          "soft",
+          "hard"
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingQualityConstraintModeContract": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Soft",
+          "Hard"
+        ],
+        "enum": [
+          "soft",
+          "hard"
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingEquipmentUnknownModeContract": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Soft",
+          "Hard"
+        ],
+        "enum": [
+          "soft",
+          "hard"
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingEquipmentAvailabilitySnapshotContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "asOfUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contractVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingEquipmentAvailabilityInputContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingEquipmentAvailabilityInputContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "window": {
+            "$ref": "#/components/schemas/NervIIPContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract"
+          },
+          "restorePredictionExpired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionKpisContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "onTimeRate": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionRateComparisonContract"
+          },
+          "lateOrderCount": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionCountComparisonContract"
+          },
+          "movedOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "resourceUtilization": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionUtilizationComparisonContract"
+          },
+          "unscheduledOperationCount": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionCountComparisonContract"
+          },
+          "lockRetention": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionLockRetentionContract"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionRateComparisonContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "candidate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "delta": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "baselineDenominator": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "candidateDenominator": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionCountComparisonContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "candidate": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "delta": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionUtilizationComparisonContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "candidate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "delta": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionLockRetentionContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "preserved": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "notPreserved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionOperationKeyContract"
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionOperationKeyContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionOrderImpactContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "isNew": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionOrderStatusContract"
+          },
+          "baselineCompletionUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "candidateCompletionUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "delayDays": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "baselineLate": {
+            "type": "boolean"
+          },
+          "candidateLate": {
+            "type": "boolean"
+          },
+          "newlyLate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionOrderStatusContract": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "Unchanged",
+          "Delayed",
+          "New",
+          "Unscheduled"
+        ],
+        "enum": [
+          "unchanged",
+          "delayed",
+          "new",
+          "unscheduled"
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionOperationImpactContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "orderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "dueUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "baseline": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentContract"
+              }
+            ]
+          },
+          "candidate": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentContract"
+              }
+            ]
+          },
+          "reasonCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sourceReference": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingInsertionPropagationStepContract"
+              }
+            }
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionPropagationStepContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fromOrderId": {
+            "type": "string"
+          },
+          "fromOperationId": {
+            "type": "string"
+          },
+          "toOrderId": {
+            "type": "string"
+          },
+          "toOperationId": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "competitionWindow": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPContractsSchedulingScheduleAssignmentSegmentContract"
+              }
+            ]
+          },
+          "capacityUnits": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingInsertionAcceptedBaselineContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanContract"
+          },
+          "problem": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingProblemContract"
           }
         }
       },
