@@ -164,12 +164,12 @@ public sealed class FiniteCapacityScheduler(
 
     internal SchedulePlanContract ScheduleRightShiftNormalized(
         SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc,
-        IReadOnlyCollection<ScheduleAssignmentContract> movable,
+        IReadOnlyCollection<ScheduleAssignmentContract> baselineQueue,
         IReadOnlyCollection<ScheduleAssignmentContract> preserved)
     {
         var state = SchedulerState.From(problem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode, [], [], []);
         state.ReserveLockedAssignments();
-        state.ScheduleOpenOperations(movable);
+        state.ScheduleOpenOperations(baselineQueue);
         state.ReportLockedAssemblyConflicts(includeOperationPredecessors: true);
         return state.ToPlan(preserved);
     }
@@ -672,17 +672,26 @@ file sealed class SchedulerState
             .ToList();
 
         var queuePredecessors = new Dictionary<OperationKey, OperationKey>();
+        var latestQueueStarts = new Dictionary<OperationKey, DateTimeOffset>();
         if (baselineQueue is not null)
         {
             var items = operations.ToDictionary(OperationKey.From);
             var ordered = baselineQueue.OrderBy(x => x.StartUtc)
                 .ThenBy(x => x.OrderId, StringComparer.Ordinal).ThenBy(x => x.OperationId, StringComparer.Ordinal).ToArray();
             operations = ordered.Select(x => items[OperationKey.From(x)]).ToList();
+            var preservedKeys = problem.LockedAssignments.Select(x => new OperationKey(x.OrderId, x.OperationId)).ToHashSet();
             foreach (var resourceQueue in ordered.GroupBy(x => x.ResourceId))
             {
                 var queue = resourceQueue.ToArray();
                 for (var index = 1; index < queue.Length; index++)
                     queuePredecessors.Add(OperationKey.From(queue[index]), OperationKey.From(queue[index - 1]));
+                DateTimeOffset? nextPreservedStart = null;
+                for (var index = queue.Length - 1; index >= 0; index--)
+                {
+                    var key = OperationKey.From(queue[index]);
+                    if (preservedKeys.Contains(key)) nextPreservedStart = queue[index].StartUtc;
+                    else if (nextPreservedStart.HasValue) latestQueueStarts.Add(key, nextPreservedStart.Value);
+                }
             }
         }
 
@@ -754,7 +763,7 @@ file sealed class SchedulerState
             // 队列只约束相对开始顺序；CapacityUnits > 1 的工序仍可并行，不人为串行化。
             var queueStart = queuePredecessors.TryGetValue(itemKey, out queuePrevious)
                 ? assignmentByOperation[queuePrevious].StartUtc : problem.HorizonStartUtc;
-            var result = TrySchedule(item, queueStart);
+            var result = TrySchedule(item, queueStart, latestQueueStarts.GetValueOrDefault(itemKey, problem.HorizonEndUtc));
             if (result is null)
             {
                 continue;
@@ -943,7 +952,7 @@ file sealed class SchedulerState
             EquipmentRiskOperationCount: equipmentRiskOperationCount);
     }
 
-    private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item, DateTimeOffset queueStart)
+    private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item, DateTimeOffset queueStart, DateTimeOffset latestQueueStart)
     {
         if (item.Operation.Changeovers is null && !item.Operation.ToolingAvailable)
         {
@@ -1034,6 +1043,14 @@ file sealed class SchedulerState
             .ThenBy(x => x.Resource.SortKey, StringComparer.Ordinal)
             .ThenBy(x => x.Resource.ResourceId, StringComparer.Ordinal)
             .ToList();
+
+        // 冻结后项保持原位；不能通过把前项安排到它之后制造无冲突的队列反转。
+        if (feasibleSlots.Count > 0 && feasibleSlots[0].StartUtc > latestQueueStart)
+        {
+            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Capacity,
+                "无法在后续冻结工序之前保持原资源队列顺序，本工序未排产。");
+            return null;
+        }
 
         if (feasibleSlots.Count == 0)
         {

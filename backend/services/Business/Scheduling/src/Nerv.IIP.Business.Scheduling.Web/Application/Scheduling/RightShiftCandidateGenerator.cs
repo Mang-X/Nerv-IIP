@@ -74,7 +74,7 @@ internal static class RightShiftCandidateGenerator
             input.EquipmentUnknownMode,
         })))).ToLowerInvariant();
         var plan = new FiniteCapacityScheduler(input.MaterialMode, input.QualityMode).ScheduleRightShiftNormalized(
-            candidateProblem, $"right-shift-{fingerprint}", input.Policy.AsOfUtc, movable, preserved);
+            candidateProblem, $"right-shift-{fingerprint}", input.Policy.AsOfUtc, impact.AffectedOperations.Select(x => x.Assignment).ToArray(), preserved);
         // 基线未排工序不在局部可移动集合中，也不借候选补排；保留既有未排说明。
         plan = plan with
         {

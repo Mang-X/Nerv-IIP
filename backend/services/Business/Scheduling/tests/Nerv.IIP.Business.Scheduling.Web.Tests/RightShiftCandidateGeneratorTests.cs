@@ -253,6 +253,43 @@ public sealed class RightShiftCandidateGeneratorTests
         Assert.Contains(result.Explanations, x => x.OperationId == "b" && x.Code == "frozen-conflict");
     }
 
+    [Fact]
+    public void Affected_frozen_queue_successor_cannot_be_overtaken_and_impossible_item_is_explained()
+    {
+        var a = Assignment("A", "a", "R1", 0, 60);
+        var b = Assignment("B", "b", "R1", 120, 180);
+        var input = Input(Problem(Order("A", Operation("a", "R1")), Order("B", Operation("b", "R1"))),
+            [a, b], [Downtime(0, 90)]) with { ManualLocks = [("B", "b")] };
+        var result = RightShiftCandidateGenerator.Generate(input);
+        Assert.Equal(2, result.Impact.AffectedOperations.Count);
+        Assert.Equal(SchedulingFreezeReason.ManualLock, Assert.Single(result.Impact.FrozenAssignments).Reasons);
+        Assert.Equal(b, Assert.Single(result.Plan.Assignments));
+        var unscheduled = Assert.Single(result.Plan.UnscheduledOperations);
+        Assert.Equal(("A", "a"), (unscheduled.OrderId, unscheduled.OperationId));
+        Assert.Equal(ScheduleConflictReasonCodeContract.Capacity, unscheduled.ReasonCode);
+        Assert.Contains(result.Plan.Conflicts, x => x.OrderId == "A" && x.ReasonCode == ScheduleConflictReasonCodeContract.Capacity);
+        var explanation = Assert.Single(result.Explanations, x => x.OrderId == "A" && x.OperationId == "a");
+        Assert.All(explanation.Reasons, x => Assert.Equal(Downtime(0, 90), x.Source));
+        Assert.NotEmpty(explanation.Paths);
+    }
+
+    [Fact]
+    public void Interruptible_item_can_start_before_affected_frozen_successor_and_finish_after_its_occupancy()
+    {
+        var a = Assignment("A", "a", "R1", 0, 120) with
+        { Segments = [new(At, At.AddMinutes(30)), new(At.AddMinutes(90), At.AddMinutes(120))] };
+        var b = Assignment("B", "b", "R1", 60, 90);
+        var problem = Problem(Order("A", Operation("a", "R1") with { SplitPolicy = ScheduleSplitPolicyContract.Interruptible }), Order("B", Operation("b", "R1")));
+        var input = Input(problem, [a, b], [Downtime(0, 50)]) with { ManualLocks = [("B", "b")] };
+        var result = RightShiftCandidateGenerator.Generate(input);
+        Assert.Equal(2, result.Impact.AffectedOperations.Count);
+        var candidate = Find(result, "A", "a");
+        Assert.Equal(At.AddMinutes(50), candidate.StartUtc);
+        Assert.Equal([new ScheduleAssignmentSegmentContract(At.AddMinutes(50), At.AddMinutes(60)), new(At.AddMinutes(90), At.AddMinutes(140))], candidate.Segments);
+        Assert.Equal(b, Find(result, "B", "b"));
+        Assert.Empty(result.Plan.UnscheduledOperations);
+    }
+
     internal static ReschedulingCandidateInput Input(SchedulingProblemContract problem, ScheduleAssignmentContract[] baseline, SchedulingDeviation[] deviations) =>
         new(problem, new FiniteCapacityScheduler().Schedule(problem, "baseline", At.AddHours(-1)) with { Assignments = baseline }, deviations,
             [], [], new(At, TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
