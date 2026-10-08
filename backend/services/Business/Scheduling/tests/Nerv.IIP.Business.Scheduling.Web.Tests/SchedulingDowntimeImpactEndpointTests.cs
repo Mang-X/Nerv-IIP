@@ -94,6 +94,24 @@ public sealed partial class SchedulingEndpointContractTests
         }
     }
 
+    [Fact]
+    public async Task Downtime_query_reports_missing_snapshot_instead_of_claiming_qualified_alternatives()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePersistedPlan("missing-snapshot", "absent", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        using var response = await client.GetAsync("/api/business/v1/scheduling/plans/missing-snapshot/downtime-impact?organizationId=org-001&environmentId=prod");
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal("基线问题快照缺失，无法核对停机影响及工艺资格。", body.RootElement.GetProperty("message").GetString());
+    }
+
     private sealed class DowntimeSourceHandler(DateTimeOffset at) : HttpMessageHandler
     {
         public DateTimeOffset? Restore { get; set; } = at.AddHours(1);
