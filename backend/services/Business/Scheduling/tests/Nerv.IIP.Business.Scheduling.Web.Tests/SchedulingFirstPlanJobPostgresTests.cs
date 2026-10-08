@@ -871,7 +871,7 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
 
     private sealed class JobFactory(ControlledSource source, SaveChangesInterceptor? interceptor = null,
         TimeProvider? clock = null, SchedulingFreezeSettings? freezeSettings = null,
-        ISchedulingEquipmentAvailabilityProvider? equipment = null) : WebApplicationFactory<Program>
+        ISchedulingEquipmentAvailabilityProvider? equipment = null, IIntegrationEventPublisher? publisher = null) : WebApplicationFactory<Program>
     {
         public JobFailureLogger FailureLog { get; } = new();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -891,7 +891,7 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
                     options.IncludeAbstractValidators = true;
                 });
                 services.RemoveAll<IIntegrationEventPublisher>();
-                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddSingleton<IIntegrationEventPublisher>(publisher ?? new NoopIntegrationEventPublisher());
                 services.RemoveAll<ISchedulingWorkbenchSourceProvider>();
                 services.RemoveAll<ISchedulingProblemProducer>();
                 services.AddSingleton<ISchedulingWorkbenchSourceProvider>(source);
