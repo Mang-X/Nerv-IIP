@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
@@ -44,7 +45,7 @@ public sealed class HttpSchedulingDowntimeFactsProvider(IHttpClientFactory clien
                 var device = item.GetProperty("deviceAssetId").GetString();
                 var center = item.GetProperty("workCenterId").GetString();
                 if (!problem.Resources.Any(x => device is not null ? x.ResourceId == device : x.WorkCenterId == center)) continue;
-                items.Add(new("mes", item.GetProperty("downtimeEventId").GetString()!, device, center,
+                items.Add(new(MesIntegrationEventSources.BusinessMes, item.GetProperty("downtimeEventId").GetString()!, device, center,
                     item.GetProperty("startedAtUtc").GetDateTimeOffset(),
                     item.GetProperty("recoveredAtUtc").ValueKind == JsonValueKind.Null ? null : item.GetProperty("recoveredAtUtc").GetDateTimeOffset(), null));
             }
@@ -71,7 +72,7 @@ public sealed class HttpSchedulingDowntimeFactsProvider(IHttpClientFactory clien
             response.EnsureSuccessStatusCode();
             var data = await response.Content.ReadFromJsonAsync<ResponseData<MaintenanceDowntimeFactsResponse>>(SchedulingJson.Options, ct)
                 ?? throw new JsonException("Maintenance downtime response is missing.");
-            items.AddRange(data.Data.Items.Select(x => new SchedulingDowntimeFactContract("maintenance", x.WorkOrderId,
+            items.AddRange(data.Data.Items.Select(x => new SchedulingDowntimeFactContract(MaintenanceIntegrationEventSources.BusinessMaintenance, x.WorkOrderId,
                 x.DeviceAssetId, null, x.UnavailableFromUtc, x.ReleasedAtUtc, x.ExpectedRestoreAtUtc,
                 x.Source, x.SourceType, x.SourceReferenceId, x.PredictedRestoreAtUtc, x.RestorePredictionSource, x.RestorePredictionSourceVersion)));
         }
