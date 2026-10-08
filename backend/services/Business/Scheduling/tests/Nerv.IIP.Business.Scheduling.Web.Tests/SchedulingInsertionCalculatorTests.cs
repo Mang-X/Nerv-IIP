@@ -269,8 +269,8 @@ public class SchedulingInsertionCalculatorTests(ITestOutputHelper output)
                 predecessor: op == 0 ? null : $"OP-{op - 1}", rush: index == 499)).ToArray())).ToArray();
         var problem = Problem(orders) with { Resources = Enumerable.Range(1, 24).Select(index => new SchedulingResourceContract($"R{index}", $"WC{index}", ["cut"], 1, "CAL", $"{index:D2}")).ToArray() };
         var baseline = Baseline(problem, orders[..499]);
-        // 对两条路径同样预热；保留全部七次采样，不假定 tiered JIT 已稳定。
-        for (var warmup = 0; warmup < 10; warmup++)
+        // 固定等量预热，让后台 tiered JIT 优化发生在正式采样前；保留全部七次采样。
+        for (var warmup = 0; warmup < 100; warmup++)
         {
             Calculate(problem, baseline);
             new FiniteCapacityScheduler().Schedule(problem, "full", At);
@@ -291,7 +291,7 @@ public class SchedulingInsertionCalculatorTests(ITestOutputHelper output)
         }
         var localMedian = local.Order().ElementAt(3);
         var fullMedian = full.Order().ElementAt(3);
-        output.WriteLine($"sample=500 orders/2000 operations/24 resources; .NET={RuntimeInformation.FrameworkDescription}; OS={RuntimeInformation.OSDescription}; arch={RuntimeInformation.ProcessArchitecture}; cpu={Environment.ProcessorCount}; localMs=[{string.Join(",", local)}]; fullMs=[{string.Join(",", full)}]; localMedianMs={localMedian:F3}; fullMedianMs={fullMedian:F3}; ratio={localMedian / fullMedian:P2}; affected={result!.Impact.AffectedOperations.Count}; recalculated={result.Impact.RecalculateAssignments.Count}");
+        output.WriteLine($"sample=500 orders/2000 operations/24 resources; warmupPerPath=100; samplesPerPath=7; .NET={RuntimeInformation.FrameworkDescription}; OS={RuntimeInformation.OSDescription}; arch={RuntimeInformation.ProcessArchitecture}; cpu={Environment.ProcessorCount}; localMs=[{string.Join(",", local)}]; fullMs=[{string.Join(",", full)}]; localMedianMs={localMedian:F3}; fullMedianMs={fullMedian:F3}; ratio={localMedian / fullMedian:P2}; affected={result!.Impact.AffectedOperations.Count}; recalculated={result.Impact.RecalculateAssignments.Count}");
         Assert.Equal(2000, result.Candidate.Assignments.Count);
         Assert.NotNull(result.PromiseUtc);
         Assert.True(localMedian <= 2000, $"local median={localMedian} ms");
