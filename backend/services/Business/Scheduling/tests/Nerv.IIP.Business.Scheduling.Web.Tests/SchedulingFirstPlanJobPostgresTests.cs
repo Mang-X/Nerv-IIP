@@ -248,6 +248,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             await VerifyInsertionFreeze(window);
         await VerifyExistingRushInsertion();
         await VerifyEquipmentSourceSnapshot();
+        await VerifyRightShiftCandidateSelection();
     }
 
     private static async Task VerifyEquipmentSourceSnapshot()
@@ -335,6 +336,152 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             Assert.Equal(before, await ReadInsertionBaseline(factory, original));
         }
         finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
+    }
+
+    private static async Task VerifyRightShiftCandidateSelection()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var sample = ShockAbsorberSchedulingFixture.CreateProblem();
+        var start = sample.HorizonStartUtc;
+        var resource = sample.Resources.First();
+        var order = sample.Orders.First();
+        var operation = order.Operations.First();
+        var segments = new[] { new ScheduleAssignmentSegmentContract(start.AddHours(2), start.AddHours(2).AddMinutes(5)),
+            new ScheduleAssignmentSegmentContract(start.AddHours(2).AddMinutes(10), start.AddHours(2).AddMinutes(15)) };
+        var problem = sample with { ProblemId = "candidate-baseline", AssemblyDependencies = [], QualityBlocks = [],
+            UnavailabilityWindows = [], LockedAssignments = [new("manual", "order-002", "order-002-op", 1,
+                resource.ResourceId, resource.WorkCenterId, segments[0].StartUtc, segments[1].EndUtc, "planner-lock", segments)],
+            Orders = Enumerable.Range(1, 3).Select(i => order with { OrderId = $"order-{i:D3}",
+                Operations = [operation with { OperationId = $"order-{i:D3}-op", OperationSequence = 1, DurationMinutes = 10,
+                    EligibleResourceIds = [resource.ResourceId], PrimaryResourceId = resource.ResourceId,
+                    DueUtc = start.AddMinutes(5), EarliestStartUtc = start,
+                    SplitPolicy = ScheduleSplitPolicyContract.Interruptible }] }).ToArray() };
+        var first = problem.Orders.First();
+        var firstOperation = first.Operations.Single();
+        var independentResource = sample.Resources.Skip(1).First();
+        problem = problem with { Orders = problem.Orders.Select(x => x.OrderId == "order-001"
+            ? x with { Operations = [firstOperation, firstOperation with { OperationId = "order-001-op20", OperationSequence = 2,
+                PredecessorOperationIds = [firstOperation.OperationId] }] }
+            : x.OrderId == "order-003" ? x with { Operations = [x.Operations.Single() with {
+                RequiredCapabilityCode = independentResource.CapabilityCodes.First(), EligibleResourceIds = [independentResource.ResourceId],
+                PrimaryResourceId = independentResource.ResourceId }] } : x).ToArray() };
+        var source = new ControlledSource { CandidateProblem = problem };
+        source.Release.TrySetResult();
+        var equipment = new CandidateEquipment();
+        await using var factory = new JobFactory(source, clock: new InsertionClock(start), equipment: equipment);
+        await Migrate(factory);
+        using var service = Client(factory);
+        await using var gateway = new GatewayJobFactory(service);
+        using var client = GatewayClient(gateway);
+        SchedulePlanContract baseline;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            baseline = await sender.Send(new CreateSchedulePlanCommand(problem));
+            await sender.Send(new ReleaseSchedulePlanCommand(baseline.PlanId, problem.OrganizationId, problem.EnvironmentId));
+            var independent = baseline.Assignments.Single(x => x.OrderId == "order-003");
+            var actual = OperationExecutionProjection.Create(problem.OrganizationId, problem.EnvironmentId,
+                independent.OrderId, independent.OperationId, independent.OperationSequence, independent.WorkCenterId, independent.StartUtc, "created");
+            actual.ApplyStarted(independent.StartUtc, "started");
+            actual.ApplyCompleted(independent.EndUtc, "completed");
+            var seedDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedDb.OperationExecutionProjections.Add(actual);
+            await seedDb.SaveChangesAsync();
+        }
+        equipment.EndUtc = start.AddMinutes(30);
+        const string previewRoute = "/api/business-console/v1/scheduling/workbench/candidates/preview";
+        const string selectRoute = "/api/business-console/v1/scheduling/workbench/candidates/select";
+        var request = new SchedulingCandidatePreviewRequestContract(problem.OrganizationId, problem.EnvironmentId, baseline.PlanId);
+        using var previewResponse = await client.PostAsJsonAsync(previewRoute, request, SchedulingJson.Options);
+        Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+        var preview = (await previewResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSetContract>>(SchedulingJson.Options))!.Data;
+        var candidate = Assert.Single(preview.Candidates);
+        Assert.Equal(SchedulePlanStatusContract.Preview, candidate.Plan.Status);
+        Assert.NotEmpty(candidate.Movements);
+        Assert.All(candidate.Movements, x => { Assert.NotEmpty(x.Reasons); Assert.NotEmpty(x.Paths); });
+        Assert.Equal(2, candidate.Kpis.TotalLockedCount);
+        Assert.Equal(2, candidate.Kpis.PreservedLockedCount);
+        Assert.Equal(segments, Assert.Single(candidate.Plan.Assignments, x => x.OrderId == "order-002").Segments);
+        Assert.Equal(2, candidate.Kpis.BaselineOnTimeDenominator);
+        Assert.Equal(2, candidate.Kpis.CandidateOnTimeDenominator);
+        Assert.Equal(3, candidate.Kpis.BaselineLateOrderCount);
+        Assert.Equal(3, candidate.Kpis.CandidateLateOrderCount);
+        var select = new SchedulingCandidateSelectRequestContract(request.OrganizationId, request.EnvironmentId,
+            baseline.PlanId, preview.AsOfUtc, preview.InputFingerprint, candidate.Strategy);
+        using var selectedResponse = await client.PostAsJsonAsync(selectRoute, select, SchedulingJson.Options);
+        Assert.Equal(HttpStatusCode.OK, selectedResponse.StatusCode);
+        var selected = (await selectedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSelectionContract>>(SchedulingJson.Options))!.Data;
+        Assert.Equal(SchedulePlanStatusContract.Generated, selected.Plan.Status);
+        Assert.Equal(JsonSerializer.Serialize(candidate.Plan.Assignments, SchedulingJson.Options),
+            JsonSerializer.Serialize(selected.Plan.Assignments, SchedulingJson.Options));
+        using var reopened = GatewayClient(gateway);
+        var restored = await reopened.GetFromJsonAsync<ResponseData<IReadOnlyList<SchedulingWorkingDraftContract>>>(
+            $"/api/business-console/v1/scheduling/working-drafts?organizationId={request.OrganizationId}&environmentId={request.EnvironmentId}&planId={selected.Plan.PlanId}", SchedulingJson.Options);
+        Assert.True(restored!.Success);
+        Assert.Equal(selected.Plan.PlanId, Assert.Single(restored.Data).PlanId);
+        var readPlan = await reopened.GetFromJsonAsync<ResponseData<SchedulePlanContract>>(
+            $"/api/business-console/v1/scheduling/plans/{selected.Plan.PlanId}?organizationId={request.OrganizationId}&environmentId={request.EnvironmentId}", SchedulingJson.Options);
+        Assert.True(readPlan!.Success);
+        Assert.Equal(JsonSerializer.Serialize(selected.Plan.Assignments, SchedulingJson.Options),
+            JsonSerializer.Serialize(readPlan.Data.Assignments.Select(x => x with { CurrentExecution = null }), SchedulingJson.Options));
+        // A saved candidate remains a usable baseline: derived freeze flags must not become manual locks.
+        using var secondPreviewResponse = await client.PostAsJsonAsync(previewRoute,
+            request with { BaselinePlanId = selected.Plan.PlanId }, SchedulingJson.Options);
+        var secondPreview = (await secondPreviewResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSetContract>>(SchedulingJson.Options))!.Data;
+        using var secondSelectedResponse = await client.PostAsJsonAsync(selectRoute,
+            select with { BaselinePlanId = selected.Plan.PlanId, AsOfUtc = secondPreview.AsOfUtc,
+                InputFingerprint = secondPreview.InputFingerprint }, SchedulingJson.Options);
+        var secondSelected = (await secondSelectedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSelectionContract>>(SchedulingJson.Options))!;
+        Assert.True(secondSelected.Success, secondSelected.Message);
+        Assert.Equal(JsonSerializer.Serialize(Assert.Single(secondPreview.Candidates).Plan.Assignments, SchedulingJson.Options),
+            JsonSerializer.Serialize(secondSelected.Data.Plan.Assignments, SchedulingJson.Options));
+        var completedFreeze = Assert.Single(secondSelected.Data.Plan.FreezeContext!.Assignments, x => x.Assignment.OrderId == "order-003");
+        Assert.Contains(SchedulePlanFreezeReasonContract.Completed, completedFreeze.Reasons);
+        Assert.DoesNotContain(SchedulePlanFreezeReasonContract.ManualLock, completedFreeze.Reasons);
+        equipment.EndUtc = start.AddMinutes(45);
+        using var staleResponse = await client.PostAsJsonAsync(selectRoute, select, SchedulingJson.Options);
+        var stale = await staleResponse.Content.ReadFromJsonAsync<ResponseData>(SchedulingJson.Options);
+        Assert.False(stale!.Success);
+        Assert.Contains("重预览", stale.Message);
+        using var refreshedResponse = await client.PostAsJsonAsync(previewRoute, request, SchedulingJson.Options);
+        var refreshed = (await refreshedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSetContract>>(SchedulingJson.Options))!.Data;
+        Assert.NotEqual(preview.InputFingerprint, refreshed.InputFingerprint);
+        await using var verify = factory.Services.CreateAsyncScope();
+        var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(3, await db.SchedulePlans.CountAsync());
+        Assert.Single(await db.OperationExecutionProjections.ToArrayAsync());
+        Assert.Equal(Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanLifecycleStatus.Generated,
+            (await db.SchedulePlans.SingleAsync(x => x.PlanId == selected.Plan.PlanId)).Status);
+        Assert.Equal(Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanLifecycleStatus.Released,
+            (await db.SchedulePlans.SingleAsync(x => x.PlanId == baseline.PlanId)).Status);
+        Assert.Equal(2, candidate.Kpis.MovedOperationCount);
+        var independentBefore = baseline.Assignments.Single(x => x.OrderId == "order-003");
+        var independentAfter = candidate.Plan.Assignments.Single(x => x.OrderId == "order-003");
+        Assert.Equal((independentBefore.ResourceId, independentBefore.StartUtc, independentBefore.EndUtc),
+            (independentAfter.ResourceId, independentAfter.StartUtc, independentAfter.EndUtc));
+        Assert.Equal(0, candidate.Kpis.UnscheduledCountChange);
+        Assert.Equal(candidate.Kpis.CandidateOnTimeRate - candidate.Kpis.BaselineOnTimeRate, candidate.Kpis.OnTimeRateChange);
+        // Four 10-minute operations (manual segments total 10); four resources x two 480-minute shifts,
+        // minus one 30-minute equipment window. Both sides use 40 / 3810, rounded to four decimals.
+        Assert.Equal(0.0105m, candidate.Kpis.BaselineResourceUtilization);
+        Assert.Equal(0.0105m, candidate.Kpis.CandidateResourceUtilization);
+        Assert.Equal(0m, candidate.Kpis.ResourceUtilizationChange);
+        // Selection still uses the original release/supersede chain, with no automatic release before this explicit action.
+        using var released = await reopened.PostAsJsonAsync($"/api/business-console/v1/scheduling/plans/{selected.Plan.PlanId}/release",
+            new { request.OrganizationId, request.EnvironmentId }, SchedulingJson.Options);
+        Assert.Equal(HttpStatusCode.OK, released.StatusCode);
+        Assert.True((await released.Content.ReadFromJsonAsync<ResponseData<JsonElement>>(SchedulingJson.Options))!.Success);
+    }
+
+    private sealed class CandidateEquipment : ISchedulingEquipmentAvailabilityProvider
+    {
+        public DateTimeOffset? EndUtc { get; set; }
+        public Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(SchedulingProblemContract problem, CancellationToken ct) =>
+            Task.FromResult(new EquipmentRuntimeAvailabilityResponse(1, problem.OrganizationId, problem.EnvironmentId,
+                problem.HorizonStartUtc, problem.HorizonEndUtc, EndUtc is { } end
+                    ? [new(problem.Resources.First().ResourceId, problem.Resources.First().WorkCenterId,
+                        EquipmentRuntimeAvailabilityStatus.Unavailable, "equipment.downtime", EquipmentRuntimeSeverity.Blocked,
+                        problem.HorizonStartUtc, end, EquipmentRuntimeSourceType.MaintenanceWindow, "CMMS-20261008-001", "equipment.downtime", [])] : []));
     }
 
     private static async Task VerifyInsertionFreeze(TimeSpan window)
@@ -724,6 +871,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         public int Calls { get; private set; }
         public SchedulingProblemContract? InsertionProblem { get; init; }
         public string? RushOrderId { get; init; }
+        public SchedulingProblemContract? CandidateProblem { get; init; }
         public async Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(string org, string env,
             DateTimeOffset start, IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken ct)
         {
@@ -737,6 +885,8 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         public Task<SchedulingProblemContract> AssembleAsync(AssembleSchedulingProblemRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<SchedulingProblemContract> AssembleWorkbenchAsync(AssembleSchedulingWorkbenchProblemRequest request, CancellationToken ct)
         {
+            if (CandidateProblem is not null) return Task.FromResult(CandidateProblem with { ProblemId = request.ProblemId,
+                Orders = CandidateProblem.Orders.Where(o => request.Orders.Any(x => x.Order.OrderId == o.OrderId)).ToArray() });
             var sample = InsertionProblem ?? ShockAbsorberSchedulingFixture.CreateProblem();
             var order = sample.Orders.First();
             var operation = order.Operations.First();

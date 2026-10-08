@@ -24,11 +24,14 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         $"{SchedulingWebRoot}/Application/IntegrationEventConverters/SchedulingIntegrationEventConverters.cs",
         $"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs",
         $"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs",
+        $"{SchedulingWebRoot}/Application/Scheduling/SchedulingCandidateService.cs",
         $"{SchedulingWebRoot}/Application/Urgency/OrderUrgencyApplication.cs",
     ];
 
     private static readonly IReadOnlyCollection<SchedulingKnownExceptionSite> ExpectedSites =
     [
+        Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingCandidateService.cs", "SchedulingCandidateService", "ReadAsync", 1),
+        Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingCandidateService.cs", "SchedulingCandidateService", "SelectAsync", 3),
         Excluded($"{SchedulingWebRoot}/Application/Commands/ScheduleWorkingDraftCommands.cs", "SaveScheduleWorkingDraftCommandHandler", "Handle", 1, "deferred/no-facade；#4143 交付 facade 时重新分类"),
         Excluded($"{SchedulingWebRoot}/Endpoints/Scheduling/ScheduleWorkingDraftEndpoints.cs", "ScheduleWorkingDraftIdentity", "Read", 1, "deferred/no-facade；#4143 交付 facade 时重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "Handle", 3),
@@ -80,7 +83,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(44, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
+        Assert.Equal(48, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(12, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));

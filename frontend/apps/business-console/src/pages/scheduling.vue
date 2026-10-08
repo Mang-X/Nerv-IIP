@@ -50,6 +50,8 @@ import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue
 import SchedulingDraftClearDialog from '@/components/scheduling/SchedulingDraftClearDialog.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
+import SchedulingCandidatePanel from '@/components/scheduling/SchedulingCandidatePanel.vue'
+import { useSchedulingCandidates } from '@/composables/useSchedulingCandidates'
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useSchedulingDraftPersistence } from '@/composables/useSchedulingDraftPersistence'
@@ -238,6 +240,46 @@ const persistence = useSchedulingDraftPersistence({
   selectPlan: (planId) => {
     if (route.query.draftPlanId !== planId)
       void router.replace({ query: { ...route.query, draftPlanId: planId } })
+  },
+})
+const candidateDraftBlockedReason = computed(() => {
+  const plan = persistedDraftPlan.value
+  if (!plan || !draft.model.value) return undefined
+  const baseline = new Map(
+    (plan.assignments ?? []).map((assignment) => [assignment.assignmentId, assignment]),
+  )
+  const tasks = draft.exportState().tasks!
+  if (
+    tasks.length !== baseline.size ||
+    tasks.some((task) => {
+      const original = baseline.get(task.taskId)
+      return (
+        !original ||
+        original.resourceId !== task.resourceId ||
+        original.startUtc !== task.startUtc ||
+        original.endUtc !== task.endUtc ||
+        Boolean(original.isLocked) !== task.locked ||
+        JSON.stringify(original.segments ?? []) !== JSON.stringify(task.segments ?? [])
+      )
+    })
+  )
+    return '草稿有人工编辑，请先锁定重预览生成新基线，再生成局部候选。'
+  return undefined
+})
+const localCandidates = useSchedulingCandidates({
+  context: () => ({
+    organizationId: schedulingFilters.organizationId,
+    environmentId: schedulingFilters.environmentId,
+  }),
+  baselinePlanId: () => persistedDraftPlan.value?.planId,
+  onSelected: async (selection) => {
+    const previousPlan = persistedDraftPlan.value
+    if (!(await persistence.restoreSelection(selection.workingDraft!))) return
+    revisionBasePlan.value = previousPlan
+    revisionResult.value = { candidate: selection.plan, comparison: selection.comparison }
+    detailSelection.planId = selection.plan?.planId ?? ''
+    await refreshPlans()
+    toast.success('已选定候选并保存工作草稿，请核对后确认发布')
   },
 })
 watch(
@@ -1030,6 +1072,15 @@ function reasonLabel(reason?: string | null) {
             <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
           </template>
         </SchedulingOrderPool>
+        <SchedulingCandidatePanel
+          :candidates="localCandidates.candidates.value"
+          :baseline-plan-id="persistedDraftPlan?.planId"
+          :can-manage="canManage && draftReady && !workbench.generatePending.value"
+          :pending="localCandidates.pending.value"
+          :blocked-reason="candidateDraftBlockedReason"
+          @preview="localCandidates.preview"
+          @select="localCandidates.select"
+        />
         <SchedulingDraftBoard
           :model="draftDisplayModel"
           :feedback="draft.feedback.value"

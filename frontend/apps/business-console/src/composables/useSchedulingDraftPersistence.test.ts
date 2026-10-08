@@ -9,6 +9,7 @@ const server = vi.hoisted(() => ({
   drafts: new Map<string, SchedulingWorkingDraft>(),
   saveBarrier: undefined as Promise<void> | undefined,
   saveFailure: false,
+  readFailure: false,
 }))
 const plan = {
   planId: 'plan-001',
@@ -31,7 +32,10 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   listBusinessConsoleSchedulingWorkingDrafts: async () => ({
     data: { success: true, data: [...server.drafts.values()] },
   }),
-  getBusinessConsoleSchedulingPlan: async () => ({ data: { success: true, data: plan } }),
+  getBusinessConsoleSchedulingPlan: async () => {
+    if (server.readFailure) throw new Error('GET selected plan failed: 500')
+    return { data: { success: true, data: plan } }
+  },
   saveBusinessConsoleSchedulingWorkingDraft: async (options: {
     path: { planId: string }
     body: { state: SchedulingWorkingDraftState }
@@ -57,6 +61,7 @@ beforeEach(() => {
   server.drafts.clear()
   server.saveBarrier = undefined
   server.saveFailure = false
+  server.readFailure = false
 })
 function setup() {
   const scope = effectScope()
@@ -74,6 +79,25 @@ function setup() {
   return { scope, draft, persistence, baseline }
 }
 describe('scheduling draft persistence', () => {
+  it('returns failure and preserves the current draft when a selected candidate cannot be read', async () => {
+    const { scope, draft, persistence, baseline } = setup()
+    await flushPromises()
+    draft.loadPlan(plan)
+    baseline.value = plan
+    await flushPromises()
+    server.readFailure = true
+    const restored = await persistence.restoreSelection({
+      planId: 'selected-plan',
+      savedAtUtc: '2026-10-07T10:00:00Z',
+      state: draft.exportState(),
+    })
+    expect(restored).toBe(false)
+    expect(baseline.value).toBe(plan)
+    expect(draft.model.value?.meta.planId).toBe('plan-001')
+    expect(persistence.status.value).toBe('error')
+    expect(persistence.ready.value).toBe(false)
+    scope.stop()
+  })
   it('waits for the server before reporting saved, and clears after an outstanding save', async () => {
     const { scope, draft, persistence } = setup()
     await flushPromises()

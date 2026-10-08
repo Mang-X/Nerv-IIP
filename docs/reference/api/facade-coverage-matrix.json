@@ -17,6 +17,24 @@
   ],
   "endpoints": [
     {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/candidates/preview",
+      "operationId": "previewSchedulingCandidates",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["previewBusinessConsoleSchedulingCandidates"]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/workbench/candidates/select",
+      "operationId": "selectSchedulingCandidate",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["selectBusinessConsoleSchedulingCandidate"]
+    },
+    {
       "service": "DemandPlanning",
       "method": "GET",
       "route": "/api/business/v1/planning/mrp-runs/{runId}/material-deliveries",

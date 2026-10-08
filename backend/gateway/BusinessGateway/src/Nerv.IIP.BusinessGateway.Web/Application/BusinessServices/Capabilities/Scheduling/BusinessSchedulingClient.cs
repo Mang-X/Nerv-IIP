@@ -19,6 +19,9 @@ public sealed record BusinessConsoleSchedulingInsertionPreviewJobRequest(
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulingCandidateSetContract> PreviewCandidatesAsync(string token, SchedulingCandidatePreviewRequestContract request, CancellationToken ct);
+    Task<SchedulingCandidateSelectionContract> SelectCandidateAsync(string token, SchedulingCandidateSelectRequestContract request, string userId, CancellationToken ct);
+
     Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
         string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken);
 
@@ -140,6 +143,12 @@ public interface IBusinessSchedulingClient
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
 {
+    public Task<SchedulingCandidateSetContract> PreviewCandidatesAsync(string token, SchedulingCandidatePreviewRequestContract request, CancellationToken ct) =>
+        SendAsync<SchedulingCandidateSetContract>(token, HttpMethod.Post, "/api/business/v1/scheduling/workbench/candidates/preview", request, ct, SchedulingJson.Options);
+    public Task<SchedulingCandidateSelectionContract> SelectCandidateAsync(string token, SchedulingCandidateSelectRequestContract request, string userId, CancellationToken ct) =>
+        SendAsync<SchedulingCandidateSelectionContract>(token, HttpMethod.Post, "/api/business/v1/scheduling/workbench/candidates/select", request, ct, SchedulingJson.Options,
+            message => message.Headers.Add(SchedulingWorkingDraftHeaders.UserId, userId));
+
     public Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
         string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken) =>
         SendAsync<SchedulingFirstPlanJobContract>(internalBearerToken, HttpMethod.Post,

@@ -8,6 +8,7 @@ import SchedulingMaterialShortageSummary from '@/components/scheduling/Schedulin
 import type {
   BusinessConsoleMesWorkOrderItem,
   BusinessConsoleSchedulingMaterialShortageSummary,
+  SchedulingCandidateSelection,
 } from '@nerv-iip/api-client'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
@@ -91,6 +92,24 @@ const stub = vi.hoisted(() => ({
   revisePlan: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
+}))
+
+const localCandidateCallback = vi.hoisted(() => ({
+  onSelected: undefined as ((selection: SchedulingCandidateSelection) => Promise<void>) | undefined,
+  readSelectedPlan: vi.fn(),
+}))
+vi.mock('@/composables/useSchedulingCandidates', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/composables/useSchedulingCandidates')>()
+  return {
+    useSchedulingCandidates: (options: Parameters<typeof actual.useSchedulingCandidates>[0]) => {
+      localCandidateCallback.onSelected = options.onSelected
+      return actual.useSchedulingCandidates(options)
+    },
+  }
+})
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  getBusinessConsoleSchedulingPlan: localCandidateCallback.readSelectedPlan,
 }))
 
 // #1288 作业范围选择入口是独立组件（自带 work-context 查询），页面测试不铺网络桩，整件打桩。
@@ -458,6 +477,7 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  localCandidateCallback.readSelectedPlan.mockReset()
   associatedOrders.value = []
   associatedError.value = undefined
   candidatesEmpty.value = false
@@ -1443,6 +1463,49 @@ describe('APS scheduling workbench page', () => {
     // 引导入口要真的把人送回可编辑的地方，不是一句说明。
     expect(wrapper.text()).toContain('批量待排 → 编辑锁定 → 重预览 → 对比发布')
     expect(wrapper.text()).toContain('待排工单池')
+  })
+
+  it('does not apply a selected candidate or report success when restoring its plan fails', async () => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .vm.$emit('include', ['WO-20260701-001'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('生成首版'))!
+      .trigger('click')
+    await flushPromises()
+    const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+    expect(board.props('model').meta.planId).toBe('plan-001')
+    const previousDetail = detailSelection.planId
+    stub.toastSuccess.mockClear()
+    localCandidateCallback.readSelectedPlan.mockRejectedValueOnce(
+      new Error('GET selected plan failed: 500'),
+    )
+    await localCandidateCallback.onSelected!({
+      plan: { ...planOne, planId: 'selected-plan', status: 'generated' },
+      workingDraft: {
+        planId: 'selected-plan',
+        savedAtUtc: '2026-10-08T08:00:00Z',
+        state: { contractVersion: 1, orders: [], tasks: [] },
+      },
+      comparison: {
+        basePlanId: 'plan-001',
+        candidatePlanId: 'selected-plan',
+        movedOperationCount: 1,
+      },
+    } as SchedulingCandidateSelection)
+    await flushPromises()
+    expect(board.props('model').meta.planId).toBe('plan-001')
+    expect(detailSelection.planId).toBe(previousDetail)
+    expect(
+      wrapper.findComponent({ name: 'ScheduleRevisionReview' }).props('revision'),
+    ).toBeUndefined()
+    expect(stub.toastSuccess).not.toHaveBeenCalled()
   })
 
   it('compares each revision against its persisted base rather than the edited draft', async () => {
