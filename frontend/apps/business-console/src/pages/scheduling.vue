@@ -277,6 +277,8 @@ const localCandidates = useSchedulingCandidates({
   onSelected: async (selection) => {
     const previousPlan = persistedDraftPlan.value
     if (!(await persistence.restoreSelection(selection.workingDraft!))) return
+    insertion.reset()
+    selectedInsertionId.value = ''
     revisionBasePlan.value = previousPlan
     revisionResult.value = { candidate: selection.plan, comparison: selection.comparison }
     detailSelection.planId = selection.plan?.planId ?? ''
