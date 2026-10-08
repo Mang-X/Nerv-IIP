@@ -178,7 +178,7 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
     {
         public ConcurrentQueue<SchedulePlanReleasedIntegrationEvent> Released { get; } = new();
         public ConcurrentQueue<SchedulePlanRevokedIntegrationEvent> Revoked { get; } = new();
-        public Task PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         {
             if (integrationEvent is SchedulePlanReleasedIntegrationEvent released) Released.Enqueue(released);
             if (integrationEvent is SchedulePlanRevokedIntegrationEvent revoked) Revoked.Enqueue(revoked);
