@@ -25,6 +25,7 @@
 ## Spike 调查
 
 - [GS1 解析库兼容与维护收益（2026-10-07）](spikes/gs1-parser-library-evaluation-2026-10-07.md)：固定官方候选与前后端合同矩阵，分别给出 go/no-go；只证明报告基线。
+- [Redis 命令锁库净替代评估（2026-10-09）](spikes/redis-command-lock-library-evaluation-2026-10-09.md)：固定 NetCorePal / DistributedLock 包与时间、取消、释放合同，结论为 no-go；只证明报告基线。
 
 ## 使用规则
 
