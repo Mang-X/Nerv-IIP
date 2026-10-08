@@ -1101,7 +1101,7 @@ public sealed class SchedulingEndpointContractTests
             x.Entity is SchedulePlanResourceLoad or SchedulePlanConflict or SchedulePlanUnscheduledOperation);
         var assignment = Assert.Single(releaseContext.ChangeTracker.Entries<SchedulePlanAssignment>());
         Assert.Equal(EntityState.Unchanged, assignment.State);
-        Assert.Equal(plan.Assignments.Single().AssignmentPublicId, assignment.Entity.AssignmentPublicId);
+        Assert.Equal(plan.Assignments.Single().AssignmentId, assignment.Entity.AssignmentId);
         Assert.Equal(plan.Assignments.Single().ResourceId, assignment.Entity.ResourceId);
         Assert.Equal(plan.Assignments.Single().StartUtc, assignment.Entity.StartUtc);
         Assert.Equal(plan.Assignments.Single().EndUtc, assignment.Entity.EndUtc);
