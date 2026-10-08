@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -25,7 +26,7 @@ public static class InventoryForwardedPermissionHeaders
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(signingKey));
         var payload = Encoding.UTF8.GetBytes(
             $"{issuer}\n{permissions}\n{organizationId}\n{environmentId}\n{requestKey}\n{issuedAtUnixSeconds}");
-        return Base64UrlEncode(hmac.ComputeHash(payload));
+        return Base64Url.EncodeToString(hmac.ComputeHash(payload));
     }
 
     public static bool VerifySignature(
@@ -63,11 +64,4 @@ public static class InventoryForwardedPermissionHeaders
             && CryptographicOperations.FixedTimeEquals(expectedBytes, signatureBytes);
     }
 
-    private static string Base64UrlEncode(byte[] bytes)
-    {
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
-    }
 }

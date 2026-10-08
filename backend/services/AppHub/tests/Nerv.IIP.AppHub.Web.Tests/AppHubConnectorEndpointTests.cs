@@ -18,7 +18,7 @@ using Nerv.IIP.Contracts.ConnectorProtocol;
 namespace Nerv.IIP.AppHub.Web.Tests;
 
 [Collection(WebApplicationFactoryCollection.Name)]
-public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public sealed partial class AppHubConnectorEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     private const string InternalServiceBearerToken = "local-internal-service-token";
 
