@@ -956,6 +956,7 @@ public static class MaintenanceEndpointContracts
         new(typeof(UpdateDowntimeReasonEndpoint), "PUT", "/api/business/v1/maintenance/downtime-reasons/{reasonCode}", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "updateMaintenanceDowntimeReason"),
         new(typeof(DeleteDowntimeReasonEndpoint), "DELETE", "/api/business/v1/maintenance/downtime-reasons/{reasonCode}", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "deleteMaintenanceDowntimeReason"),
         new(typeof(GetMaintenanceAssetAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceAssetAvailabilityWindows"),
+        new(typeof(QueryMaintenanceDowntimeFactsEndpoint), "POST", "/api/business/internal/v1/maintenance/downtime-facts/query", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceDowntimeFacts"),
         new(typeof(QueryMaintenanceAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceAvailabilityWindows"),
     ];
 

@@ -2108,6 +2108,14 @@
     },
     {
       "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/internal/v1/maintenance/downtime-facts/query",
+      "operationId": "queryMaintenanceDowntimeFacts",
+      "classification": "internal",
+      "rationale": "服务间停机事实查询，由 Scheduling 通过公开契约消费，不提供 1:1 Gateway facade。"
+    },
+    {
+      "service": "Maintenance",
       "method": "GET",
       "route": "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows",
       "operationId": "getMaintenanceAssetAvailabilityWindows",
