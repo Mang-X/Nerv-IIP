@@ -52,7 +52,7 @@ function Assert-FullChainScriptLiveOutputContract {
     $preparedProbePath = Join-Path $fixtureRoot 'prepared-probe.json'
     $scriptEntrypointTimeoutSeconds = 900
     foreach ($ids in @(
-        @('new-script-a', 'sales-order-demand-planning', 'ncr-rework-cost-closure', 'new-script-b'),
+        @('new-script-a', 'sales-order-demand-planning', 'erp-wms-delivery-completion', 'ncr-rework-cost-closure', 'new-script-b'),
         @('new-script-b', 'new-script-a'),
         @('ncr-rework-cost-closure', 'new-script-b', 'new-script-a')
     )) {
@@ -71,7 +71,7 @@ function Assert-FullChainScriptLiveOutputContract {
             Assert-Contract ($call.Timeout -eq 900) "Script '$id' must preserve its entrypoint budget."
             Assert-Contract ([string]::Equals($call.Command, 'pwsh', [StringComparison]::Ordinal) -and
                 [string]::Equals($call.Name, "full-chain-$id-entrypoint", [StringComparison]::Ordinal) -and
-                [string]::Equals(($call.Arguments -join '|'), ((@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot $member.entrypoint.path)) + $(if ([string]::Equals($id, 'sales-order-demand-planning', [StringComparison]::Ordinal)) { @('-PreparedProbePath', $preparedProbePath) })) -join '|'), [StringComparison]::Ordinal)) "Script '$id' must preserve its managed invocation."
+                [string]::Equals(($call.Arguments -join '|'), ((@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot $member.entrypoint.path)) + $(if ([string]::Equals($id, 'sales-order-demand-planning', [StringComparison]::Ordinal) -or [string]::Equals($id, 'erp-wms-delivery-completion', [StringComparison]::Ordinal)) { @('-PreparedProbePath', $preparedProbePath) })) -join '|'), [StringComparison]::Ordinal)) "Script '$id' must preserve its managed invocation."
         }
     }
 }
@@ -502,6 +502,12 @@ try {
     $runnerPath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
     Assert-Contract (Test-Path -LiteralPath $runnerPath -PathType Leaf) 'The governed FullChain runner must exist.'
     $runnerWorkflowPath = Write-FullChainRunnerWorkflowFixture -Path (Join-Path $fixtureRoot 'runner-denied-workflow.yml') -RunStepTimeoutMinutes 1
+    # Deadline admission is independent of probe reuse. Give the script fixture
+    # its own identity so fake discovery need not fabricate a real probe binary.
+    $deadlineManifestPath = Join-Path $fixtureRoot 'deadline-manifest.json'
+    $deadlineMatrixPath = Join-Path $fixtureRoot 'deadline-matrix.json'
+    [IO.File]::WriteAllText($deadlineManifestPath, ([IO.File]::ReadAllText($manifestPath).Replace('"id": "erp-wms-delivery-completion"', '"id": "deadline-script-fixture"')))
+    [IO.File]::WriteAllText($deadlineMatrixPath, ([IO.File]::ReadAllText($scenarioMatrixPath).Replace('"v1Alias": "erp-wms-delivery-completion"', '"v1Alias": "deadline-script-fixture"')))
     $fakeCommandDirectory = Join-Path $fixtureRoot 'runner-fake-bin'
     $fakeCommandLog = Join-Path $fixtureRoot 'runner-fake-commands.log'
     $allIdentities = @($manifest.members.expectedTestIdentities | ForEach-Object { [string]$_ })
@@ -522,7 +528,7 @@ try {
 
         foreach ($deniedCase in @(
             [pscustomobject]@{ Kind = 'fullstack'; MemberId = 'maintenance-runtime-hours' },
-            [pscustomobject]@{ Kind = 'script'; MemberId = 'erp-wms-delivery-completion' },
+            [pscustomobject]@{ Kind = 'script'; MemberId = 'deadline-script-fixture' },
             [pscustomobject]@{ Kind = 'dotnet'; MemberId = 'erp-return-closure' }
         )) {
             [IO.File]::WriteAllText($fakeCommandLog, '', [Text.UTF8Encoding]::new($false))
@@ -541,6 +547,8 @@ try {
             try {
                 & $runnerPath `
                     -MemberId $deniedCase.MemberId `
+                    -ManifestPath $deadlineManifestPath `
+                    -ScenarioMatrixPath $deadlineMatrixPath `
                     -WorkflowPath $runnerWorkflowPath `
                     -ResultsDirectory (Join-Path $caseRoot 'results') `
                     -SummaryPath $caseSummaryPath `
@@ -548,7 +556,7 @@ try {
             }
             catch { $runnerFailure = $_ }
 
-            Assert-Contract ($null -ne $runnerFailure -and ([string]$runnerFailure.Exception.Message).Contains('deadline admission denied', [StringComparison]::Ordinal)) "Production $($deniedCase.Kind) denied fixture must preserve the admission failure."
+            Assert-Contract ($null -ne $runnerFailure -and ([string]$runnerFailure.Exception.Message).Contains('deadline admission denied', [StringComparison]::Ordinal)) "Production $($deniedCase.Kind) denied fixture must preserve the admission failure; observed: $($runnerFailure.Exception.Message)"
             $commands = @([IO.File]::ReadAllLines($fakeCommandLog))
             Assert-Contract (@($commands | Where-Object { $_ -match '^docker .* up -d ' }).Count -eq 1) "Production $($deniedCase.Kind) denied fixture must enter runner-owned infrastructure state."
             Assert-Contract (@($commands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) "Production $($deniedCase.Kind) denied fixture must clean runner-owned infrastructure exactly once."
