@@ -40,6 +40,17 @@ it('展示权威承诺、延迟与破交期，并展开后端传播原因；完�
     },
   })
   expect(wrapper.text()).toContain('可承诺交期')
+  const date = (iso: string) => {
+    const d = new Date(iso)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+  expect(wrapper.find('.rounded-md.border.p-3 .text-lg').text()).toBe(date('2026-10-09T10:00:00Z'))
+  const cells = wrapper
+    .findAll('tbody tr')
+    .find((row) => row.text().includes('WO-11'))!
+    .findAll('td')
+  expect(cells[2]!.text()).toBe(date('2026-10-09T10:00:00Z'))
+  expect(cells[3]!.text()).toBe(date('2026-10-10T10:00:00Z'))
   expect(wrapper.text()).toContain('WO-11')
   expect(wrapper.text()).toContain('新增破交期')
   expect(wrapper.text()).toContain('1 天')
@@ -63,4 +74,21 @@ it('不可承诺如实展示未知 ETA 与未排工单，不显示虚构日期',
   expect(wrapper.text()).toContain('不可承诺')
   expect(wrapper.text()).toContain('物料到齐时间未知')
   expect(wrapper.text()).toContain('未排完整')
+})
+
+it('任务查询失败后显示失败状态并允许手动重试，不继续显示计算中', async () => {
+  const wrapper = mount(SchedulingRushInsertionResult, {
+    props: {
+      job: { jobId: 'job-running', status: 'running' },
+      failed: true,
+      message: '候选计算失败：服务不可用；急单已保存。',
+    },
+  })
+  expect(wrapper.text()).toContain('计算失败')
+  expect(wrapper.text()).not.toContain('计算中')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('手动重试'))!
+    .trigger('click')
+  expect(wrapper.emitted('retry')).toHaveLength(1)
 })

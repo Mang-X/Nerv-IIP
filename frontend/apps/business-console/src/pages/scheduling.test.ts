@@ -9,6 +9,8 @@ import type {
   BusinessConsoleMesWorkOrderItem,
   BusinessConsoleSchedulingMaterialShortageSummary,
   SchedulingCandidateSelection,
+  BusinessConsoleSchedulePlan,
+  SchedulingWorkingDraft,
 } from '@nerv-iip/api-client'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
@@ -64,6 +66,7 @@ const routeStub = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
   useRoute: () => ({ query: routeStub.query }),
+  useRouter: () => ({ replace: vi.fn() }),
 }))
 
 vi.mock('@/composables/useOrderUrgency', () => ({
@@ -76,7 +79,10 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
       '<span data-testid="order-urgency" :data-ref="orderReference" :data-mode="mode">未计算</span>',
   },
 }))
-const authState = vi.hoisted(() => ({ permissionCodes: [] as string[] }))
+const authState = vi.hoisted(() => ({
+  permissionCodes: [] as string[],
+  principalId: undefined as string | undefined,
+}))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: authState }),
 }))
@@ -120,6 +126,31 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
   },
 }))
 
+const savedDrafts = shallowRef<SchedulingWorkingDraft[]>([])
+const savedPlans = new Map<string, BusinessConsoleSchedulePlan>()
+let pagePersistence: ReturnType<
+  typeof import('@/composables/useSchedulingDraftPersistence').useSchedulingDraftPersistence
+>
+vi.mock('@/composables/useSchedulingDraftPersistence', async (original) => {
+  const actual = await original<typeof import('@/composables/useSchedulingDraftPersistence')>()
+  return {
+    useSchedulingDraftPersistence: (
+      ...args: Parameters<typeof actual.useSchedulingDraftPersistence>
+    ) => {
+      pagePersistence = actual.useSchedulingDraftPersistence(...args)
+      return pagePersistence
+    },
+  }
+})
+vi.mock('@nerv-iip/api-client', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsoleSchedulingWorkingDrafts: async () => ({
+    data: { success: true, data: savedDrafts.value },
+  }),
+  getBusinessConsoleSchedulingPlan: async ({ path }: { path: { planId: string } }) => ({
+    data: { success: true, data: savedPlans.get(path.planId) },
+  }),
+}))
 const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
 const associatedError = shallowRef<unknown>()
 let associatedOrderIds: () => (string | undefined)[]
@@ -129,6 +160,7 @@ const generatePending = shallowRef(false)
 const firstPlanJob = shallowRef()
 const generationError = shallowRef()
 const capacityCandidates = shallowRef<BusinessConsoleMesWorkOrderItem[]>()
+const releasePending = shallowRef(false)
 const insertionJob =
   shallowRef<import('@nerv-iip/api-client').BusinessConsoleSchedulingInsertionPreviewJob>()
 vi.mock('@/composables/useSchedulingRushInsertion', () => ({
@@ -471,7 +503,7 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
     plansError: shallowRef(undefined),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
-    releasePlanPending: shallowRef(false),
+    releasePlanPending: releasePending,
     revokePlan: stub.revokePlan,
     revokePlanPending: shallowRef(false),
     upsertOperationOverride: stub.upsertOperationOverride,
@@ -497,6 +529,10 @@ const sheetStubs = {
 beforeEach(() => {
   localCandidateCallback.readSelectedPlan.mockReset()
   insertionJob.value = undefined
+  releasePending.value = false
+  authState.principalId = undefined
+  savedDrafts.value = []
+  savedPlans.clear()
   stub.revisePlan.mockReset()
   associatedOrders.value = []
   associatedError.value = undefined
@@ -556,84 +592,139 @@ async function openPlanTable(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('APS scheduling workbench page', () => {
-  it.each(['confirm', 'switch'])('选定保存实际插单候选并绑定确认身份：%s', async (action) => {
-    const candidate = {
-      ...planOne,
-      planId: 'insertion-current',
-      status: 'generated' as const,
-      conflicts: [],
-      unscheduledOperations: [],
-    }
-    insertionJob.value = {
-      jobId: 'job-current',
-      status: 'completed',
-      input: {
-        ...historyFilters,
-        planId: 'plan-001',
-        workOrderId: 'WO-12',
-        workOrderIds: ['WO-12'],
-      },
-      result: {
-        baselinePlanId: 'plan-001',
-        candidatePlanId: candidate.planId,
-        candidate,
-        snapshot: {
-          baseline: { ...candidate, planId: 'plan-001' },
-          problem: {
-            organizationId: 'org-001',
-            environmentId: 'env-dev',
-            orders: [{ orderId: 'WO-11' }, { orderId: 'WO-12' }],
+  it.each(['confirm', 'switch', 'restore', 'cancel'])(
+    '选定保存实际插单候选并绑定确认身份：%s',
+    async (action) => {
+      const candidate = {
+        ...planOne,
+        planId: 'insertion-current',
+        status: 'generated' as const,
+        conflicts: [],
+        unscheduledOperations: [],
+      }
+      insertionJob.value = {
+        jobId: 'job-current',
+        status: 'completed',
+        input: {
+          ...historyFilters,
+          planId: 'plan-001',
+          workOrderId: 'WO-12',
+          workOrderIds: ['WO-12'],
+        },
+        result: {
+          baselinePlanId: 'plan-001',
+          candidatePlanId: candidate.planId,
+          candidate,
+          snapshot: {
+            baseline: { ...candidate, planId: 'plan-001' },
+            problem: {
+              organizationId: 'org-001',
+              environmentId: 'env-dev',
+              orders: [{ orderId: 'WO-11' }, { orderId: 'WO-12' }],
+            },
           },
         },
-      },
-    }
-    stub.revisePlan.mockResolvedValueOnce({ candidate })
-    const wrapper = mount(SchedulingPage, {
-      global: { plugins: [createPinia()], stubs: layoutStub },
-    })
-    await flushPromises()
-    expect(stub.releasePlan).not.toHaveBeenCalled()
-    expect(
-      wrapper
-        .findAll('button')
-        .find((b) => b.text().includes('发布新版'))!
-        .attributes('disabled'),
-    ).toBeDefined()
-    await wrapper
-      .findAll('button')
-      .find((b) => b.text().includes('选定候选并保存修订'))!
-      .trigger('click')
-    await flushPromises()
-    expect(stub.revisePlan).toHaveBeenCalledWith(
-      'insertion-current',
-      expect.objectContaining({ includedOrderIds: ['WO-11', 'WO-12'], lockedAssignments: [] }),
-    )
-    expect(stub.releasePlan).not.toHaveBeenCalled()
-    await wrapper
-      .findAll('button')
-      .find((b) => b.text().includes('发布新版'))!
-      .trigger('click')
-    await flushPromises()
-    expect(stub.releasePlan).not.toHaveBeenCalled()
-    const confirm = [...document.body.querySelectorAll('button')].find(
-      (b) => b.textContent?.trim() === '确认发布',
-    )!
-    expect(confirm).toBeTruthy()
-    if (action === 'switch') {
-      generatedPlan.value = { ...candidate, planId: 'plan-other' }
-      await flushPromises()
-      expect(confirm.disabled).toBe(true)
-      confirm.click()
+      }
+      let finishRevision!: (revision: { candidate: BusinessConsoleSchedulePlan }) => void
+      if (action === 'restore') {
+        authState.principalId = 'user-1'
+        savedPlans.set('plan-001', { ...candidate, planId: 'plan-001' })
+        savedPlans.set('plan-other', { ...candidate, planId: 'plan-other' })
+        savedDrafts.value = ['plan-001', 'plan-other'].map((planId, i) => ({
+          planId,
+          savedAtUtc: `2026-10-08T0${2 - i}:00:00Z`,
+          state: { orders: [], tasks: [], pendingOperations: [] },
+        }))
+        stub.revisePlan.mockReturnValueOnce(
+          new Promise((resolve) => {
+            finishRevision = resolve
+          }),
+        )
+      } else stub.revisePlan.mockResolvedValueOnce({ candidate })
+      const wrapper = mount(SchedulingPage, {
+        global: { plugins: [createPinia()], stubs: layoutStub },
+      })
       await flushPromises()
       expect(stub.releasePlan).not.toHaveBeenCalled()
+      expect(
+        wrapper
+          .findAll('button')
+          .find((b) => b.text().includes('发布新版'))!
+          .attributes('disabled'),
+      ).toBeDefined()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('选定候选并保存修订'))!
+        .trigger('click')
+      await flushPromises()
+      expect(stub.revisePlan).toHaveBeenCalledWith(
+        'insertion-current',
+        expect.objectContaining({ includedOrderIds: ['WO-11', 'WO-12'], lockedAssignments: [] }),
+      )
+      expect(stub.releasePlan).not.toHaveBeenCalled()
+      if (action === 'restore') {
+        await pagePersistence.select('plan-other')
+        await flushPromises()
+        expect(
+          wrapper.findComponent({ name: 'SchedulingDraftBoard' }).props('model').meta.planId,
+        ).toBe('plan-other')
+        finishRevision({ candidate })
+        await flushPromises()
+        expect(
+          wrapper.findComponent({ name: 'SchedulingDraftBoard' }).props('model').meta.planId,
+        ).toBe('plan-other')
+        expect(stub.toastSuccess).not.toHaveBeenCalledWith(
+          '所选插单候选已保存为修订，请核对后确认发布',
+        )
+        wrapper.unmount()
+        return
+      }
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('发布新版'))!
+        .trigger('click')
+      await flushPromises()
+      expect(stub.releasePlan).not.toHaveBeenCalled()
+      const confirm = [...document.body.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '确认发布',
+      )!
+      expect(confirm).toBeTruthy()
+      if (action === 'switch') {
+        generatedPlan.value = { ...candidate, planId: 'plan-other' }
+        await flushPromises()
+        expect(confirm.disabled).toBe(true)
+        confirm.click()
+        await flushPromises()
+        expect(stub.releasePlan).not.toHaveBeenCalled()
+        wrapper.unmount()
+        return
+      }
+      let finishRelease!: () => void
+      if (action === 'cancel')
+        stub.releasePlan.mockReturnValueOnce(
+          new Promise<void>((resolve) => {
+            finishRelease = resolve
+          }),
+        )
+      confirm.click()
+      await flushPromises()
+      expect(stub.releasePlan).toHaveBeenCalledWith('insertion-current')
+      if (action === 'cancel') {
+        releasePending.value = true
+        await flushPromises()
+        const cancel = [...document.body.querySelectorAll('button')].find(
+          (b) => b.textContent?.trim() === '取消',
+        )!
+        expect(cancel.disabled).toBe(false)
+        cancel.click()
+        await flushPromises()
+        expect(document.body.textContent).not.toContain('确认发布所选方案？')
+        finishRelease()
+        await flushPromises()
+      }
       wrapper.unmount()
-      return
-    }
-    confirm.click()
-    await flushPromises()
-    expect(stub.releasePlan).toHaveBeenCalledWith('insertion-current')
-    wrapper.unmount()
-  })
+    },
+  )
 
   it.each([true, false])(
     'shows the same batch shortages in draft and saved plan (shortage=%s)',

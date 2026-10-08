@@ -12,6 +12,7 @@ const props = defineProps<{
   job?: BusinessConsoleSchedulingInsertionPreviewJob
   message?: string
   pending?: boolean
+  failed?: boolean
   saving?: boolean
   selected?: boolean
 }>()
@@ -23,14 +24,15 @@ const baseline = computed(
 )
 const model = computed(() => toModel(candidate.value ?? {}))
 const baseModel = computed(() => toModel(baseline.value ?? {}))
-const status = computed(
-  () =>
-    ({
-      created: '已受理，等待计算',
-      running: '计算中',
-      failed: '计算失败',
-      completed: '候选计算完成',
-    })[props.job?.status ?? 'created'],
+const status = computed(() =>
+  props.failed
+    ? '计算失败'
+    : {
+        created: '已受理，等待计算',
+        running: '计算中',
+        failed: '计算失败',
+        completed: '候选计算完成',
+      }[props.job?.status ?? 'created'],
 )
 const reasons: Record<string, string> = {
   OperationDeviation: '工序偏差',

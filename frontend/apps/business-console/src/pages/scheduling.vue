@@ -667,6 +667,7 @@ async function selectInsertionCandidate() {
     workbench.revisionPending.value
   )
     return
+  const selectionBaseline = persistedDraftPlan.value
   try {
     const revision = await workbench.revisePlan(result.candidatePlanId, {
       organizationId: job.input.organizationId!,
@@ -674,7 +675,12 @@ async function selectInsertionCandidate() {
       includedOrderIds: result.snapshot.problem.orders.map((order) => order.orderId!),
       lockedAssignments: [],
     })
-    if (insertion.task.job.value?.jobId !== job.jobId) return
+    if (
+      insertion.task.job.value?.jobId !== job.jobId ||
+      persistedDraftPlan.value !== selectionBaseline ||
+      !draftReady.value
+    )
+      return
     revisionBasePlan.value = result.snapshot?.baseline ?? job.acceptedBaseline?.baseline
     revisionResult.value = revision
     if (revision.candidate) {
@@ -1171,6 +1177,7 @@ function reasonLabel(reason?: string | null) {
           :job="insertion.task.job.value"
           :message="insertion.message.value"
           :pending="insertion.task.pending.value"
+          :failed="Boolean(insertion.task.error.value)"
           :saving="workbench.revisionPending.value"
           :selected="
             Boolean(
@@ -1430,7 +1437,7 @@ function reasonLabel(reason?: string | null) {
           >
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
-          <NvAlertDialogCancel :disabled="releasePlanPending">取消</NvAlertDialogCancel>
+          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
           <NvButton
             type="button"
             :disabled="
