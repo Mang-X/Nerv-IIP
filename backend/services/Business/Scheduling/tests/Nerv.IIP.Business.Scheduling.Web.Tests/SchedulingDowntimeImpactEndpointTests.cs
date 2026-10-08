@@ -51,6 +51,8 @@ public sealed partial class SchedulingEndpointContractTests
         Assert.Equal(problem.ProblemId, first.ProblemId);
         Assert.Equal(problem.HorizonStartUtc, first.ObservedAtUtc);
         Assert.Equal(2, first.Items.Count);
+        Assert.Single(first.AffectedOperations);
+        Assert.Equal(1, first.OperationsWithAlternativesCount);
         Assert.All(first.Items, item =>
         {
             Assert.Equal(problem.HorizonStartUtc.AddDays(-3), item.Fact.StartedAtUtc);

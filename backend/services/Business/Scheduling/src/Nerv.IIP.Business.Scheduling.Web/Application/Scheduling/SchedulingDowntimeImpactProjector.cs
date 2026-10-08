@@ -41,7 +41,11 @@ internal static class SchedulingDowntimeImpactProjector
                 }).ToArray();
             return new SchedulingDowntimeImpactContract(fact, affected, affected.Count(x => x.AvailableAlternativeResourceIds.Count > 0));
         }).ToArray();
-        return new(baseline.PlanId, baseline.ProblemId, asOf, items);
+        var affectedOperations = items.SelectMany(x => x.AffectedOperations)
+            .DistinctBy(x => (x.WorkOrderId, x.OperationId)).OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .ThenBy(x => x.OperationId, StringComparer.Ordinal).ToArray();
+        return new(baseline.PlanId, baseline.ProblemId, asOf, items, affectedOperations,
+            affectedOperations.Count(x => x.AvailableAlternativeResourceIds.Count > 0));
     }
 
     private static bool Overlaps(ScheduleAssignmentContract assignment, SchedulingDowntimeFactContract fact)

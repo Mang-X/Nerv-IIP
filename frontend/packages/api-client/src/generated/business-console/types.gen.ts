@@ -1949,6 +1949,8 @@ export type NervIipContractsSchedulingSchedulingDowntimeImpactResponse = {
     problemId?: string;
     observedAtUtc?: string;
     items?: Array<NervIipContractsSchedulingSchedulingDowntimeImpactContract>;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract>;
+    operationsWithAlternativesCount?: number;
 };
 
 export type NervIipContractsSchedulingSchedulingDowntimeImpactContract = {

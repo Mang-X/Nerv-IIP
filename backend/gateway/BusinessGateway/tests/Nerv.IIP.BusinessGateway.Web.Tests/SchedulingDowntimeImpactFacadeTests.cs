@@ -19,7 +19,8 @@ public sealed class SchedulingDowntimeImpactFacadeTests
         var at = new DateTimeOffset(2026, 10, 8, 8, 0, 0, TimeSpan.Zero);
         var expected = new SchedulingDowntimeImpactResponse("plan-001", "saved-problem", at,
             [new(new("maintenance", "mw", "device", null, at.AddDays(-3), null, at.AddMinutes(-1), "work-order", "alarm", "alarm-1"),
-                [new("order", "operation", ["qualified-device"])], 1)]);
+                [new("order", "operation", ["qualified-device"])], 1)],
+            [new("order", "operation", ["qualified-device"])], 1);
         using var handler = new SchedulingProducerHandler(expected);
         var authorization = allowed ? FakeBusinessGatewayAuthorizationClient.AllowOnly("business.scheduling.plans.read")
             : FakeBusinessGatewayAuthorizationClient.Forbidden();

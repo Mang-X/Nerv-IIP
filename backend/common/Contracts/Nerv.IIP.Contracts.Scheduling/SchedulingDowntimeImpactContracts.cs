@@ -14,4 +14,5 @@ public sealed record SchedulingDowntimeImpactContract(SchedulingDowntimeFactCont
     IReadOnlyList<SchedulingDowntimeAffectedOperationContract> AffectedOperations, int OperationsWithAlternativesCount);
 
 public sealed record SchedulingDowntimeImpactResponse(string BaselinePlanId, string ProblemId,
-    DateTimeOffset ObservedAtUtc, IReadOnlyList<SchedulingDowntimeImpactContract> Items);
+    DateTimeOffset ObservedAtUtc, IReadOnlyList<SchedulingDowntimeImpactContract> Items,
+    IReadOnlyList<SchedulingDowntimeAffectedOperationContract> AffectedOperations, int OperationsWithAlternativesCount);
