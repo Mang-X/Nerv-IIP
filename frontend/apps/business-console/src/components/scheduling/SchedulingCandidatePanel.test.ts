@@ -129,6 +129,64 @@ describe('局部候选页内比较', () => {
     await wrapper.get('[data-testid="preview-candidates"]').trigger('click')
     expect(wrapper.emitted('preview')).toHaveLength(1)
   })
+  it('并排比较两策略，展示转移换型与设备来源，并分别选择候选', async () => {
+    const right = candidates.candidates![0]!
+    const transfer = {
+      ...right,
+      strategy: 'resourceTransfer' as const,
+      kpis: {
+        ...right.kpis,
+        candidateOnTimeRate: 0.9,
+        candidateOnTimeDenominator: 9,
+        onTimeRateChange: 0.1,
+      },
+      movements: right.movements!.map((movement) => ({
+        ...movement,
+        candidate: { ...movement.candidate, resourceId: 'CNC-02' },
+      })),
+      transfers: [
+        {
+          orderId: 'WO-260108-001',
+          operationId: 'OP-10',
+          originalResourceId: 'CNC-01',
+          resourceId: 'CNC-02',
+          setupMinutes: 15,
+          deviceSources: [
+            {
+              resourceId: 'CNC-01',
+              substituteResourceId: 'CNC-02',
+              sourceReference: 'CMMS-260108-017',
+              reasonCode: 'equipment.downtime',
+            },
+          ],
+        },
+      ],
+    }
+    const wrapper = mount(SchedulingCandidatePanel, {
+      props: {
+        candidates: { ...candidates, candidates: [right, transfer] },
+        canManage: true,
+        baselinePlanId: 'plan-production',
+      },
+    })
+    expect(wrapper.text()).toContain('原资源右移')
+    expect(wrapper.text()).toContain('合格资源转移')
+    const metrics = wrapper.findAll('dl')
+    expect(metrics[0]!.text()).toContain('80.0% → 60.0%')
+    expect(metrics[0]!.text()).toContain('分母 10 → 10')
+    expect(metrics[1]!.text()).toContain('80.0% → 90.0%')
+    expect(metrics[1]!.text()).toContain('分母 10 → 9')
+    expect(wrapper.text()).toContain('换型 15 分钟')
+    expect(wrapper.text()).toContain('替代设备依据')
+    expect(wrapper.text()).toContain('CNC-01 → CNC-02')
+    expect(wrapper.text()).toContain('CMMS-260108-017')
+    const choices = wrapper.findAll('[data-testid="select-candidate"]')
+    await choices[0]!.trigger('click')
+    await choices[1]!.trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[right], [transfer]])
+    await wrapper.get('[data-testid="preview-candidates"]').trigger('click')
+    expect(wrapper.emitted('preview')).toHaveLength(1)
+  })
   it('无管理权限或请求进行中时禁止生成和选定', () => {
     const wrapper = mount(SchedulingCandidatePanel, {
       props: { candidates, canManage: false, baselinePlanId: 'plan-production' },
