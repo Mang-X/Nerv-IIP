@@ -41,3 +41,11 @@ public sealed record SchedulingInsertionPreviewResultContract(int ContractVersio
     SchedulingInsertionCalculationSnapshotContract Snapshot, SchedulingInsertionKpisContract Kpis,
     IReadOnlyCollection<SchedulingInsertionOrderImpactContract> Orders,
     IReadOnlyCollection<SchedulingInsertionOperationImpactContract> Operations);
+
+/// <summary>Scheduling producer 的详细任务读面；现有 Gateway facade 合同由后续消费方迁移。</summary>
+public sealed record SchedulingInsertionAcceptedBaselineContract(SchedulePlanContract Baseline, SchedulingProblemContract Problem);
+public sealed record SchedulingInsertionPreviewJobDetailContract(
+    Guid JobId, SchedulingInsertionPreviewJobStatusContract Status, SchedulingInsertionPreviewInputContract Input,
+    DateTimeOffset CreatedAtUtc, DateTimeOffset? StartedAtUtc, DateTimeOffset? FinishedAtUtc,
+    SchedulePlanContract? Preview, string? FailureReason, SchedulingInsertionPreviewResultContract? Result = null,
+    SchedulingInsertionAcceptedBaselineContract? AcceptedBaseline = null);

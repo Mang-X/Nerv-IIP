@@ -9,11 +9,11 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
-public sealed record AcceptScheduleInsertionPreviewJobCommand(SchedulingInsertionPreviewRequestContract Input) : ICommand<SchedulingInsertionPreviewJobContract>;
+public sealed record AcceptScheduleInsertionPreviewJobCommand(SchedulingInsertionPreviewRequestContract Input) : ICommand<SchedulingInsertionPreviewJobDetailContract>;
 public sealed class AcceptScheduleInsertionPreviewJobCommandHandler(ApplicationDbContext db, TimeProvider clock, ISender sender)
-    : ICommandHandler<AcceptScheduleInsertionPreviewJobCommand, SchedulingInsertionPreviewJobContract>
+    : ICommandHandler<AcceptScheduleInsertionPreviewJobCommand, SchedulingInsertionPreviewJobDetailContract>
 {
-    public async Task<SchedulingInsertionPreviewJobContract> Handle(AcceptScheduleInsertionPreviewJobCommand request, CancellationToken ct)
+    public async Task<SchedulingInsertionPreviewJobDetailContract> Handle(AcceptScheduleInsertionPreviewJobCommand request, CancellationToken ct)
     {
         var input = request.Input;
         var plan = await db.SchedulePlans.AsNoTracking().SingleOrDefaultAsync(x =>
@@ -31,11 +31,11 @@ public sealed class AcceptScheduleInsertionPreviewJobCommandHandler(ApplicationD
         if (orderIds.Length > SchedulingFirstPlanJobLimits.MaxOrderCount)
             throw new KnownException("合并后的工单数量不得超过 500，请调整选择后重试。");
         var acceptedInput = new SchedulingInsertionPreviewInputContract(input.OrganizationId, input.EnvironmentId,
-            input.PlanId, input.WorkOrderId.Trim(), problem.HorizonStartUtc, problem.HorizonEndUtc, orderIds, Baseline:
-                await sender.Send(new GetSchedulePlanDetailQuery(input.PlanId, input.OrganizationId, input.EnvironmentId), ct),
-                BaselineProblem: problem);
+            input.PlanId, input.WorkOrderId.Trim(), problem.HorizonStartUtc, problem.HorizonEndUtc, orderIds);
+        var accepted = new SchedulingInsertionAcceptedInput(acceptedInput, new(
+            await sender.Send(new GetSchedulePlanDetailQuery(input.PlanId, input.OrganizationId, input.EnvironmentId), ct), problem));
         var job = new ScheduleInsertionPreviewJob(input.OrganizationId, input.EnvironmentId,
-            JsonSerializer.Serialize(acceptedInput, SchedulingJson.Options), clock.GetUtcNow());
+            JsonSerializer.Serialize(accepted, SchedulingJson.Options), clock.GetUtcNow());
         await db.ScheduleInsertionPreviewJobs.AddAsync(job, ct);
         return ScheduleInsertionPreviewJobMapper.ToContract(job);
     }
@@ -58,10 +58,11 @@ public sealed class ExecuteScheduleInsertionPreviewJobCommandHandler(
     public async Task Handle(ExecuteScheduleInsertionPreviewJobCommand request, CancellationToken ct)
     {
         var job = await db.ScheduleInsertionPreviewJobs.SingleAsync(x => x.Id == request.JobId, ct);
-        var input = JsonSerializer.Deserialize<SchedulingInsertionPreviewInputContract>(job.InputJson, SchedulingJson.Options)!;
+        var accepted = ScheduleInsertionPreviewJobMapper.ReadInput(job.InputJson);
+        var input = accepted.Input;
         var policy = freezeSettings.At(clock.GetUtcNow());
-        var baseline = input.Baseline ?? await sender.Send(new GetSchedulePlanDetailQuery(input.PlanId, input.OrganizationId, input.EnvironmentId), ct);
-        var baselineProblem = input.BaselineProblem;
+        var baseline = accepted.BaselineSnapshot?.Baseline ?? await sender.Send(new GetSchedulePlanDetailQuery(input.PlanId, input.OrganizationId, input.EnvironmentId), ct);
+        var baselineProblem = accepted.BaselineSnapshot?.Problem;
         if (baselineProblem is null)
         {
             // Created jobs accepted before this contract still have their original persisted problem.
@@ -154,10 +155,22 @@ public sealed class FailScheduleInsertionPreviewJobCommandHandler(ApplicationDbC
         job.Fail(request.Reason, clock.GetUtcNow());
     }
 }
+internal sealed record SchedulingInsertionAcceptedInput(SchedulingInsertionPreviewInputContract Input,
+    SchedulingInsertionAcceptedBaselineContract? BaselineSnapshot);
+
 internal static class ScheduleInsertionPreviewJobMapper
 {
-    public static SchedulingInsertionPreviewJobContract ToContract(ScheduleInsertionPreviewJob job)
+    public static SchedulingInsertionAcceptedInput ReadInput(string json)
     {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.TryGetProperty("input", out _)
+            ? JsonSerializer.Deserialize<SchedulingInsertionAcceptedInput>(json, SchedulingJson.Options)!
+            : new(JsonSerializer.Deserialize<SchedulingInsertionPreviewInputContract>(json, SchedulingJson.Options)!, null);
+    }
+
+    public static SchedulingInsertionPreviewJobDetailContract ToContract(ScheduleInsertionPreviewJob job)
+    {
+        var accepted = ReadInput(job.InputJson);
         SchedulingInsertionPreviewResultContract? result = null;
         SchedulePlanContract? preview = null;
         if (job.PreviewJson is not null)
@@ -172,7 +185,7 @@ internal static class ScheduleInsertionPreviewJobMapper
             else preview = JsonSerializer.Deserialize<SchedulePlanContract>(job.PreviewJson, SchedulingJson.Options);
         }
         return new(job.Id.Id, (SchedulingInsertionPreviewJobStatusContract)job.Status,
-            JsonSerializer.Deserialize<SchedulingInsertionPreviewInputContract>(job.InputJson, SchedulingJson.Options)!,
-            job.CreatedAtUtc, job.StartedAtUtc, job.FinishedAtUtc, preview, job.FailureReason, result);
+            accepted.Input,
+            job.CreatedAtUtc, job.StartedAtUtc, job.FinishedAtUtc, preview, job.FailureReason, result, accepted.BaselineSnapshot);
     }
 }

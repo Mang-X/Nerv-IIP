@@ -195,7 +195,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             using var response = await TestTimeout.RunAsync("insertion acceptance before source completes",
                 async ct => await client.PostAsJsonAsync(InsertionRoute, input, SchedulingJson.Options, ct), Budget);
             Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobDetailContract>>(SchedulingJson.Options))!.Data;
             Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Created, accepted.Status);
             Assert.Null(accepted.Preview);
             Assert.Equal(12, accepted.Input.WorkOrderIds.Count);
@@ -230,7 +230,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             Assert.Equal(SchedulingInsertionOrderStatusContract.New, result.Orders.Single(x => x.OrderId == "order-012").Status);
             Assert.Equal(1, result.Kpis.UnscheduledOperationCount.Candidate);
             Assert.Equal(12, result.Snapshot.Problem.Orders.Count);
-            Assert.Equal(original.PlanId, accepted.Input.Baseline!.PlanId);
+            Assert.Equal(original.PlanId, accepted.AcceptedBaseline!.Baseline.PlanId);
             Assert.Equal(JsonSerializer.Serialize(result, SchedulingJson.Options),
                 JsonSerializer.Serialize((await ReadInsertion(client, accepted.JobId)).Result, SchedulingJson.Options));
             Assert.Equal(before, await ReadInsertionBaseline(factory, original));
@@ -272,7 +272,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         try
         {
             using var response = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-003"), SchedulingJson.Options);
-            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobDetailContract>>(SchedulingJson.Options))!.Data;
             source.Release.TrySetResult();
             var completed = await TerminalInsertion(client, accepted.JobId);
             Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Completed, completed.Status);
@@ -350,7 +350,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         {
             using var response = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-004"), SchedulingJson.Options);
             Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobDetailContract>>(SchedulingJson.Options))!.Data;
             await TestTimeout.RunAsync("freeze insertion source entered", async ct => await source.Entered.Task.WaitAsync(ct), Budget);
             source.Release.TrySetResult();
             var completed = await TerminalInsertion(client, accepted.JobId);
@@ -423,7 +423,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         var original = await SeedInsertionPlan(factory, 500);
         using var acceptedResponse = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, " order-500 "), SchedulingJson.Options);
         Assert.Equal(HttpStatusCode.Accepted, acceptedResponse.StatusCode);
-        var accepted = (await acceptedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+        var accepted = (await acceptedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobDetailContract>>(SchedulingJson.Options))!.Data;
         Assert.Equal(500, accepted.Input.WorkOrderIds.Count);
         Assert.Equal(500, accepted.Input.WorkOrderIds.Distinct().Count());
         foreach (var input in new[] { InsertionInput(original, "new-order"),
@@ -462,7 +462,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         {
             using var response = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-012"), SchedulingJson.Options);
             Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobDetailContract>>(SchedulingJson.Options))!.Data;
             var failed = await TerminalInsertion(client, accepted.JobId);
             Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Failed, failed.Status);
             Assert.Equal(source.Failure.Message, failed.FailureReason);
@@ -489,10 +489,10 @@ public sealed class SchedulingFirstPlanJobPostgresTests
     private static ScheduleInsertionPreviewJobWorker InsertionWorker(JobFactory factory) => new(
         factory.Services.GetRequiredService<ScheduleInsertionPreviewJobQueue>(), factory.Services.GetRequiredService<IServiceScopeFactory>(),
         Microsoft.Extensions.Logging.Abstractions.NullLogger<ScheduleInsertionPreviewJobWorker>.Instance);
-    private static async Task<SchedulingInsertionPreviewJobContract> ReadInsertion(HttpClient client, Guid id) =>
-        (await client.GetFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(
+    private static async Task<SchedulingInsertionPreviewJobDetailContract> ReadInsertion(HttpClient client, Guid id) =>
+        (await client.GetFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobDetailContract>>(
             $"{InsertionRoute}/{id}?organizationId={Input(1).OrganizationId}&environmentId={Input(1).EnvironmentId}", SchedulingJson.Options))!.Data;
-    private static ValueTask<SchedulingInsertionPreviewJobContract> TerminalInsertion(HttpClient client, Guid id) =>
+    private static ValueTask<SchedulingInsertionPreviewJobDetailContract> TerminalInsertion(HttpClient client, Guid id) =>
         Eventually.WaitAsync("insertion preview terminal commit", async _ => await ReadInsertion(client, id),
             x => x.Status is SchedulingInsertionPreviewJobStatusContract.Completed or SchedulingInsertionPreviewJobStatusContract.Failed,
             x => $"{x.Status}: {x.FailureReason}", new EventuallyOptions(Budget, TimeSpan.FromMilliseconds(50), []));

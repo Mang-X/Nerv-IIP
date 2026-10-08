@@ -11,7 +11,7 @@ public sealed record GetScheduleInsertionPreviewJobRequest([property: RouteParam
     [property: QueryParam] string OrganizationId, [property: QueryParam] string EnvironmentId);
 
 public sealed class AcceptScheduleInsertionPreviewJobEndpoint(ISender sender, ScheduleInsertionPreviewJobQueue queue)
-    : SchedulingEndpoint<SchedulingInsertionPreviewRequestContract, ResponseData<SchedulingInsertionPreviewJobContract>>
+    : SchedulingEndpoint<SchedulingInsertionPreviewRequestContract, ResponseData<SchedulingInsertionPreviewJobDetailContract>>
 {
     public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<AcceptScheduleInsertionPreviewJobEndpoint>());
     public override async Task HandleAsync(SchedulingInsertionPreviewRequestContract req, CancellationToken ct)
@@ -23,7 +23,7 @@ public sealed class AcceptScheduleInsertionPreviewJobEndpoint(ISender sender, Sc
     }
 }
 public sealed class GetScheduleInsertionPreviewJobEndpoint(ISender sender)
-    : SchedulingEndpoint<GetScheduleInsertionPreviewJobRequest, ResponseData<SchedulingInsertionPreviewJobContract>>
+    : SchedulingEndpoint<GetScheduleInsertionPreviewJobRequest, ResponseData<SchedulingInsertionPreviewJobDetailContract>>
 {
     public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<GetScheduleInsertionPreviewJobEndpoint>());
     public override async Task HandleAsync(GetScheduleInsertionPreviewJobRequest req, CancellationToken ct)

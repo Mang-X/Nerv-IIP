@@ -6,7 +6,7 @@ using Nerv.IIP.Contracts.Scheduling;
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 
 public sealed record GetScheduleInsertionPreviewJobQuery(ScheduleInsertionPreviewJobId JobId, string OrganizationId, string EnvironmentId)
-    : IQuery<SchedulingInsertionPreviewJobContract>;
+    : IQuery<SchedulingInsertionPreviewJobDetailContract>;
 public sealed class GetScheduleInsertionPreviewJobQueryValidator : AbstractValidator<GetScheduleInsertionPreviewJobQuery>
 {
     public GetScheduleInsertionPreviewJobQueryValidator()
@@ -16,9 +16,9 @@ public sealed class GetScheduleInsertionPreviewJobQueryValidator : AbstractValid
     }
 }
 public sealed class GetScheduleInsertionPreviewJobQueryHandler(ApplicationDbContext db)
-    : IQueryHandler<GetScheduleInsertionPreviewJobQuery, SchedulingInsertionPreviewJobContract>
+    : IQueryHandler<GetScheduleInsertionPreviewJobQuery, SchedulingInsertionPreviewJobDetailContract>
 {
-    public async Task<SchedulingInsertionPreviewJobContract> Handle(GetScheduleInsertionPreviewJobQuery request, CancellationToken ct) =>
+    public async Task<SchedulingInsertionPreviewJobDetailContract> Handle(GetScheduleInsertionPreviewJobQuery request, CancellationToken ct) =>
         ScheduleInsertionPreviewJobMapper.ToContract(await db.ScheduleInsertionPreviewJobs.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == request.JobId && x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId, ct)
