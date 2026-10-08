@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -10,6 +11,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 using NetCorePal.Extensions.Dto;
+using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -41,8 +43,9 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
                 segments[1].EndUtc, "planner-lock", segments)]
         };
         var source = new ControlledSource { InsertionProblem = problem };
+        var publisher = new ReleaseEventCapture();
         await using var factory = new JobFactory(source, clock: new InsertionClock(start),
-            freezeSettings: new SchedulingFreezeSettings(TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
+            freezeSettings: new SchedulingFreezeSettings(TimeSpan.Zero, new Dictionary<string, TimeSpan>()), publisher: publisher);
         await Migrate(factory);
         using var client = Client(factory);
         SchedulePlanContract original;
@@ -56,6 +59,9 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             Assert.True((await response.Content.ReadFromJsonAsync<ResponseData<ReleaseSchedulePlanResponse>>(SchedulingJson.Options))!.Success);
         }
         await Release(original.PlanId);
+        AssertReleasedAssignments(original, Assert.Single(publisher.Released));
+        await Release(original.PlanId);
+        Assert.Single(publisher.Released);
         var before = await ReadInsertionBaseline(factory, original);
         using var worker = InsertionWorker(factory);
         await worker.StartAsync(CancellationToken.None);
@@ -131,6 +137,17 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             }
             Assert.Equal(1, source.Calls);
             await Release(candidateId);
+            AssertReleasedAssignments(draft, publisher.Released.Last());
+            var revoked = Assert.Single(publisher.Revoked);
+            Assert.Equal(original.PlanId, revoked.Payload.PlanId);
+            Assert.Equal(candidateId, revoked.Payload.SupersededByPlanId);
+            Assert.Equal(ExpectedOperations(original), revoked.Payload.AffectedOperations);
+            Assert.Equal(1, revoked.Payload.ReleaseRevision);
+            Assert.Equal(2, publisher.Released.Last().Payload.ReleaseRevision);
+            await Release(candidateId);
+            Assert.Equal(2, publisher.Released.Count);
+            Assert.Single(publisher.Revoked);
+            Assert.Equal(1, source.Calls);
             await using (var scope = factory.Services.CreateAsyncScope())
             {
                 var sender = scope.ServiceProvider.GetRequiredService<ISender>();
@@ -142,5 +159,30 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             }
         }
         finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
+    }
+    // Regression / ADR 0014 decision 3 / #4241: new HTTP scopes must publish saved placements.
+    private static SchedulePlanAffectedOperationPayload[] ExpectedOperations(SchedulePlanContract plan) =>
+        plan.Assignments.OrderBy(x => x.StartUtc).ThenBy(x => x.OrderId, StringComparer.Ordinal)
+            .ThenBy(x => x.OperationSequence).ThenBy(x => x.OperationId, StringComparer.Ordinal)
+            .Select(x => new SchedulePlanAffectedOperationPayload(x.OrderId, x.OperationId, x.OperationSequence,
+                x.ResourceId, x.WorkCenterId, x.StartUtc, x.EndUtc, x.StandardOperationCode)).ToArray();
+
+    private static void AssertReleasedAssignments(SchedulePlanContract plan, SchedulePlanReleasedIntegrationEvent released)
+    {
+        Assert.Equal(plan.PlanId, released.Payload.PlanId);
+        Assert.Equal(plan.ProblemFingerprint, released.Payload.ProblemFingerprint);
+        Assert.Equal(ExpectedOperations(plan), released.Payload.AffectedOperations);
+    }
+
+    private sealed class ReleaseEventCapture : IIntegrationEventPublisher
+    {
+        public ConcurrentQueue<SchedulePlanReleasedIntegrationEvent> Released { get; } = new();
+        public ConcurrentQueue<SchedulePlanRevokedIntegrationEvent> Revoked { get; } = new();
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            if (integrationEvent is SchedulePlanReleasedIntegrationEvent released) Released.Enqueue(released);
+            if (integrationEvent is SchedulePlanRevokedIntegrationEvent revoked) Revoked.Enqueue(revoked);
+            return Task.CompletedTask;
+        }
     }
 }
