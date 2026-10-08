@@ -298,7 +298,7 @@ const downtimeCandidateBlockedReason = computed(() =>
 async function previewDowntimeCandidates() {
   if (downtimeCandidateBlockedReason.value || localCandidates.pending.value) return
   await localCandidates.preview()
-  candidatePanel.value?.$el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  candidatePanel.value?.$el.scrollIntoView({ behavior: 'instant', block: 'start' })
 }
 const candidatePanel = shallowRef<InstanceType<typeof SchedulingCandidatePanel>>()
 const localCandidates = useSchedulingCandidates({
