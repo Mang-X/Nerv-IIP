@@ -21,7 +21,7 @@ param(
     [Parameter(Mandatory)] [string] $DatabaseSuffix,
     [Parameter(Mandatory)] [string] $ResultsDirectory,
     [Parameter(Mandatory)] [string] $SummaryPath,
-    # Budget for each project build and each member's discovery/execution invocation. Exceeding it fails as a
+    # Budget for each project build/discovery and each member's execution invocation. Exceeding it fails as a
     # timeout, not as a test failure; raise it for a local run whose CPU is shared with other
     # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
     # not a ceiling, so no ValidateRange is repeated here.
@@ -76,6 +76,14 @@ $memberSummaries = [Collections.Generic.List[object]]::new()
 $failure = $null
 # 仅记录本 invocation 的成功构建或原始失败；失败项目不重试，不消费旧 bin/obj。
 $projectBuilds = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+$projectFilters = [Collections.Generic.Dictionary[string, Collections.Generic.List[string]]]::new([StringComparer]::Ordinal)
+foreach ($selectedMember in $selectedMembers) {
+    $selectedProject = [string]$selectedMember.project
+    if (-not $projectFilters.ContainsKey($selectedProject)) { $projectFilters.Add($selectedProject, [Collections.Generic.List[string]]::new()) }
+    $projectFilters[$selectedProject].Add("($([string]$selectedMember.filter))")
+}
+# 发现使用首个 member 的有效连接；结果及原始失败都只属于本 invocation。
+$projectDiscoveries = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
 $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
 try {
     $probe = Invoke-NativeCommandOutput -Command 'psql' -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', 'SELECT current_setting(''server_version'')') -WorkingDirectory $repoRoot -Name 'postgres-lane-readiness'
@@ -106,7 +114,14 @@ try {
             $databaseCreated = $true
             $targetConnection = "Host=$($parsed.values.host);Port=$($parsed.values.port);Database=$databaseName;Username=$($parsed.values.username);Password=$($parsed.values.password)"
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $targetConnection)
-            $discovery = Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-build', '--no-restore', '--list-tests', '--filter', [string]$member.filter)
+            if (-not $projectDiscoveries.ContainsKey($project)) {
+                try {
+                    $discovery = Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', $project, '--configuration', 'Release', '--no-build', '--no-restore', '--list-tests', '--filter', ($projectFilters[$project] -join '|'))
+                    $projectDiscoveries.Add($project, [pscustomobject]@{ output = $discovery.Stdout; failure = $null })
+                }
+                catch { $projectDiscoveries.Add($project, [pscustomobject]@{ output = $null; failure = $_ }) }
+            }
+            if ($null -ne $projectDiscoveries[$project].failure) { throw $projectDiscoveries[$project].failure }
             $expectedIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($member.expectedTestIdentities), [StringComparer]::Ordinal)
             # #3285：这一行**没有**过滤空白元素，`dotnet test` 的 stdout 以换行结尾 ⇒ 切行必然多出一个
             # 尾随空元素。它今天不炸，靠的是紧跟着这层按冻结身份集合 `Contains` 的过滤把空串滤掉，
@@ -114,9 +129,9 @@ try {
             # 说清楚性质：这是**巧合，不是守卫**——身份过滤一旦放松（例如改成前缀匹配或整段挪走），
             # 空元素就会重新流到下游。此处不改，是因为这里根本没有可收口的参数边界；真正的结构性
             # 收口在 scripts/lib/FullChainTestLane.ps1 / BackendTestShardSelectors.ps1 的函数入参上。
-            $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $expectedIdentitySet.Contains([string]$_) })
+            $discovered = @($projectDiscoveries[$project].output -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $expectedIdentitySet.Contains([string]$_) })
             $memberSummary.discovered = $discovered.Count
-            if ($discovered.Count -ne @($member.expectedTestIdentities).Count) { throw "PostgreSQL lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }
+            if ($discovered.Count -ne @($member.expectedTestIdentities).Count -or -not $expectedIdentitySet.SetEquals([string[]]$discovered)) { throw "PostgreSQL lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }
             [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
             Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-build', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=postgres-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
             $trxResult = Get-NervPostgresTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities) -AllowInvalid
