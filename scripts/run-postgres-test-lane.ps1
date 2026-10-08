@@ -21,7 +21,7 @@ param(
     [Parameter(Mandatory)] [string] $DatabaseSuffix,
     [Parameter(Mandatory)] [string] $ResultsDirectory,
     [Parameter(Mandatory)] [string] $SummaryPath,
-    # Budget for each member's `dotnet test` discovery/execution invocation. Exceeding it fails as a
+    # Budget for each project build and each member's discovery/execution invocation. Exceeding it fails as a
     # timeout, not as a test failure; raise it for a local run whose CPU is shared with other
     # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
     # not a ceiling, so no ValidateRange is repeated here.
@@ -74,6 +74,8 @@ foreach ($entry in $parsed.environment.GetEnumerator()) {
 $summary = [ordered]@{ schemaVersion = 2; lane = 'postgres'; selectedMemberIds = @($selectedMemberIds); readiness = 'not-run'; postgresVersion = ''; expected = 0; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'not-run'; members = @() }
 $memberSummaries = [Collections.Generic.List[object]]::new()
 $failure = $null
+# 仅记录本 invocation 的成功构建或原始失败；失败项目不重试，不消费旧 bin/obj。
+$projectBuilds = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
 $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
 try {
     $probe = Invoke-NativeCommandOutput -Command 'psql' -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-Atqc', 'SELECT current_setting(''server_version'')') -WorkingDirectory $repoRoot -Name 'postgres-lane-readiness'
@@ -87,11 +89,24 @@ try {
         $memberFailure = $null
         $databaseCreated = $false
         try {
+            # 先移除该 member 的旧 evidence，build/discovery 失败也不能回读上次 TRX。
+            if (Test-Path -LiteralPath $memberResultsDirectory) {
+                Remove-Item -LiteralPath $memberResultsDirectory -Recurse -Force
+            }
+            $project = [string]$member.project
+            if (-not $projectBuilds.ContainsKey($project)) {
+                try {
+                    Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-build" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('build', $project, '--configuration', 'Release') | Out-Null
+                    $projectBuilds.Add($project, $null)
+                }
+                catch { $projectBuilds.Add($project, $_) }
+            }
+            if ($null -ne $projectBuilds[$project]) { throw $projectBuilds[$project] }
             Invoke-NativeCommandOutput -Command 'psql' -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE `"$databaseName`"") -WorkingDirectory $repoRoot -Name "postgres-lane-$($member.id)-create-database" | Out-Null
             $databaseCreated = $true
             $targetConnection = "Host=$($parsed.values.host);Port=$($parsed.values.port);Database=$databaseName;Username=$($parsed.values.username);Password=$($parsed.values.password)"
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $targetConnection)
-            $discovery = Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
+            $discovery = Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-build', '--no-restore', '--list-tests', '--filter', [string]$member.filter)
             $expectedIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($member.expectedTestIdentities), [StringComparer]::Ordinal)
             # #3285：这一行**没有**过滤空白元素，`dotnet test` 的 stdout 以换行结尾 ⇒ 切行必然多出一个
             # 尾随空元素。它今天不炸，靠的是紧跟着这层按冻结身份集合 `Contains` 的过滤把空串滤掉，
@@ -102,14 +117,8 @@ try {
             $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $expectedIdentitySet.Contains([string]$_) })
             $memberSummary.discovered = $discovered.Count
             if ($discovered.Count -ne @($member.expectedTestIdentities).Count) { throw "PostgreSQL lane member '$($member.id)' discovery expected $(@($member.expectedTestIdentities).Count) frozen tests but found $($discovered.Count)." }
-            # #3283：结果目录 run-scoped。本 lane 的 TRX 判定是 `if ($trxFiles.Count -ne 1) { throw }`，
-            # 与真库 lane 的聚合口径相反，但**同一个根因**：目录只建不清 ⇒ 本机连跑两轮第二轮会得到
-            # `observed 2` 的假红，而假红与「复用上一轮证据」的假绿是同一件事的两面。
-            if (Test-Path -LiteralPath $memberResultsDirectory) {
-                Remove-Item -LiteralPath $memberResultsDirectory -Recurse -Force
-            }
             [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
-            Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=postgres-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
+            Invoke-DotNetOutput -Name "postgres-lane-$($member.id)-execution" -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-build', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFilePrefix=postgres-$($member.id)", '--results-directory', $memberResultsDirectory) | Out-Null
             $trxResult = Get-NervPostgresTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities) -AllowInvalid
             $memberSummary.passed = $trxResult.passed
             $memberSummary.failed = $trxResult.failed
