@@ -137,13 +137,14 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
 public sealed class FileStorageGarbageCollectionHostedService(
     IServiceScopeFactory scopeFactory,
     ILogger<FileStorageGarbageCollectionHostedService> logger,
-    IConfiguration configuration) : BackgroundService
+    IConfiguration configuration,
+    TimeProvider timeProvider) : BackgroundService
 {
     private readonly TimeSpan interval = ResolveInterval(configuration);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(interval, timeProvider);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             await CollectOnceAsync(stoppingToken);
