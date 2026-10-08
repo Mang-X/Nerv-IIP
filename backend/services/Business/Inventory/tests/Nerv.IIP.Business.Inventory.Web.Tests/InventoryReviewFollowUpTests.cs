@@ -25,6 +25,24 @@ public sealed class InventoryReviewFollowUpTests
 {
     private static readonly DateOnly Today = new(2026, 7, 5);
 
+    // #4169 PublicContract: 六字段 LF/UTF-8 + HMAC-SHA256，由 Python hmac/base64 独立推导。
+    [Fact]
+    public void Forwarded_permission_signature_matches_independent_protocol_vector()
+    {
+        const string expected = "WjIaVRHJthuPdXn9i_gMy6l3OQipituM5o8yFSzfh-A";
+        var actual = InventoryForwardedPermissionHeaders.CreateSignature(
+            "test-forwarded-permissions-key", "business-gateway", "inventory.expired-stock.override",
+            "组织-001", "env-dev", "request-4169-0", 1778803200);
+
+        Assert.Equal(expected, actual);
+        Assert.True(InventoryForwardedPermissionHeaders.VerifySignature(
+            "test-forwarded-permissions-key", "business-gateway", "inventory.expired-stock.override",
+            "组织-001", "env-dev", "request-4169-0", 1778803200, expected));
+        Assert.False(InventoryForwardedPermissionHeaders.VerifySignature(
+            "test-forwarded-permissions-key", "business-gateway", "inventory.expired-stock.override",
+            "组织-001", "env-dev", "wrong-request", 1778803200, expected));
+    }
+
     [Fact]
     public void Inventory_permission_context_allows_only_signed_forwarded_permission_header()
     {
