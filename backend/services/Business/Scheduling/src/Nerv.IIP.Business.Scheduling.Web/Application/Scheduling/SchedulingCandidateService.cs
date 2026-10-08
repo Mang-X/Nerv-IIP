@@ -55,6 +55,11 @@ public sealed class SchedulingCandidateService(ApplicationDbContext db, ISender 
                 ((SchedulingFreezeReason)x.Reasons).HasFlag(SchedulingFreezeReason.ManualLock))
                 .Select(x => (x.Assignment.OrderId, x.Assignment.OperationId)) ?? [])
             .Concat(problem.LockedAssignments.Select(x => (x.OrderId, x.OperationId))).Distinct().ToArray();
+        // Persisted IsLocked also represents derived freezes. Only actual manual sources become manual locks;
+        // execution and stable-window reasons are calculated again from their own facts at the explicit time.
+        var manualKeys = manualLocks.ToHashSet();
+        baseline = baseline with { Assignments = baseline.Assignments.Select(x =>
+            x with { IsLocked = manualKeys.Contains((x.OrderId, x.OperationId)) }).ToArray() };
         var deviations = new List<SchedulingDeviation>();
         foreach (var source in availability.Windows.Where(x => x.Window.AvailabilityStatus == EquipmentRuntimeAvailabilityStatus.Unavailable))
         {

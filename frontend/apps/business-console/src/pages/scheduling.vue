@@ -273,9 +273,10 @@ const localCandidates = useSchedulingCandidates({
   }),
   baselinePlanId: () => persistedDraftPlan.value?.planId,
   onSelected: async (selection) => {
-    revisionBasePlan.value = persistedDraftPlan.value
+    const previousPlan = persistedDraftPlan.value
+    if (!(await persistence.restoreSelection(selection.workingDraft!))) return
+    revisionBasePlan.value = previousPlan
     revisionResult.value = { candidate: selection.plan, comparison: selection.comparison }
-    await persistence.restoreSelection(selection.workingDraft!)
     detailSelection.planId = selection.plan?.planId ?? ''
     await refreshPlans()
     toast.success('已选定候选并保存工作草稿，请核对后确认发布')

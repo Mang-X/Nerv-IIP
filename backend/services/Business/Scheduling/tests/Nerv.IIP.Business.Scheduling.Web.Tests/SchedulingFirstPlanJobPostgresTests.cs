@@ -424,6 +424,20 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         Assert.True(readPlan!.Success);
         Assert.Equal(JsonSerializer.Serialize(selected.Plan.Assignments, SchedulingJson.Options),
             JsonSerializer.Serialize(readPlan.Data.Assignments.Select(x => x with { CurrentExecution = null }), SchedulingJson.Options));
+        // A saved candidate remains a usable baseline: derived freeze flags must not become manual locks.
+        using var secondPreviewResponse = await client.PostAsJsonAsync(previewRoute,
+            request with { BaselinePlanId = selected.Plan.PlanId }, SchedulingJson.Options);
+        var secondPreview = (await secondPreviewResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSetContract>>(SchedulingJson.Options))!.Data;
+        using var secondSelectedResponse = await client.PostAsJsonAsync(selectRoute,
+            select with { BaselinePlanId = selected.Plan.PlanId, AsOfUtc = secondPreview.AsOfUtc,
+                InputFingerprint = secondPreview.InputFingerprint }, SchedulingJson.Options);
+        var secondSelected = (await secondSelectedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSelectionContract>>(SchedulingJson.Options))!;
+        Assert.True(secondSelected.Success, secondSelected.Message);
+        Assert.Equal(JsonSerializer.Serialize(Assert.Single(secondPreview.Candidates).Plan.Assignments, SchedulingJson.Options),
+            JsonSerializer.Serialize(secondSelected.Data.Plan.Assignments, SchedulingJson.Options));
+        var completedFreeze = Assert.Single(secondSelected.Data.Plan.FreezeContext!.Assignments, x => x.Assignment.OrderId == "order-003");
+        Assert.Contains(SchedulePlanFreezeReasonContract.Completed, completedFreeze.Reasons);
+        Assert.DoesNotContain(SchedulePlanFreezeReasonContract.ManualLock, completedFreeze.Reasons);
         equipment.EndUtc = start.AddMinutes(45);
         using var staleResponse = await client.PostAsJsonAsync(selectRoute, select, SchedulingJson.Options);
         var stale = await staleResponse.Content.ReadFromJsonAsync<ResponseData>(SchedulingJson.Options);
@@ -434,7 +448,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         Assert.NotEqual(preview.InputFingerprint, refreshed.InputFingerprint);
         await using var verify = factory.Services.CreateAsyncScope();
         var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Equal(2, await db.SchedulePlans.CountAsync());
+        Assert.Equal(3, await db.SchedulePlans.CountAsync());
         Assert.Single(await db.OperationExecutionProjections.ToArrayAsync());
         Assert.Equal(Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanLifecycleStatus.Generated,
             (await db.SchedulePlans.SingleAsync(x => x.PlanId == selected.Plan.PlanId)).Status);
@@ -447,7 +461,11 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             (independentAfter.ResourceId, independentAfter.StartUtc, independentAfter.EndUtc));
         Assert.Equal(0, candidate.Kpis.UnscheduledCountChange);
         Assert.Equal(candidate.Kpis.CandidateOnTimeRate - candidate.Kpis.BaselineOnTimeRate, candidate.Kpis.OnTimeRateChange);
-        Assert.Equal(candidate.Kpis.CandidateResourceUtilization - candidate.Kpis.BaselineResourceUtilization, candidate.Kpis.ResourceUtilizationChange);
+        // Four 10-minute operations (manual segments total 10); four resources x two 480-minute shifts,
+        // minus one 30-minute equipment window. Both sides use 40 / 3810, rounded to four decimals.
+        Assert.Equal(0.0105m, candidate.Kpis.BaselineResourceUtilization);
+        Assert.Equal(0.0105m, candidate.Kpis.CandidateResourceUtilization);
+        Assert.Equal(0m, candidate.Kpis.ResourceUtilizationChange);
         // Selection still uses the original release/supersede chain, with no automatic release before this explicit action.
         using var released = await reopened.PostAsJsonAsync($"/api/business-console/v1/scheduling/plans/{selected.Plan.PlanId}/release",
             new { request.OrganizationId, request.EnvironmentId }, SchedulingJson.Options);

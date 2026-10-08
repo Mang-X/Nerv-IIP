@@ -40,12 +40,13 @@ export function useSchedulingDraftPersistence(options: Options) {
       throwOnError: true,
     })
     assertEnvelopeSuccess(data, '草稿基线读取失败')
-    if (version !== identityVersion) return
+    if (version !== identityVersion) return false
     options.selectPlan?.(saved.planId!)
     baseline.value = data.data!
     draft.restoreSaved(data.data!, saved.state!)
     savedAtUtc.value = saved.savedAtUtc
     status.value = 'saved'
+    return true
   }
 
   async function discover() {
@@ -132,21 +133,26 @@ export function useSchedulingDraftPersistence(options: Options) {
     requestVersion++
     const identity = identityVersion
     await queue
-    if (identity !== identityVersion) return
+    if (identity !== identityVersion) return false
     try {
-      await restoreSaved(savedDrafts.value.find((item) => item.planId === planId)!, identity)
-      if (identity === identityVersion) ready.value = true
+      const restored = await restoreSaved(
+        savedDrafts.value.find((item) => item.planId === planId)!,
+        identity,
+      )
+      if (restored) ready.value = true
+      return restored
     } catch (error) {
-      if (identity !== identityVersion) return
+      if (identity !== identityVersion) return false
       status.value = 'error'
       retryOperation = () => select(planId)
       notifyOperationFailure('草稿恢复失败', error, '草稿未恢复，请重试。')
+      return false
     }
   }
 
   async function restoreSelection(saved: SchedulingWorkingDraft) {
     savedDrafts.value = [...savedDrafts.value.filter((item) => item.planId !== saved.planId), saved]
-    await select(saved.planId!)
+    return select(saved.planId!)
   }
 
   async function clear() {
