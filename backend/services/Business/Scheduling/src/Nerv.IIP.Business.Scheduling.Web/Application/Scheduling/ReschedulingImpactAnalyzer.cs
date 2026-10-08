@@ -267,7 +267,7 @@ internal static class ReschedulingImpactAnalyzer
             ? assignment.Segments.Any(x => x.StartUtc < end && start < x.EndUtc)
             : assignment.StartUtc < end && start < assignment.EndUtc;
 
-    private static string CanonicalJson(object value)
+    internal static string CanonicalJson(object value)
     {
         var options = new JsonSerializerOptions(SchedulingJson.Options);
         options.Converters.Add(new UtcDateTimeOffsetConverter());

@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../../../../../tests/Nerv.IIP.Business.Performance.Tests/SchedulingScaleProblemFactory.cs" Link="Support/SchedulingScaleProblemFactory.cs" />
     <Compile Include="../../../../../gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayTestTokens.cs" Link="Support/BusinessGatewayTestTokens.cs" />
     <ProjectReference Include="../../../../../gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj" Aliases="Gateway" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" />
