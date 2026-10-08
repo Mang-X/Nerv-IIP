@@ -5,9 +5,10 @@ public sealed record SchedulingInsertionPreviewRequestContract(
 public sealed record SchedulingInsertionPreviewInputContract(
     string OrganizationId, string EnvironmentId, string PlanId, string WorkOrderId,
     DateTimeOffset HorizonStartUtc, DateTimeOffset HorizonEndUtc,
-    IReadOnlyCollection<string> WorkOrderIds, int ContractVersion = 1);
+    IReadOnlyCollection<string> WorkOrderIds, int ContractVersion = 1,
+    SchedulePlanContract? Baseline = null, SchedulingProblemContract? BaselineProblem = null);
 public enum SchedulingInsertionPreviewJobStatusContract { Created, Running, Completed, Failed }
 public sealed record SchedulingInsertionPreviewJobContract(
     Guid JobId, SchedulingInsertionPreviewJobStatusContract Status, SchedulingInsertionPreviewInputContract Input,
     DateTimeOffset CreatedAtUtc, DateTimeOffset? StartedAtUtc, DateTimeOffset? FinishedAtUtc,
-    SchedulePlanContract? Preview, string? FailureReason);
+    SchedulePlanContract? Preview, string? FailureReason, SchedulingInsertionPreviewResultContract? Result = null);

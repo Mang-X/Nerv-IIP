@@ -216,7 +216,23 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             Assert.NotNull(completed.FinishedAtUtc);
             Assert.Null(completed.FailureReason);
             Assert.Equal(SchedulePlanStatusContract.Preview, completed.Preview!.Status);
-            Assert.Equal(12, completed.Preview.Assignments.Count);
+            // #3620 spec r1：局部插入不补排基线原来未排的独立订单。
+            Assert.Contains(completed.Preview.UnscheduledOperations, x => x.OrderId == "order-011");
+            Assert.Equal(11, completed.Preview.Assignments.Count);
+            foreach (var assignment in original.Assignments)
+                Assert.Equal(assignment, completed.Preview.Assignments.Single(x => x.OrderId == assignment.OrderId));
+            var result = Assert.IsType<SchedulingInsertionPreviewResultContract>(completed.Result);
+            Assert.Equal(original.PlanId, result.BaselinePlanId);
+            Assert.Equal(completed.Preview.PlanId, result.CandidatePlanId);
+            Assert.Equal(result.InputFingerprint, completed.Preview.ProblemFingerprint);
+            Assert.Equal(SchedulingInsertionOrderStatusContract.Unscheduled, result.Orders.Single(x => x.OrderId == "order-011").Status);
+            Assert.Null(result.Orders.Single(x => x.OrderId == "order-011").DelayDays);
+            Assert.Equal(SchedulingInsertionOrderStatusContract.New, result.Orders.Single(x => x.OrderId == "order-012").Status);
+            Assert.Equal(1, result.Kpis.UnscheduledOperationCount.Candidate);
+            Assert.Equal(12, result.Snapshot.Problem.Orders.Count);
+            Assert.Equal(original.PlanId, accepted.Input.Baseline!.PlanId);
+            Assert.Equal(JsonSerializer.Serialize(result, SchedulingJson.Options),
+                JsonSerializer.Serialize((await ReadInsertion(client, accepted.JobId)).Result, SchedulingJson.Options));
             Assert.Equal(before, await ReadInsertionBaseline(factory, original));
             await using var scopeAfter = factory.Services.CreateAsyncScope();
             var db = scopeAfter.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -229,6 +245,48 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         // DomainInvariant: ADR 0032 §3 / #4208. Same registered HTTP → worker → PostgreSQL seam.
         foreach (var window in new[] { TimeSpan.FromMinutes(20), TimeSpan.Zero })
             await VerifyInsertionFreeze(window);
+        await VerifyExistingRushInsertion();
+    }
+
+    private static async Task VerifyExistingRushInsertion()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var source = new ControlledSource { RushOrderId = "order-003" };
+        var sample = ShockAbsorberSchedulingFixture.CreateProblem();
+        await using var factory = new JobFactory(source, clock: new InsertionClock(sample.HorizonStartUtc));
+        await Migrate(factory);
+        using var client = Client(factory);
+        var template = sample.Orders.First();
+        var problem = sample with
+        {
+            ProblemId = "existing-rush-baseline", AssemblyDependencies = [], LockedAssignments = [], QualityBlocks = [],
+            Orders = Enumerable.Range(1, 3).Select(i => template with { OrderId = $"order-{i:D3}", Priority = 0, IsRush = false,
+                Operations = [template.Operations.First() with { OperationId = $"order-{i:D3}-op", DurationMinutes = 1, Priority = 0, IsRush = false }] }).ToArray()
+        };
+        SchedulePlanContract original;
+        await using (var scope = factory.Services.CreateAsyncScope())
+            original = await scope.ServiceProvider.GetRequiredService<ISender>().Send(new CreateSchedulePlanCommand(problem));
+        var before = await ReadInsertionBaseline(factory, original);
+        using var worker = InsertionWorker(factory);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            using var response = await client.PostAsJsonAsync(InsertionRoute, InsertionInput(original, "order-003"), SchedulingJson.Options);
+            var accepted = (await response.Content.ReadFromJsonAsync<ResponseData<SchedulingInsertionPreviewJobContract>>(SchedulingJson.Options))!.Data;
+            source.Release.TrySetResult();
+            var completed = await TerminalInsertion(client, accepted.JobId);
+            Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Completed, completed.Status);
+            var result = completed.Result!;
+            Assert.Equal(3, result.Candidate.Assignments.Count);
+            Assert.Equal(sample.HorizonStartUtc.AddMinutes(1), result.PromiseUtc);
+            Assert.False(result.Orders.Single(x => x.OrderId == "order-003").IsNew);
+            Assert.Equal(sample.HorizonStartUtc, result.Candidate.Assignments.Single(x => x.OrderId == "order-003").StartUtc);
+            Assert.True(result.Snapshot.Problem.Orders.Single(x => x.OrderId == "order-003").IsRush);
+            Assert.Contains(result.Orders, x => x.Status == SchedulingInsertionOrderStatusContract.Delayed);
+            Assert.Contains(result.Operations, x => x.OrderId == "order-001" && x.Paths.Count > 0);
+            Assert.Equal(before, await ReadInsertionBaseline(factory, original));
+        }
+        finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
     }
 
     private static async Task VerifyInsertionFreeze(TimeSpan window)
@@ -321,6 +379,11 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             Assert.Contains(preview.Conflicts, x => x.OrderId == manual.OrderId &&
                 x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment);
             Assert.NotNull(preview.FreezeContext);
+            Assert.Null(completed.Result!.PromiseUtc);
+            Assert.Contains(SchedulingInsertionFailureContract.BlockingConflict, completed.Result.Failures);
+            Assert.Contains(completed.Result.Operations, x => x.OrderId == manual.OrderId && x.ReasonCodes.Contains("frozen-conflict"));
+            Assert.Single(completed.Result.Snapshot.Execution);
+            Assert.Single(completed.Result.Snapshot.FixedReservations);
             Assert.Equal(start, preview.FreezeContext.AsOfUtc);
             Assert.Equal(start + window / 2, preview.FreezeContext.DefaultWindowEndUtc);
             Assert.Contains(preview.FreezeContext.WorkCenterWindows, x => x.WorkCenterId == resource.WorkCenterId &&
@@ -404,6 +467,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             Assert.Equal(SchedulingInsertionPreviewJobStatusContract.Failed, failed.Status);
             Assert.Equal(source.Failure.Message, failed.FailureReason);
             Assert.Null(failed.Preview);
+            Assert.Null(failed.Result);
             Assert.NotNull(failed.FinishedAtUtc);
             Assert.Equal(before, await ReadInsertionBaseline(factory, original));
             Assert.Equal(1, source.Calls);
@@ -596,6 +660,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         public KnownException? Failure { get; init; }
         public int Calls { get; private set; }
         public SchedulingProblemContract? InsertionProblem { get; init; }
+        public string? RushOrderId { get; init; }
         public async Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(string org, string env,
             DateTimeOffset start, IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken ct)
         {
@@ -604,7 +669,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             await Release.Task.WaitAsync(ct);
             if (Failure is not null) throw Failure;
             return selections.Select(x => new SchedulingWorkbenchProblemSourceOrder(
-                new(x.WorkOrderId, "SKU-001", 1, start.AddDays(7), x.Priority, x.IsRush, start, "routing-v1"), [])).ToArray();
+                new(x.WorkOrderId, "SKU-001", 1, start.AddDays(7), x.Priority, x.WorkOrderId == RushOrderId || x.IsRush, start, "routing-v1"), [])).ToArray();
         }
         public Task<SchedulingProblemContract> AssembleAsync(AssembleSchedulingProblemRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<SchedulingProblemContract> AssembleWorkbenchAsync(AssembleSchedulingWorkbenchProblemRequest request, CancellationToken ct)
@@ -626,8 +691,8 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             {
                 ProblemId = request.ProblemId, OrganizationId = request.OrganizationId, EnvironmentId = request.EnvironmentId,
                 HorizonStartUtc = request.HorizonStartUtc, HorizonEndUtc = request.HorizonEndUtc,
-                Orders = request.Orders.Select(x => order with { OrderId = x.Order.OrderId, Priority = x.Order.Priority,
-                    Operations = [operation with { OperationId = $"{x.Order.OrderId}-op", DurationMinutes = 1 }] }).ToArray(),
+                Orders = request.Orders.Select(x => order with { OrderId = x.Order.OrderId, Priority = x.Order.Priority, IsRush = x.Order.IsRush,
+                    Operations = [operation with { OperationId = $"{x.Order.OrderId}-op", DurationMinutes = 1, IsRush = x.Order.IsRush }] }).ToArray(),
                 AssemblyDependencies = [], LockedAssignments = [], QualityBlocks = []
             });
         }
