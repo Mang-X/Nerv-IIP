@@ -33,6 +33,25 @@ public sealed class ResourceTransferCandidateGeneratorTests
     }
 
     [Fact]
+    public void Empty_segments_downtime_without_eligible_alternative_is_unscheduled_instead_of_waiting_on_original_device()
+    {
+        var original = Assignment("A", "a", "R1", 0, 60) with { Segments = [] };
+        var input = Input(Problem(Order("A", Operation("a", "R1"))), [original], [Downtime(0, 240)]);
+        var result = ResourceTransferCandidateGenerator.Generate(input);
+        var affected = Assert.Single(result.Impact.AffectedOperations);
+        Assert.Contains(affected.Reasons, x => x.Code == ReschedulingImpactReasonCode.ResourceUnavailable);
+        Assert.Single(result.Impact.RecalculateAssignments);
+        Assert.Empty(result.Plan.Assignments);
+        Assert.Empty(result.Transfers);
+        Assert.Empty(result.Movements);
+        var unscheduled = Assert.Single(result.Plan.UnscheduledOperations);
+        Assert.Equal(("A", "a"), (unscheduled.OrderId, unscheduled.OperationId));
+        Assert.Equal(ScheduleConflictReasonCodeContract.NoEligibleResource, unscheduled.ReasonCode);
+        Assert.Contains(result.Explanations, x => x.OrderId == "A" && x.OperationId == "a"
+            && x.Code == "NoEligibleResource" && x.Reasons.Count > 0 && x.Paths.Count > 0);
+    }
+
+    [Fact]
     public void Substitute_fact_cannot_expand_qualification_when_the_only_eligible_alternative_is_unavailable()
     {
         var problem = Problem(Order("A", Operation("a", "R1") with { EligibleResourceIds = ["R1", "R2"] })) with

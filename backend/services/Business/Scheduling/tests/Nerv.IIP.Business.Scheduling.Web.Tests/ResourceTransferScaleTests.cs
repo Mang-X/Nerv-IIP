@@ -25,11 +25,14 @@ public sealed class ResourceTransferScaleTests(ITestOutputHelper output)
             new(problem.HorizonStartUtc, TimeSpan.Zero, new Dictionary<string, TimeSpan>()));
         var fullProblem = problem with
         {
-            // 全量对照应用相同转移资格：目标工序排除原设备，不能把等待原设备当成转移对照。
+            // 全量对照应用相同转移资格与开始下界：排除原设备，且不早于基线目标开始。
             Orders = problem.Orders.Select(order => order.OrderId == target.OrderId ? order with
             {
                 Operations = order.Operations.Select(operation => operation.OperationId == target.OperationId ? operation with
-                { EligibleResourceIds = operation.EligibleResourceIds.Where(id => id != target.ResourceId).ToArray() } : operation).ToArray()
+                {
+                    EligibleResourceIds = operation.EligibleResourceIds.Where(id => id != target.ResourceId).ToArray(),
+                    EarliestStartUtc = operation.EarliestStartUtc > target.StartUtc ? operation.EarliestStartUtc : target.StartUtc
+                } : operation).ToArray()
             } : order).ToArray(),
             UnavailabilityWindows = problem.UnavailabilityWindows.Append(new(target.ResourceId, null, deviation.StartUtc, deviation.EndUtc, deviation.ReasonCode)).ToArray()
         };

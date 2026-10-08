@@ -8,11 +8,9 @@ internal static class ResourceTransferCandidateGenerator
     public static ReschedulingCandidate Generate(ReschedulingCandidateInput input)
     {
         var context = ReschedulingCandidateContext.Create(input);
-        var directlyBlocked = context.Movable.Where(original => input.Deviations.OfType<SchedulingResourceUnavailableDeviation>()
-                .Any(deviation => deviation.ResourceId == original.ResourceId
-                    && (original.Segments ?? [new(original.StartUtc, original.EndUtc)])
-                        .Any(segment => segment.StartUtc < deviation.EndUtc && segment.EndUtc > deviation.StartUtc)))
-            .Select(ReschedulingCandidateContext.Key).ToHashSet();
+        var directlyBlocked = context.Impact.AffectedOperations
+            .Where(affected => affected.Reasons.Any(reason => reason.Code == ReschedulingImpactReasonCode.ResourceUnavailable))
+            .Select(affected => ReschedulingCandidateContext.Key(affected.Assignment)).ToHashSet();
         var problem = context.WithMovableOperations((operation, original) => operation with
         {
             EligibleResourceIds = directlyBlocked.Contains(ReschedulingCandidateContext.Key(original))
