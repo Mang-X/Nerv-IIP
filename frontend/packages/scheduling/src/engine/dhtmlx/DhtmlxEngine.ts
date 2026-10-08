@@ -315,7 +315,7 @@ export function cardHtml(t: ScheduleTask): string {
       )
       .join('')}
     <div class="nerv-card-r3">${meta3}</div>
-    <div class="nerv-card-tags">${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}${matRisk}${equipRisk}</div>
+    <div class="nerv-card-tags">${t.downtimeRisk ? `<span style="color:var(--destructive)">停机风险</span>` : ''}${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}${matRisk}${equipRisk}</div>
     ${prog}
   </div>`
 }
@@ -370,6 +370,7 @@ export function tooltipHtml(t: ScheduleTask): string {
     t.isRush ? chip('插单', 'var(--nv-scheduling-rush)') : '',
     t.locked ? chip('已锁定', 'var(--nv-brand)') : '',
     t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
+    t.downtimeRisk ? chip('停机风险', 'var(--destructive)') : '',
     t.materialRisk
       ? chip(materialReadyLabel(t.materialRisk) ?? '缺料待备', 'var(--nv-scheduling-kit-warn)')
       : '',
@@ -396,6 +397,7 @@ export function tooltipHtml(t: ScheduleTask): string {
       : []),
     ...(t.materialRisk ? ([['物料', t.materialRisk.message]] as Array<[string, string]>) : []),
     ...(t.equipmentRisk ? ([['设备', t.equipmentRisk.message]] as Array<[string, string]>) : []),
+    ...(t.downtimeRisk ? ([['停机风险', t.downtimeRisk]] as Array<[string, string]>) : []),
   ]
   const body = rows
     .map(
@@ -917,6 +919,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       if (t?.type === 'order') cls.push('nerv-order')
       if (t?.colorKey && !t?.blockKind) cls.push(`nerv-cat-${t.colorKey}`)
       if (t?.hasConflict) cls.push('nerv-conflict')
+      if (t?.downtimeRisk) cls.push('nerv-downtime-risk')
       if (t?.locked) cls.push('nerv-locked')
       if ((t?.segments?.length ?? 0) > 1) cls.push('nerv-segmented')
       if (t?.id === this.selectedTaskId) cls.push('nerv-selected')
@@ -968,7 +971,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       const t = task.nerv
       if (t?.type !== 'operation') return ''
       const lock = t.locked ? `<span class="nerv-card-lock">${LOCK_SVG}</span>` : ''
-      return `<span class="nerv-bar-label">${task.text ?? ''}${lock}</span>`
+      return `<span class="nerv-bar-label">${task.text ?? ''}${t.downtimeRisk ? ' · 停机风险' : ''}${lock}</span>`
     }
     // 时间线底纹讲三件事:
     // ① 工作 / 非工作——有后端工作日历时按日历判定(休息日、班次之外都算非工作),

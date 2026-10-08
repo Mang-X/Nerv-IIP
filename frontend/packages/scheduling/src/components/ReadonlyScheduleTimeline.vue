@@ -300,6 +300,7 @@ function taskLabel(task: ScheduleTask) {
 function taskAriaLabel(task: ScheduleTask) {
   const parts = [taskLabel(task), taskTime(task)]
   if (task.hasConflict) parts.push('冲突')
+  if (task.downtimeRisk) parts.push(task.downtimeRisk)
   if (task.locked) parts.push('锁定')
   if (task.materialRisk) parts.push(materialReadyLabel(task.materialRisk) ?? '缺料待备')
   return parts.join('，')
@@ -375,7 +376,8 @@ function selectTask(task: ScheduleTask) {
               :data-locked="positioned.task.locked || undefined"
               class="nv-timeline-task"
               :class="{
-                'nv-timeline-task--conflict': positioned.task.hasConflict,
+                'nv-timeline-task--conflict':
+                  positioned.task.hasConflict || Boolean(positioned.task.downtimeRisk),
                 'nv-timeline-task--locked': positioned.task.locked,
               }"
               :style="{
@@ -405,6 +407,9 @@ function selectTask(task: ScheduleTask) {
                 <span v-if="positioned.task.hasConflict" class="nv-timeline-task__status">
                   <TriangleAlertIcon aria-hidden="true" />冲突
                 </span>
+                <span v-if="positioned.task.downtimeRisk" class="nv-timeline-task__status"
+                  >停机风险</span
+                >
                 <span v-if="positioned.task.locked" class="nv-timeline-task__status">
                   <LockIcon aria-hidden="true" />锁定
                 </span>

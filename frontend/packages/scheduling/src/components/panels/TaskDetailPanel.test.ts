@@ -63,3 +63,10 @@ it('shows two real segments and excludes the overnight gap from work hours (#400
   expect(wrapper.text()).toContain('第 1 段')
   expect(wrapper.text()).toContain('第 2 段')
 })
+
+it('explains downtime risk without replacing conflict or moving the operation', () => {
+  const operation = { ...task(), downtimeRisk: '设备停机影响此工序；选定候选前保持原排程。' }
+  const wrapper = mount(TaskDetailPanel, { props: { task: operation, readOnly: true } })
+  expect(wrapper.text()).toContain('设备停机影响此工序')
+  expect(wrapper.text()).toContain('选定候选前保持原排程')
+})

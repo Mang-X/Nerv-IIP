@@ -1085,3 +1085,12 @@
     border-radius: 2px;
   }
 }
+
+@layer nv-components {
+  .nerv-gantt-dhx .gantt_task_line.nerv-downtime-risk,
+  .nerv-gantt-dhx .nerv-downtime-risk .nerv-segment {
+    border-color: var(--destructive) !important;
+    box-shadow: inset 0 0 0 1px var(--destructive) !important;
+    background-color: color-mix(in oklch, var(--destructive) 16%, var(--card)) !important;
+  }
+}
