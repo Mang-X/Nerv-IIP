@@ -1940,6 +1940,51 @@ export type NervIipContractsSchedulingSchedulingCandidateSelectRequestContract =
     strategy?: NervIipContractsSchedulingSchedulingReschedulingStrategyContract;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingDowntimeImpactResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingDowntimeImpactResponse | null;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeImpactResponse = {
+    baselinePlanId?: string;
+    problemId?: string;
+    observedAtUtc?: string;
+    items?: Array<NervIipContractsSchedulingSchedulingDowntimeImpactContract>;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract>;
+    operationsWithAlternativesCount?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeImpactContract = {
+    fact?: NervIipContractsSchedulingSchedulingDowntimeFactContract;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract>;
+    operationsWithAlternativesCount?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeFactContract = {
+    source?: string;
+    sourceReferenceId?: string;
+    deviceAssetId?: string | null;
+    workCenterId?: string | null;
+    startedAtUtc?: string;
+    recoveredAtUtc?: string | null;
+    expectedRestoreAtUtc?: string | null;
+    originSource?: string | null;
+    originSourceType?: string | null;
+    originSourceReferenceId?: string | null;
+    predictedRestoreAtUtc?: string | null;
+    restorePredictionSource?: string | null;
+    restorePredictionSourceVersion?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract = {
+    workOrderId?: string;
+    operationId?: string;
+    availableAlternativeResourceIds?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsSchedulingSchedulePlanContract | null;
 };
@@ -2152,10 +2197,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryRequest = {
-    [key: string]: never;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest = {
     [key: string]: never;
 };
 
@@ -12747,6 +12788,44 @@ export type SelectBusinessConsoleSchedulingCandidateResponses = {
 };
 
 export type SelectBusinessConsoleSchedulingCandidateResponse = SelectBusinessConsoleSchedulingCandidateResponses[keyof SelectBusinessConsoleSchedulingCandidateResponses];
+
+export type GetBusinessConsoleSchedulingDowntimeImpactData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/downtime-impact';
+};
+
+export type GetBusinessConsoleSchedulingDowntimeImpactErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingDowntimeImpactError = GetBusinessConsoleSchedulingDowntimeImpactErrors[keyof GetBusinessConsoleSchedulingDowntimeImpactErrors];
+
+export type GetBusinessConsoleSchedulingDowntimeImpactResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingDowntimeImpactResponse;
+};
+
+export type GetBusinessConsoleSchedulingDowntimeImpactResponse = GetBusinessConsoleSchedulingDowntimeImpactResponses[keyof GetBusinessConsoleSchedulingDowntimeImpactResponses];
 
 export type PreviewBusinessConsoleSchedulingPlanData = {
     body: NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest;

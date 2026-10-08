@@ -118,6 +118,7 @@ try
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<SchedulingWorkbenchPlanAssembler>();
     builder.Services.AddScoped<SchedulingCandidateService>();
+    builder.Services.AddScoped<ISchedulingDowntimeFactsProvider, HttpSchedulingDowntimeFactsProvider>();
     builder.Services.AddSingleton<ScheduleFirstPlanJobQueue>();
     builder.Services.AddSingleton<ScheduleInsertionPreviewJobQueue>();
     builder.Services.AddScoped<HttpSchedulingMaterialReadinessProvider>();

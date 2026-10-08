@@ -18,6 +18,15 @@
   "endpoints": [
     {
       "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/{planId}/downtime-impact",
+      "operationId": "getSchedulingDowntimeImpact",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleSchedulingDowntimeImpact"]
+    },
+    {
+      "service": "Scheduling",
       "method": "POST",
       "route": "/api/business/v1/scheduling/workbench/candidates/preview",
       "operationId": "previewSchedulingCandidates",

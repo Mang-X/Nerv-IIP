@@ -603,6 +603,7 @@ public static class SchedulingEndpointContracts
 {
     public static readonly IReadOnlyCollection<SchedulingEndpointContract> All =
     [
+        new(typeof(GetSchedulingDowntimeImpactEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/downtime-impact", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingDowntimeImpact"),
         new(typeof(PreviewSchedulingCandidatesEndpoint), "POST", "/api/business/v1/scheduling/workbench/candidates/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingCandidates"),
         new(typeof(SelectSchedulingCandidateEndpoint), "POST", "/api/business/v1/scheduling/workbench/candidates/select", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "selectSchedulingCandidate"),
         new(typeof(SaveScheduleWorkingDraftEndpoint), "PUT", "/api/business/v1/scheduling/plans/{planId}/working-draft", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "saveSchedulingWorkingDraft"),

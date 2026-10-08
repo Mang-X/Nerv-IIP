@@ -6539,6 +6539,74 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/plans/{planId}/downtime-impact": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleSchedulingDowntimeImpact",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfSchedulingDowntimeImpactResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/preview": {
       "post": {
         "tags": [
@@ -42840,6 +42908,159 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseDataOfSchedulingDowntimeImpactResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingDowntimeImpactResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsSchedulingSchedulingDowntimeImpactResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baselinePlanId": {
+            "type": "string"
+          },
+          "problemId": {
+            "type": "string"
+          },
+          "observedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingDowntimeImpactContract"
+            }
+          },
+          "affectedOperations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingDowntimeAffectedOperationContract"
+            }
+          },
+          "operationsWithAlternativesCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingDowntimeImpactContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fact": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingDowntimeFactContract"
+          },
+          "affectedOperations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulingDowntimeAffectedOperationContract"
+            }
+          },
+          "operationsWithAlternativesCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingDowntimeFactContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "sourceReferenceId": {
+            "type": "string"
+          },
+          "deviceAssetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recoveredAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expectedRestoreAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "originSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "originSourceType": {
+            "type": "string",
+            "nullable": true
+          },
+          "originSourceReferenceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "predictedRestoreAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "restorePredictionSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "restorePredictionSourceVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPContractsSchedulingSchedulingDowntimeAffectedOperationContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workOrderId": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "availableAlternativeResourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract": {
         "allOf": [
           {
@@ -43634,10 +43855,6 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryRequest": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest": {
         "type": "object",
         "additionalProperties": false
       },
