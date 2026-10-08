@@ -30,7 +30,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
-public sealed class SchedulingEndpointContractTests
+public sealed partial class SchedulingEndpointContractTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
 

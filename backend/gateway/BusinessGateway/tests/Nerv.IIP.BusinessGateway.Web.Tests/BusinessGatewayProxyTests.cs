@@ -20827,6 +20827,8 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
 internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
 {
+    public Task<SchedulingDowntimeImpactResponse> GetDowntimeImpactAsync(string token, BusinessConsoleSchedulingPlanRequest request, CancellationToken ct) => throw new NotSupportedException();
+
     public Task<SchedulingCandidateSetContract> PreviewCandidatesAsync(string token, SchedulingCandidatePreviewRequestContract request, CancellationToken ct) => throw new NotSupportedException();
     public Task<SchedulingCandidateSelectionContract> SelectCandidateAsync(string token, SchedulingCandidateSelectRequestContract request, string userId, CancellationToken ct) => throw new NotSupportedException();
 

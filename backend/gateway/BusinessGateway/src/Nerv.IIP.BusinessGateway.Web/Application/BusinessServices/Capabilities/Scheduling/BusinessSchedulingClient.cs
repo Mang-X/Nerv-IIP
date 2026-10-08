@@ -19,6 +19,8 @@ public sealed record BusinessConsoleSchedulingInsertionPreviewJobRequest(
 
 public interface IBusinessSchedulingClient
 {
+    Task<SchedulingDowntimeImpactResponse> GetDowntimeImpactAsync(string token, BusinessConsoleSchedulingPlanRequest request, CancellationToken ct);
+
     Task<SchedulingCandidateSetContract> PreviewCandidatesAsync(string token, SchedulingCandidatePreviewRequestContract request, CancellationToken ct);
     Task<SchedulingCandidateSelectionContract> SelectCandidateAsync(string token, SchedulingCandidateSelectRequestContract request, string userId, CancellationToken ct);
 
@@ -143,6 +145,11 @@ public interface IBusinessSchedulingClient
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessSchedulingClient
 {
+    public Task<SchedulingDowntimeImpactResponse> GetDowntimeImpactAsync(string token, BusinessConsoleSchedulingPlanRequest request, CancellationToken ct) =>
+        SendAsync<SchedulingDowntimeImpactResponse>(token, HttpMethod.Get,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/downtime-impact?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null, ct, SchedulingJson.Options);
+
     public Task<SchedulingCandidateSetContract> PreviewCandidatesAsync(string token, SchedulingCandidatePreviewRequestContract request, CancellationToken ct) =>
         SendAsync<SchedulingCandidateSetContract>(token, HttpMethod.Post, "/api/business/v1/scheduling/workbench/candidates/preview", request, ct, SchedulingJson.Options);
     public Task<SchedulingCandidateSelectionContract> SelectCandidateAsync(string token, SchedulingCandidateSelectRequestContract request, string userId, CancellationToken ct) =>

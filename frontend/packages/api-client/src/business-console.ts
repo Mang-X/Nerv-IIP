@@ -3297,3 +3297,14 @@ export type {
   NervIipContractsSchedulingSchedulingCandidateSelectRequestContract as SchedulingCandidateSelectRequest,
   NervIipContractsSchedulingSchedulingCandidateSelectionContract as SchedulingCandidateSelection,
 } from './generated/business-console'
+
+export {
+  getBusinessConsoleSchedulingDowntimeImpact,
+  getBusinessConsoleSchedulingDowntimeImpactQueryOptions,
+} from './generated/business-console'
+export type {
+  NervIipContractsSchedulingSchedulingDowntimeImpactResponse as SchedulingDowntimeImpactResponse,
+  NervIipContractsSchedulingSchedulingDowntimeImpactContract as SchedulingDowntimeImpact,
+  NervIipContractsSchedulingSchedulingDowntimeFactContract as SchedulingDowntimeFact,
+  NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract as SchedulingDowntimeAffectedOperation,
+} from './generated/business-console'
