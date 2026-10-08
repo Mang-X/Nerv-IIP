@@ -26,7 +26,10 @@ describe('当前事实候选生成与选定', () => {
       baselinePlanId: baseline.value,
       asOfUtc: '2026-10-08T00:00:00Z',
       inputFingerprint: 'current-input',
-      candidates: [{ strategy: 'rightShift' as const, kpis: { candidateLateOrderCount: 2 } }],
+      candidates: [
+        { strategy: 'rightShift' as const, kpis: { candidateLateOrderCount: 2 } },
+        { strategy: 'resourceTransfer' as const, kpis: { candidateLateOrderCount: 0 } },
+      ],
     }
     api.preview.mockResolvedValue({ data: { success: true, data: set } })
     await local.preview()
@@ -46,11 +49,33 @@ describe('当前事实候选生成与选定', () => {
       strategy: 'rightShift',
     })
     expect(selected).toHaveBeenCalledWith(result)
+    await local.select(set.candidates[1]!)
+    expect(api.select.mock.calls[1][0].body).toEqual({
+      ...api.select.mock.calls[0][0].body,
+      strategy: 'resourceTransfer',
+    })
+    expect(selected).toHaveBeenCalledTimes(2)
     api.preview.mockResolvedValue({
-      data: { success: true, data: { ...set, inputFingerprint: 'new-facts' } },
+      data: {
+        success: true,
+        data: {
+          ...set,
+          inputFingerprint: 'new-facts',
+          candidates: set.candidates.map((candidate) => ({
+            ...candidate,
+            kpis: { candidateLateOrderCount: 3 },
+          })),
+        },
+      },
     })
     await local.preview()
     expect(local.candidates.value?.inputFingerprint).toBe('new-facts')
+    expect(local.candidates.value?.candidates).toHaveLength(2)
+    expect(
+      local.candidates.value?.candidates?.map(
+        (candidate) => candidate.kpis?.candidateLateOrderCount,
+      ),
+    ).toEqual([3, 3])
     baseline.value = 'plan-new-baseline'
     await nextTick()
     expect(local.candidates.value).toBeUndefined()

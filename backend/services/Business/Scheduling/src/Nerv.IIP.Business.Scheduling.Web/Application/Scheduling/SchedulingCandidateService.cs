@@ -87,24 +87,28 @@ public sealed class SchedulingCandidateService(ApplicationDbContext db, ISender 
             SchedulingQualityConstraintModeResolver.Resolve(configuration[SchedulingQualityConstraintModeResolver.ConfigurationKey]), equipmentMode.Mode), assembled.Reservations);
     }
 
-    internal SchedulingCandidateContract Generate(Input input)
+    internal IReadOnlyList<SchedulingCandidateContract> Generate(Input input)
     {
-        var candidate = RightShiftCandidateGenerator.Generate(input.Candidate);
-        return SchedulingCandidateProjector.Project(input.Candidate, candidate);
+        var right = RightShiftCandidateGenerator.Generate(input.Candidate);
+        var transfer = ResourceTransferCandidateGenerator.Generate(input.Candidate);
+        var candidates = new List<SchedulingCandidateContract> {
+            SchedulingCandidateProjector.Project(input.Candidate, right, SchedulingReschedulingStrategyContract.RightShift)
+        };
+        if (transfer.Transfers.Count > 0)
+            candidates.Add(SchedulingCandidateProjector.Project(input.Candidate, transfer, SchedulingReschedulingStrategyContract.ResourceTransfer));
+        return candidates;
     }
 
     public async Task<SchedulingCandidateSetContract> PreviewAsync(SchedulingCandidatePreviewRequestContract request, CancellationToken ct)
     {
         var asOf = clock.GetUtcNow();
         var input = await ReadAsync(request.OrganizationId, request.EnvironmentId, request.BaselinePlanId, asOf, ct);
-        var candidate = Generate(input);
-        return new(1, request.BaselinePlanId, asOf, candidate.InputFingerprint, [candidate]);
+        var candidates = Generate(input);
+        return new(1, request.BaselinePlanId, asOf, candidates[0].InputFingerprint, candidates);
     }
 
     public async Task<SchedulingCandidateSelectionContract> SelectAsync(SchedulingCandidateSelectRequestContract request, string userId, CancellationToken ct)
     {
-        if (request.Strategy != SchedulingReschedulingStrategyContract.RightShift)
-            throw new KnownException("候选策略不可用，请重预览后重新选择。");
         var input = await ReadAsync(request.OrganizationId, request.EnvironmentId, request.BaselinePlanId, request.AsOfUtc, ct);
         var context = ReschedulingCandidateContext.Create(input.Candidate);
         if (context.Fingerprint != request.InputFingerprint)
@@ -119,7 +123,8 @@ public sealed class SchedulingCandidateService(ApplicationDbContext db, ISender 
                 && restore > request.AsOfUtc && restore <= now))
             throw new KnownException("冻结或设备恢复依据已变化，请重预览后重新选择候选。");
         // Stateless verification rebuilds the identical local result, never calls the full-plan creation/solver chain.
-        var candidate = Generate(input);
+        var candidate = Generate(input).SingleOrDefault(x => x.Strategy == request.Strategy)
+            ?? throw new KnownException("候选策略不可用，请重预览后重新选择。");
         var freeze = SchedulingFreezeSnapshot.From(input.Candidate.Policy, context.Impact.FrozenAssignments);
         var problem = context.Problem with { ProblemId = $"candidate-{Guid.CreateVersion7():N}" };
         var plan = SchedulePlanValidationContextProjector.Attach(SchedulePlanContractMapper.WithStatus(candidate.Plan with

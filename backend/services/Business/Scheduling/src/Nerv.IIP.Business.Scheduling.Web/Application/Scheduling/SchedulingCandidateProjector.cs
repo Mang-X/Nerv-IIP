@@ -4,7 +4,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
 internal static class SchedulingCandidateProjector
 {
-    internal static SchedulingCandidateContract Project(ReschedulingCandidateInput input, ReschedulingCandidate candidate)
+    internal static SchedulingCandidateContract Project(ReschedulingCandidateInput input, ReschedulingCandidate candidate, SchedulingReschedulingStrategyContract strategy)
     {
         var context = ReschedulingCandidateContext.Create(input);
         var frozenKeys = candidate.Impact.FrozenAssignments.Select(x => ReschedulingCandidateContext.Key(x.Assignment)).ToHashSet();
@@ -47,7 +47,7 @@ internal static class SchedulingCandidateProjector
         foreach (var op in input.Problem.Orders.SelectMany(o => o.Operations.Select(x => (o.OrderId, x.OperationId)))
             .Where(x => !baselineKeys.Contains(x)))
             explanations.Add(new(op.OrderId, op.OperationId, "new-operation", [], []));
-        return new(SchedulingReschedulingStrategyContract.RightShift, candidate.InputFingerprint, plan, kpis,
+        return new(strategy, candidate.InputFingerprint, plan, kpis,
             candidate.Movements.Select(x => new SchedulingCandidateMovementContract(x.Original,
                 byKey[ReschedulingCandidateContext.Key(x.Candidate)], Reasons(x.Reasons), Paths(x.Paths))).ToArray(), explanations,
             candidate.Transfers.Select(x => new SchedulingCandidateTransferContract(x.OrderId, x.OperationId,

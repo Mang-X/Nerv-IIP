@@ -26,7 +26,7 @@ const explanationLabels: Record<string, string> = {
   'frozen-conflict': '冻结工序与当前约束冲突',
   'unquantified-delay': '执行偏差尚无确定时长，保留位置等待核实',
   'restore-prediction-expired': '预计恢复时间已过，设备仍未实际恢复',
-  'new-operation': '新增工序未纳入本次局部右移，请在草稿中核实',
+  'new-operation': '新增工序未纳入本次局部重排，请在草稿中核实',
   duedate: '工序延期',
   capacity: '资源产能不足',
   calendar: '工作日历无可用时段',
@@ -71,7 +71,7 @@ function delta(value?: number, percentage = false) {
         "
         @click="emit('preview')"
       >
-        {{ pending ? '正在核实候选…' : candidates ? '重预览候选' : '生成右移候选' }}
+        {{ pending ? '正在核实候选…' : candidates ? '重预览候选' : '生成重排候选' }}
       </NvButton>
     </header>
     <p v-if="!candidates" class="text-sm text-muted-foreground">
@@ -85,7 +85,7 @@ function delta(value?: number, percentage = false) {
     <div
       v-else
       class="grid items-start gap-4"
-      :class="candidates.candidates?.length === 1 ? '' : 'xl:grid-cols-2'"
+      :class="candidates.candidates?.length === 1 ? '' : 'lg:grid-cols-2'"
     >
       <article
         v-for="candidate in candidates.candidates"
@@ -229,6 +229,28 @@ function delta(value?: number, percentage = false) {
                   分段 {{ formatDateTime(segment.startUtc) }} — {{ formatDateTime(segment.endUtc) }}
                 </p>
               </div>
+            </div>
+            <div
+              v-for="transfer in candidate.transfers?.filter(
+                (item) =>
+                  item.orderId === movement.original?.orderId &&
+                  item.operationId === movement.original?.operationId,
+              )"
+              :key="`${transfer.orderId}:${transfer.operationId}`"
+              class="grid gap-1 rounded-md bg-muted/40 p-2"
+            >
+              <p>
+                {{ transfer.originalResourceId }} → {{ transfer.resourceId }} · 换型
+                {{ transfer.setupMinutes }} 分钟
+              </p>
+              <p
+                v-for="(source, index) in transfer.deviceSources"
+                :key="index"
+                class="text-xs text-muted-foreground"
+              >
+                替代设备依据 · {{ source.sourceReference }} · {{ source.resourceId }} →
+                {{ source.substituteResourceId }}
+              </p>
             </div>
             <p v-for="(reason, index) in movement.reasons" :key="index">
               {{ reason.code ? reasonLabels[reason.code] : '' }} · 来源

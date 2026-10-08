@@ -248,7 +248,9 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             await VerifyInsertionFreeze(window);
         await VerifyExistingRushInsertion();
         await VerifyEquipmentSourceSnapshot();
-        await VerifyRightShiftCandidateSelection();
+        await VerifyCandidateSelection();
+        await VerifyCandidateSelection(SchedulingReschedulingStrategyContract.RightShift);
+        await VerifyCandidateSelection(SchedulingReschedulingStrategyContract.ResourceTransfer);
     }
 
     private static async Task VerifyEquipmentSourceSnapshot()
@@ -338,7 +340,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
     }
 
-    private static async Task VerifyRightShiftCandidateSelection()
+    private static async Task VerifyCandidateSelection(SchedulingReschedulingStrategyContract? selectedStrategy = null)
     {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         var sample = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -365,9 +367,17 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             : x.OrderId == "order-003" ? x with { Operations = [x.Operations.Single() with {
                 RequiredCapabilityCode = independentResource.CapabilityCodes.First(), EligibleResourceIds = [independentResource.ResourceId],
                 PrimaryResourceId = independentResource.ResourceId }] } : x).ToArray() };
+        const string substituteId = "DEV-WELD-02";
+        if (selectedStrategy is not null)
+            problem = problem with {
+                Resources = [.. problem.Resources, resource with { ResourceId = substituteId }],
+                Orders = problem.Orders.Select(x => x.OrderId == "order-001" ? x with {
+                    Operations = x.Operations.Select(op => op with {
+                        EligibleResourceIds = [resource.ResourceId, substituteId], SetupMinutes = 5
+                    }).ToArray() } : x).ToArray() };
         var source = new ControlledSource { CandidateProblem = problem };
         source.Release.TrySetResult();
-        var equipment = new CandidateEquipment();
+        var equipment = new CandidateEquipment { SubstituteId = selectedStrategy is null ? null : substituteId };
         await using var factory = new JobFactory(source, clock: new InsertionClock(start), equipment: equipment);
         await Migrate(factory);
         using var service = Client(factory);
@@ -392,10 +402,31 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         const string previewRoute = "/api/business-console/v1/scheduling/workbench/candidates/preview";
         const string selectRoute = "/api/business-console/v1/scheduling/workbench/candidates/select";
         var request = new SchedulingCandidatePreviewRequestContract(problem.OrganizationId, problem.EnvironmentId, baseline.PlanId);
+        var sourceReads = source.Calls;
         using var previewResponse = await client.PostAsJsonAsync(previewRoute, request, SchedulingJson.Options);
+        Assert.Equal(sourceReads + 1, source.Calls);
         Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
         var preview = (await previewResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSetContract>>(SchedulingJson.Options))!.Data;
-        var candidate = Assert.Single(preview.Candidates);
+        Assert.Equal(selectedStrategy is null ? 1 : 2, preview.Candidates.Count);
+        Assert.All(preview.Candidates, x => Assert.Equal(preview.InputFingerprint, x.InputFingerprint));
+        var candidate = Assert.Single(preview.Candidates, x => x.Strategy == (selectedStrategy ?? SchedulingReschedulingStrategyContract.RightShift));
+        if (selectedStrategy is not null)
+        {
+            var right = Assert.Single(preview.Candidates, x => x.Strategy == SchedulingReschedulingStrategyContract.RightShift);
+            var transfer = Assert.Single(preview.Candidates, x => x.Strategy == SchedulingReschedulingStrategyContract.ResourceTransfer);
+            Assert.Equal(right.Kpis.BaselineOnTimeDenominator, transfer.Kpis.BaselineOnTimeDenominator);
+            Assert.Equal(right.Kpis.BaselineResourceUtilization, transfer.Kpis.BaselineResourceUtilization);
+            Assert.All(right.Plan.Assignments, x => Assert.Equal(baseline.Assignments.Single(b => b.OrderId == x.OrderId && b.OperationId == x.OperationId).ResourceId, x.ResourceId));
+            Assert.NotEmpty(transfer.Transfers);
+            var directTransfer = Assert.Single(transfer.Transfers, x => x.OperationId == "order-001-op");
+            Assert.Equal(resource.ResourceId, directTransfer.OriginalResourceId);
+            Assert.Equal(substituteId, directTransfer.ResourceId);
+            // The idle substitute has no preceding assignment, so the existing algorithm charges no first setup.
+            Assert.Equal(0, directTransfer.SetupMinutes);
+            Assert.Equal("CMMS-20261008-001", Assert.Single(directTransfer.DeviceSources).SourceReference);
+            Assert.All(transfer.Transfers, x => Assert.Contains(x.ResourceId,
+                problem.Orders.Single(o => o.OrderId == x.OrderId).Operations.Single(op => op.OperationId == x.OperationId).EligibleResourceIds));
+        }
         Assert.Equal(SchedulePlanStatusContract.Preview, candidate.Plan.Status);
         Assert.NotEmpty(candidate.Movements);
         Assert.All(candidate.Movements, x => { Assert.NotEmpty(x.Reasons); Assert.NotEmpty(x.Paths); });
@@ -419,6 +450,8 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             $"/api/business-console/v1/scheduling/working-drafts?organizationId={request.OrganizationId}&environmentId={request.EnvironmentId}&planId={selected.Plan.PlanId}", SchedulingJson.Options);
         Assert.True(restored!.Success);
         Assert.Equal(selected.Plan.PlanId, Assert.Single(restored.Data).PlanId);
+        Assert.Equal(JsonSerializer.Serialize(selected.WorkingDraft.State, SchedulingJson.Options),
+            JsonSerializer.Serialize(Assert.Single(restored.Data).State, SchedulingJson.Options));
         var readPlan = await reopened.GetFromJsonAsync<ResponseData<SchedulePlanContract>>(
             $"/api/business-console/v1/scheduling/plans/{selected.Plan.PlanId}?organizationId={request.OrganizationId}&environmentId={request.EnvironmentId}", SchedulingJson.Options);
         Assert.True(readPlan!.Success);
@@ -430,10 +463,10 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         var secondPreview = (await secondPreviewResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSetContract>>(SchedulingJson.Options))!.Data;
         using var secondSelectedResponse = await client.PostAsJsonAsync(selectRoute,
             select with { BaselinePlanId = selected.Plan.PlanId, AsOfUtc = secondPreview.AsOfUtc,
-                InputFingerprint = secondPreview.InputFingerprint }, SchedulingJson.Options);
+                InputFingerprint = secondPreview.InputFingerprint, Strategy = SchedulingReschedulingStrategyContract.RightShift }, SchedulingJson.Options);
         var secondSelected = (await secondSelectedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSelectionContract>>(SchedulingJson.Options))!;
         Assert.True(secondSelected.Success, secondSelected.Message);
-        Assert.Equal(JsonSerializer.Serialize(Assert.Single(secondPreview.Candidates).Plan.Assignments, SchedulingJson.Options),
+        Assert.Equal(JsonSerializer.Serialize(Assert.Single(secondPreview.Candidates, x => x.Strategy == SchedulingReschedulingStrategyContract.RightShift).Plan.Assignments, SchedulingJson.Options),
             JsonSerializer.Serialize(secondSelected.Data.Plan.Assignments, SchedulingJson.Options));
         var completedFreeze = Assert.Single(secondSelected.Data.Plan.FreezeContext!.Assignments, x => x.Assignment.OrderId == "order-003");
         Assert.Contains(SchedulePlanFreezeReasonContract.Completed, completedFreeze.Reasons);
@@ -446,6 +479,8 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         using var refreshedResponse = await client.PostAsJsonAsync(previewRoute, request, SchedulingJson.Options);
         var refreshed = (await refreshedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulingCandidateSetContract>>(SchedulingJson.Options))!.Data;
         Assert.NotEqual(preview.InputFingerprint, refreshed.InputFingerprint);
+        Assert.Equal(preview.Candidates.Count, refreshed.Candidates.Count);
+        Assert.All(refreshed.Candidates, x => Assert.Equal(refreshed.InputFingerprint, x.InputFingerprint));
         await using var verify = factory.Services.CreateAsyncScope();
         var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Equal(3, await db.SchedulePlans.CountAsync());
@@ -463,9 +498,12 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         Assert.Equal(candidate.Kpis.CandidateOnTimeRate - candidate.Kpis.BaselineOnTimeRate, candidate.Kpis.OnTimeRateChange);
         // Four 10-minute operations (manual segments total 10); four resources x two 480-minute shifts,
         // minus one 30-minute equipment window. Both sides use 40 / 3810, rounded to four decimals.
-        Assert.Equal(0.0105m, candidate.Kpis.BaselineResourceUtilization);
-        Assert.Equal(0.0105m, candidate.Kpis.CandidateResourceUtilization);
-        Assert.Equal(0m, candidate.Kpis.ResourceUtilizationChange);
+        if (selectedStrategy is null)
+        {
+            Assert.Equal(0.0105m, candidate.Kpis.BaselineResourceUtilization);
+            Assert.Equal(0.0105m, candidate.Kpis.CandidateResourceUtilization);
+            Assert.Equal(0m, candidate.Kpis.ResourceUtilizationChange);
+        }
         // Selection still uses the original release/supersede chain, with no automatic release before this explicit action.
         using var released = await reopened.PostAsJsonAsync($"/api/business-console/v1/scheduling/plans/{selected.Plan.PlanId}/release",
             new { request.OrganizationId, request.EnvironmentId }, SchedulingJson.Options);
@@ -476,12 +514,13 @@ public sealed class SchedulingFirstPlanJobPostgresTests
     private sealed class CandidateEquipment : ISchedulingEquipmentAvailabilityProvider
     {
         public DateTimeOffset? EndUtc { get; set; }
+        public string? SubstituteId { get; init; }
         public Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(SchedulingProblemContract problem, CancellationToken ct) =>
             Task.FromResult(new EquipmentRuntimeAvailabilityResponse(1, problem.OrganizationId, problem.EnvironmentId,
                 problem.HorizonStartUtc, problem.HorizonEndUtc, EndUtc is { } end
                     ? [new(problem.Resources.First().ResourceId, problem.Resources.First().WorkCenterId,
                         EquipmentRuntimeAvailabilityStatus.Unavailable, "equipment.downtime", EquipmentRuntimeSeverity.Blocked,
-                        problem.HorizonStartUtc, end, EquipmentRuntimeSourceType.MaintenanceWindow, "CMMS-20261008-001", "equipment.downtime", [])] : []));
+                        problem.HorizonStartUtc, end, EquipmentRuntimeSourceType.MaintenanceWindow, "CMMS-20261008-001", "equipment.downtime", SubstituteId is { } id ? [id] : [])] : []));
     }
 
     private static async Task VerifyInsertionFreeze(TimeSpan window)
