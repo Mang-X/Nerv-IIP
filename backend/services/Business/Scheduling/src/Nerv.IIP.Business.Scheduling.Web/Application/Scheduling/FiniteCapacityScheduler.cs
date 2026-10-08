@@ -174,6 +174,20 @@ public sealed class FiniteCapacityScheduler(
         return state.ToPlan(preserved);
     }
 
+    internal (SchedulePlanContract Plan, IReadOnlyDictionary<(string OrderId, string OperationId), int> SetupMinutes) ScheduleTransferNormalized(
+        SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc,
+        IReadOnlyCollection<ScheduleAssignmentContract> movable, IReadOnlyCollection<ScheduleAssignmentContract> preserved)
+    {
+        var state = SchedulerState.From(problem, planId, generatedAtUtc, MaterialConstraintMode, QualityConstraintMode, [], [], []);
+        state.ReserveLockedAssignments();
+        state.ScheduleTransferOperations(movable);
+        state.ReportLockedAssemblyConflicts(includeOperationPredecessors: true);
+        var plan = state.ToPlan(preserved);
+        var keys = movable.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
+        return (plan, plan.Assignments.Where(x => keys.Contains((x.OrderId, x.OperationId)))
+            .ToDictionary(x => (x.OrderId, x.OperationId), state.ActualSetupMinutes));
+    }
+
     internal SchedulePlanContract ScheduleWithFixedReservations(
         SchedulingProblemContract problem,
         string planId,
@@ -659,9 +673,16 @@ file sealed class SchedulerState
         }
     }
 
-    public void ScheduleOpenOperations(IReadOnlyCollection<ScheduleAssignmentContract>? baselineQueue = null)
+    public void ScheduleOpenOperations(IReadOnlyCollection<ScheduleAssignmentContract>? baselineQueue = null) =>
+        ScheduleOperations(OrderedOperations(), baselineQueue);
+
+    public void ScheduleTransferOperations(IReadOnlyCollection<ScheduleAssignmentContract> movable)
     {
-        var operations = problem.Orders
+        var keys = movable.Select(OperationKey.From).ToHashSet();
+        ScheduleOperations(OrderedOperations().Where(x => keys.Contains(OperationKey.From(x))).ToList(), null);
+    }
+
+    private List<OperationWorkItem> OrderedOperations() => problem.Orders
             .SelectMany(order => order.Operations.Select(operation => new OperationWorkItem(order, operation)))
             .OrderByDescending(x => x.Operation.IsRush)
             .ThenByDescending(x => x.Operation.Priority)
@@ -671,6 +692,8 @@ file sealed class SchedulerState
             .ThenBy(x => x.Operation.OperationId, StringComparer.Ordinal)
             .ToList();
 
+    private void ScheduleOperations(List<OperationWorkItem> operations, IReadOnlyCollection<ScheduleAssignmentContract>? baselineQueue)
+    {
         var queuePredecessors = new Dictionary<OperationKey, OperationKey>();
         var latestQueueStarts = new Dictionary<OperationKey, DateTimeOffset>();
         if (baselineQueue is not null)
@@ -1860,6 +1883,14 @@ file sealed class SchedulerState
 
         var order = problem.Orders.Single(x => x.OrderId == assignment.OrderId);
         return EffectiveOperation(new OperationWorkItem(order, operation), resource, assignment.StartUtc);
+    }
+
+    public int ActualSetupMinutes(ScheduleAssignmentContract assignment)
+    {
+        var resource = resources[assignment.ResourceId];
+        var operation = EffectiveAssignedOperation(assignment, operationByKey[OperationKey.From(assignment)]);
+        return (int)(assignment.StartUtc - CandidateOccupiedStart(resource, assignment.StartUtc,
+            TimeSpan.FromMinutes(operation.SetupMinutes))).TotalMinutes;
     }
 
     private bool HasToolingSlot(SchedulingResourceContract resource, SchedulingOperationContract operation, DateTimeOffset earliestStart)
