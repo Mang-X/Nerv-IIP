@@ -36,6 +36,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Excluded($"{SchedulingWebRoot}/Endpoints/Scheduling/ScheduleWorkingDraftEndpoints.cs", "ScheduleWorkingDraftIdentity", "Read", 1, "deferred/no-facade；#4143 交付 facade 时重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "Handle", 3),
         Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "ValidateLocks", 3),
+        Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "SaveInsertionCandidateAsync", 3),
         Target($"{SchedulingWebRoot}/Application/Commands/UpsertScheduleOperationOverrideCommand.cs", "UpsertScheduleOperationOverrideCommandHandler", "Handle", 6),
         Target($"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs", "ReleaseSchedulePlanUniqueConflictBehavior", "Handle", 1),
         Target($"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs", "ReleaseSchedulePlanCommandHandler", "Handle", 4),
@@ -83,7 +84,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(48, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
+        Assert.Equal(51, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(12, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));

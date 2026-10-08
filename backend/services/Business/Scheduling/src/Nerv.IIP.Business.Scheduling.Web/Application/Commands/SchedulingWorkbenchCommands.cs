@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleInsertionPreviewJobAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
@@ -130,6 +131,12 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         CreateSchedulePlanRevisionCommand request,
         CancellationToken cancellationToken)
     {
+        if (request.PlanId.StartsWith("insertion-", StringComparison.Ordinal) &&
+            Guid.TryParseExact(request.PlanId["insertion-".Length..], "N", out var jobId))
+        {
+            return await SaveInsertionCandidateAsync(request, jobId, cancellationToken);
+        }
+
         var basePlanEntity = await dbContext.SchedulePlans.AsNoTracking()
             .Include(x => x.Assignments)
             .Include(x => x.ResourceLoads)
@@ -243,6 +250,69 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         var candidate = await sender.Send(new CreateSchedulePlanCommand(revisionProblem, fixedReservations,
             SchedulingFreezeSnapshot.From(policy, frozen)), cancellationToken);
         return new SchedulePlanRevisionContract(candidate, impact, Compare(baseline, candidate));
+    }
+
+    private async Task<SchedulePlanRevisionContract> SaveInsertionCandidateAsync(
+        CreateSchedulePlanRevisionCommand request, Guid jobId, CancellationToken cancellationToken)
+    {
+        var id = new ScheduleInsertionPreviewJobId(jobId);
+        var job = await dbContext.ScheduleInsertionPreviewJobs.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == id && x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
+            x.Status == ScheduleInsertionPreviewJobStatus.Completed, cancellationToken)
+            ?? throw new KnownException("未找到已完成的插单候选，请等待计算完成后重试。");
+        var detail = ScheduleInsertionPreviewJobMapper.ToContract(job);
+        var result = detail.Result;
+        if (result is null || result.CandidatePlanId != request.PlanId ||
+            result.Candidate.PlanId != request.PlanId || result.BaselinePlanId != detail.Input.PlanId ||
+            detail.AcceptedBaseline?.Baseline.PlanId != result.BaselinePlanId)
+        {
+            throw new KnownException("插单候选与受理基线不匹配，请重新计算后重试。");
+        }
+        if (request.LockedAssignments.Count != 0 ||
+            !request.IncludedOrderIds.ToHashSet(StringComparer.Ordinal).SetEquals(
+                result.Snapshot.Problem.Orders.Select(x => x.OrderId)))
+        {
+            throw new KnownException("保存插单候选必须保留完整工单集合，不能添加人工锁，请重新选择候选。");
+        }
+
+        var problem = result.Snapshot.Problem with { ProblemId = request.PlanId };
+        var reservations = result.Snapshot.FixedReservations.Select(x => new FixedWorkCenterReservation(
+            x.OrderId, x.OperationId,
+            problem.Orders.Single(order => order.OrderId == x.OrderId).Operations
+                .Single(operation => operation.OperationId == x.OperationId).OperationSequence,
+            x.WorkCenterId, x.StartUtc, x.EndUtc, x.ResourceId)).ToArray();
+        var freezeContext = result.Snapshot.Freeze;
+        var freeze = new SchedulingFreezeSnapshot(freezeContext.AsOfUtc,
+            freezeContext.DefaultWindowEndUtc - freezeContext.AsOfUtc,
+            freezeContext.WorkCenterWindows.ToDictionary(x => x.WorkCenterId, x => x.EndUtc - freezeContext.AsOfUtc,
+                StringComparer.Ordinal),
+            freezeContext.Assignments.Select(x => new SchedulingFrozenAssignmentSnapshot(x.Assignment,
+                x.Reasons.Aggregate(0, (reasons, reason) => reasons | (int)reason))).ToArray());
+        var existing = await dbContext.SchedulePlans.AsNoTracking()
+            .Include(x => x.Assignments).Include(x => x.ResourceLoads).Include(x => x.Conflicts).Include(x => x.UnscheduledOperations)
+            .AsSplitQuery().SingleOrDefaultAsync(x => x.PlanId == request.PlanId &&
+                x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId, cancellationToken);
+        SchedulePlanContract candidate;
+        if (existing is not null)
+        {
+            candidate = SchedulePlanContractMapper.ToContract(existing, problem, reservations, freeze);
+        }
+        else
+        {
+            var generated = SchedulePlanContractMapper.WithStatus(result.Candidate with { ProblemId = problem.ProblemId },
+                SchedulePlanStatusContract.Generated);
+            var entity = SchedulePlan.FromGeneratedPlan(request.OrganizationId, request.EnvironmentId,
+                SchedulePlanContractMapper.ToDomainSnapshot(generated));
+            dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(problem.ProblemId, problem.ContractVersion,
+                request.OrganizationId, request.EnvironmentId, result.Candidate.ProblemFingerprint,
+                SchedulingFrozenOccupancy.SerializeSnapshot(problem, reservations, freeze, result.Snapshot.EquipmentAvailability),
+                problem.HorizonStartUtc, problem.HorizonEndUtc, result.Candidate.GeneratedAtUtc));
+            dbContext.SchedulePlans.Add(entity);
+            candidate = SchedulePlanContractMapper.ToContract(entity, problem, reservations, freeze);
+        }
+        var baseline = detail.AcceptedBaseline.Baseline;
+        var impact = await LoadLatestImpactAsync(request with { PlanId = result.BaselinePlanId }, problem, baseline, cancellationToken);
+        return new(candidate, impact, Compare(baseline, candidate));
     }
 
     private static IReadOnlyCollection<SchedulingLockedAssignmentContract> ValidateLocks(

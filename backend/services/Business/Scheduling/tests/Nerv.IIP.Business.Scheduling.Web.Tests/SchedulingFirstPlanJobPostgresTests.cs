@@ -32,7 +32,7 @@ using NetCorePal.Extensions.Primitives;
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 [Collection(SchedulingPostgresLaneDatabase.CollectionName)]
-public sealed class SchedulingFirstPlanJobPostgresTests
+public sealed partial class SchedulingFirstPlanJobPostgresTests
 {
     private const string GatewayRoute = "/api/business-console/v1/scheduling/workbench/first-plan-jobs";
     private const string Route = "/api/business/v1/scheduling/workbench/first-plan-jobs";
@@ -251,6 +251,7 @@ public sealed class SchedulingFirstPlanJobPostgresTests
         await VerifyCandidateSelection();
         await VerifyCandidateSelection(SchedulingReschedulingStrategyContract.RightShift);
         await VerifyCandidateSelection(SchedulingReschedulingStrategyContract.ResourceTransfer);
+        await VerifyInsertionCandidateSave();
     }
 
     private static async Task VerifyEquipmentSourceSnapshot()
@@ -291,6 +292,27 @@ public sealed class SchedulingFirstPlanJobPostgresTests
                 Assert.Equal("source-maintenance", window.GetProperty("sourceReferenceId").GetString());
                 Assert.True(item.GetProperty("restorePredictionExpired").GetBoolean());
                 Assert.Equal(new[] { "substitute-a", "substitute-z" }, window.GetProperty("substituteDeviceAssetIds").EnumerateArray().Select(x => x.GetString()));
+                // #4230: the non-empty equipment input must survive candidate saving, not only job readback.
+                using var savedResponse = await client.PostAsJsonAsync(
+                    $"/api/business/v1/scheduling/plans/{readback.CandidatePlanId}/revisions",
+                    new { sample.OrganizationId, sample.EnvironmentId,
+                        IncludedOrderIds = readback.Snapshot.Problem.Orders.Select(x => x.OrderId).ToArray(),
+                        LockedAssignments = Array.Empty<SchedulingLockedAssignmentContract>() }, SchedulingJson.Options);
+                var saved = (await savedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanRevisionContract>>(SchedulingJson.Options))!;
+                Assert.True(saved.Success, saved.Message);
+                Assert.Equal(readback.CandidatePlanId, saved.Data.Candidate.PlanId);
+                await using (var scope = factory.Services.CreateAsyncScope())
+                {
+                    var stored = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScheduleProblems
+                        .AsNoTracking().SingleAsync(x => x.ProblemId == saved.Data.Candidate.ProblemId);
+                    using var storedSnapshot = JsonDocument.Parse(stored.ProblemJson);
+                    Assert.True(storedSnapshot.RootElement.TryGetProperty("equipmentAvailability", out var storedEquipment));
+                    var persisted = storedEquipment.Deserialize<SchedulingEquipmentAvailabilitySnapshotContract>(SchedulingJson.Options)!;
+                    Assert.Equal(sample.HorizonStartUtc, persisted.AsOfUtc);
+                    Assert.Equal(1, persisted.ContractVersion);
+                    Assert.Equal(version, Assert.Single(persisted.Windows).Window.RestorePredictionSourceVersion);
+                    Assert.Equivalent(readback.Snapshot.EquipmentAvailability, persisted, strict: true);
+                }
                 var problem = JsonSerializer.Serialize(readback.Snapshot.Problem, SchedulingJson.Options);
                 if (firstProblem is null) firstProblem = problem;
                 else Assert.Equal(firstProblem, problem);
@@ -637,6 +659,25 @@ public sealed class SchedulingFirstPlanJobPostgresTests
             await using var after = factory.Services.CreateAsyncScope();
             Assert.Single(await after.ServiceProvider.GetRequiredService<ApplicationDbContext>().SchedulePlans.ToArrayAsync());
             Assert.Single(await after.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScheduleProblems.ToArrayAsync());
+            // #4230: a conflicting candidate is still saved faithfully; the existing release gate rejects it.
+            using var savedResponse = await client.PostAsJsonAsync(
+                $"/api/business/v1/scheduling/plans/{completed.Result!.CandidatePlanId}/revisions",
+                new { problem.OrganizationId, problem.EnvironmentId,
+                    IncludedOrderIds = completed.Result.Snapshot.Problem.Orders.Select(x => x.OrderId).ToArray(),
+                    LockedAssignments = Array.Empty<SchedulingLockedAssignmentContract>() }, SchedulingJson.Options);
+            var saved = (await savedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanRevisionContract>>(SchedulingJson.Options))!;
+            Assert.True(saved.Success, saved.Message);
+            var persisted = await after.ServiceProvider.GetRequiredService<ISender>().Send(new GetSchedulePlanDetailQuery(
+                saved.Data.Candidate.PlanId, problem.OrganizationId, problem.EnvironmentId));
+            Assert.Equal(JsonSerializer.Serialize(preview.Assignments, SchedulingJson.Options), JsonSerializer.Serialize(persisted.Assignments, SchedulingJson.Options));
+            Assert.Equal(JsonSerializer.Serialize(preview.Conflicts.OrderBy(x => x.ConflictId), SchedulingJson.Options),
+                JsonSerializer.Serialize(persisted.Conflicts.OrderBy(x => x.ConflictId), SchedulingJson.Options));
+            Assert.Equal(JsonSerializer.Serialize(preview.UnscheduledOperations, SchedulingJson.Options), JsonSerializer.Serialize(persisted.UnscheduledOperations, SchedulingJson.Options));
+            Assert.Equal(JsonSerializer.Serialize(preview.FreezeContext, SchedulingJson.Options), JsonSerializer.Serialize(persisted.FreezeContext, SchedulingJson.Options));
+            using var release = await client.PostAsJsonAsync(
+                $"/api/business/v1/scheduling/plans/{persisted.PlanId}/release?organizationId={problem.OrganizationId}&environmentId={problem.EnvironmentId}",
+                new { }, SchedulingJson.Options);
+            Assert.False((await release.Content.ReadFromJsonAsync<ResponseData<ReleaseSchedulePlanResponse>>(SchedulingJson.Options))!.Success);
         }
         finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }
     }
