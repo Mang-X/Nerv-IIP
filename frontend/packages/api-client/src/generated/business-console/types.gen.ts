@@ -1481,9 +1481,29 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipContractsSchedulingSchedulePlanContract | null;
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSetContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingCandidateSetContract | null;
 };
+
+export type NervIipContractsSchedulingSchedulingCandidateSetContract = {
+    contractVersion?: number;
+    baselinePlanId?: string;
+    asOfUtc?: string;
+    inputFingerprint?: string;
+    candidates?: Array<NervIipContractsSchedulingSchedulingCandidateContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateContract = {
+    strategy?: NervIipContractsSchedulingSchedulingReschedulingStrategyContract;
+    inputFingerprint?: string;
+    plan?: NervIipContractsSchedulingSchedulePlanContract;
+    kpis?: NervIipContractsSchedulingSchedulingCandidateKpisContract;
+    movements?: Array<NervIipContractsSchedulingSchedulingCandidateMovementContract>;
+    explanations?: Array<NervIipContractsSchedulingSchedulingCandidateExplanationContract>;
+    transfers?: Array<NervIipContractsSchedulingSchedulingCandidateTransferContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingReschedulingStrategyContract = 'rightShift' | 'resourceTransfer';
 
 export type NervIipContractsSchedulingSchedulePlanContract = {
     contractVersion?: number;
@@ -1740,6 +1760,190 @@ export type NervIipContractsSchedulingSchedulePlanFrozenAssignmentContract = {
 
 export type NervIipContractsSchedulingSchedulePlanFreezeReasonContract = 'completed' | 'started' | 'manualLock' | 'stableWindow';
 
+export type NervIipContractsSchedulingSchedulingCandidateKpisContract = {
+    baselineOnTimeRate?: number;
+    candidateOnTimeRate?: number;
+    onTimeRateChange?: number;
+    baselineOnTimeDenominator?: number;
+    candidateOnTimeDenominator?: number;
+    baselineLateOrderCount?: number;
+    candidateLateOrderCount?: number;
+    lateOrderCountChange?: number;
+    movedOperationCount?: number;
+    baselineResourceUtilization?: number;
+    candidateResourceUtilization?: number;
+    resourceUtilizationChange?: number;
+    baselineUnscheduledCount?: number;
+    candidateUnscheduledCount?: number;
+    unscheduledCountChange?: number;
+    preservedLockedCount?: number;
+    totalLockedCount?: number;
+    lockedAssignments?: Array<NervIipContractsSchedulingSchedulingCandidateLockPreservationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateLockPreservationContract = {
+    original?: NervIipContractsSchedulingScheduleAssignmentContract;
+    candidate?: NervIipContractsSchedulingScheduleAssignmentContract | null;
+    preserved?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateMovementContract = {
+    original?: NervIipContractsSchedulingScheduleAssignmentContract;
+    candidate?: NervIipContractsSchedulingScheduleAssignmentContract;
+    reasons?: Array<NervIipContractsSchedulingSchedulingCandidateReasonContract>;
+    paths?: Array<NervIipContractsSchedulingSchedulingCandidatePathContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateReasonContract = {
+    code?: NervIipContractsSchedulingSchedulingCandidateReasonCodeContract;
+    source?: NervIipContractsSchedulingSchedulingCandidateDeviationContract;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateReasonCodeContract = 'operationDeviation' | 'newOperation' | 'resourceUnavailable' | 'predecessorDependency' | 'resourceCapacity';
+
+export type NervIipContractsSchedulingSchedulingCandidateDeviationContract = {
+    kind?: NervIipContractsSchedulingSchedulingCandidateDeviationKindContract;
+    sourceReference?: string;
+    sourceVersion?: string;
+    occurredAtUtc?: string;
+    reasonCode?: string;
+    resourceId?: string | null;
+    startUtc?: string | null;
+    endUtc?: string | null;
+    orderId?: string | null;
+    operationId?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateDeviationKindContract = 'resourceUnavailable' | 'operationDeviation' | 'newOperation';
+
+export type NervIipContractsSchedulingSchedulingCandidatePathContract = {
+    source?: NervIipContractsSchedulingSchedulingCandidateDeviationContract;
+    root?: NervIipContractsSchedulingSchedulingCandidateOperationContract;
+    steps?: Array<NervIipContractsSchedulingSchedulingCandidateStepContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateOperationContract = {
+    orderId?: string;
+    operationId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateStepContract = {
+    from?: NervIipContractsSchedulingSchedulingCandidateOperationContract;
+    to?: NervIipContractsSchedulingSchedulingCandidateOperationContract;
+    code?: NervIipContractsSchedulingSchedulingCandidateReasonCodeContract;
+    competitionWindow?: NervIipContractsSchedulingScheduleAssignmentSegmentContract | null;
+    capacityUnits?: number | null;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateExplanationContract = {
+    orderId?: string;
+    operationId?: string;
+    code?: string;
+    reasons?: Array<NervIipContractsSchedulingSchedulingCandidateReasonContract>;
+    paths?: Array<NervIipContractsSchedulingSchedulingCandidatePathContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateTransferContract = {
+    orderId?: string;
+    operationId?: string;
+    originalResourceId?: string;
+    resourceId?: string;
+    setupMinutes?: number;
+    deviceSources?: Array<NervIipContractsSchedulingSchedulingCandidateDeviceSourceContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateDeviceSourceContract = {
+    resourceId?: string;
+    substituteResourceId?: string;
+    sourceReference?: string;
+    reasonCode?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidatePreviewRequestContract = {
+    organizationId?: string;
+    environmentId?: string;
+    baselinePlanId?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSelectionContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingCandidateSelectionContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateSelectionContract = {
+    plan?: NervIipContractsSchedulingSchedulePlanContract;
+    workingDraft?: NervIipContractsSchedulingSchedulingWorkingDraftContract;
+    comparison?: NervIipContractsSchedulingSchedulePlanComparisonContract;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftContract = {
+    planId?: string;
+    savedAtUtc?: string;
+    state?: NervIipContractsSchedulingSchedulingWorkingDraftStateContract;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftStateContract = {
+    contractVersion?: number;
+    orders?: Array<NervIipContractsSchedulingSchedulingWorkingDraftOrderContract>;
+    tasks?: Array<NervIipContractsSchedulingSchedulingWorkingDraftTaskContract>;
+    pendingOperations?: Array<NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftOrderContract = {
+    workOrderId?: string;
+    priority?: number;
+    isRush?: boolean;
+    included?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftTaskContract = {
+    taskId?: string;
+    orderId?: string;
+    operationId?: string;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    locked?: boolean;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract = {
+    id?: string;
+    orderId?: string;
+    operationId?: string;
+    source?: NervIipContractsSchedulingSchedulingWorkingDraftPendingSource;
+    message?: string;
+    canRestore?: boolean;
+    taskId?: string | null;
+    reasonCode?: string | null;
+    task?: NervIipContractsSchedulingSchedulingWorkingDraftTaskContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftPendingSource = 'unscheduled' | 'invalidated' | 'removed';
+
+export type NervIipContractsSchedulingSchedulePlanComparisonContract = {
+    basePlanId?: string;
+    candidatePlanId?: string;
+    baseMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    candidateMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    movedOperationCount?: number;
+    lockedOperationCount?: number;
+    unscheduledOperationCount?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateSelectRequestContract = {
+    organizationId?: string;
+    environmentId?: string;
+    baselinePlanId?: string;
+    asOfUtc?: string;
+    inputFingerprint?: string;
+    strategy?: NervIipContractsSchedulingSchedulingReschedulingStrategyContract;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulePlanContract | null;
+};
+
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
     problem: NervIipContractsSchedulingSchedulingProblemContract;
 };
@@ -1905,16 +2109,6 @@ export type NervIipContractsSchedulingSchedulePlanImpactContract = {
     affectedResourceIds?: Array<string>;
     affectedWorkOrderIds?: Array<string>;
     affectedOperationIds?: Array<string>;
-};
-
-export type NervIipContractsSchedulingSchedulePlanComparisonContract = {
-    basePlanId?: string;
-    candidatePlanId?: string;
-    baseMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
-    candidateMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
-    movedOperationCount?: number;
-    lockedOperationCount?: number;
-    unscheduledOperationCount?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest = {
@@ -2189,52 +2383,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
 export type NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsSchedulingSchedulingWorkingDraftContract | null;
 };
-
-export type NervIipContractsSchedulingSchedulingWorkingDraftContract = {
-    planId?: string;
-    savedAtUtc?: string;
-    state?: NervIipContractsSchedulingSchedulingWorkingDraftStateContract;
-};
-
-export type NervIipContractsSchedulingSchedulingWorkingDraftStateContract = {
-    contractVersion?: number;
-    orders?: Array<NervIipContractsSchedulingSchedulingWorkingDraftOrderContract>;
-    tasks?: Array<NervIipContractsSchedulingSchedulingWorkingDraftTaskContract>;
-    pendingOperations?: Array<NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract>;
-};
-
-export type NervIipContractsSchedulingSchedulingWorkingDraftOrderContract = {
-    workOrderId?: string;
-    priority?: number;
-    isRush?: boolean;
-    included?: boolean;
-};
-
-export type NervIipContractsSchedulingSchedulingWorkingDraftTaskContract = {
-    taskId?: string;
-    orderId?: string;
-    operationId?: string;
-    resourceId?: string;
-    workCenterId?: string;
-    startUtc?: string;
-    endUtc?: string;
-    locked?: boolean;
-    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
-};
-
-export type NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract = {
-    id?: string;
-    orderId?: string;
-    operationId?: string;
-    source?: NervIipContractsSchedulingSchedulingWorkingDraftPendingSource;
-    message?: string;
-    canRestore?: boolean;
-    taskId?: string | null;
-    reasonCode?: string | null;
-    task?: NervIipContractsSchedulingSchedulingWorkingDraftTaskContract | null;
-};
-
-export type NervIipContractsSchedulingSchedulingWorkingDraftPendingSource = 'unscheduled' | 'invalidated' | 'removed';
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSaveSchedulingWorkingDraftRequest = {
     organizationId?: string;
@@ -12410,6 +12558,60 @@ export type SearchBusinessConsoleObjectsResponses = {
 };
 
 export type SearchBusinessConsoleObjectsResponse = SearchBusinessConsoleObjectsResponses[keyof SearchBusinessConsoleObjectsResponses];
+
+export type PreviewBusinessConsoleSchedulingCandidatesData = {
+    body: NervIipContractsSchedulingSchedulingCandidatePreviewRequestContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/candidates/preview';
+};
+
+export type PreviewBusinessConsoleSchedulingCandidatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleSchedulingCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSetContract;
+};
+
+export type PreviewBusinessConsoleSchedulingCandidatesResponse = PreviewBusinessConsoleSchedulingCandidatesResponses[keyof PreviewBusinessConsoleSchedulingCandidatesResponses];
+
+export type SelectBusinessConsoleSchedulingCandidateData = {
+    body: NervIipContractsSchedulingSchedulingCandidateSelectRequestContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/candidates/select';
+};
+
+export type SelectBusinessConsoleSchedulingCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SelectBusinessConsoleSchedulingCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSelectionContract;
+};
+
+export type SelectBusinessConsoleSchedulingCandidateResponse = SelectBusinessConsoleSchedulingCandidateResponses[keyof SelectBusinessConsoleSchedulingCandidateResponses];
 
 export type PreviewBusinessConsoleSchedulingPlanData = {
     body: NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest;

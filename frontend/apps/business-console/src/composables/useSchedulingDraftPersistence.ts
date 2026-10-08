@@ -144,6 +144,11 @@ export function useSchedulingDraftPersistence(options: Options) {
     }
   }
 
+  async function restoreSelection(saved: SchedulingWorkingDraft) {
+    savedDrafts.value = [...savedDrafts.value.filter((item) => item.planId !== saved.planId), saved]
+    await select(saved.planId!)
+  }
+
   async function clear() {
     const planId = draft.model.value?.meta.planId
     if (!planId) return false
@@ -204,6 +209,7 @@ export function useSchedulingDraftPersistence(options: Options) {
     clear,
     discover,
     select,
+    restoreSelection,
     retry: () => retryOperation!(),
     busy: computed(() => !ready.value || status.value === 'clearing'),
   }

@@ -3272,3 +3272,19 @@ export type {
   NervIipContractsSchedulingSchedulingInsertionPreviewJobContract as BusinessConsoleSchedulingInsertionPreviewJob,
   NervIipContractsSchedulingSchedulingInsertionPreviewJobStatusContract as BusinessConsoleSchedulingInsertionPreviewJobStatus,
 } from './generated/business-console'
+
+export {
+  previewBusinessConsoleSchedulingCandidates,
+  selectBusinessConsoleSchedulingCandidate,
+} from './generated/business-console'
+export type {
+  NervIipContractsSchedulingSchedulingCandidateSetContract as SchedulingCandidateSet,
+  NervIipContractsSchedulingSchedulingCandidateContract as SchedulingCandidate,
+  NervIipContractsSchedulingSchedulingCandidateKpisContract as SchedulingCandidateKpis,
+  NervIipContractsSchedulingSchedulingCandidateMovementContract as SchedulingCandidateMovement,
+  NervIipContractsSchedulingSchedulingCandidateReasonContract as SchedulingCandidateReason,
+  NervIipContractsSchedulingSchedulingCandidateReasonCodeContract as SchedulingCandidateReasonCode,
+  NervIipContractsSchedulingSchedulingCandidatePathContract as SchedulingCandidatePath,
+  NervIipContractsSchedulingSchedulingCandidateSelectRequestContract as SchedulingCandidateSelectRequest,
+  NervIipContractsSchedulingSchedulingCandidateSelectionContract as SchedulingCandidateSelection,
+} from './generated/business-console'

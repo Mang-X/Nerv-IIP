@@ -168,6 +168,14 @@ public sealed class FiniteCapacityScheduler(
         return state.ToPlan(problemFingerprint);
     }
 
+    internal SchedulePlanMetricsContract ProjectAssignmentMetrics(SchedulingProblemContract problem,
+        IReadOnlyCollection<ScheduleAssignmentContract> assignments, int unscheduledCount)
+    {
+        var state = SchedulerState.From(SchedulingProblemNormalizer.Normalize(problem), "metrics", problem.HorizonStartUtc,
+            MaterialConstraintMode, QualityConstraintMode, [], [], [], [], null);
+        return state.ProjectAssignmentMetrics(assignments) with { UnscheduledOperationCount = unscheduledCount };
+    }
+
     internal SchedulePlanContract ScheduleRightShiftNormalized(
         SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc,
         IReadOnlyCollection<ScheduleAssignmentContract> baselineQueue,
@@ -981,6 +989,12 @@ file sealed class SchedulerState
             EquipmentRisks: orderedEquipmentRisks,
             MaterialShortageSummary: SchedulePlanMaterialShortageSummary.Project(problem),
             AssemblyDependencies: problem.AssemblyDependencies);
+    }
+
+    public SchedulePlanMetricsContract ProjectAssignmentMetrics(IReadOnlyCollection<ScheduleAssignmentContract> assignments)
+    {
+        var occupancies = BuildResourceOccupancies(assignments);
+        return BuildMetrics(assignments, occupancies, BuildResourceLoads(occupancies), 0, 0);
     }
 
     private SchedulePlanMetricsContract BuildMetrics(

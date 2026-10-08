@@ -117,6 +117,7 @@ try
     builder.Services.AddSingleton(SchedulingFreezeSettings.Resolve(builder.Configuration));
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<SchedulingWorkbenchPlanAssembler>();
+    builder.Services.AddScoped<SchedulingCandidateService>();
     builder.Services.AddSingleton<ScheduleFirstPlanJobQueue>();
     builder.Services.AddSingleton<ScheduleInsertionPreviewJobQueue>();
     builder.Services.AddScoped<HttpSchedulingMaterialReadinessProvider>();
