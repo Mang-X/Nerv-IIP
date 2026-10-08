@@ -20,6 +20,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
@@ -878,7 +879,16 @@ public sealed partial class FileStorageRestartPersistenceTests
             }
             if (changedConfiguration)
                 builder.UseSetting("FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds", "3456000");
-            builder.ConfigureServices(services => { services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(clock); });
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(clock);
+                // 退休验收直接驱动 collector；假时钟推进不能再唤醒第二只 GC。
+                var worker = services.Single(descriptor =>
+                    descriptor.ServiceType == typeof(IHostedService)
+                    && descriptor.ImplementationType == typeof(FileStorageGarbageCollectionHostedService));
+                services.Remove(worker);
+            });
         });
 
     private static async Task SeedRetirementAssetAsync(WebApplicationFactory<Program> factory, bool bytes = true)
