@@ -177,6 +177,15 @@ $selected = @($cases | Where-Object { $identities.Contains([string]$_.MethodIden
 foreach ($case in $selected) {
     [IO.File]::AppendAllText($env:NERV_FULLCHAIN_FAKE_COMMAND_LOG, ('CASE ' + (ConvertTo-Json -InputObject @{ directory = $directory; identity = $case.Identity } -Compress) + "`n"))
 }
+# Inject only at the residual leaf boundary; discovery remains complete.
+if ([string]::Equals((Split-Path -Leaf $directory), 'residual', [StringComparison]::Ordinal)) {
+    switch -CaseSensitive ($env:NERV_FULLCHAIN_FAKE_FAILURE) {
+        'residual-missing-trx' { exit 0 }
+        'residual-missing-identity' { $selected = @($selected | Where-Object { -not [string]::Equals([string]$_.MethodIdentity, [string]$selected[0].MethodIdentity, [StringComparison]::Ordinal) }) }
+        'residual-failed-case' { $selected[-1].Outcome = 'Failed' }
+        'residual-skipped-case' { $selected[-1].Outcome = 'NotExecuted' }
+    }
+}
 [IO.Directory]::CreateDirectory($directory) | Out-Null
 New-FullChainResidualTrx -Path (Join-Path $directory $logger.Substring('trx;LogFileName='.Length)) -Cases $selected
 '@
@@ -1099,7 +1108,8 @@ try {
 
     # #4238: replacement mapping: claim-source AST -> called identities; residual
     # command/helper AST -> real leaf calls + TRX + terminal summary; total assignment
-    # AST -> lane totals. Failure propagation shape remains for #4239.
+    # AST -> lane totals. #4239 maps the residual outcome guard AST to child-process
+    # failure + persisted failed residual outcome for all four fault inputs below.
     $runnerSourcePath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
     $runnerSourceText = [IO.File]::ReadAllText($runnerSourcePath)
     $selectionMember = @($manifest.members | Where-Object { [string]::Equals([string]$_.entrypoint.kind, 'dotnet', [StringComparison]::Ordinal) })[0]
@@ -1148,6 +1158,40 @@ try {
         Assert-Contract ($selectionSummary.residual.expected -eq 2 -and $selectionSummary.residual.discovered -eq 2 -and $selectionSummary.residual.executed -eq 3 -and $selectionSummary.residual.passed -eq 3 -and $selectionSummary.residual.failed -eq 0 -and $selectionSummary.residual.skipped -eq 0 -and [string]::Equals([string]$selectionSummary.residual.outcome, 'passed', [StringComparison]::Ordinal)) 'Terminal residual summary must distinguish two methods from three successful cases.'
         Assert-Contract ($selectionSummary.expected -eq 3 -and $selectionSummary.discovered -eq 3 -and $selectionSummary.passed -eq 4 -and $selectionSummary.failed -eq 0 -and $selectionSummary.skipped -eq 0) 'Terminal lane totals must include residual method counts and all executed cases.'
         Assert-Contract ($selectionSummary.members.Count -eq 1 -and [string]::Equals([string]$selectionSummary.members[0].memberId, [string]$selectionMember.id, [StringComparison]::Ordinal) -and [string]::Equals([string]$selectionSummary.cleanup, 'passed', [StringComparison]::Ordinal)) 'Terminal selection must retain the selected member and completed cleanup.'
+        $selectionPwsh = [string](@(Get-Command pwsh -CommandType Application | Where-Object { -not $_.Source.StartsWith($selectionBin, [StringComparison]::Ordinal) })[0].Source)
+        foreach ($fault in @(
+            @{ Name = 'missing-trx'; Reason = 'must produce exactly one TRX file' },
+            @{ Name = 'missing-identity'; Reason = 'executed a different identity set' },
+            @{ Name = 'failed-case'; Reason = "Theory_case(value: 2)" },
+            @{ Name = 'skipped-case'; Reason = '0 failed and 1 skipped' }
+        )) {
+            $faultRoot = Join-Path $fixtureRoot "selection-$($fault.Name)"
+            $faultSummaryPath = Join-Path $faultRoot 'summary.json'
+            $faultLog = Join-Path $faultRoot 'calls.log'
+            [IO.Directory]::CreateDirectory($faultRoot) | Out-Null
+            [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_COMMAND_LOG', $faultLog)
+            [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', "residual-$($fault.Name)")
+            $faultFailure = $null
+            try {
+                Invoke-NativeCommandOutput -Command $selectionPwsh -Arguments @(
+                    '-NoProfile', '-File', $runnerSourcePath,
+                    '-MemberId', $selectionMember.id,
+                    '-ResultsDirectory', (Join-Path $faultRoot 'results'),
+                    '-SummaryPath', $faultSummaryPath
+                ) -WorkingDirectory $repoRoot -TimeoutSeconds 60 -Name "full-chain-residual-$($fault.Name)" | Out-Null
+            }
+            catch { $faultFailure = $_ }
+            Assert-Contract ($null -ne $faultFailure -and $faultFailure.Exception.Data['ExitCode'] -eq 1) "Residual $($fault.Name) must make the real runner process exit 1."
+            Assert-Contract ($faultFailure.Exception.Message.Contains($fault.Reason, [StringComparison]::Ordinal)) "Residual $($fault.Name) must fail for its injected cause: $($fault.Reason); observed: $($faultFailure.Exception.Message)"
+            $faultSummary = Get-Content -LiteralPath $faultSummaryPath -Raw | ConvertFrom-Json -Depth 20
+            Assert-Contract ([string]::Equals([string]$faultSummary.residual.outcome, 'failed', [StringComparison]::Ordinal)) "Residual $($fault.Name) must persist its failed terminal outcome."
+            Assert-Contract ($faultSummary.residual.expected -eq 2 -and [string]::Equals(($faultSummary.residual.identities -join '|'), ($selectionResidual -join '|'), [StringComparison]::Ordinal)) "Residual $($fault.Name) must retain both expected method identities."
+            Assert-Contract ($faultSummary.members.Count -eq 1 -and [string]::Equals([string]$faultSummary.members[0].outcome, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$faultSummary.cleanup, 'passed', [StringComparison]::Ordinal)) "Residual $($fault.Name) must preserve successful selected-member execution and cleanup."
+            $faultCommands = @([IO.File]::ReadAllLines($faultLog))
+            Assert-Contract (@($faultCommands | Where-Object { $_ -match '^docker .* (?:stop|down) ' }).Count -eq 1) "Residual $($fault.Name) must clean owned infrastructure exactly once."
+            Write-Host "Residual fault $($fault.Name): exit=1 terminal=failed cleanup=passed reason=$($fault.Reason)"
+        }
+
     }
     finally {
         [Environment]::SetEnvironmentVariable('PATH', $selectionSavedPath)
@@ -1156,19 +1200,6 @@ try {
         [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $selectionSavedRedis)
         [Environment]::SetEnvironmentVariable('NERV_FULLCHAIN_FAKE_FAILURE', $selectionSavedFailure)
     }
-    $runnerAst = [System.Management.Automation.Language.Parser]::ParseInput($runnerSourceText, [ref]$null, [ref]$null)
-    # 断言必须落在 **条件子树** 上：本票实测过，只看整个 if 的 extent 时，把条件改成 `$false`
-    # 仍然绿——因为 body 里的失败消息本身就含那两个字符串。这是「相邻同型守卫兜住变异」的同族。
-    $residualOutcomeGuards = @($runnerAst.FindAll({
-        param($node)
-        $node -is [System.Management.Automation.Language.IfStatementAst] -and
-        @($node.Clauses | Where-Object {
-            $_.Item1.Extent.Text.Contains('$summary.residual.outcome', [StringComparison]::Ordinal) -and
-            $_.Item1.Extent.Text.Contains('$firstFailure', [StringComparison]::Ordinal)
-        }).Count -ge 1 -and
-        $node.Extent.Text.Contains('$firstFailure =', [StringComparison]::Ordinal)
-    }, $true))
-    Assert-Contract ($residualOutcomeGuards.Count -eq 1) 'The FullChain runner must turn a non-passed residual outcome into a lane failure, and the guard must be evaluated rather than short-circuited.'
     # 排除注册表是本票刻意不造的逃生口：空注册表拿不出鉴别力证据，而有逃生口就会被用来重新造暗测试。
     foreach ($forbidden in @('excludedTests', 'excludedTestClasses', 'residualExclusions')) {
         Assert-Contract ($runnerSourceText.IndexOf($forbidden, [StringComparison]::Ordinal) -lt 0) "The FullChain runner must not grow an exclusion registry ('$forbidden')."
