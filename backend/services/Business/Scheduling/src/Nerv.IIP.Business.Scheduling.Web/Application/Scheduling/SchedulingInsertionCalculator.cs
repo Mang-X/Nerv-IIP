@@ -14,7 +14,9 @@ internal static class SchedulingInsertionCalculator
     public static SchedulingInsertionResult Calculate(FiniteCapacityScheduler scheduler, SchedulingProblemContract problem,
         SchedulePlanContract baseline, string insertedOrderId, string candidatePlanId,
         IReadOnlyCollection<SchedulingFreezeExecutionFact> execution,
-        IReadOnlyCollection<(string OrderId, string OperationId)> manualLocks, SchedulingFreezePolicy policy)
+        IReadOnlyCollection<(string OrderId, string OperationId)> manualLocks, SchedulingFreezePolicy policy,
+        IReadOnlyCollection<FixedWorkCenterReservation>? fixedReservations = null,
+        IReadOnlyCollection<ScheduleAssignmentContract>? externalFrozenAssignments = null)
     {
         var normalized = SchedulingProblemNormalizer.Normalize(problem);
         var insertedOrder = normalized.Orders.Single(x => x.OrderId == insertedOrderId);
@@ -27,6 +29,7 @@ internal static class SchedulingInsertionCalculator
         var baselineAssignments = baseline.Assignments.OrderBy(x => x.OrderId, StringComparer.Ordinal)
             .ThenBy(x => x.OperationId, StringComparer.Ordinal).ToArray();
         var baselineKeys = baselineAssignments.Select(Key).ToHashSet();
+        var fixedKeys = (fixedReservations ?? []).Select(x => (x.OrderId, x.OperationId)).ToHashSet();
         var lockedKeys = normalized.LockedAssignments.Select(x => (x.OrderId, x.OperationId)).ToHashSet();
         var allManualLocks = manualLocks.Concat(lockedKeys).Concat(baselineAssignments.Where(x => x.IsLocked).Select(Key)).Distinct().ToArray();
         var freeze = SchedulingFreezeCalculator.Calculate(baselineAssignments, execution, allManualLocks, policy);
@@ -34,7 +37,8 @@ internal static class SchedulingInsertionCalculator
         // 只把冻结项作为种子的不可移动占用；可移动队列的竞争由影响传播定位。
         var computeProblem = normalized with { LockedAssignments = normalized.LockedAssignments.Where(x => !baselineKeys.Contains((x.OrderId, x.OperationId))).ToArray() };
         var seed = scheduler.ScheduleNormalized(computeProblem, candidatePlanId, policy.AsOfUtc,
-            preservedAssignments: freeze.Select(x => x.Assignment).ToArray(), selectedOperations: insertedKeys,
+            fixedReservations: fixedReservations, externalFrozenAssignments: externalFrozenAssignments,
+            preservedAssignments: freeze.Where(x => !fixedKeys.Contains(Key(x.Assignment))).Select(x => x.Assignment).ToArray(), selectedOperations: insertedKeys,
             problemFingerprint: string.Empty); // 种子仅用于影响定位，其临时方案身份不返回。
         var deviations = seed.Assignments.Where(x => x.OrderId == insertedOrderId)
             .Select(x => (SchedulingDeviation)new SchedulingInsertedOperationDeviation($"insertion/{insertedOrderId}", "v1", policy.AsOfUtc, x.OrderId, x.OperationId)).ToArray();
@@ -49,11 +53,13 @@ internal static class SchedulingInsertionCalculator
             InsertedOrderId = insertedOrderId,
             scheduler.MaterialConstraintMode,
             scheduler.QualityConstraintMode,
+            FixedReservations = fixedReservations ?? [],
+            ExternalFrozenAssignments = externalFrozenAssignments ?? [],
         })))).ToLowerInvariant();
         var recalculate = impact.RecalculateAssignments.Select(Key).Concat(insertedKeys).ToHashSet();
-        var preserved = baselineAssignments.Where(x => !recalculate.Contains(Key(x))).ToArray();
+        var preserved = baselineAssignments.Where(x => !recalculate.Contains(Key(x)) && !fixedKeys.Contains(Key(x))).ToArray();
         var candidate = scheduler.ScheduleNormalized(computeProblem, candidatePlanId, policy.AsOfUtc,
-            preservedAssignments: preserved, selectedOperations: recalculate, problemFingerprint: fingerprint);
+            fixedReservations: fixedReservations, externalFrozenAssignments: externalFrozenAssignments, preservedAssignments: preserved, selectedOperations: recalculate, problemFingerprint: fingerprint);
         var unscheduled = baseline.UnscheduledOperations.Concat(candidate.UnscheduledOperations).ToArray();
         candidate = candidate with
         {

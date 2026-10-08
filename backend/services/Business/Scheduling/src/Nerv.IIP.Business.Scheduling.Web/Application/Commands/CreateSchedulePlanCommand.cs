@@ -140,7 +140,7 @@ public sealed class CreateSchedulePlanCommandHandler(
         SchedulingProblemContract problem,
         IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
         SchedulingFreezeSnapshot? freeze = null,
-        SchedulingEquipmentAvailabilitySnapshot? equipmentAvailability = null)
+        SchedulingEquipmentAvailabilitySnapshotContract? equipmentAvailability = null)
     {
         var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
         var json = SchedulingFrozenOccupancy.SerializeSnapshot(normalizedProblem, fixedReservations, freeze, equipmentAvailability);

@@ -589,6 +589,7 @@
       "nerv.iip.contracts.scheduling": {
         "type": "Project",
         "dependencies": {
+          "Nerv.IIP.Contracts.EquipmentRuntime": "[1.0.0, )",
           "Nerv.IIP.Contracts.IntegrationEvents": "[1.0.0, )"
         }
       },

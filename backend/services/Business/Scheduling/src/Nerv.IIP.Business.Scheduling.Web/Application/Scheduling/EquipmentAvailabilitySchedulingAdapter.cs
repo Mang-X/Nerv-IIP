@@ -104,7 +104,7 @@ public static class EquipmentAvailabilitySchedulingAdapter
         return problem with { UnavailabilityWindows = windows, EquipmentDataRisks = risks };
     }
 
-    internal static IReadOnlyList<SchedulingSubstituteDeviceFact> ToSubstituteDeviceFacts(SchedulingEquipmentAvailabilitySnapshot? snapshot) =>
+    internal static IReadOnlyList<SchedulingSubstituteDeviceFact> ToSubstituteDeviceFacts(SchedulingEquipmentAvailabilitySnapshotContract? snapshot) =>
         (snapshot?.Windows ?? []).SelectMany(source => source.Window.SubstituteDeviceAssetIds.Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal).Select(id => new SchedulingSubstituteDeviceFact(source.Window.DeviceAssetId, id, source)))
             .OrderBy(x => ReschedulingImpactAnalyzer.CanonicalJson(x), StringComparer.Ordinal).ToArray();

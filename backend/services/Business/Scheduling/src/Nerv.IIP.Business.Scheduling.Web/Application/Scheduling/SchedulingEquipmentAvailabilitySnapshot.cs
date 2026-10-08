@@ -5,12 +5,9 @@ using Nerv.IIP.Contracts.Scheduling;
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
 // Internal replay input. Maintenance owns ETR/MTTR/default selection; actual windows stay authoritative.
-internal sealed record SchedulingEquipmentAvailabilitySnapshot(
-    DateTimeOffset AsOfUtc,
-    int ContractVersion,
-    IReadOnlyCollection<SchedulingEquipmentAvailabilityInput> Windows)
+internal static class SchedulingEquipmentAvailabilitySnapshot
 {
-    public static SchedulingEquipmentAvailabilitySnapshot Create(
+    public static SchedulingEquipmentAvailabilitySnapshotContract Create(
         EquipmentRuntimeAvailabilityResponse availability, DateTimeOffset asOfUtc)
     {
         var windows = availability.Items.Select(window =>
@@ -27,13 +24,9 @@ internal sealed record SchedulingEquipmentAvailabilitySnapshot(
                     ? window.RestorePredictionSourceVersion : null,
                 SubstituteDeviceAssetIds = window.SubstituteDeviceAssetIds.Order(StringComparer.Ordinal).ToArray()
             };
-            return new SchedulingEquipmentAvailabilityInput(actual,
+            return new SchedulingEquipmentAvailabilityInputContract(actual,
                 actual.ExpectedRestoreAtUtc is { } prediction && prediction <= asOfUtc);
         }).OrderBy(x => JsonSerializer.Serialize(x, SchedulingJson.Options), StringComparer.Ordinal).ToArray();
         return new(asOfUtc.ToUniversalTime(), availability.ContractVersion, windows);
     }
 }
-
-internal sealed record SchedulingEquipmentAvailabilityInput(
-    EquipmentRuntimeAvailabilityWindowContract Window,
-    bool RestorePredictionExpired);

@@ -31,7 +31,7 @@ internal static class SchedulingFrozenOccupancy
         SchedulingProblemContract problem,
         IReadOnlyCollection<FixedWorkCenterReservation> reservations,
         SchedulingFreezeSnapshot? freeze = null,
-        SchedulingEquipmentAvailabilitySnapshot? equipmentAvailability = null)
+        SchedulingEquipmentAvailabilitySnapshotContract? equipmentAvailability = null)
     {
         if (reservations.Count == 0 && freeze is null && equipmentAvailability is null)
         {

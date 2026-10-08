@@ -267,7 +267,7 @@ public sealed class ResourceTransferCandidateGeneratorTests
         Assert.Equal(reason, Assert.Single(result.Plan.UnscheduledOperations).ReasonCode);
     }
 
-    private static SchedulingEquipmentAvailabilitySnapshot Snapshot(params EquipmentRuntimeAvailabilityWindowContract[] windows) =>
+    private static SchedulingEquipmentAvailabilitySnapshotContract Snapshot(params EquipmentRuntimeAvailabilityWindowContract[] windows) =>
         SchedulingEquipmentAvailabilitySnapshot.Create(new(1, "org", "env", At, At.AddDays(2), windows), At);
     private static EquipmentRuntimeAvailabilityWindowContract Window(string resource, EquipmentRuntimeAvailabilityStatus status, int end, string[] substitutes) =>
         new(resource, $"WC-{resource}", status, "equipment-state", EquipmentRuntimeSeverity.Blocked, At, At.AddMinutes(end),
