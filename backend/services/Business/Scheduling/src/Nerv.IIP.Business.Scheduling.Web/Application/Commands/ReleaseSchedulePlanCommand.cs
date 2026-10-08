@@ -55,6 +55,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
             request.EnvironmentId,
             cancellationToken);
         var plan = await dbContext.SchedulePlans
+            .Include(x => x.Assignments)
             .SingleOrDefaultAsync(
                 x => x.PlanId == request.PlanId &&
                     x.OrganizationId == request.OrganizationId &&
@@ -104,7 +105,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
             throw new KnownException("排程方案已因排程输入变化失效，请先重新生成方案。");
         }
 
-        var activePlan = await dbContext.SchedulePlans.SingleOrDefaultAsync(
+        var activePlan = await dbContext.SchedulePlans.Include(x => x.Assignments).SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.Status == SchedulePlanLifecycleStatus.Released &&
