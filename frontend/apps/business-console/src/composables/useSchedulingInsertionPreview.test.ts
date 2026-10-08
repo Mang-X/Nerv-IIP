@@ -123,4 +123,48 @@ describe('#4163 插单预览 DomainInvariant / PublicContract（HTTP 桩）', ()
     expect(task.job.value).toBeUndefined()
     wrapper.unmount()
   })
+  it('后发任务已受理时，旧任务状态晚到不能覆盖当前候选', async () => {
+    let resolveOld!: (value: unknown) => void
+    backend.status.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve
+        }),
+    )
+    const { task, wrapper } = setup()
+    await task.start(input)
+    await flushPromises()
+    backend.accept.mockResolvedValue({
+      ...job('created'),
+      data: { ...job('created').data, jobId: 'job-2', input: { ...input, workOrderId: 'WO-13' } },
+    })
+    backend.status.mockResolvedValue({
+      ...job('running'),
+      data: { ...job('running').data, jobId: 'job-2' },
+    })
+    await task.start({ ...input, workOrderId: 'WO-13' })
+    await flushPromises()
+    resolveOld(job('completed'))
+    await flushPromises()
+    expect(task.job.value?.jobId).toBe('job-2')
+    expect(task.preview.value).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('完成读回同一任务的 CTP、基线和候选结果，不在前端重新计算', async () => {
+    const result = {
+      baselinePlanId: input.planId,
+      candidatePlanId: 'insertion-job-1',
+      promiseUtc: '2026-10-09T10:00:00Z',
+      orders: [{ orderId: 'WO-11', status: 'delayed', delayDays: 0.42 }],
+    }
+    backend.accept.mockResolvedValue({
+      ...job('completed'),
+      data: { ...job('completed').data, result },
+    })
+    const { task, wrapper } = setup()
+    await task.start(input)
+    expect(task.result.value).toEqual(result)
+    wrapper.unmount()
+  })
 })

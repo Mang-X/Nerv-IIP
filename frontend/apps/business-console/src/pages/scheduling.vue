@@ -52,6 +52,8 @@ import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.v
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
 import SchedulingCandidatePanel from '@/components/scheduling/SchedulingCandidatePanel.vue'
 import { useSchedulingCandidates } from '@/composables/useSchedulingCandidates'
+import SchedulingRushInsertionResult from '@/components/scheduling/SchedulingRushInsertionResult.vue'
+import { useSchedulingRushInsertion } from '@/composables/useSchedulingRushInsertion'
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useSchedulingDraftPersistence } from '@/composables/useSchedulingDraftPersistence'
@@ -556,6 +558,8 @@ async function generateWorkbenchPlan() {
 
 watch(workbench.generatedPlan, (plan) => {
   if (!plan) return
+  insertion.reset()
+  selectedInsertionId.value = ''
   persistedDraftPlan.value = plan
   draft.loadPlan(plan)
   detailSelection.planId = plan.planId ?? ''
@@ -610,6 +614,8 @@ async function repreviewLockedDraft() {
       includedOrderIds: draft.includedOrders.value.map((order) => order.workOrderId),
       lockedAssignments: draft.lockedAssignments.value,
     })
+    insertion.reset()
+    selectedInsertionId.value = ''
     revisionBasePlan.value = persistedDraftPlan.value
     revisionResult.value = revision
     if (revision.candidate) {
@@ -623,24 +629,93 @@ async function repreviewLockedDraft() {
   }
 }
 
+const insertion = useSchedulingRushInsertion({
+  baseline: persistedDraftPlan,
+  context: () => ({
+    organizationId: schedulingFilters.organizationId,
+    environmentId: schedulingFilters.environmentId,
+  }),
+  enabled: canManage,
+  saveOrder: async (id, values) => {
+    const organizationId = schedulingFilters.organizationId
+    const environmentId = schedulingFilters.environmentId
+    await workbench.saveOrderPriority(id, values)
+    if (
+      organizationId === schedulingFilters.organizationId &&
+      environmentId === schedulingFilters.environmentId &&
+      canManage.value &&
+      draftReady.value
+    )
+      draft.updateOrder(id, values)
+  },
+})
+const selectedInsertionId = shallowRef('')
+watch(insertion.message, (message) => {
+  if (message.includes('候选受理失败')) notifyError(new Error(message))
+})
+watch(insertion.task.error, (error) => {
+  if (error) notifyOperationFailure('插单计算失败', error, '急单已保存，请手动重试候选计算。')
+})
+async function selectInsertionCandidate() {
+  const job = insertion.task.job.value
+  const result = job?.result
+  if (
+    !job?.input ||
+    !result?.candidatePlanId ||
+    !result.snapshot?.problem?.orders ||
+    !canManage.value ||
+    workbench.revisionPending.value
+  )
+    return
+  try {
+    const revision = await workbench.revisePlan(result.candidatePlanId, {
+      organizationId: job.input.organizationId!,
+      environmentId: job.input.environmentId!,
+      includedOrderIds: result.snapshot.problem.orders.map((order) => order.orderId!),
+      lockedAssignments: [],
+    })
+    if (insertion.task.job.value?.jobId !== job.jobId) return
+    revisionBasePlan.value = result.snapshot?.baseline ?? job.acceptedBaseline?.baseline
+    revisionResult.value = revision
+    if (revision.candidate) {
+      selectedInsertionId.value = revision.candidate.planId ?? ''
+      persistedDraftPlan.value = revision.candidate
+      draft.loadPlan(revision.candidate, revision.impact)
+      detailSelection.planId = revision.candidate.planId ?? ''
+      await persistence.save()
+    }
+    toast.success('所选插单候选已保存为修订，请核对后确认发布')
+  } catch (error) {
+    notifyOperationFailure('候选保存失败', error, '候选尚未保存，请重试。')
+  }
+}
+
 async function saveWorkbenchOrderPriority(
   workOrderId: string,
   values: { priority: number; isRush: boolean },
 ) {
-  await workbench.saveOrderPriority(workOrderId, values)
-  if (canManage.value && draftReady.value) draft.updateOrder(workOrderId, values)
+  await insertion.saveOrder(workOrderId, values)
 }
 
 function onLockedDragAttempt() {
   toast.error('该工序已锁定；请先解锁再调整资源或时间')
 }
 
-async function publishCandidate() {
+const publishConfirmOpen = shallowRef(false)
+const publishTargetPlanId = shallowRef('')
+function requestPublishCandidate() {
   const planId = draft.model.value?.meta.planId
   if (publishCandidateBlockedReason.value || !planId) return
+  publishTargetPlanId.value = planId
+  publishConfirmOpen.value = true
+}
+async function publishCandidate() {
+  const planId = draft.model.value?.meta.planId
+  if (publishCandidateBlockedReason.value || !planId || planId !== publishTargetPlanId.value) return
   detailSelection.planId = planId
   try {
     await releasePlan(planId)
+    publishConfirmOpen.value = false
     toast.success('新版排程已发布')
   } catch (error) {
     notifyOperationFailure('发布失败', error, '发布失败；失效或终态方案不能发布')
@@ -801,6 +876,17 @@ const draftTerminalReason = computed(() =>
 const publishCandidateBlockedReason = computed(() =>
   firstBlockingReason([
     { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
+    {
+      blocked: insertion.task.pending.value || workbench.revisionPending.value,
+      reason: '正在处理候选，请稍候',
+    },
+    {
+      blocked: Boolean(
+        insertion.task.result.value &&
+        selectedInsertionId.value !== insertion.task.result.value.candidatePlanId,
+      ),
+      reason: '请先选定插单候选并保存修订',
+    },
     { blocked: !draftReady.value, reason: '正在处理草稿，请稍候' },
     { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
     {
@@ -955,7 +1041,7 @@ function reasonLabel(reason?: string | null) {
                 type="button"
                 :disabled="Boolean(publishCandidateBlockedReason)"
                 :title="publishCandidateDisabledReason"
-                @click="publishCandidate"
+                @click="requestPublishCandidate"
               >
                 <SendIcon aria-hidden="true" />发布新版
               </NvButton>
@@ -1080,6 +1166,20 @@ function reasonLabel(reason?: string | null) {
           :blocked-reason="candidateDraftBlockedReason"
           @preview="localCandidates.preview"
           @select="localCandidates.select"
+        />
+        <SchedulingRushInsertionResult
+          :job="insertion.task.job.value"
+          :message="insertion.message.value"
+          :pending="insertion.task.pending.value"
+          :saving="workbench.revisionPending.value"
+          :selected="
+            Boolean(
+              selectedInsertionId &&
+              selectedInsertionId === insertion.task.result.value?.candidatePlanId,
+            )
+          "
+          @retry="insertion.retry"
+          @select="selectInsertionCandidate"
         />
         <SchedulingDraftBoard
           :model="draftDisplayModel"
@@ -1320,6 +1420,29 @@ function reasonLabel(reason?: string | null) {
       :pending="persistence.status.value === 'clearing' || workbench.generatePending.value"
       :clear="persistence.clear"
     />
+    <NvAlertDialog v-if="publishConfirmOpen" v-model:open="publishConfirmOpen">
+      <NvAlertDialogContent>
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>确认发布所选方案？</NvAlertDialogTitle>
+          <NvAlertDialogDescription
+            >将方案
+            {{ publishTargetPlanId }} 发布给车间执行，取代当前有效方案。</NvAlertDialogDescription
+          >
+        </NvAlertDialogHeader>
+        <NvAlertDialogFooter>
+          <NvAlertDialogCancel :disabled="releasePlanPending">取消</NvAlertDialogCancel>
+          <NvButton
+            type="button"
+            :disabled="
+              Boolean(publishCandidateBlockedReason) ||
+              draft.model.value?.meta.planId !== publishTargetPlanId
+            "
+            @click="publishCandidate"
+            >确认发布</NvButton
+          >
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
     <NvAlertDialog v-if="revokeConfirmOpen" v-model:open="revokeConfirmOpen">
       <NvAlertDialogContent>
         <NvAlertDialogHeader>
