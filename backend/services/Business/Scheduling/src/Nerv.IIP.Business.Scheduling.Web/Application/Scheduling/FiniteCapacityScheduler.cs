@@ -2201,6 +2201,7 @@ file sealed class SchedulerState
 
     private IReadOnlyCollection<ScheduleResourceLoadContract> BuildResourceLoads(IReadOnlyCollection<ResourceOccupancy> resourceOccupancies)
     {
+        var occupanciesByResource = resourceOccupancies.ToLookup(x => x.ResourceId, StringComparer.Ordinal);
         return resources.Values
             .OrderBy(x => x.SortKey, StringComparer.Ordinal)
             .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
@@ -2213,8 +2214,7 @@ file sealed class SchedulerState
 
                 return calendar.ShiftWindows.Select(shift =>
                 {
-                    var assignedMinutes = resourceOccupancies
-                        .Where(x => x.ResourceId == resource.ResourceId)
+                    var assignedMinutes = occupanciesByResource[resource.ResourceId]
                         .Sum(x => OverlapMinutes(x.StartUtc, x.EndUtc, shift.StartUtc, shift.EndUtc));
                     var unavailableMinutes = MergedUnavailableMinutes(resource, shift.StartUtc, shift.EndUtc);
                     var capacity = Math.Max(1, resource.CapacityUnits);
