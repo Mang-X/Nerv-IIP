@@ -1076,7 +1076,7 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
-    public async Task Release_updates_header_without_tracking_plan_child_collections()
+    public async Task Release_preserves_saved_assignments_for_dispatch_without_loading_unrelated_collections()
     {
         await using var provider = CreateInMemoryProvider();
         using var seedScope = provider.CreateScope();
@@ -1098,7 +1098,13 @@ public sealed class SchedulingEndpointContractTests
 
         Assert.Equal(SchedulePlanStatusContract.Released, response.Status);
         Assert.DoesNotContain(releaseContext.ChangeTracker.Entries(), x =>
-            x.Entity is SchedulePlanAssignment or SchedulePlanResourceLoad or SchedulePlanConflict or SchedulePlanUnscheduledOperation);
+            x.Entity is SchedulePlanResourceLoad or SchedulePlanConflict or SchedulePlanUnscheduledOperation);
+        var assignment = Assert.Single(releaseContext.ChangeTracker.Entries<SchedulePlanAssignment>());
+        Assert.Equal(EntityState.Unchanged, assignment.State);
+        Assert.Equal(plan.Assignments.Single().AssignmentPublicId, assignment.Entity.AssignmentPublicId);
+        Assert.Equal(plan.Assignments.Single().ResourceId, assignment.Entity.ResourceId);
+        Assert.Equal(plan.Assignments.Single().StartUtc, assignment.Entity.StartUtc);
+        Assert.Equal(plan.Assignments.Single().EndUtc, assignment.Entity.EndUtc);
     }
 
     [Fact]
