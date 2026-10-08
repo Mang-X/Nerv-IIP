@@ -16,6 +16,37 @@
 
 技术名称出现在本页不等于“当前所有部署 profile 都启用”。判断是否已引用、可选、候选或尚未实现时，回到上述 producer。
 
+## 后端选型导航
+
+先按任务读取唯一决策，再核对 producer。**已接受**描述选择与责任边界，**实际依赖**由 manifest/项目引用及代码证明，**待评估**不构成选型授权。
+
+| 任务 | 决策 / 责任边界 | 当前实现 producer |
+| --- | --- | --- |
+| 缓存 | [ADR 0003](../adr/0003-data-and-messaging-baseline.md)：FusionCache L1、Redis L2 与多实例 backplane；当前结构见 [Caching](../architecture/platform/caching.md) | [Caching 模块](../../backend/common/Caching)、[CPM](../../backend/Directory.Packages.props) 和消费项目引用 |
+| tus / storage provider | [ADR 0023](../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md)、[ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md)；受控业务网关入口修订见 [ADR 0030](../adr/0030-business-gateway-purpose-scoped-file-transfer.md)。当前结构见 [FileStorage](../architecture/platform/file-storage.md) | [FileStorage 模块](../../backend/services/FileStorage) 的项目、传输与 complete 实现；决策不代表 tusdotnet 迁移已完成 |
+| CSV | Sep 是实际依赖；CSV 转义交给库，列、金额、编码及导出权限仍由业务拥有 | [CPM](../../backend/Directory.Packages.props)、[Scheduling 项目引用](../../backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Nerv.IIP.Business.Scheduling.Web.csproj)、[CSV 消费者](../../backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Queries/SchedulePlanCsv.cs)；不把旧候选讨论当作当前未决选型 |
+| 通用编码 / 时间 / 数字与字符串 | [ADR 0034](../adr/0034-common-tools-and-time-toolchain.md)；Base64URL 先核对 BCL `System.Buffers.Text.Base64Url`，业务编码合同回到所属模块 | [目标框架](../../backend/Directory.Build.props)、[Base64URL 现有消费者](../../backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/IntegrationEventIdempotencyKey.cs)；其它实际使用回到目标项目 |
+| Office/PDF、报表、发票、标签、音视频 | [ADR 0035](../adr/0035-business-documents-reports-and-media-toolchain.md)，保留各子域基线、可选与暂缓项 | [CPM](../../backend/Directory.Packages.props)、目标项目 `.csproj` / worker 配置及代码；不能由 ADR 已接受推导包已引入 |
+| Redis 分布式锁 / GS1 | **待评估**；ADR 0003 的 Redis 基线不选定分布式锁产品，ZXing 图像编解码不替代 GS1 Application Identifier 业务语义 | 目标模块实现与项目依赖；不从 Redis / ZXing 名称推导锁或 GS1 方案已经选定 |
+
+### 通用工具与文档媒体资料
+
+下面只提供官方资料，选择理由与完整职责留在上述 ADR；名称出现不证明当前依赖存在。
+
+| 技术 | 资料用途 | 官方资料 |
+| --- | --- | --- |
+| .NET BCL / TimeProvider | 平台标准类型与可测试时间 | [TimeProvider](https://learn.microsoft.com/dotnet/standard/datetime/timeprovider-overview)、[Base64Url](https://learn.microsoft.com/dotnet/api/system.buffers.text.base64url) |
+| tus / tusdotnet | 续传协议与服务端实现资料 | [tus](https://tus.io/protocols/resumable-upload)、[tusdotnet](https://github.com/tusdotnet/tusdotnet) |
+| Sep | CSV 读写 | [nietras/Sep](https://github.com/nietras/Sep) |
+| Open XML SDK | OOXML 处理 | [Open XML SDK](https://learn.microsoft.com/office/open-xml/open-xml-sdk) |
+| ClosedXML | Excel 处理 | [ClosedXML](https://docs.closedxml.io/) |
+| QuestPDF | 代码优先 PDF 生成 | [QuestPDF](https://www.questpdf.com/) |
+| PDFsharp | PDF 绘制 | [PDFsharp](https://docs.pdfsharp.net/) |
+| Tiptap / ProseMirror | 正文编辑与文档结构 | [Tiptap](https://tiptap.dev/docs)、[ProseMirror](https://prosemirror.net/docs/) |
+| ZXing.Net | 条码图像编解码 | [ZXing.Net](https://github.com/micjahn/ZXing.Net) |
+| FFmpeg / ffprobe | 媒体处理与探测 | [FFmpeg documentation](https://ffmpeg.org/documentation.html) |
+| PdfPig / PaddleOCR | 可选 adapter / worker 资料 | [PdfPig](https://github.com/UglyToad/PdfPig)、[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) |
+
 ## 前端
 
 | 技术 | 用途 / 边界 | 官方文档 | 上游仓库 |
@@ -33,7 +64,7 @@
 | Hey API OpenAPI TypeScript | OpenAPI → 前端客户端生成 | [openapi-ts](https://heyapi.dev/openapi-ts/get-started) | [hey-api/openapi-ts](https://github.com/hey-api/openapi-ts) |
 | shadcn-vue | Console UI 组件体系 | [shadcn-vue](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
 | VueUse | 可复用组合式工具候选/依赖；实际使用看 workspace manifest | [VueUse](https://vueuse.org/guide/) | [vueuse/vueuse](https://github.com/vueuse/vueuse) |
-| es-toolkit | 工具函数候选/依赖；实际使用看 workspace manifest | [es-toolkit](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
+| es-toolkit | 通用数据处理；已接受选择见 [ADR 0034](../adr/0034-common-tools-and-time-toolchain.md)，实际使用看 workspace manifest | [es-toolkit](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
 
 ## Mobile PDA
 
