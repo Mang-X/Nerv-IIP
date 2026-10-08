@@ -22,6 +22,9 @@ public sealed partial class SchedulingEndpointContractTests
     public async Task Downtime_query_uses_saved_baseline_raw_source_http_and_scope_without_writing()
     {
         var problem = Problem(Order("A", Operation("a", "R1") with { EligibleResourceIds = ["R1", "R2"] }));
+        problem = problem with { Resources = problem.Resources.Concat(Enumerable.Range(4, 48)
+            .Select(i => new SchedulingResourceContract($"R{i}", $"WC-R{i}", ["CAP"], 1, "CAL", i.ToString()))).ToArray() };
+        var devices = Enumerable.Range(1, 51).Select(i => $"R{i}").Order(StringComparer.Ordinal).ToArray();
         var baseline = Input(problem, [Assignment("A", "a", "R1", 0, 60)], []).Baseline;
         var source = new DowntimeSourceHandler(problem.HorizonStartUtc);
         await using var baseFactory = new SchedulingLiveHttpTestFactory();
@@ -50,6 +53,7 @@ public sealed partial class SchedulingEndpointContractTests
         Assert.Equal(baseline.PlanId, first.BaselinePlanId);
         Assert.Equal(problem.ProblemId, first.ProblemId);
         Assert.Equal(problem.HorizonStartUtc, first.ObservedAtUtc);
+        Assert.Equal(devices, Assert.Single(source.MaintenanceDeviceRequests));
         Assert.Equal(2, first.Items.Count);
         Assert.Single(first.AffectedOperations);
         Assert.Equal(1, first.OperationsWithAlternativesCount);
@@ -120,6 +124,7 @@ public sealed partial class SchedulingEndpointContractTests
         public DateTimeOffset? Recovered { get; set; }
         public bool ReadSecondMesPage { get; private set; }
         public int Requests { get; private set; }
+        public List<IReadOnlyList<string>> MaintenanceDeviceRequests { get; } = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Requests++;
@@ -143,7 +148,7 @@ public sealed partial class SchedulingEndpointContractTests
                 var input = await request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Maintenance.MaintenanceDowntimeFactsRequest>(SchedulingJson.Options, ct);
                 Assert.Equal("org", input!.OrganizationId);
                 Assert.Equal("env", input.EnvironmentId);
-                Assert.Equal(new[] { "R1", "R2", "R3" }, input.DeviceAssetIds);
+                MaintenanceDeviceRequests.Add(input.DeviceAssetIds.ToArray());
                 payload = new { data = new { items = new[] { new { deviceAssetId = "R1", workOrderId = "mw-1", source = "work-order",
                     sourceType = "alarm", sourceReferenceId = "alarm-1", unavailableFromUtc = at.AddDays(-3), releasedAtUtc = Recovered,
                     expectedRestoreAtUtc = Restore, predictedRestoreAtUtc = Restore, restorePredictionSource = "maintenance", restorePredictionSourceVersion = "v1" } } }, success = true };

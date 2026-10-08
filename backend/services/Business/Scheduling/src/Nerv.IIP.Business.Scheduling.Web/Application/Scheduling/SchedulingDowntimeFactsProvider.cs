@@ -57,26 +57,21 @@ public sealed class HttpSchedulingDowntimeFactsProvider(IHttpClientFactory clien
     private async Task<IReadOnlyCollection<SchedulingDowntimeFactContract>> ReadMaintenanceAsync(SchedulingProblemContract problem,
         DateTimeOffset asOf, CancellationToken ct)
     {
-        var items = new List<SchedulingDowntimeFactContract>();
         var end = problem.HorizonEndUtc > asOf ? problem.HorizonEndUtc : asOf.AddTicks(1);
-        foreach (var ids in problem.Resources.Select(x => x.ResourceId).Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal).Chunk(HttpSchedulingEquipmentAvailabilityProvider.MaxAvailabilityQueryIdsPerBatch))
+        var ids = problem.Resources.Select(x => x.ResourceId).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/business/internal/v1/maintenance/downtime-facts/query")
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/business/internal/v1/maintenance/downtime-facts/query")
-            {
-                Content = JsonContent.Create(new MaintenanceDowntimeFactsRequest(problem.OrganizationId, problem.EnvironmentId,
-                    problem.HorizonStartUtc < asOf ? problem.HorizonStartUtc : asOf, end, ids), options: SchedulingJson.Options)
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.BearerToken);
-            using var response = await clients.CreateClient(HttpSchedulingEquipmentAvailabilityProvider.MaintenanceClientName).SendAsync(request, ct);
-            response.EnsureSuccessStatusCode();
-            var data = await response.Content.ReadFromJsonAsync<ResponseData<MaintenanceDowntimeFactsResponse>>(SchedulingJson.Options, ct)
-                ?? throw new JsonException("Maintenance downtime response is missing.");
-            items.AddRange(data.Data.Items.Select(x => new SchedulingDowntimeFactContract(MaintenanceIntegrationEventSources.BusinessMaintenance, x.WorkOrderId,
-                x.DeviceAssetId, null, x.UnavailableFromUtc, x.ReleasedAtUtc, x.ExpectedRestoreAtUtc,
-                x.Source, x.SourceType, x.SourceReferenceId, x.PredictedRestoreAtUtc, x.RestorePredictionSource, x.RestorePredictionSourceVersion)));
-        }
-        return items;
+            Content = JsonContent.Create(new MaintenanceDowntimeFactsRequest(problem.OrganizationId, problem.EnvironmentId,
+                problem.HorizonStartUtc < asOf ? problem.HorizonStartUtc : asOf, end, ids), options: SchedulingJson.Options)
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.BearerToken);
+        using var response = await clients.CreateClient(HttpSchedulingEquipmentAvailabilityProvider.MaintenanceClientName).SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var data = await response.Content.ReadFromJsonAsync<ResponseData<MaintenanceDowntimeFactsResponse>>(SchedulingJson.Options, ct)
+            ?? throw new JsonException("Maintenance downtime response is missing.");
+        return data.Data.Items.Select(x => new SchedulingDowntimeFactContract(MaintenanceIntegrationEventSources.BusinessMaintenance, x.WorkOrderId,
+            x.DeviceAssetId, null, x.UnavailableFromUtc, x.ReleasedAtUtc, x.ExpectedRestoreAtUtc,
+            x.Source, x.SourceType, x.SourceReferenceId, x.PredictedRestoreAtUtc, x.RestorePredictionSource, x.RestorePredictionSourceVersion)).ToArray();
     }
 
     private async Task<HttpResponseMessage> GetAsync(string clientName, string path, CancellationToken ct)
