@@ -49,9 +49,10 @@ function Assert-FullChainScriptLiveOutputContract {
     function Get-NervRuntimeMemorySnapshot { param($Phase) return @{} }
     function Write-NervFullChainSummarySnapshot { }
     $summary = @{ readiness = @{ postgres = 'passed'; redis = 'passed' } }
+    $preparedProbePath = Join-Path $fixtureRoot 'prepared-probe.json'
     $scriptEntrypointTimeoutSeconds = 900
     foreach ($ids in @(
-        @('new-script-a', 'ncr-rework-cost-closure', 'new-script-b'),
+        @('new-script-a', 'sales-order-demand-planning', 'ncr-rework-cost-closure', 'new-script-b'),
         @('new-script-b', 'new-script-a'),
         @('ncr-rework-cost-closure', 'new-script-b', 'new-script-a')
     )) {
@@ -70,7 +71,7 @@ function Assert-FullChainScriptLiveOutputContract {
             Assert-Contract ($call.Timeout -eq 900) "Script '$id' must preserve its entrypoint budget."
             Assert-Contract ([string]::Equals($call.Command, 'pwsh', [StringComparison]::Ordinal) -and
                 [string]::Equals($call.Name, "full-chain-$id-entrypoint", [StringComparison]::Ordinal) -and
-                [string]::Equals(($call.Arguments -join '|'), (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot $member.entrypoint.path)) -join '|'), [StringComparison]::Ordinal)) "Script '$id' must preserve its managed invocation."
+                [string]::Equals(($call.Arguments -join '|'), ((@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot $member.entrypoint.path)) + $(if ([string]::Equals($id, 'sales-order-demand-planning', [StringComparison]::Ordinal)) { @('-PreparedProbePath', $preparedProbePath) })) -join '|'), [StringComparison]::Ordinal)) "Script '$id' must preserve its managed invocation."
         }
     }
 }

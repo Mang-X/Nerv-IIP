@@ -8,8 +8,10 @@
 #     - FullChain TRX files and a machine-readable dependency summary under artifacts/**
 #     - Resumable snapshots and exactly one terminal snapshot through the configured leaf summary writer
 #     - Best-effort memory-dimension evidence inside that same dependency summary
+#     - Invocation-owned probe preparation receipt under the operating-system temp directory
 #     - Existing governed scenario diagnostics under artifacts/acceptance/** and artifacts/fullstack/**
 #   Cleanup:
+#     - Removes the invocation-owned probe preparation receipt in finally
 #     - Stops PostgreSQL and Redis services started by this runner
 #     - Delegates exact process, database and container cleanup to each governed scenario entrypoint
 #     - Fails the lane when an entrypoint or its cleanup fails
@@ -41,6 +43,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/CiWorkflowBudgets.ps1')
 . (Join-Path $PSScriptRoot 'lib/RuntimeMemoryEvidence.ps1')
 . (Join-Path $PSScriptRoot 'lib/AcceptanceScenarioMatrix.ps1')
+
+$preparedProbePath = Join-Path ([IO.Path]::GetTempPath()) "nerv-full-chain-probe-$([Guid]::NewGuid().ToString('N')).json"
 
 $laneStopwatch = [Diagnostics.Stopwatch]::StartNew()
 
@@ -242,6 +246,9 @@ try {
     Write-NervFullChainSummarySnapshot
     Invoke-DotNetOutput -Name 'full-chain-project-restore' -WorkingDirectory $repoRoot -TimeoutSeconds $restoreTimeoutSeconds -Arguments @('restore', $fullChainProject) | Out-Null
     $discovery = Invoke-DotNetOutput -Name 'full-chain-project-discovery' -WorkingDirectory $repoRoot -TimeoutSeconds $discoveryTimeoutSeconds -Arguments @('test', $fullChainProject, '--configuration', 'Release', '--no-restore', '--list-tests')
+    if ($selectedIdSet.Contains('sales-order-demand-planning')) {
+        New-NervFullChainProbePreparation -Project (Join-Path $repoRoot $fullChainProject) -Configuration Release -Path $preparedProbePath
+    }
     $discoveryLines = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     foreach ($member in $selectedMembers) {
         $memberSummary = $memberSummaryById[[string]$member.id]
@@ -349,7 +356,11 @@ foreach ($member in $selectedMembers) {
                 Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds $fullstackEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" | Out-Null
             }
             elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) {
-                Invoke-NativeCommandWithTimeout -Command 'pwsh' -Arguments (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot ([string]$member.entrypoint.path)))) -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" -LiveOutput | Out-Null
+                $scriptArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repoRoot ([string]$member.entrypoint.path)))
+                if ([string]::Equals($admittedMemberId, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
+                    $scriptArguments += @('-PreparedProbePath', $preparedProbePath)
+                }
+                Invoke-NativeCommandWithTimeout -Command 'pwsh' -Arguments $scriptArguments -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$admittedMemberId-entrypoint" -LiveOutput | Out-Null
             }
             elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) {
                 Invoke-DotNetOutput -Name "full-chain-$admittedMemberId-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds $dotnetEntrypointTimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--no-build', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null
@@ -419,6 +430,10 @@ catch {
 }
 finally {
     $cleanupFailures = [Collections.Generic.List[string]]::new()
+    try {
+        if (Test-Path -LiteralPath $preparedProbePath) { Remove-Item -LiteralPath $preparedProbePath -Force }
+    }
+    catch { $cleanupFailures.Add($_.Exception.Message) }
     if ($ownedServices.Count -gt 0) {
         try {
             $composeProjectName = [Environment]::GetEnvironmentVariable('COMPOSE_PROJECT_NAME')
