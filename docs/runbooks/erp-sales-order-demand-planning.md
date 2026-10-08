@@ -18,6 +18,8 @@ pwsh scripts/verify-erp-sales-order-demand-planning.ps1
 
 脚本当前帮助和源码是参数、超时预算、基础设施 profile、进程管理与 evidence 路径的权威来源。验收必须使用真实受支持 transport 与一次性数据库，不得用 InMemory transport 冒充跨进程消息证明。
 
+直接调用会自足构建 Debug probe；`-SkipBuild` 只跳过服务构建。FullChain runner 在同一次成功的 Release 项目发现后，通过内部 `-PreparedProbePath` 传递临时准备凭证，adapter 验证项目、配置、构建产物和存活 owner 后以 Release 执行 probe。凭证在 runner 结束时删除；不要保存或跨 invocation 复用它。服务继续按原有 Debug 配置构建和启动。
+
 最低验证语义：
 
 1. released 订单在 Planning 收敛为带稳定 source reference/version 的 DemandSource；

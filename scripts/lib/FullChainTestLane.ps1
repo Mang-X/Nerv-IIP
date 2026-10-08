@@ -2,13 +2,79 @@
 #   Category: library
 #   SideEffects:
 #     - Reads a FullChain lane manifest and VSTest TRX files supplied by the caller
+#     - Checks invocation-owned probe receipts, binary hashes and the live preparation owner
+#     - Builds the probe through the governed helper for standalone adapters
 #     - Invokes a caller-supplied member action only after deadline admission succeeds
 #   Writes:
 #     - Caller-defined outputs through the admitted member action
+#     - Caller-owned temporary probe preparation receipt
+#     - Probe bin/obj build outputs when an adapter prepares its standalone probe
 #   Cleanup:
 #     - The caller-supplied member action owns and restores its scoped resources
 #   Requires:
 #     - PowerShell 7
+
+function Get-NervFullChainProbeOwnerStartIdentity {
+    param([Parameter(Mandatory)] [int] $ProcessId)
+
+    if ($IsLinux) {
+        # /proc field 22 is the kernel start tick, independent of each process's
+        # conversion between uptime and wall-clock time (.NET StartTime).
+        $stat = [IO.File]::ReadAllText("/proc/$ProcessId/stat")
+        $commandEnd = $stat.LastIndexOf([string] ')', [StringComparison]::Ordinal)
+        $fieldsAfterCommand = $stat.Substring($commandEnd + 2).Split(' ', [StringSplitOptions]::RemoveEmptyEntries)
+        return "linux:$($fieldsAfterCommand[19])"
+    }
+    return "utc:$((Get-Process -Id $ProcessId -ErrorAction Stop).StartTime.ToUniversalTime().Ticks)"
+}
+
+# The receipt is owned by one live runner invocation and removed in its finally.
+# It is emitted only after the runner's build-bearing discovery succeeds.
+function New-NervFullChainProbePreparation {
+    param(
+        [Parameter(Mandatory)] [string] $Project,
+        [Parameter(Mandatory)] [ValidateSet('Debug', 'Release')] [string] $Configuration,
+        [Parameter(Mandatory)] [string] $Path
+    )
+
+    $projectPath = [IO.Path]::GetFullPath($Project)
+    $binaryPath = Join-Path (Split-Path $projectPath) "bin/$Configuration/net10.0/$([IO.Path]::GetFileNameWithoutExtension($Project)).dll"
+    $receipt = [ordered]@{
+        project = $projectPath
+        configuration = $Configuration
+        binarySha256 = (Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash
+        ownerPid = $PID
+        ownerStartIdentity = Get-NervFullChainProbeOwnerStartIdentity -ProcessId $PID
+    }
+    [IO.File]::WriteAllText($Path, ($receipt | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+}
+
+function Invoke-NervFullChainProbePreparation {
+    param(
+        [Parameter(Mandatory)] [string] $Project,
+        [Parameter(Mandatory)] [string] $WorkingDirectory,
+        [string] $PreparedProbePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PreparedProbePath)) {
+        Invoke-DotNet -Arguments @('build', $Project, '--configuration', 'Debug', '-m:1', '-nr:false') -WorkingDirectory $WorkingDirectory -TimeoutSeconds 600 -Name 'full-chain-standalone-probe-build' | Out-Null
+        return 'Debug'
+    }
+
+    $receipt = Get-Content -LiteralPath $PreparedProbePath -Raw | ConvertFrom-Json
+    if (-not [string]::Equals([string]$receipt.project, [IO.Path]::GetFullPath($Project), [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$receipt.configuration, 'Release', [StringComparison]::Ordinal)) {
+        throw 'FullChain probe preparation does not match the requested project and Release configuration.'
+    }
+    if (-not [string]::Equals((Get-NervFullChainProbeOwnerStartIdentity -ProcessId ([int]$receipt.ownerPid)), [string]$receipt.ownerStartIdentity, [StringComparison]::Ordinal)) {
+        throw 'FullChain probe preparation owner has expired.'
+    }
+    $binaryPath = Join-Path (Split-Path $Project) "bin/Release/net10.0/$([IO.Path]::GetFileNameWithoutExtension($Project)).dll"
+    if (-not [string]::Equals((Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash, [string]$receipt.binarySha256, [StringComparison]::Ordinal)) {
+        throw 'FullChain prepared probe binary changed after successful preparation.'
+    }
+    return 'Release'
+}
 
 function Import-NervFullChainTestLaneManifest {
     param(
