@@ -16926,6 +16926,13 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             ["worker-not-mapped"]));
     }
 
+    public Task<BusinessConsoleResourceListResponse> ListDeviceResourcesInScopesAsync(
+        string internalBearerToken,
+        BusinessConsoleListResourcesRequest request,
+        IReadOnlyList<BusinessConsoleSearchableDirectoryScope> scopes,
+        CancellationToken cancellationToken) =>
+        ListResourcesAsync(internalBearerToken, request, cancellationToken);
+
     public Task<BusinessConsoleResourceListResponse> ListResourcesInSitesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,

@@ -24,6 +24,65 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataResourceListHttpTests
 {
+    // #4257 DomainInvariant/Regression：授权 OR 谓词必须在 total、排序、分页前应用。
+    // 本宿主使用 EF InMemory；不据此宣称 PostgreSQL SQL 翻译已验证。
+    [Fact]
+    public async Task Device_spatial_union_filters_before_count_sort_and_page_without_duplicates()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory();
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            DeviceAsset Device(string code, string site, string workshop, string line, string center,
+                string organization = "org-001", string environment = "env-dev")
+            {
+                var device = DeviceAsset.Register(organization, environment, code, "设备", line, center);
+                device.UpdateLedger(null, null, "", null, "", site, workshop, line, "", null, null);
+                return device;
+            }
+            db.DeviceAssets.AddRange(
+                Device("00-DENIED", "SITE-X", "WS-X", "LINE-X", "WC-X"),
+                Device("10-SITE", "SITE-A", "WS-X", "LINE-X", "WC-X"),
+                Device("20-WORKSHOP", "SITE-X", "WS-B", "LINE-X", "WC-X"),
+                Device("30-LINE", "SITE-X", "WS-X", "LINE-C", "WC-X"),
+                Device("40-CENTER", "SITE-X", "WS-X", "LINE-X", "WC-D"),
+                Device("50-OVERLAP", "SITE-A", "WS-B", "LINE-C", "WC-D"),
+                Device("60-OTHER-ORG", "SITE-A", "WS-B", "LINE-C", "WC-D", organization: "other-org"),
+                Device("70-OTHER-ENV", "SITE-A", "WS-B", "LINE-C", "WC-D", environment: "other-env"));
+            await db.SaveChangesAsync();
+        }
+        using var client = CreateAuthenticatedClient(factory);
+        const string url = "/api/business/v1/master-data/resources?organizationId=org-001&environmentId=env-dev&resourceType=device-asset"
+            + "&deviceScopeSiteCodes=SITE-A&deviceScopeWorkshopCodes=WS-B&deviceScopeLineCodes=LINE-C&deviceScopeWorkCenterCodes=WC-D";
+        var codes = new List<string>();
+        for (var skip = 0; skip < 5; skip += 2)
+        {
+            using var response = await client.GetAsync($"{url}&skip={skip}&take=2");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            Assert.Equal(5, data.GetProperty("total").GetInt32());
+            codes.AddRange(data.GetProperty("resources").EnumerateArray().Select(x => x.GetProperty("code").GetString()!));
+        }
+        Assert.Equal(["10-SITE", "20-WORKSHOP", "30-LINE", "40-CENTER", "50-OVERLAP"], codes);
+        foreach (var (filter, expected) in new[]
+        {
+            ("siteCode=SITE-A", new[] { "10-SITE", "50-OVERLAP" }),
+            ("workshopCode=WS-B", new[] { "20-WORKSHOP", "50-OVERLAP" }),
+            ("lineCode=LINE-C", new[] { "30-LINE", "50-OVERLAP" }),
+            ("workCenterCode=WC-D", new[] { "40-CENTER", "50-OVERLAP" }),
+            ("keyword=OVERLAP", new[] { "50-OVERLAP" }),
+        })
+        {
+            using var response = await client.GetAsync($"{url}&{filter}");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            Assert.Equal(expected.Length, data.GetProperty("total").GetInt32());
+            Assert.Equal(expected, data.GetProperty("resources").EnumerateArray().Select(x => x.GetProperty("code").GetString()).ToArray());
+        }
+    }
+
     [Fact]
     public async Task Get_device_resources_resolves_exact_id_or_code_before_paging_and_returns_canonical_id()
     {
