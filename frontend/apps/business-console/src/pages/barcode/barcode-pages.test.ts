@@ -22,6 +22,8 @@ const barcode = vi.hoisted(() => ({
   saveTemplate: vi.fn(),
   createPrintBatch: vi.fn(),
   confirmPrintBatch: vi.fn(),
+  dispatchPrintBatch: vi.fn(),
+  dispatchPrintBatchPending: false,
   permissionCodes: ['business.barcodes.print'],
   uploadTemplateAsset: vi.fn(),
   recordScan: vi.fn(),
@@ -165,6 +167,11 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       saveTemplateError: shallowRef(undefined),
     }
   },
+  useBarcodePrinters: () => ({
+    printers: computed(() => [{ printerId: 'printer-01', name: '包装标签打印机' }]),
+    printersPending: shallowRef(false),
+    printersError: shallowRef(undefined),
+  }),
   useBarcodePrintBatches: () => {
     const filters = reactive({
       organizationId: 'org-001',
@@ -209,6 +216,8 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       printBatchDetailPending: shallowRef(false),
       refreshPrintBatches: vi.fn(),
       refreshPrintBatchDetail: vi.fn(),
+      dispatchPrintBatch: barcode.dispatchPrintBatch,
+      dispatchPrintBatchPending: shallowRef(barcode.dispatchPrintBatchPending),
       confirmPrintBatch: barcode.confirmPrintBatch,
       confirmPrintBatchPending: shallowRef(barcode.confirmPrintBatchPending),
       createPrintBatch: barcode.createPrintBatch,
@@ -416,6 +425,8 @@ describe('barcode pages', () => {
     barcode.printBatchSourceDocumentType = 'production.report'
     barcode.printBatchStatus = 'ready-to-print'
     barcode.confirmPrintBatchPending = false
+    barcode.dispatchPrintBatchPending = false
+    barcode.dispatchPrintBatch.mockResolvedValue(undefined)
     barcode.templateId = 'tpl-1'
     barcode.extraRules = []
     barcode.extraTemplates = []
@@ -434,6 +445,87 @@ describe('barcode pages', () => {
       fileName: 'pallet-label.json',
       sizeBytes: 363,
     })
+  })
+
+  it('searches the configured printer directory and sends the selected option identity', async () => {
+    const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
+    const wrapper = mount(PrintBatchesPage, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...stubsWithRealPicker,
+          RouterLink: routerLinkStub,
+        },
+      },
+    })
+    try {
+      await flushPromises()
+      await wrapper.find('#barcode-print-printer').trigger('click')
+      await flushPromises()
+      const search = document.body.querySelector<HTMLInputElement>(
+        'input[placeholder="搜索打印机"]',
+      )!
+      search.value = '不存在的打印机'
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(0)
+      search.value = '包装'
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      const option = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+      ).find((element) => element.textContent?.includes('包装标签打印机'))!
+      option.click()
+      await flushPromises()
+      const form = wrapper.find('#barcode-print-printer').element.closest('form')!
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await flushPromises()
+      expect(barcode.dispatchPrintBatch).toHaveBeenCalledWith('pb-1', 'printer-01')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('requires a selected printer and sends its configured identity without claiming printed', async () => {
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+    const form = wrapper.find('#barcode-print-printer').element.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(barcode.dispatchPrintBatch).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请选择打印机。')
+    await wrapper.find('#barcode-print-printer').setValue('printer-01')
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(barcode.dispatchPrintBatch).toHaveBeenCalledWith('pb-1', 'printer-01')
+    expect(toastMock.success).toHaveBeenCalledWith('打印批次已发送。')
+    expect(wrapper.text()).toContain('待打印')
+    expect(wrapper.find('section').text()).not.toContain('已打印')
+  })
+
+  it.each(['reserved', 'sent-to-printer', 'delivery-unknown', 'printed'])(
+    'does not offer dispatch in %s',
+    async (status) => {
+      barcode.printBatchStatus = status
+      const wrapper = mountPrintBatches()
+      await flushPromises()
+      expect(wrapper.find('#barcode-print-printer').exists()).toBe(false)
+    },
+  )
+
+  it('disables dispatch while sending and hides it without the print permission', async () => {
+    barcode.dispatchPrintBatchPending = true
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+    const button = wrapper.findAll('button').find((item) => item.text().includes('发送打印'))!
+    expect(button.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    barcode.permissionCodes = []
+    const denied = mountPrintBatches()
+    await flushPromises()
+    expect(denied.find('#barcode-print-printer').exists()).toBe(false)
   })
 
   it('confirms a reserved batch explicitly and leaves displayed state to server readback', async () => {

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -10,6 +11,54 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
 {
+    [Fact]
+    public async Task Printer_directory_openapi_requires_business_fields_and_excludes_transport_configuration()
+    {
+        await using var lease = Lease(FakeBusinessGatewayAuthorizationClient.Allowed(), new RecordingBarcodeLabelClient());
+        using var client = lease.CreateClient();
+        using var document = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
+        var operation = document.RootElement.GetProperty("paths").GetProperty("/api/business-console/v1/barcode/printers").GetProperty("get");
+        Assert.Equal("listBusinessConsoleBarcodePrinters", operation.GetProperty("operationId").GetString());
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var item = Assert.Single(schemas.EnumerateObject(), schema => schema.Name.EndsWith("BusinessConsoleBarcodePrinterItem", StringComparison.Ordinal));
+        Assert.Equal(new[] { "printerId", "name" }, item.Value.GetProperty("properties").EnumerateObject().Select(property => property.Name));
+        Assert.Equal(new[] { "name", "printerId" }, item.Value.GetProperty("required").EnumerateArray().Select(field => field.GetString()).Order());
+    }
+
+    [Fact]
+    public async Task Printer_directory_authorizes_the_requested_scope_with_print_permission()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = Lease(auth, barcode);
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var response = await client.GetAsync("/api/business-console/v1/barcode/printers?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.BarcodePrint, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("internal-test-token", barcode.LastInternalToken);
+        Assert.Equal(new BusinessConsoleBarcodePrinterListRequest("org-001", "env-dev"), barcode.LastPrinterListRequest);
+    }
+
+    [Theory]
+    [InlineData(false, false, "org-001", HttpStatusCode.Unauthorized)]
+    [InlineData(true, false, "org-001", HttpStatusCode.Forbidden)]
+    [InlineData(true, true, "org-other", HttpStatusCode.Forbidden)]
+    public async Task Printer_directory_rejects_missing_authentication_permission_or_foreign_scope(
+        bool authenticated, bool allowed, string organizationId, HttpStatusCode expectedStatus)
+    {
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = Lease(auth, barcode);
+        using var client = lease.CreateClient();
+        if (authenticated) BusinessGatewayTestHost.Authenticated(client);
+        using var response = await client.GetAsync($"/api/business-console/v1/barcode/printers?organizationId={organizationId}&environmentId=env-dev");
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Null(barcode.LastPrinterListRequest);
+    }
+
     [Fact]
     public async Task Confirm_authorizes_the_scoped_route_batch_and_forwards_with_internal_token()
     {

@@ -6,6 +6,7 @@ import {
   createOrUpdateBusinessConsoleBarcodeRuleMutationOptions,
   createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions,
   getBusinessConsoleBarcodePrintBatchQueryOptions,
+  listBusinessConsoleBarcodePrintersQueryOptions,
   listBusinessConsoleBarcodePrintBatchesQueryOptions,
   listBusinessConsoleBarcodeRulesQueryOptions,
   listBusinessConsoleBarcodeScansQueryOptions,
@@ -13,6 +14,7 @@ import {
   recordBusinessConsoleBarcodeScanMutationOptions,
 } from '@nerv-iip/api-client'
 import {
+  useBarcodePrinters,
   useBarcodePrintBatches,
   useBarcodeRules,
   useBarcodeScans,
@@ -22,7 +24,10 @@ import {
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   mutations: [] as ReturnType<typeof vi.fn>[],
-  mutationOptions: [] as Array<{ onSuccess?: () => Promise<void> | void }>,
+  mutationOptions: [] as Array<{
+    onSuccess?: () => Promise<void> | void
+    onSettled?: () => Promise<void> | void
+  }>,
   refetches: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
@@ -42,6 +47,11 @@ vi.mock('@/composables/businessContextBinding', () => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  listBusinessConsoleBarcodePrintersQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleBarcodePrinters' }],
+    query: vi.fn(),
+  })),
+  dispatchBusinessConsoleBarcodePrintBatchMutationOptions: vi.fn(() => ({})),
   listBusinessConsoleBarcodeRulesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleBarcodeRules' }],
     query: vi.fn(),
@@ -114,6 +124,31 @@ describe('business barcode composables', () => {
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
     })
     await coladaState.mutationOptions[1]!.onSuccess!()
+    expect(coladaState.refetches.get('listBusinessConsoleBarcodePrintBatches')).toHaveBeenCalled()
+    expect(coladaState.refetches.get('getBusinessConsoleBarcodePrintBatch')).toHaveBeenCalled()
+  })
+
+  it('reads configured printers through the scoped facade', () => {
+    coladaState.queryDataById.set('listBusinessConsoleBarcodePrinters', {
+      success: true,
+      data: { printers: [{ printerId: 'printer-01', name: '包装标签打印机' }] },
+    })
+    const result = useBarcodePrinters()
+    expect(listBusinessConsoleBarcodePrintersQueryOptions).toHaveBeenCalledWith({
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(result.printers.value).toEqual([{ printerId: 'printer-01', name: '包装标签打印机' }])
+  })
+
+  it('dispatches to the selected printer and rereads both persisted views when the mutation settles', async () => {
+    const result = useBarcodePrintBatches({ selectedPrintBatchId: 'pb-1' })
+    await result.dispatchPrintBatch('pb-1', 'printer-01')
+    expect(coladaState.mutations[2]).toHaveBeenCalledWith({
+      path: { printBatchId: 'pb-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { printBatchId: 'pb-1', printerId: 'printer-01' },
+    })
+    await coladaState.mutationOptions[2]!.onSettled!()
     expect(coladaState.refetches.get('listBusinessConsoleBarcodePrintBatches')).toHaveBeenCalled()
     expect(coladaState.refetches.get('getBusinessConsoleBarcodePrintBatch')).toHaveBeenCalled()
   })

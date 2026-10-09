@@ -49,6 +49,20 @@ public sealed class LabelPrinterConfigurationTests
         Assert.Contains(result.Failures, failure => failure.Contains("LabelPrinter:Mode", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("invalid id", "printer-02")]
+    [InlineData("printer-01", "printer-01")]
+    public void Simulated_directory_rejects_invalid_or_duplicate_identities(string firstId, string secondId)
+    {
+        var options = new LabelPrinterOptions
+        {
+            Mode = "simulated",
+            Printers = [new LabelPrinterRouteOptions { Id = firstId, Enabled = true }, new LabelPrinterRouteOptions { Id = secondId, Enabled = true }],
+        };
+        var result = new LabelPrinterOptionsValidator(new TestEnvironment("Development")).Validate(null, options);
+        Assert.True(result.Failed);
+    }
+
     [Fact]
     public void Zpl_tcp_mode_accepts_a_complete_enabled_route()
     {

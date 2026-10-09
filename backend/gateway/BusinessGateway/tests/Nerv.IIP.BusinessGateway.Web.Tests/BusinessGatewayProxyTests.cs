@@ -20525,6 +20525,19 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
     public string? LastInternalToken { get; private set; }
 
+    public BusinessConsoleBarcodePrinterListRequest? LastPrinterListRequest { get; private set; }
+
+    public Task<BusinessConsoleBarcodePrinterListResponse> ListPrintersAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrinterListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPrinterListRequest = request;
+        return Task.FromResult(new BusinessConsoleBarcodePrinterListResponse(
+            [new BusinessConsoleBarcodePrinterItem("printer-01", "标签打印机")]));
+    }
+
     public BusinessConsoleBarcodeRuleListRequest? LastRuleListRequest { get; private set; }
 
     public BusinessConsoleCreateOrUpdateBarcodeRuleRequest? LastRuleRequest { get; private set; }

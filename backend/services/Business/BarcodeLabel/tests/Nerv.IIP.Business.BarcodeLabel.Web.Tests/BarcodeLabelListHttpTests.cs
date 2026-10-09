@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
@@ -134,7 +135,35 @@ public sealed class BarcodeLabelListHttpTests
         Assert.False(document.RootElement.TryGetProperty("data", out _), body);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory()
+    [Fact]
+    public async Task Printer_directory_returns_only_enabled_configured_identities_without_transport_settings()
+    {
+        await using var factory = CreateFactory([
+            new LabelPrinterRouteOptions { Id = "packaging-02", Name = "包装标签打印机", Enabled = true, Host = "private.internal", Port = 9100, ConnectTimeoutSeconds = 5 },
+            new LabelPrinterRouteOptions { Id = "packaging-01", Enabled = true },
+            new LabelPrinterRouteOptions { Id = "disabled-printer", Name = "停用打印机", Enabled = false },
+        ]);
+        using var client = CreateAuthenticatedClient(factory);
+        using var response = await client.GetAsync("/api/business/v1/barcodes/printers?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean());
+        var printers = document.RootElement.GetProperty("data").GetProperty("printers").EnumerateArray().ToArray();
+        Assert.Equal(new[] { "packaging-01", "packaging-02" }, printers.Select(printer => printer.GetProperty("printerId").GetString()));
+        Assert.Equal("包装标签打印机", printers[1].GetProperty("name").GetString());
+        Assert.All(printers, printer => Assert.Equal(new[] { "printerId", "name" }, printer.EnumerateObject().Select(property => property.Name)));
+    }
+
+    [Fact]
+    public async Task Printer_directory_requires_internal_service_authentication()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/business/v1/barcodes/printers?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(List<LabelPrinterRouteOptions>? printers = null)
     {
         var databaseName = $"barcode-label-list-http-{Guid.CreateVersion7():N}";
         return new WebApplicationFactory<Program>()
@@ -149,6 +178,14 @@ public sealed class BarcodeLabelListHttpTests
                     }));
                 builder.ConfigureTestServices(services =>
                 {
+                    if (printers is not null)
+                    {
+                        services.PostConfigure<LabelPrinterOptions>(options =>
+                        {
+                            options.Printers.Clear();
+                            options.Printers.AddRange(printers);
+                        });
+                    }
                     services.RemoveAll<ApplicationDbContext>();
                     services.RemoveAll<DbContextOptions>();
                     services.RemoveAll<DbContextOptions<ApplicationDbContext>>();

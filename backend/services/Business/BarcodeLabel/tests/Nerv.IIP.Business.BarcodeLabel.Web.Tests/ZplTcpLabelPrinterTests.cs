@@ -252,7 +252,7 @@ public sealed class ZplTcpLabelPrinterTests
     public async Task Simulated_mode_only_reports_sent_to_printer_in_explicit_nonproduction_environments(
         string environmentName)
     {
-        var options = Options.Create(new LabelPrinterOptions { Mode = "simulated" });
+        var options = Options.Create(new LabelPrinterOptions { Mode = "simulated", Printers = [new LabelPrinterRouteOptions { Id = "printer-01", Enabled = true }] });
         var printer = new ConfiguredLabelPrinter(
             options,
             new ZplTcpLabelPrinter(options),
@@ -261,6 +261,21 @@ public sealed class ZplTcpLabelPrinterTests
         var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
 
         Assert.Equal("sent-to-printer", result.Status);
+    }
+
+    [Theory]
+    [InlineData("missing", true)]
+    [InlineData("printer-01", false)]
+    public async Task Simulated_dispatch_rejects_unconfigured_or_disabled_printer_identity(string printerId, bool enabled)
+    {
+        var options = Options.Create(new LabelPrinterOptions
+        {
+            Mode = "simulated",
+            Printers = [new LabelPrinterRouteOptions { Id = "printer-01", Enabled = enabled }],
+        });
+        var printer = new ConfiguredLabelPrinter(options, new ZplTcpLabelPrinter(options), new TestHostEnvironment("Development"));
+        var result = await printer.PrintAsync(printerId, CompileDocuments(1), CancellationToken.None);
+        Assert.Equal("failed", result.Status);
     }
 
     private static ZplTcpLabelPrinter CreateScriptedPrinter(ScriptedConnectionFactory factory) =>

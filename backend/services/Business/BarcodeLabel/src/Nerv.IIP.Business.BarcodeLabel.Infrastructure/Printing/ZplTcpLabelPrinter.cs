@@ -14,6 +14,7 @@ public sealed class LabelPrinterOptions
 public sealed record LabelPrinterRouteOptions
 {
     public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
     public string Host { get; init; } = string.Empty;
     public int Port { get; init; }
     public int ConnectTimeoutSeconds { get; init; }
@@ -59,13 +60,8 @@ public sealed class LabelPrinterOptionsValidator(IHostEnvironment environment)
                 "LabelPrinter:Mode=simulated is only allowed in Development or Testing.");
         }
 
-        if (mode == "simulated")
-        {
-            return ValidateOptionsResult.Success;
-        }
-
         var failures = new List<string>();
-        if (options.Printers.Count == 0)
+        if (mode == "zpl-tcp" && options.Printers.Count == 0)
         {
             failures.Add("LabelPrinter:Printers must contain at least one route in zpl-tcp mode.");
         }
@@ -84,10 +80,19 @@ public sealed class LabelPrinterOptionsValidator(IHostEnvironment environment)
 
         for (var index = 0; index < options.Printers.Count; index++)
         {
-            ValidateRoute(options.Printers[index], index, failures);
+            var route = options.Printers[index];
+            if (!IsPrinterId(route.Id))
+            {
+                failures.Add($"LabelPrinter:Printers:{index}:Id must be 1-100 characters using letters, digits, '.', '_' or '-'.");
+            }
+
+            if (mode == "zpl-tcp")
+            {
+                ValidateRoute(route, index, failures);
+            }
         }
 
-        if (options.Printers.Count > 0 && !options.Printers.Any(route => route.Enabled))
+        if (mode == "zpl-tcp" && options.Printers.Count > 0 && !options.Printers.Any(route => route.Enabled))
         {
             failures.Add("LabelPrinter:Printers must contain at least one enabled route.");
         }
@@ -103,11 +108,6 @@ public sealed class LabelPrinterOptionsValidator(IHostEnvironment environment)
         List<string> failures)
     {
         var path = $"LabelPrinter:Printers:{index}";
-        if (!IsPrinterId(route.Id))
-        {
-            failures.Add($"{path}:Id must be 1-100 characters using letters, digits, '.', '_' or '-'.");
-        }
-
         if (string.IsNullOrWhiteSpace(route.Host)
             || !string.Equals(route.Host, route.Host.Trim(), StringComparison.Ordinal)
             || Uri.CheckHostName(route.Host) == UriHostNameType.Unknown)
@@ -349,10 +349,25 @@ public sealed class ConfiguredLabelPrinter(
             "zpl-tcp" => zplPrinter.PrintAsync(printerId, documents, cancellationToken),
             "simulated" when environment.IsDevelopment()
                 || string.Equals(environment.EnvironmentName, "Testing", StringComparison.Ordinal) =>
-                Task.FromResult(LabelPrinterDispatchResult.Sent($"sim-{Guid.CreateVersion7():N}")),
+                Task.FromResult(Simulate(printerId, cancellationToken)),
             "simulated" => Task.FromResult(
                 LabelPrinterDispatchResult.Failed("模拟打印模式仅允许在 Development 或 Testing 环境使用。")),
             _ => Task.FromResult(LabelPrinterDispatchResult.Failed("标签打印机未启用。")),
         };
+    }
+
+    private LabelPrinterDispatchResult Simulate(string printerId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var printer = options.Value.Printers.SingleOrDefault(route =>
+            string.Equals(route.Id, printerId, StringComparison.Ordinal));
+        if (printer is null)
+        {
+            return LabelPrinterDispatchResult.Failed($"未配置标签打印机 '{printerId}'。");
+        }
+
+        return printer.Enabled
+            ? LabelPrinterDispatchResult.Sent($"sim-{Guid.CreateVersion7():N}")
+            : LabelPrinterDispatchResult.Failed($"标签打印机 '{printerId}' 已禁用。");
     }
 }

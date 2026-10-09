@@ -8,6 +8,19 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessBarcodeLabelLifecycleClientTests
 {
     [Fact]
+    public async Task Printer_directory_preserves_configured_identity_and_uses_the_authorized_scope()
+    {
+        var handler = new RecordingResponseHandler("""{"success":true,"data":{"printers":[{"printerId":"packaging-01","name":"包装标签打印机"}]},"message":"","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+        var response = await client.ListPrintersAsync("internal-token", new BusinessConsoleBarcodePrinterListRequest("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(new BusinessConsoleBarcodePrinterItem("packaging-01", "包装标签打印机"), Assert.Single(response.Printers));
+        Assert.Equal(HttpMethod.Get, handler.LastRequest!.Method);
+        Assert.Equal("/api/business/v1/barcodes/printers?organizationId=org-001&environmentId=env-dev", handler.LastRequest.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token", handler.LastRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
     public async Task Confirm_uses_the_scoped_internal_route_without_a_mes_report_body()
     {
         var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatchId":"batch-001"},"message":"","code":0}""");

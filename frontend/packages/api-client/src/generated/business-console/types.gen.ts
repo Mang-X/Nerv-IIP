@@ -9724,6 +9724,23 @@ export type NervIipContractsBarcodeLabelGetTemplateAssetRetirementRequest = {
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrinterListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterListResponse = {
+    printers: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterItem = {
+    printerId: string;
+    name: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse | null;
 };
@@ -25896,6 +25913,42 @@ export type GetBusinessConsoleBarcodeTemplateAssetRetirementResponses = {
 };
 
 export type GetBusinessConsoleBarcodeTemplateAssetRetirementResponse = GetBusinessConsoleBarcodeTemplateAssetRetirementResponses[keyof GetBusinessConsoleBarcodeTemplateAssetRetirementResponses];
+
+export type ListBusinessConsoleBarcodePrintersData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/printers';
+};
+
+export type ListBusinessConsoleBarcodePrintersErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleBarcodePrintersError = ListBusinessConsoleBarcodePrintersErrors[keyof ListBusinessConsoleBarcodePrintersErrors];
+
+export type ListBusinessConsoleBarcodePrintersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrinterListResponse;
+};
+
+export type ListBusinessConsoleBarcodePrintersResponse = ListBusinessConsoleBarcodePrintersResponses[keyof ListBusinessConsoleBarcodePrintersResponses];
 
 export type ResolveBusinessConsoleBarcodeData = {
     body: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest;
