@@ -316,7 +316,7 @@ public sealed class GetEngineeringChangeImpactPreviewEndpoint(ISender sender)
     }
 }
 
-public sealed record ListEngineeringBomsRequest(string OrganizationId, string EnvironmentId, string? ParentItemCode, string? Status, int Skip = 0, int Take = 100);
+public sealed record ListEngineeringBomsRequest(string OrganizationId, string EnvironmentId, string? ParentItemCode, string? Status, int Skip = 0, int Take = OffsetPage.DefaultTake);
 
 public sealed class ListEngineeringBomsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListEngineeringBomsRequest, ResponseData<ListEngineeringBomsResponse>>
@@ -333,7 +333,7 @@ public sealed class ListEngineeringBomsEndpoint(ISender sender)
     }
 }
 
-public sealed record ListManufacturingBomsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status, int Skip = 0, int Take = 100);
+public sealed record ListManufacturingBomsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status, int Skip = 0, int Take = OffsetPage.DefaultTake);
 
 public sealed class ListManufacturingBomsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListManufacturingBomsRequest, ResponseData<ListManufacturingBomsResponse>>
@@ -350,7 +350,7 @@ public sealed class ListManufacturingBomsEndpoint(ISender sender)
     }
 }
 
-public sealed record ListRoutingsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status, int Skip = 0, int Take = 100);
+public sealed record ListRoutingsRequest(string OrganizationId, string EnvironmentId, string? SkuCode, string? Status, int Skip = 0, int Take = OffsetPage.DefaultTake);
 
 public sealed class ListRoutingsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListRoutingsRequest, ResponseData<ListRoutingsResponse>>
@@ -367,7 +367,7 @@ public sealed class ListRoutingsEndpoint(ISender sender)
     }
 }
 
-public sealed record ListEngineeringDocumentsRequest(string OrganizationId, string EnvironmentId, string? ItemCode, string? DocumentType, int Skip = 0, int Take = 100);
+public sealed record ListEngineeringDocumentsRequest(string OrganizationId, string EnvironmentId, string? ItemCode, string? DocumentType, int Skip = 0, int Take = OffsetPage.DefaultTake);
 
 public sealed class ListEngineeringDocumentsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListEngineeringDocumentsRequest, ResponseData<ListEngineeringDocumentsResponse>>
@@ -432,7 +432,7 @@ public sealed class GetEngineeringDocumentEndpoint(ISender sender)
     }
 }
 
-public sealed record ListEngineeringItemsRequest(string OrganizationId, string EnvironmentId, string? ItemCode, string? Status, int Skip = 0, int Take = 100);
+public sealed record ListEngineeringItemsRequest(string OrganizationId, string EnvironmentId, string? ItemCode, string? Status, int Skip = 0, int Take = OffsetPage.DefaultTake);
 
 public sealed class ListEngineeringItemsEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListEngineeringItemsRequest, ResponseData<ListEngineeringItemsResponse>>
@@ -652,7 +652,7 @@ public sealed class GetMasterDataWorkCenterUsageEndpoint(ISender sender)
     }
 }
 
-public sealed record ListEngineeringChangesRequest(string OrganizationId, string EnvironmentId, string? Status, int Skip = 0, int Take = 100);
+public sealed record ListEngineeringChangesRequest(string OrganizationId, string EnvironmentId, string? Status, int Skip = 0, int Take = OffsetPage.DefaultTake);
 
 public sealed class ListEngineeringChangesEndpoint(ISender sender)
     : ProductEngineeringEndpoint<ListEngineeringChangesRequest, ResponseData<ListEngineeringChangesResponse>>
