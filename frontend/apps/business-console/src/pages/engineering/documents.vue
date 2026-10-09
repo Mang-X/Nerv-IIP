@@ -4,6 +4,8 @@ import type {
   BusinessConsoleRegisterEngineeringDocumentRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import { uploadSopFile, readSopFile } from '@/components/engineering/sopFileTransfer'
+import { useAuthStore } from '@/stores/auth'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringDocuments, useEngineeringItems } from '@/composables/useProductEngineering'
 import {
@@ -44,7 +46,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import {
   inlineErrorMessage,
@@ -145,7 +147,7 @@ const columns: NvDataTableColumn<BusinessConsoleEngineeringDocumentItem>[] = [
 ]
 
 // ── 登记文档向导 ──────────────────────────────────────────────
-// 后端无文件上传通道，fileId 先作文件引用 ID 文本输入（标注上传待接入，不假装能上传）。
+// 文件引用只由受控上传完成回执产生。
 interface DocumentForm {
   documentNumber: string
   revision: string
@@ -167,6 +169,12 @@ function blankForm(): DocumentForm {
   }
 }
 
+const auth = useAuthStore()
+const canManageDocuments = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.engineering.documents.manage'),
+)
+const uploading = ref(false)
+let uploadGeneration = 0
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<DocumentForm>(blankForm())
@@ -231,11 +239,47 @@ const canSubmit = computed(
 )
 
 function openCreate() {
+  uploadGeneration += 1
   Object.assign(form, blankForm())
   showErrors.value = false
   // 新的一次登记 = 新的幂等作用域，不能沿用上一单的键（否则第二份文档会被回放成第一份）。
   formNonce.value = newNonce()
   formOpen.value = true
+}
+
+watch(formOpen, (open) => { if (!open) uploadGeneration += 1 })
+
+function clearUploadedFile() {
+  form.fileId = ''
+  form.fileName = ''
+  form.contentType = ''
+}
+watch(() => [filters.organizationId, filters.environmentId], () => {
+  uploadGeneration += 1
+  clearUploadedFile()
+})
+
+async function selectFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || uploading.value || !canManageDocuments.value) return
+  const generation = ++uploadGeneration
+  clearUploadedFile()
+  uploading.value = true
+  try {
+    const uploaded = await uploadSopFile(file, {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+    })
+    if (generation !== uploadGeneration) return
+    Object.assign(form, uploaded)
+    notifySuccess('文件已上传，可以登记文档。')
+  } catch (error) {
+    if (generation === uploadGeneration) notifyError(error, '文件上传失败，请重新选择。')
+  } finally {
+    uploading.value = false
+    input.value = ''
+  }
 }
 
 /**
@@ -254,6 +298,7 @@ const documentNumberTaken = computed(() => {
 })
 
 async function submitForm() {
+  if (uploading.value || !canManageDocuments.value) return
   if (!canSubmit.value) {
     showErrors.value = true
     return
@@ -306,10 +351,29 @@ async function submitForm() {
 }
 
 // ── 查看文档明细（get-by-id）────────────────────────────────────
+const fileOpening = ref(false)
+const openedFileUrl = ref('')
+watch(openedFileUrl, (_url, previous) => { if (previous) URL.revokeObjectURL(previous) })
+onBeforeUnmount(() => { if (openedFileUrl.value) URL.revokeObjectURL(openedFileUrl.value) })
+async function openFile() {
+  if (!viewTarget.value?.fileId || fileOpening.value) return
+  fileOpening.value = true
+  try {
+    const blob = await readSopFile(viewTarget.value.fileId, {
+      organizationId: filters.organizationId, environmentId: filters.environmentId,
+    })
+    openedFileUrl.value = URL.createObjectURL(blob)
+  } catch (error) {
+    notifyError(error, '打开文件失败，请稍后重试。')
+  } finally {
+    fileOpening.value = false
+  }
+}
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringDocumentItem | null>(null)
 const detailPending = ref(false)
 async function openView(row: BusinessConsoleEngineeringDocumentItem) {
+  openedFileUrl.value = ''
   viewTarget.value = row
   viewOpen.value = true
   if (!row.documentNumber || !row.revision) return
@@ -344,14 +408,17 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="formOpen">
+        <NvDialog v-if="canManageDocuments" v-model:open="formOpen">
           <NvDialogTrigger as-child>
             <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               登记文档
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-xl">
+          <NvDialogContent class="sm:max-w-xl"
+            @interact-outside="(event) => { if (uploading) event.preventDefault() }"
+            @escape-key-down="(event) => { if (uploading) event.preventDefault() }"
+          >
             <NvDialogHeader>
               <NvDialogTitle>登记工程文档</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -406,32 +473,14 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                 </NvField>
               </NvFieldGroup>
 
-              <FormSectionTitle>文件引用</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
-                  <NvFieldLabel for="doc-file-id"
-                    >文件编号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput id="doc-file-id" v-model="form.fileId" placeholder="填写文件编号" />
-                </NvField>
-                <NvField :data-invalid="showErrors && !fileNameValid">
-                  <NvFieldLabel for="doc-file-name"
-                    >文件名 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="doc-file-name"
-                    v-model="form.fileName"
-                    placeholder="如 drawing.pdf"
-                  />
-                </NvField>
-                <NvField :data-invalid="showErrors && !contentTypeValid">
-                  <NvFieldLabel for="doc-content-type"
-                    >内容类型 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <!-- 该字段以 application/pdf 预填，值本身就是格式示例，不再另起说明行。 -->
-                  <NvInput id="doc-content-type" v-model="form.contentType" />
-                </NvField>
-              </NvFieldGroup>
+              <FormSectionTitle>文档文件</FormSectionTitle>
+              <NvField :data-invalid="showErrors && !fileIdValid">
+                <NvFieldLabel for="doc-file">上传文件 <span class="text-destructive">*</span></NvFieldLabel>
+                <NvInput id="doc-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.txt,.docx,.xlsx"
+                  :disabled="uploading || submitting" @change="selectFile" />
+                <NvFieldDescription v-if="uploading">正在上传，请稍候…</NvFieldDescription>
+                <NvFieldDescription v-else-if="form.fileId">已上传：{{ form.fileName }}</NvFieldDescription>
+              </NvField>
 
               <FormSectionTitle>关联（可选）</FormSectionTitle>
               <NvField>
@@ -450,8 +499,8 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               </NvField>
 
               <NvDialogFooter>
-                <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
-                <NvButton type="submit" :disabled="registerPending || submitting">
+                <NvButton type="button" variant="outline" :disabled="uploading || submitting" @click="formOpen = false">取消</NvButton>
+                <NvButton type="submit" :disabled="registerPending || submitting || uploading">
                   <Spinner v-if="registerPending || submitting" aria-hidden="true" />
                   登记文档
                 </NvButton>
@@ -500,7 +549,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
       :loading="documentsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前范围没有工程文档。可登记文档号 + 修订，并填写文件编号与类型。"
+      empty-message="当前范围没有工程文档。上传文件并登记修订后即可查看。"
     >
       <template #cell-documentType="{ row }">{{ documentTypeLabel(row.documentType) }}</template>
       <template #cell-itemCode="{ row }">{{ row.itemCode || '—' }}</template>
@@ -541,10 +590,12 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               <span class="text-muted-foreground">内容类型</span>
               <span class="font-medium">{{ viewTarget.contentType || '—' }}</span>
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">文件编号</span>
-              <span class="font-medium break-all text-right">{{ viewTarget.fileId || '—' }}</span>
-            </div>
+            <NvButton v-if="viewTarget.fileId" type="button" :disabled="fileOpening" @click="openFile">
+              {{ fileOpening ? '正在打开…' : '打开文件' }}
+            </NvButton>
+            <a v-if="openedFileUrl" :href="openedFileUrl" target="_blank" rel="noopener" class="text-primary underline">
+              查看 {{ viewTarget.fileName }}
+            </a>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">关联物料</span>
               <span class="font-medium">{{ viewTarget.itemCode || '无' }}</span>

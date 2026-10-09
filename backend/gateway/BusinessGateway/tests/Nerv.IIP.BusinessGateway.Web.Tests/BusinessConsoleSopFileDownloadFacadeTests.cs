@@ -243,6 +243,18 @@ public sealed class BusinessConsoleSopFileDownloadFacadeTests
     /// <summary>用途不符时按真实 client 的口径抛 404，用来在端点层观察拒绝而不是在 client 层。</summary>
     private sealed class PurposeAwareFileStorageClient : IBusinessFileStorageClient
     {
+        public Task<BusinessConsoleSopFileUploadSessionResponse> CreateSopFileUploadSessionAsync(
+            string internalBearerToken, string ownerId, BusinessConsoleCreateSopFileUploadSessionRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<BusinessConsoleSopFile> CompleteSopFileUploadAsync(
+            string internalBearerToken, string uploadSessionId, BusinessConsoleCompleteSopFileUploadRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task ValidateSopFileForRegistrationAsync(
+            string internalBearerToken, BusinessConsoleRegisterEngineeringDocumentRequest request,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
         public Task<BusinessFileDownloadTicket> AuthorizeSopFileDownloadAsync(
             string internalBearerToken,
             string fileId,

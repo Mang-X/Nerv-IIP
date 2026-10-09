@@ -36,7 +36,7 @@
 
 1. 在 `/master-data/skus` 确认成品和关键物料 SKU 存在，并检查 UOM、分类和生命周期状态。
 2. 在 `/engineering/items` 建立或检查工程物料。当前 `ItemCode` 语义冻结为 MasterData SKU 编码。
-3. 在 `/engineering/documents` 按 `itemCode` 和文档类型关联图纸、作业指导或质量证据。
+3. 在 `/engineering/documents` 点击「登记文档」，选择图纸、作业指导或质量证据文件；上传完成后填写修订、选择文档类型和关联物料并登记。刷新列表，点击「查看」→「打开文件」→文件链接，确认内容。
 4. 在 `/engineering/ebom` 维护设计结构，确认替代料、虚拟件、位号、得率和损耗。
 5. 在 `/engineering/mbom` 将 EBOM 转为制造用料，确保非虚拟件（phantom）的 EBOM 子项 SKU 被 MBOM 物料行覆盖。
 6. 在 `/engineering/standard-operations` 准备启用的标准工序，再到 `/engineering/routings` 发布工艺路线。逐工序选择是否「可中断（跨班次续排）」；未勾选的工序按不可中断处理，版本明细可查看该标记。

@@ -18,6 +18,23 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 /// </summary>
 public interface IBusinessFileTransferClient
 {
+    Task ProxyTusHeadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken);
+
+    Task ProxyTusPatchAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken);
+
     Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
@@ -127,7 +144,7 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         ProxyTusPatchAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, sourceRequest, targetResponse, cancellationToken);
 
     // 两个上传门面的 tus 跳形状相同：差别只在网关入口的权限口径，由端点把关。
-    private Task ProxyTusHeadAsync(
+    public Task ProxyTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
         string organizationId,
@@ -147,7 +164,7 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             },
             cancellationToken);
 
-    private Task ProxyTusPatchAsync(
+    public Task ProxyTusPatchAsync(
         string internalBearerToken,
         string uploadSessionId,
         string organizationId,
