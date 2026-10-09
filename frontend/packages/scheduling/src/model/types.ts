@@ -122,6 +122,8 @@ export interface ScheduleTask {
    * 设备数据风险（软约束）：工序排在了运行时状态未知的设备上（无快照 / 快照过期 /
    * 采集源不可达）。「不知道」不等于「不可用」——照排，但开工前需人工确认设备可用。
    */
+  /** 公开基线停机读面的展示覆盖，不改写排程冲突或 assignment。 */
+  downtimeRisk?: string
   equipmentRisk?: EquipmentRisk
 }
 

@@ -25,7 +25,7 @@ const BLOCK = {
   },
   downtime: {
     label: '计划停机',
-    desc: '计划性停机,资源不可用',
+    desc: '停机时段，资源不可用；预计恢复不代表实际恢复',
     tone: 'var(--nv-scheduling-block-downtime)',
   },
   lineChange: {
@@ -87,7 +87,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
           :style="{ '--bk': BLOCK[task.blockKind!].tone }"
         ></span>
         <span class="text-sm font-semibold text-foreground">{{
-          BLOCK[task.blockKind!].label
+          task.text || BLOCK[task.blockKind!].label
         }}</span>
       </div>
       <p class="mt-1 text-xs text-muted-foreground">{{ BLOCK[task.blockKind!].desc }}</p>
@@ -214,6 +214,13 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         <p class="text-muted-foreground">段间间隙不计入工时；分段时间由重新排程确定。</p>
       </div>
 
+      <p
+        v-if="task.downtimeRisk"
+        class="mt-3 rounded border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+        role="status"
+      >
+        {{ task.downtimeRisk }}
+      </p>
       <TaskFacts :task="task" class="mt-3" />
 
       <!-- 明细网格 -->

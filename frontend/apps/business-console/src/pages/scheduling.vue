@@ -50,6 +50,9 @@ import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue
 import SchedulingDraftClearDialog from '@/components/scheduling/SchedulingDraftClearDialog.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
+import SchedulingDowntimeBanner from '@/components/scheduling/SchedulingDowntimeBanner.vue'
+import { useSchedulingDowntime } from '@/composables/useSchedulingDowntime'
+import { withDowntimeImpact } from '@/composables/schedulingDowntime'
 import SchedulingCandidatePanel from '@/components/scheduling/SchedulingCandidatePanel.vue'
 import { useSchedulingCandidates } from '@/composables/useSchedulingCandidates'
 import SchedulingRushInsertionResult from '@/components/scheduling/SchedulingRushInsertionResult.vue'
@@ -224,6 +227,19 @@ function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
   )
 }
 const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
+const downtime = useSchedulingDowntime(
+  () => persistedDraftPlan.value?.planId,
+  () => ({
+    organizationId: schedulingFilters.organizationId,
+    environmentId: schedulingFilters.environmentId,
+  }),
+)
+watch(downtime.error, (error) => {
+  if (error) notifyError(error, '设备停机影响暂不可读取，请稍后重试。')
+})
+const downtimeDisplayModel = computed(() =>
+  withDowntimeImpact(draftDisplayModel.value, downtime.impact.value, downtime.now.value),
+)
 const revisionBasePlan = shallowRef<BusinessConsoleSchedulePlan>()
 const revisionResult = shallowRef<BusinessConsoleSchedulingPlanRevision>()
 const route = useRoute()
@@ -268,6 +284,23 @@ const candidateDraftBlockedReason = computed(() => {
     return '草稿有人工编辑，请先锁定重预览生成新基线，再生成局部候选。'
   return undefined
 })
+const downtimeCandidateBlockedReason = computed(() =>
+  !canManage.value
+    ? '当前账号没有排产管理权限'
+    : !draftReady.value
+      ? '正在恢复工作草稿，请稍候'
+      : workbench.generatePending.value
+        ? '正在生成方案，请稍候'
+        : !persistedDraftPlan.value?.planId
+          ? '先生成或恢复已保存基线'
+          : candidateDraftBlockedReason.value,
+)
+async function previewDowntimeCandidates() {
+  if (downtimeCandidateBlockedReason.value || localCandidates.pending.value) return
+  await localCandidates.preview()
+  candidatePanel.value?.$el.scrollIntoView({ behavior: 'instant', block: 'start' })
+}
+const candidatePanel = shallowRef<InstanceType<typeof SchedulingCandidatePanel>>()
 const localCandidates = useSchedulingCandidates({
   context: () => ({
     organizationId: schedulingFilters.organizationId,
@@ -1166,7 +1199,17 @@ function reasonLabel(reason?: string | null) {
             <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
           </template>
         </SchedulingOrderPool>
+        <SchedulingDowntimeBanner
+          :impact="downtime.impact.value"
+          :model="draftDisplayModel"
+          :now="downtime.now.value"
+          :blocked-reason="downtimeCandidateBlockedReason"
+          :pending="localCandidates.pending.value"
+          :has-candidates="Boolean(localCandidates.candidates.value)"
+          @preview="previewDowntimeCandidates"
+        />
         <SchedulingCandidatePanel
+          ref="candidatePanel"
           :candidates="localCandidates.candidates.value"
           :baseline-plan-id="persistedDraftPlan?.planId"
           :can-manage="canManage && draftReady && !workbench.generatePending.value"
@@ -1191,7 +1234,7 @@ function reasonLabel(reason?: string | null) {
           @select="selectInsertionCandidate"
         />
         <SchedulingDraftBoard
-          :model="draftDisplayModel"
+          :model="downtimeDisplayModel"
           :feedback="draft.feedback.value"
           :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"
           :pending-operations="draft.pendingOperations.value"

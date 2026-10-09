@@ -103,6 +103,8 @@ const stub = vi.hoisted(() => ({
 const localCandidateCallback = vi.hoisted(() => ({
   onSelected: undefined as ((selection: SchedulingCandidateSelection) => Promise<void>) | undefined,
   readSelectedPlan: vi.fn(),
+  preview: vi.fn(),
+  select: vi.fn(),
 }))
 vi.mock('@/composables/useSchedulingCandidates', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/composables/useSchedulingCandidates')>()
@@ -122,6 +124,15 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
   },
 }))
 
+const downtimeImpact = shallowRef<import('@nerv-iip/api-client').SchedulingDowntimeImpactResponse>()
+const downtimeNow = shallowRef(new Date('2026-10-09T08:00:00.000Z'))
+let downtimeBaseline: () => string | undefined
+vi.mock('@/composables/useSchedulingDowntime', () => ({
+  useSchedulingDowntime: (planId: () => string | undefined) => {
+    downtimeBaseline = planId
+    return { impact: downtimeImpact, now: downtimeNow, error: shallowRef() }
+  },
+}))
 const savedDrafts = shallowRef<SchedulingWorkingDraft[]>([])
 const savedPlans = new Map<string, BusinessConsoleSchedulePlan>()
 let pagePersistence: ReturnType<
@@ -144,6 +155,8 @@ vi.mock('@nerv-iip/api-client', async (original) => ({
     data: { success: true, data: savedDrafts.value },
   }),
   getBusinessConsoleSchedulingPlan: localCandidateCallback.readSelectedPlan,
+  previewBusinessConsoleSchedulingCandidates: localCandidateCallback.preview,
+  selectBusinessConsoleSchedulingCandidate: localCandidateCallback.select,
 }))
 const associatedOrders = shallowRef<BusinessConsoleMesWorkOrderItem[]>([])
 const associatedError = shallowRef<unknown>()
@@ -521,6 +534,7 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  downtimeImpact.value = undefined
   localCandidateCallback.readSelectedPlan.mockReset()
   localCandidateCallback.readSelectedPlan.mockImplementation(
     async ({ path }: { path: { planId: string } }) => ({
@@ -2154,4 +2168,133 @@ describe('异步首版最终状态与草稿一致性（#4137 Regression）', () 
       wrapper.unmount()
     }
   })
+})
+
+it('refreshes downtime on the persisted draft baseline while preserving manual assignments', async () => {
+  const wrapper = mount(SchedulingPage, { global: { plugins: [createPinia()], stubs: layoutStub } })
+  generatedPlan.value = planOne
+  await flushPromises()
+  expect(downtimeBaseline()).toBe('plan-001')
+  const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+  const operation =
+    board.props('model').tasks.find((t: { id: string }) => t.id === 'a1') ??
+    board.props('model').tasks.find((t: { type: string }) => t.type === 'operation')
+  const before = structuredClone(operation)
+  board.vm.$emit('update', operation.id, { startUtc: '2026-10-09T07:00:00.000Z' })
+  await flushPromises()
+  const edited = structuredClone(
+    board.props('model').tasks.find((t: { id: string }) => t.id === operation.id),
+  )
+  downtimeImpact.value = {
+    baselinePlanId: 'plan-001',
+    affectedOperations: [{ workOrderId: operation.orderId, operationId: operation.operationId }],
+    items: [
+      {
+        fact: {
+          source: 'mes',
+          sourceReferenceId: 'DT-01',
+          deviceAssetId: operation.resourceId,
+          workCenterId: operation.workCenterId,
+          startedAtUtc: '2026-10-09T06:00:00.000Z',
+        },
+        operationsWithAlternativesCount: 3,
+      },
+    ],
+  }
+  await flushPromises()
+  expect(wrapper.get('[data-testid="scheduling-downtime"]').text()).toContain(
+    '3 道受影响工序有合格可用备选',
+  )
+  expect(wrapper.get('[data-testid="scheduling-downtime"]').text()).toContain('2 小时')
+  const refreshed = board.props('model').tasks.find((t: { id: string }) => t.id === operation.id)
+  expect(refreshed).toEqual({ ...edited, downtimeRisk: expect.stringContaining('设备停机') })
+  expect(refreshed.startUtc).not.toBe(before.startUtc)
+  expect(
+    wrapper.get('[data-testid="scheduling-downtime"] button').attributes('disabled'),
+  ).toBeDefined()
+  expect(wrapper.get('[data-testid="scheduling-downtime"]').text()).toContain('草稿有人工编辑')
+  expect(stub.releasePlan).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+it('generates from the downtime banner, selects the actual candidate and confirms that plan for publishing', async () => {
+  const plan = {
+    ...planOne,
+    planId: 'selected-downtime-plan',
+    status: 'generated' as const,
+    conflicts: [],
+    unscheduledOperations: [],
+  }
+  savedPlans.set(plan.planId, plan)
+  localCandidateCallback.preview.mockResolvedValueOnce({
+    data: {
+      success: true,
+      data: {
+        baselinePlanId: 'plan-001',
+        asOfUtc: '2026-10-09T08:00:00Z',
+        inputFingerprint: 'same-facts',
+        candidates: [{ strategy: 'rightShift', comparison: {} }],
+      },
+    },
+  })
+  localCandidateCallback.select.mockResolvedValueOnce({
+    data: {
+      success: true,
+      data: {
+        plan,
+        workingDraft: {
+          planId: plan.planId,
+          savedAtUtc: '2026-10-09T08:00:00Z',
+          state: { contractVersion: 1, orders: [], tasks: [], pendingOperations: [] },
+        },
+        comparison: { basePlanId: 'plan-001', candidatePlanId: plan.planId },
+      },
+    },
+  })
+  const wrapper = mount(SchedulingPage, { global: { plugins: [createPinia()], stubs: layoutStub } })
+  generatedPlan.value = { ...planOne, conflicts: [], unscheduledOperations: [] }
+  await flushPromises()
+  downtimeImpact.value = {
+    baselinePlanId: 'plan-001',
+    items: [
+      {
+        fact: {
+          source: 'mes',
+          sourceReferenceId: 'DT-01',
+          deviceAssetId: 'CNC-01',
+          startedAtUtc: '2026-10-09T06:00:00Z',
+        },
+        operationsWithAlternativesCount: 2,
+      },
+    ],
+  }
+  await flushPromises()
+  const scroll = vi.fn()
+  wrapper.get('[data-testid="scheduling-candidates"]').element.scrollIntoView = scroll
+  await wrapper.get('[data-testid="scheduling-downtime"] button').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[data-testid="scheduling-candidates"]').text()).toContain('原资源右移')
+  expect(scroll).toHaveBeenCalled()
+  expect(localCandidateCallback.preview).toHaveBeenCalledWith(
+    expect.objectContaining({ body: expect.objectContaining({ baselinePlanId: 'plan-001' }) }),
+  )
+  await wrapper.get('[data-testid="select-candidate"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.findComponent({ name: 'SchedulingDraftBoard' }).props('model').meta.planId).toBe(
+    plan.planId,
+  )
+  expect(stub.releasePlan).not.toHaveBeenCalled()
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('发布新版'))!
+    .trigger('click')
+  await flushPromises()
+  const confirm = [...document.body.querySelectorAll('button')].find(
+    (b) => b.textContent?.trim() === '确认发布',
+  )!
+  expect(confirm).toBeTruthy()
+  confirm.click()
+  await flushPromises()
+  expect(stub.releasePlan).toHaveBeenCalledWith(plan.planId)
+  wrapper.unmount()
 })
