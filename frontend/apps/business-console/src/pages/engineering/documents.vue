@@ -543,7 +543,15 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                   :owner-id="auth.principal?.principalId ?? ''"
                   :organization-id="filters.organizationId"
                   :environment-id="filters.environmentId"
-                  :accepted-content-types="['.pdf', '.png', '.jpg', '.jpeg', '.txt', '.docx', '.xlsx']"
+                  :accepted-content-types="[
+                    '.pdf',
+                    '.png',
+                    '.jpg',
+                    '.jpeg',
+                    '.txt',
+                    '.docx',
+                    '.xlsx',
+                  ]"
                   :max-files="1"
                   :disabled="submitting"
                   :create-upload-session="sopUpload.create"
