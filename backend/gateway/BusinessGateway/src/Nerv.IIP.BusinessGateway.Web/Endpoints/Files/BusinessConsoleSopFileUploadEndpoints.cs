@@ -129,7 +129,6 @@ public sealed class GetBusinessConsoleSopFileTusOffsetEndpoint(
 }
 
 [Tags("Business Console Files")]
-[HttpPatch("/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}")]
 [BusinessGatewayOperationId("patchBusinessConsoleSopFileTusUpload")]
 [Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
 public sealed class PatchBusinessConsoleSopFileTusUploadEndpoint(
