@@ -451,13 +451,22 @@ describe('barcode pages', () => {
     const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
     const wrapper = mount(PrintBatchesPage, {
       attachTo: document.body,
-      global: { stubs: { ...layoutStub, ...dialogStubs, ...stubsWithRealPicker, RouterLink: routerLinkStub } },
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...stubsWithRealPicker,
+          RouterLink: routerLinkStub,
+        },
+      },
     })
     try {
       await flushPromises()
       await wrapper.find('#barcode-print-printer').trigger('click')
       await flushPromises()
-      const search = document.body.querySelector<HTMLInputElement>('input[placeholder="搜索打印机"]')!
+      const search = document.body.querySelector<HTMLInputElement>(
+        'input[placeholder="搜索打印机"]',
+      )!
       search.value = '不存在的打印机'
       search.dispatchEvent(new Event('input', { bubbles: true }))
       await flushPromises()
@@ -465,9 +474,9 @@ describe('barcode pages', () => {
       search.value = '包装'
       search.dispatchEvent(new Event('input', { bubbles: true }))
       await flushPromises()
-      const option = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).find(
-        (element) => element.textContent?.includes('包装标签打印机'),
-      )!
+      const option = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+      ).find((element) => element.textContent?.includes('包装标签打印机'))!
       option.click()
       await flushPromises()
       const form = wrapper.find('#barcode-print-printer').element.closest('form')!
@@ -497,7 +506,8 @@ describe('barcode pages', () => {
   })
 
   it.each(['reserved', 'sent-to-printer', 'delivery-unknown', 'printed'])(
-    'does not offer dispatch in %s', async (status) => {
+    'does not offer dispatch in %s',
+    async (status) => {
       barcode.printBatchStatus = status
       const wrapper = mountPrintBatches()
       await flushPromises()

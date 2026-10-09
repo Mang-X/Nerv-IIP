@@ -119,8 +119,9 @@ const showPrinterError = shallowRef(false)
 const printerOptions = computed(() =>
   printers.value.map((printer) => ({ value: printer.printerId, label: printer.name })),
 )
-const canDispatch = computed(() =>
-  canPrint.value && ['ready-to-print', 'failed'].includes(printBatchDetail.value?.status ?? ''),
+const canDispatch = computed(
+  () =>
+    canPrint.value && ['ready-to-print', 'failed'].includes(printBatchDetail.value?.status ?? ''),
 )
 watch(printersError, (error) => {
   if (error) notifyOperationFailure('读取打印机失败', error, '无法读取打印机目录。')

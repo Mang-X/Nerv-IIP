@@ -24,7 +24,10 @@ import {
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   mutations: [] as ReturnType<typeof vi.fn>[],
-  mutationOptions: [] as Array<{ onSuccess?: () => Promise<void> | void; onSettled?: () => Promise<void> | void }>,
+  mutationOptions: [] as Array<{
+    onSuccess?: () => Promise<void> | void
+    onSettled?: () => Promise<void> | void
+  }>,
   refetches: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
