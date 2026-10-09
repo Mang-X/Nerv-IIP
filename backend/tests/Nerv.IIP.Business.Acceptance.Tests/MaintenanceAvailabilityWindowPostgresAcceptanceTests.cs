@@ -34,17 +34,17 @@ public sealed class MaintenanceAvailabilityWindowPostgresAcceptanceTests
         var unavailableFromUtc = windowStartUtc.AddHours(1);
         var cancelledAtUtc = windowStartUtc.AddHours(3);
 
-        var inFlight = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-PG-A", "high", "maintenance");
+        var inFlight = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-PG-A", "high", "maintenance");
         inFlight.MarkAssetUnavailable(unavailableFromUtc, "repair downtime", unavailableFromUtc.AddHours(1));
         inFlight.Accept("tech-001");
         inFlight.StartWork();
 
-        var cancelled = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-PG-B", "high", "maintenance");
+        var cancelled = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-PG-B", "high", "maintenance");
         cancelled.MarkAssetUnavailable(unavailableFromUtc, "repair downtime");
         cancelled.Cancel();
 
         // 释放早于查询窗口起点的工单不得进读面 —— 证明求交谓词的右边界那一支真的在 PostgreSQL 上生效。
-        var releasedBeforeWindow = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-PG-C", "high", "maintenance");
+        var releasedBeforeWindow = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-PG-C", "high", "maintenance");
         releasedBeforeWindow.MarkAssetUnavailable(windowStartUtc.AddHours(-6), "repair downtime");
         releasedBeforeWindow.Accept("tech-001");
         releasedBeforeWindow.StartWork();

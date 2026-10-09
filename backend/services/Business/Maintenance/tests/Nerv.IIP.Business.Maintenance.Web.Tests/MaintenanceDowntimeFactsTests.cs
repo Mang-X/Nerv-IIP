@@ -34,7 +34,7 @@ public sealed class MaintenanceDowntimeFactsTests
         completed.Complete("fixed", "fault", 20, []);
         var cancelled = Order("org", "env", "device");
         cancelled.Cancel();
-        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", "device", "alarm", "high", sourceReferenceId: "MWO-FACT-001");
+        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "alarm", "high", sourceReferenceId: "MWO-FACT-001");
         clearedAlarm.MarkAssetUnavailable(From, "fault");
         clearedAlarm.MarkAlarmCleared(From.AddMinutes(30));
         db.MaintenanceWorkOrders.AddRange(active, completed, cancelled, clearedAlarm,
@@ -74,9 +74,9 @@ public sealed class MaintenanceDowntimeFactsTests
         active.UpdateExpectedRestore(null);
         var ended = Order("org", "env", "device");
         ended.Cancel();
-        var future = MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator");
+        var future = MaintenanceWorkOrder.OpenManual("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator");
         future.MarkAssetUnavailable(ended.CancelledAtUtc!.Value.AddHours(1), "fault");
-        var notUnavailable = MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator");
+        var notUnavailable = MaintenanceWorkOrder.OpenManual("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator");
         db.MaintenanceWorkOrders.AddRange(active, ended, future, notUnavailable);
         await db.SaveChangesAsync();
         var owner = new GetMaintenanceRestorePredictionQueryHandler(db, Options.Create(new MaintenanceRestorePredictionOptions()));
@@ -127,7 +127,7 @@ public sealed class MaintenanceDowntimeFactsTests
 
     private static MaintenanceWorkOrder Order(string org, string env, string device)
     {
-        var order = MaintenanceWorkOrder.OpenManual(org, env, device, "high", "operator");
+        var order = MaintenanceWorkOrder.OpenManual(org, env, $"MWO-T-{Guid.NewGuid():N}", device, "high", "operator");
         order.MarkAssetUnavailable(From, "fault", From.AddHours(2));
         return order;
     }

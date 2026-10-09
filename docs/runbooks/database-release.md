@@ -235,6 +235,19 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 3. 旧版本 MES 服务不能在本 migration 之后继续运行：旧版的遥测计数消费者和停机消费者仍会查询这张已删除的表。升级窗口内先停旧版本，再应用 migration。
 4. **不需要回填**：表内只有演示种子写入的数据，其中 8 台设备的工作中心还与主数据不一致。新版本按主数据的当前值解析，已登记的设备在升级后立即生效。升级前已挂在「设备未绑定工作中心」的遥测候选不会自动重算，按需在「报工记录 › 遥测报工待确认」里人工确认或忽略。
 
+### 6.10 BusinessMaintenance 维修工单正式单号 migration
+
+`20260928113631_AddMaintenanceWorkOrderNo` 为 `maintenance.maintenance_work_orders` 新增必填列 `work_order_no`（维修工单正式单号，编码规则 `maintenance-work-order`，格式 `MWO-yyyyMMdd-NNNNNN`），给存量工单回填单号，并建唯一索引 `ux_maintenance_work_orders_work_order_no`（组织 / 环境 / 单号）与检索索引 `ix_maintenance_work_orders_search_work_order_no_trgm`。执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 回填按两步处理，不改工单 ID 或其它列：
+   - `source_reference_id` 已经以 `MWO-` 开头的（演示数据），沿用原值；同一组织 / 环境内同一个值出现多次时，只给开单最早的一张；
+   - 其余工单按开单时间的 UTC 日期、在同一组织 / 环境内按开单时间顺序编 `MWO-yyyyMMdd-NNNNNN`。
+2. 回填后按每天已用的最大序号推进 `maintenance.code_counters`（取 `GREATEST`，不回退已有水位），升级后新分配的单号不会与回填的号相撞。
+3. 唯一索引建不起来时，migration 失败，事务回滚，列、索引和迁移历史都不写入，旧版本服务可以继续运行。这时要人工核对冲突的单号（例如演示数据沿用的 `MWO-` 值恰好与补出的号同形），由运维裁决后再重跑；不要删行或手工改号来让 migration 通过。
+4. 旧版本 Maintenance 服务不能在本 migration 之后继续建单：旧版不写 `work_order_no`，插入会被非空约束拒绝。升级窗口内先停旧版本，再应用 migration。
+5. 开始分配新单号后不执行本 migration 的 `Down`：`Down` 会删掉单号列和索引，已经写进成本候选、质量检验与库存流水的单号将无处回查。发布失败时先停止新版本服务，优先前滚补救；确需还原时走第 6 节的批准恢复点。
+6. 已登记的成本候选、质量检验与库存流水里的来源单据不迁移：旧值（工单 ID 或前端截出的 `WO-XXXXXXXX`）保持原样，界面把工单 ID 显示为「维修工单」（`docs/product/maintenance/design.md` §3.4.1）。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed，以及下文非 Development 下随 IAM 启动执行的平台引导。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

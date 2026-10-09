@@ -17,13 +17,13 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var matching = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-CNC-01", "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "reporter", assignedTechnicianUserId: "tech-001");
         matching.Accept("tech-001");
         var wrongTechnician = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-CNC-01", "high", "reporter", assignedTechnicianUserId: "tech-002");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "reporter", assignedTechnicianUserId: "tech-002");
         wrongTechnician.Accept("tech-002");
         var wrongDevice = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-CNC-02", "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-02", "high", "reporter", assignedTechnicianUserId: "tech-001");
         wrongDevice.Accept("tech-001");
         db.MaintenanceWorkOrders.AddRange(matching, wrongTechnician, wrongDevice);
         await db.SaveChangesAsync();
@@ -48,7 +48,7 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     public async Task Team_scope_is_distinct_from_self_scope()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var teamOnly = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-001", "high", "reporter");
+        var teamOnly = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "high", "reporter");
         teamOnly.Assign(null, "team-001");
         db.MaintenanceWorkOrders.Add(teamOnly);
         await db.SaveChangesAsync();
@@ -72,9 +72,9 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
         const string publicId = "019f0000-0000-7000-8000-000000000001";
         const string businessCode = "DEV-CNC-01";
         var storedByPublicId = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", publicId, "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", publicId, "high", "reporter", assignedTechnicianUserId: "tech-001");
         var storedByBusinessCode = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", businessCode, "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", businessCode, "high", "reporter", assignedTechnicianUserId: "tech-001");
         db.MaintenanceWorkOrders.AddRange(storedByPublicId, storedByBusinessCode);
         var openedAtUtc = new DateTimeOffset(2026, 8, 3, 12, 0, 0, TimeSpan.Zero);
         db.Entry(storedByPublicId).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc;
@@ -101,11 +101,11 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var exact = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV,A", "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV,A", "high", "reporter", assignedTechnicianUserId: "tech-001");
         var firstFragment = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV", "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV", "high", "reporter", assignedTechnicianUserId: "tech-001");
         var secondFragment = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "A", "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "A", "high", "reporter", assignedTechnicianUserId: "tech-001");
         db.MaintenanceWorkOrders.AddRange(exact, firstFragment, secondFragment);
         await db.SaveChangesAsync();
 
@@ -125,11 +125,11 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     public async Task Detail_derives_actions_and_block_reasons_from_status_and_persisted_business_data()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var normal = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-NORMAL", "high", "reporter");
-        var terminal = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-TERMINAL", "high", "reporter");
+        var normal = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-NORMAL", "high", "reporter");
+        var terminal = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-TERMINAL", "high", "reporter");
         terminal.Cancel();
         var missingData = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-MISSING", "high", "reporter", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-MISSING", "high", "reporter", assignedTechnicianUserId: "tech-001");
         missingData.Accept("tech-001");
         missingData.StartWork();
         missingData.Finish("fixed", "failure", 5, [], "tech-001");
@@ -169,7 +169,7 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
         {
             await seed.Database.EnsureCreatedAsync();
             var workOrder = MaintenanceWorkOrder.OpenManual(
-                "org-001", "env-dev", "DEV-RACE", "high", "reporter");
+                "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-RACE", "high", "reporter");
             workOrder.Assign("tech-old", "team-old");
             seed.MaintenanceWorkOrders.Add(workOrder);
             seed.MaintenanceWorkOrderLifecycleEvents.Add(MaintenanceWorkOrderLifecycleEvent.Record(
@@ -250,7 +250,7 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     public async Task Detail_orders_lifecycle_by_resulting_version_when_the_authoritative_clock_moves_back()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CLOCK", "high", "reporter");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CLOCK", "high", "reporter");
         workOrder.Assign("tech-001", "team-a");
         var versionOne = MaintenanceWorkOrderLifecycleEvent.Record(
             workOrder,
@@ -293,7 +293,7 @@ public sealed class MaintenanceWorkOrderQueryScopeTests
     public async Task Detail_uses_event_id_as_the_stable_tie_break_for_same_version_and_time()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-TIE", "high", "reporter");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-TIE", "high", "reporter");
         workOrder.Assign("tech-001", "team-a");
         var occurredAtUtc = DateTimeOffset.Parse("2026-08-03T01:00:00Z", CultureInfo.InvariantCulture);
         var first = MaintenanceWorkOrderLifecycleEvent.Record(

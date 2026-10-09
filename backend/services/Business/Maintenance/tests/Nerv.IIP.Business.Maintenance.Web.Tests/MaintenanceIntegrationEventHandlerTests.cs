@@ -377,8 +377,8 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     {
         await using var dbContext = CreateDbContext();
         var clearedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
-        var first = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
-        var second = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var first = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
+        var second = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         dbContext.MaintenanceWorkOrders.AddRange(first, second);
         await dbContext.SaveChangesAsync();
 

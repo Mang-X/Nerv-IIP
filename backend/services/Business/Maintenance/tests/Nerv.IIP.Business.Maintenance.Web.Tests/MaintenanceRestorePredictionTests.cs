@@ -20,7 +20,7 @@ public sealed class MaintenanceRestorePredictionTests
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var from = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
         var expected = from.AddMinutes(minutes);
-        var order = MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator");
+        var order = MaintenanceWorkOrder.OpenManual("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator");
         order.MarkAssetUnavailable(from, "fault", explicitEtr ? expected : null);
         db.MaintenanceWorkOrders.Add(order);
         await db.SaveChangesAsync();
@@ -44,7 +44,7 @@ public sealed class MaintenanceRestorePredictionTests
     public void Explicit_ETR_is_preserved_in_the_unavailable_event()
     {
         using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var order = MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator");
+        var order = MaintenanceWorkOrder.OpenManual("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator");
         var from = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
         var expected = from.AddHours(2);
         order.MarkAssetUnavailable(from, "fault", expected);
@@ -103,7 +103,7 @@ public sealed class MaintenanceRestorePredictionTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var from = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var active = MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator");
+        var active = MaintenanceWorkOrder.OpenManual("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator");
         active.MarkAssetUnavailable(from, "fault");
         db.MaintenanceWorkOrders.Add(active);
         foreach (var (org, env, device, minutes, cancel) in new[] {
@@ -111,7 +111,7 @@ public sealed class MaintenanceRestorePredictionTests
             ("other", "env", "device", 900, false), ("org", "other", "device", 900, false),
             ("org", "env", "other", 900, false) })
         {
-            var sample = MaintenanceWorkOrder.OpenManual(org, env, device, "high", "operator");
+            var sample = MaintenanceWorkOrder.OpenManual(org, env, $"MWO-T-{Guid.NewGuid():N}", device, "high", "operator");
             sample.MarkAssetUnavailable(from, "fault");
             if (cancel) sample.Cancel();
             else sample.Complete("fixed", "fault", 1, []);
@@ -120,7 +120,7 @@ public sealed class MaintenanceRestorePredictionTests
             // Repair labor cannot explain the 30/90 minute downtime samples.
             db.Entry(sample).Property(x => x.RepairStartedAtUtc).CurrentValue = from.AddMinutes(minutes - 1);
         }
-        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", "device", "alarm", "high");
+        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "alarm", "high");
         clearedAlarm.MarkAssetUnavailable(from.AddHours(-10), "fault");
         clearedAlarm.MarkAlarmCleared(from);
         db.MaintenanceWorkOrders.Add(clearedAlarm);
@@ -146,7 +146,7 @@ public sealed class MaintenanceRestorePredictionTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var from = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
-        var order = MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator");
+        var order = MaintenanceWorkOrder.OpenManual("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator");
         order.MarkAssetUnavailableByReasonCode(from, "fault");
         db.MaintenanceWorkOrders.Add(order);
         await db.SaveChangesAsync();

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { maintenanceWorkOrderNoLabel } from '@/composables/useEquipmentPickerCatalog'
 import type {
   NvDataTableColumn,
   NvMetricFacet,
@@ -653,8 +654,10 @@ function maintenanceStatusLabel(value?: string | null) {
   // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
   return value ? (labels[value.toLowerCase()] ?? '未知状态') : '未知'
 }
-function workOrderLabel(row: { openedAtUtc?: string | null }) {
-  return row.openedAtUtc ? `维修工单 · ${formatDateTime(row.openedAtUtc)}` : '维修工单'
+/** 维修工单以正式单号标识（#3852），附开单时间。 */
+function workOrderLabel(row: { workOrderNo?: string | null; openedAtUtc?: string | null }) {
+  const no = maintenanceWorkOrderNoLabel(row.workOrderNo)
+  return row.openedAtUtc ? `${no} · ${formatDateTime(row.openedAtUtc)}` : no
 }
 const alarmCodeById = computed(
   () =>
@@ -667,10 +670,12 @@ const alarmCodeById = computed(
 function alarmLabel(alarmId?: string | null) {
   return (alarmId && alarmCodeById.value.get(alarmId)) || '—'
 }
-function sparePartWorkOrderLabel(workOrderId?: string | null) {
-  if (!workOrderId) return '未关联'
-  const workOrder = currentDeviceWorkOrders.value.find((row) => row.workOrderId === workOrderId)
-  return workOrder ? workOrderLabel(workOrder) : '—'
+function sparePartWorkOrderLabel(row: {
+  workOrderId?: string | null
+  workOrderNo?: string | null
+}) {
+  if (!row.workOrderId) return '未关联'
+  return maintenanceWorkOrderNoLabel(row.workOrderNo)
 }
 /** 保养/点检周期：先查常用说法，其余按 ISO 8601 周期翻译（P7D → 每 7 天）。 */
 function intervalLabel(value?: string | null) {
@@ -1348,8 +1353,7 @@ function recordDowntime() {
                   row.skuCode ?? '备件物料'
                 }}</span>
                 <span class="text-xs text-muted-foreground"
-                  >数量 {{ quantityLabel(row) }} · 工单
-                  {{ sparePartWorkOrderLabel(row.workOrderId) }}</span
+                  >数量 {{ quantityLabel(row) }} · 工单 {{ sparePartWorkOrderLabel(row) }}</span
                 >
               </div>
               <div

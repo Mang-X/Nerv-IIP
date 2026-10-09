@@ -26,6 +26,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "medium",
             "operator-001");
@@ -58,6 +59,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "medium",
             "operator-001");
@@ -104,6 +106,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "medium",
             "operator-001");
@@ -132,6 +135,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-b",
             "env-b",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-TENANT-B",
             "medium",
             "operator-b");

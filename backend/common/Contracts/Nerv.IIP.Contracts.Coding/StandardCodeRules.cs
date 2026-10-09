@@ -41,6 +41,8 @@ public static class StandardCodeRules
         Document("manufacturing-bom", "制造 BOM", "MBOM"),
         Document("routing", "工艺路线", "RTG"),
         Document("engineering-change", "工程变更", "ECO"),
+        // #3852：维修工单正式单号。前缀 MWO 与生产工单 WO 区分开，沿用设定集演示数据的 MWO 惯例。
+        Document("maintenance-work-order", "维修工单", "MWO"),
         Document("wms-inbound-order", "入库单", "IB"),
         Document("wms-outbound-order", "出库单", "OB"),
         Document("wms-putaway-task", "上架任务", "PUT"),

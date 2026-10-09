@@ -49,21 +49,21 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
     {
         await ResetMaintenanceSchemaAsync();
         await using var db = CreateDbContext();
-        await db.GetService<IMigrator>().MigrateAsync("20260928075938_AddSparePartIssueLocation");
+        await db.GetService<IMigrator>().MigrateAsync("20260928113631_AddMaintenanceWorkOrderNo");
         await db.Database.ExecuteSqlRawAsync("""
             INSERT INTO maintenance.maintenance_work_orders
                 (id, organization_id, environment_id, device_asset_id, priority, opened_by, status,
                  opened_at_utc, alarm_cleared, asset_unavailable, asset_unavailable_from_utc,
                  asset_unavailable_reason, accepted_at_utc, repair_started_at_utc, completed_at_utc,
-                 verified_at_utc, closed_at_utc, completion_result, downtime_reason_code, downtime_minutes, version)
+                 verified_at_utc, closed_at_utc, completion_result, downtime_reason_code, downtime_minutes, version, work_order_no)
             VALUES
                 ('00000000-0000-0000-0000-000000004126', 'org-001', 'env-dev', 'ETR-ACTIVE', 'high', 'operator',
                  'InProgress', '2026-10-01 08:00:00Z', false, true, '2026-10-01 08:00:00Z', 'breakdown',
-                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', NULL, NULL, NULL, NULL, NULL, NULL, 2),
+                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', NULL, NULL, NULL, NULL, NULL, NULL, 2, 'MWO-20261001-000001'),
                 ('00000000-0000-0000-0000-000000004127', 'org-001', 'env-dev', 'ETR-CLOSED', 'high', 'operator',
                  'Closed', '2026-10-01 08:00:00Z', true, true, '2026-10-01 08:00:00Z', 'breakdown',
                  '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', '2026-10-01 09:00:00Z',
-                 '2026-10-01 09:01:00Z', '2026-10-01 09:02:00Z', 'repaired', 'DT-MECH', 60, 5);
+                 '2026-10-01 09:01:00Z', '2026-10-01 09:02:00Z', 'repaired', 'DT-MECH', 60, 5, 'MWO-20261001-000002');
             """);
         var before = await db.Database.SqlQueryRaw<string>("""
             SELECT to_jsonb(w)::text AS "Value" FROM maintenance.maintenance_work_orders w ORDER BY id
@@ -229,7 +229,7 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
             ("other", "env-dev", "DEV-CNC-01", 900), ("org-001", "other", "DEV-CNC-01", 900),
             ("org-001", "env-dev", "other", 900) })
         {
-            var sample = MaintenanceWorkOrder.OpenManual(org, env, device, "high", "operator");
+            var sample = MaintenanceWorkOrder.OpenManual(org, env, $"MWO-T-{Guid.NewGuid():N}", device, "high", "operator");
             sample.MarkAssetUnavailable(from, "fault");
             sample.Cancel();
             db.MaintenanceWorkOrders.Add(sample);
@@ -327,7 +327,7 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
 
         await using var db = CreateDbContext();
         Assert.Equal(0, await db.MaintenanceWorkOrders.CountAsync());
-        Assert.Equal(0, await db.CodeIdempotencyKeys.CountAsync());
+        await AssertOnlyTheIndependentlyCommittedNumberBindingSurvivesAsync(db);
         Assert.Empty(await ReadOutboxAsync(db));
     }
 
@@ -358,7 +358,7 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
 
         await using var db = CreateDbContext();
         Assert.Equal(0, await db.MaintenanceWorkOrders.CountAsync());
-        Assert.Equal(0, await db.CodeIdempotencyKeys.CountAsync());
+        await AssertOnlyTheIndependentlyCommittedNumberBindingSurvivesAsync(db);
         Assert.Empty(await ReadOutboxAsync(db));
     }
 
@@ -459,6 +459,132 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
         Assert.Equal(
             DowntimeReasonBaselineSeedService.Reasons.Select(x => x.Code).Order(StringComparer.Ordinal),
             codes.Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// #3852：维修工单号迁移给存量工单补号——演示数据已有的 MWO- 单号原样沿用，其余按开单日补
+    /// MWO-yyyyMMdd-NNNNNN，并把当日计数器推到已用的最大序号，之后分配的新号不会与补出的号相撞。
+    /// </summary>
+    [MaintenanceAssetUnavailableV2PostgresFact]
+    public async Task Work_order_number_migration_backfills_existing_rows_and_advances_the_counter()
+    {
+        await ResetMaintenanceSchemaAsync();
+        await using var factory = CreateFactory();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        AssertUsesGovernedDatabase(db);
+        var migrator = db.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+        await migrator.MigrateAsync("20260928075938_AddSparePartIssueLocation");
+
+        // 造数时间钉在固定日期，断言不取决于当前时刻离 UTC 午夜多远（审核阻断 3）。
+        var day = new DateTimeOffset(2026, 9, 2, 12, 0, 0, TimeSpan.Zero);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO maintenance.maintenance_work_orders
+                (id, organization_id, environment_id, device_asset_id, priority, opened_by, status,
+                 opened_at_utc, alarm_cleared, asset_unavailable, version, source_type, source_reference_id)
+            VALUES
+                ('01a0e700-0000-7000-8000-000000000001', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {0}, false, false, 0, 'alarm', 'MWO-2026-0042'),
+                ('01a0e700-0000-7000-8000-000000000002', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {1}, false, false, 0, 'manual', NULL),
+                ('01a0e700-0000-7000-8000-000000000003', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {2}, false, false, 0, 'plan', 'PM-0001:date:20260901'),
+                ('01a0e700-0000-7000-8000-000000000004', 'org-001', 'env-dev', 'DEV-1', 'high', 'seed', 'Open',
+                 {3}, false, false, 0, 'manual', NULL);
+            """,
+            day,
+            day.AddMinutes(10),
+            day.AddMinutes(20),
+            new DateTimeOffset(2026, 9, 1, 8, 0, 0, TimeSpan.Zero));
+
+        await migrator.MigrateAsync();
+
+        var numbers = await db.MaintenanceWorkOrders.AsNoTracking()
+            .OrderBy(x => x.Id)
+            .Select(x => x.WorkOrderNo)
+            .ToListAsync();
+        Assert.Equal(
+            ["MWO-2026-0042", "MWO-20260902-000001", "MWO-20260902-000002", "MWO-20260901-000001"],
+            numbers);
+
+        // 计数器已推到当日已用的最大序号：用同一份 EF 存储、时钟停在造数当天分配，新号从 000003 开始，不与补出的号相撞。
+        var allocator = new Nerv.IIP.Coding.CodeAllocator(
+            new Nerv.IIP.Coding.EfCoreCodeStore(
+                db,
+                Nerv.IIP.Coding.EfCoreCodeStore.CreateDbContextLeaseFactory<ApplicationDbContext>(
+                    scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>())),
+            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(day.AddHours(1)));
+        var next = await allocator.AllocateAsync(
+            new Nerv.IIP.Coding.CodeAllocationRequest(
+                "org-001",
+                "env-dev",
+                Nerv.IIP.Contracts.Coding.StandardCodeRules.Get(
+                    Nerv.IIP.Business.Maintenance.Web.Application.Commands.MaintenanceWorkOrderNumbers.RuleKey),
+                null,
+                null,
+                null,
+                "migration-counter-probe",
+                "Maintenance"),
+            CancellationToken.None);
+        Assert.Equal("MWO-20260902-000003", next.Code);
+    }
+
+    /// <summary>
+    /// #3852 审核阻断 1：报警 ID、幂等键都来自外部，入参各自最长 150；拼成单号意图键后必须仍落得进
+    /// <c>code_idempotency_keys.idempotency_key</c>（varchar(150)）。真实 PostgreSQL 会对超长值报 22001，
+    /// 这里经 HTTP 打 v2 入口，用 150 位的幂等键和 150 位的报警 ID 各建一张单，两张都必须成功并拿到规则单号。
+    /// </summary>
+    [MaintenanceAssetUnavailableV2PostgresFact]
+    public async Task Work_order_number_intent_keys_fit_the_binding_column_for_150_character_alarm_ids_and_idempotency_keys()
+    {
+        await ResetMaintenanceSchemaAsync();
+        await using var factory = CreateFactory();
+        await MigrateAndSeedCatalogAsync(factory);
+        await InitializeCapAsync(factory);
+        using var client = CreateClient(factory);
+        var longKey = new string('k', 150);
+        var longAlarmId = new string('a', 150);
+
+        var byKey = await client.PostAsJsonAsync("/api/business/v2/maintenance/work-orders", V2Body(longKey, null));
+        Assert.True(byKey.StatusCode == HttpStatusCode.OK, await byKey.Content.ReadAsStringAsync());
+        var byAlarm = await client.PostAsJsonAsync(
+            "/api/business/v2/maintenance/work-orders",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                deviceAssetId = "DEV-CNC-02",
+                priority = "high",
+                sourceAlarmId = longAlarmId,
+                openedBy = "operator-001",
+                assetUnavailableReasonCode = (string?)null,
+                idempotencyKey = "v2-pg-long-alarm",
+            });
+        Assert.True(byAlarm.StatusCode == HttpStatusCode.OK, await byAlarm.Content.ReadAsStringAsync());
+
+        await using var db = CreateDbContext();
+        var numbers = await db.MaintenanceWorkOrders.AsNoTracking().Select(x => x.WorkOrderNo).ToListAsync();
+        Assert.Equal(2, numbers.Count);
+        Assert.All(numbers, number => Assert.Matches(@"^MWO-\d{8}-\d{6}$", number));
+        var bindings = await db.CodeIdempotencyKeys.AsNoTracking()
+            .Where(x => x.RuleKey == Nerv.IIP.Business.Maintenance.Web.Application.Commands.MaintenanceWorkOrderNumbers.RuleKey)
+            .Select(x => x.IdempotencyKey)
+            .ToListAsync();
+        Assert.Equal(2, bindings.Count);
+        Assert.All(bindings, key => Assert.True(key.Length <= Nerv.IIP.Coding.CodeIdempotencyKey.IdempotencyKeyMaxLength, key));
+    }
+
+    /// <summary>
+    /// 建单回执随工单一起回滚；只有维修工单号的「键 → 号」绑定在独立 scope 里已提交（#3852 审核阻断 2），
+    /// 保留下来让同键重试拿回同一个号。
+    /// </summary>
+    private static async Task AssertOnlyTheIndependentlyCommittedNumberBindingSurvivesAsync(ApplicationDbContext db)
+    {
+        var survivingRuleKeys = await db.CodeIdempotencyKeys.AsNoTracking().Select(x => x.RuleKey).ToListAsync();
+        Assert.Equal(
+            [Nerv.IIP.Business.Maintenance.Web.Application.Commands.MaintenanceWorkOrderNumbers.RuleKey],
+            survivingRuleKeys);
     }
 
     private sealed class CapturingLoggerProvider : ILoggerProvider

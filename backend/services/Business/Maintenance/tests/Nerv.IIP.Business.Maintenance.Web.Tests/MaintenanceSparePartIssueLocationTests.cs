@@ -96,7 +96,7 @@ public sealed class MaintenanceSparePartIssueLocationTests
     {
         await using var dbContext = MaintenanceEndpointContractTests.CreateTestDbContext();
         dbContext.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "DT-MECH", "机械故障", "breakdown", "availability"));
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "high", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "operator-001");
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 

@@ -143,6 +143,7 @@ public sealed class MaintenanceSeedServiceTests
         db.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenFromAlarm(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-OTHER",
             "ALARM-DEMO-001",
             "low"));

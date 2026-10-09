@@ -39,6 +39,7 @@ public sealed class StandardCodeRulesTests
     [InlineData("engineering-change", "ECO")]
     [InlineData("wms-count-execution", "CNT")]
     [InlineData("inventory-stock-count-task", "SCT")]
+    [InlineData("maintenance-work-order", "MWO")]
     public void Document_rules_preserve_existing_prefixes(string ruleKey, string prefix)
     {
         var rule = StandardCodeRules.Get(ruleKey);

@@ -53,7 +53,7 @@ public sealed class MaintenanceDowntimeEscalationTests
 
         MaintenanceWorkOrder Add(string org, string env)
         {
-            var item = MaintenanceWorkOrder.OpenManual(org, env, "device", "high", "operator");
+            var item = MaintenanceWorkOrder.OpenManual(org, env, $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator");
             item.MarkAssetUnavailable(start, "fault");
             db.MaintenanceWorkOrders.Add(item);
             return item;
@@ -66,7 +66,7 @@ public sealed class MaintenanceDowntimeEscalationTests
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var start = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
         var orders = Enumerable.Range(0, 2).Select(_ =>
-            MaintenanceWorkOrder.OpenManual("org", "env", "device", "high", "operator")).ToArray();
+            MaintenanceWorkOrder.OpenManual("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "high", "operator")).ToArray();
         foreach (var order in orders)
         {
             order.MarkAssetUnavailable(start, "fault");

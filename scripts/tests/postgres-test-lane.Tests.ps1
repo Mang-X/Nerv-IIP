@@ -495,7 +495,9 @@ try {
                 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V2_outbox_failure_rolls_back_the_work_order_and_the_already_published_v1_companion',
                 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.V1_companion_outbox_failure_rolls_back_the_work_order_before_the_v2_envelope_is_attempted',
                 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Baseline_downtime_reason_seed_waits_for_migrations_and_fills_the_catalog_on_the_next_start',
-                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Nullable_ETR_migration_preserves_legacy_work_orders_and_round_trips_predictions_on_postgres')
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Nullable_ETR_migration_preserves_legacy_work_orders_and_round_trips_predictions_on_postgres',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Work_order_number_migration_backfills_existing_rows_and_advances_the_counter',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Work_order_number_intent_keys_fit_the_binding_column_for_150_character_alarm_ids_and_idempotency_keys')
             source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceAssetUnavailableV2PostgresTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' }
     )
