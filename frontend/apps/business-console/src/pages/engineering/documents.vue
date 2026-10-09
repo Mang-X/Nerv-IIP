@@ -497,9 +497,10 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                 <NvFieldLabel for="doc-file"
                   >上传文件 <span class="text-destructive">*</span></NvFieldLabel
                 >
-                <NvInput
+                <input
                   id="doc-file"
                   type="file"
+                  class="border-input bg-background h-9 w-full rounded-md border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   accept=".pdf,.png,.jpg,.jpeg,.txt,.docx,.xlsx"
                   :disabled="uploading || submitting"
                   @change="selectFile"
