@@ -43,7 +43,7 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
 
         using var headRequest = Scoped(HttpMethod.Head, Tus);
         var head = await client.SendAsync(headRequest);
-        Assert.Equal(HttpStatusCode.NoContent, head.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, head.StatusCode);
         Assert.Equal("0", head.Headers.GetValues("Upload-Offset").Single());
         using var patchRequest = Scoped(HttpMethod.Patch, Tus);
         patchRequest.Headers.Add("Upload-Offset", "0");
@@ -63,6 +63,18 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
         var content = await client.SendAsync(contentRequest);
         Assert.Equal(HttpStatusCode.OK, content.StatusCode);
         Assert.Equal(FileStorageHandler.Content, await content.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Tus_head_preserves_downstream_not_found_instead_of_reporting_success()
+    {
+        var downstream = new FileStorageHandler { HeadStatus = HttpStatusCode.NotFound };
+        await using var lease = Lease(FakeBusinessGatewayAuthorizationClient.Allowed(), downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = Scoped(HttpMethod.Head, Tus);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.SendAsync(request)).StatusCode);
+        Assert.Equal(1, downstream.Calls);
     }
 
     [Theory]
@@ -182,6 +194,7 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
         public string Environment { get; init; } = "env-dev";
         public string Status { get; init; } = "available";
         public bool FileExists { get; init; } = true;
+        public HttpStatusCode HeadStatus { get; init; } = HttpStatusCode.OK;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -196,6 +209,7 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
             }
             if (path == "/api/files/v1/tus/ups-sop-1")
             {
+                Assert.Equal("1.0.0", request.Headers.GetValues("Tus-Resumable").Single());
                 Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
                 Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
                 if (request.Method == HttpMethod.Patch)
@@ -204,8 +218,12 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
                     Assert.Equal("application/offset+octet-stream", request.Content!.Headers.ContentType!.MediaType);
                     Bytes = await request.Content.ReadAsByteArrayAsync(ct);
                 }
-                else Assert.Equal(HttpMethod.Head, request.Method);
-                var response = new HttpResponseMessage(HttpStatusCode.NoContent);
+                else
+                {
+                    Assert.Equal(HttpMethod.Head, request.Method);
+                    if (HeadStatus != HttpStatusCode.OK) return new HttpResponseMessage(HeadStatus);
+                }
+                var response = new HttpResponseMessage(request.Method == HttpMethod.Head ? HttpStatusCode.OK : HttpStatusCode.NoContent);
                 response.Headers.Add("Upload-Offset", Bytes.Length.ToString());
                 return response;
             }

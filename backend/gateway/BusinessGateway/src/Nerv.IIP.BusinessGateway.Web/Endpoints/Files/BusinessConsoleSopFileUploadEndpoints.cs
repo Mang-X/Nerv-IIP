@@ -108,6 +108,7 @@ public sealed class GetBusinessConsoleSopFileTusOffsetEndpoint(
         Head("/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}");
         Policies(BusinessGatewayPolicies.BusinessConsoleAuthenticated);
         Options(x => x.WithTags("Business Console Files"));
+        DontAutoSendResponse();
     }
 
     public override Task HandleAsync(CancellationToken ct) =>
@@ -137,6 +138,14 @@ public sealed class PatchBusinessConsoleSopFileTusUploadEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : EndpointWithoutRequest
 {
+    public override void Configure()
+    {
+        Patch("/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}");
+        Policies(BusinessGatewayPolicies.BusinessConsoleAuthenticated);
+        Options(x => x.WithTags("Business Console Files"));
+        DontAutoSendResponse();
+    }
+
     public override Task HandleAsync(CancellationToken ct) =>
         BusinessConsoleFileTransfer.ProxyAsync(
             HttpContext,

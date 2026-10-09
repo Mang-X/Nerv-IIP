@@ -159,6 +159,7 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             targetResponse,
             new Dictionary<string, string>
             {
+                ["Tus-Resumable"] = "1.0.0",
                 ["X-Organization-Id"] = organizationId,
                 ["X-Environment-Id"] = environmentId
             },
