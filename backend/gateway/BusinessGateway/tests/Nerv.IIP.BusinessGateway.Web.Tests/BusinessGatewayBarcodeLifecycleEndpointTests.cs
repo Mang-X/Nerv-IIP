@@ -11,6 +11,26 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
 {
     [Fact]
+    public async Task Confirm_authorizes_the_scoped_route_batch_and_forwards_with_internal_token()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = Lease(auth, barcode);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var response = await client.PostAsync(
+            "/api/business-console/v1/barcode/print-batches/batch-route/confirm?organizationId=org-001&environmentId=env-dev", null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.BarcodePrint, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("barcode-print-batch", auth.LastRequirement.ResourceType);
+        Assert.Equal("batch-route", auth.LastRequirement.ResourceId);
+        Assert.Equal("internal-test-token", barcode.LastInternalToken);
+        Assert.Equal(new BusinessConsoleConfirmBarcodePrintBatchRequest("batch-route", "org-001", "env-dev"), barcode.LastConfirmRequest);
+    }
+
+    [Fact]
     public async Task Dispatch_authorizes_and_forwards_the_route_batch_with_internal_token()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -75,6 +95,7 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
     }
 
     [Theory]
+    [InlineData("confirm")]
     [InlineData("dispatch")]
     [InlineData("reprint")]
     [InlineData("void")]
@@ -95,6 +116,7 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
     }
 
     [Theory]
+    [InlineData("confirm")]
     [InlineData("dispatch")]
     [InlineData("reprint")]
     [InlineData("void")]
@@ -122,6 +144,8 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
     // AuthorizedBusinessProxyEndpoint 判定此时作不出有意义的鉴权结论，把它推迟给 DTO 校验先答
     // （否则一个确实有权限、只是漏填查询参数的调用方会被告知「你没有权限」）。
     [Theory]
+    [InlineData("confirm", "organizationId=org-001")]
+    [InlineData("confirm", "environmentId=env-dev")]
     [InlineData("dispatch", "organizationId=org-001")]
     [InlineData("dispatch", "environmentId=env-dev")]
     [InlineData("reprint", "organizationId=org-001")]
@@ -146,6 +170,7 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
     }
 
     [Theory]
+    [InlineData("confirm")]
     [InlineData("dispatch")]
     [InlineData("reprint")]
     [InlineData("void")]
@@ -191,6 +216,7 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
     }
 
     [Theory]
+    [InlineData("confirm")]
     [InlineData("dispatch")]
     [InlineData("reprint")]
     [InlineData("void")]
@@ -236,6 +262,8 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
         string operation,
         string query) => operation switch
         {
+            "confirm" => client.PostAsync(
+                $"/api/business-console/v1/barcode/print-batches/batch-001/confirm?{query}", null),
             "dispatch" => client.PostAsJsonAsync(
                 $"/api/business-console/v1/barcode/print-batches/batch-001/dispatch?{query}",
                 new { printBatchId = "batch-001", printerId = "printer-01" }),

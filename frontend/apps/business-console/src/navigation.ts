@@ -773,7 +773,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '打印批次',
           icon: PrinterIcon,
           to: { path: '/barcode/print-batches' },
-          requiredPermissions: [P.barcodeTemplatesManage],
+          requiredPermissions: [P.barcodePrint],
         },
         {
           title: '扫码记录',

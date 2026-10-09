@@ -327,6 +327,19 @@
     {
       "service": "BarcodeLabel",
       "method": "POST",
+      "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/confirm",
+      "operationId": "confirmBusinessBarcodePrintBatch",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "confirmBusinessConsoleBarcodePrintBatch"
+      ]
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
       "route": "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/activate",
       "operationId": "activateBusinessBarcodePrintBatch",
       "classification": "deferred",

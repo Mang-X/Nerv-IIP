@@ -1010,6 +1010,7 @@ public sealed class BusinessGatewayOpenApiTests
             document,
             "BusinessConsoleBarcodePrintBatchDetail",
             "reportIntentFingerprint");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/confirm", "post", "confirmBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "dispatchBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "reprintBusinessConsoleBarcodeLabel");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "voidBusinessConsoleBarcodeLabel");

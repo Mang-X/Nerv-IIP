@@ -21,7 +21,7 @@ public sealed class BarcodeLabelEndpointContractTests
     {
         var contracts = BarcodeLabelEndpointContracts.All.ToArray();
 
-        Assert.Equal(21, contracts.Length);
+        Assert.Equal(22, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/barcodes/rules"
             && x.PermissionCode == BarcodeLabelPermissionCodes.TemplatesManage
@@ -52,6 +52,11 @@ public sealed class BarcodeLabelEndpointContractTests
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "activateBusinessBarcodePrintBatch");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/internal/v1/barcodes/print-batches/{printBatchId}/confirm"
+            && x.PermissionCode == BarcodeLabelPermissionCodes.Print
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "confirmBusinessBarcodePrintBatch");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/barcodes/print-batches/{printBatchId}/dispatch"
             && x.PermissionCode == BarcodeLabelPermissionCodes.Print

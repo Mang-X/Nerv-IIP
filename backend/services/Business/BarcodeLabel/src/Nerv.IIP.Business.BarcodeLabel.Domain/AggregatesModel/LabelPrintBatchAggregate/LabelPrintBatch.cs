@@ -303,6 +303,18 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         }
     }
 
+    public void ConfirmReadyToPrint()
+    {
+        if (Status != Reserved)
+        {
+            throw Reject(
+                LabelPrintLifecycleRejectionReason.BatchCannotBeConfirmed,
+                $"Print batch in status '{Status}' cannot be confirmed ready to print.");
+        }
+
+        Status = ReadyToPrint;
+    }
+
     public void Activate(string productionReportId, string productionReportNo)
     {
         var normalizedReportId = BarcodeLabelText.Required(productionReportId, nameof(productionReportId));
@@ -802,6 +814,7 @@ public enum LabelPrintLifecycleRejectionReason
     PrintItemVoided,
     PrintItemConsumed,
     ConsumedPrintItemCannotBeVoided,
+    BatchCannotBeConfirmed,
 }
 
 public sealed class LabelPrintLifecycleRejectedException(
