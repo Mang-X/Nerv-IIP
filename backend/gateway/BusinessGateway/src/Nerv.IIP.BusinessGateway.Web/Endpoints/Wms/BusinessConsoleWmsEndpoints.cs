@@ -618,7 +618,10 @@ public sealed class ListBusinessConsoleWmsInboundOrdersEndpoint
         CancellationToken cancellationToken)
     {
         var trusted = await ResolveTrustedContextAsync(request, cancellationToken);
-        var scope = trusted.ResolveScope(request.ScopeKind, request.ScopeId);
+        var scope = string.Equals(request.ScopeKind?.Trim(), "authorized-sites", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(request.ScopeId?.Trim(), "all", StringComparison.Ordinal)
+                ? new WmsTrustedScopeSelection("authorized-sites", "all")
+                : trusted.ResolveScope(request.ScopeKind, request.ScopeId);
         var response = await _wms.ListInboundOrdersAsync(
             _tokenProvider.BearerToken,
             new BusinessWmsScopedListRequest(
@@ -1899,7 +1902,8 @@ public sealed class BusinessConsoleWmsInboundOrderListRequestValidator
         RuleFor(x => x.Status).MaximumLength(50);
         RuleFor(x => x.Keyword).MaximumLength(150);
         RuleFor(x => x.ScopeKind)
-            .Must(BusinessConsoleWmsScopeKinds.Contains)
+            .Must(value => BusinessConsoleWmsScopeKinds.Contains(value)
+                || string.Equals(value?.Trim(), "authorized-sites", StringComparison.OrdinalIgnoreCase))
             .When(x => !string.IsNullOrWhiteSpace(x.ScopeKind));
         RuleFor(x => x.ScopeId).MaximumLength(200);
     }

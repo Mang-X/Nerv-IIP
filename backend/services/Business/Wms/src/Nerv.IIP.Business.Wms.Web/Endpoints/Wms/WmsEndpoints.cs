@@ -587,15 +587,15 @@ public sealed class ListInboundOrdersEndpoint(
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListInboundOrdersEndpoint>());
     public override async Task HandleAsync(ListInboundOrdersRequest req, CancellationToken ct)
     {
-        var scope = await WmsAuthorizedListScopeResolver.ResolveAsync(
-            authorizer,
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.ActorPrincipalId,
-            req.AuthorizedSiteCodes,
-            req.ScopeKind,
-            req.ScopeId,
-            req.SiteCode,
+        var scope = await authorizer.ResolveReceiptListAsync(
+            new WarehouseWorkScopeRequest(
+                req.OrganizationId ?? string.Empty,
+                req.EnvironmentId ?? string.Empty,
+                req.ActorPrincipalId,
+                req.AuthorizedSiteCodes,
+                req.ScopeKind,
+                req.ScopeId,
+                req.SiteCode),
             ct);
         var result = await sender.Send(new ListInboundOrdersQuery(
             req.OrganizationId,
@@ -607,8 +607,8 @@ public sealed class ListInboundOrdersEndpoint(
             req.InboundOrderId,
             req.LocationCode,
             req.LotNo,
-            scope.OperatorPrincipalIds,
-            scope.PoolCodes,
+            scope.AssignedOperatorUserId is null ? null : [scope.AssignedOperatorUserId],
+            scope.AssignedOperatorUserId is null ? scope.PoolCodes : null,
             scope.SiteCodes,
             SiteWideScope: scope.SiteWide), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);

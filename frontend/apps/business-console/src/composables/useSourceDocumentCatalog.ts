@@ -28,7 +28,6 @@ import {
   maintenanceWorkOrderDocumentOption,
   maintenanceWorkOrderNoLabel,
 } from './useEquipmentPickerCatalog'
-import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from './useWmsWorkScope'
 
 /** 一次取回的候选条数；更多的靠搜索收窄，匹配总数如实交给选择器提示。 */
 const PAGE_SIZE = 50
@@ -55,8 +54,6 @@ interface CatalogSpecFields {
   searchPlaceholder: string
   /** 端点支持按单号关键字搜索时走服务端搜索；否则取一批在本地过滤。 */
   serverSearch: boolean
-  /** 列表按 WMS 作业范围授权时，取哪一类作业范围。 */
-  wmsWorkScope?: WmsWorkScopeCatalogKind
 }
 
 interface TypedCatalogSpec<TRow> extends CatalogSpecFields {
@@ -107,8 +104,10 @@ const SPECS = {
     noun: '入库单',
     searchPlaceholder: '搜索入库单号…',
     serverSearch: true,
-    queryOptions: (query) => listBusinessConsoleWmsInboundOrdersQueryOptions({ query }),
-    wmsWorkScope: 'receipts',
+    queryOptions: (query) =>
+      listBusinessConsoleWmsInboundOrdersQueryOptions({
+        query: { ...query, scopeKind: 'authorized-sites', scopeId: 'all' },
+      }),
     toOption: (row) => documentOption(row.inboundOrderNo, row.inboundOrderNo, row.siteCode),
   }),
   'wms-supplier-return': defineSpec({
@@ -176,8 +175,6 @@ export function useSourceDocumentCatalog(
 ) {
   const context = useBusinessContextStore()
   const spec: SourceDocumentCatalogSpec = SPECS[kind]
-  // 入库单列表按 WMS 作业范围授权，不带范围会被网关拒绝；沿用 WMS 页记住的范围。
-  const wmsScope = spec.wmsWorkScope ? useWmsWorkScope(spec.wmsWorkScope) : undefined
   const search = ref('')
   const keyword = refDebounced(
     computed(() => search.value.trim()),
@@ -186,17 +183,14 @@ export function useSourceDocumentCatalog(
 
   const query = useQuery(() => {
     const serverKeyword = spec.serverSearch ? keyword.value : ''
-    const scopeKind = wmsScope?.scopeKind.value
-    const scopeId = wmsScope?.scopeId.value
     return {
       ...(spec.queryOptions({
         organizationId: context.organizationId,
         environmentId: context.environmentId,
         take: spec.serverSearch ? PAGE_SIZE : LOCAL_FILTER_TAKE,
         ...(serverKeyword ? { keyword: serverKeyword } : {}),
-        ...(scopeKind && scopeId ? { scopeKind, scopeId } : {}),
       }) as object),
-      enabled: hasBusinessContext(context) && (!wmsScope || wmsScope.hasSelection.value),
+      enabled: hasBusinessContext(context),
     } as never
   })
 
