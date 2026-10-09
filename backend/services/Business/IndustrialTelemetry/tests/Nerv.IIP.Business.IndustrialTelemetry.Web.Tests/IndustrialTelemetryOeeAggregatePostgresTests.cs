@@ -132,7 +132,11 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
             Assert.Equal(0.611111m, actual.QualityRate);
             Assert.Equal(0.4125m, actual.OeeRate);
         }
-        var deviceUnion = await handler.Handle(unionRequest with { Dimension = OeeAggregateDimension.Device, Skip = 1, Take = 1 }, CancellationToken.None);
+        var deviceUnion = await handler.Handle(new QueryOeeAggregateBucketsQuery(
+            unionRequest.OrganizationId, unionRequest.EnvironmentId, OeeAggregateDimension.Device,
+            unionRequest.WindowStartUtc, unionRequest.WindowEndUtc, Skip: 1, Take: 1,
+            AuthorizedSiteCodes: unionRequest.AuthorizedSiteCodes, AuthorizedWorkshopCodes: unionRequest.AuthorizedWorkshopCodes,
+            AuthorizedLineCodes: unionRequest.AuthorizedLineCodes, AuthorizedWorkCenterIds: unionRequest.AuthorizedWorkCenterIds), CancellationToken.None);
         Assert.Equal(2, deviceUnion.TotalCount);
         Assert.Equal("UNION-B", Assert.Single(deviceUnion.Buckets).DimensionValue);
         Assert.Empty((await handler.Handle(unionRequest with { DeviceAssetId = "UNION-C" }, CancellationToken.None)).Buckets);
