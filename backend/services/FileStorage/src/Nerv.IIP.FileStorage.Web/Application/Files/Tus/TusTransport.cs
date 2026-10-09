@@ -49,7 +49,10 @@ internal static class TusTransport
                         && x.EnvironmentId == environment && x.Provider == "tus"
                         && x.State == UploadSessionState.Open && !x.LegacyCompleted,
                         authorization.CancellationToken);
-                    if (authorized is null)
+                    // A Gateway may bind the byte entrance to a purpose. Check at the durable session owner
+                    // before tus reads or mutates bytes; session purpose is immutable.
+                    var purpose = context.Request.Headers[FileStorageTransferHeaders.FilePurpose].ToString();
+                    if (authorized is null || (!string.IsNullOrEmpty(purpose) && authorized.FilePurpose != purpose))
                     {
                         authorization.FailRequest(HttpStatusCode.NotFound);
                     }

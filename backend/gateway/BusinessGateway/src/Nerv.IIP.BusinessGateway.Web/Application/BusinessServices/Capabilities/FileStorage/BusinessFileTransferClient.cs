@@ -18,6 +18,25 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 /// </summary>
 public interface IBusinessFileTransferClient
 {
+    Task ProxyTusHeadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken,
+        string? filePurpose = null);
+
+    Task ProxyTusPatchAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        string organizationId,
+        string environmentId,
+        HttpRequest sourceRequest,
+        HttpResponse targetResponse,
+        CancellationToken cancellationToken,
+        string? filePurpose = null);
+
     Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
@@ -127,13 +146,14 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         ProxyTusPatchAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, sourceRequest, targetResponse, cancellationToken);
 
     // 两个上传门面的 tus 跳形状相同：差别只在网关入口的权限口径，由端点把关。
-    private Task ProxyTusHeadAsync(
+    public Task ProxyTusHeadAsync(
         string internalBearerToken,
         string uploadSessionId,
         string organizationId,
         string environmentId,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? filePurpose = null) =>
         ProxyRawAsync(
             HttpMethod.Head,
             FileStorageDownstreamAddress.Tus(uploadSessionId),
@@ -142,19 +162,22 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             targetResponse,
             new Dictionary<string, string>
             {
+                ["Tus-Resumable"] = "1.0.0",
                 ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId
+                ["X-Environment-Id"] = environmentId,
+                ["X-File-Purpose"] = filePurpose ?? string.Empty
             },
             cancellationToken);
 
-    private Task ProxyTusPatchAsync(
+    public Task ProxyTusPatchAsync(
         string internalBearerToken,
         string uploadSessionId,
         string organizationId,
         string environmentId,
         HttpRequest sourceRequest,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? filePurpose = null) =>
         ProxyRawAsync(
             HttpMethod.Patch,
             FileStorageDownstreamAddress.Tus(uploadSessionId),
@@ -164,7 +187,8 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             new Dictionary<string, string>
             {
                 ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId
+                ["X-Environment-Id"] = environmentId,
+                ["X-File-Purpose"] = filePurpose ?? string.Empty
             },
             cancellationToken);
 

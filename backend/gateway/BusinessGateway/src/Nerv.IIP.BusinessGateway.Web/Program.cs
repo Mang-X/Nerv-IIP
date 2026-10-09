@@ -49,6 +49,7 @@ builder.Services
             s.DocumentProcessors.Add(new MachineOverheadOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new SopTusOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new BusinessGatewayErrorResponseOpenApiDocumentProcessor());
         };
     });

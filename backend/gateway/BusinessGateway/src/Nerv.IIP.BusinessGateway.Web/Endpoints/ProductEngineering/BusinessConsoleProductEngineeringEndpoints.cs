@@ -13,6 +13,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.ProductEngineering;
 public sealed class RegisterBusinessConsoleEngineeringDocumentEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessProductEngineeringClient engineering,
+    IBusinessFileStorageClient files,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRegisterEngineeringDocumentRequest, BusinessConsoleEngineeringEntityResponse>(
         auth,
@@ -22,11 +23,14 @@ public sealed class RegisterBusinessConsoleEngineeringDocumentEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleRegisterEngineeringDocumentRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
         BusinessConsoleRegisterEngineeringDocumentRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        engineering.RegisterEngineeringDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await files.ValidateSopFileForRegistrationAsync(tokenProvider.BearerToken, request, cancellationToken);
+        return await engineering.RegisterEngineeringDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console Product Engineering")]

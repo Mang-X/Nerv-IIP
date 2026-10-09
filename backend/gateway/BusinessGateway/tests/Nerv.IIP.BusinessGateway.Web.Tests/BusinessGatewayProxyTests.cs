@@ -18704,6 +18704,18 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
 
     public string? LastSopAuthorizedEnvironmentId { get; private set; }
 
+    public Task<BusinessConsoleSopFileUploadSessionResponse> CreateSopFileUploadSessionAsync(
+        string internalBearerToken, string ownerId, BusinessConsoleCreateSopFileUploadSessionRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<BusinessConsoleSopFile> CompleteSopFileUploadAsync(
+        string internalBearerToken, string uploadSessionId, BusinessConsoleCompleteSopFileUploadRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task ValidateSopFileForRegistrationAsync(
+        string internalBearerToken, BusinessConsoleRegisterEngineeringDocumentRequest request,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task<BusinessFileDownloadTicket> AuthorizeSopFileDownloadAsync(
         string internalBearerToken,
         string fileId,
@@ -18834,6 +18846,14 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
     public string? LastTusPatchEnvironmentId { get; private set; }
 
     public BusinessFileDownloadTicket? LastStreamedTicket { get; private set; }
+
+    public Task ProxyTusHeadAsync(string internalBearerToken, string uploadSessionId,
+        string organizationId, string environmentId, HttpResponse targetResponse, CancellationToken cancellationToken, string? filePurpose = null) =>
+        ProxyShiftHandoverAttachmentTusHeadAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, targetResponse, cancellationToken);
+
+    public Task ProxyTusPatchAsync(string internalBearerToken, string uploadSessionId,
+        string organizationId, string environmentId, HttpRequest sourceRequest, HttpResponse targetResponse, CancellationToken cancellationToken, string? filePurpose = null) =>
+        ProxyShiftHandoverAttachmentTusPatchAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, sourceRequest, targetResponse, cancellationToken);
 
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,

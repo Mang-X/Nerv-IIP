@@ -40,14 +40,14 @@ Phase 1（后端已支持，本轮做）
 └─ EBOM       /engineering/ebom                 [列表 + 发布向导（查看仅版本头，明细待后端）]
 Phase 2（codex 已补 list/get，本轮完成页面）
 ├─ 工程物料   /engineering/items                [列表 + 新建修订向导 + get 详情]  ✅
-├─ 工程文档   /engineering/documents            [列表 + 登记文档（fileId 文本，文件上传待接入）+ get]  ✅
+├─ 工程文档   /engineering/documents            [列表 + 上传文件后登记修订 + get + 打开文件]  ✅
 └─ 工程变更   /engineering/eco                  [列表 + 发布变更（Open→Approve→Release 一步）+ get]  ✅
 Phase 3（#628 / MAN-337 已补）
 ├─ BOM 分析   /engineering/bom-analysis         [多级树 + 爆炸 + 反查 + EBOM/MBOM 版本结构对比] ✅
 └─ ECO 预览   /engineering/eco                  [发布前 affected downstream preview：MBOM/Routing/PV/MRP/MES/APS 候选] ✅
 规划中（依赖后端 #397，未交付前用字典过渡，不假做）
 └─ 标准工序   /engineering/standard-operations  [工序主数据：默认工作中心+标准工时]  ⏳ #397
-注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。2026-07-02 起，Business Console 的 ECO 发布/查看入口接入 BusinessApproval 真实审批链选择与状态查看，`approvalReferenceId` 由真实 `chainId` 关联，不再提供自由文本审批参考；这不改变 ProductEngineering 自身 release 校验。影响预览不自动修改下游单据。文档 fileId 为文本登记，文件上传端点未接入。
+注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。2026-07-02 起，Business Console 的 ECO 发布/查看入口接入 BusinessApproval 真实审批链选择与状态查看，`approvalReferenceId` 由真实 `chainId` 关联，不再提供自由文本审批参考；这不改变 ProductEngineering 自身 release 校验。影响预览不自动修改下游单据。工程文档先上传文件，完成后登记修订，刷新列表后从详情打开真实内容；上传及登记使用文档写权限，列表和文件内容使用文档读权限。文件用途固定为工程文档，归属标识取认证身份，不依赖登记时分配的文档号。
 
 ### 标准工序（工序主数据，⏳ 规划，依赖 #397）
 - **问题**：当前工艺路线的工序名走通用数据字典（`reference-data`，`codeSet=operation`），只有 code+名，**无默认工作中心/标准工时**；建路线时每行工作中心、工时仍逐行手填。成熟系统（SAP 标准工序 CA21 / 参考工序集 CA11、Oracle Standard Operations）把工序建模为**独立工程主数据**，预绑默认工作中心+标准工时+控制码，选工序即带出默认值。

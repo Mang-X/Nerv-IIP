@@ -17,6 +17,23 @@ public interface IBusinessFileStorageClient
         string environmentId,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleSopFileUploadSessionResponse> CreateSopFileUploadSessionAsync(
+        string internalBearerToken,
+        string ownerId,
+        BusinessConsoleCreateSopFileUploadSessionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleSopFile> CompleteSopFileUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteSopFileUploadRequest request,
+        CancellationToken cancellationToken);
+
+    Task ValidateSopFileForRegistrationAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterEngineeringDocumentRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleShiftHandoverAttachmentUploadSessionResponse> CreateShiftHandoverAttachmentUploadSessionAsync(
         string internalBearerToken,
         string ownerId,
@@ -129,6 +146,101 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
             EngineeringDocuments.FilePurpose,
             "filestorage-file-not-engineering-document",
             cancellationToken);
+
+    public async Task<BusinessConsoleSopFileUploadSessionResponse> CreateSopFileUploadSessionAsync(
+        string internalBearerToken,
+        string ownerId,
+        BusinessConsoleCreateSopFileUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await SendAsync<CreateUploadSessionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/files/v1/upload-sessions",
+            new CreateUploadSessionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                new OwnerReference(
+                    EngineeringDocuments.OwnerService,
+                    EngineeringDocuments.OwnerType,
+                    ownerId),
+                EngineeringDocuments.FilePurpose,
+                request.FileName,
+                request.ContentType,
+                request.ExpectedSizeBytes,
+                request.Checksum),
+            cancellationToken);
+
+        // ADR 0023：tus 是唯一目标传输协议，默认 server-proxy 只生成没有字节 endpoint 的占位指令。
+        // 把占位指令原样交给调用方等于发一个必然写不进字节的 URL，所以这里失败关闭。
+        if (!string.Equals(session.Provider, EngineeringDocuments.TusUploadProtocol, StringComparison.Ordinal))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway,
+                "filestorage-upload-protocol-unsupported");
+        }
+
+        return new BusinessConsoleSopFileUploadSessionResponse(
+            session.UploadSessionId,
+            session.FileId,
+            EngineeringDocuments.TusUploadProtocol,
+            session.ExpiresAtUtc,
+            FileStorageRoutes.RewriteProxiedUrl(
+                session.Upload.Url,
+                FileStorageRoutes.DownstreamTusPrefix,
+                FileStorageRoutes.ConsoleSopTusPrefix),
+            session.Upload.Headers);
+    }
+
+    public async Task<BusinessConsoleSopFile> CompleteSopFileUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteSopFileUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        var file = await SendAsync<FileMetadataResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/files/v1/upload-sessions/{Uri.EscapeDataString(uploadSessionId)}/complete",
+            new CompleteUploadSessionRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                EngineeringDocuments.FilePurpose,
+                request.Checksum,
+                request.SizeBytes),
+            cancellationToken);
+
+        // FileStorage 完成提交后才返回登记所需的真实文件引用。
+        return new BusinessConsoleSopFile(
+            file.FileId,
+            file.FileName,
+            file.ContentType,
+            file.SizeBytes);
+    }
+
+    public async Task ValidateSopFileForRegistrationAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterEngineeringDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var file = await SendAsync<FileMetadataResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/files/v1/files/{Uri.EscapeDataString(request.FileId)}",
+            body: null,
+            cancellationToken);
+        if (file.OrganizationId != request.OrganizationId || file.EnvironmentId != request.EnvironmentId
+            || file.FilePurpose != EngineeringDocuments.FilePurpose)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.NotFound, "filestorage-file-not-engineering-document");
+        }
+        if (file.Status != "available")
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.Conflict, "工程文档文件尚不可用，请完成上传后再登记。");
+        }
+    }
 
     public async Task<BusinessConsoleShiftHandoverAttachmentUploadSessionResponse> CreateShiftHandoverAttachmentUploadSessionAsync(
         string internalBearerToken,
@@ -361,6 +473,7 @@ public static class FileStorageRoutes
     public const string DownstreamTusPrefix = "/api/files/v1/tus/";
     public const string DownstreamDownloadGrantPrefix = "/api/files/v1/download-grants/";
 
+    public const string ConsoleSopTusPrefix = "/api/business-console/v1/files/sop-documents/tus/";
     public const string ConsoleShiftHandoverTusPrefix = "/api/business-console/v1/files/shift-handover-attachments/tus/";
     public const string ConsoleBarcodeTemplateAssetTusPrefix = "/api/business-console/v1/files/barcode-template-assets/tus/";
 
@@ -407,6 +520,9 @@ public static class FileStorageRoutes
 public static class EngineeringDocuments
 {
     public const string FilePurpose = "engineering-document";
+    public const string OwnerService = "business-product-engineering";
+    public const string OwnerType = "engineering-document";
+    public const string TusUploadProtocol = "tus";
 }
 
 /// <summary>

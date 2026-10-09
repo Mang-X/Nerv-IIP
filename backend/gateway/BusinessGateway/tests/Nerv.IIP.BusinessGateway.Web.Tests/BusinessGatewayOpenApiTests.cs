@@ -416,6 +416,10 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/sops/current", "get", "getBusinessConsoleCurrentEngineeringSopDocuments");
         // #3314 SOP 下载面：只有一条字节路由、以 fileId 为入参；grant id 不再出现在公开契约里。
         AssertOperationId(paths, "/api/business-console/v1/files/sop-documents/{fileId}/content", "get", "downloadBusinessConsoleSopFileContent");
+        AssertOperationId(paths, "/api/business-console/v1/files/sop-documents/upload-sessions", "post", "createBusinessConsoleSopFileUploadSession");
+        AssertOperationId(paths, "/api/business-console/v1/files/sop-documents/upload-sessions/{uploadSessionId}/complete", "post", "completeBusinessConsoleSopFileUpload");
+        AssertOperationId(paths, "/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}", "head", "getBusinessConsoleSopFileTusOffset");
+        AssertOperationId(paths, "/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}", "patch", "patchBusinessConsoleSopFileTusUpload");
         // #3085 交接班附件门面：上传三段（会话 / tus HEAD+PATCH / complete）与下载两段都必须进契约，
         // 否则 business-console 与 PDA 侧没有可消费的 generated operation。
         AssertOperationId(paths, "/api/business-console/v1/files/shift-handover-attachments/upload-sessions", "post", "createBusinessConsoleShiftHandoverAttachmentUploadSession");
@@ -434,6 +438,9 @@ public sealed class BusinessGatewayOpenApiTests
             paths,
             "/api/business-console/v1/files/",
             "/api/business-console/v1/files/sop-documents/{fileId}/content",
+            "/api/business-console/v1/files/sop-documents/upload-sessions",
+            "/api/business-console/v1/files/sop-documents/upload-sessions/{uploadSessionId}/complete",
+            "/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}",
             "/api/business-console/v1/files/shift-handover-attachments/upload-sessions",
             "/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete",
             "/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}",

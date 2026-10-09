@@ -7976,6 +7976,48 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     sizeBytes?: number;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileUploadSessionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadProtocol?: string;
+    expiresAtUtc?: string;
+    uploadUrl?: string;
+    uploadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileUploadSessionRequest = {
+    organizationId: string;
+    environmentId: string;
+    fileName: string;
+    contentType: string;
+    expectedSizeBytes?: number;
+    checksum?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFile = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFile | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFile = {
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteSopFileUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    checksum?: string | null;
+    sizeBytes?: number | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderListResponse | null;
 };
@@ -23146,6 +23188,130 @@ export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses = {
 };
 
 export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponse = PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses[keyof PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses];
+
+export type CreateBusinessConsoleSopFileUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/upload-sessions';
+};
+
+export type CreateBusinessConsoleSopFileUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSopFileUploadSessionError = CreateBusinessConsoleSopFileUploadSessionErrors[keyof CreateBusinessConsoleSopFileUploadSessionErrors];
+
+export type CreateBusinessConsoleSopFileUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleSopFileUploadSessionResponse = CreateBusinessConsoleSopFileUploadSessionResponses[keyof CreateBusinessConsoleSopFileUploadSessionResponses];
+
+export type CompleteBusinessConsoleSopFileUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteSopFileUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleSopFileUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleSopFileUploadError = CompleteBusinessConsoleSopFileUploadErrors[keyof CompleteBusinessConsoleSopFileUploadErrors];
+
+export type CompleteBusinessConsoleSopFileUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFile;
+};
+
+export type CompleteBusinessConsoleSopFileUploadResponse = CompleteBusinessConsoleSopFileUploadResponses[keyof CompleteBusinessConsoleSopFileUploadResponses];
+
+export type GetBusinessConsoleSopFileTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleSopFileTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSopFileTusOffsetResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PatchBusinessConsoleSopFileTusUploadData = {
+    body: Blob | File;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleSopFileTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleSopFileTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleSopFileTusUploadResponse = PatchBusinessConsoleSopFileTusUploadResponses[keyof PatchBusinessConsoleSopFileTusUploadResponses];
 
 export type ListBusinessConsoleErpPurchaseOrdersData = {
     body?: never;
