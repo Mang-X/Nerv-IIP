@@ -18,15 +18,22 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 // PublicContract: #4246, approved #3629 r1. Real local HTTP host / EF InMemory / controlled upstream HTTP.
 public sealed partial class SchedulingEndpointContractTests
 {
-    [Fact]
-    public async Task Downtime_query_uses_saved_baseline_raw_source_http_and_scope_without_writing()
+    [Theory]
+    [InlineData("sparse", 1)]
+    [InlineData("iiot-unknown", 0)]
+    [InlineData("maintenance-unavailable", 0)]
+    [InlineData("iiot-http-failure", 0)]
+    [InlineData("maintenance-failed-envelope", 0)]
+    [InlineData("iiot-missing-data", 0)]
+    public async Task Downtime_query_uses_sparse_availability_saved_baseline_raw_source_http_and_scope_without_writing(
+        string availabilityCase, int expectedCount)
     {
         var problem = Problem(Order("A", Operation("a", "R1") with { EligibleResourceIds = ["R1", "R2"] }));
         problem = problem with { Resources = problem.Resources.Concat(Enumerable.Range(4, 48)
             .Select(i => new SchedulingResourceContract($"R{i}", $"WC-R{i}", ["CAP"], 1, "CAL", i.ToString()))).ToArray() };
         var devices = Enumerable.Range(1, 51).Select(i => $"R{i}").Order(StringComparer.Ordinal).ToArray();
         var baseline = Input(problem, [Assignment("A", "a", "R1", 0, 60)], []).Baseline;
-        var source = new DowntimeSourceHandler(problem.HorizonStartUtc);
+        var source = new DowntimeSourceHandler(problem.HorizonStartUtc, availabilityCase);
         await using var baseFactory = new SchedulingLiveHttpTestFactory();
         await using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
@@ -56,15 +63,15 @@ public sealed partial class SchedulingEndpointContractTests
         Assert.Equal(devices, Assert.Single(source.MaintenanceDeviceRequests));
         Assert.Equal(2, first.Items.Count);
         Assert.Single(first.AffectedOperations);
-        Assert.Equal(1, first.OperationsWithAlternativesCount);
+        Assert.Equal(expectedCount, first.OperationsWithAlternativesCount);
         Assert.All(first.Items, item =>
         {
             Assert.Equal(problem.HorizonStartUtc.AddDays(-3), item.Fact.StartedAtUtc);
             Assert.Null(item.Fact.RecoveredAtUtc);
-            Assert.Equal(1, item.OperationsWithAlternativesCount);
+            Assert.Equal(expectedCount, item.OperationsWithAlternativesCount);
             var operation = Assert.Single(item.AffectedOperations);
             Assert.Equal(("A", "a"), (operation.WorkOrderId, operation.OperationId));
-            Assert.Equal(new[] { "R2" }, operation.AvailableAlternativeResourceIds);
+            Assert.Equal(expectedCount == 1 ? new[] { "R2" } : [], operation.AvailableAlternativeResourceIds);
         });
         var maintenance = first.Items.Single(x => x.Fact.Source == "business-maintenance").Fact;
         Assert.Equal(problem.HorizonStartUtc.AddHours(1), maintenance.ExpectedRestoreAtUtc);
@@ -118,7 +125,7 @@ public sealed partial class SchedulingEndpointContractTests
         Assert.Equal("基线问题快照缺失，无法核对停机影响及工艺资格。", body.RootElement.GetProperty("message").GetString());
     }
 
-    private sealed class DowntimeSourceHandler(DateTimeOffset at) : HttpMessageHandler
+    private sealed class DowntimeSourceHandler(DateTimeOffset at, string availabilityCase) : HttpMessageHandler
     {
         public DateTimeOffset? Restore { get; set; } = at.AddHours(1);
         public DateTimeOffset? Recovered { get; set; }
@@ -157,9 +164,22 @@ public sealed partial class SchedulingEndpointContractTests
             {
                 Assert.True(request.RequestUri.AbsolutePath.EndsWith("runtime-availability", StringComparison.Ordinal)
                     || request.RequestUri.AbsolutePath.EndsWith("availability-windows", StringComparison.Ordinal));
-                var window = new EquipmentRuntimeAvailabilityWindowContract("R2", "WC-R2", EquipmentRuntimeAvailabilityStatus.Available,
-                    "available", EquipmentRuntimeSeverity.Blocked, at, at.AddMinutes(1), EquipmentRuntimeSourceType.StaleSource, "state", "state", []);
-                payload = new { data = new EquipmentRuntimeAvailabilityResponse(1, "org", "env", at, at.AddMinutes(1), [window]), success = true };
+                var isIiOt = request.RequestUri.AbsolutePath.EndsWith("runtime-availability", StringComparison.Ordinal);
+                if (isIiOt && availabilityCase == "iiot-http-failure")
+                    return new(HttpStatusCode.ServiceUnavailable);
+                if (isIiOt && availabilityCase == "iiot-missing-data")
+                    return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { success = true }, options: SchedulingJson.Options) };
+                // Real producers emit only blocking/Unknown windows; fresh running + no maintenance emits [].
+                var ids = query["deviceAssetIds"].ToString().Split(',');
+                EquipmentRuntimeAvailabilityWindowContract[] windows = [];
+                if (ids.Contains("R2") && ((isIiOt && availabilityCase == "iiot-unknown")
+                    || (!isIiOt && availabilityCase == "maintenance-unavailable")))
+                {
+                    windows = [new("R2", "WC-R2", isIiOt ? EquipmentRuntimeAvailabilityStatus.Unknown : EquipmentRuntimeAvailabilityStatus.Unavailable,
+                        "state", EquipmentRuntimeSeverity.Blocked, at, at.AddMinutes(1), EquipmentRuntimeSourceType.StaleSource, "state", "state", [])];
+                }
+                payload = new { data = new EquipmentRuntimeAvailabilityResponse(1, "org", "env", at, at.AddMinutes(1), windows),
+                    success = isIiOt || availabilityCase != "maintenance-failed-envelope" };
             }
             return new(HttpStatusCode.OK) { Content = JsonContent.Create(payload, options: SchedulingJson.Options) };
         }
