@@ -72,6 +72,21 @@ beforeEach(() => {
 })
 
 describe('SOP file transfer', () => {
+  it.each(['create', 'head', 'patch', 'complete'] as const)(
+    '%s 的 JSON 业务拒绝保留服务端原因',
+    async (stage) => {
+      api[stage].mockRejectedValueOnce({ message: '上传内容与声明的文件类型不匹配' })
+      await expect(uploadSopFile(file, scope)).rejects.toThrow('上传内容与声明的文件类型不匹配')
+    },
+  )
+
+  it('传输取消保留 AbortError 身份', async () => {
+    const aborted = new DOMException('The operation was aborted.', 'AbortError')
+    api.patch.mockRejectedValueOnce(aborted)
+    await expect(uploadSopFile(file, scope)).rejects.toBe(aborted)
+    expect(api.complete).not.toHaveBeenCalled()
+  })
+
   it('sends the selected bytes through HEAD/PATCH and uses only the completion file reference', async () => {
     expect(await uploadSopFile(file, scope)).toEqual({
       fileId: 'file-sop-1',

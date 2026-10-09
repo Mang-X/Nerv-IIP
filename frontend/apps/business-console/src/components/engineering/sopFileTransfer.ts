@@ -11,6 +11,20 @@ import {
   getBusinessConsoleSopFileTusOffset,
   patchBusinessConsoleSopFileTusUpload,
 } from '@nerv-iip/api-client'
+import { inlineErrorMessage } from '@/utils/notify'
+
+// FileUpload 接收 Error.message；在 SDK 响应体离开适配器前沿统一映射保留原因。
+function uploadError(error: unknown): never {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'AbortError'
+  ) {
+    throw error
+  }
+  throw new Error(inlineErrorMessage(error, '文件上传失败，请重新选择。'), { cause: error })
+}
 
 interface Scope {
   organizationId: string
@@ -24,7 +38,7 @@ export async function createSopUploadSession(
   const { data: session } = await createBusinessConsoleSopFileUploadSession({
     body: { organizationId, environmentId, fileName, contentType, expectedSizeBytes },
     throwOnError: true,
-  })
+  }).catch(uploadError)
   const uploaded = session.data
   if (
     !session.success ||
@@ -63,7 +77,7 @@ export async function transferSopFile(
     parseAs: 'text',
     signal,
     throwOnError: true,
-  })
+  }).catch(uploadError)
   const offset = Number(head.response.headers.get('Upload-Offset'))
   if (head.response.headers.get('Upload-Offset') === null || offset !== 0) {
     throw new Error('上传起点无法确认，请重新选择文件。')
@@ -79,7 +93,7 @@ export async function transferSopFile(
     signal,
     bodySerializer: null,
     throwOnError: true,
-  })
+  }).catch(uploadError)
   if (Number(patch.response.headers.get('Upload-Offset')) !== file.size) {
     throw new Error('文件没有完整上传，请重新选择文件。')
   }
@@ -98,7 +112,7 @@ export async function completeSopUploadSession(
       sizeBytes: request.sizeBytes,
     },
     throwOnError: true,
-  })
+  }).catch(uploadError)
   const uploaded = completed.data
   if (!completed.success || !uploaded?.fileId || !uploaded.fileName || !uploaded.contentType) {
     throw new Error('文件上传未完成，请重新选择文件。')

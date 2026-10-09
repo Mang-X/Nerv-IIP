@@ -15,6 +15,12 @@ const stub = vi.hoisted(() => ({
   fetchDocumentDetail: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  apiCreate: vi.fn(),
+}))
+
+vi.mock('@nerv-iip/api-client', async (orig) => ({
+  ...(await orig<typeof import('@nerv-iip/api-client')>()),
+  createBusinessConsoleSopFileUploadSession: stub.apiCreate,
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -166,6 +172,7 @@ async function selectFile(wrapper: ReturnType<typeof mount>, name = 'spec.pdf') 
 
 beforeEach(() => {
   stub.permissionCodes = ['business.engineering.documents.manage']
+  stub.createUpload.mockReset()
   stub.createUpload.mockResolvedValue({
     uploadSessionId: 'ups-sop-1',
     fileId: 'pending',
@@ -197,6 +204,63 @@ afterEach(() => {
 })
 
 describe('engineering documents page', () => {
+  it('真实 JSON 403 经 SOP 适配器和 FileUpload 保留权限提示', async () => {
+    const actual = await vi.importActual<typeof import('@/components/engineering/sopFileTransfer')>(
+      '@/components/engineering/sopFileTransfer',
+    )
+    stub.apiCreate.mockRejectedValueOnce({ message: 'Forbidden.', response: { status: 403 } })
+    stub.createUpload.mockImplementationOnce(actual.createSopUploadSession)
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await selectFile(wrapper, 'A.pdf')
+    expect(stub.toastError).toHaveBeenLastCalledWith('没有权限执行此操作。')
+    expect(stub.registerDocument).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('移除 A 后只登记 B，A 晚到=%s', async (lateA) => {
+    let finishA!: (receipt: { fileId: string; fileName: string; contentType: string }) => void
+    stub.uploadFile.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishA = resolve
+        }),
+    )
+    stub.uploadFile.mockResolvedValueOnce({
+      fileId: 'file-b',
+      fileName: 'B.pdf',
+      contentType: 'application/pdf',
+    })
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '登记文档')!.trigger('click')
+    await wrapper.find('#doc-rev').setValue('A')
+    await wrapper.find('#doc-type').setValue('work-instruction')
+    await selectFile(wrapper, 'A.pdf')
+    const receiptA = { fileId: 'file-a', fileName: 'A.pdf', contentType: 'application/pdf' }
+    if (!lateA) {
+      finishA(receiptA)
+      await flushPromises()
+    }
+    await wrapper.get('button[aria-label="移除 A.pdf"]').trigger('click')
+    await selectFile(wrapper, 'B.pdf')
+    if (lateA) {
+      finishA(receiptA)
+      await flushPromises()
+    }
+    expect(wrapper.find('#doc-file').text()).toContain('B.pdf')
+    expect(wrapper.find('#doc-file').text()).not.toContain('A.pdf')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(stub.registerDocument).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fileId: 'file-b',
+        fileName: 'B.pdf',
+        contentType: 'application/pdf',
+      }),
+    )
+    wrapper.unmount()
+  })
+
   it('渲染标题与文档行（文档号/类型/文件名）', async () => {
     const wrapper = mount(DocumentsPage, { global: { stubs: { ...layoutStub } } })
     await flushPromises()

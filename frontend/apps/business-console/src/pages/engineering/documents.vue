@@ -281,6 +281,7 @@ watch(
 const sopUpload = computed(() => {
   const generation = uploadGeneration.value
   const scope = { organizationId: filters.organizationId, environmentId: filters.environmentId }
+  const receipts = new Map<string, Awaited<ReturnType<typeof completeSopUploadSession>>>()
   return {
     async create(request: FileUploadCreateSessionRequest) {
       clearUploadedFile()
@@ -292,11 +293,7 @@ const sopUpload = computed(() => {
     },
     async complete(id: string, request: FileUploadCompleteSessionRequest) {
       const uploaded = await completeSopUploadSession(id, { ...request, ...scope })
-      if (generation === uploadGeneration.value && formOpen.value) {
-        Object.assign(form, uploaded)
-        uploading.value = false
-        notifySuccess('文件已上传，可以登记文档。')
-      }
+      receipts.set(uploaded.fileId, uploaded)
       return uploaded
     },
     failed(row: { error: string | null }) {
@@ -305,7 +302,17 @@ const sopUpload = computed(() => {
       notifyError(new Error(row.error ?? '文件上传失败'), '文件上传失败，请重新选择。')
     },
     completed(files: FileUploadCompletedFile[]) {
-      if (generation === uploadGeneration.value && files.length === 0) clearUploadedFile()
+      if (generation !== uploadGeneration.value || !formOpen.value) return
+      uploading.value = false
+      const selected = files[0]
+      if (!selected) {
+        clearUploadedFile()
+        return
+      }
+      // FileUpload 的当前完成列表才决定保留哪份文件；已移除行的晚到回执不能登记。
+      const uploaded = receipts.get(selected.fileId)!
+      if (form.fileId !== uploaded.fileId) notifySuccess('文件已上传，可以登记文档。')
+      Object.assign(form, uploaded)
     },
   }
 })
