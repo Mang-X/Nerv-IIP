@@ -29,6 +29,7 @@ export async function uploadSopFile(file: File, scope: Scope) {
   const head = await getBusinessConsoleSopFileTusOffset({
     path: { uploadSessionId },
     headers,
+    parseAs: 'text',
     throwOnError: true,
   })
   const offset = Number(head.response.headers.get('Upload-Offset'))
