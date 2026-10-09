@@ -52,7 +52,10 @@ public sealed class MesTaskScopeQueryTests
             AuthorizedWorkCenterIds: "WC-A,WC-A");
 
         var first = await handler.Handle(query, CancellationToken.None);
-        var second = await handler.Handle(query with { Skip = 2 }, CancellationToken.None);
+        var second = await handler.Handle(
+            new ListMesWorkOrdersQuery("org-001", "env-dev", null, Skip: 2, Take: 2,
+                Keyword: "WO-", AuthorizedAssignedUserIds: "user-a", AuthorizedTeamIds: "TEAM-A",
+                AuthorizedWorkCenterIds: "WC-A,WC-A"), CancellationToken.None);
         Assert.Equal(4, first.Total);
         Assert.Equal(4, second.Total);
         Assert.Equal(["WO-01", "WO-02", "WO-03", "WO-04"],
