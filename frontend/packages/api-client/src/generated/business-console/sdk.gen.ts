@@ -2891,9 +2891,14 @@ export const getBusinessConsoleSopFileTusOffset = <ThrowOnError extends boolean 
 });
 
 export const patchBusinessConsoleSopFileTusUpload = <ThrowOnError extends boolean = false>(options: Options<PatchBusinessConsoleSopFileTusUploadData, ThrowOnError>): RequestResult<PatchBusinessConsoleSopFileTusUploadResponses, PatchBusinessConsoleSopFileTusUploadErrors, ThrowOnError> => (options.client ?? client).patch<PatchBusinessConsoleSopFileTusUploadResponses, PatchBusinessConsoleSopFileTusUploadErrors, ThrowOnError>({
+    bodySerializer: null,
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}',
-    ...options
+    ...options,
+    headers: {
+        'Content-Type': 'application/offset+octet-stream',
+        ...options.headers
+    }
 });
 
 export const listBusinessConsoleErpPurchaseOrders = <ThrowOnError extends boolean = false>(options: Options<ListBusinessConsoleErpPurchaseOrdersData, ThrowOnError>): RequestResult<ListBusinessConsoleErpPurchaseOrdersResponses, ListBusinessConsoleErpPurchaseOrdersErrors, ThrowOnError> => (options.client ?? client).get<ListBusinessConsoleErpPurchaseOrdersResponses, ListBusinessConsoleErpPurchaseOrdersErrors, ThrowOnError>({

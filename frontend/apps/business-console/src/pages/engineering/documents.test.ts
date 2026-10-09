@@ -6,6 +6,8 @@ import DocumentsPage from './documents.vue'
 
 const stub = vi.hoisted(() => ({
   permissionCodes: ['business.engineering.documents.manage'],
+  createUpload: vi.fn(),
+  transfer: vi.fn(),
   uploadFile: vi.fn(),
   readFile: vi.fn(),
   refresh: vi.fn(),
@@ -19,7 +21,9 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: stub.permissionCodes } }),
 }))
 vi.mock('@/components/engineering/sopFileTransfer', () => ({
-  uploadSopFile: stub.uploadFile,
+  createSopUploadSession: stub.createUpload,
+  transferSopFile: stub.transfer,
+  completeSopUploadSession: stub.uploadFile,
   readSopFile: stub.readFile,
 }))
 
@@ -87,7 +91,7 @@ const dialogStubs = {
 const sheetStubs = {
   // NvSheet 根与 NvDialog 同为 reka DialogRoot，但 barrel 已给两个别名各自的 name，
   // 因而这里能分开打桩（过去只能共用一个 DialogRoot 键）。
-  NvSheet: { template: '<div><slot /></div>' },
+  NvSheet: { name: 'NvSheet', template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -149,7 +153,9 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 async function selectFile(wrapper: ReturnType<typeof mount>, name = 'spec.pdf') {
-  const input = wrapper.find('#doc-file')
+  const upload = wrapper.findComponent({ name: 'FileUpload' })
+  if (upload.exists()) (upload.vm as unknown as { clear: () => void }).clear()
+  const input = wrapper.find('#doc-file input[type=file]')
   Object.defineProperty(input.element, 'files', {
     configurable: true,
     value: [new File(['SOP content'], name, { type: 'application/pdf' })],
@@ -160,11 +166,20 @@ async function selectFile(wrapper: ReturnType<typeof mount>, name = 'spec.pdf') 
 
 beforeEach(() => {
   stub.permissionCodes = ['business.engineering.documents.manage']
+  stub.createUpload.mockResolvedValue({
+    uploadSessionId: 'ups-sop-1',
+    fileId: 'pending',
+    uploadMode: 'tus',
+    provider: 'tus',
+    expiresAtUtc: '2099-01-01',
+    upload: { url: '/controlled', headers: {} },
+  })
+  stub.transfer.mockResolvedValue(undefined)
   stub.uploadFile.mockReset()
-  stub.uploadFile.mockImplementation(async (file: File) => ({
+  stub.uploadFile.mockImplementation(async (_id: string, request: { sizeBytes: number }) => ({
     fileId: 'file-xyz',
-    fileName: file.name,
-    contentType: file.type,
+    fileName: stub.createUpload.mock.calls.at(-1)![0].fileName,
+    contentType: stub.createUpload.mock.calls.at(-1)![0].contentType,
   }))
   stub.readFile.mockReset()
   stub.refresh.mockClear()
@@ -204,7 +219,7 @@ describe('engineering documents page', () => {
     await findButton(wrapper, '登记文档')!.trigger('click')
     await wrapper.find('#doc-rev').setValue('A')
     await wrapper.find('#doc-type').setValue('work-instruction')
-    const input = wrapper.find('#doc-file')
+    const input = wrapper.find('#doc-file input[type=file]')
     Object.defineProperty(input.element, 'files', {
       configurable: true,
       value: [new File(['SOP'], 'sop.txt', { type: 'text/plain' })],
@@ -433,6 +448,40 @@ describe('engineering documents page', () => {
       environmentId: 'env-dev',
     })
     expect(wrapper.find('a[href="blob:sop-content"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('关闭A详情并查看B后，A内容晚返回不能覆盖B文件', async () => {
+    let finishRead!: (blob: Blob) => void
+    stub.readFile.mockImplementationOnce(
+      () =>
+        new Promise<Blob>((resolve) => {
+          finishRead = resolve
+        }),
+    )
+    const createObjectURL = vi.fn(() => 'blob:old-a')
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = createObjectURL
+        static revokeObjectURL = vi.fn()
+      },
+    )
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '查看')!.trigger('click')
+    await flushPromises()
+    await findButton(wrapper, '打开文件')!.trigger('click')
+    wrapper.findComponent({ name: 'NvSheet' }).vm.$emit('update:open', false)
+    await flushPromises()
+    const b = { ...docRow, documentNumber: 'DOC-2', fileId: 'file-b', fileName: 'B.pdf' }
+    stub.fetchDocumentDetail.mockResolvedValueOnce(b)
+    await findButton(wrapper, '查看')!.trigger('click')
+    await flushPromises()
+    finishRead(new Blob(['A bytes']))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="sheet"]').text()).toContain('B.pdf')
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(wrapper.find('a[href="blob:old-a"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

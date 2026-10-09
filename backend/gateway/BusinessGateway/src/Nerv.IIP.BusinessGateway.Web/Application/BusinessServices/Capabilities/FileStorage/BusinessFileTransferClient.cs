@@ -24,7 +24,8 @@ public interface IBusinessFileTransferClient
         string organizationId,
         string environmentId,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? filePurpose = null);
 
     Task ProxyTusPatchAsync(
         string internalBearerToken,
@@ -33,7 +34,8 @@ public interface IBusinessFileTransferClient
         string environmentId,
         HttpRequest sourceRequest,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? filePurpose = null);
 
     Task ProxyShiftHandoverAttachmentTusHeadAsync(
         string internalBearerToken,
@@ -150,7 +152,8 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         string organizationId,
         string environmentId,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? filePurpose = null) =>
         ProxyRawAsync(
             HttpMethod.Head,
             FileStorageDownstreamAddress.Tus(uploadSessionId),
@@ -161,7 +164,8 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             {
                 ["Tus-Resumable"] = "1.0.0",
                 ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId
+                ["X-Environment-Id"] = environmentId,
+                ["X-File-Purpose"] = filePurpose ?? string.Empty
             },
             cancellationToken);
 
@@ -172,7 +176,8 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         string environmentId,
         HttpRequest sourceRequest,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? filePurpose = null) =>
         ProxyRawAsync(
             HttpMethod.Patch,
             FileStorageDownstreamAddress.Tus(uploadSessionId),
@@ -182,7 +187,8 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
             new Dictionary<string, string>
             {
                 ["X-Organization-Id"] = organizationId,
-                ["X-Environment-Id"] = environmentId
+                ["X-Environment-Id"] = environmentId,
+                ["X-File-Purpose"] = filePurpose ?? string.Empty
             },
             cancellationToken);
 

@@ -1,3 +1,9 @@
+import type {
+  FileUploadCreateSessionRequest,
+  FileUploadSession,
+  FileUploadTransportContext,
+  FileUploadCompleteSessionRequest,
+} from '@nerv-iip/ui'
 import {
   completeBusinessConsoleSopFileUpload,
   createBusinessConsoleSopFileUploadSession,
@@ -11,17 +17,34 @@ interface Scope {
   environmentId: string
 }
 
-export async function uploadSopFile(file: File, scope: Scope) {
-  if (!file.size) throw new Error('文件是空的，请重新选择。')
-  const contentType = file.type || 'application/octet-stream'
+export async function createSopUploadSession(
+  request: FileUploadCreateSessionRequest,
+): Promise<FileUploadSession> {
+  const { organizationId, environmentId, fileName, contentType, expectedSizeBytes } = request
   const { data: session } = await createBusinessConsoleSopFileUploadSession({
-    body: { ...scope, fileName: file.name, contentType, expectedSizeBytes: file.size },
+    body: { organizationId, environmentId, fileName, contentType, expectedSizeBytes },
     throwOnError: true,
   })
   const uploadSessionId = session.data?.uploadSessionId
   if (!session.success || !uploadSessionId) throw new Error('未能开始上传，请重新选择文件。')
+  return {
+    uploadSessionId,
+    fileId: session.data!.fileId,
+    uploadMode: 'tus',
+    provider: 'tus',
+    expiresAtUtc: session.data!.expiresAtUtc,
+    upload: { url: session.data!.uploadUrl, headers: session.data!.uploadHeaders },
+  }
+}
+
+export async function transferSopFile(
+  { file, session, signal, onProgress }: FileUploadTransportContext,
+  scope: Scope,
+) {
+  if (!file.size) throw new Error('文件是空的，请重新选择。')
+  const uploadSessionId = session.uploadSessionId
   const headers = {
-    ...session.data?.uploadHeaders,
+    ...session.upload.headers,
     'X-Organization-Id': scope.organizationId,
     'X-Environment-Id': scope.environmentId,
     'Tus-Resumable': '1.0.0',
@@ -30,6 +53,7 @@ export async function uploadSopFile(file: File, scope: Scope) {
     path: { uploadSessionId },
     headers,
     parseAs: 'text',
+    signal,
     throwOnError: true,
   })
   const offset = Number(head.response.headers.get('Upload-Offset'))
@@ -43,16 +67,28 @@ export async function uploadSopFile(file: File, scope: Scope) {
       'Upload-Offset': '0',
       'Content-Type': 'application/offset+octet-stream',
     },
-    body: file as never,
+    body: file,
+    signal,
     bodySerializer: null,
     throwOnError: true,
   })
   if (Number(patch.response.headers.get('Upload-Offset')) !== file.size) {
     throw new Error('文件没有完整上传，请重新选择文件。')
   }
+  onProgress(100)
+}
+
+export async function completeSopUploadSession(
+  uploadSessionId: string,
+  request: FileUploadCompleteSessionRequest,
+) {
   const { data: completed } = await completeBusinessConsoleSopFileUpload({
     path: { uploadSessionId },
-    body: { ...scope, sizeBytes: file.size },
+    body: {
+      organizationId: request.organizationId,
+      environmentId: request.environmentId,
+      sizeBytes: request.sizeBytes,
+    },
     throwOnError: true,
   })
   const uploaded = completed.data

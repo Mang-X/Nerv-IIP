@@ -18848,11 +18848,11 @@ internal sealed class RecordingBusinessFileTransferClient : IBusinessFileTransfe
     public BusinessFileDownloadTicket? LastStreamedTicket { get; private set; }
 
     public Task ProxyTusHeadAsync(string internalBearerToken, string uploadSessionId,
-        string organizationId, string environmentId, HttpResponse targetResponse, CancellationToken cancellationToken) =>
+        string organizationId, string environmentId, HttpResponse targetResponse, CancellationToken cancellationToken, string? filePurpose = null) =>
         ProxyShiftHandoverAttachmentTusHeadAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, targetResponse, cancellationToken);
 
     public Task ProxyTusPatchAsync(string internalBearerToken, string uploadSessionId,
-        string organizationId, string environmentId, HttpRequest sourceRequest, HttpResponse targetResponse, CancellationToken cancellationToken) =>
+        string organizationId, string environmentId, HttpRequest sourceRequest, HttpResponse targetResponse, CancellationToken cancellationToken, string? filePurpose = null) =>
         ProxyShiftHandoverAttachmentTusPatchAsync(internalBearerToken, uploadSessionId, organizationId, environmentId, sourceRequest, targetResponse, cancellationToken);
 
     public Task ProxyShiftHandoverAttachmentTusHeadAsync(

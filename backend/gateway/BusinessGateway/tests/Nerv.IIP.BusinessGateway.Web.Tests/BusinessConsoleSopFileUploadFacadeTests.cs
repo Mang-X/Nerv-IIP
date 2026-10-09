@@ -19,6 +19,18 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
         new("org-001", "env-dev", null, "A", "file-sop-1", "work-instruction.txt", "text/plain", "sop");
 
     [Fact]
+    public async Task Tus_contract_describes_actual_success_and_raw_binary_patch()
+    {
+        using var doc = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var tus = doc.RootElement.GetProperty("paths").GetProperty("/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}");
+        Assert.True(tus.GetProperty("head").GetProperty("responses").TryGetProperty("200", out _));
+        Assert.False(tus.GetProperty("head").GetProperty("responses").TryGetProperty("204", out _));
+        var body = tus.GetProperty("patch").GetProperty("requestBody");
+        Assert.True(body.GetProperty("required").GetBoolean());
+        Assert.Equal("binary", body.GetProperty("content").GetProperty("application/offset+octet-stream").GetProperty("schema").GetProperty("format").GetString());
+    }
+
+    [Fact]
     public async Task Authenticated_upload_uses_fixed_owner_and_gateway_tus_then_registers_the_completed_file()
     {
         var downstream = new FileStorageHandler();
@@ -96,6 +108,11 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
             organizationId = "org-001", environmentId = "env-dev", fileName = "work-instruction.txt",
             contentType = "text/plain", expectedSizeBytes = 100,
         });
+        if (method == "PATCH")
+        {
+            request.Content = new ByteArrayContent(FileStorageHandler.Content);
+            request.Content.Headers.ContentType = new("application/offset+octet-stream");
+        }
         Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(request)).StatusCode);
         Assert.Equal(BusinessGatewayPermissions.EngineeringDocumentsManage, auth.LastRequirement!.PermissionCode);
         Assert.Equal(0, downstream.Calls);
@@ -151,6 +168,8 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         }
         using var request = new HttpRequestMessage(HttpMethod.Patch, Tus);
+        request.Content = new ByteArrayContent(FileStorageHandler.Content);
+        request.Content.Headers.ContentType = new("application/offset+octet-stream");
         request.Headers.Add("X-Organization-Id", organization);
         request.Headers.Add("X-Environment-Id", environment);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(request)).StatusCode);
@@ -210,6 +229,7 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
             if (path == "/api/files/v1/tus/ups-sop-1")
             {
                 Assert.Equal("1.0.0", request.Headers.GetValues("Tus-Resumable").Single());
+                Assert.Equal("engineering-document", request.Headers.GetValues("X-File-Purpose").Single());
                 Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
                 Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
                 if (request.Method == HttpMethod.Patch)

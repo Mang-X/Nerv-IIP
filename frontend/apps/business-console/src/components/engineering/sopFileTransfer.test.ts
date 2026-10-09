@@ -14,10 +14,34 @@ vi.mock('@nerv-iip/api-client', () => ({
   completeBusinessConsoleSopFileUpload: api.complete,
   downloadBusinessConsoleSopFileContent: api.read,
 }))
-import { readSopFile, uploadSopFile } from './sopFileTransfer'
+import {
+  readSopFile,
+  createSopUploadSession,
+  transferSopFile,
+  completeSopUploadSession,
+} from './sopFileTransfer'
 
 const scope = { organizationId: 'org-001', environmentId: 'env-dev' }
 const file = new File(['SOP: torque 12 Nm.'], 'work-instruction.txt', { type: 'text/plain' })
+async function uploadSopFile(file: File, scope: typeof importScope) {
+  const session = await createSopUploadSession({
+    ...scope,
+    fileName: file.name,
+    contentType: file.type,
+    expectedSizeBytes: file.size,
+    owner: { ownerService: '', ownerType: '', ownerId: '' },
+    filePurpose: 'engineering-document',
+    checksum: null,
+  })
+  await transferSopFile({ file, session, onProgress: vi.fn() }, scope)
+  return completeSopUploadSession(session.uploadSessionId, {
+    ...scope,
+    sizeBytes: file.size,
+    filePurpose: 'engineering-document',
+    checksum: null,
+  })
+}
+const importScope = scope
 function offset(value: number) {
   return {
     response: new Response(null, { status: 204, headers: { 'Upload-Offset': String(value) } }),
@@ -26,7 +50,16 @@ function offset(value: number) {
 beforeEach(() => {
   vi.resetAllMocks()
   api.create.mockResolvedValue({
-    data: { success: true, data: { uploadSessionId: 'ups-sop-1', fileId: 'file-pending' } },
+    data: {
+      success: true,
+      data: {
+        uploadSessionId: 'ups-sop-1',
+        fileId: 'file-pending',
+        uploadHeaders: {},
+        expiresAtUtc: '2099-01-01',
+        uploadUrl: '/controlled',
+      },
+    },
   })
   api.head.mockResolvedValue(offset(0))
   api.patch.mockResolvedValue(offset(file.size))

@@ -23279,15 +23279,13 @@ export type GetBusinessConsoleSopFileTusOffsetErrors = {
 
 export type GetBusinessConsoleSopFileTusOffsetResponses = {
     /**
-     * No Content
+     * Success
      */
-    204: void;
+    200: unknown;
 };
 
-export type GetBusinessConsoleSopFileTusOffsetResponse = GetBusinessConsoleSopFileTusOffsetResponses[keyof GetBusinessConsoleSopFileTusOffsetResponses];
-
 export type PatchBusinessConsoleSopFileTusUploadData = {
-    body?: never;
+    body: Blob | File;
     path: {
         uploadSessionId: string;
     };

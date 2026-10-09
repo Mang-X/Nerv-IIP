@@ -3,8 +3,20 @@ import type {
   BusinessConsoleEngineeringDocumentItem,
   BusinessConsoleRegisterEngineeringDocumentRequest,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { uploadSopFile, readSopFile } from '@/components/engineering/sopFileTransfer'
+import type {
+  NvDataTableColumn,
+  NvMetricStripCell,
+  FileUploadCreateSessionRequest,
+  FileUploadCompleteSessionRequest,
+  FileUploadTransportContext,
+  FileUploadCompletedFile,
+} from '@nerv-iip/ui'
+import {
+  createSopUploadSession,
+  transferSopFile,
+  completeSopUploadSession,
+  readSopFile,
+} from '@/components/engineering/sopFileTransfer'
 import { useAuthStore } from '@/stores/auth'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringDocuments, useEngineeringItems } from '@/composables/useProductEngineering'
@@ -15,6 +27,7 @@ import {
 import { refLabel } from '@/data/masterDataReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  FileUpload,
   NvButton,
   NvDataTable,
   NvDialog,
@@ -174,7 +187,7 @@ const canManageDocuments = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes('business.engineering.documents.manage'),
 )
 const uploading = ref(false)
-let uploadGeneration = 0
+const uploadGeneration = ref(0)
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<DocumentForm>(blankForm())
@@ -239,16 +252,17 @@ const canSubmit = computed(
 )
 
 function openCreate() {
-  uploadGeneration += 1
+  uploadGeneration.value += 1
   Object.assign(form, blankForm())
   showErrors.value = false
   // 新的一次登记 = 新的幂等作用域，不能沿用上一单的键（否则第二份文档会被回放成第一份）。
   formNonce.value = newNonce()
+  uploading.value = false
   formOpen.value = true
 }
 
 watch(formOpen, (open) => {
-  if (!open) uploadGeneration += 1
+  if (!open) uploadGeneration.value += 1
 })
 
 function clearUploadedFile() {
@@ -259,33 +273,42 @@ function clearUploadedFile() {
 watch(
   () => [filters.organizationId, filters.environmentId],
   () => {
-    uploadGeneration += 1
+    uploadGeneration.value += 1
     clearUploadedFile()
   },
 )
 
-async function selectFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || uploading.value || !canManageDocuments.value) return
-  const generation = ++uploadGeneration
-  clearUploadedFile()
-  uploading.value = true
-  try {
-    const uploaded = await uploadSopFile(file, {
-      organizationId: filters.organizationId,
-      environmentId: filters.environmentId,
-    })
-    if (generation !== uploadGeneration) return
-    Object.assign(form, uploaded)
-    notifySuccess('文件已上传，可以登记文档。')
-  } catch (error) {
-    if (generation === uploadGeneration) notifyError(error, '文件上传失败，请重新选择。')
-  } finally {
-    uploading.value = false
-    input.value = ''
+const sopUpload = computed(() => {
+  const generation = uploadGeneration.value
+  const scope = { organizationId: filters.organizationId, environmentId: filters.environmentId }
+  return {
+    async create(request: FileUploadCreateSessionRequest) {
+      clearUploadedFile()
+      uploading.value = true
+      return createSopUploadSession({ ...request, ...scope })
+    },
+    transfer(context: FileUploadTransportContext) {
+      return transferSopFile(context, scope)
+    },
+    async complete(id: string, request: FileUploadCompleteSessionRequest) {
+      const uploaded = await completeSopUploadSession(id, { ...request, ...scope })
+      if (generation === uploadGeneration.value && formOpen.value) {
+        Object.assign(form, uploaded)
+        uploading.value = false
+        notifySuccess('文件已上传，可以登记文档。')
+      }
+      return uploaded
+    },
+    failed(row: { error: string | null }) {
+      if (generation !== uploadGeneration.value) return
+      uploading.value = false
+      notifyError(new Error(row.error ?? '文件上传失败'), '文件上传失败，请重新选择。')
+    },
+    completed(files: FileUploadCompletedFile[]) {
+      if (generation === uploadGeneration.value && files.length === 0) clearUploadedFile()
+    },
   }
-}
+})
 
 /**
  * 当前页里已有同号同修订？——提交前的**占用预检**，只看已加载的行，
@@ -366,23 +389,36 @@ onBeforeUnmount(() => {
 })
 async function openFile() {
   if (!viewTarget.value?.fileId || fileOpening.value) return
+  const target = viewTarget.value
+  const generation = viewGeneration
   fileOpening.value = true
   try {
-    const blob = await readSopFile(viewTarget.value.fileId, {
+    const blob = await readSopFile(target.fileId!, {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
     })
+    if (generation !== viewGeneration || !viewOpen.value || viewTarget.value !== target) return
     openedFileUrl.value = URL.createObjectURL(blob)
   } catch (error) {
-    notifyError(error, '打开文件失败，请稍后重试。')
+    if (generation === viewGeneration) notifyError(error, '打开文件失败，请稍后重试。')
   } finally {
-    fileOpening.value = false
+    if (generation === viewGeneration) fileOpening.value = false
   }
 }
+let viewGeneration = 0
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringDocumentItem | null>(null)
 const detailPending = ref(false)
+watch(viewOpen, (open) => {
+  if (!open) {
+    viewGeneration += 1
+    fileOpening.value = false
+    openedFileUrl.value = ''
+  }
+})
 async function openView(row: BusinessConsoleEngineeringDocumentItem) {
+  const generation = ++viewGeneration
+  fileOpening.value = false
   openedFileUrl.value = ''
   viewTarget.value = row
   viewOpen.value = true
@@ -390,12 +426,12 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
   detailPending.value = true
   try {
     const detail = await fetchDocumentDetail(row.documentNumber, row.revision)
-    if (detail) viewTarget.value = detail
+    if (detail && generation === viewGeneration && viewOpen.value) viewTarget.value = detail
   } catch (error) {
     // 结果一律 toast；列表行数据仍可展示，不在抽屉里留常驻错误条。
     notifyError(error, '加载文档明细失败，请稍后重试。')
   } finally {
-    detailPending.value = false
+    if (generation === viewGeneration) detailPending.value = false
   }
 }
 </script>
@@ -497,13 +533,24 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                 <NvFieldLabel for="doc-file"
                   >上传文件 <span class="text-destructive">*</span></NvFieldLabel
                 >
-                <input
+                <FileUpload
+                  v-if="formOpen"
                   id="doc-file"
-                  type="file"
-                  class="border-input bg-background h-9 w-full rounded-md border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  accept=".pdf,.png,.jpg,.jpeg,.txt,.docx,.xlsx"
-                  :disabled="uploading || submitting"
-                  @change="selectFile"
+                  :key="uploadGeneration"
+                  purpose="engineering-document"
+                  owner-service="business-product-engineering"
+                  owner-type="engineering-document"
+                  :owner-id="auth.principal?.principalId ?? ''"
+                  :organization-id="filters.organizationId"
+                  :environment-id="filters.environmentId"
+                  :accepted-content-types="['.pdf', '.txt', '.docx', '.xlsx', '.pptx', 'image/*']"
+                  :max-files="1"
+                  :disabled="submitting"
+                  :create-upload-session="sopUpload.create"
+                  :transport="sopUpload.transfer"
+                  :complete-upload-session="sopUpload.complete"
+                  @completed="sopUpload.completed"
+                  @failed="sopUpload.failed"
                 />
                 <NvFieldDescription v-if="uploading">正在上传，请稍候…</NvFieldDescription>
                 <NvFieldDescription v-else-if="form.fileId"

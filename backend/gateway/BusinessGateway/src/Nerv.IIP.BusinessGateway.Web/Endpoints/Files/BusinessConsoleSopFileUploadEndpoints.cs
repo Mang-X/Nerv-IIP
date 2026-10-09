@@ -108,6 +108,7 @@ public sealed class GetBusinessConsoleSopFileTusOffsetEndpoint(
         Head("/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}");
         Policies(BusinessGatewayPolicies.BusinessConsoleAuthenticated);
         Options(x => x.WithTags("Business Console Files"));
+        Description(x => x.ClearDefaultProduces(StatusCodes.Status200OK).Produces(StatusCodes.Status200OK));
         DontAutoSendResponse();
     }
 
@@ -124,7 +125,8 @@ public sealed class GetBusinessConsoleSopFileTusOffsetEndpoint(
                 organizationId,
                 environmentId,
                 HttpContext.Response,
-                cancellationToken),
+                cancellationToken,
+                EngineeringDocuments.FilePurpose),
             ct);
 }
 
@@ -142,6 +144,7 @@ public sealed class PatchBusinessConsoleSopFileTusUploadEndpoint(
         Patch("/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}");
         Policies(BusinessGatewayPolicies.BusinessConsoleAuthenticated);
         Options(x => x.WithTags("Business Console Files"));
+        Description(x => x.Accepts<Stream>("application/offset+octet-stream"));
         DontAutoSendResponse();
     }
 
@@ -159,6 +162,7 @@ public sealed class PatchBusinessConsoleSopFileTusUploadEndpoint(
                 environmentId,
                 HttpContext.Request,
                 HttpContext.Response,
-                cancellationToken),
+                cancellationToken,
+                EngineeringDocuments.FilePurpose),
             ct);
 }
