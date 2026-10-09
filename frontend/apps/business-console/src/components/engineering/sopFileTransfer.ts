@@ -25,15 +25,23 @@ export async function createSopUploadSession(
     body: { organizationId, environmentId, fileName, contentType, expectedSizeBytes },
     throwOnError: true,
   })
-  const uploadSessionId = session.data?.uploadSessionId
-  if (!session.success || !uploadSessionId) throw new Error('未能开始上传，请重新选择文件。')
+  const uploaded = session.data
+  if (
+    !session.success ||
+    !uploaded?.uploadSessionId ||
+    !uploaded.fileId ||
+    !uploaded.expiresAtUtc ||
+    !uploaded.uploadUrl
+  ) {
+    throw new Error('未能开始上传，请重新选择文件。')
+  }
   return {
-    uploadSessionId,
-    fileId: session.data!.fileId,
+    uploadSessionId: uploaded.uploadSessionId,
+    fileId: uploaded.fileId,
     uploadMode: 'tus',
     provider: 'tus',
-    expiresAtUtc: session.data!.expiresAtUtc,
-    upload: { url: session.data!.uploadUrl, headers: session.data!.uploadHeaders },
+    expiresAtUtc: uploaded.expiresAtUtc,
+    upload: { url: uploaded.uploadUrl, headers: uploaded.uploadHeaders ?? {} },
   }
 }
 
