@@ -26,7 +26,11 @@ public sealed record ListMasterDataResourcesQuery(
     string? SkillCode = null,
     string? WorkshopCode = null,
     string? DeviceAssetId = null,
-    IReadOnlyCollection<string>? SiteCodes = null) : IQuery<ListMasterDataResourcesResponse>;
+    IReadOnlyCollection<string>? SiteCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeSiteCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeWorkshopCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeLineCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeWorkCenterCodes = null) : IQuery<ListMasterDataResourcesResponse>;
 
 public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<ListMasterDataResourcesQuery>
 {
@@ -299,9 +303,19 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         string resourceType,
         DeviceAssetId? resolvedDeviceAssetId)
     {
+        var restricted = request.DeviceScopeSiteCodes is not null || request.DeviceScopeWorkshopCodes is not null
+            || request.DeviceScopeLineCodes is not null || request.DeviceScopeWorkCenterCodes is not null;
+        var sites = request.DeviceScopeSiteCodes ?? [];
+        var workshops = request.DeviceScopeWorkshopCodes ?? [];
+        var lines = request.DeviceScopeLineCodes ?? [];
+        var workCenters = request.DeviceScopeWorkCenterCodes ?? [];
         var query = dbContext.DeviceAssets
             .AsNoTracking()
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
+            .Where(x => !restricted || sites.Contains(x.SiteCode) || workshops.Contains(x.WorkshopCode)
+                || lines.Contains(x.LineCode) || workCenters.Contains(x.WorkCenterCode))
+            .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkshopCode) || x.WorkshopCode == request.WorkshopCode)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
             .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)

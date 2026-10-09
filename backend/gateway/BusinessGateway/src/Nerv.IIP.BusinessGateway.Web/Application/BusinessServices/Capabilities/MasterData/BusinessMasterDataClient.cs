@@ -33,6 +33,12 @@ public interface IBusinessMasterDataClient
         IReadOnlyList<string>? siteCodes,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleResourceListResponse> ListDeviceResourcesInScopesAsync(
+        string internalBearerToken,
+        BusinessConsoleListResourcesRequest request,
+        IReadOnlyList<BusinessConsoleSearchableDirectoryScope> scopes,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMasterDataResourceDetail> GetResourceDetailAsync(
         string internalBearerToken,
         BusinessConsoleMasterDataResourceRequest request,
@@ -311,6 +317,30 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         IReadOnlyList<string>? siteCodes,
         CancellationToken cancellationToken)
     {
+        return await ListResourcesCoreAsync(internalBearerToken, request,
+            RepeatedQuery("siteCodes", siteCodes), cancellationToken);
+    }
+
+    public Task<BusinessConsoleResourceListResponse> ListDeviceResourcesInScopesAsync(
+        string internalBearerToken,
+        BusinessConsoleListResourcesRequest request,
+        IReadOnlyList<BusinessConsoleSearchableDirectoryScope> scopes,
+        CancellationToken cancellationToken)
+    {
+        var scopeQuery = scopes.Any(scope => scope.Kind == "organization") ? string.Empty : JoinQuery(
+            RepeatedQuery("deviceScopeSiteCodes", scopes.Where(x => x.Kind == "site").Select(x => x.Id!).ToArray()),
+            RepeatedQuery("deviceScopeWorkshopCodes", scopes.Where(x => x.Kind == "workshop").Select(x => x.Id!).ToArray()),
+            RepeatedQuery("deviceScopeLineCodes", scopes.Where(x => x.Kind == "production-line").Select(x => x.Id!).ToArray()),
+            RepeatedQuery("deviceScopeWorkCenterCodes", scopes.Where(x => x.Kind == "work-center").Select(x => x.Id!).ToArray()));
+        return ListResourcesCoreAsync(internalBearerToken, request, scopeQuery, cancellationToken);
+    }
+
+    private async Task<BusinessConsoleResourceListResponse> ListResourcesCoreAsync(
+        string internalBearerToken,
+        BusinessConsoleListResourcesRequest request,
+        string scopeQuery,
+        CancellationToken cancellationToken)
+    {
         var response = await SendAsync<BusinessConsoleResourceListResponse>(
             internalBearerToken,
             HttpMethod.Get,
@@ -336,7 +366,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("skillCode", request.SkillCode),
                 ("workshopCode", request.WorkshopCode),
                 ("deviceAssetId", request.DeviceAssetId)),
-                RepeatedQuery("siteCodes", siteCodes)),
+                scopeQuery),
             null,
             cancellationToken,
             failClosedOnFailureEnvelope: true);

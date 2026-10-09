@@ -120,6 +120,36 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
         int pageOffset,
         CancellationToken cancellationToken)
     {
+        if (request.DirectoryType == "equipment")
+        {
+            var scopes = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedDeviceScopes(
+                authorization, request.OrganizationId);
+            if (scopes is null)
+            {
+                return null;
+            }
+            if (!string.IsNullOrWhiteSpace(scopeKind) && !scopes.Any(x => x.Kind == "organization"
+                    || x.Kind == scopeKind && x.Id == scopeId))
+            {
+                var resource = await masterData.GetResourceDetailAsync(tokenProvider.BearerToken,
+                    new(request.OrganizationId, request.EnvironmentId, scopeKind, scopeId!), cancellationToken);
+                var authorized = resource.OrganizationId == request.OrganizationId
+                    && resource.EnvironmentId == request.EnvironmentId
+                    && scopes.Any(x => x.Kind switch
+                    {
+                        "site" => x.Id == (resource.SiteCode ?? resource.PlantCode),
+                        "workshop" => x.Id == resource.WorkshopCode,
+                        "production-line" => x.Id == resource.LineCode,
+                        _ => false,
+                    });
+                if (!authorized)
+                {
+                    return null;
+                }
+            }
+            return await QueryEquipmentAsync(request, scopeKind, scopeId, scopes, pageOffset, cancellationToken);
+        }
+
         // 按工厂切分的目录（库位 / 批次 / 序列号 / 工作中心 / 车间）：可见范围取授权工厂的并集；其余目录解析成单一范围。
         if (definition.SplitBySite)
         {
@@ -238,6 +268,34 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
             authorityConfigured = probe.Total > 0;
         }
 
+        return ResourceDirectoryResponse(request, resources, authorityConfigured);
+    }
+
+    private async Task<BusinessConsoleSearchableDirectoryResponse> QueryEquipmentAsync(
+        BusinessConsoleSearchableDirectoryRequest request,
+        string? scopeKind,
+        string? scopeId,
+        IReadOnlyList<BusinessConsoleSearchableDirectoryScope> scopes,
+        int pageOffset,
+        CancellationToken cancellationToken)
+    {
+        var query = new BusinessConsoleListResourcesRequest(request.OrganizationId, request.EnvironmentId,
+            "device-asset", Skip: pageOffset, Take: request.PageSize, Keyword: request.Keyword,
+            SiteCode: scopeKind == "site" ? scopeId : null,
+            WorkshopCode: scopeKind == "workshop" ? scopeId : null,
+            LineCode: scopeKind == "production-line" ? scopeId : null,
+            WorkCenterCode: scopeKind == "work-center" ? scopeId : null);
+        var resources = await masterData.ListDeviceResourcesInScopesAsync(
+            tokenProvider.BearerToken, query, scopes, cancellationToken);
+        ValidateResources(resources, request, pageOffset);
+        return ResourceDirectoryResponse(request, resources, true);
+    }
+
+    private static BusinessConsoleSearchableDirectoryResponse ResourceDirectoryResponse(
+        BusinessConsoleSearchableDirectoryRequest request,
+        BusinessConsoleResourceListResponse resources,
+        bool authorityConfigured)
+    {
         return BusinessConsoleSearchableDirectoryResponse.FromItems(
             request.DirectoryType,
             [.. resources.Resources.Select(resource => new BusinessConsoleSearchableDirectoryItem(

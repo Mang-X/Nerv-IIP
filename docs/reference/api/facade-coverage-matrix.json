@@ -2822,7 +2822,7 @@
       "route": "/api/business/v1/master-data/resources",
       "operationId": "listBusinessMasterDataResources",
       "classification": "exposed",
-      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；#2603 补齐 deviceAssetId（GUID/Code）与 shiftCode 精确过滤，并返回 canonical 设备 Id；公开字段与既有分页默认值保持兼容。",
+      "note": "NERV-1244：复用组合式租户、关键词与分页 criteria；#2603 补齐 deviceAssetId（GUID/Code）与 shiftCode 精确过滤，并返回 canonical 设备 Id；公开字段与既有分页默认值保持兼容。 #4257：设备目录内部传递空间授权并集，过滤在计数分页前执行；Console 公开请求/响应不增加授权集合字段。",
       "gateways": [
         "business"
       ],

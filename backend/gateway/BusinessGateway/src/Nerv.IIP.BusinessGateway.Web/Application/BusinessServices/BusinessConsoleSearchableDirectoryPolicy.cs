@@ -48,7 +48,7 @@ public static class BusinessConsoleSearchableDirectoryPolicy
         {
             ["personnel"] = Define("personnel", "master-data", BusinessGatewayPermissions.MasterDataResourcesRead, "team", "workshop", "work-center"),
             ["team"] = Define("team", "master-data", BusinessGatewayPermissions.MasterDataResourcesRead, "workshop"),
-            ["equipment"] = Define("equipment", "master-data", BusinessGatewayPermissions.MasterDataResourcesRead, "work-center"),
+            ["equipment"] = Define("equipment", "master-data", BusinessGatewayPermissions.MasterDataResourcesRead, "site", "workshop", "production-line", "work-center"),
             ["work-center"] = Define("work-center", "master-data", BusinessGatewayPermissions.MasterDataResourcesRead, "site"),
             ["station"] = Define("station", "master-data", BusinessGatewayPermissions.MasterDataResourcesRead, "work-center"),
             ["workshop"] = Define("workshop", "master-data", BusinessGatewayPermissions.MasterDataResourcesRead, "site"),
@@ -247,6 +247,38 @@ public static class BusinessConsoleSearchableDirectoryPolicy
         }
 
         return sites.Length > 0 ? BusinessConsoleAuthorizedSites.Sites(sites) : null;
+    }
+
+    // #4257：设备没有 self/team 所有权，只消费适用资源读权限的空间授权。
+    public static IReadOnlyList<BusinessConsoleSearchableDirectoryScope>? ResolveAuthorizedDeviceScopes(
+        BusinessGatewayAuthorizationResult? authorization, string organizationId)
+    {
+        if (authorization is null || !authorization.IsAllowed || authorization.DataScope?.DenyAll == true)
+        {
+            return null;
+        }
+        var grants = (authorization.ScopeGrants ?? []).ToArray();
+        if (!grants.All(IsWellFormedGrant))
+        {
+            return null;
+        }
+        var applicable = grants.Where(grant => grant.ApplicablePermissionCodes?.Contains(
+            BusinessGatewayPermissions.MasterDataResourcesRead, StringComparer.Ordinal) == true).ToArray();
+        var organizations = applicable.Where(grant =>
+            string.Equals(grant.ScopeKind.Trim(), "organization", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (organizations.Any(grant => !grant.OrganizationWide || grant.ScopeId.Trim() != organizationId))
+        {
+            return null;
+        }
+        if (organizations.Length > 0)
+        {
+            return [new("organization", organizationId)];
+        }
+        var scopes = applicable.Select(grant => new BusinessConsoleSearchableDirectoryScope(
+                grant.ScopeKind.Trim().ToLowerInvariant(), grant.ScopeId.Trim()))
+            .Where(scope => Require("equipment").SupportedScopeKinds.Contains(scope.Kind!))
+            .Distinct().ToArray();
+        return scopes.Length > 0 ? scopes : null;
     }
 
     private static bool IsRepresentableGrant(
