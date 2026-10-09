@@ -100,7 +100,7 @@ public sealed class BusinessOeeAggregateCapabilityTests
     }
 
     [Fact]
-    public async Task Query_projects_a_single_work_center_grant_when_the_request_has_no_spatial_filter()
+    public async Task Query_transmits_a_work_center_authorization_without_inventing_a_spatial_filter()
     {
         var masterData = new RoutingHandler(request => ResourceResponse(request,
             """{"resourceType":"work-center","code":"WC-01","displayName":"WC","active":true,"snapshotVersion":"v1","plantCode":"SITE-01","lineCode":"LINE-01","workshopCode":"WS-01"}"""));
@@ -118,30 +118,50 @@ public sealed class BusinessOeeAggregateCapabilityTests
                 WindowEnd),
             CancellationToken.None);
 
-        Assert.Contains("workCenterId=WC-01", telemetry.LastRequest!.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Contains("authorizedWorkCenterIds=WC-01", telemetry.LastRequest!.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Null(telemetry.LastOeeRequest!.WorkCenterId);
     }
 
     [Fact]
-    public async Task Query_rejects_a_device_outside_the_granted_line_before_calling_telemetry()
+    public async Task Query_uses_historical_authorization_even_when_device_current_line_differs()
     {
         var masterData = new RoutingHandler(request => ResourceResponse(request,
             """{"resourceType":"device-asset","code":"DEVICE-02","displayName":"Press","active":true,"snapshotVersion":"v1","siteCode":"SITE-01","workshopCode":"WS-01","lineCode":"LINE-02","workCenterCode":"WC-02","deviceAssetId":"018f47f1-40c4-7f6e-aafb-02f943709999"}"""));
-        var telemetry = new RoutingHandler(_ => throw new InvalidOperationException("Telemetry must not be called."));
-        var capability = Capability(masterData, telemetry);
-
-        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => capability.QueryAsync(
+        var telemetry = RoutingHandler.ForOee(request => OeeResponse(request));
+        var response = await Capability(masterData, telemetry).QueryAsync(
             ScopedAuthorization("production-line", "LINE-01"),
-            new BusinessOeeAggregateRequest(
-                "org-001",
-                "env-dev",
-                BusinessOeeAggregateDimension.Device,
-                WindowStart,
-                WindowEnd,
-                DeviceAssetId: "DEVICE-02"),
-            CancellationToken.None));
+            new BusinessOeeAggregateRequest("org-001", "env-dev", BusinessOeeAggregateDimension.Device,
+                WindowStart, WindowEnd, DeviceAssetId: "DEVICE-02"), CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
-        Assert.Null(telemetry.LastRequest);
+        Assert.Single(response.Buckets);
+        Assert.Null(telemetry.LastOeeRequest!.LineCode);
+        Assert.Null(telemetry.LastOeeRequest.WorkCenterId);
+        Assert.Contains("authorizedLineCodes=LINE-01", telemetry.LastRequest!.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Query_unions_site_and_multiple_work_centers_for_this_permission_only()
+    {
+        var masterData = new RoutingHandler(_ => throw new InvalidOperationException("No explicit identity to resolve."));
+        var telemetry = RoutingHandler.ForOee(request => OeeResponse(request));
+        var authorization = ScopedAuthorization("site", "SITE-A") with
+        {
+            ScopeGrants = [
+                new("role", "r", "site", "SITE-A", [BusinessGatewayPermissions.IiotTelemetryRead]),
+                new("role", "r", "work-center", "WC-A", [BusinessGatewayPermissions.IiotTelemetryRead]),
+                new("role", "r", "work-center", "WC-B", [BusinessGatewayPermissions.IiotTelemetryRead]),
+                new("role", "r", "work-center", "WC-A", [BusinessGatewayPermissions.IiotTelemetryRead]),
+                new("role", "r", "site", "SITE-C", [BusinessGatewayPermissions.InventoryLedgerRead]),
+            ],
+        };
+        await Capability(masterData, telemetry).QueryAsync(authorization,
+            new BusinessOeeAggregateRequest("org-001", "env-dev", BusinessOeeAggregateDimension.Day,
+                WindowStart, WindowEnd), CancellationToken.None);
+        var query = Uri.UnescapeDataString(telemetry.LastRequest!.RequestUri!.Query);
+        Assert.Contains("authorizedSiteCodes=SITE-A", query);
+        Assert.Contains("authorizedWorkCenterIds=WC-A,WC-B", query);
+        Assert.DoesNotContain("SITE-C", query);
+        Assert.Null(telemetry.LastOeeRequest!.WorkCenterId);
     }
 
     [Fact]
@@ -305,7 +325,7 @@ public sealed class BusinessOeeAggregateCapabilityTests
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.QueryOeeAggregatesAsync(
             "internal-token",
-            new BusinessOeeAggregateRequest(
+            new Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest(
                 "org-001",
                 "env-dev",
                 BusinessOeeAggregateDimension.Line,
@@ -326,7 +346,7 @@ public sealed class BusinessOeeAggregateCapabilityTests
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.QueryOeeAggregatesAsync(
             "internal-token",
-            new BusinessOeeAggregateRequest(
+            new Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest(
                 "org-001",
                 "env-dev",
                 BusinessOeeAggregateDimension.Day,
@@ -348,7 +368,7 @@ public sealed class BusinessOeeAggregateCapabilityTests
 
         await client.QueryOeeAggregatesAsync(
             "absence-token",
-            new BusinessOeeAggregateRequest(
+            new Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest(
                 "org-absence",
                 "env-absence",
                 BusinessOeeAggregateDimension.Day,
@@ -416,7 +436,7 @@ public sealed class BusinessOeeAggregateCapabilityTests
 
         var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.QueryOeeAggregatesAsync(
             "internal-token",
-            new BusinessOeeAggregateRequest(
+            new Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest(
                 "org-001",
                 "env-dev",
                 BusinessOeeAggregateDimension.Day,
@@ -550,6 +570,10 @@ public sealed class BusinessOeeAggregateCapabilityTests
             "businessDate",
             "skip",
             "take",
+            "authorizedSiteCodes",
+            "authorizedWorkshopCodes",
+            "authorizedLineCodes",
+            "authorizedWorkCenterIds",
         ];
 
         public static ObservedOeeAggregateRequest From(HttpRequestMessage request)

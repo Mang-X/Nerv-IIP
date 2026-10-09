@@ -21291,7 +21291,7 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
         string internalBearerToken,
-        BusinessOeeAggregateRequest request,
+        Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest request,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 

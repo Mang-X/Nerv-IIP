@@ -30,7 +30,9 @@ internal static class OeeAggregateQueryPlan
             .Where(x => x.AggregationOccurredAtUtc >= request.WindowStartUtc)
             .Where(x => x.AggregationOccurredAtUtc < request.WindowEndUtc);
         var selection = SelectionFor(request);
+        var authorization = AuthorizationFor(request);
         var selectedDeviceIds = scopedFacts
+            .Where(authorization)
             .Where(selection)
             .Select(x => x.DeviceAssetId)
             .Distinct();
@@ -46,10 +48,24 @@ internal static class OeeAggregateQueryPlan
                 $"OEE aggregate window exceeds the {OeeAggregateMaterializationLimits.MaximumProductionFactCount} production-fact materialization limit; narrow the window or add dimension filters.");
         }
 
+        var carryInFacts = await dbContext.OeeProductionFacts.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => selectedDeviceIds.Contains(x.DeviceAssetId))
+            .Where(x => x.AggregationOccurredAtUtc < request.WindowStartUtc)
+            .GroupBy(x => x.DeviceAssetId)
+            .Select(group => group.OrderByDescending(x => x.AggregationOccurredAtUtc)
+                .ThenByDescending(x => x.SourceReportNo).First())
+            .Take(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1)
+            .ToArrayAsync(cancellationToken);
+        if (contextFacts.Length + carryInFacts.Length > OeeAggregateMaterializationLimits.MaximumProductionFactCount)
+        {
+            throw new KnownException("OEE aggregate production-fact context exceeds the materialization limit; narrow the window.");
+        }
         var matchesSelection = selection.Compile();
+        var isAuthorized = authorization.Compile();
         return new MaterializedProductionFactSet(
-            contextFacts,
-            contextFacts.Where(matchesSelection).ToArray());
+            carryInFacts.Concat(contextFacts).ToArray(),
+            contextFacts.Where(x => matchesSelection(x) && isAuthorized(x)).ToArray());
     }
 
     private static Expression<Func<OeeProductionFact, bool>> SelectionFor(
@@ -61,6 +77,20 @@ internal static class OeeAggregateQueryPlan
             (request.LineCode == null || x.LineCode == request.LineCode) &&
             (request.WorkshopCode == null || x.WorkshopCode == request.WorkshopCode) &&
             (request.BusinessDate == null || x.BusinessDate == request.BusinessDate);
+
+    internal static Expression<Func<OeeProductionFact, bool>> AuthorizationFor(QueryOeeAggregateBucketsQuery request)
+    {
+        var sites = Split(request.AuthorizedSiteCodes);
+        var workshops = Split(request.AuthorizedWorkshopCodes);
+        var lines = Split(request.AuthorizedLineCodes);
+        var workCenters = Split(request.AuthorizedWorkCenterIds);
+        var organizationWide = request.AuthorizedSiteCodes is null && request.AuthorizedWorkshopCodes is null &&
+            request.AuthorizedLineCodes is null && request.AuthorizedWorkCenterIds is null;
+        return x => organizationWide || sites.Contains(x.SiteCode!) || workshops.Contains(x.WorkshopCode!) ||
+            lines.Contains(x.LineCode!) || workCenters.Contains(x.WorkCenterId);
+
+        static string[] Split(string? value) => value?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+    }
 
     internal static IQueryable<DeviceStateSnapshot> BuildInWindowStates(
         ApplicationDbContext dbContext,
@@ -118,7 +148,11 @@ public sealed record QueryOeeAggregateBucketsQuery(
     string? WorkshopCode = null,
     DateOnly? BusinessDate = null,
     int Skip = 0,
-    int Take = 100) : IQuery<OeeAggregateBucketsResponse>;
+    int Take = 100,
+    string? AuthorizedSiteCodes = null,
+    string? AuthorizedWorkshopCodes = null,
+    string? AuthorizedLineCodes = null,
+    string? AuthorizedWorkCenterIds = null) : IQuery<OeeAggregateBucketsResponse>;
 
 public sealed class QueryOeeAggregateBucketsQueryValidator : AbstractValidator<QueryOeeAggregateBucketsQuery>
 {
@@ -218,6 +252,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
         QueryOeeAggregateBucketsQuery request)
     {
         var windows = new Dictionary<DeviceBucketKey, List<RuntimeWindow>>();
+        var isAuthorized = OeeAggregateQueryPlan.AuthorizationFor(request).Compile();
         var segmentsByDevice = contextFacts
             .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal)
             .ToDictionary(
@@ -230,7 +265,7 @@ public sealed class QueryOeeAggregateBucketsQueryHandler(ApplicationDbContext db
             {
                 foreach (var segment in segmentsByDevice[deviceId].Hierarchy)
                 {
-                    if (!MatchesHierarchyFilters(segment.Fact, request) ||
+                    if (!isAuthorized(segment.Fact) || !MatchesHierarchyFilters(segment.Fact, request) ||
                         !SegmentBelongsToBucket(segment.Fact, group.Key, request))
                     {
                         continue;

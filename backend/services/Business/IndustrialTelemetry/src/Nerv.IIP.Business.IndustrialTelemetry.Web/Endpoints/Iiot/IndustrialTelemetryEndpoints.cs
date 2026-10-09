@@ -580,12 +580,12 @@ public sealed class QueryOeeEndpoint(ISender sender) : IndustrialTelemetryEndpoi
 }
 
 public sealed class QueryOeeAggregateBucketsEndpoint(ISender sender)
-    : IndustrialTelemetryEndpoint<QueryOeeAggregateBucketsRequest, ResponseData<OeeAggregateBucketsResponse>>
+    : IndustrialTelemetryEndpoint<QueryInternalOeeAggregateBucketsRequest, ResponseData<OeeAggregateBucketsResponse>>
 {
     public override void Configure() =>
         ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<QueryOeeAggregateBucketsEndpoint>());
 
-    public override async Task HandleAsync(QueryOeeAggregateBucketsRequest req, CancellationToken ct)
+    public override async Task HandleAsync(QueryInternalOeeAggregateBucketsRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new QueryOeeAggregateBucketsQuery(
             req.OrganizationId,
@@ -600,7 +600,11 @@ public sealed class QueryOeeAggregateBucketsEndpoint(ISender sender)
             req.WorkshopCode,
             req.BusinessDate,
             req.Skip,
-            req.Take), ct);
+            req.Take,
+            req.AuthorizedSiteCodes,
+            req.AuthorizedWorkshopCodes,
+            req.AuthorizedLineCodes,
+            req.AuthorizedWorkCenterIds), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
