@@ -18,6 +18,61 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesTaskScopeQueryTests
 {
+    // DomainInvariant：#4256 / #3825 r1，授权维度满足任一，业务筛选仍取交集。
+    [Fact]
+    public async Task Work_order_authorization_union_deduplicates_before_paging_and_hides_other_operations()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = Utc("2026-07-29T08:00:00Z");
+        SeedTask(db, "WO-01", "OP-SELF", "WC-X", "user-a", "TEAM-X", now);
+        SeedTask(db, "WO-01", "OP-HIDDEN", "WC-X", "user-x", "TEAM-X", now);
+        SeedTask(db, "WO-02", "OP-TEAM", "WC-X", "user-x", "TEAM-A", now.AddMinutes(1));
+        SeedTask(db, "WO-03", "OP-CENTER", "WC-A", "user-x", "TEAM-X", now.AddMinutes(2));
+        SeedTask(db, "WO-04", "OP-OVERLAP", "WC-A", "user-a", "TEAM-A", now.AddMinutes(3));
+        SeedTask(db, "WO-05", "OP-DENIED", "WC-X", "user-x", "TEAM-X", now.AddMinutes(4));
+        var crossTenant = OperationTask.Create("other-org", "env-dev", "WO-01", "OP-CROSS-ORG",
+            OperationTaskLifecycleStatus.Queued, 20, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001");
+        var crossEnvironment = OperationTask.Create("org-001", "other-env", "WO-01", "OP-CROSS-ENV",
+            OperationTaskLifecycleStatus.Queued, 30, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001");
+        db.OperationTasks.AddRange(crossTenant, crossEnvironment);
+        db.WorkOrders.AddRange(
+            WorkOrder.Create("other-org", "env-dev", "WO-OTHER-ORG", "SKU-001", "PV-001", 10m, 1, now, "PCS"),
+            WorkOrder.Create("org-001", "other-env", "WO-OTHER-ENV", "SKU-001", "PV-001", 10m, 1, now, "PCS"));
+        db.OperationTasks.AddRange(
+            OperationTask.Create("other-org", "env-dev", "WO-OTHER-ORG", "OP-OTHER-ORG",
+                OperationTaskLifecycleStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001"),
+            OperationTask.Create("org-001", "other-env", "WO-OTHER-ENV", "OP-OTHER-ENV",
+                OperationTaskLifecycleStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001"));
+        await db.SaveChangesAsync();
+        var handler = new ListMesWorkOrdersQueryHandler(db);
+        var query = new ListMesWorkOrdersQuery("org-001", "env-dev", null, Take: 2,
+            Keyword: "WO-", AuthorizedAssignedUserIds: "user-a", AuthorizedTeamIds: "TEAM-A",
+            AuthorizedWorkCenterIds: "WC-A,WC-A");
+
+        var first = await handler.Handle(query, CancellationToken.None);
+        var second = await handler.Handle(query with { Skip = 2 }, CancellationToken.None);
+        Assert.Equal(4, first.Total);
+        Assert.Equal(4, second.Total);
+        Assert.Equal(["WO-01", "WO-02", "WO-03", "WO-04"],
+            first.Items.Concat(second.Items).Select(x => x.WorkOrderId).ToArray());
+        Assert.Equal("OP-SELF", Assert.Single(first.Items.First().OperationTasks).OperationTaskId);
+        Assert.Equal("OP-OVERLAP", Assert.Single(second.Items.Last().OperationTasks).OperationTaskId);
+
+        var filtered = await handler.Handle(query with { WorkCenterIds = "WC-A", Keyword = "WO-03" }, CancellationToken.None);
+        Assert.Equal(1, filtered.Total);
+        Assert.Equal("WO-03", Assert.Single(filtered.Items).WorkOrderId);
+        var disjoint = await handler.Handle(query with { AuthorizedAssignedUserIds = null,
+            AuthorizedTeamIds = null, WorkCenterId = "WC-X" }, CancellationToken.None);
+        Assert.Equal(0, disjoint.Total);
+        Assert.Empty(disjoint.Items);
+        var emptyScope = await handler.Handle(query with { AuthorizedAssignedUserIds = " ",
+            AuthorizedTeamIds = null, AuthorizedWorkCenterIds = null }, CancellationToken.None);
+        Assert.Equal(0, emptyScope.Total);
+        Assert.Empty(emptyScope.Items);
+    }
+
     [Fact]
     public async Task Operation_scope_filters_intersect_and_keep_total_consistent_with_the_page()
     {
