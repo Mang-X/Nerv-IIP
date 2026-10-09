@@ -203,7 +203,7 @@ describe('engineering documents page', () => {
     const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
     await findButton(wrapper, '登记文档')!.trigger('click')
     await wrapper.find('#doc-rev').setValue('A')
-    await wrapper.find('#doc-type').setValue('sop')
+    await wrapper.find('#doc-type').setValue('work-instruction')
     const input = wrapper.find('#doc-file')
     Object.defineProperty(input.element, 'files', {
       configurable: true,
@@ -223,7 +223,7 @@ describe('engineering documents page', () => {
 
     await findButton(wrapper, '登记文档')!.trigger('click')
     await wrapper.find('#doc-rev').setValue('B')
-    await wrapper.find('#doc-type').setValue('sop')
+    await wrapper.find('#doc-type').setValue('work-instruction')
     stub.uploadFile.mockRejectedValueOnce(new Error('上传内容不匹配'))
     await selectFile(wrapper)
     await wrapper.find('form').trigger('submit')
