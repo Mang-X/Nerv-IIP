@@ -49,21 +49,21 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
     {
         await ResetMaintenanceSchemaAsync();
         await using var db = CreateDbContext();
-        await db.GetService<IMigrator>().MigrateAsync("20260928075938_AddSparePartIssueLocation");
+        await db.GetService<IMigrator>().MigrateAsync("20260928113631_AddMaintenanceWorkOrderNo");
         await db.Database.ExecuteSqlRawAsync("""
             INSERT INTO maintenance.maintenance_work_orders
                 (id, organization_id, environment_id, device_asset_id, priority, opened_by, status,
                  opened_at_utc, alarm_cleared, asset_unavailable, asset_unavailable_from_utc,
                  asset_unavailable_reason, accepted_at_utc, repair_started_at_utc, completed_at_utc,
-                 verified_at_utc, closed_at_utc, completion_result, downtime_reason_code, downtime_minutes, version)
+                 verified_at_utc, closed_at_utc, completion_result, downtime_reason_code, downtime_minutes, version, work_order_no)
             VALUES
                 ('00000000-0000-0000-0000-000000004126', 'org-001', 'env-dev', 'ETR-ACTIVE', 'high', 'operator',
                  'InProgress', '2026-10-01 08:00:00Z', false, true, '2026-10-01 08:00:00Z', 'breakdown',
-                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', NULL, NULL, NULL, NULL, NULL, NULL, 2),
+                 '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', NULL, NULL, NULL, NULL, NULL, NULL, 2, 'MWO-20261001-000001'),
                 ('00000000-0000-0000-0000-000000004127', 'org-001', 'env-dev', 'ETR-CLOSED', 'high', 'operator',
                  'Closed', '2026-10-01 08:00:00Z', true, true, '2026-10-01 08:00:00Z', 'breakdown',
                  '2026-10-01 08:01:00Z', '2026-10-01 08:02:00Z', '2026-10-01 09:00:00Z',
-                 '2026-10-01 09:01:00Z', '2026-10-01 09:02:00Z', 'repaired', 'DT-MECH', 60, 5);
+                 '2026-10-01 09:01:00Z', '2026-10-01 09:02:00Z', 'repaired', 'DT-MECH', 60, 5, 'MWO-20261001-000002');
             """);
         var before = await db.Database.SqlQueryRaw<string>("""
             SELECT to_jsonb(w)::text AS "Value" FROM maintenance.maintenance_work_orders w ORDER BY id

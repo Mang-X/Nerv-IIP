@@ -62501,6 +62501,10 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -63552,6 +63556,10 @@
             "nullable": true
           },
           "locationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workOrderNo": {
             "type": "string",
             "nullable": true
           }
