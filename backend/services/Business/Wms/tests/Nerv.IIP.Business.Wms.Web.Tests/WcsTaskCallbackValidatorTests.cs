@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Validation;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.DistributedLocking;
+using Nerv.IIP.Testing;
 using Nerv.IIP.Testing.PostgreSql;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
@@ -89,6 +90,8 @@ public sealed class WcsTaskCallbackValidatorTests
         // 规则树里声明的上界集合必须恰好是这四条（Complete 侧三条、Fail 侧四条），
         // 少一条 / 多一条 / 改一个数都红。
         await using var factory = CreateHost();
+        // #3197：先等 CAP 启动完成，避免短 host 拆解与 ConsumerRegister.StartAsync 竞态。
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         using var scope = factory.Services.CreateScope();
 
         Assert.Equal(
@@ -144,6 +147,7 @@ public sealed class WcsTaskCallbackValidatorTests
     public async Task Validator_rules_discriminate_on_each_field()
     {
         await using var factory = CreateHost();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         using var scope = factory.Services.CreateScope();
         var complete = scope.ServiceProvider.GetRequiredService<IValidator<CompleteWcsTaskCommand>>();
         var fail = scope.ServiceProvider.GetRequiredService<IValidator<FailWcsTaskCommand>>();
@@ -208,6 +212,7 @@ public sealed class WcsTaskCallbackValidatorTests
     public async Task Callback_commands_resolve_validators_and_sit_behind_the_command_lock()
     {
         await using var factory = CreateHost();
+        await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
         using var scope = factory.Services.CreateScope();
 
         Assert.Single(scope.ServiceProvider.GetServices<IValidator<CompleteWcsTaskCommand>>());
@@ -276,6 +281,7 @@ public sealed class WcsTaskCallbackValidatorTests
 
         // 校验器把这一格拦在 handler 之前——同一个越界取值，改后走命令层直接被拒。
         await using var validationHost = CreateHost();
+        await CapTestHost.WaitForCapBootstrapAsync(validationHost.Services);
         using var validationScope = validationHost.Services.CreateScope();
         var validator = validationScope.ServiceProvider.GetRequiredService<IValidator<FailWcsTaskCommand>>();
         Assert.False(validator.Validate(FailCommand(
