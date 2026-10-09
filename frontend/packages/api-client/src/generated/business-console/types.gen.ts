@@ -7190,6 +7190,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     lifecycle?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem> | null;
     blockReasons?: Array<string> | null;
     expectedRestoreAtUtc?: string | null;
+    workOrderNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem = {
@@ -7453,6 +7454,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     uomCode?: string | null;
     siteCode?: string | null;
     locationCode?: string | null;
+    workOrderNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceSparePartResponse = NetCorePalExtensionsDtoResponseData & {

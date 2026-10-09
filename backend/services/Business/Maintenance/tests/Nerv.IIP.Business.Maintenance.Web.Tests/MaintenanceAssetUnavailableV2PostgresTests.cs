@@ -229,7 +229,7 @@ public sealed class MaintenanceAssetUnavailableV2PostgresTests
             ("other", "env-dev", "DEV-CNC-01", 900), ("org-001", "other", "DEV-CNC-01", 900),
             ("org-001", "env-dev", "other", 900) })
         {
-            var sample = MaintenanceWorkOrder.OpenManual(org, env, device, "high", "operator");
+            var sample = MaintenanceWorkOrder.OpenManual(org, env, $"MWO-T-{Guid.NewGuid():N}", device, "high", "operator");
             sample.MarkAssetUnavailable(from, "fault");
             sample.Cancel();
             db.MaintenanceWorkOrders.Add(sample);
