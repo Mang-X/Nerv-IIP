@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
+using Nerv.IIP.FileStorage.Web.Application.Files;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
