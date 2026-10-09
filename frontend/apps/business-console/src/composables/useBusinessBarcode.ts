@@ -298,7 +298,7 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
       dispatchPrintBatchMutation.mutateAsync({
         path: { printBatchId },
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-        body: { printerId },
+        body: { printBatchId, printerId },
       }),
     dispatchPrintBatchPending: dispatchPrintBatchMutation.isLoading,
     createPrintBatch: (body: CreateBusinessConsoleBarcodePrintBatchData['body']) =>

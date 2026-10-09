@@ -146,7 +146,7 @@ describe('business barcode composables', () => {
     expect(coladaState.mutations[2]).toHaveBeenCalledWith({
       path: { printBatchId: 'pb-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
-      body: { printerId: 'printer-01' },
+      body: { printBatchId: 'pb-1', printerId: 'printer-01' },
     })
     await coladaState.mutationOptions[2]!.onSettled!()
     expect(coladaState.refetches.get('listBusinessConsoleBarcodePrintBatches')).toHaveBeenCalled()
