@@ -139,7 +139,7 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
             var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<EquipmentRuntimeAvailabilityResponse>>(
                 EquipmentRuntimeJson.Options,
                 cancellationToken);
-            return envelope?.Data ?? SourceUnavailable(problem, clientName);
+            return envelope is { Success: true, Data: not null } ? envelope.Data : SourceUnavailable(problem, clientName);
         }
         catch (HttpRequestException exception)
         {
