@@ -434,7 +434,7 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scope = await workScopeResolver.ResolveAsync(
+        var scope = await workScopeResolver.ResolveWorkOrderListAsync(
             AuthorizationResult,
             request.OrganizationId,
             request.EnvironmentId,
@@ -454,46 +454,20 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
                 request.DeviceAssetId,
                 request.Skip,
                 request.Take,
-                Join(scope.AssignedUserIds),
-                Join(scope.TeamIds),
-                NarrowRequestedIds(request.WorkCenterIds, scope.WorkCenterIds),
+                null,
+                null,
+                request.WorkCenterIds,
                 request.DeviceAssetIds,
-                request.Statuses),
+                request.Statuses,
+                AuthorizedAssignedUserIds: Join(scope.AssignedUserIds),
+                AuthorizedTeamIds: Join(scope.TeamIds),
+                AuthorizedWorkCenterIds: Join(scope.WorkCenterIds)),
             cancellationToken);
         var facts = await commercialSources.ReadAsync(request.OrganizationId, request.EnvironmentId, bearerToken,
             response.Items.Select(x => (x.WorkOrderId, x.SourcePlanReference)).ToArray(), cancellationToken);
         return response with { Items = response.Items.Select(x => x with { CommercialSourceFacts = facts.GetValueOrDefault(x.WorkOrderId) }).ToArray() };
 
     }
-
-    private static string? NarrowRequestedIds(
-        string? requestedIds,
-        IReadOnlyCollection<string> authorizedIds)
-    {
-        var requested = Split(requestedIds);
-        if (authorizedIds.Count == 0)
-        {
-            return requested.Count == 0 ? null : string.Join(',', requested);
-        }
-
-        if (requested.Count == 0)
-        {
-            return Join(authorizedIds);
-        }
-
-        var authorized = authorizedIds.ToHashSet(StringComparer.Ordinal);
-        var narrowed = requested.Where(authorized.Contains).ToArray();
-        return narrowed.Length == 0 ? "__principal_scope_no_match__" : string.Join(',', narrowed);
-    }
-
-    private static IReadOnlyCollection<string> Split(string? values) =>
-        string.IsNullOrWhiteSpace(values)
-            ? []
-            : values
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.Ordinal)
-                .Order(StringComparer.Ordinal)
-                .ToArray();
 
     private static string? Join(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));

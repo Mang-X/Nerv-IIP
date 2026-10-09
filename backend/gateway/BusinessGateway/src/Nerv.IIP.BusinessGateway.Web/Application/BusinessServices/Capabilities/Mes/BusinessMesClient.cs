@@ -1486,6 +1486,9 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("deviceAssetIds", request.DeviceAssetIds),
             ("statuses", request.Statuses),
             ("workOrderId", request.WorkOrderId),
+            ("authorizedAssignedUserIds", request.AuthorizedAssignedUserIds),
+            ("authorizedTeamIds", request.AuthorizedTeamIds),
+            ("authorizedWorkCenterIds", request.AuthorizedWorkCenterIds),
             ("skip", request.Skip),
             ("take", request.Take));
 

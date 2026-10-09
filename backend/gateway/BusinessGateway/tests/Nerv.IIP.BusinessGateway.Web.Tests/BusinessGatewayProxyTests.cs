@@ -2989,8 +2989,8 @@ public sealed class BusinessGatewayProxyTests
             "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=workshop&scopeId=WS-A");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
-        Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.AuthorizedWorkCenterIds);
+        Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.AuthorizedWorkCenterIds);
     }
 
     [Fact]
@@ -3033,11 +3033,11 @@ public sealed class BusinessGatewayProxyTests
             "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=work-center&scopeId=WC-A");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.AuthorizedWorkCenterIds);
     }
 
     [Fact]
-    public async Task Mes_work_order_list_intersects_requested_work_centers_and_preserves_multi_value_filters()
+    public async Task Mes_work_order_list_sends_authorization_separately_from_multi_value_business_filters()
     {
         var mes = new RecordingMesClient();
         var masterData = new RecordingMasterDataClient
@@ -3085,13 +3085,14 @@ public sealed class BusinessGatewayProxyTests
             "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=workshop&scopeId=WS-A&workCenterIds=WC-A,WC-B&deviceAssetIds=DEV-A,DEV-B&statuses=Released,InProgress");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.AuthorizedWorkCenterIds);
+        Assert.Equal("WC-A,WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
         Assert.Equal("DEV-A,DEV-B", mes.LastWorkOrderListRequest.DeviceAssetIds);
         Assert.Equal("Released,InProgress", mes.LastWorkOrderListRequest.Statuses);
     }
 
     [Fact]
-    public async Task Mes_work_order_list_uses_no_match_filter_when_requested_work_centers_are_outside_scope()
+    public async Task Mes_work_order_list_keeps_disjoint_business_and_authorization_filters_for_mes_intersection()
     {
         var mes = new RecordingMesClient();
         var masterData = new RecordingMasterDataClient
@@ -3132,11 +3133,12 @@ public sealed class BusinessGatewayProxyTests
             "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&scopeKind=workshop&scopeId=WS-A&workCenterIds=WC-B");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("__principal_scope_no_match__", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.AuthorizedWorkCenterIds);
+        Assert.Equal("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
     }
 
     [Fact]
-    public async Task Mes_work_order_list_requires_a_selection_when_multiple_scopes_are_authorized()
+    public async Task Mes_work_order_list_uses_the_authorized_union_without_an_explicit_selection()
     {
         var mes = new RecordingMesClient();
         var masterData = new RecordingMasterDataClient
@@ -3178,8 +3180,8 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.GetAsync(
             "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Null(mes.LastWorkOrderListRequest);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.AuthorizedWorkCenterIds);
     }
 
     [Fact]
@@ -3215,9 +3217,9 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(mes.LastWorkOrderListRequest);
-        Assert.Null(mes.LastWorkOrderListRequest.AssignedUserIds);
-        Assert.Null(mes.LastWorkOrderListRequest.TeamIds);
-        Assert.Null(mes.LastWorkOrderListRequest.WorkCenterIds);
+        Assert.Null(mes.LastWorkOrderListRequest.AuthorizedAssignedUserIds);
+        Assert.Null(mes.LastWorkOrderListRequest.AuthorizedTeamIds);
+        Assert.Null(mes.LastWorkOrderListRequest.AuthorizedWorkCenterIds);
     }
 
     [Fact]

@@ -51,7 +51,10 @@ public sealed record ListMesWorkOrdersRequest(
     string? Statuses = null,
     string? AssignedUserIds = null,
     string? TeamIds = null,
-    string? WorkOrderId = null);
+    string? WorkOrderId = null,
+    string? AuthorizedAssignedUserIds = null,
+    string? AuthorizedTeamIds = null,
+    string? AuthorizedWorkCenterIds = null);
 
 public sealed record ListOperationTasksRequest(
     string OrganizationId,
@@ -873,7 +876,10 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
                 req.Statuses,
                 req.AssignedUserIds,
                 req.TeamIds,
-                req.WorkOrderId),
+                req.WorkOrderId,
+                req.AuthorizedAssignedUserIds,
+                req.AuthorizedTeamIds,
+                req.AuthorizedWorkCenterIds),
             ct);
         await Send.OkAsync(response, ct);
     }

@@ -4767,7 +4767,10 @@ public sealed record BusinessMesWorkOrderListRequest(
     string? WorkCenterIds = null,
     string? DeviceAssetIds = null,
     string? Statuses = null,
-    string? WorkOrderId = null);
+    string? WorkOrderId = null,
+    string? AuthorizedAssignedUserIds = null,
+    string? AuthorizedTeamIds = null,
+    string? AuthorizedWorkCenterIds = null);
 
 public sealed record BusinessConsoleMesOperationTaskListRequest(
     string OrganizationId,

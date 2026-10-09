@@ -23,7 +23,10 @@ public sealed record ListMesWorkOrdersQuery(
     string? Statuses = null,
     string? AssignedUserIds = null,
     string? TeamIds = null,
-    string? WorkOrderId = null) : IQuery<ListMesWorkOrdersResponse>;
+    string? WorkOrderId = null,
+    string? AuthorizedAssignedUserIds = null,
+    string? AuthorizedTeamIds = null,
+    string? AuthorizedWorkCenterIds = null) : IQuery<ListMesWorkOrdersResponse>;
 
 public sealed record ListMesWorkOrdersResponse(
     IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
@@ -140,19 +143,31 @@ public sealed class ListMesWorkOrdersQueryHandler(
             !string.IsNullOrWhiteSpace(request.DeviceAssetIds) ||
             request.AssignedUserIds is not null ||
             request.TeamIds is not null;
-        if (hasTaskFilters)
+        var authorizedUsers = SplitCsv(request.AuthorizedAssignedUserIds);
+        var authorizedTeams = SplitCsv(request.AuthorizedTeamIds);
+        var authorizedWorkCenters = SplitCsv(request.AuthorizedWorkCenterIds);
+        var hasAuthorizationScope = request.AuthorizedAssignedUserIds is not null ||
+            request.AuthorizedTeamIds is not null || request.AuthorizedWorkCenterIds is not null;
+        // 同一查询同时用于工单 EXISTS 和返回工序；授权维度 OR，业务筛选仍为 AND。
+        var visibleTasks = dbContext.OperationTasks.AsNoTracking().Where(task =>
+            task.OrganizationId == tenant.OrganizationId &&
+            task.EnvironmentId == tenant.EnvironmentId &&
+            (!hasTaskFilters ||
+                ((workCenterId == null || task.WorkCenterId == workCenterId) &&
+                 (!hasWorkCenterScope || workCenterIds.Contains(task.WorkCenterId)) &&
+                 (shiftId == null || task.ShiftId == shiftId) &&
+                 (deviceAssetId == null || task.DeviceAssetId == deviceAssetId) &&
+                 (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId)) &&
+                 (!hasAssignedUserScope || assignedUserIds.Contains(task.AssignedUserId)) &&
+                 (!hasTeamScope || teamIds.Contains(task.TeamId)))) &&
+            (!hasAuthorizationScope ||
+                authorizedUsers.Contains(task.AssignedUserId) ||
+                authorizedTeams.Contains(task.TeamId) ||
+                authorizedWorkCenters.Contains(task.WorkCenterId)));
+        if (hasTaskFilters || hasAuthorizationScope)
         {
-            workOrdersQuery = workOrdersQuery.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == tenant.OrganizationId &&
-                task.EnvironmentId == tenant.EnvironmentId &&
-                task.WorkOrderId == x.WorkOrderIdValue &&
-                (workCenterId == null || task.WorkCenterId == workCenterId) &&
-                (!hasWorkCenterScope || workCenterIds.Contains(task.WorkCenterId)) &&
-                (shiftId == null || task.ShiftId == shiftId) &&
-                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId) &&
-                (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId)) &&
-                (!hasAssignedUserScope || assignedUserIds.Contains(task.AssignedUserId)) &&
-                (!hasTeamScope || teamIds.Contains(task.TeamId))));
+            workOrdersQuery = workOrdersQuery.Where(x =>
+                visibleTasks.Any(task => task.WorkOrderId == x.WorkOrderIdValue));
         }
 
         var total = await workOrdersQuery.CountAsync(cancellationToken);
@@ -202,20 +217,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
         // Keep this IN-list bounded by the clamped `take` value above; this endpoint returns a
         // compact execution snapshot for scheduling/acceptance flows, not an unbounded export.
         var workOrderIds = workOrders.Select(x => x.WorkOrderIdValue).ToArray();
-        var tasks = await dbContext.OperationTasks
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == tenant.OrganizationId &&
-                x.EnvironmentId == tenant.EnvironmentId &&
-                workOrderIds.Contains(x.WorkOrderId) &&
-                (!hasTaskFilters ||
-                    ((workCenterId == null || x.WorkCenterId == workCenterId) &&
-                     (!hasWorkCenterScope || workCenterIds.Contains(x.WorkCenterId)) &&
-                     (shiftId == null || x.ShiftId == shiftId) &&
-                     (deviceAssetId == null || x.DeviceAssetId == deviceAssetId) &&
-                     (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId)) &&
-                     (!hasAssignedUserScope || assignedUserIds.Contains(x.AssignedUserId)) &&
-                     (!hasTeamScope || teamIds.Contains(x.TeamId)))))
+        var tasks = await visibleTasks
+            .Where(x => workOrderIds.Contains(x.WorkOrderId))
             .OrderBy(x => x.OperationSequence)
             .ThenBy(x => x.OperationTaskIdValue)
             .ToListAsync(cancellationToken);
