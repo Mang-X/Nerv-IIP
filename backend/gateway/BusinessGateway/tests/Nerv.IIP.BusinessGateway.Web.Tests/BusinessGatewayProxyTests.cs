@@ -20539,6 +20539,8 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
 
     public BusinessConsoleBarcodePrintBatchListResponse? PrintBatchListResponse { get; set; }
 
+    public BusinessConsoleConfirmBarcodePrintBatchRequest? LastConfirmRequest { get; private set; }
+
     public BusinessConsoleActivateBarcodePrintBatchRequest? LastActivateRequest { get; private set; }
 
     public BusinessServiceProxyException? ActivationFailure { get; init; }
@@ -20710,6 +20712,21 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient,
                 },
             }
             : response;
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> ConfirmPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleConfirmBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastConfirmRequest = request;
+        if (LifecycleFailure is not null)
+        {
+            throw LifecycleFailure;
+        }
+        return Task.FromResult(new BusinessConsoleBarcodePrintLifecycleResponse(request.PrintBatchId));
+    }
 
     public Task<BusinessConsoleBarcodePrintLifecycleResponse> ActivatePrintBatchAsync(
         string internalBearerToken,

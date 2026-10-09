@@ -390,6 +390,8 @@ public static class LabelPrintLifecycleKnownExceptionMapper
         int sequenceNo) =>
         exception.Reason switch
         {
+            LabelPrintLifecycleRejectionReason.BatchCannotBeConfirmed =>
+                new KnownException("仅已预留的打印批次可以确认待打印。", exception),
             LabelPrintLifecycleRejectionReason.BatchCannotBeDispatched =>
                 new KnownException("当前打印批次状态不允许再次下发。", exception),
             LabelPrintLifecycleRejectionReason.BatchDeliveryUnknownCannotBeDispatched =>

@@ -9703,6 +9703,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     [key: string]: never;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmBarcodePrintBatchRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfTemplateAssetRetirementResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsBarcodeLabelTemplateAssetRetirementResponse | null;
 };
@@ -25815,6 +25819,45 @@ export type RecordBusinessConsoleBarcodeScanResponses = {
 };
 
 export type RecordBusinessConsoleBarcodeScanResponse = RecordBusinessConsoleBarcodeScanResponses[keyof RecordBusinessConsoleBarcodeScanResponses];
+
+export type ConfirmBusinessConsoleBarcodePrintBatchData = {
+    body?: never;
+    path: {
+        printBatchId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/confirm';
+};
+
+export type ConfirmBusinessConsoleBarcodePrintBatchErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ConfirmBusinessConsoleBarcodePrintBatchError = ConfirmBusinessConsoleBarcodePrintBatchErrors[keyof ConfirmBusinessConsoleBarcodePrintBatchErrors];
+
+export type ConfirmBusinessConsoleBarcodePrintBatchResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse;
+};
+
+export type ConfirmBusinessConsoleBarcodePrintBatchResponse = ConfirmBusinessConsoleBarcodePrintBatchResponses[keyof ConfirmBusinessConsoleBarcodePrintBatchResponses];
 
 export type GetBusinessConsoleBarcodeTemplateAssetRetirementData = {
     body?: never;

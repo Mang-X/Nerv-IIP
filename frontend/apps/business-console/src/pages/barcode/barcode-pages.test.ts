@@ -21,10 +21,13 @@ const barcode = vi.hoisted(() => ({
   saveRule: vi.fn(),
   saveTemplate: vi.fn(),
   createPrintBatch: vi.fn(),
+  confirmPrintBatch: vi.fn(),
+  permissionCodes: ['business.barcodes.print'],
   uploadTemplateAsset: vi.fn(),
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
   printBatchStatus: 'ready-to-print',
+  confirmPrintBatchPending: false,
   templateId: 'tpl-1',
   // 打印批次用例额外追加的规则 / 模板；其它页面的用例保持为空。
   extraRules: [] as Array<Record<string, unknown>>,
@@ -52,6 +55,10 @@ const barcode = vi.hoisted(() => ({
         skip: number
         take: number
       },
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: barcode.permissionCodes } }),
 }))
 
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
@@ -202,6 +209,8 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       printBatchDetailPending: shallowRef(false),
       refreshPrintBatches: vi.fn(),
       refreshPrintBatchDetail: vi.fn(),
+      confirmPrintBatch: barcode.confirmPrintBatch,
+      confirmPrintBatchPending: shallowRef(barcode.confirmPrintBatchPending),
       createPrintBatch: barcode.createPrintBatch,
       createPrintBatchPending: shallowRef(false),
       createPrintBatchError: shallowRef(undefined),
@@ -406,6 +415,7 @@ describe('barcode pages', () => {
     barcode.route.query = {}
     barcode.printBatchSourceDocumentType = 'production.report'
     barcode.printBatchStatus = 'ready-to-print'
+    barcode.confirmPrintBatchPending = false
     barcode.templateId = 'tpl-1'
     barcode.extraRules = []
     barcode.extraTemplates = []
@@ -415,6 +425,8 @@ describe('barcode pages', () => {
     barcode.scanFilters = undefined
     barcode.saveRule.mockResolvedValue(undefined)
     barcode.saveTemplate.mockResolvedValue(undefined)
+    barcode.permissionCodes = ['business.barcodes.print']
+    barcode.confirmPrintBatch.mockResolvedValue(undefined)
     barcode.createPrintBatch.mockResolvedValue(undefined)
     barcode.recordScan.mockResolvedValue(undefined)
     barcode.uploadTemplateAsset.mockResolvedValue({
@@ -422,6 +434,63 @@ describe('barcode pages', () => {
       fileName: 'pallet-label.json',
       sizeBytes: 363,
     })
+  })
+
+  it('confirms a reserved batch explicitly and leaves displayed state to server readback', async () => {
+    barcode.printBatchStatus = 'reserved'
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+    expect(barcode.confirmPrintBatch).not.toHaveBeenCalled()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '确认待打印')!
+      .trigger('click')
+    await flushPromises()
+    expect(barcode.confirmPrintBatch).toHaveBeenCalledWith('pb-1')
+    expect(toastMock.success).toHaveBeenCalledWith('打印批次已确认待打印。')
+    expect(wrapper.text()).toContain('已预留')
+  })
+
+  it('exposes confirmation as busy and disabled while the request is pending', async () => {
+    barcode.printBatchStatus = 'reserved'
+    barcode.confirmPrintBatchPending = true
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+    const button = wrapper.findAll('button').find((button) => button.text().includes('确认待打印'))!
+    expect(button.attributes('aria-busy')).toBe('true')
+    expect(button.attributes('disabled')).toBeDefined()
+  })
+
+  it.each(['ready-to-print', 'sent-to-printer', 'delivery-unknown', 'printed', 'failed'])(
+    'does not offer confirmation for a batch in %s',
+    async (status) => {
+      barcode.printBatchStatus = status
+      const wrapper = mountPrintBatches()
+      await flushPromises()
+      expect(wrapper.findAll('button').some((button) => button.text() === '确认待打印')).toBe(false)
+    },
+  )
+
+  it('hides confirmation without print permission and reports a rejected confirmation as an operation error', async () => {
+    barcode.printBatchStatus = 'reserved'
+    barcode.permissionCodes = []
+    const denied = mountPrintBatches()
+    await flushPromises()
+    expect(denied.findAll('button').some((button) => button.text() === '确认待打印')).toBe(false)
+    denied.unmount()
+    barcode.permissionCodes = ['business.barcodes.print']
+    barcode.confirmPrintBatch.mockRejectedValueOnce(new Error('仅已预留的打印批次可以确认待打印。'))
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '确认待打印')!
+      .trigger('click')
+    await flushPromises()
+    expect(toastMock.error).toHaveBeenCalledWith(
+      '确认待打印失败：仅已预留的打印批次可以确认待打印。',
+    )
+    expect(wrapper.text()).toContain('已预留')
   })
 
   it('renders rule maintenance with source usage and route-seeded keyword', async () => {

@@ -22,6 +22,8 @@ import {
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   mutations: [] as ReturnType<typeof vi.fn>[],
+  mutationOptions: [] as Array<{ onSuccess?: () => Promise<void> | void }>,
+  refetches: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@/composables/businessContextBinding', () => ({
@@ -33,6 +35,10 @@ vi.mock('@/composables/businessContextBinding', () => ({
     return filters
   },
   withBusinessContextEnabled: (options: object) => options,
+  hasBusinessContext: (filters: { organizationId: string; environmentId: string }) =>
+    !!filters.organizationId && !!filters.environmentId,
+  refetchWithBusinessContext: (_filters: object, query: { refetch: () => Promise<void> }) =>
+    query.refetch(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -58,6 +64,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   createOrUpdateBusinessConsoleBarcodeRuleMutationOptions: vi.fn(() => ({})),
   createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions: vi.fn(() => ({})),
+  confirmBusinessConsoleBarcodePrintBatchMutationOptions: vi.fn(() => ({})),
   createBusinessConsoleBarcodePrintBatchMutationOptions: vi.fn(() => ({})),
   recordBusinessConsoleBarcodeScanMutationOptions: vi.fn(() => ({})),
 }))
@@ -68,14 +75,17 @@ vi.mock('@pinia/colada', () => ({
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
 
+    const refetch = vi.fn()
+    coladaState.refetches.set(id, refetch)
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
-  useMutation: vi.fn(() => {
+  useMutation: vi.fn((options) => {
+    coladaState.mutationOptions.push(options)
     const mutateAsync = vi.fn().mockResolvedValue({ data: { id: 'ok' } })
     coladaState.mutations.push(mutateAsync)
     return {
@@ -92,6 +102,20 @@ describe('business barcode composables', () => {
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
     coladaState.mutations.length = 0
+    coladaState.mutationOptions.length = 0
+    coladaState.refetches.clear()
+  })
+
+  it('confirms the selected batch in the current scope and refetches both persisted views', async () => {
+    const result = useBarcodePrintBatches({ selectedPrintBatchId: 'pb-1' })
+    await result.confirmPrintBatch('pb-1')
+    expect(coladaState.mutations[1]).toHaveBeenCalledWith({
+      path: { printBatchId: 'pb-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    await coladaState.mutationOptions[1]!.onSuccess!()
+    expect(coladaState.refetches.get('listBusinessConsoleBarcodePrintBatches')).toHaveBeenCalled()
+    expect(coladaState.refetches.get('getBusinessConsoleBarcodePrintBatch')).toHaveBeenCalled()
   })
 
   it('lists barcode rules with context, status, keyword, paging, and total', () => {

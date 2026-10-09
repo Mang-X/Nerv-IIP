@@ -13,6 +13,8 @@ import {
 } from '@/composables/useBusinessBarcode'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -56,7 +58,7 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '打印批次',
-    requiredPermissions: ['business.barcodes.templates.manage'],
+    requiredPermissions: ['business.barcodes.print'],
   },
 })
 
@@ -87,7 +89,11 @@ const SOURCE_DOCUMENT_VARIABLE = 'sourceDocumentId'
 const LOT_NO_VARIABLE = 'lotNo'
 
 const route = useRoute()
+const auth = useAuthStore()
+const canPrint = computed(() => (auth.principal?.permissionCodes ?? []).includes(P.barcodePrint))
 const {
+  confirmPrintBatch,
+  confirmPrintBatchPending,
   createPrintBatch,
   createPrintBatchPending,
   filters,
@@ -334,6 +340,17 @@ function changeSourceDocumentType(value: unknown) {
 
 function selectBatch(row: BusinessConsoleBarcodePrintBatchItem) {
   if (row.printBatchId) filters.selectedPrintBatchId = row.printBatchId
+}
+
+async function confirmSelectedBatch() {
+  const printBatchId = printBatchDetail.value?.printBatchId
+  if (!printBatchId) return
+  try {
+    await confirmPrintBatch(printBatchId)
+    notifySuccess('打印批次已确认待打印。')
+  } catch (error) {
+    notifyOperationFailure('确认待打印失败', error, '确认待打印失败，请稍后重试。')
+  }
 }
 
 async function submitCreate() {
@@ -697,6 +714,16 @@ function firstQuery(value: unknown) {
             >{{ statusLabel(printBatchDetail.status) }}
           </div>
         </div>
+        <NvButton
+          v-if="canPrint && printBatchDetail?.status === 'reserved'"
+          class="justify-self-start"
+          type="button"
+          :loading="confirmPrintBatchPending"
+          :disabled="confirmPrintBatchPending || printBatchDetailPending"
+          @click="confirmSelectedBatch"
+        >
+          确认待打印
+        </NvButton>
         <NvDataTable
           :columns="itemColumns"
           :rows="selectedItems"

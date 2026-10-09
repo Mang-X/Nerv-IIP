@@ -4,6 +4,11 @@ using FastEndpoints;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
+public sealed record BusinessConsoleConfirmBarcodePrintBatchRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
 public sealed record BusinessConsoleDispatchBarcodePrintBatchBody(
     [property: JsonRequired, Required] string PrintBatchId,
     [property: JsonRequired, Required] string PrinterId);

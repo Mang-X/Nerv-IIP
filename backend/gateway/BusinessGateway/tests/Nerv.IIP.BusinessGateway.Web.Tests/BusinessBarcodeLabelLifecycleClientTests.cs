@@ -8,6 +8,22 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessBarcodeLabelLifecycleClientTests
 {
     [Fact]
+    public async Task Confirm_uses_the_scoped_internal_route_without_a_mes_report_body()
+    {
+        var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatchId":"batch-001"},"message":"","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+        var response = await client.ConfirmPrintBatchAsync(
+            "internal-token", new BusinessConsoleConfirmBarcodePrintBatchRequest("batch-001", "org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal("batch-001", response.PrintBatchId);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal("/api/business/internal/v1/barcodes/print-batches/batch-001/confirm?organizationId=org-001&environmentId=env-dev",
+            handler.LastRequest.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token", handler.LastRequest.Headers.Authorization!.Parameter);
+        Assert.True(string.IsNullOrEmpty(handler.LastRequestBody));
+    }
+
+    [Fact]
     public async Task Detail_by_idempotency_key_uses_the_exact_key_and_authorized_scope()
     {
         var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatch":{"printBatchId":"batch-001","labelTemplateId":"template-001","sourceDocumentType":"work-order","sourceDocumentId":"WO-001","idempotencyKey":"intent:Case/A","reportIntentKey":"intent:Case/A","reportIntentFingerprint":"opaque:fingerprint-a","requestedQuantity":1,"status":"reserved","printerId":null,"printJobId":null,"failureReason":null,"productionReportId":null,"productionReportNo":null,"items":[]}},"message":"","code":0}""");

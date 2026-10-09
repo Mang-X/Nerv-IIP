@@ -1,4 +1,5 @@
 import {
+  confirmBusinessConsoleBarcodePrintBatchMutationOptions,
   createBusinessConsoleBarcodePrintBatchMutationOptions,
   createOrUpdateBusinessConsoleBarcodeRuleMutationOptions,
   createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions,
@@ -227,6 +228,18 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
     },
   })
 
+  const confirmPrintBatchMutation = useMutation({
+    ...confirmBusinessConsoleBarcodePrintBatchMutationOptions(),
+    async onSuccess() {
+      await Promise.all([
+        refetchWithBusinessContext(filters, printBatchesQuery),
+        filters.selectedPrintBatchId && hasBusinessContext(filters)
+          ? printBatchDetailQuery.refetch()
+          : Promise.resolve(),
+      ])
+    },
+  })
+
   return {
     filters,
     printBatches: computed<BusinessConsoleBarcodePrintBatchItem[]>(() =>
@@ -245,6 +258,12 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
       filters.selectedPrintBatchId && hasBusinessContext(filters)
         ? printBatchDetailQuery.refetch()
         : Promise.resolve(),
+    confirmPrintBatch: (printBatchId: string) =>
+      confirmPrintBatchMutation.mutateAsync({
+        path: { printBatchId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+      }),
+    confirmPrintBatchPending: confirmPrintBatchMutation.isLoading,
     createPrintBatch: (body: CreateBusinessConsoleBarcodePrintBatchData['body']) =>
       createPrintBatchMutation.mutateAsync({ body }),
     createPrintBatchPending: createPrintBatchMutation.isLoading,
