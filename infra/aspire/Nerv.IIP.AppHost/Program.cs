@@ -617,7 +617,10 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithAppHostEnvironment(builder.A
 if (localDevelopmentAppHost)
 {
     businessBarcodeLabel = businessBarcodeLabel
-        .WithEnvironment("LabelPrinter__Mode", "simulated");
+        .WithEnvironment("LabelPrinter__Mode", "simulated")
+        .WithEnvironment("LabelPrinter__Printers__0__Id", "development-label-printer")
+        .WithEnvironment("LabelPrinter__Printers__0__Name", "开发模拟打印机")
+        .WithEnvironment("LabelPrinter__Printers__0__Enabled", "true");
 }
 else
 {

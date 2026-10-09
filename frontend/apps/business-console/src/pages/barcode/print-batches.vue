@@ -7,6 +7,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { parseVariableRows, rowDisplayLabel } from '@/components/barcode/labelTemplateVariables'
 import {
+  useBarcodePrinters,
   useBarcodePrintBatches,
   useBarcodeRules,
   useBarcodeTemplates,
@@ -94,6 +95,8 @@ const canPrint = computed(() => (auth.principal?.permissionCodes ?? []).includes
 const {
   confirmPrintBatch,
   confirmPrintBatchPending,
+  dispatchPrintBatch,
+  dispatchPrintBatchPending,
   createPrintBatch,
   createPrintBatchPending,
   filters,
@@ -109,6 +112,29 @@ const {
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.sourceDocumentType, () => filters.sourceDocumentId, () => filters.status],
 })
+
+const { printers, printersPending, printersError } = useBarcodePrinters()
+const selectedPrinterId = shallowRef('')
+const showPrinterError = shallowRef(false)
+const printerOptions = computed(() =>
+  printers.value.map((printer) => ({ value: printer.printerId, label: printer.name })),
+)
+const canDispatch = computed(() =>
+  canPrint.value && ['ready-to-print', 'failed'].includes(printBatchDetail.value?.status ?? ''),
+)
+watch(printersError, (error) => {
+  if (error) notifyOperationFailure('读取打印机失败', error, '无法读取打印机目录。')
+})
+watch(printerOptions, (options) => {
+  if (!options.some((option) => option.value === selectedPrinterId.value))
+    selectedPrinterId.value = ''
+})
+watch(
+  () => filters.selectedPrintBatchId,
+  () => {
+    showPrinterError.value = false
+  },
+)
 
 const open = shallowRef(false)
 const showErrors = shallowRef(false)
@@ -350,6 +376,21 @@ async function confirmSelectedBatch() {
     notifySuccess('打印批次已确认待打印。')
   } catch (error) {
     notifyOperationFailure('确认待打印失败', error, '确认待打印失败，请稍后重试。')
+  }
+}
+
+async function dispatchSelectedBatch() {
+  const printBatchId = printBatchDetail.value?.printBatchId
+  if (!printBatchId || !canDispatch.value) return
+  if (!selectedPrinterId.value) {
+    showPrinterError.value = true
+    return
+  }
+  try {
+    await dispatchPrintBatch(printBatchId, selectedPrinterId.value)
+    notifySuccess('打印批次已发送。')
+  } catch (error) {
+    notifyOperationFailure('发送打印失败', error, '发送打印失败，请查看批次状态。')
   }
 }
 
@@ -724,6 +765,38 @@ function firstQuery(value: unknown) {
         >
           确认待打印
         </NvButton>
+        <form v-if="canDispatch" class="grid gap-3" @submit.prevent="dispatchSelectedBatch">
+          <NvField :data-invalid="showPrinterError && !selectedPrinterId">
+            <NvFieldLabel for="barcode-print-printer">打印机</NvFieldLabel>
+            <NvEntityPicker
+              id="barcode-print-printer"
+              title="选择打印机"
+              v-model="selectedPrinterId"
+              :invalid="showPrinterError && !selectedPrinterId"
+              :options="printerOptions"
+              :loading="printersPending"
+              :disabled="dispatchPrintBatchPending"
+              :show-code="false"
+              placeholder="选择打印机"
+              search-placeholder="搜索打印机"
+              empty-text="暂无可用打印机，请联系管理员配置。"
+            />
+            <NvFieldDescription v-if="showPrinterError && !selectedPrinterId">
+              <span class="text-destructive">请选择打印机。</span>
+            </NvFieldDescription>
+          </NvField>
+          <NvButton
+            class="justify-self-start"
+            type="submit"
+            :loading="dispatchPrintBatchPending"
+            :disabled="dispatchPrintBatchPending || printBatchDetailPending || printersPending"
+          >
+            发送打印
+          </NvButton>
+        </form>
+        <p v-if="printBatchDetail?.failureReason" class="text-sm text-muted-foreground">
+          {{ printBatchDetail.failureReason }}
+        </p>
         <NvDataTable
           :columns="itemColumns"
           :rows="selectedItems"

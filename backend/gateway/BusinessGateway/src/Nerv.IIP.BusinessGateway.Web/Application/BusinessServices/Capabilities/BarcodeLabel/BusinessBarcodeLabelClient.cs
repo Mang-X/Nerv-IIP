@@ -16,6 +16,11 @@ public interface IBusinessBarcodeLabelClient
     Task<RetireTemplateAssetResponse> RetireTemplateAssetAsync(
         string internalBearerToken, RetireTemplateAssetRequest request, CancellationToken cancellationToken);
 
+    Task<BusinessConsoleBarcodePrinterListResponse> ListPrintersAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrinterListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
         string internalBearerToken,
         BusinessConsoleBarcodeRuleListRequest request,
@@ -106,6 +111,19 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
         string internalBearerToken, RetireTemplateAssetRequest request, CancellationToken cancellationToken) =>
         SendAsync<RetireTemplateAssetResponse>(internalBearerToken, HttpMethod.Post,
             TemplateAssetRetirementProofV1.Route, request, cancellationToken);
+
+    public Task<BusinessConsoleBarcodePrinterListResponse> ListPrintersAsync(
+        string internalBearerToken,
+        BusinessConsoleBarcodePrinterListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodePrinterListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/barcodes/printers?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
 
     public Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
         string internalBearerToken,
