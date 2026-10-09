@@ -78,11 +78,7 @@ public sealed record ListMasterDataResourcesRequest(
     string? SkillCode = null,
     string? WorkshopCode = null,
     string? DeviceAssetId = null,
-    IReadOnlyCollection<string>? SiteCodes = null,
-    IReadOnlyCollection<string>? DeviceScopeSiteCodes = null,
-    IReadOnlyCollection<string>? DeviceScopeWorkshopCodes = null,
-    IReadOnlyCollection<string>? DeviceScopeLineCodes = null,
-    IReadOnlyCollection<string>? DeviceScopeWorkCenterCodes = null);
+    IReadOnlyCollection<string>? SiteCodes = null);
 
 public sealed record CreateSkuRequest(
     string OrganizationId,
@@ -134,6 +130,10 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMasterDataResourcesRequest req, CancellationToken ct)
     {
+        // 内部服务身份已由端点 policy 验证；这些集合由 Gateway 授权裁决产生，
+        // 不加入公开请求 DTO/OpenAPI，也不从 Console 客户端透传。
+        IReadOnlyCollection<string>? DeviceScopeCodes(string name) =>
+            HttpContext.Request.Query.TryGetValue(name, out var values) ? values.ToArray()! : null;
         var response = await sender.Send(
             new ListMasterDataResourcesQuery(
                 req.OrganizationId,
@@ -158,10 +158,10 @@ public sealed class ListMasterDataResourcesEndpoint(ISender sender)
                 req.WorkshopCode,
                 req.DeviceAssetId,
                 req.SiteCodes,
-                req.DeviceScopeSiteCodes,
-                req.DeviceScopeWorkshopCodes,
-                req.DeviceScopeLineCodes,
-                req.DeviceScopeWorkCenterCodes),
+                DeviceScopeCodes("deviceScopeSiteCodes"),
+                DeviceScopeCodes("deviceScopeWorkshopCodes"),
+                DeviceScopeCodes("deviceScopeLineCodes"),
+                DeviceScopeCodes("deviceScopeWorkCenterCodes")),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
