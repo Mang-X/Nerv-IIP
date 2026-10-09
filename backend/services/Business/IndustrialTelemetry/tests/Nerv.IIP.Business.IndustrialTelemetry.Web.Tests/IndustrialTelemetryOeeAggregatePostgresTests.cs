@@ -103,6 +103,65 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         Assert.Equal(1, secondDevicePage.Skip);
         Assert.Equal(1, secondDevicePage.Take);
         Assert.Equal("DEV-B", Assert.Single(secondDevicePage.Buckets).DimensionValue);
+
+        // #4258: independent quantities and runtimes prove union weighting, not averaging ratios.
+        db.DeviceStateSnapshots.AddRange(
+            State("org-union", "UNION-A", "running", start.AddHours(-1), "ua-carry"),
+            State("org-union", "UNION-A", "idle", start.AddHours(1), "ua-idle"),
+            State("org-union", "UNION-B", "running", start, "ub-running"),
+            State("org-union", "UNION-C", "running", start, "uc-running"));
+        db.OeeProductionFacts.AddRange(
+            Fact("UNION-A", start.AddMinutes(20), "UNION-A", "UWC-A", 70m, 20m, 10m, "PCS", 100m, businessDate, organization: "org-union"),
+            Fact("UNION-B", start.AddMinutes(40), "UNION-B", "UWC-B", 40m, 20m, 20m, "PCS", 50m, businessDate, organization: "org-union"),
+            Fact("UNION-C", start.AddMinutes(50), "UNION-C", "UWC-C", 9999m, 0m, 0m, "PCS", 1m, businessDate, organization: "org-union", site: "SITE-C"));
+        await db.SaveChangesAsync();
+        var unionRequest = new QueryOeeAggregateBucketsQuery("org-union", "env-dev", OeeAggregateDimension.Day,
+            start, end, AuthorizedSiteCodes: "", AuthorizedWorkshopCodes: "", AuthorizedLineCodes: "",
+            AuthorizedWorkCenterIds: "UWC-A,UWC-B,UWC-A");
+        foreach (var union in new[] { unionRequest, unionRequest with { AuthorizedSiteCodes = "SITE-01" } })
+        {
+            var result = await handler.Handle(union, CancellationToken.None);
+            var actual = Assert.Single(result.Buckets);
+            Assert.Equal(1, result.TotalCount);
+            Assert.Equal(2, actual.DeviceCount);
+            Assert.Equal(2, actual.ProductionFactCount);
+            Assert.Equal(110m, actual.GoodQuantity);
+            Assert.Equal(200m, actual.ExpectedOutputQuantity);
+            Assert.Equal(0.75m, actual.AvailabilityRate);
+            Assert.Equal(0.9m, actual.PerformanceRate);
+            Assert.Equal(0.611111m, actual.QualityRate);
+            Assert.Equal(0.4125m, actual.OeeRate);
+        }
+        var deviceUnion = await handler.Handle(new QueryOeeAggregateBucketsQuery(
+            unionRequest.OrganizationId, unionRequest.EnvironmentId, OeeAggregateDimension.Device,
+            unionRequest.WindowStartUtc, unionRequest.WindowEndUtc, Skip: 1, Take: 1,
+            AuthorizedSiteCodes: unionRequest.AuthorizedSiteCodes, AuthorizedWorkshopCodes: unionRequest.AuthorizedWorkshopCodes,
+            AuthorizedLineCodes: unionRequest.AuthorizedLineCodes, AuthorizedWorkCenterIds: unionRequest.AuthorizedWorkCenterIds), CancellationToken.None);
+        Assert.Equal(2, deviceUnion.TotalCount);
+        Assert.Equal("UNION-B", Assert.Single(deviceUnion.Buckets).DimensionValue);
+        Assert.Empty((await handler.Handle(unionRequest with { DeviceAssetId = "UNION-C" }, CancellationToken.None)).Buckets);
+        Assert.Equal(3, (await handler.Handle(unionRequest with {
+            Dimension = OeeAggregateDimension.Device, AuthorizedSiteCodes = null, AuthorizedWorkshopCodes = null,
+            AuthorizedLineCodes = null, AuthorizedWorkCenterIds = null }, CancellationToken.None)).TotalCount);
+
+        // Context outside authorization and before the query window bounds runtime ownership,
+        // but never contributes quantities or the unauthorized duration.
+        db.DeviceStateSnapshots.Add(State("org-move", "MOVE-UNION", "running", start.AddHours(-2), "move-carry"));
+        db.OeeProductionFacts.AddRange(
+            Fact("MOVE-CARRY", start.AddHours(-1), "MOVE-UNION", "UWC-C", 500m, 0m, 0m, "PCS", 10m, businessDate, organization: "org-move", site: "SITE-C"),
+            Fact("MOVE-VISIBLE", start.AddMinutes(30), "MOVE-UNION", "UWC-A", 10m, 0m, 0m, "PCS", 10m, businessDate, organization: "org-move"),
+            Fact("MOVE-HIDDEN", start.AddMinutes(90), "MOVE-UNION", "UWC-C", 500m, 0m, 0m, "PCS", 10m, businessDate, organization: "org-move", site: "SITE-C"));
+        await db.SaveChangesAsync();
+        var moved = Assert.Single((await handler.Handle(unionRequest with {
+            OrganizationId = "org-move", Dimension = OeeAggregateDimension.Device,
+            DeviceAssetId = "MOVE-UNION", AuthorizedWorkCenterIds = "UWC-A" }, CancellationToken.None)).Buckets);
+        Assert.Equal(1, moved.ProductionFactCount);
+        Assert.Equal(10m, moved.GoodQuantity);
+        Assert.Equal(10m, moved.ExpectedOutputQuantity);
+        Assert.Equal(1m, moved.AvailabilityRate);
+        Assert.Equal(1m, moved.PerformanceRate);
+        Assert.Equal(1m, moved.OeeRate);
+
     }
 
     [RealPostgresFact]
@@ -397,7 +456,8 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         var accepted = await new QueryOeeAggregateBucketsQueryHandler(db).Handle(request, CancellationToken.None);
         Assert.Equal(1, Assert.Single(accepted.Buckets).ProductionFactCount);
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount + 1, interceptor.FactLimits);
-        Assert.Contains("LIMIT", Assert.Single(interceptor.FactCommands), StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(interceptor.FactCommands);
+        Assert.All(interceptor.FactCommands, command => Assert.Contains("LIMIT", command, StringComparison.OrdinalIgnoreCase));
 
         db.OeeProductionFacts.Add(Fact("OVER", DateTimeOffset.Parse("2026-07-01T00:02:00Z"), "DEV-LIMIT", "WC-CONTEXT", 1m, 0m, 0m, "PCS", 1m, new(2026, 7, 1)));
         await db.SaveChangesAsync();
@@ -406,7 +466,8 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new QueryOeeAggregateBucketsQueryHandler(db).Handle(request, CancellationToken.None));
         Assert.Contains(OeeAggregateMaterializationLimits.MaximumProductionFactCount.ToString(), exception.Message, StringComparison.Ordinal);
-        Assert.Contains("LIMIT", Assert.Single(interceptor.FactCommands), StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(interceptor.FactCommands);
+        Assert.All(interceptor.FactCommands, command => Assert.Contains("LIMIT", command, StringComparison.OrdinalIgnoreCase));
     }
 
     private static ApplicationDbContext CreateLaneDbContext(DbCommandInterceptor? interceptor = null)
@@ -446,7 +507,8 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
         string environment = "env-dev",
         string line = "LINE-01",
         string workshop = "WORKSHOP-01",
-        string shift = "SHIFT-01") =>
+        string shift = "SHIFT-01",
+        string site = "SITE-01") =>
         OeeProductionFact.Project(
             organization,
             environment,
@@ -459,14 +521,15 @@ public sealed class IndustrialTelemetryOeeAggregatePostgresTests
             uom,
             rate,
             occurredAt,
-            Snapshot(businessDate, line, workshop, shift));
+            Snapshot(businessDate, line, workshop, shift, site));
 
     private static OeeHistoricalDimensionSnapshot Snapshot(
         DateOnly businessDate,
         string line = "LINE-01",
         string workshop = "WORKSHOP-01",
-        string shift = "SHIFT-01") => new(
-            "SITE-01",
+        string shift = "SHIFT-01",
+        string site = "SITE-01") => new(
+            site,
             workshop,
             line,
             shift,

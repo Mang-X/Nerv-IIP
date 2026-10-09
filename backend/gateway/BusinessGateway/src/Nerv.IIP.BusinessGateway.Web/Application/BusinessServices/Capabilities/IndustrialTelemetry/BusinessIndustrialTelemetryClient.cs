@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using BusinessOeeAggregateBucket = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucket;
 using BusinessOeeAggregateDimension = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateDimension;
-using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest;
 using BusinessOeeAggregateResponse = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucketsResponse;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -575,7 +575,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 ("workshopCode", request.WorkshopCode),
                 ("businessDate", request.BusinessDate),
                 ("skip", request.Skip),
-                ("take", request.Take)),
+                ("take", request.Take),
+                ("authorizedSiteCodes", request.AuthorizedSiteCodes),
+                ("authorizedWorkshopCodes", request.AuthorizedWorkshopCodes),
+                ("authorizedLineCodes", request.AuthorizedLineCodes),
+                ("authorizedWorkCenterIds", request.AuthorizedWorkCenterIds)),
             null,
             cancellationToken,
             failClosedOnFailureEnvelope: true);

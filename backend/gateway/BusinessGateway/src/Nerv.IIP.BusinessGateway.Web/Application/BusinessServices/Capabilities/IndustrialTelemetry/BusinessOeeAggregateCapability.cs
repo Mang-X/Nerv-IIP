@@ -57,73 +57,35 @@ public sealed class BusinessOeeAggregateCapability(
             && Kind(grant) == "organization"
             && string.Equals(grant.ScopeId, request.OrganizationId, StringComparison.Ordinal));
 
+        if (!organizationWide && !grants.Any(grant => Kind(grant) is "site" or "workshop" or "production-line" or "work-center"))
+        {
+            throw Forbidden();
+        }
+
+        // MasterData validates explicit identities and their requested hierarchy only.
+        // Historical visibility is decided by Telemetry from fact-time ownership.
         var selection = await ResolveSelectionAsync(request, cancellationToken);
-        var narrowed = request with
-        {
-            DeviceAssetId = selection.DeviceAssetId,
-            WorkCenterId = selection.WorkCenterCode,
-            LineCode = selection.LineCode,
-            WorkshopCode = selection.WorkshopCode,
-        };
+        var narrowed = new Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest(
+            request.OrganizationId, request.EnvironmentId, request.Dimension,
+            request.WindowStartUtc, request.WindowEndUtc,
+            selection.DeviceAssetId, request.WorkCenterId, request.ShiftCode,
+            request.LineCode, request.WorkshopCode, request.BusinessDate, request.Skip, request.Take,
+            organizationWide ? null : ScopeIds("site"),
+            organizationWide ? null : ScopeIds("workshop"),
+            organizationWide ? null : ScopeIds("production-line"),
+            organizationWide ? null : ScopeIds("work-center"));
 
-        if (!organizationWide)
-        {
-            narrowed = await NarrowToGrantedScopeAsync(narrowed, selection, grants, cancellationToken);
-        }
-
-        return await industrialTelemetry.QueryOeeAggregatesAsync(
-            tokenProvider.BearerToken,
-            narrowed,
-            cancellationToken);
-    }
-
-    private async Task<BusinessOeeAggregateRequest> NarrowToGrantedScopeAsync(
-        BusinessOeeAggregateRequest request,
-        SpatialSelection selection,
-        IReadOnlyCollection<AuthorizationScopeGrant> grants,
-        CancellationToken cancellationToken)
-    {
-        if (selection.HasSpatialFilter)
-        {
-            if (!grants.Any(grant => Authorizes(grant, selection)))
-            {
-                throw Forbidden();
-            }
-
-            return request;
-        }
-
-        var spatialGrants = grants
-            .Where(grant => Kind(grant) is "work-center" or "production-line" or "workshop")
-            .Select(grant => (Kind: Kind(grant), Id: grant.ScopeId))
-            .Distinct()
-            .ToArray();
-        if (spatialGrants.Length != 1)
+        var response = await industrialTelemetry.QueryOeeAggregatesAsync(
+            tokenProvider.BearerToken, narrowed, cancellationToken);
+        if (!organizationWide && selection.HasSpatialFilter && response.TotalCount == 0)
         {
             throw Forbidden();
         }
+        return response;
 
-        var grant = spatialGrants[0];
-        var narrowed = grant.Kind switch
-        {
-            "work-center" => request with { WorkCenterId = grant.Id },
-            "production-line" => request with { LineCode = grant.Id },
-            "workshop" => request with { WorkshopCode = grant.Id },
-            _ => throw Forbidden(),
-        };
-        var resolved = await ResolveSelectionAsync(narrowed, cancellationToken);
-        if (!Authorizes(grants.Single(x => Kind(x) == grant.Kind && x.ScopeId == grant.Id), resolved))
-        {
-            throw Forbidden();
-        }
-
-        return narrowed with
-        {
-            DeviceAssetId = resolved.DeviceAssetId,
-            WorkCenterId = resolved.WorkCenterCode,
-            LineCode = resolved.LineCode,
-            WorkshopCode = resolved.WorkshopCode,
-        };
+        string ScopeIds(string kind) => string.Join(',', grants
+            .Where(grant => Kind(grant) == kind)
+            .Select(grant => grant.ScopeId).Distinct(StringComparer.Ordinal));
     }
 
     private async Task<SpatialSelection> ResolveSelectionAsync(
@@ -244,15 +206,6 @@ public sealed class BusinessOeeAggregateCapability(
             }
         }
     }
-
-    private static bool Authorizes(AuthorizationScopeGrant grant, SpatialSelection selection) => Kind(grant) switch
-    {
-        "site" => string.Equals(grant.ScopeId, selection.SiteCode, StringComparison.Ordinal),
-        "workshop" => string.Equals(grant.ScopeId, selection.WorkshopCode, StringComparison.Ordinal),
-        "production-line" => string.Equals(grant.ScopeId, selection.LineCode, StringComparison.Ordinal),
-        "work-center" => string.Equals(grant.ScopeId, selection.WorkCenterCode, StringComparison.Ordinal),
-        _ => false,
-    };
 
     private static string Kind(AuthorizationScopeGrant grant) => grant.ScopeKind.Trim().ToLowerInvariant();
 

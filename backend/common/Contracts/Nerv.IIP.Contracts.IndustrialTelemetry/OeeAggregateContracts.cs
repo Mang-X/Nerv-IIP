@@ -95,6 +95,26 @@ public sealed record QueryOeeAggregateBucketsRequest(
     int Skip = 0,
     int Take = 100);
 
+// Internal service request; Gateway public DTO deliberately has no authorization fields.
+public sealed record QueryInternalOeeAggregateBucketsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    OeeAggregateDimension Dimension,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetId = null,
+    string? WorkCenterId = null,
+    string? ShiftCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null,
+    DateOnly? BusinessDate = null,
+    int Skip = 0,
+    int Take = 100,
+    string? AuthorizedSiteCodes = null,
+    string? AuthorizedWorkshopCodes = null,
+    string? AuthorizedLineCodes = null,
+    string? AuthorizedWorkCenterIds = null);
+
 public sealed record OeeAggregateBucketsResponse(
     string OrganizationId,
     string EnvironmentId,
