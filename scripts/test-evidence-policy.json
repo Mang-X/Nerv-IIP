@@ -1352,7 +1352,7 @@
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Work_order_number_migration_backfills_existing_rows_and_advances_the_counter",
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceAssetUnavailableV2PostgresTests.Work_order_number_intent_keys_fit_the_binding_column_for_150_character_alarm_ids_and_idempotency_keys"
       ],
-      "expectedRuntimeTestCount": 8
+      "expectedRuntimeTestCount": 10
     },
     {
       "id": "quality-postgres",
