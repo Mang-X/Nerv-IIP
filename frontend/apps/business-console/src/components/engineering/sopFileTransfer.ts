@@ -27,7 +27,9 @@ export async function uploadSopFile(file: File, scope: Scope) {
     'Tus-Resumable': '1.0.0',
   }
   const head = await getBusinessConsoleSopFileTusOffset({
-    path: { uploadSessionId }, headers, throwOnError: true,
+    path: { uploadSessionId },
+    headers,
+    throwOnError: true,
   })
   const offset = Number(head.response.headers.get('Upload-Offset'))
   if (head.response.headers.get('Upload-Offset') === null || offset !== 0) {
@@ -35,7 +37,11 @@ export async function uploadSopFile(file: File, scope: Scope) {
   }
   const patch = await patchBusinessConsoleSopFileTusUpload({
     path: { uploadSessionId },
-    headers: { ...headers, 'Upload-Offset': '0', 'Content-Type': 'application/offset+octet-stream' },
+    headers: {
+      ...headers,
+      'Upload-Offset': '0',
+      'Content-Type': 'application/offset+octet-stream',
+    },
     body: file as never,
     bodySerializer: null,
     throwOnError: true,
@@ -44,7 +50,9 @@ export async function uploadSopFile(file: File, scope: Scope) {
     throw new Error('文件没有完整上传，请重新选择文件。')
   }
   const { data: completed } = await completeBusinessConsoleSopFileUpload({
-    path: { uploadSessionId }, body: { ...scope, sizeBytes: file.size }, throwOnError: true,
+    path: { uploadSessionId },
+    body: { ...scope, sizeBytes: file.size },
+    throwOnError: true,
   })
   const uploaded = completed.data
   if (!completed.success || !uploaded?.fileId || !uploaded.fileName || !uploaded.contentType) {

@@ -247,17 +247,22 @@ function openCreate() {
   formOpen.value = true
 }
 
-watch(formOpen, (open) => { if (!open) uploadGeneration += 1 })
+watch(formOpen, (open) => {
+  if (!open) uploadGeneration += 1
+})
 
 function clearUploadedFile() {
   form.fileId = ''
   form.fileName = ''
   form.contentType = ''
 }
-watch(() => [filters.organizationId, filters.environmentId], () => {
-  uploadGeneration += 1
-  clearUploadedFile()
-})
+watch(
+  () => [filters.organizationId, filters.environmentId],
+  () => {
+    uploadGeneration += 1
+    clearUploadedFile()
+  },
+)
 
 async function selectFile(event: Event) {
   const input = event.target as HTMLInputElement
@@ -353,14 +358,19 @@ async function submitForm() {
 // ── 查看文档明细（get-by-id）────────────────────────────────────
 const fileOpening = ref(false)
 const openedFileUrl = ref('')
-watch(openedFileUrl, (_url, previous) => { if (previous) URL.revokeObjectURL(previous) })
-onBeforeUnmount(() => { if (openedFileUrl.value) URL.revokeObjectURL(openedFileUrl.value) })
+watch(openedFileUrl, (_url, previous) => {
+  if (previous) URL.revokeObjectURL(previous)
+})
+onBeforeUnmount(() => {
+  if (openedFileUrl.value) URL.revokeObjectURL(openedFileUrl.value)
+})
 async function openFile() {
   if (!viewTarget.value?.fileId || fileOpening.value) return
   fileOpening.value = true
   try {
     const blob = await readSopFile(viewTarget.value.fileId, {
-      organizationId: filters.organizationId, environmentId: filters.environmentId,
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
     })
     openedFileUrl.value = URL.createObjectURL(blob)
   } catch (error) {
@@ -415,9 +425,18 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               登记文档
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-xl"
-            @interact-outside="(event) => { if (uploading) event.preventDefault() }"
-            @escape-key-down="(event) => { if (uploading) event.preventDefault() }"
+          <NvDialogContent
+            class="sm:max-w-xl"
+            @interact-outside="
+              (event) => {
+                if (uploading) event.preventDefault()
+              }
+            "
+            @escape-key-down="
+              (event) => {
+                if (uploading) event.preventDefault()
+              }
+            "
           >
             <NvDialogHeader>
               <NvDialogTitle>登记工程文档</NvDialogTitle>
@@ -475,11 +494,20 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
 
               <FormSectionTitle>文档文件</FormSectionTitle>
               <NvField :data-invalid="showErrors && !fileIdValid">
-                <NvFieldLabel for="doc-file">上传文件 <span class="text-destructive">*</span></NvFieldLabel>
-                <NvInput id="doc-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.txt,.docx,.xlsx"
-                  :disabled="uploading || submitting" @change="selectFile" />
+                <NvFieldLabel for="doc-file"
+                  >上传文件 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <NvInput
+                  id="doc-file"
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.txt,.docx,.xlsx"
+                  :disabled="uploading || submitting"
+                  @change="selectFile"
+                />
                 <NvFieldDescription v-if="uploading">正在上传，请稍候…</NvFieldDescription>
-                <NvFieldDescription v-else-if="form.fileId">已上传：{{ form.fileName }}</NvFieldDescription>
+                <NvFieldDescription v-else-if="form.fileId"
+                  >已上传：{{ form.fileName }}</NvFieldDescription
+                >
               </NvField>
 
               <FormSectionTitle>关联（可选）</FormSectionTitle>
@@ -499,7 +527,13 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               </NvField>
 
               <NvDialogFooter>
-                <NvButton type="button" variant="outline" :disabled="uploading || submitting" @click="formOpen = false">取消</NvButton>
+                <NvButton
+                  type="button"
+                  variant="outline"
+                  :disabled="uploading || submitting"
+                  @click="formOpen = false"
+                  >取消</NvButton
+                >
                 <NvButton type="submit" :disabled="registerPending || submitting || uploading">
                   <Spinner v-if="registerPending || submitting" aria-hidden="true" />
                   登记文档
@@ -590,10 +624,21 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               <span class="text-muted-foreground">内容类型</span>
               <span class="font-medium">{{ viewTarget.contentType || '—' }}</span>
             </div>
-            <NvButton v-if="viewTarget.fileId" type="button" :disabled="fileOpening" @click="openFile">
+            <NvButton
+              v-if="viewTarget.fileId"
+              type="button"
+              :disabled="fileOpening"
+              @click="openFile"
+            >
               {{ fileOpening ? '正在打开…' : '打开文件' }}
             </NvButton>
-            <a v-if="openedFileUrl" :href="openedFileUrl" target="_blank" rel="noopener" class="text-primary underline">
+            <a
+              v-if="openedFileUrl"
+              :href="openedFileUrl"
+              target="_blank"
+              rel="noopener"
+              class="text-primary underline"
+            >
               查看 {{ viewTarget.fileName }}
             </a>
             <div class="flex justify-between gap-3">

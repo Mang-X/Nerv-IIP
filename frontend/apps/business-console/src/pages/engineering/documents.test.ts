@@ -151,7 +151,8 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 async function selectFile(wrapper: ReturnType<typeof mount>, name = 'spec.pdf') {
   const input = wrapper.find('#doc-file')
   Object.defineProperty(input.element, 'files', {
-    configurable: true, value: [new File(['SOP content'], name, { type: 'application/pdf' })],
+    configurable: true,
+    value: [new File(['SOP content'], name, { type: 'application/pdf' })],
   })
   await input.trigger('change')
   await flushPromises()
@@ -161,7 +162,9 @@ beforeEach(() => {
   stub.permissionCodes = ['business.engineering.documents.manage']
   stub.uploadFile.mockReset()
   stub.uploadFile.mockImplementation(async (file: File) => ({
-    fileId: 'file-xyz', fileName: file.name, contentType: file.type,
+    fileId: 'file-xyz',
+    fileName: file.name,
+    contentType: file.type,
   }))
   stub.readFile.mockReset()
   stub.refresh.mockClear()
@@ -174,7 +177,9 @@ beforeEach(() => {
   filters.documentType = undefined
 })
 
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('engineering documents page', () => {
   it('渲染标题与文档行（文档号/类型/文件名）', async () => {
@@ -189,13 +194,21 @@ describe('engineering documents page', () => {
 
   it('上传完成前不能登记，失败后也不能提交文件引用', async () => {
     let finishUpload: ((value: unknown) => void) | undefined
-    stub.uploadFile.mockImplementationOnce(() => new Promise((resolve) => { finishUpload = resolve }))
+    stub.uploadFile.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = resolve
+        }),
+    )
     const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
     await findButton(wrapper, '登记文档')!.trigger('click')
     await wrapper.find('#doc-rev').setValue('A')
     await wrapper.find('#doc-type').setValue('sop')
     const input = wrapper.find('#doc-file')
-    Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['SOP'], 'sop.txt', { type: 'text/plain' })] })
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['SOP'], 'sop.txt', { type: 'text/plain' })],
+    })
     await input.trigger('change')
     await wrapper.find('form').trigger('submit')
     expect(stub.registerDocument).not.toHaveBeenCalled()
@@ -204,7 +217,9 @@ describe('engineering documents page', () => {
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
-    expect(stub.registerDocument).toHaveBeenCalledWith(expect.objectContaining({ fileId: 'file-sop' }))
+    expect(stub.registerDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ fileId: 'file-sop' }),
+    )
 
     await findButton(wrapper, '登记文档')!.trigger('click')
     await wrapper.find('#doc-rev').setValue('B')
@@ -400,10 +415,13 @@ describe('engineering documents page', () => {
 
   it('从详情打开真实文件内容，沿用当前组织和环境', async () => {
     const createObjectURL = vi.fn(() => 'blob:sop-content')
-    vi.stubGlobal('URL', class extends URL {
-      static createObjectURL = createObjectURL
-      static revokeObjectURL = vi.fn()
-    })
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = createObjectURL
+        static revokeObjectURL = vi.fn()
+      },
+    )
     stub.readFile.mockResolvedValue(new Blob(['SOP: torque 12 Nm.']))
     const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
     await findButton(wrapper, '查看')!.trigger('click')
@@ -411,7 +429,8 @@ describe('engineering documents page', () => {
     await findButton(wrapper, '打开文件')!.trigger('click')
     await flushPromises()
     expect(stub.readFile).toHaveBeenCalledWith('file-abc', {
-      organizationId: 'org-001', environmentId: 'env-dev',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
     })
     expect(wrapper.find('a[href="blob:sop-content"]').exists()).toBe(true)
     wrapper.unmount()

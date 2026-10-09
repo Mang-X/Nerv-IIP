@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const api = vi.hoisted(() => ({ create: vi.fn(), head: vi.fn(), patch: vi.fn(), complete: vi.fn(), read: vi.fn() }))
+const api = vi.hoisted(() => ({
+  create: vi.fn(),
+  head: vi.fn(),
+  patch: vi.fn(),
+  complete: vi.fn(),
+  read: vi.fn(),
+}))
 vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleSopFileUploadSession: api.create,
   getBusinessConsoleSopFileTusOffset: api.head,
@@ -13,29 +19,58 @@ import { readSopFile, uploadSopFile } from './sopFileTransfer'
 const scope = { organizationId: 'org-001', environmentId: 'env-dev' }
 const file = new File(['SOP: torque 12 Nm.'], 'work-instruction.txt', { type: 'text/plain' })
 function offset(value: number) {
-  return { response: new Response(null, { status: 204, headers: { 'Upload-Offset': String(value) } }) }
+  return {
+    response: new Response(null, { status: 204, headers: { 'Upload-Offset': String(value) } }),
+  }
 }
 beforeEach(() => {
   vi.resetAllMocks()
-  api.create.mockResolvedValue({ data: { success: true, data: { uploadSessionId: 'ups-sop-1', fileId: 'file-pending' } } })
+  api.create.mockResolvedValue({
+    data: { success: true, data: { uploadSessionId: 'ups-sop-1', fileId: 'file-pending' } },
+  })
   api.head.mockResolvedValue(offset(0))
   api.patch.mockResolvedValue(offset(file.size))
-  api.complete.mockResolvedValue({ data: { success: true, data: { fileId: 'file-sop-1', fileName: file.name, contentType: file.type } } })
+  api.complete.mockResolvedValue({
+    data: {
+      success: true,
+      data: { fileId: 'file-sop-1', fileName: file.name, contentType: file.type },
+    },
+  })
 })
 
 describe('SOP file transfer', () => {
   it('sends the selected bytes through HEAD/PATCH and uses only the completion file reference', async () => {
-    expect(await uploadSopFile(file, scope)).toEqual({ fileId: 'file-sop-1', fileName: file.name, contentType: file.type })
-    expect(api.create).toHaveBeenCalledWith({ body: { ...scope, fileName: file.name, contentType: file.type, expectedSizeBytes: file.size }, throwOnError: true })
-    expect(api.head.mock.invocationCallOrder[0]).toBeLessThan(api.patch.mock.invocationCallOrder[0]!)
-    expect(api.patch.mock.invocationCallOrder[0]).toBeLessThan(api.complete.mock.invocationCallOrder[0]!)
+    expect(await uploadSopFile(file, scope)).toEqual({
+      fileId: 'file-sop-1',
+      fileName: file.name,
+      contentType: file.type,
+    })
+    expect(api.create).toHaveBeenCalledWith({
+      body: { ...scope, fileName: file.name, contentType: file.type, expectedSizeBytes: file.size },
+      throwOnError: true,
+    })
+    expect(api.head.mock.invocationCallOrder[0]).toBeLessThan(
+      api.patch.mock.invocationCallOrder[0]!,
+    )
+    expect(api.patch.mock.invocationCallOrder[0]).toBeLessThan(
+      api.complete.mock.invocationCallOrder[0]!,
+    )
     const request = api.patch.mock.calls[0]![0]
     expect(request.path).toEqual({ uploadSessionId: 'ups-sop-1' })
     expect(request.body).toBe(file)
     expect(request.bodySerializer).toBeNull()
-    expect(request.headers).toEqual({ 'X-Organization-Id': scope.organizationId, 'X-Environment-Id': scope.environmentId,
-      'Tus-Resumable': '1.0.0', 'Upload-Offset': '0', 'Content-Type': 'application/offset+octet-stream' })
-    expect(api.complete).toHaveBeenCalledWith({ path: { uploadSessionId: 'ups-sop-1' }, body: { ...scope, sizeBytes: file.size }, throwOnError: true })
+    expect(request.headers).toEqual({
+      'X-Organization-Id': scope.organizationId,
+      'X-Environment-Id': scope.environmentId,
+      'Tus-Resumable': '1.0.0',
+      'Upload-Offset': '0',
+      'Content-Type': 'application/offset+octet-stream',
+    })
+    expect(api.complete).toHaveBeenCalledWith({
+      path: { uploadSessionId: 'ups-sop-1' },
+      body: { ...scope, sizeBytes: file.size },
+      throwOnError: true,
+    })
   })
 
   it('does not complete an incomplete upload or expose a failed completion reference', async () => {
@@ -50,8 +85,14 @@ describe('SOP file transfer', () => {
     const blob = new Blob(['SOP: torque 12 Nm.'])
     api.read.mockResolvedValue({ data: blob })
     expect(await readSopFile('file-sop-1', scope)).toBe(blob)
-    expect(api.read).toHaveBeenCalledWith({ path: { fileId: 'file-sop-1' }, headers: {
-      'X-Organization-Id': scope.organizationId, 'X-Environment-Id': scope.environmentId,
-    }, parseAs: 'blob', throwOnError: true })
+    expect(api.read).toHaveBeenCalledWith({
+      path: { fileId: 'file-sop-1' },
+      headers: {
+        'X-Organization-Id': scope.organizationId,
+        'X-Environment-Id': scope.environmentId,
+      },
+      parseAs: 'blob',
+      throwOnError: true,
+    })
   })
 })
