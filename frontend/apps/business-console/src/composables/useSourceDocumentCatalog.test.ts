@@ -14,7 +14,6 @@ const colada = vi.hoisted(() => ({
   factory: undefined as undefined | (() => { enabled?: boolean }),
   data: undefined as unknown,
 }))
-const wmsScope = vi.hoisted(() => ({ kind: undefined as string | undefined }))
 
 vi.mock('@nerv-iip/api-client', async (importOriginal) => {
   const options = () => vi.fn(() => ({ key: [], query: vi.fn() }))
@@ -36,33 +35,12 @@ vi.mock('@pinia/colada', async (importOriginal) => ({
   }),
 }))
 
-vi.mock('./useWmsWorkScope', () => ({
-  useWmsWorkScope: () => ({
-    hasSelection: {
-      get value() {
-        return !!wmsScope.kind
-      },
-    },
-    scopeKind: {
-      get value() {
-        return wmsScope.kind
-      },
-    },
-    scopeId: {
-      get value() {
-        return wmsScope.kind ? 'SITE-01' : undefined
-      },
-    },
-  }),
-}))
-
 // PublicContract: #3775 来源单据按类型取各域列表，提交值与下游比对的值一致。
 describe('source document catalog', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     colada.data = undefined
-    wmsScope.kind = undefined
     vi.useFakeTimers()
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
   })
@@ -174,20 +152,36 @@ describe('source document catalog', () => {
     expect(catalog.options.value.map((option) => option.value)).toEqual(['QUO-100', 'QUO-001'])
   })
 
-  it('waits for the WMS work scope before listing inbound orders', () => {
-    useSourceDocumentCatalog('wms-inbound-order', '')
-    expect(colada.factory!().enabled).toBe(false)
-
-    wmsScope.kind = 'site'
+  // PublicContract: #4255 / #3825 r1，授权工厂来源搜索不依赖、不改变入库页记忆。
+  it('searches all authorized sites and selects a real inbound number while preserving the remembered site', async () => {
+    const memoryKey =
+      'nerv-iip.business-console.wms-work-scope.v1:user-001|org-001|env-dev|receipts'
+    localStorage.setItem(memoryKey, 'site:SITE-A')
+    colada.data = {
+      success: true,
+      data: { items: [{ inboundOrderNo: 'IN-20261009-0002', siteCode: 'SITE-B' }], total: 1 },
+    }
+    const selected = shallowRef('')
+    const catalog = useSourceDocumentCatalog('wms-inbound-order', selected)
+    catalog.search.value = ' IN-20261009 '
+    await vi.advanceTimersByTimeAsync(300)
     expect(colada.factory!().enabled).toBe(true)
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toHaveBeenLastCalledWith({
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
         take: 50,
-        scopeKind: 'site',
-        scopeId: 'SITE-01',
+        keyword: 'IN-20261009',
+        scopeKind: 'authorized-sites',
+        scopeId: 'all',
       },
     })
+    expect(catalog.options.value).toEqual([
+      { value: 'IN-20261009-0002', label: 'IN-20261009-0002', hint: 'SITE-B' },
+    ])
+    selected.value = catalog.options.value[0]!.value
+    expect(selected.value).toBe('IN-20261009-0002')
+    expect(localStorage.getItem(memoryKey)).toBe('site:SITE-A')
+    localStorage.removeItem(memoryKey)
   })
 })

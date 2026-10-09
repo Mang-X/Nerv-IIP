@@ -132,6 +132,35 @@ public sealed class WarehouseWorkScopeAuthorizer(
         return new WarehouseWorkScopeCatalog(normalizedActorPrincipalId, items);
     }
 
+    // Only the receipt source list opts into the authorized-site union; work actions keep ResolveAsync.
+    public Task<WarehouseWorkScopeSelection> ResolveReceiptListAsync(
+        WarehouseWorkScopeRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.ScopeKind?.Trim(), "authorized-sites", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(request.ScopeId?.Trim(), "all", StringComparison.Ordinal))
+        {
+            return ResolveAsync(request, cancellationToken);
+        }
+
+        var actorPrincipalId = Required(request.ActorPrincipalId, nameof(request.ActorPrincipalId));
+        var authorizedSites = NormalizeAuthorizedSites(request.AuthorizedSiteCodes);
+        var requestedSite = Optional(request.SiteCode);
+        if (requestedSite is not null && !authorizedSites.Contains(requestedSite))
+        {
+            throw WmsAuthorizationException.Forbidden("site-outside-exact-grant");
+        }
+
+        return Task.FromResult(new WarehouseWorkScopeSelection(
+            actorPrincipalId,
+            "authorized-sites",
+            "all",
+            AssignedOperatorUserId: null,
+            PoolCodes: [],
+            SiteCodes: requestedSite is null ? authorizedSites.Order(StringComparer.Ordinal).ToArray() : [requestedSite],
+            SiteWide: true));
+    }
+
     public async Task<WarehouseWorkScopeSelection> ResolveAsync(
         WarehouseWorkScopeRequest request,
         CancellationToken cancellationToken)

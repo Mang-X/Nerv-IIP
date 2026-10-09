@@ -14,7 +14,7 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
-public sealed class BusinessGatewayWmsTests
+public sealed partial class BusinessGatewayWmsTests
 {
     [Theory]
     [InlineData(HttpStatusCode.Conflict, "wcs-retry-not-due")]
