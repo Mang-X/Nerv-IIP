@@ -6,7 +6,7 @@ using static Nerv.IIP.Business.Scheduling.Web.Tests.RightShiftCandidateGenerator
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
-// DomainInvariant: #4246 / #3629 approved spec r1: exact overlap, persisted qualification, confirmed availability, read-only.
+// DomainInvariant: #4246 / #3629 approved spec r1: exact overlap, persisted qualification, producer sparse availability, read-only.
 public sealed class SchedulingDowntimeImpactTests
 {
     private static readonly DateTimeOffset At = Assignment("A", "a", "R1", 0, 60).StartUtc;
@@ -35,7 +35,7 @@ public sealed class SchedulingDowntimeImpactTests
     }
 
     [Fact]
-    public void Alternatives_require_snapshot_eligibility_capabilities_and_confirmed_current_availability_and_count_operations_once()
+    public void Alternatives_require_snapshot_eligibility_capabilities_and_no_current_blocking_windows_and_count_operations_once()
     {
         var problem = Problem(Order("A", Operation("a", "R1") with { EligibleResourceIds = ["R1", "R2", "R2", "R3", "R4", "R5", "R6", "R7"] }),
             Order("B", Operation("b", "R1")));
@@ -52,7 +52,7 @@ public sealed class SchedulingDowntimeImpactTests
         var item = Assert.Single(result.Items);
         Assert.Null(item.Fact.RecoveredAtUtc); // expired ETR does not recover an asset
         Assert.Equal(1, item.OperationsWithAlternativesCount);
-        Assert.Equal(new[] { "R2", "R7" }, item.AffectedOperations.Single(x => x.WorkOrderId == "A").AvailableAlternativeResourceIds);
+        Assert.Equal(new[] { "R2", "R6", "R7" }, item.AffectedOperations.Single(x => x.WorkOrderId == "A").AvailableAlternativeResourceIds);
         Assert.Empty(item.AffectedOperations.Single(x => x.WorkOrderId == "B").AvailableAlternativeResourceIds);
     }
 
@@ -70,6 +70,20 @@ public sealed class SchedulingDowntimeImpactTests
         Assert.Equal(0, center.OperationsWithAlternativesCount);
         Assert.Empty(center.AffectedOperations[0].AvailableAlternativeResourceIds);
         Assert.Empty(result.Items.Single(x => x.Fact.SourceReferenceId == "alternative-down").AffectedOperations);
+    }
+
+    [Fact]
+    public void Sparse_available_alternatives_and_multiple_downtime_sources_count_each_affected_operation_once()
+    {
+        var problem = Problem(Order("A", Operation("a", "R1") with { EligibleResourceIds = ["R1", "R2", "R3"] }));
+        var plan = Input(problem, [Assignment("A", "a", "R1", 0, 60)], []).Baseline;
+        var facts = new[] {
+            new SchedulingDowntimeFactContract("mes", "mes-outage", "R1", null, At.AddHours(-1), null, null),
+            new SchedulingDowntimeFactContract("maintenance", "maintenance-outage", "R1", null, At.AddHours(-1), null, null) };
+        var result = SchedulingDowntimeImpactProjector.Project(problem, plan, facts, Availability(), At);
+        Assert.Equal(1, result.OperationsWithAlternativesCount);
+        Assert.Equal(new[] { "R2", "R3" }, Assert.Single(result.AffectedOperations).AvailableAlternativeResourceIds);
+        Assert.All(result.Items, item => Assert.Equal(1, item.OperationsWithAlternativesCount));
     }
 
     private static EquipmentRuntimeAvailabilityResponse Availability(params EquipmentRuntimeAvailabilityWindowContract[] windows) =>

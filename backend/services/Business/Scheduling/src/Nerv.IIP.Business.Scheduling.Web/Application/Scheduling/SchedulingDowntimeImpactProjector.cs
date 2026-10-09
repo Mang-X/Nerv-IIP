@@ -10,12 +10,11 @@ internal static class SchedulingDowntimeImpactProjector
     {
         var operations = problem.Orders.SelectMany(order => order.Operations.Select(operation =>
             (Key: (order.OrderId, operation.OperationId), Operation: operation))).ToDictionary(x => x.Key, x => x.Operation);
-        var current = availability.Items.Where(x => x.StartUtc <= asOf && asOf < x.EndUtc)
-            .GroupBy(x => x.DeviceAssetId, StringComparer.Ordinal).ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.Ordinal);
-        var confirmed = current.Where(x => x.Value.Any(w => w.AvailabilityStatus == EquipmentRuntimeAvailabilityStatus.Available)
-                && x.Value.All(w => w.AvailabilityStatus == EquipmentRuntimeAvailabilityStatus.Available))
-            .Select(x => x.Key).ToHashSet(StringComparer.Ordinal);
-        // MES and maintenance raw facts also block a currently reported Available device.
+        // Producers emit sparse blocking/Unknown windows, not an Available window for every device.
+        var confirmed = problem.Resources.Select(x => x.ResourceId).ToHashSet(StringComparer.Ordinal);
+        confirmed.ExceptWith(availability.Items.Where(x => x.StartUtc <= asOf && asOf < x.EndUtc
+            && x.AvailabilityStatus != EquipmentRuntimeAvailabilityStatus.Available).Select(x => x.DeviceAssetId));
+        // MES and maintenance raw facts also block devices absent from the sparse windows.
         confirmed.ExceptWith(facts.Where(x => x.DeviceAssetId is not null && x.StartedAtUtc <= asOf
             && (x.RecoveredAtUtc is null || asOf < x.RecoveredAtUtc)).Select(x => x.DeviceAssetId!));
         var items = facts.Where(x => x.StartedAtUtc < problem.HorizonEndUtc
