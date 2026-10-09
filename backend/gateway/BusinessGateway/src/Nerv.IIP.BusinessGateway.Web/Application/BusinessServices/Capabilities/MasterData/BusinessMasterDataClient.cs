@@ -23,6 +23,16 @@ public interface IBusinessMasterDataClient
         BusinessConsoleListResourcesRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// 按授权工厂集合收窄的资源列表（可搜目录的工作中心 / 车间，#3825）；<paramref name="siteCodes"/> 为 null 表示不收窄。
+    /// 工厂集合是网关授权裁决的结果，不属于 console 公开的资源列表请求。
+    /// </summary>
+    Task<BusinessConsoleResourceListResponse> ListResourcesInSitesAsync(
+        string internalBearerToken,
+        BusinessConsoleListResourcesRequest request,
+        IReadOnlyList<string>? siteCodes,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMasterDataResourceDetail> GetResourceDetailAsync(
         string internalBearerToken,
         BusinessConsoleMasterDataResourceRequest request,
@@ -289,15 +299,22 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             null,
             cancellationToken);
 
-    public async Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
+    public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
+        CancellationToken cancellationToken) =>
+        ListResourcesInSitesAsync(internalBearerToken, request, null, cancellationToken);
+
+    public async Task<BusinessConsoleResourceListResponse> ListResourcesInSitesAsync(
+        string internalBearerToken,
+        BusinessConsoleListResourcesRequest request,
+        IReadOnlyList<string>? siteCodes,
         CancellationToken cancellationToken)
     {
         var response = await SendAsync<BusinessConsoleResourceListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/master-data/resources?" + Query(
+            "/api/business/v1/master-data/resources?" + JoinQuery(Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("resourceType", request.ResourceType),
@@ -319,6 +336,7 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
                 ("skillCode", request.SkillCode),
                 ("workshopCode", request.WorkshopCode),
                 ("deviceAssetId", request.DeviceAssetId)),
+                RepeatedQuery("siteCodes", siteCodes)),
             null,
             cancellationToken,
             failClosedOnFailureEnvelope: true);

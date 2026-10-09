@@ -8,12 +8,16 @@ public sealed record BusinessConsoleSearchableDirectoryDefinition(
     string DirectoryType,
     string Owner,
     string PermissionCode,
-    IReadOnlySet<string> SupportedScopeKinds);
+    IReadOnlySet<string> SupportedScopeKinds)
+{
+    /// <summary>只按工厂切分的目录（库位 / 批次 / 序列号 / 工作中心 / 车间）：可见范围取授权工厂的并集。</summary>
+    public bool SplitBySite => SupportedScopeKinds.Count == 1 && SupportedScopeKinds.Contains("site");
+}
 
 public sealed record BusinessConsoleSearchableDirectoryScope(string? Kind, string? Id);
 
 /// <summary>
-/// 按工厂切分的目录（库位 / 批次 / 序列号）可见范围，只有两种合法状态：
+/// 按工厂切分的目录（库位 / 批次 / 序列号 / 工作中心 / 车间）可见范围，只有两种合法状态：
 /// 组织级授权不收窄（<see cref="OrganizationWide"/>），或收窄到至少一个工厂（<see cref="Sites"/>）。
 /// </summary>
 public sealed class BusinessConsoleAuthorizedSites
@@ -33,7 +37,7 @@ public sealed class BusinessConsoleAuthorizedSites
         return new(siteCodes);
     }
 
-    /// <summary>下传给库存目录的工厂过滤；null 表示不收窄。</summary>
+    /// <summary>下传给权威源（库存 / 主数据）的工厂过滤；null 表示不收窄。</summary>
     public IReadOnlyList<string>? SiteFilter { get; }
 }
 
@@ -180,7 +184,7 @@ public static class BusinessConsoleSearchableDirectoryPolicy
     }
 
     /// <summary>
-    /// 按工厂切分的目录（库位 / 批次 / 序列号）：可见范围是用户授权工厂的并集。
+    /// 按工厂切分的目录（库位 / 批次 / 序列号 / 工作中心 / 车间）：可见范围是用户授权工厂的并集。
     /// <list type="bullet">
     /// <item>持有多个工厂范围：看到这些工厂的并集。</item>
     /// <item>self、work-center 等不是工厂的范围不给出任何工厂，也不让同一用户的工厂授权失效

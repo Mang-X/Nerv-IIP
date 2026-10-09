@@ -25,13 +25,16 @@ public sealed record ListMasterDataResourcesQuery(
     string? UserId = null,
     string? SkillCode = null,
     string? WorkshopCode = null,
-    string? DeviceAssetId = null) : IQuery<ListMasterDataResourcesResponse>;
+    string? DeviceAssetId = null,
+    IReadOnlyCollection<string>? SiteCodes = null) : IQuery<ListMasterDataResourcesResponse>;
 
 public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<ListMasterDataResourcesQuery>
 {
     public ListMasterDataResourcesQueryValidator()
     {
         this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+        RuleFor(query => query.SiteCodes).Must(x => x == null || x.Count is > 0 and <= 100);
+        RuleForEach(query => query.SiteCodes).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -258,6 +261,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.SiteCode))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, x.SiteCode, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
@@ -271,6 +275,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.PlantCode == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.PlantCode))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, x.PlantCode, x.LineCode, x.WorkshopCode, x.CapacityMinutesPerDay, null, x.Disabled ? "disabled" : "active"));
@@ -380,6 +385,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.Code == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.Code))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => new MasterDataResourceItem(
@@ -401,6 +407,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.SiteCode))
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.Code == request.LineCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
