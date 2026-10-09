@@ -27,6 +27,7 @@ const barcode = vi.hoisted(() => ({
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
   printBatchStatus: 'ready-to-print',
+  confirmPrintBatchPending: false,
   templateId: 'tpl-1',
   // 打印批次用例额外追加的规则 / 模板；其它页面的用例保持为空。
   extraRules: [] as Array<Record<string, unknown>>,
@@ -209,7 +210,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       refreshPrintBatches: vi.fn(),
       refreshPrintBatchDetail: vi.fn(),
       confirmPrintBatch: barcode.confirmPrintBatch,
-      confirmPrintBatchPending: shallowRef(false),
+      confirmPrintBatchPending: shallowRef(barcode.confirmPrintBatchPending),
       createPrintBatch: barcode.createPrintBatch,
       createPrintBatchPending: shallowRef(false),
       createPrintBatchError: shallowRef(undefined),
@@ -414,6 +415,7 @@ describe('barcode pages', () => {
     barcode.route.query = {}
     barcode.printBatchSourceDocumentType = 'production.report'
     barcode.printBatchStatus = 'ready-to-print'
+    barcode.confirmPrintBatchPending = false
     barcode.templateId = 'tpl-1'
     barcode.extraRules = []
     barcode.extraTemplates = []
@@ -447,6 +449,16 @@ describe('barcode pages', () => {
     expect(barcode.confirmPrintBatch).toHaveBeenCalledWith('pb-1')
     expect(toastMock.success).toHaveBeenCalledWith('打印批次已确认待打印。')
     expect(wrapper.text()).toContain('已预留')
+  })
+
+  it('exposes confirmation as busy and disabled while the request is pending', async () => {
+    barcode.printBatchStatus = 'reserved'
+    barcode.confirmPrintBatchPending = true
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+    const button = wrapper.findAll('button').find((button) => button.text().includes('确认待打印'))!
+    expect(button.attributes('aria-busy')).toBe('true')
+    expect(button.attributes('disabled')).toBeDefined()
   })
 
   it.each(['ready-to-print', 'sent-to-printer', 'delivery-unknown', 'printed', 'failed'])(

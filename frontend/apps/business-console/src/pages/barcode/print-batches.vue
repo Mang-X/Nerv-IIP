@@ -718,10 +718,10 @@ function firstQuery(value: unknown) {
           v-if="canPrint && printBatchDetail?.status === 'reserved'"
           class="justify-self-start"
           type="button"
+          :loading="confirmPrintBatchPending"
           :disabled="confirmPrintBatchPending || printBatchDetailPending"
           @click="confirmSelectedBatch"
         >
-          <Spinner v-if="confirmPrintBatchPending" aria-hidden="true" />
           确认待打印
         </NvButton>
         <NvDataTable
