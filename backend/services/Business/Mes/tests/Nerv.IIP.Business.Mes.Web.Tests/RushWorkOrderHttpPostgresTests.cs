@@ -147,6 +147,8 @@ public sealed class RushWorkOrderHttpPostgresTests
                     // 急单建单时冻结齐套需求（#3858）；本用例不起 ProductEngineering，改用无需求快照。
                     services.RemoveAll<IMesMaterialRequirementSnapshotProvider>();
                     services.AddSingleton<IMesMaterialRequirementSnapshotProvider>(NoRequirementSnapshotProvider.Instance);
+                    services.RemoveAll<IMesRoutingSnapshotProvider>();
+                    services.AddSingleton<IMesRoutingSnapshotProvider>(SingleOperationRoutingSnapshotProvider.Instance);
                 });
             });
     }

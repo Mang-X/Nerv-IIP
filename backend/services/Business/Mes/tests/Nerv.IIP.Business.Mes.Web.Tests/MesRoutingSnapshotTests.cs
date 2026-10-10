@@ -786,7 +786,7 @@ public sealed class MesRoutingSnapshotTests
     }
 }
 
-internal sealed class SingleOperationRoutingSnapshotProvider : IMesRoutingSnapshotProvider
+internal sealed class SingleOperationRoutingSnapshotProvider(int sequence = 10) : IMesRoutingSnapshotProvider
 {
     public static readonly SingleOperationRoutingSnapshotProvider Instance = new();
 
@@ -796,6 +796,6 @@ internal sealed class SingleOperationRoutingSnapshotProvider : IMesRoutingSnapsh
     {
         return Task.FromResult(MesRoutingSnapshotResult.Captured(
             $"test:{request.ProductionVersionId}:ROUTE-TEST:A",
-            [new MesRoutingOperationSnapshot(10, "OP-10", "WC-TEST", [], 30, false)]));
+            [new MesRoutingOperationSnapshot(sequence, "OP-10", "WC-TEST", [], 30, false)]));
     }
 }

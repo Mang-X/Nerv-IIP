@@ -52,7 +52,11 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             operationTask.Duration,
             operationTask.ExistingStartUtc,
             operationTask.ExistingEndUtc,
-            operationTask.SkuCode));
+            operationTask.SkuCode,
+            plannedQuantity: operationTask.PlannedQuantity,
+            requiresQualityInspection: operationTask.RequiresQualityInspection,
+            operationCode: operationTask.OperationCode,
+            requiredSkillCode: operationTask.RequiredSkillCode));
     }
 
     public void AddUnavailability(WorkCenterUnavailability unavailability)
@@ -151,7 +155,11 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
                 x.ExistingStartUtc,
                 x.ExistingEndUtc,
                 x.OrganizationId,
-                x.EnvironmentId))
+                x.EnvironmentId,
+                x.OperationCode,
+                x.RequiresQualityInspection,
+                x.RequiredSkillCode,
+                x.PlannedQuantity))
             .ToListAsync(cancellationToken);
     }
 
