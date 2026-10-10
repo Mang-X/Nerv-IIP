@@ -768,6 +768,36 @@ describe('WMS operate actions', () => {
     })
   })
 
+  it('创建内容冲突时展示服务端中文原因并保留入库表单', async () => {
+    const reason = '本次提交与此前的创建内容不一致，请重新发起创建。'
+    wms.createInbound.mockRejectedValueOnce({ success: false, message: reason })
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建入库单'))!
+      .trigger('click')
+    await flushPromises()
+
+    setInput('#wms-in-site', 'S1')
+    setInput('#wms-in-srctype', '采购收货')
+    setInput('#wms-in-srcid', 'PO-1')
+    setInput('[aria-label="第 1 行物料"]', 'SKU1')
+    setInput('[aria-label="第 1 行收货数量"]', '5')
+    setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
+    await flushPromises()
+
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(toast.error).toHaveBeenCalledWith(`创建入库单失败：${reason}`)
+    expect(document.body.querySelector('#wms-in-site')).not.toBeNull()
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
   it('links inbound orders to scan records through the SPA router', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
     await flushPromises()

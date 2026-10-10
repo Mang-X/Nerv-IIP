@@ -129,10 +129,12 @@ public sealed class CodeAllocatorTests
             allocator.AllocateAsync(new CodeAllocationRequest("org", "env", rule, null, null, null, "payload", "material"), CancellationToken.None));
     }
 
-    [Fact]
-    public async Task AllocateAsync_replays_idempotency_record_and_rejects_conflicting_payload()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AllocateAsync_replays_idempotency_record_and_rejects_conflicting_payload(bool useStore)
     {
-        var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+        var allocator = new CodeAllocator(store: useStore ? new InMemoryCodeStore() : null, timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
         var firstRequest = new CodeAllocationRequest("org", "env", SkuRule(), null, null, "idem-1", "payload-a", "sku");
         var replayRequest = firstRequest with { PayloadFingerprint = "payload-a" };
         var conflictRequest = firstRequest with { PayloadFingerprint = "payload-b" };
@@ -142,7 +144,13 @@ public sealed class CodeAllocatorTests
 
         Assert.Equal(first.Code, replay.Code);
         Assert.True(replay.IsIdempotentReplay);
-        await Assert.ThrowsAsync<KnownException>(() => allocator.AllocateAsync(conflictRequest, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<KnownException>(() => allocator.AllocateAsync(conflictRequest, CancellationToken.None));
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", exception.Message);
+        Assert.DoesNotContain(firstRequest.IdempotencyKey!, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(firstRequest.ConflictResourceLabel, exception.Message, StringComparison.Ordinal);
+        var replayAfterConflict = await allocator.AllocateAsync(replayRequest, CancellationToken.None);
+        Assert.Equal(first.Code, replayAfterConflict.Code);
+        Assert.True(replayAfterConflict.IsIdempotentReplay);
     }
 
     [Fact]
@@ -160,16 +168,19 @@ public sealed class CodeAllocatorTests
         Assert.True(replay.IsIdempotentReplay);
     }
 
-    [Fact]
-    public async Task TryPeekReplayAsync_rejects_conflicting_payload_with_allocator_semantics()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TryPeekReplayAsync_rejects_conflicting_payload_with_allocator_semantics(bool useStore)
     {
-        var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+        var allocator = new CodeAllocator(store: useStore ? new InMemoryCodeStore() : null, timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
         var request = new CodeAllocationRequest("org", "env", SkuRule(), null, null, "idem-peek-conflict", "payload-a", "sku");
         await allocator.AllocateAsync(request, CancellationToken.None);
 
-        await Assert.ThrowsAsync<KnownException>(() => allocator.TryPeekReplayAsync(
+        var exception = await Assert.ThrowsAsync<KnownException>(() => allocator.TryPeekReplayAsync(
             request with { PayloadFingerprint = "payload-b" },
             CancellationToken.None));
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", exception.Message);
     }
 
     [Fact]

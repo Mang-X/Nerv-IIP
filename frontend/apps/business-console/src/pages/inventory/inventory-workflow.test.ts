@@ -1174,6 +1174,27 @@ describe('inventory workflow pages', () => {
     )
   })
 
+  it('盘点创建内容冲突交给现有反馈链，保留填写内容供用户处理', async () => {
+    const refusal = {
+      success: false,
+      message: '本次提交与此前的创建内容不一致，请重新发起创建。',
+    }
+    routeState.query = { skuCode: 'SKU-001', locationCode: 'A-01' }
+    inventoryState.createCountTask.mockRejectedValueOnce(refusal)
+    const wrapper = mountInventoryPage(CountsPage)
+    await openCreateCountTask(wrapper)
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await flushPromises()
+
+    expect(inventoryState.notifyOperationFailure).toHaveBeenCalledWith(
+      '创建盘点任务失败',
+      refusal,
+      '创建盘点任务失败，请稍后重试。',
+    )
+    expect(wrapper.find('#count-task-location').exists()).toBe(true)
+    expect(inventoryState.notifySuccess).not.toHaveBeenCalled()
+  })
+
   it('新建盘点任务不填任务号：提交带幂等键，同一次填写重试沿用同一个键，重新打开才换键', async () => {
     routeState.query = { skuCode: 'SKU-001', locationCode: 'A-01' }
     inventoryState.createCountTask

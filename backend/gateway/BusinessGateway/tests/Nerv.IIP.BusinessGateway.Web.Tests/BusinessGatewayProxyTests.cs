@@ -32,6 +32,51 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayProxyTests
 {
     [Theory]
+    [InlineData(false, HttpStatusCode.OK)]
+    [InlineData(true, HttpStatusCode.OK)]
+    [InlineData(false, HttpStatusCode.BadRequest)]
+    [InlineData(true, HttpStatusCode.BadRequest)]
+    public async Task Create_content_conflict_reaches_the_public_gateway_with_its_safe_chinese_reason(bool wms, HttpStatusCode downstreamStatus)
+    {
+        const string reason = "本次提交与此前的创建内容不一致，请重新发起创建。";
+        var handler = new RecordingHandler(_ => JsonResponse(downstreamStatus, new
+        {
+            success = false,
+            message = reason,
+            code = 0,
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://business.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(new HttpBusinessWmsClient(downstream));
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(new HttpBusinessInventoryClient(
+                downstream, Options.Create(new BusinessGatewayInventoryForwardedPermissionOptions())));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        object request = wms
+            ? new BusinessConsoleCreateWmsInboundOrderRequest(
+                "org-001", "env-dev", "purchase-receipt", "PR-001", "S1",
+                [new("10", "SKU-001", "EA", 1, "STAGE-01", "LOT-001", null, "qualified", "company", null)],
+                "create-content-conflict")
+            : new BusinessConsoleCreateStockCountTaskRequest(
+                "org-001", "env-dev", "SKU-001", "EA", "S1", "LOC-01", "LOT-001", null,
+                "qualified", "company", null, "create-content-conflict");
+        var path = wms ? "wms/inbound-orders" : "inventory/count-tasks";
+
+        var response = await client.PostAsJsonAsync($"/api/business-console/v1/{path}", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(json.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(reason, json.RootElement.GetProperty("message").GetString());
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal(wms ? "/api/business/v1/wms/inbound-orders" : "/api/inventory/v1/count-tasks", forwarded.RequestUri!.AbsolutePath);
+    }
+
+    [Theory]
     [InlineData(false, true, true)]
     [InlineData(true, true, true)]
     [InlineData(false, false, true)]

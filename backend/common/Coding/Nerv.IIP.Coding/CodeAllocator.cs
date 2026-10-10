@@ -409,7 +409,7 @@ public sealed class CodeAllocator(
 
     private static KnownException IdempotencyConflict(string idempotencyKey, string conflictResourceLabel)
     {
-        return new KnownException($"Idempotency key '{idempotencyKey}' conflicts with a different {conflictResourceLabel} create payload.");
+        return new KnownException("本次提交与此前的创建内容不一致，请重新发起创建。");
     }
 
     private static string Key(params string[] parts)
