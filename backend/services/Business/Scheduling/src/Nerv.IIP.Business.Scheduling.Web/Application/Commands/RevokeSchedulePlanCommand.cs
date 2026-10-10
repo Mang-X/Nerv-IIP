@@ -41,7 +41,9 @@ public sealed class RevokeSchedulePlanCommandHandler(
             request.OrganizationId,
             request.EnvironmentId,
             cancellationToken);
-        var plan = await dbContext.SchedulePlans.SingleOrDefaultAsync(
+        var plan = await dbContext.SchedulePlans
+            .Include(x => x.Assignments)
+            .SingleOrDefaultAsync(
             x => x.PlanId == request.PlanId &&
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId,
