@@ -135,7 +135,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]
             },
             CancellationToken.None));
-        Assert.Contains("conflicts", conflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", conflict.Message);
 
         var skillConflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             command with
@@ -153,7 +153,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]
             },
             CancellationToken.None));
-        Assert.Contains("conflicts", skillConflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", skillConflict.Message);
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             },
             CancellationToken.None));
 
-        Assert.Contains("conflicts", conflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", conflict.Message);
     }
 
     [Fact]
@@ -350,10 +350,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
             routingHandler.Handle(
                 routingCommand with { Revision = "B" },
                 CancellationToken.None));
-        Assert.Contains("Idempotency key", mbomConflict.Message, StringComparison.Ordinal);
-        Assert.Contains("conflicts", mbomConflict.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Idempotency key", routingConflict.Message, StringComparison.Ordinal);
-        Assert.Contains("conflicts", routingConflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", mbomConflict.Message);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", routingConflict.Message);
 
         var productionVersionResult = await new CreateProductionVersionCommandHandler(
             new ProductionVersionRepository(dbContext),

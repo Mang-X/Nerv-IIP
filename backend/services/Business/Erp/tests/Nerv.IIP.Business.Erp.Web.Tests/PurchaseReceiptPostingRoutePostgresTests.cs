@@ -101,7 +101,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
                     ? PurchaseReceiptInventoryPostingRoute.Wms : PurchaseReceiptInventoryPostingRoute.Direct;
                 var conflict = await Assert.ThrowsAsync<KnownException>(() => Handler(read.ServiceProvider).Handle(
                     command with { InventoryPostingRoute = otherRoute }, CancellationToken.None));
-                Assert.Contains("conflicts", conflict.Message, StringComparison.Ordinal);
+                Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", conflict.Message);
             }
 
             await using (var finance = provider.CreateAsyncScope())
@@ -188,7 +188,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         Assert.Empty(receipt.GetDomainEvents());
         var conflict = await Assert.ThrowsAsync<KnownException>(() => Handler(read.ServiceProvider).Handle(
             command with { InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Wms }, CancellationToken.None));
-        Assert.Contains("conflicts", conflict.Message, StringComparison.Ordinal);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", conflict.Message);
         Assert.Equal(1, await readDb.PurchaseReceipts.CountAsync());
         var recorded = new PurchaseReceiptRecordedIntegrationEventConverter().Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
