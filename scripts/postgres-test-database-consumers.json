@@ -60,6 +60,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpInputSourcePersistenceTests.cs",
+      "sourceSha256": "f4a0e890f2c3174d2dccf6f7b3891360e7ac0a508246e9e70061fff20db0953c",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MRP source persistence proof owns its isolated new database and surfaces cleanup failure."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/NetRequirementIdentityPersistenceTests.cs",
       "sourceSha256": "5e18b5d2fad36dd8feaeae1be8ca625defb59821313b7933b4debe3e2a3be010",
       "factoryCallCount": 2,

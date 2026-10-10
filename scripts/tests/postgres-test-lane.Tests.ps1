@@ -727,7 +727,8 @@ try {
     # 按裁决的例外判据保持 runner——判据是失败诊断价值：Acceptance 的终局跨四个 schema，必须能在成员
     # 数据库里看到。ERP 本就没有手写建库；Acceptance 的手写建库（内嵌 TemporaryPostgresDatabase）由本批删除。
     $demandPlanningMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'demandplanning-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($demandPlanningMember.expectedTestIdentities).Count -eq 8) 'The DemandPlanning member must freeze exactly its eight PostgreSQL identities.'
+    # #4289 adds the complete MRP input-source persistence proof to the existing eight identities.
+    Assert-Contract (@($demandPlanningMember.expectedTestIdentities).Count -eq 9) 'The DemandPlanning member must freeze exactly its nine PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$demandPlanningMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'DemandPlanning runs on governed temporary databases, so the member must be test-owned.'
     Assert-MethodScopedFilter -Member $demandPlanningMember
     $demandPlanningSourcePath = Join-Path $repoRoot 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'
