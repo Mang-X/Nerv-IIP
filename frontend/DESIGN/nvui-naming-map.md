@@ -87,6 +87,8 @@ PR #1093 的指标家族件、演示走查整改前端批 1、演示走查整改
 > §1.1(2) PC 层取素名，R1–R5 不适用。`data-slot` 为 `nv-sidebar-trigger` / `nv-sidebar-rail`，
 > 已并入 `nvui-naming.contract.test.ts` 冻结规范集合，文档站页 `components/desktop/sidebar`。
 
+> **收口后新增（无旧名）。** #4296 在 `pc/spinner/` 新增 `NvSpinner`，按 ADR 0020 §1.1(2) PC 素名规则定名；中文加载读屏名称，原版 `Spinner` 零改动。
+
 ### A1. PC 素名层 — `pc/`（35 目录，116 个组件导出）
 
 | 目录              | 旧名                                 | 新名                       |

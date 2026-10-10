@@ -44,7 +44,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { FactoryIcon, PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
@@ -1130,7 +1130,7 @@ function childLabelOf(type: string): string | undefined {
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="editOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="editPending || editLoading">
-              <Spinner v-if="editPending" aria-hidden="true" />
+              <NvSpinner v-if="editPending" aria-hidden="true" />
               保存修改
             </NvButton>
           </NvDialogFooter>

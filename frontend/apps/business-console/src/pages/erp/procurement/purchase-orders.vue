@@ -35,7 +35,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -427,7 +427,7 @@ async function submit() {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="orders.createPurchaseOrderPending.value">
-              <Spinner v-if="orders.createPurchaseOrderPending.value" aria-hidden="true" />
+              <NvSpinner v-if="orders.createPurchaseOrderPending.value" aria-hidden="true" />
               创建采购单
             </NvButton>
           </NvDialogFooter>

@@ -27,7 +27,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { UserCheckIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
@@ -353,7 +353,7 @@ function formatDateTime(value?: string | null) {
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="pending || !affordance.enabled">
-            <Spinner v-if="pending" aria-hidden="true" />
+            <NvSpinner v-if="pending" aria-hidden="true" />
             <UserCheckIcon v-else aria-hidden="true" />
             {{ target?.assignedUserId ? '确认改派' : '确认派工' }}
           </NvButton>

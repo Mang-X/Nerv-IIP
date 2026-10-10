@@ -56,7 +56,7 @@ import {
   NvTooltipContent,
   NvTooltipProvider,
   NvTooltipTrigger,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
@@ -803,7 +803,7 @@ async function dismissCandidate(candidateId?: string) {
             :disabled="!canSubmitReverse || reverseProductionReportPending"
             @click="submitReverse"
           >
-            <Spinner v-if="reverseProductionReportPending" aria-hidden="true" />
+            <NvSpinner v-if="reverseProductionReportPending" aria-hidden="true" />
             <Undo2Icon v-else aria-hidden="true" />
             确认冲销
           </NvButton>

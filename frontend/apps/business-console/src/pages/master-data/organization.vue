@@ -40,7 +40,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, SearchIcon, UsersIcon, UsersRoundIcon } from '@lucide/vue'
@@ -871,7 +871,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
               >取消</NvButton
             >
             <NvButton type="submit" :disabled="departments.createPending.value">
-              <Spinner v-if="departments.createPending.value" aria-hidden="true" />保存部门
+              <NvSpinner v-if="departments.createPending.value" aria-hidden="true" />保存部门
             </NvButton>
           </NvDialogFooter>
         </form>
@@ -933,7 +933,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="deptEditOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="deptActions.updatePending.value || deptEditLoading">
-              <Spinner v-if="deptActions.updatePending.value" aria-hidden="true" />保存修改
+              <NvSpinner v-if="deptActions.updatePending.value" aria-hidden="true" />保存修改
             </NvButton>
           </NvDialogFooter>
         </form>
@@ -1037,7 +1037,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
                 teams.createPending.value || teamActions.updatePending.value || teamEditLoading
               "
             >
-              <Spinner
+              <NvSpinner
                 v-if="teams.createPending.value || teamActions.updatePending.value"
                 aria-hidden="true"
               />{{ teamEditingCode ? '保存修改' : '保存班组' }}

@@ -34,7 +34,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -484,7 +484,7 @@ async function confirmArchive() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
-                  <Spinner v-if="createPending || updatePending" aria-hidden="true" />
+                  <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存工序' : '创建工序' }}
                 </NvButton>
               </NvDialogFooter>
@@ -576,7 +576,7 @@ async function confirmArchive() {
           <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。
                variant 不写 = NvAlertDialogAction 的默认值 'default'，换件不改外观。 -->
           <NvButton type="button" :disabled="archivePending" @click="confirmArchive">
-            <Spinner v-if="archivePending" aria-hidden="true" />
+            <NvSpinner v-if="archivePending" aria-hidden="true" />
             确认停用
           </NvButton>
         </NvAlertDialogFooter>

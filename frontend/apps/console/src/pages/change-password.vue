@@ -13,7 +13,7 @@ import {
   FieldLabel,
   Input,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   toast,
 } from '@nerv-iip/ui'
 import { storeToRefs } from 'pinia'
@@ -119,7 +119,7 @@ async function submit() {
             </FieldGroup>
 
             <Button type="submit" :disabled="pending">
-              <Spinner v-if="pending" />
+              <NvSpinner v-if="pending" />
               修改密码
             </Button>
           </form>

@@ -40,7 +40,7 @@ import {
   NvInput,
   NvPageHeader,
   NvRowActions,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { CalendarClockIcon, PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
@@ -368,7 +368,7 @@ async function submitGenerate() {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="generateDuePending">
-              <Spinner v-if="generateDuePending" aria-hidden="true" />
+              <NvSpinner v-if="generateDuePending" aria-hidden="true" />
               <CalendarClockIcon v-else aria-hidden="true" />
               生成到期工单
             </NvButton>

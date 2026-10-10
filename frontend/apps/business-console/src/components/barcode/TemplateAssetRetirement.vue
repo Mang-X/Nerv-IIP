@@ -12,7 +12,7 @@ import {
   NvField,
   NvFieldLabel,
   NvStatusBadge,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -117,7 +117,7 @@ async function confirm() {
             </p>
           </NvField>
           <NvButton type="submit" variant="destructive" :disabled="!canSubmit">
-            <Spinner v-if="busy" aria-hidden="true" />确认退役
+            <NvSpinner v-if="busy" aria-hidden="true" />确认退役
           </NvButton>
         </form>
         <p v-else-if="busy" class="text-sm text-muted-foreground" role="status">

@@ -17,7 +17,7 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
@@ -209,7 +209,7 @@ const contextItems = computed(() => [
         <NvSheetFooter>
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
           <NvButton type="submit" :disabled="createReceiptRequestPending">
-            <Spinner v-if="createReceiptRequestPending" aria-hidden="true" />
+            <NvSpinner v-if="createReceiptRequestPending" aria-hidden="true" />
             <PackageCheckIcon v-else aria-hidden="true" />
             登记入库
           </NvButton>

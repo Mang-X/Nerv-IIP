@@ -32,7 +32,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -434,7 +434,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="quotations.createQuotationPending.value">
-              <Spinner v-if="quotations.createQuotationPending.value" aria-hidden="true" />
+              <NvSpinner v-if="quotations.createQuotationPending.value" aria-hidden="true" />
               创建报价
             </NvButton>
           </NvDialogFooter>

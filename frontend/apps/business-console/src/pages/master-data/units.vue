@@ -39,7 +39,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -654,7 +654,7 @@ async function submitConversion() {
                       type="submit"
                       :disabled="createUomPending || uomActions.updatePending.value || editLoading"
                     >
-                      <Spinner
+                      <NvSpinner
                         v-if="createUomPending || uomActions.updatePending.value"
                         aria-hidden="true"
                       />
@@ -860,7 +860,7 @@ async function submitConversion() {
                       >取消</NvButton
                     >
                     <NvButton type="submit" :disabled="createUomConversionPending">
-                      <Spinner v-if="createUomConversionPending" aria-hidden="true" />
+                      <NvSpinner v-if="createUomConversionPending" aria-hidden="true" />
                       保存换算关系
                     </NvButton>
                   </NvDialogFooter>

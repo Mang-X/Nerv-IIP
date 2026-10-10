@@ -26,7 +26,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -449,7 +449,7 @@ async function submitRule() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
                 <NvButton type="submit" :disabled="saveRulePending">
-                  <Spinner v-if="saveRulePending" aria-hidden="true" />
+                  <NvSpinner v-if="saveRulePending" aria-hidden="true" />
                   保存规则
                 </NvButton>
               </NvDialogFooter>

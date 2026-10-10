@@ -39,7 +39,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
@@ -506,7 +506,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="saveAlarmRulePending">
-              <Spinner v-if="saveAlarmRulePending" aria-hidden="true" />
+              <NvSpinner v-if="saveAlarmRulePending" aria-hidden="true" />
               保存规则
             </NvButton>
           </NvDialogFooter>

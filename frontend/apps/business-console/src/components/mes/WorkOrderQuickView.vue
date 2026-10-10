@@ -13,7 +13,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { ExternalLinkIcon } from '@lucide/vue'
@@ -72,7 +72,7 @@ function openFull() {
       </NvDialogHeader>
 
       <div v-if="detailPending" class="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-        <Spinner aria-hidden="true" />
+        <NvSpinner aria-hidden="true" />
         加载工单概要…
       </div>
       <p

@@ -8,7 +8,7 @@ import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/useUrgencyDisplayMode'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
-import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
+import { NvButton, NvCheckbox, NvInput, NvSpinner } from '@nerv-iip/ui'
 import { computed, ref, reactive, shallowRef } from 'vue'
 import {
   FIRST_PLAN_ORDER_LIMIT,
@@ -231,7 +231,7 @@ async function save(candidate: BusinessConsoleMesWorkOrderItem) {
       v-if="loading"
       class="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"
     >
-      <Spinner aria-hidden="true" />正在读取 MES 工单
+      <NvSpinner aria-hidden="true" />正在读取 MES 工单
     </div>
 
     <!-- 作业范围未就绪：候选查询根本没发，不许下「没有待排产的工单」结论（#1288） -->

@@ -7,7 +7,7 @@ import {
   NvSheetHeader,
   NvSheetTitle,
   NvStatusBadge,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PrinterIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
@@ -91,7 +91,7 @@ function printRecord() {
       </NvSheetHeader>
       <div class="grid content-start gap-4 p-4">
         <div v-if="recordPending" class="flex items-center gap-2 text-muted-foreground">
-          <Spinner aria-hidden="true" />
+          <NvSpinner aria-hidden="true" />
           <span>正在加载检验记录…</span>
         </div>
         <!-- 加载失败（403/5xx/断网）：错误已 toast，此处给可重试出口，不误报为「未找到」空态。 -->

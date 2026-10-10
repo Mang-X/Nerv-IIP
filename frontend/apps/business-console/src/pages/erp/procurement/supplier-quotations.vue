@@ -31,7 +31,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
@@ -418,7 +418,7 @@ async function submit() {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="quotes.receiveSupplierQuotationPending.value">
-              <Spinner v-if="quotes.receiveSupplierQuotationPending.value" aria-hidden="true" />
+              <NvSpinner v-if="quotes.receiveSupplierQuotationPending.value" aria-hidden="true" />
               录入报价
             </NvButton>
           </NvDialogFooter>

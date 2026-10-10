@@ -45,7 +45,7 @@ import {
   NvSheetHeader,
   NvSheetTitle,
   NvStatusBadge,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import {
   CheckCheckIcon,
@@ -297,7 +297,7 @@ function formatQuantity(value?: number | null) {
           class="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
           role="status"
         >
-          <Spinner aria-hidden="true" />
+          <NvSpinner aria-hidden="true" />
           正在加载工单…
         </p>
 

@@ -194,7 +194,7 @@ const stubs = {
     template:
       '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Spinner: true,
+  NvSpinner: true,
 }
 
 function mountPage(permissionCodes: string[] = ['business.mes.receipts.manage']) {

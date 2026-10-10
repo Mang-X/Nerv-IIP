@@ -142,7 +142,7 @@ const stubs = {
   NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
   NvSelectValue: { template: '<span />' },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
-  Spinner: true,
+  NvSpinner: true,
 }
 
 function mountSheet(workOrderId: string, skuId: string) {

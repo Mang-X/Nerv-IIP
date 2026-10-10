@@ -50,7 +50,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -577,7 +577,7 @@ async function runResolve() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
-                  <Spinner v-if="createPending || updatePending" aria-hidden="true" />
+                  <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingId ? '保存生产版本' : '创建生产版本' }}
                 </NvButton>
               </NvDialogFooter>
@@ -626,7 +626,7 @@ async function runResolve() {
           </NvField>
           <div class="flex flex-wrap items-center gap-2">
             <NvButton type="button" :disabled="!canResolve || resolvePending" @click="runResolve">
-              <Spinner v-if="resolvePending" aria-hidden="true" />
+              <NvSpinner v-if="resolvePending" aria-hidden="true" />
               <SearchIcon v-else aria-hidden="true" />
               解析
             </NvButton>
@@ -771,7 +771,7 @@ async function runResolve() {
           <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
           <!-- variant 不写 = NvAlertDialogAction 的默认值 'default'，换件不改外观。 -->
           <NvButton type="button" :disabled="archivePending" @click="confirmArchive">
-            <Spinner v-if="archivePending" aria-hidden="true" />
+            <NvSpinner v-if="archivePending" aria-hidden="true" />
             确认归档
           </NvButton>
         </NvAlertDialogFooter>

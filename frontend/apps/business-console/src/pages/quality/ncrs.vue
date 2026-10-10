@@ -63,7 +63,7 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -655,7 +655,7 @@ watch(
             </ul>
             <div class="flex justify-end">
               <NvButton type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
-                <Spinner v-if="submitDispositionPending" aria-hidden="true" />
+                <NvSpinner v-if="submitDispositionPending" aria-hidden="true" />
                 <SendIcon v-else aria-hidden="true" />
                 提交处置
               </NvButton>
@@ -700,7 +700,7 @@ watch(
                     variant="destructive"
                     :disabled="closeNcrPending || !canCloseNcr"
                   >
-                    <Spinner v-if="closeNcrPending" aria-hidden="true" />
+                    <NvSpinner v-if="closeNcrPending" aria-hidden="true" />
                     <CheckCircle2Icon v-else aria-hidden="true" />
                     关闭不合格品
                   </NvButton>
@@ -719,7 +719,7 @@ watch(
                          `type="button"` 不能省——本框在 <form> 里，缺了会顺带触发表单提交。
                          variant 不写 = NvAlertDialogAction 的默认值 'default'，换件不改外观。 -->
                     <NvButton type="button" :disabled="closeNcrPending" @click="submitCloseNcr">
-                      <Spinner v-if="closeNcrPending" aria-hidden="true" />
+                      <NvSpinner v-if="closeNcrPending" aria-hidden="true" />
                       确认关闭
                     </NvButton>
                   </NvAlertDialogFooter>

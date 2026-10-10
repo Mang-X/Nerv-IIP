@@ -18,7 +18,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvSearchSelect,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -87,7 +87,7 @@ async function submit() {
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="sites.pending.value">
-            <Spinner v-if="sites.pending.value" aria-hidden="true" />
+            <NvSpinner v-if="sites.pending.value" aria-hidden="true" />
             保存工厂
           </NvButton>
         </NvDialogFooter>

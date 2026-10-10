@@ -37,7 +37,7 @@ import {
   NvSheetTitle,
   NvStatusBadge,
   NvToolbar,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { incomingUserLabel, outgoingUserLabel } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch } from 'vue'
@@ -664,7 +664,7 @@ function formatDateTime(value?: string | null) {
             class="flex items-center gap-2 text-sm text-muted-foreground"
             role="status"
           >
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             正在加载交接明细…
           </p>
 
@@ -865,7 +865,7 @@ function formatDateTime(value?: string | null) {
               取消
             </NvButton>
             <NvButton type="submit" :disabled="createPending">
-              <Spinner v-if="createPending" aria-hidden="true" />
+              <NvSpinner v-if="createPending" aria-hidden="true" />
               <PlusIcon v-else aria-hidden="true" />
               创建交接单
             </NvButton>
@@ -905,7 +905,7 @@ function formatDateTime(value?: string | null) {
               取消
             </NvButton>
             <NvButton type="submit" :disabled="acceptPendingId !== null || acceptOutcomeUnknown">
-              <Spinner v-if="acceptPendingId !== null" aria-hidden="true" />
+              <NvSpinner v-if="acceptPendingId !== null" aria-hidden="true" />
               <CheckCircle2Icon v-else-if="!acceptOutcomeUnknown" aria-hidden="true" />
               {{ acceptOutcomeUnknown ? '结果待确认' : '确认接班' }}
             </NvButton>

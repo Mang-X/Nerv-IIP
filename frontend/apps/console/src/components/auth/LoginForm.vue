@@ -13,7 +13,7 @@ import {
   FieldGroup,
   FieldLabel,
   Input,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { LogInIcon } from '@lucide/vue'
 import { reactive } from 'vue'
@@ -94,7 +94,7 @@ function submit() {
 
       <CardFooter>
         <Button class="w-full" :disabled="pending" type="submit">
-          <Spinner v-if="pending" data-icon="inline-start" />
+          <NvSpinner v-if="pending" data-icon="inline-start" />
           <LogInIcon v-else data-icon="inline-start" />
           {{ pending ? t('login.pending') : t('login.title') }}
         </Button>

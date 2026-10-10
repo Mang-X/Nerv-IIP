@@ -55,7 +55,7 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
@@ -598,7 +598,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                   >取消</NvButton
                 >
                 <NvButton type="submit" :disabled="registerPending || submitting || uploading">
-                  <Spinner v-if="registerPending || submitting" aria-hidden="true" />
+                  <NvSpinner v-if="registerPending || submitting" aria-hidden="true" />
                   登记文档
                 </NvButton>
               </NvDialogFooter>
@@ -671,7 +671,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
             v-if="detailPending"
             class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
           >
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             加载文档明细…
           </div>
           <div v-else class="grid gap-2 text-sm">

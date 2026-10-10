@@ -151,7 +151,7 @@ vi.mock('@nerv-iip/ui', () => {
     NvSelectTrigger: Shell,
     NvSelectValue: Shell,
     NvToolbar: Shell,
-    Spinner: Shell,
+    NvSpinner: Shell,
   }
 })
 

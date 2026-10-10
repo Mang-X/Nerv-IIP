@@ -45,7 +45,7 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -604,7 +604,7 @@ function riskTone(severity?: string | null): StatusTone {
                     :disabled="previewPending"
                     @click="previewFormImpact"
                   >
-                    <Spinner v-if="previewPending" aria-hidden="true" />
+                    <NvSpinner v-if="previewPending" aria-hidden="true" />
                     <NetworkIcon v-else aria-hidden="true" />
                     预览影响
                   </NvButton>
@@ -663,7 +663,7 @@ function riskTone(severity?: string | null): StatusTone {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
-                  <Spinner v-if="releasePending" aria-hidden="true" />
+                  <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布变更
                 </NvButton>
               </NvDialogFooter>
@@ -765,7 +765,7 @@ function riskTone(severity?: string | null): StatusTone {
             v-if="detailPending"
             class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
           >
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             加载受影响版本…
           </div>
           <div v-else-if="viewAffected.length" class="overflow-hidden rounded-md border">

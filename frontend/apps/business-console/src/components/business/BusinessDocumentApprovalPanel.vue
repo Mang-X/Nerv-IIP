@@ -21,7 +21,7 @@ import {
   NvSelectTrigger,
   NvSelectValue,
   resolveStatus,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { ExternalLinkIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
@@ -329,7 +329,7 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
         v-if="approval.chainsPending.value"
         class="flex items-center gap-2 text-sm text-muted-foreground"
       >
-        <Spinner aria-hidden="true" />
+        <NvSpinner aria-hidden="true" />
         正在加载审批链…
       </div>
       <p v-else-if="approval.chainsError.value" class="text-sm text-destructive" role="alert">
@@ -419,7 +419,7 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
           刷新审批
         </NvButton>
         <NvButton size="sm" type="button" :disabled="startDisabled" @click="startApprovalChain">
-          <Spinner v-if="approval.startChainPending.value" aria-hidden="true" />
+          <NvSpinner v-if="approval.startChainPending.value" aria-hidden="true" />
           <SendIcon v-else aria-hidden="true" />
           发起审批
         </NvButton>

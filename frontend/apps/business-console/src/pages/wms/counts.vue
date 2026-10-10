@@ -62,7 +62,7 @@ import {
   NvMetricStrip,
   NvPageHeader,
   NvRowActions,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -691,7 +691,7 @@ function refreshAll() {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="createCountExecutionPending">
-              <Spinner v-if="createCountExecutionPending" aria-hidden="true" />
+              <NvSpinner v-if="createCountExecutionPending" aria-hidden="true" />
               创建盘点单
             </NvButton>
           </NvDialogFooter>
@@ -737,7 +737,7 @@ function refreshAll() {
               </NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="completeCountExecutionPending">
-              <Spinner v-if="completeCountExecutionPending" aria-hidden="true" />
+              <NvSpinner v-if="completeCountExecutionPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               {{ completeIntentLocked ? '按原内容重试' : '完成盘点' }}
             </NvButton>

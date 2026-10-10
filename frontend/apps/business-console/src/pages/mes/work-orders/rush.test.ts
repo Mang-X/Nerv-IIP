@@ -146,7 +146,7 @@ const uiStubs = {
   NvSelectItem: { template: '<div><slot /></div>' },
   NvSelectValue: true,
   NvStatusBadge: true,
-  Spinner: true,
+  NvSpinner: true,
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }
 

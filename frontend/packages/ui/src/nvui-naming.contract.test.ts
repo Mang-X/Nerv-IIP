@@ -202,6 +202,7 @@ const NV_ALL = [
   'NvSidebarUser',
   'NvSlider',
   'NvSparkline',
+  'NvSpinner',
   'NvStatTile',
   'NvStationBar',
   'NvStatusBadge',

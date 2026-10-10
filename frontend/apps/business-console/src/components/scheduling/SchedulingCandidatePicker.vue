@@ -11,7 +11,7 @@ import {
   NvInput,
   NvRadioGroup,
   NvRadioGroupItem,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 
@@ -77,7 +77,7 @@ function candidateLabel(candidate: (typeof candidates.value)[number]) {
       v-if="mes.workOrdersPending.value"
       class="flex items-center gap-2 text-sm text-muted-foreground"
     >
-      <Spinner aria-hidden="true" />
+      <NvSpinner aria-hidden="true" />
       正在读取候选工单
     </div>
     <!-- 作业范围未就绪：候选查询根本没发（enabled=false），不许说「没有匹配的可排工单」（#1288）。 -->

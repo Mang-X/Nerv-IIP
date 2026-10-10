@@ -34,7 +34,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, reactive, ref } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -218,7 +218,7 @@ async function submit() {
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="saveLocationPending">
-            <Spinner v-if="saveLocationPending" aria-hidden="true" />
+            <NvSpinner v-if="saveLocationPending" aria-hidden="true" />
             {{ editingCode ? '保存修改' : '创建库位' }}
           </NvButton>
         </NvDialogFooter>

@@ -29,7 +29,7 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -131,7 +131,7 @@ async function submit() {
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="stations.pending.value">
-            <Spinner v-if="stations.pending.value" aria-hidden="true" />
+            <NvSpinner v-if="stations.pending.value" aria-hidden="true" />
             保存工位
           </NvButton>
         </NvDialogFooter>

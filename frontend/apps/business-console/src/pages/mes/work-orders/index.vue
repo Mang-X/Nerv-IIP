@@ -83,7 +83,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -1051,7 +1051,7 @@ function isNonEmpty(value: string) {
               取消
             </NvButton>
             <NvButton type="submit" :disabled="!canSubmitRelease">
-              <Spinner v-if="releaseWorkOrderPending" aria-hidden="true" />
+              <NvSpinner v-if="releaseWorkOrderPending" aria-hidden="true" />
               确认下达
             </NvButton>
           </NvDialogFooter>
@@ -1179,7 +1179,7 @@ function isNonEmpty(value: string) {
                 >取消</NvButton
               >
               <NvButton type="submit" :disabled="createRushWorkOrderPending || !canCreateRush">
-                <Spinner v-if="createRushWorkOrderPending" aria-hidden="true" />
+                <NvSpinner v-if="createRushWorkOrderPending" aria-hidden="true" />
                 <FactoryIcon v-else aria-hidden="true" />
                 创建急单
               </NvButton>

@@ -21,7 +21,7 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
@@ -328,7 +328,7 @@ async function submit() {
               submitted && blockers.length ? 'first-article-plan-errors' : undefined
             "
           >
-            <Spinner v-if="createFirstArticlePlanPending" aria-hidden="true" />
+            <NvSpinner v-if="createFirstArticlePlanPending" aria-hidden="true" />
             创建并启用
           </NvButton>
         </NvSheetFooter>

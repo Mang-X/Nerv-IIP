@@ -12,7 +12,7 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
-  Spinner,
+  NvSpinner,
   type EntityPickerOption,
 } from '@nerv-iip/ui'
 
@@ -108,7 +108,7 @@ const defectQuantity = defineModel<string>('defectQuantity', { required: true })
             取消
           </NvButton>
           <NvButton type="submit" :disabled="pending">
-            <Spinner v-if="pending" aria-hidden="true" />
+            <NvSpinner v-if="pending" aria-hidden="true" />
             {{ pending ? '登记中…' : '确认登记' }}
           </NvButton>
         </NvDialogFooter>

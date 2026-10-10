@@ -64,7 +64,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -1091,7 +1091,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               v-if="mrpRunInProgress"
               class="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
             >
-              <Spinner aria-hidden="true" />
+              <NvSpinner aria-hidden="true" />
               <span>
                 已受理，{{
                   activeMrpRun.status === 'running' ? '正在计算' : '排队等待计算'
@@ -1103,7 +1103,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 {{ mrpRunInProgress ? '关闭' : '取消' }}
               </NvButton>
               <NvButton type="submit" :disabled="runMrpPending || mrpRunInProgress">
-                <Spinner v-if="runMrpPending" aria-hidden="true" />
+                <NvSpinner v-if="runMrpPending" aria-hidden="true" />
                 运行 MRP
               </NvButton>
             </NvDialogFooter>
@@ -1188,7 +1188,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 type="submit"
                 :disabled="createMpsBucketPending || updateMpsBucketPending || !canSubmitMps"
               >
-                <Spinner
+                <NvSpinner
                   v-if="createMpsBucketPending || updateMpsBucketPending"
                   aria-hidden="true"
                 />
@@ -1290,7 +1290,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             <NvDialogFooter>
               <NvButton type="button" variant="outline" @click="demandOpen = false">取消</NvButton>
               <NvButton type="submit" :disabled="createDemandPending || !canSubmitDemand">
-                <Spinner v-if="createDemandPending" aria-hidden="true" />
+                <NvSpinner v-if="createDemandPending" aria-hidden="true" />
                 保存需求
               </NvButton>
             </NvDialogFooter>
@@ -1569,7 +1569,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               :disabled="reviewMpsBucketPending"
               @click="reviewMps(row)"
             >
-              <Spinner v-if="reviewMpsBucketPending" aria-hidden="true" />
+              <NvSpinner v-if="reviewMpsBucketPending" aria-hidden="true" />
               <CheckIcon v-else aria-hidden="true" />
               评审
             </NvButton>
@@ -1581,7 +1581,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               :disabled="releaseMpsBucketPending"
               @click="releaseMps(row)"
             >
-              <Spinner v-if="releaseMpsBucketPending" aria-hidden="true" />
+              <NvSpinner v-if="releaseMpsBucketPending" aria-hidden="true" />
               <CheckIcon v-else aria-hidden="true" />
               发布
             </NvButton>
@@ -1964,7 +1964,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               :disabled="acceptingSuggestionId === row.suggestionId"
               @click="acceptPlanningSuggestion(row)"
             >
-              <Spinner v-if="acceptingSuggestionId === row.suggestionId" aria-hidden="true" />
+              <NvSpinner v-if="acceptingSuggestionId === row.suggestionId" aria-hidden="true" />
               <CheckIcon v-else aria-hidden="true" />
               接受
             </NvButton>
@@ -2053,7 +2053,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             <NvDialogFooter>
               <NvButton type="button" variant="outline" @click="rejectTarget = null">取消</NvButton>
               <NvButton type="submit" :disabled="rejectSuggestionPending || !canSubmitReject">
-                <Spinner v-if="rejectSuggestionPending" aria-hidden="true" />
+                <NvSpinner v-if="rejectSuggestionPending" aria-hidden="true" />
                 确认拒绝
               </NvButton>
             </NvDialogFooter>

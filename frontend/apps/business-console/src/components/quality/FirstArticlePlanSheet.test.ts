@@ -59,7 +59,7 @@ const stubs = {
   NvSelectItem: { template: '<span><slot /></span>' },
   NvSelectTrigger: { template: '<button type="button"><slot /></button>' },
   NvSelectValue: { template: '<span />' },
-  Spinner: { template: '<span />' },
+  NvSpinner: { template: '<span />' },
   SelectRoot: { template: '<div><slot /></div>' },
   SelectContent: { template: '<div><slot /></div>' },
   SelectItem: { template: '<span><slot /></span>' },
