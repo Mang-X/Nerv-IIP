@@ -38,7 +38,7 @@ public sealed class MesOperationTaskSkuSourcePostgresTests
         var now = DateTimeOffset.Parse("2026-09-09T08:00:00Z");
         var store = new PersistentMesPlanningStore(dbContext);
 
-        var rushResponse = await new CreateRushWorkOrderCommandHandler(store, new MesCodingService(), dbContext)
+        var rushResponse = await new CreateRushWorkOrderCommandHandler(store, new MesCodingService(), dbContext, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance)
             .Handle(
                 new CreateRushWorkOrderCommand(
                     "org-001", "env-dev", "WO-3112-RUSH", "SKU-FG-3112-RUSH", "PV-001", 5m,

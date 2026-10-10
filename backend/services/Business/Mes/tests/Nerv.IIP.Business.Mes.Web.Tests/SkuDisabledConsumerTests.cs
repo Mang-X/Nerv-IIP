@@ -161,7 +161,7 @@ public sealed class SkuDisabledConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var store = new InMemoryMesPlanningStore();
-        var rushHandler = new CreateRushWorkOrderCommandHandler(store, null, dbContext);
+        var rushHandler = new CreateRushWorkOrderCommandHandler(store, null, dbContext, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
         await Assert.ThrowsAsync<DisabledMesSkuException>(() => rushHandler.Handle(
             RushCommand("org-001", "env-dev", "WO-BLOCKED", changedAtUtc),
             CancellationToken.None));
@@ -195,7 +195,7 @@ public sealed class SkuDisabledConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var rushStore = new InMemoryMesPlanningStore();
-        var rushHandler = new CreateRushWorkOrderCommandHandler(rushStore, codingService, dbContext);
+        var rushHandler = new CreateRushWorkOrderCommandHandler(rushStore, codingService, dbContext, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
         var rushCommand = RushCommand("org-001", "env-dev", "WO-RUSH-REPLAY", changedAtUtc) with
         {
             IdempotencyKey = "rush-replay-001"

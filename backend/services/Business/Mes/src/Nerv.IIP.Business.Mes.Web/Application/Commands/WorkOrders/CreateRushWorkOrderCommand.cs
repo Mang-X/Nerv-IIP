@@ -32,14 +32,16 @@ public sealed class CreateRushWorkOrderCommandHandler
     private readonly ApplicationDbContext? dbContext;
     private readonly IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator;
     private readonly IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider;
+    private readonly IMesRoutingSnapshotProvider? routingSnapshotProvider;
 
     public CreateRushWorkOrderCommandHandler(
         IMesPlanningStore store,
         MesCodingService codingService,
         ApplicationDbContext dbContext,
         IMesSkuAvailabilityScopeCoordinator skuAvailabilityScopeCoordinator,
-        IMesMaterialRequirementSnapshotProvider materialSnapshotProvider)
-        : this(store, codingService, dbContext, skuAvailabilityScopeCoordinator, materialSnapshotProvider, isTestConstruction: false)
+        IMesMaterialRequirementSnapshotProvider materialSnapshotProvider,
+        IMesRoutingSnapshotProvider routingSnapshotProvider)
+        : this(store, codingService, dbContext, skuAvailabilityScopeCoordinator, materialSnapshotProvider, routingSnapshotProvider, isTestConstruction: false)
     {
     }
 
@@ -47,13 +49,15 @@ public sealed class CreateRushWorkOrderCommandHandler
         IMesPlanningStore store,
         MesCodingService? codingService = null,
         ApplicationDbContext? dbContext = null,
-        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null,
+        IMesRoutingSnapshotProvider? routingSnapshotProvider = null)
         : this(
             store,
             codingService ?? new MesCodingService(),
             dbContext,
             dbContext is null ? null : new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
             materialSnapshotProvider,
+            routingSnapshotProvider,
             isTestConstruction: true)
     {
     }
@@ -64,6 +68,7 @@ public sealed class CreateRushWorkOrderCommandHandler
         ApplicationDbContext? dbContext,
         IMesSkuAvailabilityScopeCoordinator? skuAvailabilityScopeCoordinator,
         IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider,
+        IMesRoutingSnapshotProvider? routingSnapshotProvider,
         bool isTestConstruction)
     {
         _ = isTestConstruction;
@@ -72,6 +77,7 @@ public sealed class CreateRushWorkOrderCommandHandler
         this.dbContext = dbContext;
         this.skuAvailabilityScopeCoordinator = skuAvailabilityScopeCoordinator;
         this.materialSnapshotProvider = materialSnapshotProvider;
+        this.routingSnapshotProvider = routingSnapshotProvider;
     }
 
 
@@ -138,9 +144,7 @@ public sealed class CreateRushWorkOrderCommandHandler
                 cancellationToken);
         }
 
-        var operationTaskId = string.IsNullOrWhiteSpace(request.OperationTaskId)
-            ? $"{workOrderId}-OP-{request.OperationSequence}"
-            : request.OperationTaskId.Trim();
+        var routing = await CaptureRoutingAsync(request, workOrderId, cancellationToken);
 
         store.AddWorkOrder(new PlannedWorkOrder(
             request.OrganizationId,
@@ -152,22 +156,33 @@ public sealed class CreateRushWorkOrderCommandHandler
             RushPriority,
             request.DueUtc,
             IsRush: true));
-        store.AddOperationTask(new PlannedOperationTask(
-            workOrderId,
-            operationTaskId,
-            OperationTaskStatus.Queued,
-            request.OperationSequence,
-            request.WorkCenterId,
-            [],
-            request.RequestedAtUtc,
-            request.Duration,
-            // 加急工单的工序必须带工单真实 SKU：以前 PlannedOperationTask 没有 SKU 字段，
-            // 落库时 OperationTask 回落成工单号，完工事件因此与 WorkOrderReleased 不同源（#3112）。
-            request.SkuId,
-            null,
-            null,
-            request.OrganizationId,
-            request.EnvironmentId));
+        foreach (var operation in routing.Operations.OrderBy(x => x.Sequence))
+        {
+            var isOverride = operation.Sequence == request.OperationSequence;
+            var operationTaskId = isOverride && !string.IsNullOrWhiteSpace(request.OperationTaskId)
+                ? request.OperationTaskId.Trim()
+                : $"{workOrderId}-OP-{operation.Sequence}";
+            store.AddOperationTask(new PlannedOperationTask(
+                workOrderId,
+                operationTaskId,
+                OperationTaskStatus.Queued,
+                operation.Sequence,
+                isOverride ? request.WorkCenterId : operation.WorkCenterId,
+                operation.AlternativeWorkCenterIds,
+                request.RequestedAtUtc,
+                isOverride ? request.Duration : TimeSpan.FromMinutes(operation.StandardMinutes),
+                // 加急工单的工序必须带工单真实 SKU：以前 PlannedOperationTask 没有 SKU 字段，
+                // 落库时 OperationTask 回落成工单号，完工事件因此与 WorkOrderReleased 不同源（#3112）。
+                request.SkuId,
+                null,
+                null,
+                request.OrganizationId,
+                request.EnvironmentId,
+                operation.OperationCode,
+                operation.RequiresQualityInspection,
+                operation.RequiredSkillCode,
+                request.Quantity));
+        }
 
         if (dbContext is not null && materialSnapshotProvider is not null)
         {
@@ -189,6 +204,29 @@ public sealed class CreateRushWorkOrderCommandHandler
         }
 
         return new CreateRushWorkOrderResponse(workOrderId);
+    }
+
+    private async Task<MesRoutingSnapshotResult> CaptureRoutingAsync(
+        CreateRushWorkOrderCommand request,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var routing = routingSnapshotProvider is null
+            ? MesRoutingSnapshotResult.Missing(MesRoutingSnapshotSources.NotConfigured)
+            : await routingSnapshotProvider.GetSnapshotAsync(new MesRoutingSnapshotRequest(
+                request.OrganizationId, request.EnvironmentId, workOrderId, request.SkuId,
+                request.ProductionVersionId, request.Quantity, request.RequestedAtUtc), cancellationToken);
+        if (routing.Status != MesRoutingSnapshotStatus.Captured || routing.Operations.Count == 0)
+        {
+            throw new MesRoutingSnapshotMissingException(routing.SourceSystem);
+        }
+
+        if (!routing.Operations.Any(x => x.Sequence == request.OperationSequence))
+        {
+            throw new KnownException("所选工序序号不在生产版本的工艺路线中，急单未创建。请按该版本的工序序号设置工作中心覆盖。");
+        }
+
+        return routing;
     }
 
     private static string WorkOrderPayloadFingerprint(CreateRushWorkOrderCommand request)

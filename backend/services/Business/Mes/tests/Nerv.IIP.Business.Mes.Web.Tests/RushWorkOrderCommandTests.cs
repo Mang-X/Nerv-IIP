@@ -24,7 +24,7 @@ public sealed class RushWorkOrderCommandTests
         var now = DateTimeOffset.Parse("2026-09-28T08:00:00Z");
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new CreateRushWorkOrderCommandHandler(store).Handle(
+            new CreateRushWorkOrderCommandHandler(store, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance).Handle(
                 new CreateRushWorkOrderCommand(
                     "org-001", "env-dev", null, "SKU-R", null, 1m,
                     now.AddHours(4), "WC-A", null, 10, TimeSpan.FromHours(1), now,
@@ -51,7 +51,7 @@ public sealed class RushWorkOrderCommandTests
                 null, "MAT-R", null, 5m, "PCS", 10m, 0m, "MBOM-R:A:MAT-R", [])]));
 
         var response = await new CreateRushWorkOrderCommandHandler(
-            new PersistentMesPlanningStore(dbContext), new MesCodingService(), dbContext, snapshots)
+            new PersistentMesPlanningStore(dbContext), new MesCodingService(), dbContext, snapshots, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance)
             .Handle(
                 new CreateRushWorkOrderCommand(
                     "org-001", "env-dev", null, "SKU-R", "PV-R", 5m,
@@ -89,7 +89,7 @@ public sealed class RushWorkOrderCommandTests
                 new MesCodingService(),
                 dbContext,
                 new StubMaterialSnapshotProvider(
-                    MesMaterialRequirementSnapshotResult.Missing("product-engineering:production-version:PV-OLD")))
+                    MesMaterialRequirementSnapshotResult.Missing("product-engineering:production-version:PV-OLD")), routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance)
                 .Handle(
                     new CreateRushWorkOrderCommand(
                         "org-001", "env-dev", null, "SKU-R", "PV-OLD", 5m,
@@ -136,7 +136,7 @@ public sealed class RushWorkOrderCommandTests
             now.AddDays(1), "WC-1", "OP-10", 10, TimeSpan.FromMinutes(30), now,
             "rush-predicate-replay");
 
-        await new CreateRushWorkOrderCommandHandler(new InMemoryMesPlanningStore(), coding)
+        await new CreateRushWorkOrderCommandHandler(new InMemoryMesPlanningStore(), coding, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance)
             .Handle(command, CancellationToken.None);
         var persistedWorkOrder = WorkOrder.Create(
             "org-001", "env-dev", "WO-PREDICATE", "SKU-1", "PV-1", 1m, 1000, now.AddDays(1));
@@ -147,7 +147,7 @@ public sealed class RushWorkOrderCommandTests
         interceptor.Clear();
 
         var store = new PersistentMesPlanningStore(dbContext);
-        var handler = new CreateRushWorkOrderCommandHandler(store, coding, dbContext);
+        var handler = new CreateRushWorkOrderCommandHandler(store, coding, dbContext, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
         await handler.Handle(command, CancellationToken.None);
 
         var replayQuery = Assert.Single(interceptor.Commands, sql =>
@@ -167,7 +167,7 @@ public sealed class RushWorkOrderCommandTests
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-NORMAL", "SKU-N", null, 1m, 10, now.AddDays(1)));
         store.AddOperationTask(new PlannedOperationTask("WO-NORMAL", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
 
-        var handler = new CreateRushWorkOrderCommandHandler(store);
+        var handler = new CreateRushWorkOrderCommandHandler(store, routingSnapshotProvider: new SingleOperationRoutingSnapshotProvider(20));
 
         var response = await handler.Handle(
             new CreateRushWorkOrderCommand(
@@ -225,7 +225,7 @@ public sealed class RushWorkOrderCommandTests
         var store = new InMemoryMesPlanningStore();
         var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        var handler = new CreateRushWorkOrderCommandHandler(store, numbering);
+        var handler = new CreateRushWorkOrderCommandHandler(store, numbering, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
 
         var response = await handler.Handle(
             new CreateRushWorkOrderCommand(
@@ -255,7 +255,7 @@ public sealed class RushWorkOrderCommandTests
         var store = new InMemoryMesPlanningStore();
         var numbering = new MesCodingService();
         var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
-        var handler = new CreateRushWorkOrderCommandHandler(store, numbering);
+        var handler = new CreateRushWorkOrderCommandHandler(store, numbering, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
         var command = new CreateRushWorkOrderCommand(
             "org-001",
             "env-dev",
@@ -289,7 +289,7 @@ public sealed class RushWorkOrderCommandTests
             .Select(async index =>
             {
                 var store = new InMemoryMesPlanningStore();
-                var handler = new CreateRushWorkOrderCommandHandler(store, numbering);
+                var handler = new CreateRushWorkOrderCommandHandler(store, numbering, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
                 var response = await handler.Handle(
                     new CreateRushWorkOrderCommand(
                         "org-001",

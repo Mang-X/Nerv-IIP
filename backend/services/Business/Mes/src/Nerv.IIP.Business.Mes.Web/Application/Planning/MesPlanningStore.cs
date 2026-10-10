@@ -47,7 +47,11 @@ public sealed record PlannedOperationTask(
     DateTimeOffset? ExistingStartUtc = null,
     DateTimeOffset? ExistingEndUtc = null,
     string? OrganizationId = null,
-    string? EnvironmentId = null);
+    string? EnvironmentId = null,
+    string? OperationCode = null,
+    bool RequiresQualityInspection = false,
+    string? RequiredSkillCode = null,
+    decimal PlannedQuantity = 0m);
 
 public interface IMesPlanningStore
 {

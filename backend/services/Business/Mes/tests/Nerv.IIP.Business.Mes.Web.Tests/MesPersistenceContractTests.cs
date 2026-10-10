@@ -143,7 +143,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var handler = new CreateRushWorkOrderCommandHandler(
-                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>());
+                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(), routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
 
             await handler.Handle(
                 new CreateRushWorkOrderCommand(
