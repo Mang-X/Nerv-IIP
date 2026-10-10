@@ -1,0 +1,550 @@
+{
+  "runtimeSha": "2851a4c5079974ab9b684fc6036dcb171ab4e9df",
+  "capturedAtUtc": "2026-10-10T14:42:03.288334+00:00",
+  "session": {
+    "sessionId": "nerv-4291-261011",
+    "state": "Running",
+    "worktreeRoot": "/Users/mang/.t3/worktrees/Nerv-IIP/issue-4291-mrp-mes-acceptance",
+    "messagingProvider": "Redis",
+    "persistenceProvider": "PostgreSQL",
+    "volumeNames": [
+      "nerv-iip-postgres-18-nerv-4291-261011",
+      "nerv-iip-redis-nerv-4291-261011",
+      "nerv-iip-minio-nerv-4291-261011",
+      "nerv-iip-victoria-logs-nerv-4291-261011"
+    ],
+    "containerIds": [
+      "b104c0d05ba0a5ec6a9b6862c2f3f13c2aa81734dc488d456d5a4adcd98af20b",
+      "48053f83b3a2202913fa96f1618de100b8be2b1822281450ffeef7be0ed2846f",
+      "acfececd90ebeb69e7b212367b5f37fc49f079a1cbd9891d993619749bda6e33",
+      "33b815119a06f29a91c53cb6de628561ca559a1000e90dbc713e058de30599fc"
+    ],
+    "entry": "http://localhost:58000"
+  },
+  "browserMechanism": "Existing @playwright/test Chromium; real DOM actions, no route interception, no API fixture writes",
+  "input": {
+    "skuCode": "SF-ROD-01",
+    "siteCode": "SITE-001",
+    "uomCode": "pcs",
+    "quantity": 2,
+    "bucketDate": "2026-10-20",
+    "horizonStart": "2026-10-10",
+    "horizonEnd": "2026-11-09"
+  },
+  "httpProjection": [
+    {
+      "at": "2026-10-10T14:33:57.202Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mrp-runs?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": []
+    },
+    {
+      "at": "2026-10-10T14:33:57.203Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mps?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": []
+    },
+    {
+      "at": "2026-10-10T14:33:57.230Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": []
+    },
+    {
+      "at": "2026-10-10T14:36:00.981Z",
+      "method": "POST",
+      "path": "/api/business-console/v1/planning/mps",
+      "status": 200,
+      "success": true,
+      "data": {
+        "mpsId": "01a1263e-03f4-70f1-9355-5ca51e404078",
+        "skuCode": "SF-ROD-01",
+        "siteCode": "SITE-001",
+        "uomCode": "pcs",
+        "quantity": 2,
+        "bucketDate": "2026-10-20",
+        "status": "Draft",
+        "reviewedBy": null,
+        "reviewedAtUtc": null,
+        "releasedBy": null,
+        "releasedAtUtc": null
+      }
+    },
+    {
+      "at": "2026-10-10T14:36:01.024Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mps?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "mpsId": "01a1263e-03f4-70f1-9355-5ca51e404078",
+          "skuCode": "SF-ROD-01",
+          "siteCode": "SITE-001",
+          "uomCode": "pcs",
+          "quantity": 2,
+          "bucketDate": "2026-10-20",
+          "status": "Draft",
+          "reviewedBy": null,
+          "reviewedAtUtc": null,
+          "releasedBy": null,
+          "releasedAtUtc": null
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:13.967Z",
+      "method": "POST",
+      "path": "/api/business-console/v1/planning/mps/01a1263e-03f4-70f1-9355-5ca51e404078/review?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": {
+        "mpsId": "01a1263e-03f4-70f1-9355-5ca51e404078",
+        "skuCode": "SF-ROD-01",
+        "siteCode": "SITE-001",
+        "uomCode": "pcs",
+        "quantity": 2,
+        "bucketDate": "2026-10-20",
+        "status": "Reviewed",
+        "reviewedBy": "user-admin",
+        "reviewedAtUtc": "2026-10-10T14:36:13.948857+00:00",
+        "releasedBy": null,
+        "releasedAtUtc": null
+      }
+    },
+    {
+      "at": "2026-10-10T14:36:13.992Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mps?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "mpsId": "01a1263e-03f4-70f1-9355-5ca51e404078",
+          "skuCode": "SF-ROD-01",
+          "siteCode": "SITE-001",
+          "uomCode": "pcs",
+          "quantity": 2,
+          "bucketDate": "2026-10-20",
+          "status": "Reviewed",
+          "reviewedBy": "user-admin",
+          "reviewedAtUtc": "2026-10-10T14:36:13.948857+00:00",
+          "releasedBy": null,
+          "releasedAtUtc": null
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:20.773Z",
+      "method": "POST",
+      "path": "/api/business-console/v1/planning/mps/01a1263e-03f4-70f1-9355-5ca51e404078/release?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": {
+        "mpsId": "01a1263e-03f4-70f1-9355-5ca51e404078",
+        "skuCode": "SF-ROD-01",
+        "siteCode": "SITE-001",
+        "uomCode": "pcs",
+        "quantity": 2,
+        "bucketDate": "2026-10-20",
+        "status": "Released",
+        "reviewedBy": "user-admin",
+        "reviewedAtUtc": "2026-10-10T14:36:13.948857+00:00",
+        "releasedBy": "user-admin",
+        "releasedAtUtc": "2026-10-10T14:36:20.76641+00:00"
+      }
+    },
+    {
+      "at": "2026-10-10T14:36:20.789Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mps?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "mpsId": "01a1263e-03f4-70f1-9355-5ca51e404078",
+          "skuCode": "SF-ROD-01",
+          "siteCode": "SITE-001",
+          "uomCode": "pcs",
+          "quantity": 2,
+          "bucketDate": "2026-10-20",
+          "status": "Released",
+          "reviewedBy": "user-admin",
+          "reviewedAtUtc": "2026-10-10T14:36:13.948857+00:00",
+          "releasedBy": "user-admin",
+          "releasedAtUtc": "2026-10-10T14:36:20.76641+00:00"
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:30.799Z",
+      "method": "POST",
+      "path": "/api/business-console/v1/planning/mrp-runs",
+      "status": 200,
+      "success": true,
+      "data": {
+        "runId": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+        "status": "Created"
+      }
+    },
+    {
+      "at": "2026-10-10T14:36:30.857Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mrp-runs?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "runId": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+          "status": "Running",
+          "horizonStart": "2026-10-10",
+          "horizonEnd": "2026-11-09",
+          "demandCount": 0,
+          "suggestionCount": 0,
+          "availabilityCount": 0,
+          "productionEngineeringSnapshotSource": "",
+          "inventorySnapshotSource": "",
+          "inputSources": [],
+          "inputCoverageStart": null,
+          "inputCoverageEnd": null,
+          "hasInputDegradation": false,
+          "inputDegradationSources": [],
+          "failureReason": null
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:32.828Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mrp-runs?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "runId": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+          "status": "Completed",
+          "horizonStart": "2026-10-10",
+          "horizonEnd": "2026-11-09",
+          "demandCount": 1,
+          "suggestionCount": 2,
+          "availabilityCount": 2,
+          "productionEngineeringSnapshotSource": "product-engineering-http:2;product-engineering-http:0",
+          "inventorySnapshotSource": "inventory-http:2;erp-purchase-orders:0;accepted-purchases:0;mes-work-orders:0;master-data-planning-parameters:2;master-data-uom-conversions:0",
+          "inputSources": [
+            "mps"
+          ],
+          "inputCoverageStart": "2026-10-20",
+          "inputCoverageEnd": "2026-10-20",
+          "hasInputDegradation": false,
+          "inputDegradationSources": [],
+          "failureReason": null
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:32.860Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "suggestionId": "01a1263e-7bc6-708e-9af6-4fbe88d86395",
+          "runId": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+          "suggestionType": "planned-purchase",
+          "skuCode": "RM-BAR-01",
+          "siteCode": "SITE-001",
+          "uomCode": "kg",
+          "quantity": 2.8,
+          "requiredDate": "2026-10-20",
+          "status": "Open",
+          "downstreamService": null,
+          "downstreamDocumentType": null,
+          "downstreamDocumentId": null,
+          "primarySourceType": "component"
+        },
+        {
+          "suggestionId": "01a1263e-7bad-76c3-8f9c-812428a94efe",
+          "runId": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+          "suggestionType": "planned-work-order",
+          "skuCode": "SF-ROD-01",
+          "siteCode": "SITE-001",
+          "uomCode": "pcs",
+          "quantity": 2,
+          "requiredDate": "2026-10-20",
+          "status": "Open",
+          "downstreamService": null,
+          "downstreamDocumentType": null,
+          "downstreamDocumentId": null,
+          "primarySourceType": "mps"
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:47.005Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/mrp-runs/01a1263e-78b8-73b4-ade7-05a2fc646327/pegging?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "suggestionId": "01a1263e-7bad-76c3-8f9c-812428a94efe",
+          "demandSourceReference": "MPS:01a1263e-03f4-70f1-9355-5ca51e404078",
+          "parentSkuCode": "SF-ROD-01",
+          "componentSkuCode": null,
+          "quantity": 2,
+          "grossDemandQuantity": 2,
+          "peggingType": "demand",
+          "sourceType": "mps",
+          "productionVersionReference": "01a1263b-7ae8-72d5-a64f-efb5e2313c3d",
+          "manufacturingBomReference": "MBOM-SF-ROD-01:1",
+          "routingReference": "ROUTING-SF-ROD-01:1"
+        },
+        {
+          "suggestionId": "01a1263e-7bc6-708e-9af6-4fbe88d86395",
+          "demandSourceReference": "MPS:01a1263e-03f4-70f1-9355-5ca51e404078",
+          "parentSkuCode": "SF-ROD-01",
+          "componentSkuCode": "RM-BAR-01",
+          "quantity": 2.8,
+          "grossDemandQuantity": 2.8,
+          "peggingType": "demand",
+          "sourceType": "mps",
+          "productionVersionReference": null,
+          "manufacturingBomReference": null,
+          "routingReference": null
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:54.448Z",
+      "method": "POST",
+      "path": "/api/business-console/v1/planning/suggestions/01a1263e-7bad-76c3-8f9c-812428a94efe/accept?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": {
+        "accepted": true,
+        "downstreamService": "BusinessMes",
+        "downstreamDocumentType": "WorkOrder",
+        "downstreamDocumentId": "WO-20261010-000001"
+      }
+    },
+    {
+      "at": "2026-10-10T14:36:54.468Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "suggestionId": "01a1263e-7bc6-708e-9af6-4fbe88d86395",
+          "runId": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+          "suggestionType": "planned-purchase",
+          "skuCode": "RM-BAR-01",
+          "siteCode": "SITE-001",
+          "uomCode": "kg",
+          "quantity": 2.8,
+          "requiredDate": "2026-10-20",
+          "status": "Open",
+          "downstreamService": null,
+          "downstreamDocumentType": null,
+          "downstreamDocumentId": null,
+          "primarySourceType": "component"
+        },
+        {
+          "suggestionId": "01a1263e-7bad-76c3-8f9c-812428a94efe",
+          "runId": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+          "suggestionType": "planned-work-order",
+          "skuCode": "SF-ROD-01",
+          "siteCode": "SITE-001",
+          "uomCode": "pcs",
+          "quantity": 2,
+          "requiredDate": "2026-10-20",
+          "status": "Accepted",
+          "downstreamService": "BusinessMes",
+          "downstreamDocumentType": "WorkOrder",
+          "downstreamDocumentId": "WO-20261010-000001",
+          "primarySourceType": "mps"
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:36:54.630Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/mes/work-orders/WO-20261010-000001?organizationId=org-001&environmentId=env-dev",
+      "status": 200,
+      "success": true,
+      "data": {
+        "workOrderId": "WO-20261010-000001",
+        "skuId": "SF-ROD-01",
+        "quantity": 2,
+        "status": "created",
+        "productionVersionId": "01a1263b-7ae8-72d5-a64f-efb5e2313c3d",
+        "sourcePlanReference": {
+          "sourceSystem": "DemandPlanning",
+          "sourceDocumentType": "PlanningSuggestion",
+          "sourceDocumentId": "01a1263e-7bad-76c3-8f9c-812428a94efe",
+          "sourceDemandReference": "MPS:01a1263e-03f4-70f1-9355-5ca51e404078",
+          "sourceDemandReferences": [
+            "MPS:01a1263e-03f4-70f1-9355-5ca51e404078"
+          ]
+        },
+        "operations": [
+          {
+            "operationTaskId": "WO-20261010-000001-OP-10",
+            "operationSequence": 10,
+            "workCenterId": "WC-TUB-01",
+            "status": "Queued",
+            "operationCode": "OP-WB-CUT"
+          },
+          {
+            "operationTaskId": "WO-20261010-000001-OP-20",
+            "operationSequence": 20,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "operationCode": "OP-WB-CNC"
+          },
+          {
+            "operationTaskId": "WO-20261010-000001-OP-30",
+            "operationSequence": 30,
+            "workCenterId": "WC-GRD-01",
+            "status": "Queued",
+            "operationCode": "OP-WB-GRD"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-10T14:37:53.602Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10&scopeKind=organization&scopeId=org-001",
+      "status": 200,
+      "success": true,
+      "data": [
+        {
+          "workOrderId": "WO-20261010-000001",
+          "skuId": "SF-ROD-01",
+          "quantity": 2,
+          "status": "created",
+          "productionVersionId": "01a1263b-7ae8-72d5-a64f-efb5e2313c3d",
+          "sourcePlanReference": {
+            "sourceSystem": "DemandPlanning",
+            "sourceDocumentType": "PlanningSuggestion",
+            "sourceDocumentId": "01a1263e-7bad-76c3-8f9c-812428a94efe",
+            "sourceDemandReference": "MPS:01a1263e-03f4-70f1-9355-5ca51e404078",
+            "sourceDemandReferences": [
+              "MPS:01a1263e-03f4-70f1-9355-5ca51e404078"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "at": "2026-10-10T14:38:12.580Z",
+      "method": "GET",
+      "path": "/api/business-console/v1/mes/work-orders/WO-20261010-000001?organizationId=org-001&environmentId=env-dev&scopeKind=organization&scopeId=org-001",
+      "status": 200,
+      "success": true,
+      "data": {
+        "workOrderId": "WO-20261010-000001",
+        "skuId": "SF-ROD-01",
+        "quantity": 2,
+        "status": "created",
+        "productionVersionId": "01a1263b-7ae8-72d5-a64f-efb5e2313c3d",
+        "sourcePlanReference": {
+          "sourceSystem": "DemandPlanning",
+          "sourceDocumentType": "PlanningSuggestion",
+          "sourceDocumentId": "01a1263e-7bad-76c3-8f9c-812428a94efe",
+          "sourceDemandReference": "MPS:01a1263e-03f4-70f1-9355-5ca51e404078",
+          "sourceDemandReferences": [
+            "MPS:01a1263e-03f4-70f1-9355-5ca51e404078"
+          ]
+        },
+        "operations": [
+          {
+            "operationTaskId": "WO-20261010-000001-OP-10",
+            "operationSequence": 10,
+            "workCenterId": "WC-TUB-01",
+            "status": "Queued",
+            "operationCode": "OP-WB-CUT"
+          },
+          {
+            "operationTaskId": "WO-20261010-000001-OP-20",
+            "operationSequence": 20,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "operationCode": "OP-WB-CNC"
+          },
+          {
+            "operationTaskId": "WO-20261010-000001-OP-30",
+            "operationSequence": 30,
+            "workCenterId": "WC-GRD-01",
+            "status": "Queued",
+            "operationCode": "OP-WB-GRD"
+          }
+        ]
+      }
+    }
+  ],
+  "postgresProjection": {
+    "mrpRuns": [
+      {
+        "id": "01a1263e-78b8-73b4-ade7-05a2fc646327",
+        "status": "Completed",
+        "inventory_snapshot_source": "inventory-http:2;erp-purchase-orders:0;accepted-purchases:0;mes-work-orders:0;master-data-planning-parameters:2;master-data-uom-conversions:0",
+        "source_length": 141,
+        "production_engineering_snapshot_source": "product-engineering-http:2;product-engineering-http:0"
+      }
+    ],
+    "mesWorkOrders": [
+      {
+        "id": "01a1263e-d45b-7571-9f4b-35d08142d064",
+        "work_order_id": "WO-20261010-000001",
+        "sku_id": "SF-ROD-01",
+        "quantity": 2.0,
+        "uom_code": "pcs",
+        "status": "created",
+        "production_version_id": "01a1263b-7ae8-72d5-a64f-efb5e2313c3d",
+        "source_system": "DemandPlanning",
+        "source_document_type": "PlanningSuggestion",
+        "source_document_id": "01a1263e-7bad-76c3-8f9c-812428a94efe",
+        "source_demand_reference": "MPS:01a1263e-03f4-70f1-9355-5ca51e404078",
+        "source_demand_references": [
+          "MPS:01a1263e-03f4-70f1-9355-5ca51e404078"
+        ]
+      }
+    ],
+    "processedIntegrationEvents": [
+      {
+        "ConsumerName": "business-mes.demand-planning-suggestion-accepted",
+        "EventId": "evt-01a1263ed52773b6a753be16a7eec880",
+        "EventType": "demandPlanning.PlanningSuggestionAccepted",
+        "EventVersion": 1,
+        "SourceService": "business-demand-planning",
+        "IdempotencyKey": "demand-planning:planning-suggestion-accepted:org-001:env-dev:01a1263e-7bad-76c3-8f9c-812428a94efe",
+        "ProcessedAtUtc": "2026-10-10T14:36:55.429693+00:00"
+      }
+    ],
+    "capReceived": [
+      {
+        "Id": 2059500844711937,
+        "Name": "PlanningSuggestionAcceptedIntegrationEvent",
+        "Group": "business-mes.demand-planning-suggestion-accepted.v1",
+        "Retries": 0,
+        "Added": "2026-10-10T22:36:55.404959",
+        "StatusName": "Succeeded"
+      }
+    ]
+  },
+  "cleanup": {
+    "initialSession": "nerv-4291-261010",
+    "initialSessionState": "Stopped",
+    "initialSessionRemainingResources": 0,
+    "currentSession": "retained for independent review and parent acceptance; final stop pending"
+  }
+}
