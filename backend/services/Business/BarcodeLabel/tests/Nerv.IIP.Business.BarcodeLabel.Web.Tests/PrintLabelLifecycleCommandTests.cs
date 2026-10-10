@@ -1,6 +1,10 @@
 using MediatR;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting.Internal;
+using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.PrintBatches;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
@@ -80,7 +84,50 @@ public sealed class PrintLabelLifecycleCommandTests
         Assert.Equal(2, printer.Calls.Count);
         Assert.Equal(printer.Calls[0][1], Assert.Single(printer.Calls[1]));
         Assert.Equal("sent-to-printer", batch.Status);
+        Assert.Null(batch.CompletedAtUtc);
         Assert.All(batch.Items, item => Assert.Equal("created", item.Status));
+    }
+
+    [Fact]
+    public async Task Simulated_completion_persists_the_same_batch_job_time_and_labels_on_sqlite()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        await dbContext.Database.EnsureCreatedAsync();
+        var (batch, template) = CreateReplayableBatch(2);
+        var labels = batch.Items.OrderBy(item => item.SequenceNo).Select(item => item.LabelValue).ToArray();
+        dbContext.AddRange(template, batch);
+        await dbContext.SaveChangesAsync();
+        var printerOptions = Options.Create(new LabelPrinterOptions
+        {
+            Mode = "simulated",
+            Printers = [new LabelPrinterRouteOptions { Id = "printer-01", Enabled = true }],
+        });
+        var printer = new ConfiguredLabelPrinter(printerOptions, new ZplTcpLabelPrinter(printerOptions),
+            new HostingEnvironment { EnvironmentName = "Development" });
+
+        var result = await new ScopedDispatchLabelPrintBatchCommandHandler(
+            dbContext, ValidAssetPort(), printer, new RecordingAttemptRecorder())
+            .Handle(new ScopedDispatchLabelPrintBatchCommand(batch.Id, "org-001", "env-dev", "printer-01"),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var detail = await new GetScopedLabelPrintBatchQueryHandler(dbContext)
+            .Handle(new GetScopedLabelPrintBatchQuery(result, "org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(batch.Id, detail.PrintBatchId);
+        Assert.Equal("printed", detail.Status);
+        Assert.Equal("printer-01", detail.PrinterId);
+        Assert.StartsWith("sim-", detail.PrintJobId);
+        Assert.Equal(batch.PrintJobId, detail.PrintJobId);
+        Assert.NotNull(detail.CompletedAtUtc);
+        Assert.Equal(batch.CompletedAtUtc, detail.CompletedAtUtc);
+        Assert.Equal(labels, detail.Items.Select(item => item.LabelValue));
+        Assert.All(detail.Items, item => Assert.Equal("printed", item.Status));
+        Assert.Null(detail.ProductionReportId);
+        Assert.Null(detail.ProductionReportNo);
     }
 
     [Fact]

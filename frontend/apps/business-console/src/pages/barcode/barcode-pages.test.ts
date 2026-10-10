@@ -202,6 +202,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       printBatchesTotal: computed(() => 1),
       printBatchDetail: computed(() => ({
         printBatchId: 'pb-1',
+        completedAtUtc: '2026-10-10T01:23:45Z',
         labelTemplateId: 'tpl-1',
         sourceDocumentType: barcode.printBatchSourceDocumentType,
         sourceDocumentId: 'WO-001',
@@ -504,6 +505,23 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('待打印')
     expect(wrapper.find('section').text()).not.toContain('已打印')
   })
+
+  it.each(['printed', 'sent-to-printer'])(
+    'shows the persisted print time only for %s',
+    async (status) => {
+      barcode.printBatchStatus = status
+      const wrapper = mountPrintBatches()
+      await flushPromises()
+      if (status === 'printed') {
+        expect(wrapper.text()).toContain('打印时间：')
+        expect(wrapper.text()).toContain(new Date('2026-10-10T01:23:45Z').toLocaleString())
+        expect(wrapper.text()).toContain('(01)06912345678901(10)L2407')
+      } else {
+        expect(wrapper.text()).not.toContain('打印时间：')
+      }
+      wrapper.unmount()
+    },
+  )
 
   it.each(['reserved', 'sent-to-printer', 'delivery-unknown', 'printed'])(
     'does not offer dispatch in %s',

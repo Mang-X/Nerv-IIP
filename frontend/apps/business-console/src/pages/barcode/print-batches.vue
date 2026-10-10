@@ -756,6 +756,10 @@ function firstQuery(value: unknown) {
             >{{ statusLabel(printBatchDetail.status) }}
           </div>
         </div>
+        <div v-if="printBatchDetail?.status === 'printed'" class="text-sm">
+          <span class="text-muted-foreground">打印时间：</span>
+          {{ formatDateTime(printBatchDetail.completedAtUtc) }}
+        </div>
         <NvButton
           v-if="canPrint && printBatchDetail?.status === 'reserved'"
           class="justify-self-start"

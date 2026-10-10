@@ -9634,6 +9634,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     productionReportId?: string | null;
     productionReportNo?: string | null;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintItemDetail>;
+    completedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintItemDetail = {

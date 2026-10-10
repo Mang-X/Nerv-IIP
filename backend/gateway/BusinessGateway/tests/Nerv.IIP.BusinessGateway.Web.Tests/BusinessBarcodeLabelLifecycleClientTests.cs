@@ -21,6 +21,22 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
     }
 
     [Fact]
+    public async Task Detail_preserves_the_completed_job_time_from_the_downstream_batch()
+    {
+        var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatch":{"printBatchId":"batch-001","labelTemplateId":"template-001","sourceDocumentType":"wms.inbound","sourceDocumentId":"IB-001","idempotencyKey":"intent-001","reportIntentKey":"intent-001","reportIntentFingerprint":null,"requestedQuantity":1,"status":"printed","printerId":"development-label-printer","printJobId":"sim-job-001","failureReason":null,"completedAtUtc":"2026-10-10T01:23:45Z","productionReportId":null,"productionReportNo":null,"items":[{"sequenceNo":1,"labelValue":"PK-001","status":"printed"}]}},"message":"","code":0}""");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var response = await client.GetPrintBatchAsync("internal-token",
+            new BusinessConsoleBarcodePrintBatchRequest("org-001", "env-dev", "batch-001"), CancellationToken.None);
+
+        Assert.Equal("printed", response.PrintBatch.Status);
+        Assert.Equal("sim-job-001", response.PrintBatch.PrintJobId);
+        Assert.Equal(new DateTimeOffset(2026, 10, 10, 1, 23, 45, TimeSpan.Zero), response.PrintBatch.CompletedAtUtc);
+        Assert.Equal("PK-001", Assert.Single(response.PrintBatch.Items).LabelValue);
+    }
+
+    [Fact]
     public async Task Confirm_uses_the_scoped_internal_route_without_a_mes_report_body()
     {
         var handler = new RecordingResponseHandler("""{"success":true,"data":{"printBatchId":"batch-001"},"message":"","code":0}""");

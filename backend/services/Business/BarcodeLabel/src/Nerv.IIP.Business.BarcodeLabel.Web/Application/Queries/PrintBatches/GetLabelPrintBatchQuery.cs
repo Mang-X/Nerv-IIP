@@ -81,7 +81,10 @@ public sealed record ScopedLabelPrintBatchDetail(
     string? FailureReason,
     string? ProductionReportId,
     string? ProductionReportNo,
-    IReadOnlyCollection<ScopedLabelPrintItemDetail> Items);
+    IReadOnlyCollection<ScopedLabelPrintItemDetail> Items)
+{
+    public DateTimeOffset? CompletedAtUtc { get; init; }
+}
 
 public sealed record ScopedLabelPrintItemDetail(
     int SequenceNo,
@@ -180,5 +183,8 @@ internal static class ScopedLabelPrintBatchProjection
                 item.SerialNumber,
                 item.LotNo,
                 item.Gtin,
-                item.EpcUri)).ToArray());
+                item.EpcUri)).ToArray())
+        {
+            CompletedAtUtc = batch.CompletedAtUtc,
+        };
 }
