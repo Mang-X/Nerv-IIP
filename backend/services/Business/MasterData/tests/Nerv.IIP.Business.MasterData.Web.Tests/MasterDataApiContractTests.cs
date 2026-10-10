@@ -2598,8 +2598,7 @@ public sealed class MasterDataApiContractTests
             new CreateSkuCommand("org-001", "env-dev", null, "Changed Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-name"),
             CancellationToken.None));
 
-        Assert.Contains("conflicts with a different", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("create payload", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", exception.Message);
     }
 
     [Fact]
@@ -2637,8 +2636,7 @@ public sealed class MasterDataApiContractTests
             new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Gram", "mass", 3, "half-up", "uom-idempotent-conflict"),
             CancellationToken.None));
 
-        Assert.Contains("conflicts with a different", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("create payload", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", exception.Message);
     }
 
     [Fact]

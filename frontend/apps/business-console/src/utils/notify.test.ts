@@ -217,6 +217,12 @@ describe('notifyOperationFailure', () => {
     )
   })
 
+  it.each(['创建入库单失败', '创建盘点任务失败'])('编码创建冲突通过 %s 展示中文原因', (action) => {
+    const message = '本次提交与此前的创建内容不一致，请重新发起创建。'
+    notifyOperationFailure(action, { success: false, message }, `${action}，请稍后重试。`)
+    expect(toastError).toHaveBeenCalledWith(`${action}：${message}`)
+  })
+
   it('服务端领域消息（中文、可行动）带动作前缀原样透传', () => {
     notifyOperationFailure(
       '生成失败',
