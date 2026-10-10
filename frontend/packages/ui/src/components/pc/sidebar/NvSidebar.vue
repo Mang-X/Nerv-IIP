@@ -55,7 +55,7 @@ const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
           <XIcon aria-hidden="true" />
         </NvButton>
       </SheetClose>
-      <div class="flex h-full w-full flex-col">
+      <div class="flex h-full w-full flex-col [&_[data-sidebar=header]]:pr-12">
         <slot />
       </div>
     </SheetContent>
