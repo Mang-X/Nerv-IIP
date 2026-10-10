@@ -13,6 +13,9 @@ public abstract record LabelPrinterDispatchResult
     public static LabelPrinterDispatchResult Sent(string printJobId) =>
         new LabelPrinterSentResult(Required(printJobId, nameof(printJobId)));
 
+    public static LabelPrinterDispatchResult Printed(string printJobId) =>
+        new LabelPrinterPrintedResult(Required(printJobId, nameof(printJobId)));
+
     public static LabelPrinterDispatchResult DeliveryUnknown(string printJobId, string failureReason) =>
         new LabelPrinterDeliveryUnknownResult(
             Required(printJobId, nameof(printJobId)),
@@ -32,6 +35,15 @@ public sealed record LabelPrinterSentResult : LabelPrinterDispatchResult
     internal LabelPrinterSentResult(string jobId) => PrintJobId = jobId;
 
     public override string Status => "sent-to-printer";
+    public override string PrintJobId { get; }
+    public override string? FailureReason => null;
+}
+
+public sealed record LabelPrinterPrintedResult : LabelPrinterDispatchResult
+{
+    internal LabelPrinterPrintedResult(string jobId) => PrintJobId = jobId;
+
+    public override string Status => "printed";
     public override string PrintJobId { get; }
     public override string? FailureReason => null;
 }
@@ -66,7 +78,7 @@ public sealed class LabelPrinterDispatchCanceledException : OperationCanceledExc
         CancellationToken cancellationToken)
         : base(cancellation.Message, cancellation, cancellationToken)
     {
-        AttemptResult = attemptResult is LabelPrinterSentResult
+        AttemptResult = attemptResult is LabelPrinterSentResult or LabelPrinterPrintedResult
             ? throw new ArgumentException("A canceled printer attempt cannot be classified as sent.", nameof(attemptResult))
             : attemptResult;
     }

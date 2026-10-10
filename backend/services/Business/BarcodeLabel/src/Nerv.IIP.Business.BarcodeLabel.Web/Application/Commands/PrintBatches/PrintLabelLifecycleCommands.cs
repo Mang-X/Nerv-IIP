@@ -631,6 +631,10 @@ internal static class LabelPrintLifecycle
             (printJobId, failureReason) =>
                 batch.RecordDeliveryUnknown(printerId, printJobId, failureReason),
             failureReason => batch.RecordPrintFailed(printerId, failureReason));
+        if (result is LabelPrinterPrintedResult)
+        {
+            batch.RecordPrinted();
+        }
     }
 
     public static void ApplyReprintResult(
@@ -673,6 +677,9 @@ internal static class LabelPrintLifecycle
         {
             case LabelPrinterSentResult sent:
                 recordSent(sent.PrintJobId);
+                break;
+            case LabelPrinterPrintedResult printed:
+                recordSent(printed.PrintJobId);
                 break;
             case LabelPrinterDeliveryUnknownResult unknown:
                 recordDeliveryUnknown(unknown.PrintJobId, unknown.FailureReason);

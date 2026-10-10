@@ -349,14 +349,17 @@ public sealed class ConfiguredLabelPrinter(
             "zpl-tcp" => zplPrinter.PrintAsync(printerId, documents, cancellationToken),
             "simulated" when environment.IsDevelopment()
                 || string.Equals(environment.EnvironmentName, "Testing", StringComparison.Ordinal) =>
-                Task.FromResult(Simulate(printerId, cancellationToken)),
+                SimulateAsync(printerId, documents, cancellationToken),
             "simulated" => Task.FromResult(
                 LabelPrinterDispatchResult.Failed("模拟打印模式仅允许在 Development 或 Testing 环境使用。")),
             _ => Task.FromResult(LabelPrinterDispatchResult.Failed("标签打印机未启用。")),
         };
     }
 
-    private LabelPrinterDispatchResult Simulate(string printerId, CancellationToken cancellationToken)
+    private async Task<LabelPrinterDispatchResult> SimulateAsync(
+        string printerId,
+        IReadOnlyCollection<CompiledLabelDocument> documents,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var printer = options.Value.Printers.SingleOrDefault(route =>
@@ -366,8 +369,25 @@ public sealed class ConfiguredLabelPrinter(
             return LabelPrinterDispatchResult.Failed($"未配置标签打印机 '{printerId}'。");
         }
 
-        return printer.Enabled
-            ? LabelPrinterDispatchResult.Sent($"sim-{Guid.CreateVersion7():N}")
-            : LabelPrinterDispatchResult.Failed($"标签打印机 '{printerId}' 已禁用。");
+        if (!printer.Enabled)
+        {
+            return LabelPrinterDispatchResult.Failed($"标签打印机 '{printerId}' 已禁用。");
+        }
+
+        if (documents.Count == 0 || documents.Any(document => document.Payload.IsEmpty))
+        {
+            return LabelPrinterDispatchResult.Failed("未提供可执行的已编译标签文档。");
+        }
+
+        var printJobId = $"sim-{Guid.CreateVersion7():N}";
+        // The development printer consumes this job's compiled labels through a null output device.
+        // Completion is a simulated execution fact, never a physical printer acknowledgement.
+        foreach (var document in documents)
+        {
+            await Stream.Null.WriteAsync(document.Payload, cancellationToken);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return LabelPrinterDispatchResult.Printed(printJobId);
     }
 }

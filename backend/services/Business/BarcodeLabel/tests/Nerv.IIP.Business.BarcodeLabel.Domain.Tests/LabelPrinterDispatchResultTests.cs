@@ -9,6 +9,7 @@ public sealed class LabelPrinterDispatchResultTests
     public void Factories_return_closed_transport_result_variants()
     {
         Assert.IsType<LabelPrinterSentResult>(LabelPrinterDispatchResult.Sent("job-001"));
+        Assert.IsType<LabelPrinterPrintedResult>(LabelPrinterDispatchResult.Printed("job-printed"));
         Assert.IsType<LabelPrinterDeliveryUnknownResult>(
             LabelPrinterDispatchResult.DeliveryUnknown("job-002", "partial write"));
         Assert.IsType<LabelPrinterFailedResult>(LabelPrinterDispatchResult.Failed("pre-write failure"));

@@ -4631,7 +4631,10 @@ public sealed record BusinessConsoleBarcodePrintBatchDetail(
     string? FailureReason,
     string? ProductionReportId,
     string? ProductionReportNo,
-    IReadOnlyCollection<BusinessConsoleBarcodePrintItemDetail> Items);
+    IReadOnlyCollection<BusinessConsoleBarcodePrintItemDetail> Items)
+{
+    public DateTimeOffset? CompletedAtUtc { get; init; }
+}
 
 public sealed record BusinessConsoleBarcodePrintItemDetail(
     int SequenceNo,

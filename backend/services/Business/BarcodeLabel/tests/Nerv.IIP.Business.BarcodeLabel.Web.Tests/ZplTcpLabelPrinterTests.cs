@@ -249,7 +249,7 @@ public sealed class ZplTcpLabelPrinterTests
     [Theory]
     [InlineData("Development")]
     [InlineData("Testing")]
-    public async Task Simulated_mode_only_reports_sent_to_printer_in_explicit_nonproduction_environments(
+    public async Task Simulated_mode_reports_completion_for_the_executed_job_in_explicit_nonproduction_environments(
         string environmentName)
     {
         var options = Options.Create(new LabelPrinterOptions { Mode = "simulated", Printers = [new LabelPrinterRouteOptions { Id = "printer-01", Enabled = true }] });
@@ -260,7 +260,9 @@ public sealed class ZplTcpLabelPrinterTests
 
         var result = await printer.PrintAsync("printer-01", CompileDocuments(1), CancellationToken.None);
 
-        Assert.Equal("sent-to-printer", result.Status);
+        Assert.IsType<LabelPrinterPrintedResult>(result);
+        Assert.Equal("printed", result.Status);
+        Assert.StartsWith("sim-", result.PrintJobId);
     }
 
     [Theory]
