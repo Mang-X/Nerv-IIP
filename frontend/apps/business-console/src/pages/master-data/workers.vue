@@ -32,7 +32,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -390,7 +390,7 @@ async function confirmRestore() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
-                  <Spinner v-if="createPending || updatePending" aria-hidden="true" />
+                  <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建员工' }}
                 </NvButton>
               </NvDialogFooter>
@@ -527,7 +527,7 @@ async function confirmRestore() {
             :disabled="!canConfirmDisable"
             @click="confirmDisable"
           >
-            <Spinner v-if="disablePending" aria-hidden="true" />
+            <NvSpinner v-if="disablePending" aria-hidden="true" />
             确认停用
           </NvButton>
         </NvAlertDialogFooter>
@@ -558,7 +558,7 @@ async function confirmRestore() {
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
           <NvButton type="button" :disabled="!canConfirmRestore" @click="confirmRestore">
-            <Spinner v-if="enablePending" aria-hidden="true" />
+            <NvSpinner v-if="enablePending" aria-hidden="true" />
             确认恢复
           </NvButton>
         </NvAlertDialogFooter>

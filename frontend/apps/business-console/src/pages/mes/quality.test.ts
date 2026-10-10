@@ -181,7 +181,7 @@ const uiStubs = {
     template:
       '<button v-bind="$attrs" :type="type || \'button\'" :disabled="disabled"><slot /></button>',
   },
-  Spinner: true,
+  NvSpinner: true,
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }
 

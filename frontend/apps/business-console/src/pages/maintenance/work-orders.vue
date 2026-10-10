@@ -68,7 +68,7 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
@@ -1040,7 +1040,7 @@ watch(
           <NvSheetFooter class="px-0">
             <NvButton type="button" variant="outline" @click="createOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="createWorkOrderPending">
-              <Spinner v-if="createWorkOrderPending" aria-hidden="true" />
+              <NvSpinner v-if="createWorkOrderPending" aria-hidden="true" />
               创建维护工单
             </NvButton>
           </NvSheetFooter>
@@ -1097,7 +1097,7 @@ watch(
               >取消</NvButton
             >
             <NvButton type="submit" :disabled="expectedRestorePending || !expectedRestoreScope">
-              <Spinner v-if="expectedRestorePending" aria-hidden="true" />保存预计恢复时间
+              <NvSpinner v-if="expectedRestorePending" aria-hidden="true" />保存预计恢复时间
             </NvButton>
           </NvSheetFooter>
         </form>
@@ -1324,7 +1324,7 @@ watch(
           <NvSheetFooter class="px-0">
             <NvButton type="button" variant="outline" @click="completeOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="completeWorkOrderPending">
-              <Spinner v-if="completeWorkOrderPending" aria-hidden="true" />
+              <NvSpinner v-if="completeWorkOrderPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               完成工单
             </NvButton>

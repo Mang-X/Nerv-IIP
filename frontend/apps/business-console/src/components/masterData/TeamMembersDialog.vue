@@ -22,7 +22,7 @@ import {
   NvFieldError,
   NvFieldLabel,
   NvInput,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { Trash2Icon } from '@lucide/vue'
@@ -181,7 +181,7 @@ function onRemoveOpenChange(value: boolean) {
           <NvFieldLabel for="member-leader" class="mb-0">设为组长</NvFieldLabel>
         </NvField>
         <NvButton type="submit" size="sm" :disabled="addPending">
-          <Spinner v-if="addPending" aria-hidden="true" />添加成员
+          <NvSpinner v-if="addPending" aria-hidden="true" />添加成员
         </NvButton>
       </form>
 
@@ -267,7 +267,7 @@ function onRemoveOpenChange(value: boolean) {
         <NvAlertDialogCancel :disabled="removePending">取消</NvAlertDialogCancel>
         <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
         <NvButton type="button" variant="destructive" :disabled="!canRemove" @click="confirmRemove">
-          <Spinner v-if="removePending" aria-hidden="true" />
+          <NvSpinner v-if="removePending" aria-hidden="true" />
           确认移除
         </NvButton>
       </NvAlertDialogFooter>

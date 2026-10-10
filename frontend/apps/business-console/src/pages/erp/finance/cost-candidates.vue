@@ -32,7 +32,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -359,7 +359,7 @@ async function submit() {
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="costs.createCostCandidatePending.value"
-              ><Spinner
+              ><NvSpinner
                 v-if="costs.createCostCandidatePending.value"
                 aria-hidden="true"
               />登记成本</NvButton

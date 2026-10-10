@@ -148,7 +148,7 @@ vi.mock('@nerv-iip/ui', () => {
     NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
     NvSelectTrigger: { template: '<slot />' },
     NvSelectValue: { template: '<span />' },
-    Spinner: passthrough('span'),
+    NvSpinner: passthrough('span'),
     NvStatusBadge: { props: ['label'], template: '<span>{{ label }}</span>' },
     NvToolbar: passthrough('div'),
   }

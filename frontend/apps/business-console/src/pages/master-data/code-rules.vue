@@ -34,7 +34,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
@@ -657,7 +657,7 @@ async function submitForm() {
                 :disabled="viewPreviewPending"
                 @click="previewViewSample"
               >
-                <Spinner v-if="viewPreviewPending" aria-hidden="true" />
+                <NvSpinner v-if="viewPreviewPending" aria-hidden="true" />
                 预览示例编码
               </NvButton>
               <code v-if="viewPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{
@@ -672,7 +672,7 @@ async function submitForm() {
               v-if="versionsPending"
               class="mt-2 flex items-center gap-2 py-2 text-sm text-muted-foreground"
             >
-              <Spinner aria-hidden="true" />
+              <NvSpinner aria-hidden="true" />
               加载版本历史…
             </div>
             <p
@@ -1036,7 +1036,7 @@ async function submitForm() {
               :disabled="formPreviewPending"
               @click="previewFormSample"
             >
-              <Spinner v-if="formPreviewPending" aria-hidden="true" />
+              <NvSpinner v-if="formPreviewPending" aria-hidden="true" />
               预览
             </NvButton>
             <code v-if="formPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{
@@ -1053,7 +1053,7 @@ async function submitForm() {
               >取消</NvButton
             >
             <NvButton type="submit" :disabled="createPending">
-              <Spinner v-if="createPending" aria-hidden="true" />
+              <NvSpinner v-if="createPending" aria-hidden="true" />
               发布版本
             </NvButton>
           </NvDialogFooter>

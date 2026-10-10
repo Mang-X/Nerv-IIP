@@ -27,7 +27,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -327,7 +327,7 @@ function isNonEmpty(value: string) {
             :disabled="isRetrying(row.requestNo ?? '')"
             @click="retryRow(row)"
           >
-            <Spinner v-if="isRetrying(row.requestNo ?? '')" aria-hidden="true" />
+            <NvSpinner v-if="isRetrying(row.requestNo ?? '')" aria-hidden="true" />
             <RotateCcwIcon v-else aria-hidden="true" />
             重试
           </NvButton>

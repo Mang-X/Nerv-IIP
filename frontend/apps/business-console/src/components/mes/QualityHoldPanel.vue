@@ -14,7 +14,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvStatusBadge,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { LinkIcon, LockIcon, RefreshCwIcon, UnlockIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
@@ -205,7 +205,7 @@ async function confirmRelease() {
         v-else-if="timelinePending"
         class="flex items-center gap-2 text-sm text-muted-foreground"
       >
-        <Spinner aria-hidden="true" />
+        <NvSpinner aria-hidden="true" />
         <span>正在加载时间线…</span>
       </div>
       <ol v-else-if="timeline.length" class="grid gap-2">
@@ -303,7 +303,7 @@ async function confirmRelease() {
             :disabled="forceReleasePending"
             @click="confirmRelease"
           >
-            <Spinner v-if="forceReleasePending" aria-hidden="true" />
+            <NvSpinner v-if="forceReleasePending" aria-hidden="true" />
             <UnlockIcon v-else aria-hidden="true" />
             确认强制释放
           </NvButton>

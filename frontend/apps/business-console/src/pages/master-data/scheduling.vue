@@ -54,7 +54,7 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -875,7 +875,7 @@ const sortedExceptions = computed(() =>
                         calEditLoading
                       "
                     >
-                      <Spinner
+                      <NvSpinner
                         v-if="calendars.createPending.value || calActions.updatePending.value"
                         aria-hidden="true"
                       />{{ calEditingCode ? '保存修改' : '保存日历' }}
@@ -895,7 +895,7 @@ const sortedExceptions = computed(() =>
               v-if="calendars.pending.value"
               class="flex items-center gap-2 px-2 py-6 text-sm text-muted-foreground"
             >
-              <Spinner aria-hidden="true" />加载工作日历…
+              <NvSpinner aria-hidden="true" />加载工作日历…
             </div>
             <p
               v-else-if="!calRows.length"
@@ -952,7 +952,7 @@ const sortedExceptions = computed(() =>
                   <span
                     v-if="calBoardSaving"
                     class="inline-flex items-center gap-1 text-xs text-muted-foreground"
-                    ><Spinner aria-hidden="true" />保存中</span
+                    ><NvSpinner aria-hidden="true" />保存中</span
                   >
                 </div>
                 <div class="flex items-center gap-1">
@@ -985,7 +985,7 @@ const sortedExceptions = computed(() =>
                 v-if="calDetailLoading"
                 class="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"
               >
-                <Spinner aria-hidden="true" />加载日历明细…
+                <NvSpinner aria-hidden="true" />加载日历明细…
               </div>
 
               <template v-else>

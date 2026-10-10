@@ -75,7 +75,7 @@ const stubs = {
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { template: '<span><slot /></span>' },
   NvCheckbox: { template: '<input type="checkbox" />' },
-  Spinner: { template: '<span />' },
+  NvSpinner: { template: '<span />' },
 }
 
 let wrapper: ReturnType<typeof mount> | null = null

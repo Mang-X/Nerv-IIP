@@ -45,7 +45,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -406,7 +406,7 @@ async function submitTemplate() {
                       :disabled="uploadPending"
                       @click="chooseFile"
                     >
-                      <Spinner v-if="uploadPending" aria-hidden="true" />
+                      <NvSpinner v-if="uploadPending" aria-hidden="true" />
                       <UploadIcon v-else aria-hidden="true" />
                       {{ form.templateFileId ? '重新上传' : '上传模板文件' }}
                     </NvButton>
@@ -530,7 +530,7 @@ async function submitTemplate() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
                 <NvButton type="submit" :disabled="saveTemplatePending">
-                  <Spinner v-if="saveTemplatePending" aria-hidden="true" />
+                  <NvSpinner v-if="saveTemplatePending" aria-hidden="true" />
                   保存模板
                 </NvButton>
               </NvDialogFooter>

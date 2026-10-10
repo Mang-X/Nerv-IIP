@@ -74,7 +74,7 @@
 | 文字提示        | `NvTooltip`                                        | `—`                                     | `—`          | `—`                                              |
 | 轻提示 / 通知   | `nvMessage` · `nvNotification`（`NvNotifierHost`） | `NvMobileToast` · `NvNoticeBar`         | （复用 PC）  | `—`                                              |
 | 告警表          | `—`                                                | `—`                                     | `—`          | `NvAlarmTable`                                   |
-| 加载 / 骨架     | `NvLoader`                                         | `NvMobileSkeleton` · `NvMobileProgress` | `—`          | `—`                                              |
+| 加载 / 骨架     | `NvSpinner` · `NvLoader`                           | `NvMobileSkeleton` · `NvMobileProgress` | `—`          | `—`                                              |
 | 空态 / 结果     | （原版 Empty 复用）                                | `NvMobileEmpty` · `NvMobileResult`      | `—`          | `—`                                              |
 | 错误重试        | `—`                                                | `NvMobileErrorRetry`                    | `—`          | `—`                                              |
 | 仪表 / 翻牌     | `—`                                                | `—`                                     | `—`          | `NvRingGauge` · `NvCapsuleBar` · `NvDigitalFlop` |

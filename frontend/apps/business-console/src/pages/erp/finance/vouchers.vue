@@ -20,7 +20,7 @@ import {
   NvInput,
   NvMetricStrip,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -320,7 +320,7 @@ async function submit() {
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="vouchers.postVoucherPending.value"
-              ><Spinner
+              ><NvSpinner
                 v-if="vouchers.postVoucherPending.value"
                 aria-hidden="true"
               />过账凭证</NvButton

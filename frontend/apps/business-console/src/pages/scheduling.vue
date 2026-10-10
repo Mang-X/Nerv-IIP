@@ -86,7 +86,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -1065,7 +1065,7 @@ function reasonLabel(reason?: string | null) {
                 :title="generateDisabledReason"
                 @click="generateWorkbenchPlan"
               >
-                <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
+                <NvSpinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
               </NvButton>
               <NvButton
                 size="sm"
@@ -1075,7 +1075,7 @@ function reasonLabel(reason?: string | null) {
                 :title="repreviewDisabledReason"
                 @click="repreviewLockedDraft"
               >
-                <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
+                <NvSpinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
               </NvButton>
               <NvButton
                 size="sm"
@@ -1385,7 +1385,7 @@ function reasonLabel(reason?: string | null) {
                 :title="releaseDisabledReason(row)"
                 @click="publish(row)"
               >
-                <Spinner v-if="releasePlanPending" aria-hidden="true" />
+                <NvSpinner v-if="releasePlanPending" aria-hidden="true" />
                 <SendIcon v-else aria-hidden="true" />
                 发布
               </NvButton>
@@ -1514,7 +1514,7 @@ function reasonLabel(reason?: string | null) {
             :disabled="revokePlanPending"
             @click="confirmRevoke"
           >
-            <Spinner v-if="revokePlanPending" aria-hidden="true" />
+            <NvSpinner v-if="revokePlanPending" aria-hidden="true" />
             确认撤销
           </NvButton>
         </NvAlertDialogFooter>
@@ -1546,7 +1546,7 @@ function reasonLabel(reason?: string | null) {
           v-if="planDetailPending"
           class="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
         >
-          <Spinner aria-hidden="true" />
+          <NvSpinner aria-hidden="true" />
           正在读取方案明细
         </div>
 

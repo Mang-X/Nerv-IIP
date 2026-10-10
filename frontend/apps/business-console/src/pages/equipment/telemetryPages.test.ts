@@ -221,7 +221,7 @@ vi.mock('@nerv-iip/ui', () => ({
   NvSelectItem: { template: '<div><slot /></div>' },
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectValue: { template: '<span><slot /></span>' },
-  Spinner: { template: '<span />' },
+  NvSpinner: { template: '<span />' },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
   toast: { success: vi.fn() },
 }))
@@ -508,7 +508,7 @@ const stubs = {
     template:
       '<ol data-testid="timeline"><li v-for="item in items" :key="item.key">{{ item.title }} {{ item.label }} {{ item.description }}</li></ol>',
   },
-  Spinner: { template: '<span />' },
+  NvSpinner: { template: '<span />' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },
   NvDialog: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },

@@ -126,7 +126,7 @@ const stubs = {
     template:
       '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.type === \'number\' && $event.target.value !== \'\' ? Number($event.target.value) : $event.target.value)" />',
   },
-  Spinner: true,
+  NvSpinner: true,
 }
 
 const context: ProductionReportContext = {

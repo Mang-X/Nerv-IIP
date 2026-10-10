@@ -420,7 +420,7 @@ const uiStubs = {
   NvSheetDescription: { template: '<p><slot /></p>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
-  Spinner: true,
+  NvSpinner: true,
   StatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },

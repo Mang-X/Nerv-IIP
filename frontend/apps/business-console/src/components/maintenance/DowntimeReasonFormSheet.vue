@@ -29,7 +29,7 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, reactive, ref } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -201,7 +201,7 @@ function isDuplicateCodeError(error: unknown) {
         <NvSheetFooter class="px-0">
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="saving">
-            <Spinner v-if="saving" aria-hidden="true" />
+            <NvSpinner v-if="saving" aria-hidden="true" />
             保存
           </NvButton>
         </NvSheetFooter>

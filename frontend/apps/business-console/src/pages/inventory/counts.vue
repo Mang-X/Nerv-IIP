@@ -36,7 +36,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, ClipboardPlusIcon, RotateCcwIcon, XCircleIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
@@ -574,7 +574,7 @@ function isNonEmpty(value: string) {
           </NvFieldGroup>
           <div class="flex justify-end">
             <NvButton type="submit" :disabled="createCountTaskPending || !canCreateTask">
-              <Spinner v-if="createCountTaskPending" aria-hidden="true" />
+              <NvSpinner v-if="createCountTaskPending" aria-hidden="true" />
               <ClipboardPlusIcon v-else aria-hidden="true" />
               创建任务
             </NvButton>
@@ -609,7 +609,7 @@ function isNonEmpty(value: string) {
           </NvFieldGroup>
           <div class="flex justify-end">
             <NvButton type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
-              <Spinner v-if="confirmAdjustmentPending" aria-hidden="true" />
+              <NvSpinner v-if="confirmAdjustmentPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               确认调整
             </NvButton>
@@ -647,7 +647,7 @@ function isNonEmpty(value: string) {
               variant="destructive"
               :disabled="cancelCountTaskPending || !canCloseTask"
             >
-              <Spinner v-if="cancelCountTaskPending" aria-hidden="true" />
+              <NvSpinner v-if="cancelCountTaskPending" aria-hidden="true" />
               <XCircleIcon v-else aria-hidden="true" />
               关闭任务
             </NvButton>

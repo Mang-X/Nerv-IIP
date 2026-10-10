@@ -24,7 +24,7 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { AlertTriangleIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
@@ -226,7 +226,7 @@ async function submit() {
             :disabled="!canSubmit"
             :title="disabledReason || undefined"
           >
-            <Spinner v-if="scheduling.pending.value" aria-hidden="true" />
+            <NvSpinner v-if="scheduling.pending.value" aria-hidden="true" />
             生成只含该单的方案
           </NvButton>
         </NvDialogFooter>

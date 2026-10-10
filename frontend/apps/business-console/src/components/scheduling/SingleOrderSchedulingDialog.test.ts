@@ -119,7 +119,7 @@ vi.mock('@nerv-iip/ui', async () => {
     NvSelectItem: Shell,
     NvSelectTrigger: Shell,
     NvSelectValue: Shell,
-    Spinner: Shell,
+    NvSpinner: Shell,
     toast: { error: vi.fn(), success: vi.fn() },
   }
 })

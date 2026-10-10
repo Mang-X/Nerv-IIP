@@ -20,7 +20,7 @@ const stubs = {
       '<input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   NvStatusBadge: { template: '<span><slot />{{ label }}</span>', props: ['label'] },
-  Spinner: true,
+  NvSpinner: true,
 }
 
 function mountDialog(props: Record<string, unknown>) {

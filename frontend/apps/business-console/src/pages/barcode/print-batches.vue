@@ -41,7 +41,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -626,7 +626,7 @@ function firstQuery(value: unknown) {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPrintBatchPending">
-                  <Spinner v-if="createPrintBatchPending" aria-hidden="true" />
+                  <NvSpinner v-if="createPrintBatchPending" aria-hidden="true" />
                   提交打印
                 </NvButton>
               </NvDialogFooter>

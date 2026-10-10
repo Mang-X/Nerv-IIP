@@ -345,7 +345,7 @@ function mountReports(permissionCodes: string[]) {
             </select>
           `,
         },
-        Spinner: true,
+        NvSpinner: true,
       },
     },
   })

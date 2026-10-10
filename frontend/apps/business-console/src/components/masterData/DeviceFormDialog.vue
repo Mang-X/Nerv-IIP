@@ -42,7 +42,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
@@ -606,7 +606,7 @@ async function submit() {
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="saving || editLoading">
-            <Spinner v-if="saving" aria-hidden="true" />
+            <NvSpinner v-if="saving" aria-hidden="true" />
             {{ editingCode ? '保存修改' : '保存设备' }}
           </NvButton>
         </NvDialogFooter>

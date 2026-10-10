@@ -30,7 +30,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -780,7 +780,7 @@ function diagnosticLabel(severity?: string | null) {
         </NvField>
         <div class="flex items-end">
           <NvButton type="submit" :disabled="pending">
-            <Spinner v-if="pending" aria-hidden="true" />
+            <NvSpinner v-if="pending" aria-hidden="true" />
             <NetworkIcon v-else aria-hidden="true" />
             对比
           </NvButton>
@@ -817,7 +817,7 @@ function diagnosticLabel(severity?: string | null) {
         </NvField>
         <div class="flex items-end">
           <NvButton type="submit" :disabled="pending">
-            <Spinner v-if="pending" aria-hidden="true" />
+            <NvSpinner v-if="pending" aria-hidden="true" />
             <NetworkIcon v-else aria-hidden="true" />
             分析
           </NvButton>
@@ -825,7 +825,7 @@ function diagnosticLabel(severity?: string | null) {
       </div>
       <div v-else class="flex justify-end">
         <NvButton type="submit" :disabled="pending">
-          <Spinner v-if="pending" aria-hidden="true" />
+          <NvSpinner v-if="pending" aria-hidden="true" />
           <SearchIcon v-else aria-hidden="true" />
           反查
         </NvButton>

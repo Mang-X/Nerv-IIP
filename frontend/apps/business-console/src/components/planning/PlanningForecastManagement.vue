@@ -34,7 +34,7 @@ import {
   NvInput,
   NvSearchSelect,
   NvToolbar,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 
 const {
@@ -537,7 +537,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="dialogOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="saveForecastPending">
-              <Spinner v-if="saveForecastPending" aria-hidden="true" />
+              <NvSpinner v-if="saveForecastPending" aria-hidden="true" />
               {{ editMode ? '保存修改' : '创建预测' }}
             </NvButton>
           </NvDialogFooter>

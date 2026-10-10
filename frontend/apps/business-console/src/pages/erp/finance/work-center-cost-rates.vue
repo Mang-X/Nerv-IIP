@@ -21,7 +21,7 @@ import {
   NvSheetTitle,
   NvStatusBadge,
   NvToolbar,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PlusIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
@@ -263,7 +263,7 @@ async function submit() {
           <NvSheetFooter>
             <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
             <NvButton type="submit" :disabled="costs.addRevisionPending.value">
-              <Spinner v-if="costs.addRevisionPending.value" aria-hidden="true" />保存修订
+              <NvSpinner v-if="costs.addRevisionPending.value" aria-hidden="true" />保存修订
             </NvButton>
           </NvSheetFooter>
         </form>

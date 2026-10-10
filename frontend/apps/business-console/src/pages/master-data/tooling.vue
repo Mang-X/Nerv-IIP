@@ -58,7 +58,7 @@ import {
   NvSheetTitle,
   NvStatusBadge,
   NvToolbar,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 
@@ -676,7 +676,7 @@ const listErrorMessage = computed(() =>
           <NvSheetFooter class="px-4">
             <NvButton type="button" variant="outline" @click="registerOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="tooling.registerPending.value">
-              <Spinner v-if="tooling.registerPending.value" aria-hidden="true" />
+              <NvSpinner v-if="tooling.registerPending.value" aria-hidden="true" />
               确认注册
             </NvButton>
           </NvSheetFooter>
@@ -716,7 +716,7 @@ const listErrorMessage = computed(() =>
             :disabled="tooling.changeStatusPending.value"
             @click="submitStatus"
           >
-            <Spinner v-if="tooling.changeStatusPending.value" aria-hidden="true" />
+            <NvSpinner v-if="tooling.changeStatusPending.value" aria-hidden="true" />
             确认{{ statusActionLabel }}
           </NvButton>
         </NvDialogFooter>
@@ -752,7 +752,7 @@ const listErrorMessage = computed(() =>
             :disabled="!statusReason.trim() || tooling.changeStatusPending.value"
             @click="submitStatus"
           >
-            <Spinner v-if="tooling.changeStatusPending.value" aria-hidden="true" />
+            <NvSpinner v-if="tooling.changeStatusPending.value" aria-hidden="true" />
             确认退役
           </NvButton>
         </NvAlertDialogFooter>
@@ -793,7 +793,7 @@ const listErrorMessage = computed(() =>
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="usageOpen = false">取消</NvButton>
           <NvButton type="button" :disabled="tooling.recordUsagePending.value" @click="submitUsage">
-            <Spinner v-if="tooling.recordUsagePending.value" aria-hidden="true" />
+            <NvSpinner v-if="tooling.recordUsagePending.value" aria-hidden="true" />
             确认登记
           </NvButton>
         </NvDialogFooter>

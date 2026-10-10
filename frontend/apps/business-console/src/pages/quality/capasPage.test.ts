@@ -144,7 +144,7 @@ const stubs = {
   NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvStatusBadge: { props: ['label'], template: '<span>{{ label }}</span>' },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
-  Spinner: { template: '<span />' },
+  NvSpinner: { template: '<span />' },
 }
 
 describe('quality CAPA read-face guard', () => {

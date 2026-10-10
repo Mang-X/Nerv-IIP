@@ -42,7 +42,7 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -595,7 +595,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
-                  <Spinner v-if="releasePending" aria-hidden="true" />
+                  <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </NvButton>
               </NvDialogFooter>
@@ -714,7 +714,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
             v-if="detailPending"
             class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
           >
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             加载工序明细…
           </div>
           <div v-else-if="viewOperations.length" class="overflow-hidden rounded-md border">

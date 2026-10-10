@@ -40,7 +40,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -504,7 +504,7 @@ function formatCreditLimit(
                     createPartnerPending || partnerActions.updatePending.value || editLoading
                   "
                 >
-                  <Spinner
+                  <NvSpinner
                     v-if="createPartnerPending || partnerActions.updatePending.value"
                     aria-hidden="true"
                   />

@@ -33,7 +33,7 @@ import {
   schedulingPlanStatusTone,
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
-import { NvButton, NvStatusBadge, Spinner } from '@nerv-iip/ui'
+import { NvButton, NvStatusBadge, NvSpinner } from '@nerv-iip/ui'
 import {
   CalendarDaysIcon,
   EyeIcon,
@@ -519,7 +519,7 @@ function setLaneOrder(value: LaneOrder) {
       v-if="loading"
       class="flex min-h-80 items-center justify-center gap-2 rounded-lg border bg-card text-sm text-muted-foreground"
     >
-      <Spinner aria-hidden="true" />
+      <NvSpinner aria-hidden="true" />
       正在读取方案时间轴
     </div>
 
@@ -581,7 +581,7 @@ function setLaneOrder(value: LaneOrder) {
             :title="summary?.isInvalidated ? `方案已失效（${invalidationReason}）` : '发布当前方案'"
             @click="emit('release')"
           >
-            <Spinner v-if="releasePending" aria-hidden="true" />
+            <NvSpinner v-if="releasePending" aria-hidden="true" />
             <SendIcon v-else aria-hidden="true" />
             发布当前方案
           </NvButton>

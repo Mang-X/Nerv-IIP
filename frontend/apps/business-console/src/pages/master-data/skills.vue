@@ -35,7 +35,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvToolbar,
   NvTooltip,
   NvTooltipContent,
@@ -533,7 +533,7 @@ async function submitSkill() {
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="skillOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="skillAssignment.assignPending.value">
-              <Spinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
+              <NvSpinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
             </NvButton>
           </NvDialogFooter>
         </form>

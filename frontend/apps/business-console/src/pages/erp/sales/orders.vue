@@ -35,7 +35,7 @@ import {
   NvInput,
   NvMetricStrip,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -469,7 +469,7 @@ async function submit() {
             :disabled="orders.releaseCreditHoldPending.value"
             @click="submitCreditHoldRelease"
           >
-            <Spinner v-if="orders.releaseCreditHoldPending.value" aria-hidden="true" />
+            <NvSpinner v-if="orders.releaseCreditHoldPending.value" aria-hidden="true" />
             提交解冻复核
           </NvButton>
         </NvDialogFooter>
@@ -501,7 +501,7 @@ async function submit() {
             :disabled="orders.releaseDeliveryOrderPending.value"
             @click="submitReleaseDelivery"
           >
-            <Spinner v-if="orders.releaseDeliveryOrderPending.value" aria-hidden="true" />
+            <NvSpinner v-if="orders.releaseDeliveryOrderPending.value" aria-hidden="true" />
             <TruckIcon v-else aria-hidden="true" />
             释放发货
           </NvButton>
@@ -557,7 +557,7 @@ async function submit() {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="orders.createSalesOrderPending.value">
-              <Spinner v-if="orders.createSalesOrderPending.value" aria-hidden="true" />
+              <NvSpinner v-if="orders.createSalesOrderPending.value" aria-hidden="true" />
               创建订单
             </NvButton>
           </NvDialogFooter>

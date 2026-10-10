@@ -31,7 +31,7 @@ import {
   NvDataTable,
   NvPageHeader,
   NvToolbar,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, shallowRef } from 'vue'
@@ -214,7 +214,7 @@ async function confirmDelete() {
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
           <!-- 确认按钮不用 NvAlertDialogAction：它点击即无条件关框，失败时就看不到原因了。 -->
           <NvButton type="button" variant="destructive" :disabled="deleting" @click="confirmDelete">
-            <Spinner v-if="deleting" aria-hidden="true" />
+            <NvSpinner v-if="deleting" aria-hidden="true" />
             删除
           </NvButton>
         </NvAlertDialogFooter>

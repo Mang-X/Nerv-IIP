@@ -129,6 +129,7 @@ export default defineConfig({
           text: '通用',
           items: [
             { text: 'Button 按钮', link: '/components/desktop/button' },
+            { text: 'Spinner 加载', link: '/components/desktop/spinner' },
             { text: 'Badge 徽标', link: '/components/desktop/badge' },
             { text: 'Card 卡片', link: '/components/desktop/card' },
             { text: 'MetricCard 指标卡', link: '/components/desktop/metric' },

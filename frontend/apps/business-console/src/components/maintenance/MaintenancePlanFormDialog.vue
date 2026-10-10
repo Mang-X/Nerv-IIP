@@ -28,7 +28,7 @@ import {
   NvTabs,
   NvTabsList,
   NvTabsTrigger,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
@@ -358,7 +358,7 @@ function submitForm() {
             <NvButton type="button" variant="outline">取消</NvButton>
           </NvDialogClose>
           <NvButton type="submit" :disabled="pending">
-            <Spinner v-if="pending" aria-hidden="true" />
+            <NvSpinner v-if="pending" aria-hidden="true" />
             {{ isEditMode ? '保存触发条件' : '创建保养计划' }}
           </NvButton>
         </NvDialogFooter>

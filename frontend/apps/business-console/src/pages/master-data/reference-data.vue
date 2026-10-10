@@ -30,7 +30,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -376,7 +376,7 @@ function isNonEmpty(value: string) {
                     !canSubmitCode
                   "
                 >
-                  <Spinner
+                  <NvSpinner
                     v-if="createCodePending || codeActions.updatePending.value"
                     aria-hidden="true"
                   />

@@ -30,7 +30,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -373,7 +373,7 @@ async function submit() {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="receipts.recordPurchaseReceiptPending.value">
-              <Spinner v-if="receipts.recordPurchaseReceiptPending.value" aria-hidden="true" />
+              <NvSpinner v-if="receipts.recordPurchaseReceiptPending.value" aria-hidden="true" />
               <PackageCheckIcon v-else aria-hidden="true" />
               确认收货
             </NvButton>

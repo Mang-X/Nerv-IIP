@@ -41,7 +41,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -532,7 +532,7 @@ async function submitPayable() {
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="receivables.createReceivablePending.value"
-              ><Spinner
+              ><NvSpinner
                 v-if="receivables.createReceivablePending.value"
                 aria-hidden="true"
               />登记应收</NvButton
@@ -609,7 +609,7 @@ async function submitPayable() {
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="payables.createPayablePending.value"
-              ><Spinner
+              ><NvSpinner
                 v-if="payables.createPayablePending.value"
                 aria-hidden="true"
               />登记应付</NvButton

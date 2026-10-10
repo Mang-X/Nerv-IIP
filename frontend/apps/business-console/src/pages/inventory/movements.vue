@@ -40,7 +40,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { SendIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
@@ -455,7 +455,7 @@ function isNonEmpty(value: string) {
 
           <div class="flex justify-end">
             <NvButton type="submit" :disabled="postMovementPending || !canSubmit">
-              <Spinner v-if="postMovementPending" aria-hidden="true" />
+              <NvSpinner v-if="postMovementPending" aria-hidden="true" />
               <SendIcon v-else aria-hidden="true" />
               提交库存移动
             </NvButton>

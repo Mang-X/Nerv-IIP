@@ -5,7 +5,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, ref, watch } from 'vue'
-import { NvButton, NvDataTable, Spinner, type NvDataTableColumn } from '@nerv-iip/ui'
+import { NvButton, NvDataTable, NvSpinner, type NvDataTableColumn } from '@nerv-iip/ui'
 import { useSchedulingInsertionPreview } from '@/composables/useSchedulingInsertionPreview'
 import { assertEnvelopeSuccess } from '@/composables/serviceEnvelope'
 import { notifyOperationFailure } from '@/utils/notify'
@@ -142,7 +142,7 @@ async function start() {
       :disabled="!!deniedReason || task.pending.value"
       :title="deniedReason || undefined"
       @click="start"
-      ><Spinner v-if="task.pending.value" />插入该单并重预览</NvButton
+      ><NvSpinner v-if="task.pending.value" />插入该单并重预览</NvButton
     >
     <div v-if="task.job.value" class="grid gap-1 rounded-md border p-3 text-sm" role="status">
       <p>

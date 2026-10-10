@@ -512,7 +512,7 @@ const uiStubs = {
     template:
       '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Spinner: true,
+  NvSpinner: true,
   Table: {
     template: '<table><slot /></table>',
   },

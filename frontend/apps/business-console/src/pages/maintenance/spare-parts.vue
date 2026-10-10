@@ -42,7 +42,7 @@ import {
   NvInput,
   NvPageHeader,
   NvRowActions,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PackageSearchIcon, PlusIcon, RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
@@ -419,7 +419,7 @@ async function submitCreate() {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="createSparePartPending">
-              <Spinner v-if="createSparePartPending" aria-hidden="true" />
+              <NvSpinner v-if="createSparePartPending" aria-hidden="true" />
               <PackageSearchIcon v-else aria-hidden="true" />
               创建备件需求
             </NvButton>

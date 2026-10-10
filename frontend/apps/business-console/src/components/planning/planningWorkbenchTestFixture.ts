@@ -436,7 +436,7 @@ vi.mock('@nerv-iip/ui', async () => {
     NvSelectItem: SelectItem,
     NvSelectTrigger: Shell,
     NvSelectValue: Shell,
-    Spinner: Shell,
+    NvSpinner: Shell,
     NvStatusBadge: defineComponent({ props: ['label'], template: '<span>{{ label }}</span>' }),
     NvTabs: Shell,
     NvTabsContent: Shell,

@@ -12,7 +12,7 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
@@ -456,7 +456,7 @@ async function onSubmit() {
               quantitySnapshotPending
             "
           >
-            <Spinner
+            <NvSpinner
               v-if="recordProductionReportPending || reportScopePending || quantitySnapshotPending"
               aria-hidden="true"
             />

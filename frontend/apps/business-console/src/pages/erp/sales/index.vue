@@ -25,7 +25,7 @@ import {
   NvInput,
   NvMetricStrip,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -278,7 +278,7 @@ async function submit() {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="opportunities.openOpportunityPending.value">
-              <Spinner v-if="opportunities.openOpportunityPending.value" aria-hidden="true" />
+              <NvSpinner v-if="opportunities.openOpportunityPending.value" aria-hidden="true" />
               开立机会
             </NvButton>
           </NvDialogFooter>

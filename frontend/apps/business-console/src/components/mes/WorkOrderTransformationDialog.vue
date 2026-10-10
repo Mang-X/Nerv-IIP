@@ -26,7 +26,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvStatusBadge,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
@@ -227,7 +227,7 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
           :data-state="props.state"
           data-testid="transformation-status"
         >
-          <Spinner v-if="props.state === 'loading'" aria-hidden="true" />
+          <NvSpinner v-if="props.state === 'loading'" aria-hidden="true" />
           <NvStatusBadge v-else :label="statusText" :tone="statusTone" />
           <span v-if="props.state === 'loading'">{{ statusText }}</span>
         </div>
@@ -422,7 +422,7 @@ function lineLabel(line: MesWorkOrderTransformationLine) {
           data-testid="submit-work-order-transformation"
           @click="submit"
         >
-          <Spinner v-if="pending" aria-hidden="true" />
+          <NvSpinner v-if="pending" aria-hidden="true" />
           {{ isSplit ? '确认拆分' : '确认合并' }}
         </NvButton>
       </NvDialogFooter>

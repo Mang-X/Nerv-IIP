@@ -81,7 +81,7 @@ import {
   NvTooltipContent,
   NvTooltipProvider,
   NvTooltipTrigger,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import {
   CalendarCogIcon,
@@ -1546,7 +1546,7 @@ function formatStatus(value?: string | null) {
             data-testid="submit-material-issue"
             @click="submitIssue"
           >
-            <Spinner v-if="createMaterialIssueRequestPending" aria-hidden="true" />
+            <NvSpinner v-if="createMaterialIssueRequestPending" aria-hidden="true" />
             确认发起领料
           </NvButton>
         </NvAlertDialogFooter>
@@ -1609,7 +1609,7 @@ function formatStatus(value?: string | null) {
             data-testid="submit-line-side-receipt"
             @click="submitReceipt"
           >
-            <Spinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
+            <NvSpinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
             确认收料
           </NvButton>
         </NvAlertDialogFooter>
@@ -1653,7 +1653,7 @@ function formatStatus(value?: string | null) {
             data-testid="submit-line-side-return"
             @click="submitReturn"
           >
-            <Spinner v-if="returnLineSideMaterialPending" aria-hidden="true" />
+            <NvSpinner v-if="returnLineSideMaterialPending" aria-hidden="true" />
             提交退料
           </NvButton>
         </NvAlertDialogFooter>
@@ -1678,7 +1678,7 @@ function formatStatus(value?: string | null) {
           <span class="font-semibold text-foreground">补偿预览</span>
 
           <div v-if="cancelPreviewPending" class="flex items-center gap-2 text-muted-foreground">
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             <span>正在加载补偿预览…</span>
           </div>
           <div
@@ -1855,7 +1855,7 @@ function formatStatus(value?: string | null) {
             :disabled="!canSubmitCancel || cancelWorkOrderPending"
             @click="submitCancel"
           >
-            <Spinner v-if="cancelWorkOrderPending" aria-hidden="true" />
+            <NvSpinner v-if="cancelWorkOrderPending" aria-hidden="true" />
             <XCircleIcon v-else aria-hidden="true" />
             确认取消工单
           </NvButton>
@@ -1891,7 +1891,7 @@ function formatStatus(value?: string | null) {
             data-testid="confirm-close-work-order"
             @click="submitClose"
           >
-            <Spinner v-if="closeWorkOrderPending" aria-hidden="true" />
+            <NvSpinner v-if="closeWorkOrderPending" aria-hidden="true" />
             确认关闭
           </NvButton>
         </NvAlertDialogFooter>
@@ -1943,7 +1943,7 @@ function formatStatus(value?: string | null) {
             data-testid="confirm-hold-work-order"
             @click="submitHold"
           >
-            <Spinner v-if="holdWorkOrderPending" aria-hidden="true" />
+            <NvSpinner v-if="holdWorkOrderPending" aria-hidden="true" />
             确认挂起
           </NvButton>
         </NvAlertDialogFooter>
@@ -2036,7 +2036,7 @@ function formatStatus(value?: string | null) {
             data-testid="confirm-engineering-change-decision"
             @click="submitDecision"
           >
-            <Spinner v-if="recordEngineeringChangeDecisionPending" aria-hidden="true" />
+            <NvSpinner v-if="recordEngineeringChangeDecisionPending" aria-hidden="true" />
             保存决策
           </NvButton>
         </NvAlertDialogFooter>

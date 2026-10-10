@@ -67,7 +67,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -1333,7 +1333,7 @@ function isPresent(value: string | undefined | null): value is string {
                 :aria-describedby="submitBlockers.length ? 'record-submit-blockers' : undefined"
                 :disabled="createInspectionRecordPending || !canCreateRecord"
               >
-                <Spinner v-if="createInspectionRecordPending" aria-hidden="true" />
+                <NvSpinner v-if="createInspectionRecordPending" aria-hidden="true" />
                 <ClipboardCheckIcon v-else aria-hidden="true" />
                 提交检验记录
               </NvButton>

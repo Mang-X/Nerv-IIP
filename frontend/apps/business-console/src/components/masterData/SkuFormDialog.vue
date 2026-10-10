@@ -31,7 +31,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -406,7 +406,7 @@ async function submit() {
             type="submit"
             :disabled="saving || editLoading || dictionaryPending || !formValid"
           >
-            <Spinner v-if="saving || dictionaryPending" aria-hidden="true" />
+            <NvSpinner v-if="saving || dictionaryPending" aria-hidden="true" />
             {{ editingCode ? '保存修改' : '保存物料' }}
           </NvButton>
         </NvDialogFooter>

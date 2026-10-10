@@ -484,7 +484,7 @@ const uiStubs = {
   NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectValue: true,
-  Spinner: true,
+  NvSpinner: true,
 }
 
 function mountInventoryPage(component: unknown) {

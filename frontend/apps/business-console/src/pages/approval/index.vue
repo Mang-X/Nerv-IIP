@@ -51,7 +51,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -1011,7 +1011,7 @@ function toIsoFromLocalInput(value: string) {
               :variant="decisionForm.decision === 'reject' ? 'destructive' : 'default'"
               :disabled="approval.resolveTaskPending.value"
             >
-              <Spinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />
+              <NvSpinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />
               {{ decisionLabel(decisionForm.decision) }}
             </NvButton>
           </NvDialogFooter>
@@ -1097,7 +1097,7 @@ function toIsoFromLocalInput(value: string) {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="approval.createDelegationPending.value">
-              <Spinner v-if="approval.createDelegationPending.value" aria-hidden="true" />
+              <NvSpinner v-if="approval.createDelegationPending.value" aria-hidden="true" />
               保存委托
             </NvButton>
           </NvDialogFooter>
@@ -1237,7 +1237,7 @@ function toIsoFromLocalInput(value: string) {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="approval.saveTemplatePending.value">
-              <Spinner v-if="approval.saveTemplatePending.value" aria-hidden="true" />
+              <NvSpinner v-if="approval.saveTemplatePending.value" aria-hidden="true" />
               保存模板
             </NvButton>
           </NvDialogFooter>

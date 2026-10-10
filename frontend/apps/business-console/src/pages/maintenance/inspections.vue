@@ -48,7 +48,7 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import {
@@ -534,7 +534,7 @@ function formatDateTime(value?: string | null) {
           <NvSheetFooter class="px-0">
             <NvButton type="button" variant="outline" @click="recordOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="recordInspectionPending">
-              <Spinner v-if="recordInspectionPending" aria-hidden="true" />
+              <NvSpinner v-if="recordInspectionPending" aria-hidden="true" />
               <ClipboardCheckIcon v-else aria-hidden="true" />
               提交点检
             </NvButton>

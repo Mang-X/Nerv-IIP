@@ -30,7 +30,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -396,7 +396,7 @@ function firstQuery(value: unknown) {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
                 <NvButton type="submit" :disabled="recordScanPending">
-                  <Spinner v-if="recordScanPending" aria-hidden="true" />
+                  <NvSpinner v-if="recordScanPending" aria-hidden="true" />
                   记录审计
                 </NvButton>
               </NvDialogFooter>
