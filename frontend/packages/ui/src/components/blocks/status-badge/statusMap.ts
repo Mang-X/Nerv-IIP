@@ -17,7 +17,7 @@ export function normalizeStatusKey(value: string): string {
  * Localized (zh-Hans) label for a known status key.
  *
  * 键一律用 `normalizeStatusKey` 之后的形态（全小写、无连字符）。
- * **漏一条的代价是界面上直接印出后端英文状态码**，所以新增状态务必同步补这里。
+ * 新增状态务必同步补这里，避免已知状态退化为中性占位。
  */
 const STATUS_LABELS: Record<string, string> = {
   accepted: '已受理',
@@ -90,10 +90,38 @@ const STATUS_LABELS: Record<string, string> = {
   unavailable: '不可用',
   unrestricted: '非限制使用',
   warning: '预警',
+  registered: '已登记',
+  matched: '已匹配',
+  executed: '已执行',
+  recorded: '已记录',
+  converted: '已转换',
+  authorized: '已授权',
+  warehousereceived: '仓库已收货',
+  creditapproved: '贷项已批准',
+  creditissued: '贷项已开具',
+  creditdenied: '贷项已拒绝',
+  paymentheld: '付款已冻结',
+  voided: '已作废',
+  applied: '已应用',
+  waitingforparts: '待备件',
+  verified: '已验证',
+  returned: '已退回',
+  skipped: '已跳过',
+  withdrawn: '已撤回',
+  revoked: '已吊销',
+  split: '已拆分',
+  merged: '已合并',
 }
 
 const TONE_BY_STATUS: Record<StatusTone, string[]> = {
   success: [
+    'matched',
+    'executed',
+    'authorized',
+    'creditapproved',
+    'creditissued',
+    'applied',
+    'verified',
     'accepted',
     'active',
     'approved',
@@ -111,6 +139,10 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'unrestricted',
   ],
   info: [
+    'registered',
+    'recorded',
+    'converted',
+    'warehousereceived',
     'dispatched',
     'dispositioninprogress',
     'inprogress',
@@ -124,6 +156,9 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'started',
   ],
   danger: [
+    'creditdenied',
+    'voided',
+    'revoked',
     'blocked',
     'cancelled',
     'creditheld',
@@ -137,6 +172,9 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'unavailable',
   ],
   warning: [
+    'paymentheld',
+    'waitingforparts',
+    'returned',
     'awaitingarrival',
     'conditionalrelease',
     'created',
@@ -160,7 +198,7 @@ const TONE_BY_STATUS: Record<StatusTone, string[]> = {
     'scheduleinvalidated',
     'submitted',
   ],
-  neutral: ['dismissed', 'nolines', 'superseded'],
+  neutral: ['dismissed', 'nolines', 'superseded', 'skipped', 'withdrawn', 'split', 'merged'],
 }
 
 const STATUS_TO_TONE = new Map<string, StatusTone>()
@@ -176,7 +214,7 @@ export interface ResolvedStatus {
 /**
  * 词表漏词只在开发期告警一次，生产构建里整段被摇树掉。
  *
- * 仍然回吐原值（宁可上屏英文码，也不让状态列空白），但开发期必须有声音——
+ * 未知值显示中性「—」，但开发期仍必须有声音——
  * 否则新状态码只会在真机走查时才被人眼发现。同一个 key 只报一次，避免表格逐行刷屏。
  */
 const warnedStatusKeys = new Set<string>()
@@ -192,8 +230,8 @@ function warnMissingStatusLabel(key: string, raw: string) {
 /**
  * Resolve a raw status value to a localized label + semantic tone.
  *
- * `warnOnMissing` 存在的理由：漏词告警要拦的是「裸码值上了屏」。调用方自己传了
- * `label` 时，屏上是它的词、不是这里的回吐值，漏词**没有可见后果**——照报只会
+ * `warnOnMissing` 存在的理由：漏词告警要发现的是「已知状态缺少可读标签」。调用方自己传了
+ * `label` 时，屏上是它的词、不是这里的占位值，漏词**没有可见后果**——照报只会
  * 把频道刷满假警报（实测：审批决策记录传了 `:label` 还在报 `approve` 缺词），
  * 真正的漏词反而被淹掉。所以由调用方声明「这次的词表结果是否会上屏」。
  */
@@ -207,7 +245,7 @@ export function resolveStatus(
   if (label === undefined && raw && options?.warnOnMissing !== false)
     warnMissingStatusLabel(key, raw)
   return {
-    label: label ?? (raw || '未知'),
+    label: label ?? '—',
     tone: STATUS_TO_TONE.get(key) ?? 'neutral',
   }
 }

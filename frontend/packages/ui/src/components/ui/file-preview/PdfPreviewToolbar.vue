@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label="Previous page"
+        aria-label="上一页"
         :disabled="!canGoPrevious"
         @click="scroll?.scrollToPreviousPage('smooth')"
       >
@@ -119,7 +119,7 @@ onBeforeUnmount(() => {
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label="Next page"
+        aria-label="下一页"
         :disabled="!canGoNext"
         @click="scroll?.scrollToNextPage('smooth')"
       >
@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="flex items-center gap-1">
-      <Button variant="ghost" size="icon-sm" aria-label="Zoom out PDF" @click="zoom?.zoomOut()">
+      <Button variant="ghost" size="icon-sm" aria-label="缩小 PDF" @click="zoom?.zoomOut()">
         <ZoomOutIcon aria-hidden="true" />
       </Button>
       <div
@@ -137,14 +137,14 @@ onBeforeUnmount(() => {
       >
         {{ zoomLabel }}
       </div>
-      <Button variant="ghost" size="icon-sm" aria-label="Zoom in PDF" @click="zoom?.zoomIn()">
+      <Button variant="ghost" size="icon-sm" aria-label="放大 PDF" @click="zoom?.zoomIn()">
         <ZoomInIcon aria-hidden="true" />
       </Button>
       <div class="mx-1 h-5 w-px bg-border" aria-hidden="true" />
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label="Fit PDF width"
+        aria-label="适应 PDF 宽度"
         @click="zoom?.requestZoom(ZoomMode.FitWidth)"
       >
         <Maximize2Icon aria-hidden="true" />

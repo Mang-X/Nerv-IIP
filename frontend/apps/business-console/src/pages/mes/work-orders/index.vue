@@ -693,22 +693,6 @@ const terminalWorkOrderStatuses = new Set([
 function isTerminalWorkOrderStatus(status?: string | null) {
   return terminalWorkOrderStatuses.has(status?.toLowerCase() ?? '')
 }
-function formatStatus(value?: string | null) {
-  const map: Record<string, string> = {
-    blocked: '阻塞',
-    closed: '已关闭',
-    completed: '已完成',
-    created: '新建',
-    hold: '暂停',
-    inprogress: '执行中',
-    queued: '排队中',
-    ready: '可开工',
-    released: '已下达',
-    running: '执行中',
-    started: '已开工',
-  }
-  return value ? (map[value.toLowerCase()] ?? value) : '未知'
-}
 function newMesIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
@@ -924,7 +908,7 @@ function isNonEmpty(value: string) {
                 '未指定工作中心'
               }}
             </span>
-            <span class="text-xs text-muted-foreground">{{ formatStatus(task.status) }}</span>
+            <span class="text-xs text-muted-foreground">{{ statusLabel(task.status) }}</span>
           </div>
           <span v-if="!row.operationTasks?.length" class="text-xs text-muted-foreground"
             >暂无工序任务</span
@@ -1007,7 +991,7 @@ function isNonEmpty(value: string) {
             </div>
             <div class="flex justify-between gap-4">
               <dt class="text-muted-foreground">当前状态</dt>
-              <dd>{{ formatStatus(releaseIntentOrder.status) }}</dd>
+              <dd>{{ statusLabel(releaseIntentOrder.status) }}</dd>
             </div>
             <div class="flex justify-between gap-4">
               <dt class="text-muted-foreground">生产版本</dt>

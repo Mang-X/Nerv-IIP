@@ -977,7 +977,9 @@ function toIsoFromLocalInput(value: string) {
             @update:page-size="(v) => (templatePager.pageSize.value = String(v))"
           >
             <template #cell-isActive="{ row }"
-              ><NvStatusBadge :value="formatStatus(row.isActive)"
+              ><NvStatusBadge
+                :value="row.isActive ? 'active' : 'disabled'"
+                :label="formatStatus(row.isActive)"
             /></template>
           </NvDataTable>
         </NvTabsContent>

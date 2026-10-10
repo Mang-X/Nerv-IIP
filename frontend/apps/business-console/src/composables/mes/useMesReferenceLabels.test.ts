@@ -78,21 +78,21 @@ describe('MES 状态词表不吸收契约漂移', () => {
     // 加成「先原样、再 lower」（PascalCase 域死、工单域活）还是「先原样、再首字母大写」
     // （工单域活、PascalCase 域死），两条里总有一条会红 —— 早先只钉工单那一对，
     // 归一化恰好只对工单生效时整条断言会一起放过。
-    // 查不到时回吐原值（不是空串），所以负例断言的是「原样返回」。
+    // 查不到时显示「—」，负例不能把漂移码翻译为已知状态。
     expect(statusLabel('Queued')).toBe('待开工')
-    expect(statusLabel('queued')).toBe('queued')
+    expect(statusLabel('queued')).toBe('—')
     expect(statusLabel('InProgress')).toBe('执行中')
-    expect(statusLabel('inProgress')).toBe('inProgress')
+    expect(statusLabel('inProgress')).toBe('—')
     expect(statusLabel('ScheduleInvalidated')).toBe('排程已失效')
-    expect(statusLabel('scheduleInvalidated')).toBe('scheduleInvalidated')
+    expect(statusLabel('scheduleInvalidated')).toBe('—')
     // 工单是真小写，PascalCase 变体同样必须查不到。
     expect(statusLabel('created')).toBe('已创建')
-    expect(statusLabel('Created')).toBe('Created')
+    expect(statusLabel('Created')).toBe('—')
     // 领料单与完工入库是另外两个 PascalCase 域，各钉一对。
     expect(statusLabel('PartiallyReceived')).toBe('部分接收')
-    expect(statusLabel('partiallyReceived')).toBe('partiallyReceived')
+    expect(statusLabel('partiallyReceived')).toBe('—')
     expect(statusLabel('InventoryPostingFailed')).toBe('入库失败')
-    expect(statusLabel('inventoryPostingFailed')).toBe('inventoryPostingFailed')
+    expect(statusLabel('inventoryPostingFailed')).toBe('—')
   })
 
   it('工序筛选项是 PascalCase 的真实值域，不含小写变体', () => {
@@ -131,5 +131,20 @@ describe('MES 状态词表不吸收契约漂移', () => {
     expect(receiptStatusTone('Requested')).toBe('neutral')
     // 小写不得命中，否则漂移又被静默吸收。
     expect(receiptStatusTone('posted')).toBe('neutral')
+  })
+})
+
+describe('MES 已登记状态中文展示', () => {
+  const { statusLabel } = useMesReferenceLabels()
+  it.each([
+    ['Paused', '暂停'],
+    ['ScheduleInvalidated', '排程已失效'],
+    ['cancelled', '已取消'],
+    ['scrapped', '已报废'],
+  ])('%s 展示 %s', (value, label) => {
+    expect(statusLabel(value)).toBe(label)
+  })
+  it.each([null, '', 'future-work-order-status'])('未知状态 %s 不回吐原码', (value) => {
+    expect(statusLabel(value)).toBe('—')
   })
 })
