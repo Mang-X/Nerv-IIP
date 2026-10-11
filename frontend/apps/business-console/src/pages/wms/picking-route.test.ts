@@ -57,6 +57,7 @@ const routeState = vi.hoisted(() => ({
 }))
 
 const wmsState = vi.hoisted(() => ({
+  taskQuantities: {} as { plannedQuantity?: number; executedQuantity?: number; uomCode?: string },
   filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
   completePicking: vi.fn(async () => undefined),
   createPicking: vi.fn(async () => undefined),
@@ -147,6 +148,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
           toLocationCode: 'STAGE-01',
           uomCode: 'EA',
           warehouseTaskId: 'pick-1',
+          ...wmsState.taskQuantities,
         },
       ]),
       pickingTasksError: shallowRef(undefined),
@@ -206,6 +208,17 @@ describe('WMS picking route context', () => {
     vi.clearAllMocks()
     routeState.query = {}
     wmsState.filters = undefined
+    wmsState.taskQuantities = {}
+  })
+
+  it.each([0, 0.7])('计划 1.4kg 与已执行 %skg 分列展示，保留真实状态', (executedQuantity) => {
+    wmsState.taskQuantities = { plannedQuantity: 1.4, executedQuantity, uomCode: 'kg' }
+    const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
+
+    expect(wrapper.get('[data-cell="plannedQuantity"]').text()).toBe('1.4')
+    expect(wrapper.get('[data-cell="executedQuantity"]').text()).toBe(String(executedQuantity))
+    expect(wrapper.get('[data-cell="uomCode"]').text()).toBe('kg')
+    expect(wrapper.get('[data-cell="status"]').text()).toBe('inProgress')
   })
 
   it('initializes picking filters from inventory lot context', () => {

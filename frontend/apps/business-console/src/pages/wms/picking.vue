@@ -423,10 +423,21 @@ const columns: NvDataTableColumn<PickingRow>[] = [
     accessor: (r) => `${locationLabel(r.fromLocationCode)} → ${locationLabel(r.toLocationCode)}`,
   },
   {
-    key: 'quantity',
-    header: '数量',
+    key: 'plannedQuantity',
+    header: '计划数量',
     align: 'end',
-    accessor: (r) => formatQuantity(r.executedQuantity ?? r.plannedQuantity),
+    accessor: (r) => formatQuantity(r.plannedQuantity),
+  },
+  {
+    key: 'executedQuantity',
+    header: '已执行数量',
+    align: 'end',
+    accessor: (r) => formatQuantity(r.executedQuantity),
+  },
+  {
+    key: 'uomCode',
+    header: '单位',
+    accessor: (r) => r.uomCode ?? '—',
   },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
   {
