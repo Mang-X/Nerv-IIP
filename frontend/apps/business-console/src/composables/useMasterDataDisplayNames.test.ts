@@ -15,7 +15,17 @@ const deviceRows = [
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: (resourceType: string) => ({
     filters: { take: 0 },
-    resources: computed(() => (resourceType === 'device-asset' ? deviceRows : [])),
+    resources: computed(() =>
+      resourceType === 'device-asset'
+        ? deviceRows
+        : resourceType === 'shift'
+          ? [
+              { code: 'NIGHT', displayName: '夜班' },
+              { code: 'UNNAMED', displayName: null },
+              { code: 'EMPTY', displayName: '' },
+            ]
+          : [],
+    ),
   }),
 }))
 
@@ -34,5 +44,15 @@ describe('useMasterDataDisplayNames 设备解析', () => {
 
     expect(resolveDevice('11111111-2222-3333-4444-555555555555')).toBeUndefined()
     expect(resolveDeviceCode('11111111-2222-3333-4444-555555555555')).toBeUndefined()
+  })
+})
+
+describe('班次名称来自目录', () => {
+  it('返回已登记名称，缺名称不回退系统码', () => {
+    const { resolveShift } = useMasterDataDisplayNames({ shifts: true })
+    expect(resolveShift('NIGHT')).toBe('夜班')
+    expect(resolveShift('UNNAMED')).toBeUndefined()
+    expect(resolveShift('EMPTY')).toBeUndefined()
+    expect(resolveShift('ABSENT')).toBeUndefined()
   })
 })

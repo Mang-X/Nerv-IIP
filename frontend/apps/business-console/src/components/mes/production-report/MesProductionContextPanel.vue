@@ -44,7 +44,7 @@ function bucketLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
     case 'day':
       return [date, code && (resolveSite(code) ?? code)].filter(Boolean).join(' · ') || '—'
     case 'shift':
-      return [code && (resolveShift(code) ?? code), date].filter(Boolean).join(' · ') || '—'
+      return [resolveShift(code) ?? '—', date].filter(Boolean).join(' · ') || '—'
     default:
       return (code && (resolveWorkCenter(code) ?? code)) || '—'
   }

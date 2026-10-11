@@ -319,6 +319,20 @@ describe('quality inspection task workbench page', () => {
     expect(state.push.mock.calls[0]?.[0]?.query).not.toHaveProperty('sourceDocumentNo')
   })
 
+  it('carries the existing source document business number into the inspection form', async () => {
+    state.query = { sourceDocumentNo: 'GR-001' }
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+    const action = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('认领并开始检验'))
+    await action?.trigger('click')
+    await flushPromises()
+    expect(state.push).toHaveBeenCalledWith({
+      path: '/quality/inspections',
+      query: expect.objectContaining({ sourceDocumentNo: 'GR-001', sourceDocumentId: 'GR-001' }),
+    })
+  })
+
   it('offers reassignment for a claimed task and never renders its account id', () => {
     state.claimedRow = true
     const wrapper = mount(InspectionTasksPage, { global: { stubs } })

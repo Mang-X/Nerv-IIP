@@ -83,6 +83,7 @@ const taskActionSpies = vi.hoisted(() => ({
   startInspection: vi.fn(),
   refreshInspectionTasks: vi.fn(),
 }))
+const createRecordSpy = vi.hoisted(() => vi.fn())
 const qualityTaskRead = vi.hoisted(() => vi.fn())
 const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
@@ -256,7 +257,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
       qualityState.inspectionFilters = filters
 
       return {
-        createInspectionRecord: vi.fn(),
+        createInspectionRecord: createRecordSpy,
         createInspectionRecordError: shallowRef(),
         createInspectionRecordPending: shallowRef(false),
         filters,
@@ -471,6 +472,7 @@ describe('quality route location behavior', () => {
     notifySpies.error.mockReset()
     notifySpies.operationFailure.mockReset()
     notifySpies.success.mockReset()
+    createRecordSpy.mockReset()
     taskActionSpies.startInspection.mockReset()
     taskActionSpies.refreshInspectionTasks.mockReset()
     taskActionSpies.refreshInspectionTasks.mockResolvedValue(undefined)
@@ -1007,6 +1009,84 @@ describe('quality route location behavior', () => {
     expect(vm.recordForm.resultLines[0]!.observedValue).toBe('10.1')
     expect(taskActionSpies.refreshInspectionTasks).not.toHaveBeenCalled()
   })
+
+  it.each([true, false])(
+    'uses explicit source document numbers in the %s task submission flow',
+    async (taskFlow) => {
+      routeState.route!.query = {
+        ...(taskFlow ? { inspectionTaskId: 'TASK-001' } : {}),
+        inspectionPlanId: 'PLAN-001',
+        sourceDocumentNo: 'GR-20261011-000008',
+        sourceType: 'receiving',
+        sourceService: 'wms',
+        skuCode: 'SKU-RM-001',
+        quantity: '12',
+        action: 'create',
+      }
+      const submit = taskFlow ? taskActionSpies.startInspection : createRecordSpy
+      submit.mockResolvedValueOnce({
+        data: { inspectionRecordId: '01a0f250-1234-7234-8234-123456789abc' },
+      })
+      const wrapper = mountQualityPage(InspectionsPage)
+      await nextRenderTick()
+      const vm = wrapper.vm as unknown as {
+        recordForm: { resultLines: Array<{ observedValue: string }> }
+        recordSheetOpen: boolean
+        submitInspectionRecord: () => Promise<void>
+      }
+      vm.recordForm.resultLines[0]!.observedValue = '10.1'
+      await nextRenderTick()
+      await vm.submitInspectionRecord()
+      expect(notifySpies.success).toHaveBeenCalledWith(
+        `来源单据 GR-20261011-000008 的检验记录已提交${taskFlow ? '，待检任务已闭合。' : '。'}`,
+      )
+      expect(vm.recordSheetOpen).toBe(false)
+      if (taskFlow)
+        expect(routerSpies.push).toHaveBeenCalledWith({ path: '/quality/inspection-tasks' })
+      else
+        expect(createRecordSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sourceDocumentId: 'GR-20261011-000008',
+            inspectedQuantity: 12,
+          }),
+        )
+    },
+  )
+
+  it.each([
+    [true, '01a0f250-1234-7234-8234-123456789abc'],
+    [false, '01a0f250-1234-7234-8234-123456789abc'],
+    [true, undefined],
+    [false, undefined],
+  ])(
+    'does not use internal identifiers when the %s task flow has no business number (%s)',
+    async (taskFlow, recordId) => {
+      routeState.route!.query = {
+        ...(taskFlow ? { inspectionTaskId: 'TASK-001' } : {}),
+        inspectionPlanId: 'PLAN-001',
+        sourceDocumentId: 'source-internal-001',
+        sourceType: 'receiving',
+        sourceService: 'wms',
+        skuCode: 'SKU-RM-001',
+        quantity: '12',
+        action: 'create',
+      }
+      const submit = taskFlow ? taskActionSpies.startInspection : createRecordSpy
+      submit.mockResolvedValueOnce({ data: { inspectionRecordId: recordId } })
+      const wrapper = mountQualityPage(InspectionsPage)
+      await nextRenderTick()
+      const vm = wrapper.vm as unknown as {
+        recordForm: { resultLines: Array<{ observedValue: string }> }
+        submitInspectionRecord: () => Promise<void>
+      }
+      vm.recordForm.resultLines[0]!.observedValue = '10.1'
+      await nextRenderTick()
+      await vm.submitInspectionRecord()
+      expect(notifySpies.success).toHaveBeenCalledWith(
+        `检验记录已提交${taskFlow ? '，待检任务已闭合。' : '。'}`,
+      )
+    },
+  )
 
   // #1326：计量型（variable）特性必须提交数值 measuredValue，缺失时后端会以领域 400 拒绝。
   it('submits measuredValue for variable characteristics and gates submit on a numeric value', async () => {
