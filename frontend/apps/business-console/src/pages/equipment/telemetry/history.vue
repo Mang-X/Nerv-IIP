@@ -83,10 +83,7 @@ const tagPickerOptions = computed<EntityPickerOption[]>(() => {
   const tagKey = filters.tagKey.trim()
   // 目录尚未回来 / 该设备没登记标签时，仍把当前生效的筛选值显示出来，不让选择器"看着是空的"。
   if (!tagKey || selectedTagInCatalog.value) return tagOptions.value
-  return [
-    ...tagOptions.value,
-    { value: tagKey, label: '—', hint: '当前筛选' },
-  ]
+  return [...tagOptions.value, { value: tagKey, label: '—', hint: '当前筛选' }]
 })
 watch([() => filters.deviceAssetId, tagOptions, tagsPending], () => {
   if (tagsPending.value || !filters.tagKey.trim()) return
