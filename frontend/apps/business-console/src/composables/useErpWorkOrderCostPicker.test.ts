@@ -22,7 +22,7 @@ vi.mock('@pinia/colada', () => ({
   }),
 }))
 
-// PublicContract: #3783 财务页工单候选取自 ERP 工单成本，服务端按关键字搜索。
+// PublicContract: #3783 ERP 财务候选与 #4300 业务编号展示；身份不作为缺名占位。
 describe('ERP work-order cost picker', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -47,6 +47,43 @@ describe('ERP work-order cost picker', () => {
     })
   })
 
+  it.each(['', '  ', '01234567-89ab-cdef-0123-456789abcdef'])(
+    'does not display a missing or internal work-order identifier: %j',
+    (workOrderId) => {
+      colada.data = {
+        success: true,
+        data: { items: [{ workOrderId, skuCode: 'FG-01', costKind: 'ordinary' }], total: 1 },
+      }
+
+      const picker = useErpWorkOrderCostPicker('')
+
+      expect(picker.options.value).toEqual([{ value: workOrderId, label: '—', hint: 'FG-01' }])
+    },
+  )
+
+  it('keeps the original identity when the selected business number is in the results', () => {
+    colada.data = {
+      success: true,
+      data: {
+        items: [{ workOrderId: 'WO-0186', skuCode: 'FG-01', costKind: 'ordinary' }],
+        total: 1,
+      },
+    }
+
+    expect(useErpWorkOrderCostPicker('WO-0186').options.value).toEqual([
+      { value: 'WO-0186', label: 'WO-0186', hint: 'FG-01' },
+    ])
+  })
+
+  it.each(['WO-0999', '01234567-89ab-cdef-0123-456789abcdef'])(
+    'keeps an unavailable selection neutral without changing its identity: %s',
+    (selected) => {
+      const picker = useErpWorkOrderCostPicker(selected)
+
+      expect(picker.options.value).toEqual([{ value: selected, label: '—' }])
+    },
+  )
+
   it('offers work orders with their SKU and keeps a selection outside the current page', () => {
     colada.data = {
       success: true,
@@ -62,7 +99,7 @@ describe('ERP work-order cost picker', () => {
     const picker = useErpWorkOrderCostPicker('WO-0999')
 
     expect(picker.options.value).toEqual([
-      { value: 'WO-0999', label: 'WO-0999' },
+      { value: 'WO-0999', label: '—' },
       { value: 'WO-0186', label: 'WO-0186', hint: 'FG-01' },
       { value: 'WO-RW-0007', label: 'WO-RW-0007', hint: 'FG-01 · 返工' },
     ])
