@@ -600,9 +600,10 @@ function setLaneOrder(value: LaneOrder) {
           <p class="mt-1 text-lg font-semibold text-foreground">{{ resourceCount }}</p>
         </div>
         <div class="rounded-lg border bg-card p-3">
-          <p class="text-xs text-muted-foreground">冲突</p>
+          <p class="text-xs text-muted-foreground">冲突 / 预警</p>
           <p class="mt-1 text-lg font-semibold text-foreground">
-            {{ plan.conflicts?.length ?? 0 }}
+            {{ plan.conflicts?.filter((item) => item.severity === 'error').length ?? 0 }} /
+            {{ plan.conflicts?.filter((item) => item.severity !== 'error').length ?? 0 }}
           </p>
         </div>
         <div class="rounded-lg border bg-card p-3">
@@ -758,6 +759,7 @@ function setLaneOrder(value: LaneOrder) {
                 :key="conflict.id || conflict.message"
                 class="rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs text-foreground"
               >
+                {{ conflict.severity === 'error' ? '阻塞' : '预警' }} ·
                 {{ conflict.message || conflictReasonLabel[conflict.reason] }}
               </p>
             </div>
