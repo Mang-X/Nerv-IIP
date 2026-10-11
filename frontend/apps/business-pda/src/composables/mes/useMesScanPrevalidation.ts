@@ -397,9 +397,11 @@ export function useMesScanPrevalidation(options: MesScanPrevalidationOptions) {
       case 'ambiguous':
         return '找到多个候选，请手动选择；系统不会猜测。'
       case 'unknown':
-        return '无法确认该扫码内容，已阻止当前操作。'
+        return '未找到该工单/工序或其他扫码对象，已阻止当前操作。'
       case 'unsupported':
-        return '已识别，但当前页面不支持使用该对象。'
+        return reasonCode.value === 'barcode-format-unsupported'
+          ? '未找到该工单/工序或其他扫码对象，已阻止当前操作。'
+          : '已识别，但当前页面不支持使用该对象。'
       case 'forbidden':
         return '当前账号无权解析或预校验该扫码内容。'
       case 'rejected':
