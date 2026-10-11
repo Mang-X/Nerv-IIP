@@ -4,7 +4,7 @@ import type { RouteLocationRaw } from 'vue-router'
 import { RouterLink } from 'vue-router'
 import {
   Separator,
-  Sidebar,
+  NvSidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
@@ -48,7 +48,7 @@ defineEmits<{
 
 <template>
   <SidebarProvider>
-    <Sidebar collapsible="icon">
+    <NvSidebar collapsible="icon">
       <SidebarHeader>
         <NvSidebarBrand
           :as="RouterLink"
@@ -65,7 +65,7 @@ defineEmits<{
         <NavUser :sign-out-label="signOutLabel" :user="user" @sign-out="$emit('signOut')" />
       </SidebarFooter>
       <NvSidebarRail />
-    </Sidebar>
+    </NvSidebar>
 
     <SidebarInset>
       <header

@@ -342,6 +342,11 @@ describe('FilePreview', () => {
     })
 
     expect(wrapper.get('[data-slot="file-preview-pdf-toolbar"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="上一页"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="下一页"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="放大 PDF"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="缩小 PDF"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="适应 PDF 宽度"]')).toBeTruthy()
     expect(wrapper.get('[data-testid="embedpdf-render-layer"]').text()).toBe('0')
     expect(wrapper.get('[data-slot="file-preview-pdf-zoom"]').text()).toBe('100%')
     expect(wrapper.find('[data-testid="embedpdf-viewer"]').exists()).toBe(false)
@@ -392,9 +397,12 @@ describe('FilePreview', () => {
     expect(wrapper.get('[data-testid="file-preview-image"]').attributes('src')).toBe(
       '/files/evidence.png',
     )
-    expect(wrapper.get('button[aria-label="Zoom in evidence.png"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="放大 evidence.png"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="缩小 evidence.png"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="向左旋转 evidence.png"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="向右旋转 evidence.png"]')).toBeTruthy()
 
-    await wrapper.get('button[aria-label="Zoom in evidence.png"]').trigger('click')
+    await wrapper.get('button[aria-label="放大 evidence.png"]').trigger('click')
 
     expect(wrapper.get('[data-slot="file-preview-zoom"]').text()).toBe('110%')
   })
@@ -411,7 +419,7 @@ describe('FilePreview', () => {
     expect(wrapper.emitted('ready')).toBeUndefined()
 
     await wrapper.get('[data-testid="file-preview-image"]').trigger('load')
-    await wrapper.get('button[aria-label="Open evidence.png"]').trigger('click')
+    await wrapper.get('button[aria-label="打开 evidence.png"]').trigger('click')
 
     expect(wrapper.emitted('ready')?.[0]).toEqual(['image'])
     expect(wrapper.emitted('openSource')?.[0]).toEqual(['/files/evidence.png'])
@@ -462,10 +470,10 @@ describe('FilePreview', () => {
     })
 
     expect(wrapper.text()).toContain('还没有可用的预览源')
-    expect(wrapper.find('button[aria-label="Open work-instruction.pdf"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="打开 work-instruction.pdf"]').exists()).toBe(false)
   })
 
-  it('uses an unsupported state for unpreviewable files', () => {
+  it('uses an unsupported state with a Chinese source action for unpreviewable files', async () => {
     const wrapper = mount(FilePreview, {
       props: {
         src: '/files/legacy.doc',
@@ -476,6 +484,10 @@ describe('FilePreview', () => {
 
     expect(wrapper.text()).toContain('暂不支持预览')
     expect(wrapper.text()).toContain('legacy.doc')
+    await wrapper
+      .get('[data-slot="file-preview-unsupported"] button[aria-label="打开 legacy.doc"]')
+      .trigger('click')
+    expect(wrapper.emitted('openSource')?.[0]).toEqual(['/files/legacy.doc'])
   })
 
   it('keeps office canvas stable when reloading a canvas-backed document', async () => {
@@ -488,6 +500,9 @@ describe('FilePreview', () => {
 
     await flushPromises()
     expect(wrapper.find('canvas').exists()).toBe(true)
+    expect(wrapper.get('button[aria-label="缩小文档"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="上一页"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="下一页"]')).toBeTruthy()
 
     await wrapper.setProps({ src: '/files/work-instruction-v2.docx' })
     await flushPromises()
@@ -592,7 +607,7 @@ describe('FilePreview', () => {
 
     expect(wrapper.text()).toContain('100%')
 
-    await wrapper.get('button[aria-label="Zoom in document"]').trigger('click')
+    await wrapper.get('button[aria-label="放大文档"]').trigger('click')
     await vi.advanceTimersByTimeAsync(200)
     await flushPromises()
 
@@ -600,7 +615,7 @@ describe('FilePreview', () => {
     expect(officeViewerMocks.docxOptions).toHaveLength(1)
     expect(officeViewerMocks.docxRenderWidths).toEqual([704])
 
-    await wrapper.get('button[aria-label="Reset document zoom"]').trigger('click')
+    await wrapper.get('button[aria-label="重置文档缩放"]').trigger('click')
     await vi.advanceTimersByTimeAsync(200)
     await flushPromises()
 
@@ -660,10 +675,10 @@ describe('FilePreview', () => {
 
     await flushPromises()
 
-    expect(pptx.get('button[aria-label="Previous slide"]')).toBeTruthy()
-    expect(pptx.get('button[aria-label="Next slide"]')).toBeTruthy()
-    expect(xlsx.get('button[aria-label="Previous sheet"]')).toBeTruthy()
-    expect(xlsx.get('button[aria-label="Next sheet"]')).toBeTruthy()
+    expect(pptx.get('button[aria-label="上一张幻灯片"]')).toBeTruthy()
+    expect(pptx.get('button[aria-label="下一张幻灯片"]')).toBeTruthy()
+    expect(xlsx.get('button[aria-label="上一个工作表"]')).toBeTruthy()
+    expect(xlsx.get('button[aria-label="下一个工作表"]')).toBeTruthy()
   })
 
   it('allows jumping Word pages from the toolbar', async () => {

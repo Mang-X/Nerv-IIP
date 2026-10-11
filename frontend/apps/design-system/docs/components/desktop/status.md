@@ -30,7 +30,7 @@ import { NvStatusDot, NvStatusBadge } from '@nerv-iip/ui'
 
 ## 状态徽标 NvStatusBadge
 
-按原始状态值自动解析文案与色调，`pulse` 标记进行中状态。
+按原始状态值自动解析中文文案与色调，`pulse` 标记进行中状态。空值或未知状态显示中性色「—」，不展示系统原码；开发期仍对缺词告警一次。传入 `label` 可明确覆盖展示文案，此时不产生缺词告警。
 
 <Demo>
   <span class="flex flex-wrap items-center gap-2">

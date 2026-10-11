@@ -194,6 +194,7 @@ const NV_ALL = [
   'NvSheetSize',
   'NvSheetTitle',
   'NvSheetTrigger',
+  'NvSidebar',
   'NvSidebarBrand',
   'NvSidebarDot',
   'NvSidebarRail',

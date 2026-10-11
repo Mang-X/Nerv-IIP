@@ -199,7 +199,7 @@ export const mesHandoverStatusOptions = statusOptions(['Open', 'Accepted'], {
 
 /**
  * 词表漏词只在开发期告警一次，生产构建里整段被摇树掉。
- * 仍然回吐原值（不让状态列空白），但别让漏词沉默到真机走查才被发现。
+ * 未知码显示「—」，开发期保留告警以便发现已知状态漏词。
  */
 const warnedStatusValues = new Set<string>()
 function warnMissingStatusLabel(value: string) {
@@ -211,15 +211,15 @@ function warnMissingStatusLabel(value: string) {
 
 export function useMesReferenceLabels() {
   function statusLabel(value?: string | null) {
-    if (!value) return '未知'
+    if (!value) return '—'
     // 直查，不做大小写归一化：见本文件 RECEIPT_STATUS_LABELS 上方的说明。
-    // 查不到就回吐原值并告警，而不是换个拼写再试一次 —— 那层兼容正是
+    // 查不到就显示「—」并告警，而不是换个拼写再试一次 —— 那层兼容正是
     // `contracts-and-codegen.md`「不得用前端临时适配掩盖后端漂移」所禁止的。
     // 刻意不导出只读表入口给测试另开一条路：守卫必须打在这条生产渲染路径上，
     // 否则有人把归一化加回这里而测试仍绿，正确性就成了实现巧合而非断言保证。
     const label = statusLabels[value as MesStatusValue]
     if (label === undefined) warnMissingStatusLabel(value)
-    return label ?? value
+    return label ?? '—'
   }
 
   function emptyText(value?: string | null) {

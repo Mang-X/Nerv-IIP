@@ -9,7 +9,7 @@ describe('NvAppShellInset', () => {
     const wrapper = mount(AppShellInset, {
       global: {
         stubs: {
-          Sidebar: passthrough,
+          NvSidebar: passthrough,
           SidebarContent: passthrough,
           SidebarFooter: passthrough,
           SidebarHeader: passthrough,

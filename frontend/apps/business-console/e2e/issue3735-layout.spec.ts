@@ -278,7 +278,7 @@ async function routeBusinessConsoleApi(route: Route) {
                   operationSequence: 10,
                   workCenterCode: 'WC-CYL-01',
                   workCenterName: '缸筒加工中心一线',
-                  status: 'inProgress',
+                  status: 'InProgress',
                 },
                 {
                   operationTaskId: 'ot-2',
@@ -286,7 +286,7 @@ async function routeBusinessConsoleApi(route: Route) {
                   operationSequence: 20,
                   workCenterCode: 'WC-CYL-02',
                   workCenterName: '缸筒热处理',
-                  status: 'queued',
+                  status: 'Queued',
                 },
               ],
             },

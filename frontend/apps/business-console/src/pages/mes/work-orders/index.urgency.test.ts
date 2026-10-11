@@ -190,7 +190,7 @@ function mountList(permissions: string[] = []) {
         NvDataTable: {
           props: ['rows', 'columns'],
           template:
-            '<div><div v-for="(row, i) in rows" :key="i" data-testid="work-order-row" :data-status="row.status"><slot name="cell-status" :row="row" /><slot name="cell-urgency" :row="row" /><slot name="cell-completedQuantity" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
+            '<div><div v-for="(row, i) in rows" :key="i" data-testid="work-order-row" :data-status="row.status"><slot name="cell-status" :row="row" /><slot name="cell-urgency" :row="row" /><slot name="cell-completedQuantity" :row="row" /><div data-testid="operations"><slot name="cell-operationCount" :row="row" /></div><slot name="cell-actions" :row="row" /></div></div>',
         },
         NvStatusBadge: { props: ['value', 'label'], template: '<span>{{ label ?? value }}</span>' },
         NvButton: { template: '<button><slot /></button>' },
@@ -325,5 +325,38 @@ describe('工单列表完成量与排产', () => {
         .disabled,
     ).toBe(true)
     expect(wrapper.find('[data-testid="scheduling-target"]').exists()).toBe(false)
+  })
+})
+
+describe('工单列表中文状态', () => {
+  it('工单取消、报废与工序暂停、排程失效均中文展示，未知状态不回吐', () => {
+    workOrders.items = [
+      {
+        workOrderId: 'WO-20261011-001',
+        status: 'cancelled',
+        operationTasks: [
+          { operationTaskId: 'OP-10', operationSequence: 10, status: 'Paused' },
+          { operationTaskId: 'OP-20', operationSequence: 20, status: 'ScheduleInvalidated' },
+        ],
+      },
+      {
+        workOrderId: 'WO-20261011-002',
+        status: 'scrapped',
+        operationTasks: [
+          { operationTaskId: 'OP-30', operationSequence: 30, status: 'future-operation-status' },
+        ],
+      },
+      { workOrderId: 'WO-20261011-003', status: 'future-work-order-status', operationTasks: [] },
+    ]
+    const wrapper = mountList()
+    const rows = wrapper.findAll('[data-testid="work-order-row"]')
+    expect(rows[0].text()).toContain('已取消')
+    expect(rows[0].get('[data-testid="operations"]').text()).toContain('暂停')
+    expect(rows[0].get('[data-testid="operations"]').text()).toContain('排程已失效')
+    expect(rows[1].text()).toContain('已报废')
+    expect(rows[1].get('[data-testid="operations"]').text()).toContain('—')
+    expect(rows[2].text()).toContain('—')
+    expect(wrapper.text()).not.toContain('future-')
+    wrapper.unmount()
   })
 })

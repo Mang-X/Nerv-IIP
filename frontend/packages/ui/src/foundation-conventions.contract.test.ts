@@ -154,10 +154,10 @@ describe('状态词表', () => {
     )
   })
 
-  it('空值给「未知」，未登记的码原样回吐（便于发现漏登记）', () => {
-    expect(resolveStatus(null).label).toBe('未知')
-    expect(resolveStatus('').label).toBe('未知')
-    expect(resolveStatus('brand-new-code').label).toBe('brand-new-code')
+  it('空值与未登记码给中性占位，不回吐原码', () => {
+    expect(resolveStatus(null).label).toBe('—')
+    expect(resolveStatus('').label).toBe('—')
+    expect(resolveStatus('brand-new-code')).toEqual({ label: '—', tone: 'neutral' })
   })
 
   // 后端 StockQualityStatus.cs 里库存质量状态只有四个规范值（写入时 Normalize，

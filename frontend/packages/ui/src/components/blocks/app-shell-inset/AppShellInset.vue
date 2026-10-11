@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import {
-  Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarInset,
   SidebarProvider,
 } from '../../ui/sidebar'
-import { NvSidebarRail, NvSidebarTrigger } from '../../pc/sidebar'
+import { NvSidebar, NvSidebarRail, NvSidebarTrigger } from '../../pc/sidebar'
 import { Separator } from '../../ui/separator'
 
 withDefaults(
@@ -21,7 +20,7 @@ withDefaults(
 
 <template>
   <SidebarProvider>
-    <Sidebar variant="inset" :collapsible="collapsible">
+    <NvSidebar variant="inset" :collapsible="collapsible">
       <SidebarHeader v-if="$slots['sidebar-header']">
         <slot name="sidebar-header" />
       </SidebarHeader>
@@ -32,7 +31,7 @@ withDefaults(
         <slot name="sidebar-footer" />
       </SidebarFooter>
       <NvSidebarRail />
-    </Sidebar>
+    </NvSidebar>
 
     <SidebarInset class="min-w-0">
       <header
