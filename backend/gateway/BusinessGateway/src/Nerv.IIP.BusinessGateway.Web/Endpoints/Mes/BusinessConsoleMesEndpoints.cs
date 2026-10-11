@@ -1299,12 +1299,12 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
             var worker = directory.Items.FirstOrDefault();
             if (worker is null)
             {
-                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"未找到员工，工人标识 = {workerId}");
+                throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, "未找到员工，无法派工。");
             }
 
             if (!worker.Active || !string.Equals(worker.EmploymentStatus, "active", StringComparison.Ordinal))
             {
-                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"员工 {worker.DisplayName} 当前不在岗，无法派工。");
+                throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, "员工当前不在岗，无法派工。");
             }
 
             return (workerId, worker);
@@ -1945,9 +1945,9 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
             cancellationToken);
         if (!string.Equals(operationTask.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal))
         {
-            throw new BusinessServiceProxyException(
+            throw BusinessServiceProxyException.FromLocalRejection(
                 System.Net.HttpStatusCode.Forbidden,
-                "work-scope-not-authorized");
+                PrincipalWorkScopeStableWireCodes.NotAuthorized);
         }
         return await coordinator.RecordAsync(
             tokenProvider.BearerToken,

@@ -26,6 +26,19 @@ beforeEach(() => {
 })
 
 describe('friendlyErrorMessage', () => {
+  it('将本地工作范围拒绝显示为范围指引，并保留两条派工原因', () => {
+    notifyOperationFailure(
+      '登记失败',
+      { message: 'work-scope-not-authorized' },
+      '登记失败，请稍后重试。',
+    )
+    expect(toastError).toHaveBeenCalledWith(
+      '登记失败：当前账号未获授权操作此工作范围，请切换到已授权范围或联系管理员。',
+    )
+    expect(friendlyErrorMessage('未找到员工，无法派工。')).toBe('未找到员工，无法派工。')
+    expect(friendlyErrorMessage('员工当前不在岗，无法派工。')).toBe('员工当前不在岗，无法派工。')
+  })
+
   it.each([
     [
       'stored-maintenance-work-order-receipt-is-invalid',

@@ -3998,6 +3998,8 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("work-scope-not-authorized", body.RootElement.GetProperty("message").GetString());
         Assert.Equal(0, mes.RecordDowntimeCallCount);
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
@@ -9944,6 +9946,8 @@ public sealed class BusinessGatewayProxyTests
             new { assignedUserId = "user-not-registered", idempotencyKey = "dispatch-3" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("未找到员工，无法派工。", body.RootElement.GetProperty("message").GetString());
         Assert.Null(mes.LastAssignDispatchRequest);
     }
 
@@ -9976,6 +9980,8 @@ public sealed class BusinessGatewayProxyTests
             new { assignedUserId = "user-op-005", idempotencyKey = "dispatch-4" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("员工当前不在岗，无法派工。", body.RootElement.GetProperty("message").GetString());
         Assert.Null(mes.LastAssignDispatchRequest);
     }
 

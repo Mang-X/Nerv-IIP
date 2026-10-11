@@ -123,5 +123,5 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
         values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
 
     private static BusinessServiceProxyException Forbidden() =>
-        new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+        BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized);
 }
