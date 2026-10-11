@@ -321,6 +321,7 @@ vi.mock('@/composables/useBusinessMasterData', async () => {
           : resourceType === 'unit-of-measure'
             ? [
                 { code: 'pcs', displayName: '件' },
+                { code: 'box', displayName: '箱' },
                 { code: 'kg', displayName: '' },
               ]
             : [],

@@ -308,6 +308,7 @@ describe('PlanningWorkbench', () => {
 
   it.each([
     ['pcs', '120 件'],
+    ['box', '120 箱'],
     ['unknown-unit', '120 —'],
     ['kg', '120 —'],
   ])('MPS 数量保留数值并按目录显示单位：%s', async (uomCode, expected) => {
