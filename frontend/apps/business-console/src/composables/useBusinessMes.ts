@@ -2891,6 +2891,7 @@ export function useMesFinishedGoodsReceipts() {
     onSuccess() {
       void invalidateMesQueries(queryCache, [
         'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+        'listBusinessConsoleMesReceivableProducedLots',
         'getBusinessConsoleMesOverview',
       ]).catch(ignoreBackgroundError)
     },

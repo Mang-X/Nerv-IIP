@@ -158,6 +158,25 @@ describe('ReceiptCreateSheet', () => {
     state.keyCounter = 0
   })
 
+  it('同一在途登记只提交一次，成功后关表单', async () => {
+    let finish!: (value: unknown) => void
+    state.createReceiptRequest = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const wrapper = mountSheet('WO-A', 'FG-A')
+    await flushPromises()
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('form').trigger('submit')
+    expect(state.createReceiptRequest).toHaveBeenCalledTimes(1)
+    finish({ success: true, data: { requestNo: 'FGR-4280-002' } })
+    await flushPromises()
+    expect(wrapper.emitted('update:open')).toEqual([[false]])
+    expect(wrapper.emitted('created')).toHaveLength(1)
+  })
+
   // 回归 #1285：登记体的 uomCode 曾写死为 'EA'，世界里没有这个单位，后端单位换算必然失败。
   it('submits the finished-goods base unit of measure from SKU master data', async () => {
     const wrapper = mountSheet('WO-A', 'FG-A')

@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { ref, shallowRef } from 'vue'
+import { reactive, ref, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
@@ -179,7 +179,7 @@ const stubs = {
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { props: ['value'], template: '<div data-testid="status-option"><slot /></div>' },
   NvSelectValue: { template: '<span />' },
-  NvSheet: { props: ['open'], template: '<div><slot /></div>' },
+  NvSheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvSheetContent: { template: '<div><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -351,28 +351,62 @@ describe('MES receipts — failed inventory posting retry', () => {
     await flushPromises()
   }
 
-  it('rotates the idempotency key per registration → two receipts for the same work order', async () => {
+  it('成功后关闭表单并显示登记单号，下一笔须显式重新打开', async () => {
     routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.createReceiptRequest = vi
+      .fn()
+      .mockResolvedValue({ success: true, data: { requestNo: 'FGR-4280-001' } })
     const wrapper = mountPage()
     await flushPromises()
-
     await submitReceipt(wrapper)
-    // 成功后轮换幂等键，连录第二笔成为独立申请。
+    expect(wrapper.find('form').exists()).toBe(false)
+    routeState.query.status = 'Requested'
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(notifySpies.success.mock.calls[0]![0]).toContain('FGR-4280-001')
+    expect(notifySpies.success.mock.calls[0]![0]).toContain('成本')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '登记完工入库')!
+      .trigger('click')
     await submitReceipt(wrapper)
+    const bodies = receiptState.createReceiptRequest.mock.calls.map(
+      ([body]) => body as { idempotencyKey: string },
+    )
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0]!.idempotencyKey).not.toBe(bodies[1]!.idempotencyKey)
+  })
 
-    expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(2)
-    const key1 = (
-      receiptState.createReceiptRequest.mock.calls[0]![0] as { idempotencyKey?: string }
-    ).idempotencyKey
-    const key2 = (
-      receiptState.createReceiptRequest.mock.calls[1]![0] as { idempotencyKey?: string }
-    ).idempotencyKey
-    expect(key1).toBeTruthy()
-    expect(key2).toBeTruthy()
-    expect(key1).not.toBe(key2)
-    // 不再是「按工单恒定」的键（否则第二笔会回放第一张或幂等冲突）。
-    expect(key1).not.toBe('receipt-WO-1')
-    expect(notifySpies.success).toHaveBeenCalledTimes(2)
+  it('只有工单标识的入口提供可操作的上下文恢复', async () => {
+    routeState.query = { workOrderId: 'WO-1' }
+    const wrapper = mountPage()
+    const recover = wrapper.findAll('button').find((button) => button.text().includes('工单详情'))!
+    expect(recover.attributes('disabled')).toBeUndefined()
+    await recover.trigger('click')
+    expect(routerState.push).toHaveBeenCalledWith('/mes/work-orders/WO-1')
+  })
+
+  it('返回已登记完的工单时不自动打开空表单', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.producedLots = []
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.text()).toContain('暂无可入库产出')
+    expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
+  })
+
+  it('剩余量为零的产出批次不开放登记', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.producedLots = [
+      { producedLotNo: 'LOT-FG-1', goodQuantity: 8, remainingQuantity: 0 },
+    ]
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    const entry = wrapper.findAll('button').find((button) => button.text() === '登记完工入库')!
+    expect(entry.attributes('disabled')).toBeDefined()
+    expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
   })
 
   it('复用失败登记的同一幂等键，避免失败重试产生新意图', async () => {
@@ -417,11 +451,11 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await submitReceipt(wrapper)
+    expect(wrapper.find('form').exists()).toBe(false)
 
     // 无产出批次 → canCreate 为假，提交被拦截，且给出「先报工产出」引导而非盲提交后 500。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('该工单暂无可入库的产出批次')
+    expect(wrapper.text()).toContain('暂无可入库产出')
   })
 
   it('blocks submit when quantity exceeds the selected lot remaining (no request, inline error)', async () => {
@@ -449,7 +483,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await submitReceipt(wrapper)
+    expect(wrapper.find('form').exists()).toBe(false)
 
     // 加载失败区别于真实空态：给重试出口、不误报「暂无」，提交仍被拦截（未选批次）。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()

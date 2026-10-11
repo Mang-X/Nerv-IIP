@@ -14,6 +14,7 @@ import WorkOrderDetailPage from './[workOrderId].vue'
  * 不用空白冒充已发料。
  */
 
+const routerPush = vi.hoisted(() => vi.fn())
 const routeState = vi.hoisted(() => ({
   params: { workOrderId: 'WO-1' },
   query: {} as Record<string, string>,
@@ -21,7 +22,7 @@ const routeState = vi.hoisted(() => ({
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: routerPush, replace: vi.fn() }),
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 
@@ -59,6 +60,7 @@ const state = vi.hoisted(() => ({
   baseUomBySku: new Map<string, string>(),
   skusPending: false,
   catalogResolved: true,
+  detailPending: false,
   detail: {} as Record<string, unknown>,
   materialReadiness: {} as Record<string, unknown>,
 }))
@@ -104,7 +106,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     createMaterialIssueRequestPending: ref(false),
     detail: ref(state.detail),
     detailError: ref(undefined),
-    detailPending: ref(false),
+    detailPending: ref(state.detailPending),
     filters: reactive({ organizationId: 'org', environmentId: 'dev', workOrderId: 'WO-1' }),
     finishedGoodsReceiptRequests: ref([]),
     materialIssueRequests: ref(state.materialIssueRequests),
@@ -232,6 +234,8 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     state.baseUomBySku.set('MAT-OIL', 'L')
     state.skusPending = false
     state.catalogResolved = true
+    state.detailPending = false
+    routerPush.mockReset()
     state.detail = {
       workOrderId: 'WO-1',
       skuId: 'FG-1',
@@ -242,6 +246,28 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
       qualityHolds: [],
     }
     state.materialReadiness = { items: [], readinessStatus: 'Ready', blockingReasons: [] }
+  })
+
+  it('详情加载中不能发起缺上下文的完工登记', async () => {
+    state.detail = {}
+    state.detailPending = true
+    const wrapper = mountDetail(['business.mes.work-orders.read'])
+    const entry = wrapper.findAll('button').find((button) => button.text() === '完工入库')!
+    expect(entry.attributes('disabled')).toBeDefined()
+    await entry.trigger('click')
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
+  it('详情就绪后带真实成品和数量进入完工登记', async () => {
+    const wrapper = mountDetail(['business.mes.work-orders.read'])
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '完工入库')!
+      .trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/mes/receipts',
+      query: { workOrderId: 'WO-1', skuId: 'FG-1', quantity: '10' },
+    })
   })
 
   it('有领料管理权限时渲染「发起领料」入口', () => {
