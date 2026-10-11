@@ -513,6 +513,9 @@ async function submitDefect() {
       empty-message="暂无质量或不良记录。点击上方「登记缺陷」记录生产过程中的不良，登记后可在这里跟进处置与关闭。"
       @retry="refreshQuality"
     >
+      <template #cell-qualityItemId="{ row }">
+        <span :title="row.qualityItemId" class="block truncate">{{ row.qualityItemId }}</span>
+      </template>
       <template #cell-sourceDocumentId="{ row }">
         <RouterLink
           v-if="row.workOrderId"
@@ -520,7 +523,8 @@ async function submitDefect() {
             path: `/mes/work-orders/${encodeURIComponent(row.workOrderId!)}`,
             query: { operationTaskId: row.operationTaskId ?? undefined },
           }"
-          class="text-brand underline-offset-4 hover:underline"
+          :title="row.sourceDocumentId ?? undefined"
+          class="block truncate text-brand underline-offset-4 hover:underline"
         >
           {{ row.sourceDocumentId }}
         </RouterLink>
@@ -542,7 +546,8 @@ async function submitDefect() {
               workOrderId: row.workOrderId ?? undefined,
             },
           }"
-          class="text-brand underline-offset-4 hover:underline"
+          :title="row.ncrCode || row.ncrId"
+          class="block truncate text-brand underline-offset-4 hover:underline"
         >
           {{ row.ncrCode || row.ncrId }}
         </RouterLink>
