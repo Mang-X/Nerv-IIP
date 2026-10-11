@@ -9,10 +9,24 @@ test.beforeEach(async ({ page }) => {
   await seedStoredSession(page)
 })
 
-function resolveEnvelope(status: string, candidates: Array<Record<string, unknown>> = []) {
+function resolveEnvelope(
+  status: string,
+  candidates: Array<Record<string, unknown>> = [],
+  reasonCode: string | null = null,
+) {
   return {
     success: true,
-    data: { status, reasonCode: status.toUpperCase(), candidates, total: candidates.length },
+    data: {
+      status,
+      reasonCode,
+      candidates: candidates.map((candidate) => ({
+        authority: 'barcode-label',
+        source: 'barcode-label-print-item',
+        observedAtUtc: '2026-08-28T10:00:00Z',
+        ...candidate,
+      })),
+      total: candidates.length,
+    },
   }
 }
 
@@ -32,18 +46,28 @@ test('MES 四个现场页面在 375×812 明确呈现歧义、未知、不支持
     if (scannedValue === 'AMBIGUOUS') {
       return fulfillJson(
         route,
-        resolveEnvelope('ambiguous', [
-          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-1' } },
-          { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-2' } },
-        ]),
+        resolveEnvelope(
+          'ambiguous',
+          [
+            { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-1' } },
+            { objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-2' } },
+          ],
+          'multiple-source-documents',
+        ),
       )
     }
-    return fulfillJson(route, resolveEnvelope(scannedValue.toLowerCase()))
+    const outcomes: Record<string, { status: string; reasonCode: string }> = {
+      UNKNOWN: { status: 'unknown', reasonCode: 'managed-label-not-found' },
+      UNSUPPORTED: { status: 'unsupported', reasonCode: 'resolved-object-type-unsupported' },
+      FORBIDDEN: { status: 'forbidden', reasonCode: 'label-voided' },
+    }
+    const outcome = outcomes[scannedValue]!
+    return fulfillJson(route, resolveEnvelope(outcome.status, [], outcome.reasonCode))
   })
 
   const scenarios = [
     { path: '/mes/issue', value: 'AMBIGUOUS', message: '找到多个候选，请手动选择' },
-    { path: '/mes/operation', value: 'UNKNOWN', message: '无法确认该扫码内容' },
+    { path: '/mes/operation', value: 'UNKNOWN', message: '未找到' },
     { path: '/mes/report', value: 'UNSUPPORTED', message: '当前页面不支持使用该对象' },
     { path: '/mes/receipt', value: 'FORBIDDEN', message: '当前账号无权解析或预校验' },
   ]
@@ -54,6 +78,125 @@ test('MES 四个现场页面在 375×812 明确呈现歧义、未知、不支持
     await expect(page.getByTestId('mes-scan-status')).toContainText(scenario.message)
     await expect(page.locator('html')).toHaveJSProperty('scrollWidth', 375)
   }
+})
+
+test('报工区分未找到与已识别类型不支持，拒绝结果不写入且支持工序仍经过预校验', async ({ page }) => {
+  let productionReportWrites = 0
+  let materialPrevalidations = 0
+  const contextRequests: Array<Record<string, unknown>> = []
+  await page.route('**/api/business-console/v1/mes/production-reports', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    productionReportWrites += 1
+    return fulfillJson(route, { success: false, message: '报工写入不应发生。' }, 400)
+  })
+  await page.route('**/api/business-console/v1/mes/material-scan-prevalidation', (route) => {
+    materialPrevalidations += 1
+    return fulfillJson(route, { success: false, message: '不应调用物料预校验。' }, 400)
+  })
+  await page.route('**/api/business-console/v1/mes/context-scan-prevalidation', (route) => {
+    const request = route.request().postDataJSON() as Record<string, unknown>
+    contextRequests.push(request)
+    return fulfillJson(route, {
+      success: true,
+      data: {
+        workOrderId: 'WO-1',
+        operationTaskId: 'OP-1',
+        objectType: 'operationTask',
+        scannedObjectId: 'OP-1',
+        decision: 'accepted',
+        reasonCode: 'operation-task-scan-accepted',
+        evaluatedAtUtc: '2026-08-28T10:00:00Z',
+      },
+    })
+  })
+  const outcomes = [
+    {
+      value: 'FGAWO9990001',
+      status: 'unknown',
+      reasonCode: 'managed-label-not-found',
+      message: '未找到',
+    },
+    {
+      value: 'WO-NOT-EXIST-3869',
+      status: 'unsupported',
+      reasonCode: 'barcode-format-unsupported',
+      message: '未找到',
+    },
+    {
+      value: 'OTHER-TYPE-LABEL',
+      status: 'unsupported',
+      reasonCode: 'resolved-object-type-unsupported',
+      message: '不支持',
+    },
+    {
+      value: 'VOIDED-LABEL',
+      status: 'forbidden',
+      reasonCode: 'label-voided',
+      message: '无权',
+    },
+    {
+      value: 'LOCATION-LABEL',
+      status: 'resolved',
+      reasonCode: null,
+      message: '不支持',
+      candidates: [
+        { objectType: 'inventory-location', strongIds: { inventoryLocationId: 'LOC-1' } },
+      ],
+    },
+  ]
+  await page.route('**/api/business-console/v1/barcode/resolve', (route) => {
+    const { scannedValue } = route.request().postDataJSON() as { scannedValue: string }
+    if (scannedValue === 'OP-LABEL') {
+      return fulfillJson(
+        route,
+        resolveEnvelope('resolved', [
+          {
+            objectType: 'mes-operation',
+            strongIds: { workOrderId: 'WO-1', operationTaskId: 'OP-1' },
+          },
+        ]),
+      )
+    }
+    const outcome = outcomes.find((item) => item.value === scannedValue)!
+    return fulfillJson(
+      route,
+      resolveEnvelope(outcome.status, outcome.candidates, outcome.reasonCode),
+    )
+  })
+
+  await page.goto('/mes/report?workOrderId=WO-1&operationTaskId=OP-1')
+  await expect(page.getByTestId('good-quantity')).toBeVisible()
+  await page.getByTestId('good-quantity').fill('1')
+  const status = page.getByTestId('mes-scan-status')
+  for (const outcome of outcomes) {
+    await scan(page, outcome.value)
+    await expect(status).toContainText(outcome.message)
+    if (outcome.message === '未找到') {
+      await expect(status).not.toContainText('已识别')
+    } else {
+      await expect(status).not.toContainText('未找到')
+    }
+    await expect(page.getByTestId('submit-report')).toBeDisabled()
+    await expect(page).toHaveURL(/\/mes\/report\?workOrderId=WO-1&operationTaskId=OP-1$/)
+    expect(contextRequests).toHaveLength(0)
+    expect(materialPrevalidations).toBe(0)
+    expect(productionReportWrites).toBe(0)
+  }
+
+  await scan(page, 'OP-LABEL')
+  await expect(status).toContainText('已通过当前工单工序预校验')
+  expect(contextRequests).toEqual([
+    {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+      objectType: 'operationTask',
+      scannedObjectId: 'OP-1',
+    },
+  ])
+  expect(materialPrevalidations).toBe(0)
+  expect(productionReportWrites).toBe(0)
 })
 
 test('报工扫码只采用当前 pair 的服务端预校验，并显示过期、错配与来源失败', async ({ page }) => {
@@ -170,10 +313,16 @@ test('报工扫码只采用当前 pair 的服务端预校验，并显示过期�
 
   await scan(page, 'EXPIRED')
   await expect(page.getByTestId('mes-scan-status')).toContainText('物料批次已过期')
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+  expect(productionReportWrites).toBe(0)
   await scan(page, 'QUALIFICATION')
   await expect(page.getByTestId('mes-scan-status')).toContainText('人员技能资格已过期')
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+  expect(productionReportWrites).toBe(0)
   await scan(page, 'SOURCE')
   await expect(page.getByTestId('mes-scan-status')).toContainText('预校验来源暂不可用')
+  await expect(page.getByTestId('submit-report')).toBeDisabled()
+  expect(productionReportWrites).toBe(0)
 
   await scan(page, 'GOOD')
   await expect(page.getByTestId('mes-scan-status')).toContainText('已通过当前工单工序预校验')
@@ -221,17 +370,17 @@ test('领料快速连续扫码丢弃迟到结果，且 pending 期间阻断相�
         ]),
       )
     }
-    return fulfillJson(route, resolveEnvelope('unknown'))
+    return fulfillJson(route, resolveEnvelope('unknown', [], 'managed-label-not-found'))
   })
 
   await page.goto('/mes/issue')
   await scan(page, 'SLOW')
   await expect(page.getByTestId('new-issue')).toBeDisabled()
   await scan(page, 'LATEST')
-  await expect(page.getByTestId('mes-scan-status')).toContainText('无法确认该扫码内容')
+  await expect(page.getByTestId('mes-scan-status')).toContainText('未找到')
   await expect(page.getByTestId('new-issue')).toBeEnabled()
   releaseSlow()
-  await expect(page.getByTestId('mes-scan-status')).toContainText('无法确认该扫码内容')
+  await expect(page.getByTestId('mes-scan-status')).toContainText('未找到')
   await scan(page, 'VALID')
   await expect(page.getByTestId('new-issue')).toBeEnabled()
 })

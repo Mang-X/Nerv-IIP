@@ -14,8 +14,9 @@ const scope = { organizationId: 'org-1', environmentId: 'env-1' }
 function barcodeEnvelope(
   status: string,
   candidates: BusinessConsoleBarcodeResolveCandidate[] = [],
+  reasonCode: string | null = null,
 ): BusinessConsoleBarcodeResolveEnvelope {
-  return { success: true, data: { status, candidates, total: candidates.length } }
+  return { success: true, data: { status, reasonCode, candidates, total: candidates.length } }
 }
 
 function materialAccepted(): BusinessConsoleMesMaterialScanPrevalidationResponse {
@@ -36,9 +37,14 @@ function contextAccepted(
   objectType: 'operationTask' | 'deviceAsset' | 'personnel' = 'operationTask',
   scannedObjectId = 'OP-1',
 ): BusinessConsoleMesContextScanPrevalidationResponse {
+  const reasonCodes = {
+    operationTask: 'operation-task-scan-accepted',
+    deviceAsset: 'device-asset-scan-accepted',
+    personnel: 'personnel-scan-accepted',
+  }
   return {
     decision: 'accepted',
-    reasonCode: `${objectType}-scan-accepted`,
+    reasonCode: reasonCodes[objectType],
     workOrderId: 'WO-1',
     operationTaskId: 'OP-1',
     objectType,
@@ -118,23 +124,102 @@ describe('useMesScanPrevalidation', () => {
     })
   })
 
-  it.each(['unknown', 'unsupported', 'forbidden'] as const)(
-    'keeps the barcode %s outcome explicit and performs no MES prevalidation',
-    async (status) => {
-      const prevalidateContext = vi.fn()
-      const scanner = useMesScanPrevalidation({
-        ...scope,
-        context: {},
-        resolveBarcode: vi.fn().mockResolvedValue(barcodeEnvelope(status)),
-        prevalidateContext,
-      })
-
-      await scanner.scan('CODE')
-      expect(scanner.status.value).toBe(status)
-      expect(scanner.message.value).not.toBe('')
-      expect(prevalidateContext).not.toHaveBeenCalled()
+  it.each([
+    { status: 'unknown', reasonCode: 'managed-label-not-found', value: 'FGAWO9990001' },
+    {
+      status: 'unsupported',
+      reasonCode: 'barcode-format-unsupported',
+      value: 'WO-NOT-EXIST-3869',
     },
-  )
+  ])('reports no object found for $reasonCode without claiming recognition', async (outcome) => {
+    const prevalidateContext = vi.fn()
+    const prevalidateMaterial = vi.fn()
+    const scanner = useMesScanPrevalidation({
+      ...scope,
+      context: {},
+      acceptedKinds: ['work-order', 'operation-task'],
+      resolveBarcode: vi
+        .fn()
+        .mockResolvedValue(barcodeEnvelope(outcome.status, [], outcome.reasonCode)),
+      prevalidateContext,
+      prevalidateMaterial,
+    })
+
+    await expect(scanner.scan(outcome.value)).resolves.toBeNull()
+    expect(scanner.status.value).toBe(outcome.status)
+    expect(scanner.reasonCode.value).toBe(outcome.reasonCode)
+    expect(scanner.message.value).toContain('未找到')
+    expect(scanner.message.value).not.toContain('已识别')
+    expect(scanner.accepted.value).toBeNull()
+    expect(prevalidateContext).not.toHaveBeenCalled()
+    expect(prevalidateMaterial).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { status: 'unsupported', reasonCode: 'resolved-object-type-unsupported', message: '不支持' },
+    { status: 'forbidden', reasonCode: 'label-voided', message: '无权' },
+  ])('preserves the $reasonCode outcome without accepting or prevalidating it', async (outcome) => {
+    const prevalidateContext = vi.fn()
+    const prevalidateMaterial = vi.fn()
+    const scanner = useMesScanPrevalidation({
+      ...scope,
+      context: {},
+      resolveBarcode: vi
+        .fn()
+        .mockResolvedValue(barcodeEnvelope(outcome.status, [], outcome.reasonCode)),
+      prevalidateContext,
+      prevalidateMaterial,
+    })
+
+    await expect(scanner.scan('LABEL')).resolves.toBeNull()
+    expect(scanner.status.value).toBe(outcome.status)
+    expect(scanner.reasonCode.value).toBe(outcome.reasonCode)
+    expect(scanner.message.value).toContain(outcome.message)
+    expect(scanner.message.value).not.toContain('未找到')
+    expect(scanner.accepted.value).toBeNull()
+    expect(prevalidateContext).not.toHaveBeenCalled()
+    expect(prevalidateMaterial).not.toHaveBeenCalled()
+  })
+
+  it('prevalidates a supported operation using its work-order and operation strong IDs', async () => {
+    const prevalidateContext = vi.fn().mockResolvedValue(contextAccepted())
+    const scanner = useMesScanPrevalidation({
+      ...scope,
+      context: {},
+      acceptedKinds: ['work-order', 'operation-task'],
+      resolveBarcode: vi.fn().mockResolvedValue(
+        barcodeEnvelope('resolved', [
+          {
+            objectType: 'mes-operation',
+            strongIds: { workOrderId: 'WO-1', operationTaskId: 'OP-1' },
+            authority: 'barcode-label',
+            source: 'barcode-label-print-item',
+            observedAtUtc: '2026-08-28T10:00:00Z',
+          },
+        ]),
+      ),
+      prevalidateContext,
+    })
+
+    await expect(scanner.scan('OP-LABEL')).resolves.toMatchObject({
+      kind: 'operation-task',
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'OP-1',
+    })
+    expect(prevalidateContext).toHaveBeenCalledTimes(1)
+    expect(prevalidateContext).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      environmentId: 'env-1',
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+      objectType: 'operationTask',
+      scannedObjectId: 'OP-1',
+    })
+    expect(scanner.status.value).toBe('resolved')
+    expect(scanner.accepted.value).toMatchObject({ kind: 'operation-task' })
+    expect(scanner.message.value).toContain('已通过')
+  })
 
   it('rejects a resolved object that the current page cannot consume', async () => {
     const prevalidateContext = vi.fn()
@@ -154,6 +239,9 @@ describe('useMesScanPrevalidation', () => {
 
     await expect(scanner.scan('BADGE')).resolves.toBeNull()
     expect(scanner.status.value).toBe('unsupported')
+    expect(scanner.message.value).toContain('不支持')
+    expect(scanner.message.value).not.toContain('未找到')
+    expect(scanner.accepted.value).toBeNull()
     expect(prevalidateContext).not.toHaveBeenCalled()
   })
 
@@ -177,6 +265,7 @@ describe('useMesScanPrevalidation', () => {
 
     await expect(scanner.scan('BAD-BADGE')).resolves.toBeNull()
     expect(scanner.status.value).toBe('rejected')
+    expect(scanner.accepted.value).toBeNull()
     expect(scanner.message.value).toContain('工牌与当前工序指派人员不匹配')
   })
 
@@ -199,6 +288,7 @@ describe('useMesScanPrevalidation', () => {
 
     await expect(scanner.scan('BADGE')).resolves.toBeNull()
     expect(scanner.status.value).toBe('error')
+    expect(scanner.accepted.value).toBeNull()
     expect(scanner.message.value).toContain('预校验来源暂不可用')
   })
 
