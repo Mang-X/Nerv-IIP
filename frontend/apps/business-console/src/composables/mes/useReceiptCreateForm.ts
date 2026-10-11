@@ -85,7 +85,7 @@ export function useReceiptCreateForm(
     uomCode: '',
     requestedAtUtc: toLocalDateTimeInput(new Date()),
     producedLotNo: '',
-    // 幂等键按「登记会话」生成：会话内瞬时失败重投复用同键→后端回放不重复入库；成功后 resetForm 轮换新键→连录产生独立申请。
+    // 幂等键按「登记会话」生成：会话内瞬时失败重投复用同键→后端回放不重复入库；显式开始下一笔时 resetForm 轮换新键→连录产生独立申请。
     idempotencyKey: makeIdempotencyKey('receipt'),
   })
 
@@ -184,12 +184,12 @@ export function useReceiptCreateForm(
     form.quantity = context().initialQuantity || '1'
     // 回到「跟随物料主档」：主档没到就留空，由上面的 watch 在主档到位后补齐。
     form.uomCode = contextBaseUom.value
-    // 成功后先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
+    // 开始下一笔登记时先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
     // applyDefaultProducedLot 自动回填。
     form.producedLotNo = ''
     applyDefaultProducedLot()
     form.requestedAtUtc = toLocalDateTimeInput(new Date())
-    // 仅在登记成功后调用：轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。
+    // 在新登记或工单切换时轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。
     form.idempotencyKey = makeIdempotencyKey('receipt')
     showErrors.value = false
   }
@@ -250,7 +250,7 @@ export function useReceiptCreateForm(
       () => submitting.value || createReceiptRequestPending.value,
     ),
     beginRegistration: () => {
-      if (!submitting.value) resetForm()
+      if (submitted.value && !submitting.value) resetForm()
     },
     submit,
   }

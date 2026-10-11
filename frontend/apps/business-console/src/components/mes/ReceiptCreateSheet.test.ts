@@ -58,7 +58,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 })
 
 const state = vi.hoisted(() => ({
-  createReceiptRequest: vi.fn(async (_body: unknown) => undefined),
+  createReceiptRequest: vi.fn<(_body: unknown) => Promise<unknown>>(async () => undefined),
   keyCounter: 0,
 }))
 
@@ -175,6 +175,26 @@ describe('ReceiptCreateSheet', () => {
     await flushPromises()
     expect(wrapper.emitted('update:open')).toEqual([[false]])
     expect(wrapper.emitted('created')).toHaveLength(1)
+  })
+
+  it('失败后关闭再打开保留登记输入与同一幂等键', async () => {
+    state.createReceiptRequest = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('lost response'))
+      .mockResolvedValueOnce({ success: true, data: { requestNo: 'FGR-4280-003' } })
+    const wrapper = mountSheet('WO-A', 'FG-A')
+    await wrapper.get('#receipt-quantity').setValue('7')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    expect((wrapper.get('#receipt-quantity').element as HTMLInputElement).value).toBe('7')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const bodies = state.createReceiptRequest.mock.calls.map(
+      ([body]) => body as { idempotencyKey: string },
+    )
+    expect(bodies[1]!.idempotencyKey).toBe(bodies[0]!.idempotencyKey)
   })
 
   // 回归 #1285：登记体的 uomCode 曾写死为 'EA'，世界里没有这个单位，后端单位换算必然失败。
