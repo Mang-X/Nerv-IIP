@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { reactive, ref } from 'vue'
+import { reactive, ref, toRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
@@ -53,6 +53,7 @@ const state = vi.hoisted(() => ({
   createMaterialIssueRequest: vi.fn(),
   confirmLineSideReceipt: vi.fn(),
   returnLineSideMaterial: vi.fn(),
+  refreshMaterialReadiness: vi.fn(),
   recordEngineeringChangeDecision: vi.fn(),
   materialIssueRequests: [] as Record<string, unknown>[],
   baseUomBySku: new Map<string, string>(),
@@ -61,6 +62,8 @@ const state = vi.hoisted(() => ({
   detail: {} as Record<string, unknown>,
   materialReadiness: {} as Record<string, unknown>,
 }))
+
+const readinessQuery = reactive({ pending: false, error: undefined as unknown })
 
 // 单位取自物料主档（#1294 姿势）：主档缺单位就不许发起领料，绝不写死占位值。
 vi.mock('@/composables/useSkuNames', () => ({
@@ -76,6 +79,7 @@ vi.mock('@/composables/useSkuNames', () => ({
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
+  describeMesReadinessReasons: () => [],
   useMesWorkScopeSelection: () => ({
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
@@ -107,13 +111,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     materialIssueRequestsError: ref(undefined),
     materialIssueRequestsPending: ref(false),
     materialReadiness: ref(state.materialReadiness),
-    materialReadinessError: ref(undefined),
-    materialReadinessPending: ref(false),
+    materialReadinessError: toRef(readinessQuery, 'error'),
+    materialReadinessPending: toRef(readinessQuery, 'pending'),
     returnLineSideMaterial: state.returnLineSideMaterial,
     returnLineSideMaterialPending: ref(false),
     refreshDetail: vi.fn(),
     refreshMaterialIssueRequests: vi.fn(),
-    refreshMaterialReadiness: vi.fn(),
+    refreshMaterialReadiness: state.refreshMaterialReadiness,
     recordEngineeringChangeDecision: state.recordEngineeringChangeDecision,
     recordEngineeringChangeDecisionPending: ref(false),
     workOrderManageScope: ref({ kind: 'work-center', id: 'WC-1' }),
@@ -166,6 +170,12 @@ function mountDetail(permissionCodes: string[]) {
           </div></div>`,
         },
         NvButton: { template: '<button><slot /></button>' },
+        NvMetricCard: {
+          props: ['label', 'value', 'status', 'footStart', 'action'],
+          emits: ['action'],
+          template:
+            '<section :data-metric="label">{{ value }} {{ status?.label }} {{ footStart }}<button v-if="action" @click="$emit(\'action\')">{{ action.label }}</button><slot /></section>',
+        },
         NvStatusBadge: {
           props: ['label', 'value'],
           template: '<span>{{ label ?? value }}</span>',
@@ -212,6 +222,9 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     routeState.params.workOrderId = 'WO-1'
     state.createMaterialIssueRequest.mockReset()
     state.confirmLineSideReceipt.mockReset()
+    state.refreshMaterialReadiness.mockReset()
+    readinessQuery.pending = false
+    readinessQuery.error = undefined
     state.returnLineSideMaterial.mockReset()
     state.recordEngineeringChangeDecision.mockReset()
     state.materialIssueRequests.length = 0
@@ -429,6 +442,79 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     expect(visibleText).toContain('未指定')
     expect(visibleText).not.toMatch(UUID_PATTERN)
     expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it.each(['Ready', 'Blocked'])(
+    '收料后自动读取并按权威 %s 展示齐套，刷新中不显示旧结论',
+    async (status) => {
+      state.materialIssueRequests.push({
+        requestId: 'MIR-001',
+        workOrderId: 'WO-1',
+        materialId: 'MAT-OIL',
+        requestedQuantity: 5,
+        receivedQuantity: 0,
+        status: 'Requested',
+      })
+      state.materialReadiness = reactive({
+        readinessStatus: 'Blocked',
+        items: [],
+        blockingReasons: [],
+      })
+      state.confirmLineSideReceipt.mockImplementation(async () => {
+        readinessQuery.pending = true
+      })
+      const wrapper = mountDetail([
+        'business.mes.work-orders.read',
+        'business.mes.materials.manage',
+      ])
+      await wrapper.get('[data-testid="receive-material-MIR-001"]').trigger('click')
+      await wrapper.get('[data-testid="submit-line-side-receipt"]').trigger('click')
+      await wrapper.vm.$nextTick()
+      expect(state.refreshMaterialReadiness).not.toHaveBeenCalled()
+      const metric = wrapper.get('[data-metric="用料齐套"]')
+      expect(metric.text()).toContain('正在更新齐套')
+      expect(metric.text()).not.toContain('阻塞')
+      state.materialReadiness.readinessStatus = status
+      readinessQuery.pending = false
+      await wrapper.vm.$nextTick()
+      expect(metric.text()).toContain(status === 'Ready' ? '已齐套' : '阻塞')
+      expect(state.confirmLineSideReceipt).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('齐套读取失败时遮蔽旧的已齐套结论，重试只恢复读取', async () => {
+    readinessQuery.error = new Error('读取齐套失败')
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])
+    const metric = wrapper.get('[data-metric="用料齐套"]')
+    expect(metric.text()).toContain('齐套更新失败')
+    expect(metric.text()).not.toContain('已齐套')
+    await metric.get('button').trigger('click')
+    expect(state.refreshMaterialReadiness).toHaveBeenCalledTimes(1)
+    expect(state.confirmLineSideReceipt).not.toHaveBeenCalled()
+  })
+
+  it('收料受理后读回失败关闭提交表单，齐套重试不重复收料', async () => {
+    state.materialIssueRequests.push({
+      requestId: 'MIR-001',
+      workOrderId: 'WO-1',
+      materialId: 'MAT-OIL',
+      requestedQuantity: 5,
+      receivedQuantity: 0,
+      status: 'Requested',
+    })
+    state.confirmLineSideReceipt.mockImplementation(async () => {
+      readinessQuery.error = new Error('齐套GET失败')
+    })
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])
+    await wrapper.get('[data-testid="receive-material-MIR-001"]').trigger('click')
+    await wrapper.get('[data-testid="submit-line-side-receipt"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="submit-line-side-receipt"]').exists()).toBe(false)
+    const metric = wrapper.get('[data-metric="用料齐套"]')
+    expect(metric.text()).toContain('齐套更新失败')
+    await metric.get('button').trigger('click')
+    expect(state.refreshMaterialReadiness).toHaveBeenCalledTimes(1)
+    expect(state.confirmLineSideReceipt).toHaveBeenCalledTimes(1)
   })
 
   it('线边收料 400 时把服务端的具体原因渲染到收料表单', async () => {

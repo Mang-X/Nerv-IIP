@@ -691,12 +691,19 @@ export function makeIdempotencyKey(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2)}`
 }
 
-function invalidateMesQueries(queryCache: ReturnType<typeof useQueryCache>, ids: string[]) {
+function invalidateMesQueries(
+  queryCache: ReturnType<typeof useQueryCache>,
+  ids: string[],
+  refetchActive = true,
+) {
   return Promise.all(
     ids.map((id) =>
-      queryCache.invalidateQueries({
-        predicate: isBusinessQuery(id),
-      }),
+      queryCache.invalidateQueries(
+        {
+          predicate: isBusinessQuery(id),
+        },
+        refetchActive,
+      ),
     ),
   )
 }
@@ -1612,14 +1619,6 @@ export function useMesWorkOrderDetail() {
     detailEnabled,
   )
 
-  const materialQuery = useQuery(() => ({
-    ...getBusinessConsoleMesMaterialReadinessQueryOptions({
-      path: { workOrderId: filters.workOrderId },
-      query: toContextQuery(filters),
-    }),
-    enabled: detailEnabled.value,
-  }))
-
   // 服务端按 workOrderId 过滤（facade/底层 MES 均支持）+ 完整分页取全。取消 handler 会处理该工单的全部
   // 关联单据，预览与 toast 也必须取全，故不能固定 take/只取一页——否则单工单 >一页 时仍会少算。
   const receiptQuery = useQuery(() => {
@@ -1693,6 +1692,52 @@ export function useMesWorkOrderDetail() {
     }
   })
 
+  // 收料回执只表示受理；库存 CAP 回执前仍是 ReceiptPosting，不能用此时的旧齐套当终态。
+  const receiptReadbacks = shallowRef<Array<{ workOrderId: string; requestId: string }>>([])
+  const receiptReadbackActive = computed(() =>
+    receiptReadbacks.value.some((item) => item.workOrderId === filters.workOrderId),
+  )
+  const materialQuery = useQuery(() => {
+    const options = getBusinessConsoleMesMaterialReadinessQueryOptions({
+      path: { workOrderId: filters.workOrderId },
+      query: toContextQuery(filters),
+    })
+    return {
+      ...options,
+      enabled: detailEnabled.value,
+      query: async (context: Parameters<typeof options.query>[0]) => {
+        const readbacks = receiptReadbacks.value.filter(
+          (item) => item.workOrderId === filters.workOrderId,
+        )
+        let posting = false
+        if (readbacks.length) {
+          await materialIssueQuery.refetch(true)
+          posting = readbacks
+            .map((readback) => {
+              const row = materialIssueQuery.data.value?.data?.items?.find(
+                (item) => item.requestId === readback.requestId,
+              )
+              if (!row) throw new Error('未取得本次收料结果，请重试读取。')
+              return row.status === 'ReceiptPosting'
+            })
+            .some(Boolean)
+        }
+        const result = await options.query(context)
+        if (result?.success !== true || !result.data) {
+          throw new Error(result?.message || '齐套读取失败，请重试。')
+        }
+        if (readbacks.length && !posting)
+          receiptReadbacks.value = receiptReadbacks.value.filter(
+            (item) => !readbacks.includes(item),
+          )
+        return result
+      },
+      // 沿用应用现有 auto-refetch 插件；只等待本次收料过账，读取失败停止，交由用户重试读取。
+      autoRefetch: (state: { status: string }) =>
+        receiptReadbackActive.value && state.status !== 'error' ? 1000 : false,
+    }
+  })
+
   const createMaterialIssueMutation = useMutation(
     createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
   )
@@ -1702,12 +1747,16 @@ export function useMesWorkOrderDetail() {
   const returnLineSideMaterialMutation = useMutation(
     returnBusinessConsoleMesLineSideMaterialMutationOptions(),
   )
-  const refreshMaterialIssueQueries = () =>
-    invalidateMesQueries(queryCache, [
-      'listBusinessConsoleMesMaterialIssueRequests',
-      'getBusinessConsoleMesMaterialReadiness',
-      'getBusinessConsoleMesWorkOrderDetail',
-    ])
+  const refreshMaterialIssueQueries = (refetchActive = true) =>
+    invalidateMesQueries(
+      queryCache,
+      [
+        'listBusinessConsoleMesMaterialIssueRequests',
+        'getBusinessConsoleMesMaterialReadiness',
+        'getBusinessConsoleMesWorkOrderDetail',
+      ],
+      refetchActive,
+    )
 
   const cancelWorkOrderPending = shallowRef(false)
   const cancelWorkOrderError = shallowRef<unknown>()
@@ -1964,7 +2013,9 @@ export function useMesWorkOrderDetail() {
       >(materialQuery.data.value),
     ),
     materialReadinessError: materialQuery.error,
-    materialReadinessPending: materialQuery.isLoading,
+    materialReadinessPending: computed(
+      () => materialQuery.isLoading.value || receiptReadbackActive.value,
+    ),
     materialReadinessState: businessReadState(materialQuery, () => detailEnabled.value),
     refreshDetail: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
     refreshMaterialReadiness: () =>
@@ -1988,12 +2039,17 @@ export function useMesWorkOrderDetail() {
       requestId: string,
       body: BusinessConsoleMesConfirmLineSideReceiptRequest,
     ) => {
+      const workOrderId = filters.workOrderId
       const result = await confirmLineSideReceiptMutation.mutateAsync({
         path: { requestId },
         query: toContextQuery(filters),
         body,
       })
-      await refreshMaterialIssueQueries()
+      receiptReadbacks.value = [...receiptReadbacks.value, { workOrderId, requestId }]
+      // 受理结果与读回结果分开：失败保留 query.error，用户只需重试读取。
+      await refreshMaterialIssueQueries(false)
+      void materialQuery.refetch()
+      void detailQuery.refetch()
       return result
     },
     confirmLineSideReceiptPending: confirmLineSideReceiptMutation.isLoading,

@@ -325,9 +325,21 @@ const workOrderStatusPill = computed<NvMetricStatus>(() => {
 const materialShortageCount = computed(
   () => materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0).length,
 )
+const materialConclusion = computed(() =>
+  materialReadinessError.value || materialReadinessPending.value
+    ? undefined
+    : materialReadiness.value,
+)
+const materialReadStateLabel = computed(() =>
+  materialReadinessError.value
+    ? '齐套更新失败'
+    : materialReadinessPending.value
+      ? '正在更新齐套'
+      : '未取得',
+)
 const materialTone = computed<NvMetricTone>(() => {
-  if (materialReadiness.value?.readinessStatus === 'Blocked') return 'danger'
-  return materialReadiness.value?.readinessStatus === 'Ready' ? 'success' : 'neutral'
+  if (materialConclusion.value?.readinessStatus === 'Blocked') return 'danger'
+  return materialConclusion.value?.readinessStatus === 'Ready' ? 'success' : 'neutral'
 })
 
 type TaskRow = (typeof operationTasks)['value'][number]
@@ -576,8 +588,7 @@ async function submitReceipt() {
       materialLotId: receiveForm.materialLotId.trim() || undefined,
     })
     receiveOpen.value = false
-    notifySuccess('已确认线边收料。')
-    void refreshMaterialReadiness()
+    notifySuccess('收料已受理，正在更新齐套。')
   } catch (error) {
     receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
     notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
@@ -1176,28 +1187,38 @@ function formatStatus(value?: string | null) {
       <NvMetricCard
         variant="alert"
         label="用料齐套"
-        :value="materialReadiness ? formatStatus(materialReadiness.readinessStatus) : '未取得'"
+        :value="
+          materialConclusion
+            ? formatStatus(materialConclusion.readinessStatus)
+            : materialReadStateLabel
+        "
+        :action="materialReadinessError ? { label: '重试更新齐套' } : undefined"
+        @action="refreshMaterialReadiness"
         :tone="materialTone"
         :status="
-          materialReadiness
-            ? materialReadiness.readinessStatus === 'Ready'
+          materialConclusion
+            ? materialConclusion.readinessStatus === 'Ready'
               ? { label: '已齐套', tone: 'success' }
               : {
                   label: materialShortageCount > 0 ? `${materialShortageCount} 项缺料` : '阻塞',
                   tone: 'danger',
                 }
-            : { label: '结论未取得', tone: 'neutral' }
+            : { label: materialReadStateLabel, tone: 'neutral' }
         "
         :foot-start="
-          materialReadiness
-            ? materialReadiness.readinessStatus === 'Ready'
+          materialConclusion
+            ? materialConclusion.readinessStatus === 'Ready'
               ? '用料已备齐，可按工序顺序开工。'
               : materialShortageCount > 0
                 ? '缺料项需先发起领料，物料到线边后确认收料，否则无法开工。'
-                : describeMesReadinessReasons(materialReadiness.blockingReasons)
+                : describeMesReadinessReasons(materialConclusion.blockingReasons)
                     .map((reason) => reason.detail || reason.label)
                     .join('；')
-            : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
+            : materialReadinessError
+              ? '读取未完成，请重试更新齐套，无需重复收料。'
+              : materialReadinessPending
+                ? '正在等待收料过账与最新齐套结果。'
+                : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
         "
       />
     </div>
