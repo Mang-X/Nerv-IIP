@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
+import { useMesDefectNcrs } from '@/composables/mes/useMesDefectNcrs'
 import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import {
@@ -100,7 +101,44 @@ const contextOperationTaskId = computed(() => firstQuery(route.query.operationTa
 const openCount = computed(
   () => qualityItems.value.filter((r) => (r.status ?? '').toLowerCase() !== 'closed').length,
 )
-const ncrCount = computed(() => qualityItems.value.filter((r) => r.ncrId).length)
+const ncrAssociations = useMesDefectNcrs(() => ({
+  organizationId: filters.organizationId,
+  environmentId: filters.environmentId,
+  defectNos: qualityItems.value.flatMap((row) => (row.qualityItemId ? [row.qualityItemId] : [])),
+}))
+const ncrState = ncrAssociations.state
+const qualityRows = computed(() =>
+  qualityItems.value.map((row) => ({
+    ...row,
+    ncrId:
+      ncrState.value === 'ready'
+        ? ncrAssociations.ncrs.value[row.qualityItemId ?? '']?.id
+        : undefined,
+    ncrCode:
+      ncrState.value === 'ready'
+        ? ncrAssociations.ncrs.value[row.qualityItemId ?? '']?.code
+        : undefined,
+  })),
+)
+const ncrCount = computed(() => qualityRows.value.filter((row) => row.ncrId).length)
+const ncrNote = computed(() => {
+  if (qualityItemsError.value) return '质量记录读取失败，无法判断 NCR 关联。'
+  if (qualityItemsPending.value) return '正在读取质量记录。'
+  if (qualityItems.value.length === 0) return '当前没有不良记录。'
+  if (ncrState.value === 'error') return 'NCR 关联读取失败，请刷新重试。'
+  if (ncrState.value === 'idle') return '未选择业务范围。'
+  if (ncrState.value === 'loading') return '正在读取 NCR 关联。'
+  return ncrCount.value > 0 ? '点击不良记录中的 NCR 编号进入质量处置。' : '当前页不良尚未生成 NCR。'
+})
+async function refreshQuality() {
+  try {
+    await refreshQualityItems()
+    await ncrAssociations.refresh()
+    if (ncrAssociations.error.value) throw ncrAssociations.error.value
+  } catch (error) {
+    notifyOperationFailure('质量记录刷新失败', error, '质量记录或 NCR 关联读取失败，请刷新重试。')
+  }
+}
 // 质量项的决策点是「还有多少没关闭」——构成卡按处理状态拆分；已开 NCR 单独标注。
 const qualitySegments = computed(() =>
   pagedBreakdownSegments(qualityItemsTotal.value, [
@@ -114,7 +152,7 @@ const qualitySegments = computed(() =>
   ]),
 )
 
-type QualityRow = (typeof qualityItems)['value'][number]
+type QualityRow = (typeof qualityRows)['value'][number]
 const columns: NvDataTableColumn<QualityRow>[] = [
   {
     key: 'qualityItemId',
@@ -133,9 +171,6 @@ const columns: NvDataTableColumn<QualityRow>[] = [
   { key: 'ncrId', header: 'NCR', accessor: (r) => r.ncrId ?? '无' },
 ]
 
-function isWorkOrder(value?: string | null) {
-  return !!value && /^WO/i.test(value)
-}
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
@@ -357,10 +392,7 @@ async function submitDefect() {
     const receipt = response.data.downstreamDocumentId?.trim()
     defectDialogOpen.value = false
     clearDefectIntent()
-    const refreshResults = await Promise.allSettled([
-      refreshQualityItems(),
-      refreshOperationTasks(),
-    ])
+    const refreshResults = await Promise.allSettled([refreshQuality(), refreshOperationTasks()])
     notifySuccess(receipt ? `缺陷 ${receipt} 已登记。` : '缺陷登记已受理。')
     const refreshFailure = refreshResults.find(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -404,8 +436,8 @@ async function submitDefect() {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="qualityItemsPending"
-          @click="refreshQualityItems"
+          :disabled="qualityItemsPending || ncrAssociations.pending.value"
+          @click="refreshQuality"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -423,18 +455,17 @@ async function submitDefect() {
       />
       <NvMetricCard
         variant="alert"
-        label="已开不合格品单"
-        :value="ncrCount"
+        label="当前页已开不合格品单"
+        :value="
+          qualityItemsPending ||
+          qualityItemsError ||
+          (qualityItems.length > 0 && ncrState !== 'ready')
+            ? '—'
+            : ncrCount
+        "
         unit="张"
         :tone="ncrCount > 0 ? 'danger' : 'neutral'"
-        :status="
-          ncrCount > 0 ? { label: '待处置', tone: 'danger' } : { label: '无', tone: 'success' }
-        "
-        :foot-start="
-          ncrCount > 0
-            ? '不合格品单需给出返工、让步或报废结论后才能关闭对应质量项。'
-            : '当前质量项都未升级为不合格品单。'
-        "
+        :foot-start="ncrNote"
         :action="ncrCount > 0 ? { label: '去质量处置' } : undefined"
         @action="router.push({ path: '/quality/ncrs' })"
       />
@@ -472,7 +503,7 @@ async function submitDefect() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
-      :rows="qualityItems"
+      :rows="qualityRows"
       row-key="qualityItemId"
       :loading="qualityItemsPending"
       :error="qualityItemsError"
@@ -480,8 +511,11 @@ async function submitDefect() {
       :searchable="false"
       :column-settings="false"
       empty-message="暂无质量或不良记录。点击上方「登记缺陷」记录生产过程中的不良，登记后可在这里跟进处置与关闭。"
-      @retry="refreshQualityItems"
+      @retry="refreshQuality"
     >
+      <template #cell-qualityItemId="{ row }">
+        <span :title="row.qualityItemId" class="block truncate">{{ row.qualityItemId }}</span>
+      </template>
       <template #cell-sourceDocumentId="{ row }">
         <RouterLink
           v-if="row.workOrderId"
@@ -489,7 +523,8 @@ async function submitDefect() {
             path: `/mes/work-orders/${encodeURIComponent(row.workOrderId!)}`,
             query: { operationTaskId: row.operationTaskId ?? undefined },
           }"
-          class="text-brand underline-offset-4 hover:underline"
+          :title="row.sourceDocumentId ?? undefined"
+          class="block truncate text-brand underline-offset-4 hover:underline"
         >
           {{ row.sourceDocumentId }}
         </RouterLink>
@@ -508,14 +543,23 @@ async function submitDefect() {
             path: '/quality/ncrs',
             query: {
               ncrId: row.ncrId,
-              workOrderId: isWorkOrder(row.sourceDocumentId) ? row.sourceDocumentId : undefined,
+              workOrderId: row.workOrderId ?? undefined,
             },
           }"
-          class="text-brand underline-offset-4 hover:underline"
+          :title="row.ncrCode || row.ncrId"
+          class="block truncate text-brand underline-offset-4 hover:underline"
         >
-          {{ row.ncrId }}
+          {{ row.ncrCode || row.ncrId }}
         </RouterLink>
-        <span v-else class="text-muted-foreground">无</span>
+        <span v-else class="text-muted-foreground">{{
+          ncrState === 'error'
+            ? '关联读取失败'
+            : ncrState === 'ready'
+              ? '未生成 NCR'
+              : ncrState === 'loading'
+                ? '正在读取关联'
+                : '未选择业务范围'
+        }}</span>
       </template>
     </NvDataTable>
 
