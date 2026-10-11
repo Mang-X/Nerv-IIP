@@ -101,6 +101,18 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
             requestedScopeKind,
             requestedScopeId,
             cancellationToken);
+        if (scope.Kind == "organization")
+        {
+            // 组织范围已由 resolver 按本次权限及实际 grant 校验，不以空工作中心集合表示拒绝。
+            if (!string.Equals(authorization!.AuthorizedOrganizationId, organizationId, StringComparison.Ordinal)
+                || !string.Equals(authorization.AuthorizedEnvironmentId, environmentId, StringComparison.Ordinal))
+            {
+                throw Forbidden();
+            }
+
+            return;
+        }
+
         if (!scope.WorkCenterIds.Any(x => string.Equals(x, workCenterId, StringComparison.Ordinal)))
         {
             throw Forbidden();
