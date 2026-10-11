@@ -177,10 +177,34 @@ const unavailableHint = computed(() =>
 )
 
 const columns: NvDataTableColumn<DeadLetterRow>[] = [
-  { key: 'service', header: '服务', filter: 'enum', width: 'w-36' },
-  { key: 'eventType', header: '事件类型', accessor: (row) => row.deadLetter.eventType ?? '' },
-  { key: 'consumerName', header: '消费者', accessor: (row) => row.deadLetter.consumerName ?? '' },
-  { key: 'failureCode', header: '失败码', accessor: (row) => row.deadLetter.failureCode ?? '' },
+  {
+    key: 'service',
+    header: '服务',
+    filter: 'enum',
+    width: 'w-36',
+    cellClass: 'whitespace-normal break-all',
+  },
+  {
+    key: 'eventType',
+    header: '事件类型',
+    accessor: (row) => row.deadLetter.eventType ?? '',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+  },
+  {
+    key: 'consumerName',
+    header: '消费者',
+    accessor: (row) => row.deadLetter.consumerName ?? '',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+  },
+  {
+    key: 'failureCode',
+    header: '失败码',
+    accessor: (row) => row.deadLetter.failureCode ?? '',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+  },
   {
     key: 'deadLetteredAtUtc',
     header: '死信时间',
@@ -618,7 +642,7 @@ function formatPayload(value: string | null | undefined) {
       <NvSheetContent side="right" size="lg" class="overflow-y-auto">
         <NvSheetHeader>
           <NvSheetTitle>死信详情</NvSheetTitle>
-          <NvSheetDescription>
+          <NvSheetDescription class="break-all">
             {{ selectedTarget?.service }} · {{ selectedDeadLetter?.eventType ?? '未知事件类型' }}
           </NvSheetDescription>
         </NvSheetHeader>
@@ -651,7 +675,7 @@ function formatPayload(value: string | null | undefined) {
             <dt class="text-muted-foreground">失败码</dt>
             <dd class="break-all">{{ selectedDeadLetter.failureCode ?? '—' }}</dd>
             <dt class="text-muted-foreground">失败原因</dt>
-            <dd class="break-words">{{ selectedDeadLetter.failureMessage ?? '—' }}</dd>
+            <dd class="[overflow-wrap:anywhere]">{{ selectedDeadLetter.failureMessage ?? '—' }}</dd>
             <template v-if="selectedFailureHint">
               <dt class="text-muted-foreground">处理建议</dt>
               <dd class="break-words">

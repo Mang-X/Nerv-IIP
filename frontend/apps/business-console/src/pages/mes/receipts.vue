@@ -179,11 +179,24 @@ const columns: NvDataTableColumn<ReceiptRow>[] = [
   {
     key: 'requestNo',
     header: '入库单',
-    cellClass: 'font-medium',
+    cellClass: 'font-medium whitespace-normal break-all',
+    width: 'w-48',
     accessor: (r) => r.requestNo?.trim() || '—',
   },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo?.trim() || '—' },
-  { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
+  {
+    key: 'workOrderId',
+    header: '工单',
+    accessor: (r) => r.workOrderNo?.trim() || '—',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
+  },
+  {
+    key: 'skuId',
+    header: '成品',
+    accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
+  },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'unitCost', header: '单位成本', align: 'end', width: 'w-28' },
   { key: 'receiptStatus', header: '入库状态', width: 'w-48' },
@@ -347,7 +360,7 @@ function isNonEmpty(value: string) {
         ><span class="tabular-nums">{{ formatUnitCost(row.unitCost) }}</span></template
       >
       <template #cell-receiptStatus="{ row }">
-        <div class="grid justify-items-start gap-1">
+        <div class="grid min-w-0 justify-items-start gap-1">
           <NvStatusBadge
             :tone="receiptStatusTone(row.receiptStatus)"
             :label="receiptStatusLabel(row.receiptStatus)"
@@ -355,7 +368,7 @@ function isNonEmpty(value: string) {
           <!-- 失败原因：库存过账失败时给出后端失败信息，一线据此判断是补库存还是改数量后再重投。 -->
           <p
             v-if="isFailedReceiptStatus(row.receiptStatus) && row.inventoryPostingFailureMessage"
-            class="max-w-64 text-xs leading-snug text-destructive"
+            class="w-full text-xs leading-snug whitespace-normal text-destructive [overflow-wrap:anywhere]"
             :title="row.inventoryPostingFailureMessage"
           >
             {{ row.inventoryPostingFailureMessage }}
@@ -364,7 +377,7 @@ function isNonEmpty(value: string) {
           <p
             v-else-if="receiptPendingReason(row)"
             data-testid="receipt-pending-reason"
-            class="w-64 text-xs leading-snug whitespace-normal text-muted-foreground"
+            class="w-full text-xs leading-snug whitespace-normal text-muted-foreground [overflow-wrap:anywhere]"
           >
             {{ receiptPendingReason(row) }}
           </p>
