@@ -906,6 +906,10 @@ function downstreamRoute(
 function formatDate(value?: string | null) {
   return value ? value.slice(0, 10) : '-'
 }
+function formatMpsQuantity(value?: number | null, uom?: string | null) {
+  const name = units.value.find((unit) => unit.code === uom)?.displayName?.trim() || '—'
+  return `${value ?? 0} ${name}`
+}
 function formatQuantity(value?: number | null, uom?: string | null) {
   return `${value ?? 0} ${uom ?? ''}`.trim()
 }
@@ -1536,7 +1540,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </template>
         <template #cell-quantity="{ row }"
           ><span class="tabular-nums">{{
-            formatQuantity(row.quantity, row.uomCode)
+            formatMpsQuantity(row.quantity, row.uomCode)
           }}</span></template
         >
         <template #cell-status="{ row }"

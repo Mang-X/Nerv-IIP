@@ -370,6 +370,24 @@ function signInAsMaintenanceReader() {
 }
 
 describe('maintenance work orders page', () => {
+  it('开单列与完工上下文固定本地日期时间，不随英文默认语言变化', async () => {
+    state.query = {}
+    // 使用本地时刻构造 UTC 输入，不改变测试进程时区。
+    state.workOrders[0]!.openedAtUtc = new Date(2026, 6, 6, 8, 15).toISOString()
+    const wrapper = mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    const headers = [...document.body.querySelectorAll('th')]
+    const openedIndex = headers.findIndex((header) => header.textContent?.includes('开单时间'))
+    expect(openedIndex).toBeGreaterThanOrEqual(0)
+    const row = document.body.querySelector('tbody tr')!
+    expect(row.querySelectorAll('td')[openedIndex]?.textContent?.trim()).toBe('2026-07-06 08:15')
+    await openCompleteSheet()
+    expect(document.body.querySelector('[data-slot="carried-context"]')?.textContent).toContain(
+      '2026-07-06 08:15',
+    )
+    wrapper.unmount()
+  })
+
   it('renders plan-generated work orders with a stable Chinese priority', async () => {
     state.query = {}
     state.workOrders = [
