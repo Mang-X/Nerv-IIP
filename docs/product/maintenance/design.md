@@ -77,6 +77,8 @@
 - 更新沿用工单管理权限、当前授权作业范围与指派技师限制；维修作业范围仅列出 Maintenance 支持的组织、本人及团队范围；有多个合法范围时，在预计恢复抽屉内选择维修作业范围，优先预选工单所属团队；已完成的工单不可改。服务端拒绝未登记设备不可用的工单，错误通过 toast 呈现并保留输入。
 - 保存携带工单版本和稳定幂等键，确认权威回执后读回详情并刷新列表。预测与实际停机、实际恢复分开，不触发完工或恢复。
 
+维修工单列表与完工上下文的开单时间统一按本机时区显示为 `YYYY-MM-DD HH:mm`，不随浏览器语言改变日期时间格式；空值显示「—」。
+
 ## 4. 角色与权限
 - 读:`business.maintenance.plans.read` / `business.maintenance.work-orders.read` / `business.iiot.telemetry.read`(运行小时卡)。
 - 写:`business.maintenance.plans.manage`(建计划 / 编辑触发配置 / 生成到期工单)/ `business.maintenance.work-orders.manage`(含停机原因目录的新增、修改、删除,不单设权限码)。

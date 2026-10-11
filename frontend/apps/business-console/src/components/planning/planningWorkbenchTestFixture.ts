@@ -48,7 +48,7 @@ const planningSpies = vi.hoisted(() => ({
   // 需求池刷新后"某类需求整类消失"要能在用例里复现 → 把 demands 的 ref 交出来供测试改写。
   demandsRef: null as { value: Array<Record<string, unknown>> } | null,
   mpsBucketsRef: null as { value: Array<Record<string, unknown>> } | null,
-  mpsFormRef: null as { quantity: number } | null,
+  mpsFormRef: null as { quantity: number; uomCode: string } | null,
   mrpRunsRef: null as { value: Array<Record<string, unknown>> } | null,
   peggingRef: null as { value: Array<Record<string, unknown>> } | null,
   suggestionFiltersRef: null as { status: string } | null,
@@ -318,7 +318,12 @@ vi.mock('@/composables/useBusinessMasterData', async () => {
       resources: shallowRef(
         resourceType === 'worker'
           ? [{ userId: 'user-emp-zhangwei', code: 'EMP-0001', displayName: '张伟' }]
-          : [],
+          : resourceType === 'unit-of-measure'
+            ? [
+                { code: 'pcs', displayName: '件' },
+                { code: 'kg', displayName: '' },
+              ]
+            : [],
       ),
     }),
     useBusinessSkus: () => ({ skus: shallowRef([]) }),

@@ -30,6 +30,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
+import { formatDateTime as formatLocalDateTime } from '@/utils/format'
 import { CURRENCY_OPTIONS } from '@/data/currencyReference'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
@@ -358,7 +359,7 @@ const completeCarriedItems = computed(() => {
         ? (resolvePartner(target.supplierPartnerCode) ?? target.supplierPartnerCode)
         : undefined,
     },
-    { label: '开单时间', value: omitPlaceholder(formatDateTime(target.openedAtUtc)) },
+    { label: '开单时间', value: omitPlaceholder(formatOpenedAt(target.openedAtUtc)) },
     {
       label: '备件领出工厂',
       value: completeSiteCode.value ? siteLabel(completeSiteCode.value) : '设备未登记所属工厂',
@@ -416,7 +417,7 @@ const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
     header: '预计恢复',
     accessor: (r) => formatDateTime(r.expectedRestoreAtUtc),
   },
-  { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
+  { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatOpenedAt(r.openedAtUtc) },
   ...(canManageWorkOrders.value
     ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
     : []),
@@ -746,6 +747,10 @@ function optionalNonNegativeNumber(value: string | number): number | undefined |
   if (!trimmed) return undefined
   const n = Number(trimmed)
   return Number.isFinite(n) && n >= 0 ? round2(n) : false
+}
+
+function formatOpenedAt(value?: string | null) {
+  return value ? formatLocalDateTime(value) : '—'
 }
 
 function formatDateTime(value?: string | null) {

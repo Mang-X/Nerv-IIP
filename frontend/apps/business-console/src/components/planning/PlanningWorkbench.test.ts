@@ -306,6 +306,22 @@ describe('PlanningWorkbench', () => {
     expect(refreshedRow.querySelector('.cell-status')?.textContent).toContain('2026-07-01')
   })
 
+  it.each([
+    ['pcs', '120 件'],
+    ['unknown-unit', '120 —'],
+    ['kg', '120 —'],
+  ])('MPS 数量保留数值并按目录显示单位：%s', async (uomCode, expected) => {
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mpsBucketsRef!.value = [
+      { mpsId: 'mps-001', skuCode: 'SKU-FG-1000', uomCode, quantity: 120, status: 'Draft' },
+    ]
+    await flushPromises()
+    // 需求池与建议数量不属于本票的 MPS 列，避免误改工作台共用 formatter。
+    expect(wrapper.findAll('.cell-quantity').map((cell) => cell.text())).toContain(expected)
+    expect(wrapper.findAll('.cell-quantity').map((cell) => cell.text())).toContain('2 pcs')
+    wrapper.unmount()
+  })
+
   it('MPS 评审人 / 发布人显示员工姓名，名录里查不到的账号显示「—」', async () => {
     const wrapper = mount(PlanningWorkbench)
     planningSpies.mpsBucketsRef!.value = [
@@ -348,8 +364,10 @@ describe('PlanningWorkbench', () => {
     await wrapper.get('#mps-qty').setValue('12')
     expect(planningSpies.mpsFormRef!.quantity).toBe(12)
     const submittedQuantities: number[] = []
+    const submittedUnits: string[] = []
     planningSpies.updateMpsBucket.mockImplementationOnce(async () => {
       submittedQuantities.push(planningSpies.mpsFormRef!.quantity)
+      submittedUnits.push(planningSpies.mpsFormRef!.uomCode)
     })
     await wrapper
       .findAll('form')
@@ -358,6 +376,7 @@ describe('PlanningWorkbench', () => {
 
     expect(planningSpies.updateMpsBucket).toHaveBeenCalledWith('mps-001')
     expect(submittedQuantities).toEqual([12])
+    expect(submittedUnits).toEqual(['pcs'])
   })
 
   it('drills a sales-order demand into the ERP order search without copying order facts', async () => {
