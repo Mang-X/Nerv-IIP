@@ -405,6 +405,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
                 id="rule-tag"
                 v-model="form.tagKey"
                 :options="tagOptions"
+                :show-code="false"
                 title="选择采集标签"
                 :placeholder="form.deviceAssetId ? '选择采集标签' : '请先选择设备'"
                 :disabled="!form.deviceAssetId"

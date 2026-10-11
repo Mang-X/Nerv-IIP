@@ -271,7 +271,6 @@ vi.mock('@/composables/useEquipmentScopeSelection', () => ({
 
 // 设备 / 采集标签 / 单位目录走真实读面（useQuery）；单测给确定目录，只验页面行为。
 vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
-  telemetryTagLabel: (tagKey: string) => tagKey,
   useEquipmentDeviceCatalog: () => ({
     deviceOptions: computed(() => [{ value: 'DEV-CNC-01', label: '五轴加工中心' }]),
     devicesPending: shallowRef(false),

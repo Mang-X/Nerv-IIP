@@ -49,62 +49,12 @@ function joinHint(...parts: (string | null | undefined)[]) {
     .join(' · ')
 }
 
-/**
- * 采集标签的中文名对照。遥测读面只回工程标识 `tagKey`（`spindle-speed` / `bath-ph`），
- * 后端没有标签名字段，所以这里用常量把常见测点译成业务语言；对不上的仍原样显示
- * tagKey（不臆造名称），新增测点扩这张表即可。
- */
-export const TELEMETRY_TAG_LABELS: Record<string, string> = {
-  'air-pressure': '气压',
-  'bath-ph': '槽液 pH',
-  'bath-temperature': '槽液温度',
-  'bearing-temperature': '轴承温度',
-  'coolant-flow': '冷却液流量',
-  current: '电流',
-  'cycle-count': '循环计数',
-  'damping-force': '阻尼力',
-  flow: '流量',
-  humidity: '湿度',
-  level: '液位',
-  power: '功率',
-  'press-force': '压装力',
-  pressure: '压力',
-  runtime: '运行时长',
-  'runtime-state': '运行状态',
-  speed: '转速',
-  'spindle-speed': '主轴转速',
-  'spindle-temperature': '主轴温度',
-  state: '运行状态',
-  'temp-bearing': '轴承温度',
-  temperature: '温度',
-  torque: '扭矩',
-  vibration: '振动',
-  voltage: '电压',
-  'weld-current': '焊接电流',
-  'wheel-speed': '砂轮转速',
-}
-
 const TELEMETRY_VALUE_TYPE_LABELS: Record<string, string> = {
   bool: '布尔',
   boolean: '布尔',
   number: '数值',
   numeric: '数值',
   text: '文本',
-}
-
-/** tagKey 的分隔符各连接器不统一（`.` / `_` / `-`），对照表按连字符归一后查。 */
-function normalizeTagKey(tagKey: string) {
-  return tagKey
-    .trim()
-    .toLowerCase()
-    .replace(/[._\s]+/g, '-')
-}
-
-/** 采集标签的人读名：对照表命中就用中文名，否则如实回落到 tagKey。 */
-export function telemetryTagLabel(tagKey?: string | null) {
-  const key = (tagKey ?? '').trim()
-  if (!key) return ''
-  return TELEMETRY_TAG_LABELS[normalizeTagKey(key)] ?? key
 }
 
 function telemetryValueTypeLabel(valueType?: string | null) {
@@ -182,7 +132,7 @@ export function useTelemetryTagCatalog(deviceAssetId: MaybeRefOrGetter<string>) 
         .flatMap((row) =>
           toOption(
             row.tagKey,
-            telemetryTagLabel(row.tagKey),
+            row.displayName?.trim() || '—',
             joinHint(row.unitCode, telemetryValueTypeLabel(row.valueType)),
           ),
         )

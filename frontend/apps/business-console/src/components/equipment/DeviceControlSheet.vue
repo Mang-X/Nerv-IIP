@@ -308,7 +308,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                     :key="tag.telemetryTagId"
                     :value="tag.tagKey ?? ''"
                   >
-                    {{ tag.tagKey }}
+                    {{ tag.displayName?.trim() || '—' }}
                   </NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
@@ -402,7 +402,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                         :key="tag.telemetryTagId"
                         :value="tag.tagKey ?? ''"
                       >
-                        {{ tag.tagKey }}
+                        {{ tag.displayName?.trim() || '—' }}
                       </NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>

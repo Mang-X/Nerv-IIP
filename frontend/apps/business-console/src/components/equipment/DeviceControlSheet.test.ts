@@ -20,6 +20,8 @@ const cvState = vi.hoisted(() => ({
   refresh: vi.fn(),
 }))
 
+const tagName = vi.hoisted(() => ({ value: '主轴设定转速' as string | null }))
+
 const TERMINAL = new Set(['completed', 'failed', 'rejected', 'abandoned'])
 
 vi.mock('@/composables/useBusinessDeviceControl', () => ({
@@ -49,6 +51,7 @@ vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => ({
       {
         telemetryTagId: 't1',
         tagKey: 'spindle.speed',
+        displayName: tagName.value,
         valueType: 'number',
         unitCode: 'rpm',
         isWritable: true,
@@ -130,6 +133,7 @@ async function selectTag(wrapper: ReturnType<typeof mount>) {
 }
 
 beforeEach(() => {
+  tagName.value = '主轴设定转速'
   state.dispatch.mockClear()
   state.startTracking.mockClear()
   state.tracked = undefined
@@ -140,6 +144,40 @@ beforeEach(() => {
 })
 
 describe('DeviceControlSheet', () => {
+  it('shows the registered display name in both control candidates while keeping the key', async () => {
+    const wrapper = mountSheet()
+    expect(wrapper.find('option').text()).toBe('主轴设定转速')
+    expect(wrapper.find('option').attributes('value')).toBe('spindle.speed')
+    wrapper.findComponent(stubs.NvTabs).vm.$emit('update:modelValue', 'parameter-set')
+    await flushPromises()
+    expect(wrapper.find('option').text()).toBe('主轴设定转速')
+    await wrapper.find('select').setValue('spindle.speed')
+    await wrapper.find('input[aria-label="参数值 1"]').setValue('80')
+    await wrapper.find('#devctl-reason').setValue('调整主轴转速')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('确认下发'))!
+      .trigger('click')
+    await flushPromises()
+    expect(state.dispatch).toHaveBeenCalledWith({
+      commandType: 'parameter-set',
+      parameters: { 'spindle.speed': '80' },
+      reason: '调整主轴转速',
+    })
+  })
+
+  it.each([null, '', '  '])(
+    'shows a neutral label when the registered name is %s',
+    async (name) => {
+      tagName.value = name
+      const wrapper = mountSheet()
+      expect(wrapper.find('option').text()).toBe('—')
+      wrapper.findComponent(stubs.NvTabs).vm.$emit('update:modelValue', 'parameter-set')
+      await flushPromises()
+      expect(wrapper.find('option').text()).toBe('—')
+    },
+  )
+
   it('shows the tag value range and the real current value from the current-value read-face', async () => {
     const wrapper = mountSheet()
     await selectTag(wrapper)

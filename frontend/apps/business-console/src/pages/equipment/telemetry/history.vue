@@ -9,7 +9,7 @@ import {
   projectTelemetryHistory,
 } from '@/components/equipment/telemetryHistoryPresentation'
 import { useBusinessTelemetryHistory } from '@/composables/useBusinessTelemetry'
-import { telemetryTagLabel, useTelemetryTagCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { useTelemetryTagCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -83,10 +83,7 @@ const tagPickerOptions = computed<EntityPickerOption[]>(() => {
   const tagKey = filters.tagKey.trim()
   // 目录尚未回来 / 该设备没登记标签时，仍把当前生效的筛选值显示出来，不让选择器"看着是空的"。
   if (!tagKey || selectedTagInCatalog.value) return tagOptions.value
-  return [
-    ...tagOptions.value,
-    { value: tagKey, label: telemetryTagLabel(tagKey), hint: '当前筛选' },
-  ]
+  return [...tagOptions.value, { value: tagKey, label: '—', hint: '当前筛选' }]
 })
 watch([() => filters.deviceAssetId, tagOptions, tagsPending], () => {
   if (tagsPending.value || !filters.tagKey.trim()) return
@@ -280,6 +277,7 @@ function fromDateInput(value: string, dayOffset: number) {
             id="history-tag"
             v-model="filters.tagKey"
             :options="tagPickerOptions"
+            :show-code="false"
             title="选择采集标签"
             placeholder="全部采集标签"
             :empty-text="
