@@ -267,7 +267,7 @@ test.describe('长诊断内容留在所属列（#4330）', () => {
           services: [{ service: 'Erp', metrics: { pendingCount: 1, failedCount: 0 } }],
         }
       if (path.endsWith('/dead-letters')) data = { items: [{ service: 'Erp', deadLetter }] }
-      if (path.endsWith('/dead-letters/Erp/dl-1')) data = { service: 'Erp', deadLetter }
+      if (path.endsWith('/dead-letters/Erp/dl-1')) data = deadLetter
       if (path.endsWith('/mes/finished-goods-receipt-requests'))
         data = {
           totalCount: 2,
@@ -327,13 +327,21 @@ test.describe('长诊断内容留在所属列（#4330）', () => {
     for (const theme of ['light', 'dark']) {
       test(`死信长内容 ${width}×900 ${theme}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width, height: 900 })
+        await page.addInitScript((mode) => localStorage.setItem('nerv-iip-color-mode', mode), theme)
         await page.goto('/ops/dead-letters', { waitUntil: 'domcontentloaded' })
-        await page.evaluate(
-          (value) => document.documentElement.classList.toggle('dark', value === 'dark'),
-          theme,
-        )
         await expect(page.getByText(eventType, { exact: true })).toBeVisible()
         await expect(page.getByText(consumerName, { exact: true })).toBeVisible()
+        await expect(
+          page.getByRole('button', {
+            name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题',
+          }),
+        ).toBeVisible()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width,
+        )
+        const row = page.getByRole('row').filter({ hasText: eventType })
+        await expect(row.getByText(failureCode, { exact: true })).toBeVisible()
+        await expect(row.getByText('待处理', { exact: true })).toBeVisible()
         await assertTextContained(page)
         const detail = page.getByRole('button', { name: '详情', exact: true })
         await detail.scrollIntoViewIfNeeded()
@@ -344,6 +352,7 @@ test.describe('长诊断内容留在所属列（#4330）', () => {
         await expect(dialog.getByText(eventType, { exact: true })).toBeVisible()
         await expect(dialog.getByText(consumerName, { exact: true })).toBeVisible()
         await expect(dialog.getByText(failureMessage, { exact: true })).toBeVisible()
+        await expect(dialog.locator('pre')).toContainText('WO-TUB-20261012-001')
         await page.screenshot({
           path: testInfo.outputPath('dead-letter-detail.png'),
           fullPage: true,
@@ -351,14 +360,25 @@ test.describe('长诊断内容留在所属列（#4330）', () => {
       })
       test(`完工长内容 ${width}×900 ${theme}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width, height: 900 })
+        await page.addInitScript((mode) => localStorage.setItem('nerv-iip-color-mode', mode), theme)
         await page.goto('/mes/receipts', { waitUntil: 'domcontentloaded' })
-        await page.evaluate(
-          (value) => document.documentElement.classList.toggle('dark', value === 'dark'),
-          theme,
-        )
         await expect(page.getByTestId('receipt-pending-reason')).toContainText(
           '等待 ERP 收到工单完工',
         )
+        await expect(
+          page.getByRole('button', {
+            name: theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题',
+          }),
+        ).toBeVisible()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width,
+        )
+        await expect(
+          page.getByText(failureMessage + ' CostSettlementReference-WC-TUB-20261012-001', {
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(page.getByText('入库失败', { exact: true })).toBeVisible()
         await assertTextContained(page)
         const retry = page.getByRole('button', { name: '重试', exact: true })
         await retry.scrollIntoViewIfNeeded()

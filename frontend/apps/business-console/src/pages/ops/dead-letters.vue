@@ -552,6 +552,7 @@ function formatPayload(value: string | null | undefined) {
       </section>
 
       <NvDataTable
+        class="min-w-0"
         v-model:selected="selectedRowKeys"
         :columns="columns"
         :rows="rows"
