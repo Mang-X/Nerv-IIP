@@ -9,7 +9,7 @@ import {
   projectTelemetryHistory,
 } from '@/components/equipment/telemetryHistoryPresentation'
 import { useBusinessTelemetryHistory } from '@/composables/useBusinessTelemetry'
-import { telemetryTagLabel, useTelemetryTagCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { useTelemetryTagCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -85,7 +85,7 @@ const tagPickerOptions = computed<EntityPickerOption[]>(() => {
   if (!tagKey || selectedTagInCatalog.value) return tagOptions.value
   return [
     ...tagOptions.value,
-    { value: tagKey, label: telemetryTagLabel(tagKey), hint: '当前筛选' },
+    { value: tagKey, label: '—', hint: '当前筛选' },
   ]
 })
 watch([() => filters.deviceAssetId, tagOptions, tagsPending], () => {
@@ -280,6 +280,7 @@ function fromDateInput(value: string, dayOffset: number) {
             id="history-tag"
             v-model="filters.tagKey"
             :options="tagPickerOptions"
+            :show-code="false"
             title="选择采集标签"
             placeholder="全部采集标签"
             :empty-text="
