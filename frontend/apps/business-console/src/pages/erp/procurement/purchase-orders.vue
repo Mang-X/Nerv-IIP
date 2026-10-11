@@ -103,9 +103,13 @@ const rows = computed(() =>
 )
 
 const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
-  { key: 'purchaseOrderNo', header: '采购单', cellClass: 'font-medium' },
-  { key: 'supplierCode', header: '供应商' },
-  { key: 'skuCode', header: '物料' },
+  {
+    key: 'purchaseOrderNo',
+    header: '采购单',
+    cellClass: 'font-medium whitespace-normal break-all',
+  },
+  { key: 'supplierCode', header: '供应商', cellClass: 'whitespace-normal break-all' },
+  { key: 'skuCode', header: '物料', cellClass: 'whitespace-normal break-all' },
   { key: 'sourceRequisitions', header: '来源申请', width: 'w-40' },
   { key: 'orderedQuantity', header: '订单数量', align: 'end', width: 'w-28' },
   { key: 'receivedQuantity', header: '已收数量', align: 'end', width: 'w-28' },

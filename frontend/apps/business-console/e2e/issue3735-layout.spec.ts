@@ -1,4 +1,5 @@
 import { expect, test, type Route } from '@playwright/test'
+import { writeFile } from 'node:fs/promises'
 
 // #3735：三条都是「肉眼看代码看不出来、只有真浏览器能判」的呈现问题，所以这些断言
 // 必须在真实浏览器里跑：
@@ -27,6 +28,9 @@ const principal = {
     'business.mes.work-orders.write',
     'business.mes.reporting.read',
     'business.mes.operations.write',
+    'business.mes.reporting.write',
+    'business.masterdata.resources.read',
+    'business.erp.procurement.read',
   ],
 }
 
@@ -167,6 +171,221 @@ test('④ 工序列不再逐道重复渲染完整工单号（#3735）', async ({
   expect(operations).toContain('执行中')
 })
 
+// #4306：登记的中文名称与业务号；短行同时守住普通列表显示。
+const overlapResources = {
+  'device-asset': [
+    {
+      resourceType: 'device-asset',
+      code: 'EQ00001',
+      displayName: '数控车床 CK6150（精密轴套加工）',
+      active: true,
+      snapshotVersion: '2026-09-28T09:00:00Z',
+      siteCode: 'SITE-01',
+    },
+    {
+      resourceType: 'device-asset',
+      code: 'EQ02',
+      displayName: '车床',
+      active: true,
+      snapshotVersion: '2026-09-28T09:00:00Z',
+      siteCode: 'SITE-02',
+    },
+  ],
+  site: [
+    {
+      resourceType: 'site',
+      code: 'SITE-01',
+      displayName: '常州精密机械制造有限公司第一工厂',
+      active: true,
+      snapshotVersion: '1',
+    },
+    {
+      resourceType: 'site',
+      code: 'SITE-02',
+      displayName: '一厂',
+      active: true,
+      snapshotVersion: '1',
+    },
+  ],
+  'business-partner': [
+    {
+      resourceType: 'business-partner',
+      code: 'SUP-20260928-000001',
+      displayName: '常州恒力弹簧有限公司',
+      partnerType: 'Supplier',
+      partnerRoles: ['Supplier'],
+      active: true,
+      snapshotVersion: '1',
+    },
+    {
+      resourceType: 'business-partner',
+      code: 'SUP02',
+      displayName: '恒力',
+      partnerType: 'Supplier',
+      partnerRoles: ['Supplier'],
+      active: true,
+      snapshotVersion: '1',
+    },
+  ],
+  sku: [
+    {
+      resourceType: 'sku',
+      code: 'RM-20260928-000001',
+      displayName: '精密数控车床用高强度合金弹簧轴套',
+      baseUomCode: 'EA',
+      active: true,
+      snapshotVersion: '1',
+    },
+    {
+      resourceType: 'sku',
+      code: 'RM02',
+      displayName: '轴套',
+      baseUomCode: 'EA',
+      active: true,
+      snapshotVersion: '1',
+    },
+  ],
+}
+
+const overlapCases = [
+  {
+    path: '/master-data/devices',
+    name: '设备',
+    headers: ['设备编码', '设备名称', '工厂'],
+    values: [
+      ['EQ00001', '数控车床 CK6150（精密轴套加工）', '常州精密机械制造有限公司第一工厂'],
+      ['EQ02', '车床', '一厂'],
+    ],
+  },
+  {
+    path: '/erp/procurement/purchase-orders',
+    name: '采购',
+    headers: ['采购单', '供应商', '物料'],
+    values: [
+      ['PO-20260928-000001', '常州恒力弹簧有限公司', '精密数控车床用高强度合金弹簧轴套'],
+      ['PO02', '恒力', '轴套'],
+    ],
+  },
+  {
+    path: '/mes/production-reports',
+    name: '报工',
+    headers: ['报工单', '工单', '工序任务'],
+    values: [
+      ['PRPT-20260928-000001', 'WO-20260928-000001', 'WO-20260928-000001-OP-10'],
+      ['PR02', 'WO02', 'WO02-OP10'],
+    ],
+  },
+]
+
+for (const scenario of overlapCases) {
+  test(`#4306 ${scenario.name}：长内容完整可读且不覆盖邻列，短行与操作保持`, async ({
+    page,
+  }, testInfo) => {
+    await page.goto(scenario.path, { waitUntil: 'domcontentloaded' })
+    const table = page.locator('table.nv-dt-table').first()
+    await expect(table).toBeVisible()
+    const rows = table.locator('tbody tr')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.first()).toContainText(scenario.values[0][0])
+    // 等目录名称进入真实页面，避免拿“目录尚未到”的业务码测中文布局。
+    for (const value of scenario.values[0]) await expect(rows.first()).toContainText(value)
+    await page.evaluate(() => document.fonts.ready)
+
+    const measurements = []
+    for (const header of scenario.headers) {
+      const index = await table
+        .locator('thead th')
+        .evaluateAll(
+          (heads, label) => heads.findIndex((head) => head.textContent?.trim() === label),
+          header,
+        )
+      expect(index, `找不到${header}列`).toBeGreaterThanOrEqual(0)
+      for (let rowIndex = 0; rowIndex < scenario.values.length; rowIndex += 1) {
+        const cell = rows.nth(rowIndex).locator('td').nth(index)
+        const expected = scenario.values[rowIndex][scenario.headers.indexOf(header)]
+        await expect(cell).toContainText(expected)
+        const measured = await cell.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          const style = getComputedStyle(element)
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+          const fragments = []
+          let node = walker.nextNode()
+          while (node) {
+            if (node.textContent?.trim()) {
+              const range = document.createRange()
+              range.selectNodeContents(node)
+              for (const rect of range.getClientRects()) {
+                fragments.push({
+                  text: node.textContent.trim(),
+                  left: rect.left,
+                  right: rect.right,
+                  top: rect.top,
+                  bottom: rect.bottom,
+                })
+              }
+            }
+            node = walker.nextNode()
+          }
+          return {
+            left: box.left + parseFloat(style.paddingLeft),
+            right: box.right - parseFloat(style.paddingRight),
+            top: box.top,
+            bottom: box.bottom,
+            width: box.width,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            fragments,
+          }
+        })
+        measurements.push({ header, rowIndex, expected, ...measured })
+      }
+    }
+    await writeFile(
+      testInfo.outputPath('4306-geometry.json'),
+      JSON.stringify(measurements, null, 2),
+    )
+    await page.screenshot({ path: testInfo.outputPath('4306-layout.png'), fullPage: true })
+    for (const cell of measurements) {
+      expect.soft(cell.width, `${cell.header}应有可读宽度`).toBeGreaterThan(16)
+      expect.soft(cell.fragments.length, `${cell.header}应有实际绘制文本`).toBeGreaterThan(0)
+      expect
+        .soft(cell.scrollWidth, `${cell.header}内容不得横向溢出`)
+        .toBeLessThanOrEqual(cell.clientWidth + 1)
+      for (const fragment of cell.fragments) {
+        expect
+          .soft(fragment.left, `${cell.header}：${fragment.text}左侧越界`)
+          .toBeGreaterThanOrEqual(cell.left - 1)
+        expect
+          .soft(fragment.right, `${cell.header}：${fragment.text}覆盖邻列`)
+          .toBeLessThanOrEqual(cell.right + 1)
+        expect
+          .soft(fragment.top, `${cell.header}文本顶部应可读`)
+          .toBeGreaterThanOrEqual(cell.top - 1)
+        expect
+          .soft(fragment.bottom, `${cell.header}文本底部应可读`)
+          .toBeLessThanOrEqual(cell.bottom + 1)
+      }
+    }
+    if (scenario.name === '设备') {
+      await rows.nth(1).getByRole('button', { name: '设备操作 EQ02', exact: true }).click()
+      await page.getByRole('menuitem', { name: '查看详情' }).click()
+      await expect(page.getByRole('dialog')).toContainText('车床')
+    }
+    if (scenario.name === '采购') {
+      // 未改列表筛选语义：普通短行仍可读，选择框可操作。
+      await page.getByRole('combobox', { name: '订单状态' }).click()
+      await page.getByRole('option', { name: '已关闭', exact: true }).click()
+      await expect(page.getByRole('combobox', { name: '订单状态' })).toContainText('已关闭')
+    }
+    if (scenario.name === '报工') {
+      await expect(rows.nth(1).getByRole('button', { name: '冲销', exact: true })).toBeEnabled()
+      await rows.nth(1).getByRole('button', { name: 'WO02', exact: true }).click()
+      await expect(page.getByRole('dialog')).toContainText('工单速览')
+      await expect(page.getByRole('dialog')).toContainText('wo-short')
+    }
+  })
+}
+
 async function routeConsoleApi(route: Route) {
   const url = new URL(route.request().url())
   if (url.pathname === '/api/console/v1/auth/refresh') {
@@ -180,6 +399,100 @@ async function routeConsoleApi(route: Route) {
 
 async function routeBusinessConsoleApi(route: Route) {
   const { pathname } = new URL(route.request().url())
+
+  if (pathname === '/api/business-console/v1/master-data/resources') {
+    const resourceType = new URL(route.request().url()).searchParams.get('resourceType')
+    const resources = overlapResources[resourceType as keyof typeof overlapResources] ?? []
+    return route.fulfill({ json: { success: true, data: { resources, total: resources.length } } })
+  }
+  if (pathname === '/api/business-console/v1/master-data/skus') {
+    return route.fulfill({
+      json: { success: true, data: { resources: overlapResources.sku, total: 2 } },
+    })
+  }
+  if (pathname === '/api/business-console/v1/erp/procurement/purchase-orders') {
+    const items = [
+      {
+        purchaseOrderNo: 'PO-20260928-000001',
+        supplierCode: 'SUP-20260928-000001',
+        siteCode: 'SITE-01',
+        status: 'Released',
+        receiptReadiness: 'Open',
+        totalAmount: 120,
+        lines: [
+          {
+            lineNo: '10',
+            skuCode: 'RM-20260928-000001',
+            uomCode: 'EA',
+            orderedQuantity: 12,
+            receivedQuantity: 0,
+            openQuantity: 12,
+            finalDelivery: false,
+            unitPrice: 10,
+            promisedDate: '2026-09-30',
+          },
+        ],
+      },
+      {
+        purchaseOrderNo: 'PO02',
+        supplierCode: 'SUP02',
+        siteCode: 'SITE-02',
+        status: 'Released',
+        receiptReadiness: 'Open',
+        totalAmount: 10,
+        lines: [
+          {
+            lineNo: '10',
+            skuCode: 'RM02',
+            uomCode: 'EA',
+            orderedQuantity: 1,
+            receivedQuantity: 0,
+            openQuantity: 1,
+            finalDelivery: false,
+            unitPrice: 10,
+            promisedDate: '2026-09-30',
+          },
+        ],
+      },
+    ]
+    return route.fulfill({ json: { success: true, data: { items, total: 2 } } })
+  }
+  if (pathname === '/api/business-console/v1/mes/production-reports') {
+    const items = [
+      {
+        productionReportId: 'report-long',
+        reportNo: 'PRPT-20260928-000001',
+        reversalReportNo: 'PRPT-20260928-000002',
+        workOrderId: 'wo-long',
+        workOrderNo: 'WO-20260928-000001',
+        operationTaskId: 'task-long',
+        operationTaskNo: 'WO-20260928-000001-OP-10',
+        goodQuantity: 12,
+        scrapQuantity: 0,
+        reworkQuantity: 0,
+        reportedAtUtc: '2026-09-28T09:00:00Z',
+        workOrderStatus: 'started',
+        operationActualLaborHours: 1.25,
+        operationActualMachineHours: 0.5,
+      },
+      {
+        productionReportId: 'report-short',
+        reportNo: 'PR02',
+        workOrderId: 'wo-short',
+        workOrderNo: 'WO02',
+        operationTaskId: 'task-short',
+        operationTaskNo: 'WO02-OP10',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        reworkQuantity: 0,
+        reportedAtUtc: '2026-09-28T09:00:00Z',
+        workOrderStatus: 'started',
+        operationActualLaborHours: 0.25,
+        operationActualMachineHours: 0.5,
+      },
+    ]
+    return route.fulfill({ json: { success: true, data: { items, total: 2 } } })
+  }
 
   // 作业范围是工单/工序列表的准入前提：读面按 `selectedScope` 过滤，
   // 响应里必须同时给 `authorizedScopes`（可选清单）与 `selectedScope`（当前选择），

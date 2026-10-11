@@ -428,12 +428,18 @@ function reReport(row: ReportRow) {
 }
 
 const columns: NvDataTableColumn<ReportRow>[] = [
-  { key: 'reportNo', header: '报工单', cellClass: 'font-medium' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo?.trim() || '—' },
+  { key: 'reportNo', header: '报工单', cellClass: 'font-medium whitespace-normal break-all' },
+  {
+    key: 'workOrderId',
+    header: '工单',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.workOrderNo?.trim() || '—',
+  },
   { key: 'output', header: '产量', accessor: (r) => r.goodQuantity ?? 0 },
   {
     key: 'operationTaskId',
     header: '工序任务',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
   { key: 'actualHours', header: '实际工时', width: 'w-36' },
@@ -530,7 +536,7 @@ async function dismissCandidate(candidateId?: string) {
           @mouseenter="hasLink(row) && focusPair(row)"
           @mouseleave="clearFocus"
         >
-          <div class="flex items-center gap-1.5">
+          <div class="flex flex-wrap items-center gap-1.5">
             <span>{{ row.reportNo?.trim() || '—' }}</span>
             <NvStatusBadge v-if="isReversalRow(row)" label="负向冲销" tone="danger" />
             <NvStatusBadge v-else-if="isAlreadyReversed(row)" label="已冲销" tone="warning" />
