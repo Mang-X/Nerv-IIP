@@ -14868,6 +14868,30 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_quality_http_client_preserves_work_order_and_operation_identity()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = new[] { new {
+                qualityItemId = "DEF-001", sourceType = "Defect",
+                sourceDocumentId = "WO-001-OP-10", status = "Open",
+                defectCode = "DIMENSION", ncrId = (string?)null,
+                workOrderId = "WO-001", operationTaskId = "WO-001-OP-10",
+            } },
+            total = 1,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+        var response = await client.ListRelatedQualityItemsAsync(
+            "internal-token-001", new BusinessConsoleMesListRequest("org-001", "env-dev"), CancellationToken.None);
+        var source = Assert.Single(response.Items);
+        Assert.Equal("WO-001", source.WorkOrderId);
+        Assert.Equal("WO-001-OP-10", source.OperationTaskId);
+        Assert.Single(handler.Requests);
+        Assert.StartsWith("/api/business/v1/mes/related-quality-items?", handler.Requests[0].RequestUri!.PathAndQuery);
+    }
+
+    [Fact]
     public async Task Mes_secondary_http_clients_forward_skip_take_and_map_total()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new

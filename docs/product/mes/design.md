@@ -138,6 +138,8 @@ MES（ISA-95 Level-3）分**四大运营域**：生产运营、质量运营、�
 异常三页（capacity/downtime/quality）与排产工作台（/scheduling）是孤岛 → 补「源工单回链」（异常行带 workOrderId+operationTaskId）与「工单→排产工作台」正向链（页内数据关联，不做页面互跳）。
 **统一带参契约**：跨工序操作一律携带 `workOrderId + operationTaskId + workCenterId + skuId`。
 
+质量与不良列表的来源链接使用质量读面提供的真实工单身份进入工单详情，同时携带独立的工序身份；详情标识对应的「来源工序」。工单级不良只进入工单，不猜测工序。来源显示文本不承担身份解析，也不依赖工序列表反查。
+
 ### 3.7 领料闭环可视化（跨域：MES 领料申请 → WMS 出库）
 **事实（2026-07-31 更正，含尚未落地项的明确标注）**：`MaterialIssueRequestRow` 早就含 `wmsRequestId`（连 WMS 出库）+ `requestedQuantity`/`receivedQuantity`（收料进度）+ `status`，但**字段有 ≠ 闭环有**：本文档 v1 据此写下的「后端闭环已建」是失实的 —— 领料申请创建不发任何领域事件，WMS 从不知道有人领料，`wmsRequestId` 恒 `null`。当前状态请按下面三行读，**不要再把"计划中"当成"已建成"**：
 

@@ -56820,6 +56820,14 @@
           "ncrId": {
             "type": "string",
             "nullable": true
+          },
+          "workOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

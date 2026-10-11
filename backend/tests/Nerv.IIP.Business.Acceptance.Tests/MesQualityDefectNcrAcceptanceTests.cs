@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
@@ -193,6 +194,11 @@ public sealed class MesQualityDefectNcrAcceptanceTests
         Assert.Equal(ncr.Id.ToString(), updatedDefect.NcrId);
         Assert.Equal(ncr.NcrCode, updatedDefect.NcrCode);
         Assert.Equal("scrap", updatedDefect.DispositionType);
+        var source = Assert.Single((await new ListRelatedQualityItemsQueryHandler(mesDb).Handle(
+            new ListRelatedQualityItemsQuery("org-001", "env-dev", "WO-ACCEPT-001", "OP-10"),
+            CancellationToken.None)).Items);
+        Assert.Equal("WO-ACCEPT-001", source.WorkOrderId);
+        Assert.Equal("OP-10", source.OperationTaskId);
     }
 
     [Fact]

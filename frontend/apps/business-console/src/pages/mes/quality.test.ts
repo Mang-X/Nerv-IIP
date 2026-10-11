@@ -35,7 +35,7 @@ const notifySuccess = vi.hoisted(() => vi.fn())
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: state.routeQuery }),
   useRouter: () => ({ push: vi.fn() }),
-  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+  RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' },
 }))
 
 vi.mock('@/utils/notify', () => ({
@@ -127,7 +127,12 @@ const uiStubs = {
   NvPageHeader: { template: '<header><slot name="actions" /></header>' },
   NvMetricCard: true,
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
-  NvDataTable: true,
+  NvDataTable: {
+    props: ['rows'],
+    template: `<div><div v-for="row in rows" :key="row.qualityItemId">
+      <slot name="cell-sourceDocumentId" :row="row" />
+    </div></div>`,
+  },
   NvStatusBadge: true,
   NvSelect: passthrough,
   NvSelectTrigger: passthrough,
@@ -182,7 +187,7 @@ const uiStubs = {
       '<button v-bind="$attrs" :type="type || \'button\'" :disabled="disabled"><slot /></button>',
   },
   NvSpinner: true,
-  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+  RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' },
 }
 
 function operationTask(overrides: Record<string, unknown> = {}) {
@@ -279,6 +284,55 @@ describe('MES 质量页 — 缺陷登记入口', () => {
         downstreamDocumentType: 'Defect',
         downstreamDocumentId: 'DEF-20260825-001',
       },
+    })
+  })
+
+  it('opens the real work order with the source operation using quality facts without operations permission', async () => {
+    state.operationTasks = []
+    state.qualityItems = [
+      {
+        qualityItemId: 'DEF-1',
+        sourceType: 'Defect',
+        sourceDocumentId: 'WO-20261012-002-OP-10',
+        workOrderId: 'WO-20261012-002',
+        operationTaskId: 'WO-20261012-002-OP-10',
+        status: 'Open',
+        defectCode: 'DIMENSION',
+        ncrId: null,
+      },
+    ]
+    const wrapper = mountPage(['business.mes.quality.read', 'business.mes.work-orders.read'])
+    await flushPromises()
+    const source = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((link) => link.text() === 'WO-20261012-002-OP-10')
+    expect(source).toBeDefined()
+    expect(source!.props('to')).toEqual({
+      path: '/mes/work-orders/WO-20261012-002',
+      query: { operationTaskId: 'WO-20261012-002-OP-10' },
+    })
+  })
+
+  it('opens a work-order-only defect without guessing an operation from its display text', async () => {
+    state.qualityItems = [
+      {
+        qualityItemId: 'DEF-2',
+        sourceType: 'Defect',
+        sourceDocumentId: '订单来源',
+        workOrderId: 'production-order-A',
+        operationTaskId: null,
+        status: 'Open',
+      },
+    ]
+    const wrapper = mountPage(['business.mes.quality.read', 'business.mes.work-orders.read'])
+    await flushPromises()
+    const source = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((link) => link.text() === '订单来源')
+    expect(source).toBeDefined()
+    expect(source!.props('to')).toEqual({
+      path: '/mes/work-orders/production-order-A',
+      query: { operationTaskId: undefined },
     })
   })
 

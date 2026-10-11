@@ -484,8 +484,11 @@ async function submitDefect() {
     >
       <template #cell-sourceDocumentId="{ row }">
         <RouterLink
-          v-if="isWorkOrder(row.sourceDocumentId)"
-          :to="`/mes/work-orders/${encodeURIComponent(row.sourceDocumentId!)}`"
+          v-if="row.workOrderId"
+          :to="{
+            path: `/mes/work-orders/${encodeURIComponent(row.workOrderId!)}`,
+            query: { operationTaskId: row.operationTaskId ?? undefined },
+          }"
           class="text-brand underline-offset-4 hover:underline"
         >
           {{ row.sourceDocumentId }}
