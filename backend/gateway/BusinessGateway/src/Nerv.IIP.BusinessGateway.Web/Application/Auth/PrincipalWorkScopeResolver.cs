@@ -4,6 +4,11 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
+internal static class PrincipalWorkScopeStableWireCodes
+{
+    public const string NotAuthorized = "work-scope-not-authorized";
+}
+
 public sealed record PrincipalWorkScopeSelection(
     string Kind,
     string Id,
@@ -182,5 +187,5 @@ public sealed class PrincipalWorkScopeResolver(
     }
 
     private static BusinessServiceProxyException Forbidden() =>
-        new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+        BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized);
 }

@@ -91,6 +91,12 @@ public sealed class BusinessServiceProxyException : Exception
 
     internal IReadOnlyCollection<JsonElement> ErrorData { get; }
 
+    /// <summary>仅用于 Gateway 本地批准公开的拒绝原因；下游 message 必须使用下游构造入口。</summary>
+    internal static BusinessServiceProxyException FromLocalRejection(
+        HttpStatusCode statusCode,
+        string safeMessage) =>
+        new(statusCode, safeMessage, innerException: null, messageIsSafe: true);
+
     public static BusinessServiceProxyException FromSafeDownstreamMessage(
         HttpStatusCode statusCode,
         string? downstreamMessage,
