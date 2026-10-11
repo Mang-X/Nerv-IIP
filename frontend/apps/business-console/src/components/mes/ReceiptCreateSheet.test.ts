@@ -162,7 +162,7 @@ describe('ReceiptCreateSheet', () => {
     let finish!: (value: unknown) => void
     state.createReceiptRequest = vi.fn(
       () =>
-        new Promise((resolve) => {
+        new Promise<unknown>((resolve) => {
           finish = resolve
         }),
     )
