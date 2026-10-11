@@ -45,7 +45,7 @@ public sealed class HttpOrderUrgencyMesDueDateProvider(
                 using var response = await mesClient.SendAsync(request, cancellationToken);
                 response.EnsureSuccessStatusCode();
                 using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-                var payload = document.RootElement.GetProperty("data");
+                var payload = document.RootElement;
                 foreach (var item in payload.GetProperty("items").EnumerateArray())
                 {
                     if (string.Equals(item.GetProperty("workOrderId").GetString(), workOrderId, StringComparison.Ordinal))
