@@ -71,13 +71,7 @@ const statusModel = computed({
 })
 
 const columns: NvDataTableColumn<SessionRow>[] = [
-  { key: 'sessionId', header: '会话 ID', cellClass: 'font-mono text-xs' },
-  {
-    key: 'userId',
-    header: '用户 ID',
-    cellClass: 'font-mono text-xs text-muted-foreground',
-    accessor: (r) => r.userId || '—',
-  },
+  { key: 'sessionContext', header: '会话', accessor: sessionLabel },
   { key: 'issuedAtUtc', header: '签发时间', accessor: (r) => formatDate(r.issuedAtUtc) },
   { key: 'expiresAtUtc', header: '过期时间', accessor: (r) => formatDate(r.expiresAtUtc) },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -111,11 +105,11 @@ function formatDate(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return date.toLocaleString('zh-CN')
 }
 
 function sessionLabel(session: ConsoleIamSessionResponse) {
-  return session.sessionId || '会话'
+  return `${formatDate(session.issuedAtUtc)} 签发的会话`
 }
 
 function isCurrentSession(session: ConsoleIamSessionResponse) {
@@ -202,9 +196,9 @@ async function confirmRevoke(sessionId: string) {
         :loading="tablePending"
         empty-message="没有符合当前条件的会话。"
       >
-        <template #cell-sessionId="{ row }">
+        <template #cell-sessionContext="{ row }">
           <div class="flex flex-col gap-1">
-            <span>{{ row.sessionId || '—' }}</span>
+            <span>{{ sessionLabel(row) }}</span>
             <span v-if="isCurrentSession(row)" class="text-xs font-normal text-muted-foreground">
               当前会话
             </span>
@@ -243,6 +237,7 @@ async function confirmRevoke(sessionId: string) {
         :current-session-id="currentSessionId"
         :pending="sessions.revokeSessionPending.value"
         :session="selectedSession"
+        :session-label="selectedSession ? sessionLabel(selectedSession) : '会话'"
         @confirm="confirmRevoke"
       />
     </section>

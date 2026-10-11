@@ -14,6 +14,7 @@ import { useNotifications } from './useNotifications'
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
+  failedQuery: undefined as string | undefined,
   refetchError: undefined as Error | undefined,
   singleMutationResult: undefined as unknown,
   batchMutationResult: undefined as unknown,
@@ -60,7 +61,7 @@ vi.mock('@pinia/colada', () => ({
 
     return {
       data: shallowRef({
-        success: true,
+        success: id !== coladaState.failedQuery,
         data: {
           items:
             id === 'listConsoleNotificationTasks'
@@ -112,6 +113,7 @@ describe('useNotifications', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.refetchError = undefined
+    coladaState.failedQuery = undefined
     coladaState.singleMutationResult = {
       success: true,
       data: {
@@ -301,4 +303,49 @@ describe('useNotifications', () => {
 
     expect(notifications.allError.value?.message).toBe('Refresh failed')
   })
+  it('keeps an unknown refresh failure visible with a Chinese fallback', async () => {
+    coladaState.refetchError = {} as Error
+    const notifications = useNotifications()
+    await notifications.refreshNotifications()
+    expect(notifications.allError.value?.message).toBe('无法刷新通知。')
+  })
+  it.each([
+    ['listConsoleNotificationMessages', '无法加载通知消息。'],
+    ['listConsoleNotificationTasks', '无法加载通知任务。'],
+  ])('reports an independent %s failure without a message in Chinese', (id, message) => {
+    coladaState.failedQuery = id
+    const notifications = useNotifications()
+    expect(notifications.allError.value?.message).toBe(message)
+  })
+  it.each([
+    ['markRead', '无法将通知标记为已读。'],
+    ['markAllUnreadRead', '无法将通知批量标记为已读。'],
+    ['submitIntent', '无法提交通知。'],
+  ] as const)(
+    'rejects %s failures without a message with Chinese feedback',
+    async (operation, message) => {
+      coladaState.singleMutationResult = { success: false }
+      coladaState.batchMutationResult = { success: false }
+      coladaState.intentMutationResult = { success: false }
+      const notifications = useNotifications()
+      await expect(
+        operation === 'markRead'
+          ? notifications.markRead('msg-1')
+          : operation === 'markAllUnreadRead'
+            ? notifications.markAllUnreadRead()
+            : notifications.submitIntent({
+                sourceService: 'ops',
+                sourceEventType: 'operation.failed',
+                sourceEventId: 'evt-1',
+                intentType: 'ops.operation.failed',
+                severity: 'warning',
+                dedupeKey: 'ops:evt-1',
+                title: '操作失败',
+                suggestedRecipientRefs: ['user-admin'],
+              }),
+      ).rejects.toThrow(message)
+      expect(notifications.allError.value?.message).toBe(message)
+      expect(coladaState.invalidateQueries).not.toHaveBeenCalled()
+    },
+  )
 })

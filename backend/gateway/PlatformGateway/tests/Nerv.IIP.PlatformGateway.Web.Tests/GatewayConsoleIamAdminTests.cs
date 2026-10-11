@@ -27,6 +27,38 @@ public sealed class GatewayConsoleIamAdminTests
         ["iam.users.read", "iam.users.manage"],
         ["role-platform-admin"]);
 
+    [Theory]
+    [InlineData("users", "登录名「admin」已被使用。")]
+    [InlineData("roles", "角色名称「平台管理员」已被使用。")]
+    public async Task Console_duplicate_name_rejection_preserves_chinese_reason_through_public_http(
+        string resource, string message)
+    {
+        await using var factory = CreateFactory(
+            FakeGatewayAuthorizationClient.Allowed(), new FakeGatewayIamAuthClient(), new FakeGatewayIamAdminClient())
+            .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IGatewayIamAdminClient>();
+                services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient>(client =>
+                    client.BaseAddress = new Uri("http://iam.local"))
+                    .ConfigurePrimaryHttpMessageHandler(() => new StubHttpMessageHandler(_ =>
+                        new HttpResponseMessage(HttpStatusCode.BadRequest)
+                        {
+                            Content = JsonContent.Create(new { success = false, message, code = 400, errorData = Array.Empty<object>() })
+                        }));
+            }));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+        var response = resource == "users"
+            ? await client.PostAsJsonAsync("/api/console/v1/iam/users",
+                new ConsoleCreateIamUserRequest("admin", "admin@nerv.local", "P@ssw0rd!", null))
+            : await client.PostAsJsonAsync("/api/console/v1/iam/roles",
+                new ConsoleCreateIamRoleRequest("平台管理员", ["iam.users.read"]));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.False(envelope.GetProperty("success").GetBoolean());
+        Assert.Equal(message, envelope.GetProperty("message").GetString());
+    }
+
     [Fact]
     public async Task Iam_admin_client_passes_iam_rejection_reason_through_as_bad_request()
     {
