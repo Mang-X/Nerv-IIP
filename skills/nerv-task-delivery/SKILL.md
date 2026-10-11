@@ -25,6 +25,8 @@ argument-hint: "<GitHub #issue 或 Linear key>[ <更多任务号或 key>]"
 
 一个代理不兼任同一 PR 的实施与审核；实施席位不同时承接两个 PR。审核侧不改代码。后续修复回原实施席位，复审回原审核侧。
 
+长任务优先使用宿主支持的异步委派与完成通知，保留任务标识并在通知后回读结果；宿主没有完成通知时使用其有界等待接口。CI 使用宿主原生监控；没有该能力时才使用 CI watcher。`watch pr` 只监控 CI，审核意见通过评论回读与席位通知接续。进度更新聚焦阶段变化、阻塞和终态。
+
 ## 1. 接入票面与恢复
 
 本技能消费 GitHub 中已发布的 spec、plan 和子票，不重做已经批准的访谈或拆票。
@@ -45,7 +47,7 @@ GitHub Issue 是范围、spec 和子票的权威源。Linear key 沿现有 GitHu
 
 中断后使用同一 Issue 编号重入：重新读取审批、plan 评论、子票依赖、现有分支与 PR 当前 head、评论线程和 CI 状态，从第一个未完成边界继续。以持久化结果为准，不依赖旧会话记忆，不重开已完成的 spec 或 breakdown。
 
-派单前确认当前路径的必需技能可用：`scope-gate` 负责定级，`nerv-pr-review` 负责每个 PR 审核；前端改动才需要 `frontend-gate`。上游产物齐全时不用重跑 `/to-spec` 或 `/to-tickets`；缺失时才检查对应用户手动技能。缺少当前步骤的必需技能时，报告准确名称和受阻步骤并暂停该票；不伪造替代结论或安装技能。
+派单前确认当前路径的必需技能可用：`scope-gate` 负责定级，`nerv-pr-review` 负责每个 PR 审核。上游产物齐全时不用重跑 `/to-spec` 或 `/to-tickets`；缺失时才检查对应用户手动技能。缺少当前步骤的必需技能时，报告准确名称和受阻步骤并暂停该票；不伪造替代结论或安装技能。
 
 **接入完成条件：** 每个输入唯一解析到 GitHub Issue；所需审批、spec 与 plan 链接有效；当前 Scope Gate 级别、获批票组和 ready frontier 清楚。未满足时只做上游交接，不派实施席位。
 
@@ -60,6 +62,8 @@ GitHub Issue 是范围、spec 和子票的权威源。Linear key 沿现有 GitHu
 | XL | 先有获批 spec / ADR 与拆票方案；独立评审完成前不开实施票 |
 | ? | 只启动限时 Spike / Investigation；不交付生产代码，结论用于重新定级和补票 |
 
+Spike / Investigation 按票面时间盒与结项条件交付调查结论、证据及未决条件；需要入库的报告 PR 沿用实施与审核席位分离，生产修复另按获批范围接续。结项回写分别列出调查结论、未完成验收和后续修复归属（已有票、新票或待批准范围）。满足票面结项条件时可关闭调查票，未完成验收保持未勾选；关闭调查票不代表生产缺陷修复。票面停止条件要求交回时，按该边界交回，后续修复先取得范围批准。
+
 已批准的 `/to-tickets` 子 Issue 和 `Blocked by` 图就是执行计划，不再询问粒度或依赖。`scope-gate` 决定交付形状和每票范围上限；`Blocked by` 只决定执行先后，不能从票的排列或创建顺序推断。
 
 每张子票都覆盖跨需要层次的**完整用户行为**。验收标准须能用明确输入、状态或输出判定。共享公开契约、schema 或消费者测试 seam 若由上游票定义，下游票通过真实 blocker 边等待上游合并；票面写清契约行为和消费者验证。仅确实独立的票可同波并行；前置票合并后，依赖票从最新 `origin/main` 起新树。本流程不引入 integration branch。
@@ -71,6 +75,10 @@ GitHub Issue 是范围、spec 和子票的权威源。Linear key 沿现有 GitHu
 每张票一棵持久 worktree、一条分支、一位实施席位和一张 PR。分支从当时最新 `origin/main` 起；rebase 前重新 fetch 并核实 ancestry；不用裸 `git stash` / `git stash pop`。不要把多票合成一支 PR。
 
 派单只给指针，不复述或预先解释票面：票号、worktree 绝对路径、《实施准则》整段。席位自己读取 GitHub Issue 和获批 plan，运行受影响门禁、push 并开中文 PR，正文带 `Fixes #<GitHub issue>`。跑门禁前先 `git add`，确保新增文件进入 `git ls-files`。实施席位不再派子代理。
+
+涉及前端改动时，实施席位按 `docs/governance/testing/README.md`、`docs/runbooks/testing/README.md` 与当前影响计划执行受影响的前端门禁。命令以 `frontend/package.json`、目标包 scripts 和 CI workflow 为准；`.claude/commands/frontend-gate.md` 是便捷命令入口，宿主未提供该命令时直接执行对应仓库命令，不因此暂停交付。门禁证据沿用精确 SHA、实际命令和输出的口径。
+
+涉及真实栈调查时，实施席位先读取 `docs/runbooks/local-development.md` 与 `docs/runbooks/testing/evidence.md`，及时留存关键请求及其关联服务日志；缺失的关联记录明确列入未决证据。
 
 开 PR 前先按票号、分支和 Issue 交叉核对是否已有 PR。每票只开一张 PR：已有 PR 时更新该 PR，不另建重复 PR；若原 PR 已合并，不再新开同票 PR；按第 6–7 节核对合并记录和父级验收，未完成的代码修复沿批准后的恢复路径处理。**REQUIRED SUB-SKILL：** 新建或更新 PR 正文时调用 `/pr`，按其摘要、证据、合并风险结构，用中文呈现可核实事实。证据须绑定实际 head SHA；CI、审核和门禁仍按本技能流程独立完成，不能由 `/pr` 文案代替。更新正文时保留原 PR 的 base/head 与 draft/ready 状态；新 PR 的状态遵循用户或任务的明确要求。`/pr` 只负责正文，不改变一票一 PR、审核与 CI 顺序、合并权限或 `--admin` 授权边界。
 
@@ -128,6 +136,8 @@ HEAD 改变后重新钉 SHA，之前一轮的门禁结果不再作为新 head �
 每个 PR 一行：Issue / 分支 / PR / 当前轮次 / 阻断数 / 下一步。多票父任务另报：父 Issue / 当前波次 / 未合并子票 / 阻塞依赖 / 父级验收状态与组合 SHA。
 
 只报实际执行证据并注明未运行项，区分本地测试、CI、真实运行、PR 合并和 tracker 完成。
+
+交接前，各席位核对本次启动的栈与辅助进程，按现有运行手册停止自有资源，报告停止结果、残留及证据位置。工作树清理按用户授权执行，先归档并校验证据，再移除已合并、干净、无活动占用且非当前的相关工作树；保留分支和无关工作树。
 
 **汇报完成条件：** 每张票和每个父任务均有明确状态、精确 SHA、实际证据、未运行项和下一步；没有证据的结果标为未验证或阻塞。
 
