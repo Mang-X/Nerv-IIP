@@ -297,18 +297,50 @@ public sealed class OrderUrgencyApplicationTests
         Assert.True(result.ExecutionRisk.IsSourceMissing);
     }
 
-    private sealed class MesDueDateHandler(DateTimeOffset dueUtc) : HttpMessageHandler
+    [Fact]
+    public async Task Missing_mes_work_orders_preserve_missing_urgency_facts()
+    {
+        await using var provider = CreateProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var clock = new MutableTimeProvider(Now);
+        using var mesClient = new HttpClient(new MesDueDateHandler(null))
+        {
+            BaseAddress = new Uri("http://mes"),
+        };
+        var handler = new ListOrderUrgenciesQueryHandler(
+            new OrderUrgencyService(db, clock),
+            new HttpOrderUrgencyMesDueDateProvider(mesClient),
+            clock);
+
+        var result = await handler.Handle(
+            new ListOrderUrgenciesQuery("org-001", "prod", ["SO-20260928-000001", "SO-DEMO-001"]),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, item =>
+        {
+            Assert.True(item.ExecutionRisk.IsSourceMissing);
+            Assert.Null(item.TimeCriticality.DueUtc);
+            Assert.Contains("time.due.missing", item.TimeCriticality.ReasonCodes);
+        });
+        Assert.Empty(await db.OrderUrgencySnapshots.ToArrayAsync());
+    }
+
+    private sealed class MesDueDateHandler(DateTimeOffset? dueUtc) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Assert.Equal("/api/business/v1/mes/work-orders", request.RequestUri!.AbsolutePath);
-            Assert.Contains("workOrderId=WO-001", request.RequestUri.Query);
+            Assert.Contains(dueUtc.HasValue ? "workOrderId=WO-001" : "workOrderId=SO-", request.RequestUri.Query);
             Assert.Contains("organizationId=org-001", request.RequestUri.Query);
             Assert.Contains("environmentId=prod", request.RequestUri.Query);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    $"{{\"data\":{{\"items\":[{{\"workOrderId\":\"WO-001\",\"dueUtc\":\"{dueUtc:O}\"}}],\"total\":1}}}}",
+                    dueUtc.HasValue
+                        ? $"{{\"items\":[{{\"workOrderId\":\"WO-001\",\"dueUtc\":\"{dueUtc:O}\"}}],\"total\":1}}"
+                        : "{\"items\":[],\"total\":0}",
                     Encoding.UTF8,
                     "application/json"),
             });
