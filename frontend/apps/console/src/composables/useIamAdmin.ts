@@ -158,12 +158,18 @@ export function useIamUsers() {
   })
 
   function clearMutationErrors() {
-    createUserMutation.reset()
-    updateUserMutation.reset()
-    disableUserMutation.reset()
-    enableUserMutation.reset()
-    resetUserPasswordMutation.reset()
-    replaceUserMembershipMutation.reset()
+    for (const mutation of [
+      createUserMutation,
+      updateUserMutation,
+      disableUserMutation,
+      enableUserMutation,
+      resetUserPasswordMutation,
+      replaceUserMembershipMutation,
+    ]) {
+      if (mutation.error.value && !mutation.isLoading.value) {
+        mutation.reset()
+      }
+    }
   }
 
   return {

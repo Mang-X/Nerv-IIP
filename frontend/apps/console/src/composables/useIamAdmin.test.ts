@@ -11,6 +11,7 @@ const apiState = vi.hoisted(() => ({
   listFetchCount: 0,
   listSuccess: true,
   disableFails: false,
+  updateResult: undefined as Promise<unknown> | undefined,
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -70,7 +71,7 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(),
   })),
   updateConsoleIamUserMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(),
+    mutation: vi.fn(async () => apiState.updateResult),
   })),
 }))
 
@@ -78,6 +79,8 @@ describe('useIamAdmin composables', () => {
   beforeEach(() => {
     apiState.listFetchCount = 0
     apiState.listSuccess = true
+    apiState.disableFails = false
+    apiState.updateResult = undefined
     vi.clearAllMocks()
   })
 
@@ -190,6 +193,40 @@ describe('useIamAdmin composables', () => {
     await users.enableUser({ path: { userId: 'user-1' } })
     await flushPromises()
     expect(wrapper.text()).toBe('')
+    wrapper.unmount()
+  })
+  it('keeps a pending update and its later failure visible when creating another user succeeds', async () => {
+    let rejectUpdate!: (reason: unknown) => void
+    apiState.updateResult = new Promise((_resolve, reject) => {
+      rejectUpdate = reject
+    })
+    let users!: ReturnType<typeof useIamUsers>
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          users = useIamUsers()
+          return () => h('output', users.updateUserError.value?.message ?? '')
+        },
+      }),
+      { global: { plugins: [createPinia(), PiniaColada] } },
+    )
+    await flushPromises()
+    const update = users.updateUser({
+      path: { userId: 'user-1' },
+      body: { loginName: 'admin', email: 'admin@nerv.local', enabled: true },
+    })
+    const failure = expect(update).rejects.toEqual({ message: '登录名「admin」已被使用。' })
+    await flushPromises()
+    expect(users.updateUserPending.value).toBe(true)
+    await users.createUser({
+      body: { loginName: 'operator', email: 'operator@nerv.local', password: 'Operator123!' },
+    })
+    expect.soft(users.updateUserPending.value).toBe(true)
+    rejectUpdate({ message: '登录名「admin」已被使用。' })
+    await failure
+    await flushPromises()
+    expect(users.updateUserPending.value).toBe(false)
+    expect(wrapper.text()).toBe('登录名「admin」已被使用。')
     wrapper.unmount()
   })
 })

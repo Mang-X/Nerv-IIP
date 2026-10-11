@@ -4,14 +4,20 @@ import { shallowRef } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationDeadLetters } from './useNotificationDeadLetters'
 
-const state = vi.hoisted(() => ({ envelope: {} as unknown, refreshFails: false }))
+const state = vi.hoisted(() => ({
+  envelope: {} as unknown,
+  refreshFails: false,
+  failedQuery: undefined as string | undefined,
+}))
 vi.mock('@nerv-iip/api-client', () => {
-  const query = () => ({ key: [], query: vi.fn() })
+  const query = (id: string) => () => ({ key: [{ _id: id }], query: vi.fn() })
   const mutation = () => ({ mutation: async () => state.envelope })
   return {
-    getConsoleNotificationDeadLetterMetricsQueryOptions: query,
-    getConsoleNotificationDeadLetterQueryOptions: query,
-    listConsoleNotificationDeadLettersQueryOptions: query,
+    getConsoleNotificationDeadLetterMetricsQueryOptions: query(
+      'getConsoleNotificationDeadLetterMetrics',
+    ),
+    getConsoleNotificationDeadLetterQueryOptions: query('getConsoleNotificationDeadLetter'),
+    listConsoleNotificationDeadLettersQueryOptions: query('listConsoleNotificationDeadLetters'),
     ignoreConsoleNotificationDeadLetterMutationOptions: mutation,
     replayConsoleNotificationDeadLetterMutationOptions: mutation,
     replayConsoleNotificationDeadLettersMutationOptions: mutation,
@@ -19,8 +25,8 @@ vi.mock('@nerv-iip/api-client', () => {
 })
 vi.mock('@pinia/colada', () => ({
   useQueryCache: () => ({ invalidateQueries: async () => {} }),
-  useQuery: () => ({
-    data: shallowRef(state.envelope),
+  useQuery: (factory: () => { key: Array<{ _id?: string }> }) => ({
+    data: shallowRef({ success: factory().key[0]?._id !== state.failedQuery }),
     error: shallowRef(),
     isLoading: shallowRef(false),
     refetch: async () => {
@@ -40,8 +46,10 @@ describe('dead-letter Chinese failure feedback', () => {
     useAuthStore().principal = { organizationId: 'org-1', environmentId: 'env-1' }
     state.envelope = { success: false }
     state.refreshFails = false
+    state.failedQuery = undefined
   })
   it('reports loading and refresh failures instead of presenting success', async () => {
+    state.failedQuery = 'listConsoleNotificationDeadLetters'
     const letters = useNotificationDeadLetters()
     expect(letters.allError.value?.message).toBe('无法加载死信队列。')
     state.refreshFails = true
@@ -62,5 +70,14 @@ describe('dead-letter Chinese failure feedback', () => {
           : letters.replayFiltered(),
     ).rejects.toThrow(message)
     expect(letters.actionError.value?.message).toBe(message)
+  })
+  it.each([
+    ['getConsoleNotificationDeadLetter', '无法加载死信详情。'],
+    ['getConsoleNotificationDeadLetterMetrics', '无法加载死信统计。'],
+  ])('reports an independent %s failure without a message in Chinese', (id, message) => {
+    state.failedQuery = id
+    const letters = useNotificationDeadLetters()
+    letters.selectedDeadLetterId.value = 'dead-letter-1'
+    expect(letters.allError.value?.message).toBe(message)
   })
 })
