@@ -83,9 +83,25 @@ const formSession = shallowRef(0)
 const formEditing = shallowRef<BusinessConsoleResourceItem>()
 
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'code', header: '设备编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
-  { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'siteCode', header: '工厂', width: 'w-28', accessor: (r) => siteName(r.siteCode) },
+  {
+    key: 'code',
+    header: '设备编码',
+    cellClass: 'font-medium whitespace-normal break-all',
+    accessor: (r) => r.code ?? '无',
+  },
+  {
+    key: 'displayName',
+    header: '设备名称',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.displayName ?? '无',
+  },
+  {
+    key: 'siteCode',
+    header: '工厂',
+    width: 'w-28',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => siteName(r.siteCode),
+  },
   {
     key: 'workshopCode',
     header: '车间',
