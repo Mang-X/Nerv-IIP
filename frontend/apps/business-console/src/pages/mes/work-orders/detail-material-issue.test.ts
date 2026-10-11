@@ -460,7 +460,7 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
         items: [],
         blockingReasons: [],
       })
-      state.refreshMaterialReadiness.mockImplementation(() => {
+      state.confirmLineSideReceipt.mockImplementation(async () => {
         readinessQuery.pending = true
       })
       const wrapper = mountDetail([
@@ -470,7 +470,7 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
       await wrapper.get('[data-testid="receive-material-MIR-001"]').trigger('click')
       await wrapper.get('[data-testid="submit-line-side-receipt"]').trigger('click')
       await wrapper.vm.$nextTick()
-      expect(state.refreshMaterialReadiness).toHaveBeenCalledTimes(1)
+      expect(state.refreshMaterialReadiness).not.toHaveBeenCalled()
       const metric = wrapper.get('[data-metric="用料齐套"]')
       expect(metric.text()).toContain('正在更新齐套')
       expect(metric.text()).not.toContain('阻塞')
@@ -491,6 +491,30 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     await metric.get('button').trigger('click')
     expect(state.refreshMaterialReadiness).toHaveBeenCalledTimes(1)
     expect(state.confirmLineSideReceipt).not.toHaveBeenCalled()
+  })
+
+  it('收料受理后读回失败关闭提交表单，齐套重试不重复收料', async () => {
+    state.materialIssueRequests.push({
+      requestId: 'MIR-001',
+      workOrderId: 'WO-1',
+      materialId: 'MAT-OIL',
+      requestedQuantity: 5,
+      receivedQuantity: 0,
+      status: 'Requested',
+    })
+    state.confirmLineSideReceipt.mockImplementation(async () => {
+      readinessQuery.error = new Error('齐套GET失败')
+    })
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])
+    await wrapper.get('[data-testid="receive-material-MIR-001"]').trigger('click')
+    await wrapper.get('[data-testid="submit-line-side-receipt"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="submit-line-side-receipt"]').exists()).toBe(false)
+    const metric = wrapper.get('[data-metric="用料齐套"]')
+    expect(metric.text()).toContain('齐套更新失败')
+    await metric.get('button').trigger('click')
+    expect(state.refreshMaterialReadiness).toHaveBeenCalledTimes(1)
+    expect(state.confirmLineSideReceipt).toHaveBeenCalledTimes(1)
   })
 
   it('线边收料 400 时把服务端的具体原因渲染到收料表单', async () => {

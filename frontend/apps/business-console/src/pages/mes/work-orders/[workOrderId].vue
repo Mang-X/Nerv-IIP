@@ -589,7 +589,6 @@ async function submitReceipt() {
     })
     receiveOpen.value = false
     notifySuccess('收料已受理，正在更新齐套。')
-    void refreshMaterialReadiness()
   } catch (error) {
     receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
     notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
