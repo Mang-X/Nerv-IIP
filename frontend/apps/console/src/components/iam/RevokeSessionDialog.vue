@@ -17,9 +17,11 @@ const props = withDefaults(
     currentSessionId?: string
     pending?: boolean
     session?: ConsoleIamSessionResponse
+    sessionLabel?: string
   }>(),
   {
     pending: false,
+    sessionLabel: '该会话',
   },
 )
 
@@ -50,7 +52,7 @@ function confirmRevoke() {
       <AlertDialogHeader>
         <AlertDialogTitle>吊销会话</AlertDialogTitle>
         <AlertDialogDescription>
-          吊销 {{ props.session?.sessionId }} 将终止该会话的刷新链路。
+          吊销 {{ props.sessionLabel }} 后，该会话将无法继续使用。
           <span v-if="props.session?.sessionId === props.currentSessionId"
             >这是你当前的会话，可能会被登出。</span
           >

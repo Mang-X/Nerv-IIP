@@ -17,7 +17,7 @@ import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { computed, shallowRef } from 'vue'
 
-const CONTEXT_UNAVAILABLE_MESSAGE = 'Console organization and environment context is unavailable.'
+const CONTEXT_UNAVAILABLE_MESSAGE = '当前组织与环境信息不可用。'
 const ignoreBackgroundError = (_error: unknown) => {}
 
 export type DeadLetterStatusFilter = '' | 'Pending' | 'Failed' | 'Replayed' | 'Ignored'
@@ -164,13 +164,13 @@ export function useNotificationDeadLetters() {
   const pendingCount = computed(() => metrics.value?.pendingCount ?? 0)
   const failedCount = computed(() => metrics.value?.failedCount ?? 0)
   const listEnvelopeError = computed(() =>
-    responseEnvelopeError(listQuery.data.value, 'Unable to load dead letters.'),
+    responseEnvelopeError(listQuery.data.value, '无法加载死信队列。'),
   )
   const detailEnvelopeError = computed(() =>
-    responseEnvelopeError(detailQuery.data.value, 'Unable to load dead-letter detail.'),
+    responseEnvelopeError(detailQuery.data.value, '无法加载死信详情。'),
   )
   const metricsEnvelopeError = computed(() =>
-    responseEnvelopeError(metricsQuery.data.value, 'Unable to load dead-letter metrics.'),
+    responseEnvelopeError(metricsQuery.data.value, '无法加载死信统计。'),
   )
   const allError = computed(
     () =>
@@ -195,7 +195,7 @@ export function useNotificationDeadLetters() {
         selectedDeadLetterId.value ? detailQuery.refetch() : Promise.resolve(),
       ])
     } catch (error) {
-      actionError.value = toError(error, 'Unable to refresh dead letters.')
+      actionError.value = toError(error, '无法刷新死信队列。')
     }
   }
 
@@ -216,10 +216,10 @@ export function useNotificationDeadLetters() {
         } as Parameters<
           typeof replayMutation.mutateAsync
         >[0])) as NotificationDeadLetterReplayEnvelope,
-        'Unable to replay dead letter.',
+        '无法重放死信。',
       )
     } catch (error) {
-      actionError.value = toError(error, 'Unable to replay dead letter.')
+      actionError.value = toError(error, '无法重放死信。')
       throw actionError.value
     }
   }
@@ -240,10 +240,10 @@ export function useNotificationDeadLetters() {
         } as Parameters<
           typeof replayBatchMutation.mutateAsync
         >[0])) as NotificationDeadLetterBatchReplayEnvelope,
-        'Unable to replay matching dead letters.',
+        '无法批量重放死信。',
       )
     } catch (error) {
-      actionError.value = toError(error, 'Unable to replay matching dead letters.')
+      actionError.value = toError(error, '无法批量重放死信。')
       throw actionError.value
     }
   }
@@ -268,10 +268,10 @@ export function useNotificationDeadLetters() {
         } as Parameters<
           typeof ignoreMutation.mutateAsync
         >[0])) as NotificationDeadLetterDetailEnvelope,
-        'Unable to ignore dead letter.',
+        '无法忽略死信。',
       )
     } catch (error) {
-      actionError.value = toError(error, 'Unable to ignore dead letter.')
+      actionError.value = toError(error, '无法忽略死信。')
       throw actionError.value
     }
   }

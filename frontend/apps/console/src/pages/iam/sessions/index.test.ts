@@ -100,7 +100,9 @@ describe('IAM sessions page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('会话')
-    expect(wrapper.text()).toContain('session-1')
+    expect(wrapper.text()).not.toContain('session-1')
+    expect(wrapper.text()).not.toContain('user-admin')
+    expect(wrapper.text()).toContain('签发时间')
     expect(wrapper.text()).toContain('吊销')
     expect(wrapper.find('[style*="--legacy-color"]').exists()).toBe(false)
   })
@@ -145,7 +147,7 @@ describe('IAM sessions page', () => {
     await flushPromises()
 
     expect(
-      wrapper.get('button[aria-label="吊销会话 session-current"]').attributes('disabled'),
+      wrapper.findAll('button[aria-label^="吊销会话"]')[0]!.attributes('disabled'),
     ).toBeDefined()
   })
 
@@ -153,9 +155,11 @@ describe('IAM sessions page', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('button[aria-label="吊销会话 session-1"]').trigger('click')
+    await wrapper.findAll('button[aria-label^="吊销会话"]')[1]!.trigger('click')
     await flushPromises()
 
+    expect(document.body.textContent).not.toContain('session-1')
+    expect(document.body.textContent).not.toContain('user-admin')
     const confirmButton = [...document.body.querySelectorAll('button')].find(
       (button) => button.textContent?.trim() === '吊销会话',
     )
@@ -174,7 +178,7 @@ describe('IAM sessions page', () => {
     await flushPromises()
 
     expect(
-      wrapper.get('button[aria-label="吊销会话 session-1"]').attributes('disabled'),
+      wrapper.findAll('button[aria-label^="吊销会话"]')[1]!.attributes('disabled'),
     ).toBeDefined()
   })
 
@@ -183,7 +187,7 @@ describe('IAM sessions page', () => {
     await flushPromises()
 
     expect(
-      wrapper.get('button[aria-label="吊销会话 session-revoked"]').attributes('disabled'),
+      wrapper.findAll('button[aria-label^="吊销会话"]')[2]!.attributes('disabled'),
     ).toBeDefined()
   })
 

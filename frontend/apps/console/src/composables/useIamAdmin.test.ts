@@ -10,6 +10,7 @@ import { useIamUsers } from './useIamAdmin'
 const apiState = vi.hoisted(() => ({
   listFetchCount: 0,
   listSuccess: true,
+  disableFails: false,
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -20,7 +21,9 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(),
   })),
   disableConsoleIamUserMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(),
+    mutation: vi.fn(async () => {
+      if (apiState.disableFails) throw { message: '平台管理员账号不能停用。' }
+    }),
   })),
   enableConsoleIamUserMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
@@ -167,5 +170,26 @@ describe('useIamAdmin composables', () => {
     await flushPromises()
 
     expect(wrapper.text()).toBe('0 0')
+  })
+  it('clears an earlier failed mutation after a different user operation succeeds', async () => {
+    let users!: ReturnType<typeof useIamUsers>
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          users = useIamUsers()
+          return () => h('output', users.disableUserError.value?.message ?? '')
+        },
+      }),
+      { global: { plugins: [createPinia(), PiniaColada] } },
+    )
+    await flushPromises()
+    apiState.disableFails = true
+    await expect(users.disableUser({ path: { userId: 'user-1' } })).rejects.toBeDefined()
+    await flushPromises()
+    expect(wrapper.text()).toBe('平台管理员账号不能停用。')
+    await users.enableUser({ path: { userId: 'user-1' } })
+    await flushPromises()
+    expect(wrapper.text()).toBe('')
+    wrapper.unmount()
   })
 })

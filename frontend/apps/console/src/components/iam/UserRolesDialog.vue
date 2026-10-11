@@ -52,7 +52,7 @@ function handleSubmit() {
       <NvDialogHeader>
         <NvDialogTitle>分配角色</NvDialogTitle>
         <NvDialogDescription>
-          为用户 {{ user?.loginName || user?.userId }} 设置在当前组织环境中的角色。
+          为用户 {{ user?.loginName || '—' }} 设置在当前组织环境中的角色。
         </NvDialogDescription>
       </NvDialogHeader>
 

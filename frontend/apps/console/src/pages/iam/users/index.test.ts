@@ -12,6 +12,7 @@ const iamState = vi.hoisted(() => ({
   createUser: vi.fn(),
   disableUser: vi.fn(),
   enableUser: vi.fn(),
+  rejection: undefined as { message: string } | undefined,
   filters: { pageIndex: 1, pageSize: 20 } as { pageIndex: number; pageSize: number },
   membershipError: undefined as { message: string } | undefined,
   membershipPending: false,
@@ -60,7 +61,7 @@ vi.mock('@/composables/useIamAdmin', () => ({
   }),
   useIamUsers: () => ({
     createUser: iamState.createUser,
-    createUserError: computed(() => undefined),
+    createUserError: computed(() => iamState.rejection),
     createUserPending: shallowRef(false),
     disableUser: iamState.disableUser,
     disableUserError: computed(() => undefined),
@@ -108,6 +109,7 @@ function mountPage() {
 describe('IAM users page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    iamState.rejection = undefined
     document.body.innerHTML = ''
     iamState.createUser.mockResolvedValue({ data: { userId: 'user-created' }, success: true })
     iamState.replaceUserMembership.mockResolvedValue(undefined)
@@ -135,6 +137,13 @@ describe('IAM users page', () => {
       },
     ]
     permissionState.canManage.value = true
+  })
+
+  it('renders the Chinese duplicate-name rejection received from IAM', async () => {
+    iamState.rejection = { message: '登录名「admin」已被使用。' }
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('登录名「admin」已被使用。')
   })
 
   it('renders the users list with FE-2 blocks and no legacy color variables', async () => {
@@ -253,6 +262,18 @@ describe('IAM users page', () => {
 
     expect(wrapper.text()).toContain('2026-08-31')
     expect(wrapper.text()).toContain('需改密')
+  })
+
+  it('does not show internal user identities even when the login name is missing', async () => {
+    iamState.users[0]!.loginName = ''
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('user-admin')
+    expect(wrapper.text()).not.toContain('用户 ID')
+    expect(wrapper.find('button[aria-label="分配角色 用户"]').exists()).toBe(true)
+    await wrapper.get('button[aria-label="分配角色 用户"]').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('user-admin')
   })
 
   it('creates a user and assigns the chosen roles in the current organization environment', async () => {

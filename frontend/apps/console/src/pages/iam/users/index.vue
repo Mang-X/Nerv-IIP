@@ -159,12 +159,6 @@ const columns: NvDataTableColumn<UserRow>[] = [
     header: '密码策略',
     width: 'w-32',
   },
-  {
-    key: 'userId',
-    header: '用户 ID',
-    cellClass: 'font-mono text-xs text-muted-foreground',
-    accessor: (r) => r.userId || '—',
-  },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-72' },
 ]
@@ -186,7 +180,7 @@ function statusToEnabledFilter(nextStatus: '' | 'enabled' | 'disabled') {
 }
 
 function userLabel(user: ConsoleIamUserResponse) {
-  return user.loginName || user.userId || '用户'
+  return user.loginName || '用户'
 }
 
 function formatDate(value?: string | null) {
