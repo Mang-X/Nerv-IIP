@@ -1807,7 +1807,7 @@ describe('business MES composables', () => {
     expect(mutationOptions).toBeDefined()
     const sentBody = mutationOptions!.mutation.mock.calls[0]![0].body
     expect(sentBody).not.toHaveProperty('unitCost')
-    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(3)
   })
 
   it('tracks concurrent inventory-posting retries independently by requestNo', async () => {
