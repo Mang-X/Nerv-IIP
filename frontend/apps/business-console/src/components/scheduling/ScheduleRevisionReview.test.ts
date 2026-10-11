@@ -130,6 +130,36 @@ describe('修订逐工序对比', () => {
     ).toContain('已移动')
   })
 
+  it.each([
+    ['仅开始时间', '2026-09-30T00:30:00Z', '2026-09-30T02:00:00Z'],
+    ['仅结束时间', '2026-09-30T00:00:00Z', '2026-09-30T02:30:00Z'],
+    ['起止时间平移', '2026-09-30T00:30:00Z', '2026-09-30T02:30:00Z'],
+  ])('同资源、同分段的%s变化仍是移动，锁定说明对应调整后位置', (_, startUtc, endUtc) => {
+    const before = basePlan.assignments![0]!
+    const wrapper = mount(ScheduleRevisionReview, {
+      props: {
+        basePlan: { assignments: [before] },
+        revision: {
+          candidate: {
+            assignments: [{ ...before, startUtc, endUtc, isLocked: true }],
+            changeSummary: [
+              {
+                orderId: before.orderId,
+                operationId: before.operationId,
+                changeType: 'preserved',
+                message: '锁定工序已按原计划保留，未参与本次重排。',
+              },
+            ],
+          },
+        },
+      },
+    })
+    const row = wrapper.get('[data-change-row]')
+    expect(row.text()).toContain('已移动')
+    expect(row.text()).toContain('相对基线已调整资源或排程时间，按调整后的位置锁定')
+    expect(row.text()).not.toContain('按原计划保留')
+  })
+
   it('筛选工单只显示该工单工序，清空恢复全部', async () => {
     const wrapper = mount(ScheduleRevisionReview, { props: { revision: { candidate }, basePlan } })
     const input = wrapper.get('input[aria-label="筛选工单"]')

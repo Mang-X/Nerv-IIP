@@ -28,33 +28,7 @@ const filteredChanges = computed(() => {
       const after = props.tasks?.find(
         (task) => task.orderId === change.orderId && task.operationId === change.operationId,
       )
-      if (!props.baseTasks || !props.tasks || !after) return { ...change, before, after }
-      const sameTime = (left: string, right: string) => Date.parse(left) === Date.parse(right)
-      const unchanged =
-        before &&
-        before.resourceId === after.resourceId &&
-        sameTime(before.startUtc, after.startUtc) &&
-        sameTime(before.endUtc, after.endUtc) &&
-        (before.segments ?? []).length === (after.segments ?? []).length &&
-        (before.segments ?? []).every((segment, index) => {
-          const next = after.segments![index]!
-          return sameTime(segment.startUtc, next.startUtc) && sameTime(segment.endUtc, next.endUtc)
-        })
-      const changeType = !before ? 'added' : unchanged ? 'preserved' : 'moved'
-      const message = !before
-        ? change.message
-        : unchanged
-          ? '资源、起止时间与分段保持不变'
-          : change.changeType === 'added'
-            ? '资源或排程时间已调整'
-            : change.message
-      return {
-        ...change,
-        changeType: changeType as ScheduleChange['changeType'],
-        message,
-        before,
-        after,
-      }
+      return { ...change, before, after }
     })
 })
 function formatTime(value: string) {
