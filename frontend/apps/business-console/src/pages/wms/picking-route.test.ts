@@ -172,8 +172,8 @@ const uiStubs = {
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
   NvDataTable: {
     props: ['rows', 'columns'],
-    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i">
-      <td v-for="column in columns" :key="column.key" :data-cell="column.key">
+    template: `<table data-ui-table><thead><tr><th v-for="column in columns.filter((c) => !c.defaultHidden)" :key="column.key">{{ column.header }}</th></tr></thead><tbody><tr v-for="(row, i) in rows" :key="i">
+      <td v-for="column in columns.filter((c) => !c.defaultHidden)" :key="column.key" :data-cell="column.key">
         <slot :name="'cell-' + column.key" :row="row">{{ column.accessor ? column.accessor(row) : row[column.key] }}</slot>
       </td>
     </tr></tbody></table>`,
@@ -211,13 +211,23 @@ describe('WMS picking route context', () => {
     wmsState.taskQuantities = {}
   })
 
-  it.each([0, 0.7])('计划 1.4kg 与已执行 %skg 分列展示，保留真实状态', (executedQuantity) => {
-    wmsState.taskQuantities = { plannedQuantity: 1.4, executedQuantity, uomCode: 'kg' }
+  it.each([
+    [0, 'kg'],
+    [0.7, 'kg'],
+    [2, 'pcs'],
+  ] as const)('计划量与已执行 %s %s 分列展示，保留真实状态', (executedQuantity, uomCode) => {
+    wmsState.taskQuantities = { plannedQuantity: 1.4, executedQuantity, uomCode }
     const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
 
     expect(wrapper.get('[data-cell="plannedQuantity"]').text()).toBe('1.4')
     expect(wrapper.get('[data-cell="executedQuantity"]').text()).toBe(String(executedQuantity))
-    expect(wrapper.get('[data-cell="uomCode"]').text()).toBe('kg')
+    expect(wrapper.get('[data-cell="uomCode"]').text()).toBe(uomCode)
+    expect(
+      wrapper
+        .findAll('th')
+        .slice(6, 9)
+        .map((header) => header.text()),
+    ).toEqual(['计划数量', '已执行数量', '单位'])
     expect(wrapper.get('[data-cell="status"]').text()).toBe('inProgress')
   })
 
