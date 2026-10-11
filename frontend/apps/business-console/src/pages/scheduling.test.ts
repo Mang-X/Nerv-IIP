@@ -879,7 +879,8 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('plan-001')
     expect(wrapper.text()).toContain('已生成')
     expect(wrapper.text()).toContain('8')
-    expect(wrapper.text()).toContain('1 项冲突')
+    expect(wrapper.text()).toContain('1 项约束（冲突/预警）')
+    expect(wrapper.text()).not.toContain('1 项冲突')
     expect(wrapper.text()).toContain('2 项未排')
   })
 

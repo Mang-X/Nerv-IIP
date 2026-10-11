@@ -70,6 +70,96 @@ describe('修订逐工序对比', () => {
     expect(rows[2].text()).toContain('未排 → ASM-01')
   })
 
+  it('重预览以业务身份区分未变、移动与新增，不受新 assignment 编号影响', () => {
+    const unchanged = { ...basePlan.assignments![0], assignmentId: 'new-id', isLocked: false }
+    const moved = { ...basePlan.assignments![1], assignmentId: 'moved-id', resourceId: 'CNC-04' }
+    const added = { ...candidate.assignments![1], assignmentId: 'added-id' }
+    const revised = {
+      assignments: [unchanged, moved, added],
+      changeSummary: [unchanged, moved, added].map((item) => ({
+        orderId: item.orderId,
+        operationId: item.operationId,
+        changeType: 'added' as const,
+        message: 'Scheduled by APS lite.',
+      })),
+    }
+    const wrapper = mount(ScheduleRevisionReview, {
+      props: { revision: { candidate: revised }, basePlan },
+    })
+    const rows = wrapper.findAll('[data-change-row]')
+    expect(rows[0].text()).toContain('保持不变')
+    expect(rows[0].text()).not.toContain('新增')
+    expect(rows[1].text()).toContain('已移动')
+    expect(rows[2].text()).toContain('新增')
+  })
+
+  it('锁定未变工序保持不变，相同外层时间内的生产分段移动也能识别', () => {
+    const before = {
+      ...basePlan.assignments![0],
+      isLocked: true,
+      segments: [
+        { startUtc: '2026-09-30T00:00:00Z', endUtc: '2026-09-30T01:00:00Z' },
+        { startUtc: '2026-09-30T01:30:00Z', endUtc: '2026-09-30T02:00:00Z' },
+      ],
+    }
+    const summary = {
+      orderId: before.orderId,
+      operationId: before.operationId,
+      changeType: 'preserved' as const,
+    }
+    const mountRevision = (segments: typeof before.segments) =>
+      mount(ScheduleRevisionReview, {
+        props: {
+          basePlan: { assignments: [before] },
+          revision: {
+            candidate: {
+              assignments: [{ ...before, assignmentId: 'new-lock-id', segments }],
+              changeSummary: [summary],
+            },
+          },
+        },
+      })
+    expect(mountRevision(before.segments).get('[data-change-row]').text()).toContain('保持不变')
+    expect(
+      mountRevision([
+        before.segments[0],
+        { ...before.segments[1], startUtc: '2026-09-30T01:15:00Z' },
+      ])
+        .get('[data-change-row]')
+        .text(),
+    ).toContain('已移动')
+  })
+
+  it.each([
+    ['仅开始时间', '2026-09-30T00:30:00Z', '2026-09-30T02:00:00Z'],
+    ['仅结束时间', '2026-09-30T00:00:00Z', '2026-09-30T02:30:00Z'],
+    ['起止时间平移', '2026-09-30T00:30:00Z', '2026-09-30T02:30:00Z'],
+  ])('同资源、同分段的%s变化仍是移动，锁定说明对应调整后位置', (_, startUtc, endUtc) => {
+    const before = basePlan.assignments![0]!
+    const wrapper = mount(ScheduleRevisionReview, {
+      props: {
+        basePlan: { assignments: [before] },
+        revision: {
+          candidate: {
+            assignments: [{ ...before, startUtc, endUtc, isLocked: true }],
+            changeSummary: [
+              {
+                orderId: before.orderId,
+                operationId: before.operationId,
+                changeType: 'preserved',
+                message: '锁定工序已按原计划保留，未参与本次重排。',
+              },
+            ],
+          },
+        },
+      },
+    })
+    const row = wrapper.get('[data-change-row]')
+    expect(row.text()).toContain('已移动')
+    expect(row.text()).toContain('相对基线已调整资源或排程时间，按调整后的位置锁定')
+    expect(row.text()).not.toContain('按原计划保留')
+  })
+
   it('筛选工单只显示该工单工序，清空恢复全部', async () => {
     const wrapper = mount(ScheduleRevisionReview, { props: { revision: { candidate }, basePlan } })
     const input = wrapper.get('input[aria-label="筛选工单"]')

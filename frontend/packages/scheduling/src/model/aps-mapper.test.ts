@@ -21,6 +21,30 @@ describe('toModel', () => {
     expect(task.progress).toBeUndefined()
   })
 
+  it('未知设备警告不会被画作已确认冲突，已知设备阻塞仍保留冲突', () => {
+    const assignment = samplePlan.assignments![0]!
+    const conflict = {
+      conflictId: 'equipment-risk',
+      reasonCode: 'equipment' as const,
+      orderId: assignment.orderId,
+      operationId: assignment.operationId,
+      resourceId: assignment.resourceId,
+      message: '设备状态未知，开工前请人工确认设备可用',
+    }
+    const warning = toModel({ ...samplePlan, conflicts: [{ ...conflict, severity: 'warning' }] })
+    expect(warning.tasks.find((task) => task.id === assignment.assignmentId)?.hasConflict).toBe(
+      false,
+    )
+    const blocked = toModel({
+      ...samplePlan,
+      conflicts: [{ ...conflict, severity: 'error', message: '设备停机' }],
+    })
+    expect(blocked.tasks.find((task) => task.id === assignment.assignmentId)?.hasConflict).toBe(
+      true,
+    )
+    expect(blocked.conflicts[0]!.message).toBe('设备停机')
+  })
+
   it('uses the frozen predecessor graph instead of connecting adjacent sequence numbers', () => {
     const model = toModel({
       ...samplePlan,

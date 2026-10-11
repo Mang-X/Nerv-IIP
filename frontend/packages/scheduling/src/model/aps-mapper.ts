@@ -165,7 +165,7 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
   // 把冲突标记回对应 task。
   for (const c of conflicts) {
     const t = operations.find((o) => o.id === c.taskId)
-    if (t) {
+    if (t && !(c.reason === 'equipment' && c.severity === 'warning')) {
       t.hasConflict = true
       t.conflictReason = c.reason
     }

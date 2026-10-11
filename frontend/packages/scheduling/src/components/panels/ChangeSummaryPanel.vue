@@ -21,15 +21,15 @@ const filteredChanges = computed(() => {
   const query = orderFilter.value.trim().toLocaleLowerCase()
   return props.changes
     .filter((change) => change.orderId.toLocaleLowerCase().includes(query))
-    .map((change) => ({
-      ...change,
-      before: props.baseTasks?.find(
+    .map((change) => {
+      const before = props.baseTasks?.find(
         (task) => task.orderId === change.orderId && task.operationId === change.operationId,
-      ),
-      after: props.tasks?.find(
+      )
+      const after = props.tasks?.find(
         (task) => task.orderId === change.orderId && task.operationId === change.operationId,
-      ),
-    }))
+      )
+      return { ...change, before, after }
+    })
 })
 function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', {

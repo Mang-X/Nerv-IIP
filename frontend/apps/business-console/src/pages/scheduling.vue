@@ -428,7 +428,7 @@ const columns: NvDataTableColumn<BusinessConsoleSchedulingPlanSummaryResponse>[]
     width: '7rem',
     accessor: (row) => `${row.assignmentCount ?? 0} 道工序`,
   },
-  { key: 'conflicts', header: '冲突摘要', width: '12rem', accessor: conflictSummary },
+  { key: 'conflicts', header: '约束摘要', width: '12rem', accessor: conflictSummary },
   {
     key: 'releasedAtUtc',
     header: '发布时间',
@@ -526,7 +526,7 @@ function conflictSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
   if (conflicts === 0 && unscheduled === 0) return '无冲突'
 
   return [
-    conflicts > 0 ? `${conflicts} 项冲突` : '',
+    conflicts > 0 ? `${conflicts} 项约束（冲突/预警）` : '',
     unscheduled > 0 ? `${unscheduled} 项未排` : '',
   ]
     .filter(Boolean)
