@@ -5726,6 +5726,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     status?: 'Open' | 'ReworkPending' | 'ScrapAccepted' | 'ReturnAccepted' | 'DispositionAccepted';
     defectCode?: string | null;
     ncrId?: string | null;
+    workOrderId?: string | null;
+    operationTaskId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReceiptRequestListResponse = NetCorePalExtensionsDtoResponseData & {

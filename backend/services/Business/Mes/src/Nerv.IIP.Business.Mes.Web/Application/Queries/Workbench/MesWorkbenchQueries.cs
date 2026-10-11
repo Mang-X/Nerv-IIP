@@ -2083,7 +2083,9 @@ public sealed record MesRelatedQualityItemRow(
     string SourceDocumentId,
     string Status,
     string? DefectCode,
-    string? NcrId);
+    string? NcrId,
+    string? WorkOrderId = null,
+    string? OperationTaskId = null);
 
 public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListRelatedQualityItemsQuery, MesRelatedQualityItemListResponse>
@@ -2152,7 +2154,9 @@ public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbC
                 x.OperationTaskId ?? x.WorkOrderId,
                 x.Status,
                 x.DefectCode,
-                null))
+                null,
+                x.WorkOrderId,
+                x.OperationTaskId))
             .ToArrayAsync(cancellationToken);
         return new MesRelatedQualityItemListResponse(items, total);
     }

@@ -3172,6 +3172,9 @@ public sealed class MesEndpointContractTests
         Assert.Equal(expectedQualityItem.ReferenceId, qualityItem.QualityItemId);
         Assert.Equal("Defect", qualityItem.SourceType);
         Assert.Equal("OP-20", qualityItem.SourceDocumentId);
+        // #4332：质量读面独立保留身份，来源展示值不能代替工单身份。
+        Assert.Equal("WO-QUALITY", qualityItem.WorkOrderId);
+        Assert.Equal("OP-20", qualityItem.OperationTaskId);
         Assert.Equal("Open", qualityItem.Status);
         Assert.Equal("DEF-MIX", qualityItem.DefectCode);
         Assert.Null(qualityItem.NcrId);

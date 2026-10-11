@@ -5667,7 +5667,9 @@ public sealed record BusinessConsoleMesRelatedQualityItemRow(
     string SourceDocumentId,
     string Status,
     string? DefectCode,
-    string? NcrId);
+    string? NcrId,
+    string? WorkOrderId = null,
+    string? OperationTaskId = null);
 
 public sealed record BusinessConsoleMesReceiptRequestListResponse(
     IReadOnlyCollection<BusinessConsoleMesReceiptRequestRow> Items,
