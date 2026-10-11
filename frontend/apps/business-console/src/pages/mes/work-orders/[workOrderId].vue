@@ -1075,7 +1075,13 @@ function formatStatus(value?: string | null) {
           <ClipboardCheckIcon aria-hidden="true" />
           报工记录
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" @click="openRoute('/mes/receipts')">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="detailPending || !!detailError || !detail?.skuId"
+          @click="openRoute('/mes/receipts')"
+        >
           <PackageCheckIcon aria-hidden="true" />
           完工入库
         </NvButton>

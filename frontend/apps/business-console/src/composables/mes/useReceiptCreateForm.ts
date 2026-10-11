@@ -57,7 +57,7 @@ function overQuantityMessage(error: unknown): string | undefined {
 
 /**
  * 完工入库「登记表单」状态与提交，从路由页抽出，供 ReceiptCreateSheet 复用（路由页只负责编排上下文与开合）。
- * 产出批次来自工单权威产出端点；提交结果一律走 toast，成功后重置留在原地支持高频连录（见各轮复审）。
+ * 产出批次来自工单权威产出端点；提交结果一律走 toast，成功后关闭表单，显式开始下一笔登记时才重置。
  */
 export function useReceiptCreateForm(
   context: () => ReceiptCreateContext,
@@ -76,19 +76,22 @@ export function useReceiptCreateForm(
   const { resolveBaseUom } = useSkuNames()
   const contextBaseUom = computed(() => resolveBaseUom(context().skuId) ?? '')
 
+  const submitting = ref(false)
+  const submitted = ref(false)
+
   const form = reactive({
     quantity: '1',
     // 物料主档到位前保持空：宁可让操作员显式选单位，也不预填一个假单位。
     uomCode: '',
     requestedAtUtc: toLocalDateTimeInput(new Date()),
     producedLotNo: '',
-    // 幂等键按「登记会话」生成：会话内瞬时失败重投复用同键→后端回放不重复入库；成功后 resetForm 轮换新键→连录产生独立申请。
+    // 幂等键按「登记会话」生成：会话内瞬时失败重投复用同键→后端回放不重复入库；显式开始下一笔时 resetForm 轮换新键→连录产生独立申请。
     idempotencyKey: makeIdempotencyKey('receipt'),
   })
 
   // 单一产出批次时自动选中；当前选择若已不在候选集合中（工单切换/成功重置）则清空，避免提交陈旧批次。
   function applyDefaultProducedLot() {
-    const lots = producedLots.value
+    const lots = producedLots.value.filter((lot) => lot.remainingQuantity > 0)
     if (lots.length === 1) {
       form.producedLotNo = lots[0].producedLotNo
     } else if (!lots.some((l) => l.producedLotNo === form.producedLotNo)) {
@@ -163,6 +166,9 @@ export function useReceiptCreateForm(
       isNonEmpty(ctx.environmentId) &&
       isNonEmpty(ctx.workOrderId) &&
       isNonEmpty(ctx.skuId) &&
+      !producedLotsPending.value &&
+      !producedLotsError.value &&
+      !!selectedLot.value &&
       !invalid.value.producedLotNo &&
       !invalid.value.quantity &&
       !invalid.value.uomCode &&
@@ -174,20 +180,22 @@ export function useReceiptCreateForm(
   const showErrors = ref(false)
 
   function resetForm() {
-    form.quantity = '1'
+    submitted.value = false
+    form.quantity = context().initialQuantity || '1'
     // 回到「跟随物料主档」：主档没到就留空，由上面的 watch 在主档到位后补齐。
     form.uomCode = contextBaseUom.value
-    // 成功后先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
+    // 开始下一笔登记时先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
     // applyDefaultProducedLot 自动回填。
     form.producedLotNo = ''
     applyDefaultProducedLot()
     form.requestedAtUtc = toLocalDateTimeInput(new Date())
-    // 仅在登记成功后调用：轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。
+    // 在新登记或工单切换时轮换幂等键，使同一工单的下一笔登记成为一笔独立申请（连录不回放旧单）。
     form.idempotencyKey = makeIdempotencyKey('receipt')
     showErrors.value = false
   }
 
   async function submit(): Promise<boolean> {
+    if (submitting.value || submitted.value) return false
     // 点提交才校验：必填/超量未过则标红 + 顶部汇总，不发请求（create-dialog 硬规则）。
     showErrors.value = true
     if (!canSubmit.value) return false
@@ -204,8 +212,10 @@ export function useReceiptCreateForm(
       idempotencyKey: optionalText(form.idempotencyKey) ?? makeIdempotencyKey('receipt'),
     }
     // 登记成功与「列表刷新」是两件独立的事：刷新失败不得否定已成功的登记（否则同时看到成功+失败并可能重复提交）。
+    submitting.value = true
+    let result
     try {
-      await createReceiptRequest(body)
+      result = await createReceiptRequest(body)
     } catch (error) {
       const err = createReceiptRequestError.value ?? error
       const overQuantity = overQuantityMessage(err)
@@ -215,9 +225,11 @@ export function useReceiptCreateForm(
         '登记完工入库失败，请稍后重试。',
       )
       return false
+    } finally {
+      submitting.value = false
     }
-    notifySuccess(`已登记完工入库 · 工单 ${body.workOrderId ?? ''}，可在列表查看入库状态。`)
-    resetForm()
+    submitted.value = true
+    notifySuccess(`已登记完工入库 ${result?.data?.requestNo ?? ''}，成本及入库进度请查看列表。`)
     void Promise.resolve(refreshReceiptRequests()).catch(() => {})
     options.onCreated?.()
     return true
@@ -234,7 +246,12 @@ export function useReceiptCreateForm(
     canSubmit,
     showErrors,
     invalid,
-    createReceiptRequestPending,
+    createReceiptRequestPending: computed(
+      () => submitting.value || createReceiptRequestPending.value,
+    ),
+    beginRegistration: () => {
+      if (submitted.value && !submitting.value) resetForm()
+    },
     submit,
   }
 }

@@ -10,7 +10,10 @@ import {
   receiptStatusTone,
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
+import {
+  useMesFinishedGoodsReceipts,
+  useMesWorkOrderProducedLots,
+} from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -65,6 +68,15 @@ const quickViewWorkOrderId = ref<string | null>(null)
 
 // 登记完工入库的工单上下文（由工单详情/报工带 query 进入）；传给 ReceiptCreateSheet。
 const receiptContext = reactive({ workOrderId: '', skuId: '', quantity: '' })
+const { producedLots, producedLotsPending, producedLotsError, refreshProducedLots } =
+  useMesWorkOrderProducedLots(() => receiptContext.workOrderId)
+const hasReceivableOutput = computed(
+  () =>
+    !producedLotsPending.value &&
+    !producedLotsError.value &&
+    producedLots.value.some((lot) => lot.remainingQuantity > 0),
+)
+const autoOpenRequested = ref(false)
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -117,19 +129,23 @@ watch(
 )
 
 watch(
-  () => route.query,
-  (query) => {
-    // 无条件覆盖：query 缺失即清空，避免离开/切换后残留旧工单或混合上下文。
-    receiptContext.workOrderId = firstQueryValue(query.workOrderId)
-    receiptContext.skuId = firstQueryValue(query.skuId)
-    receiptContext.quantity = firstQueryValue(query.quantity)
+  [() => route.query.workOrderId, () => route.query.skuId, () => route.query.quantity],
+  ([workOrderId, skuId, quantity]) => {
+    receiptContext.workOrderId = firstQueryValue(workOrderId)
+    receiptContext.skuId = firstQueryValue(skuId)
+    receiptContext.quantity = firstQueryValue(quantity)
     resetPage()
-    if (receiptContext.workOrderId && receiptContext.skuId && canManageReceipts.value) {
-      // 仅有 manage 权限时才自动打开登记 Sheet（读用户从工单详情带 query 进来也不弹创建）。
+    receiptSheetOpen.value = false
+    autoOpenRequested.value = hasReceiptContext.value && canManageReceipts.value
+  },
+  { immediate: true },
+)
+watch(
+  [autoOpenRequested, hasReceivableOutput],
+  ([requested, available]) => {
+    if (requested && available) {
+      autoOpenRequested.value = false
       receiptSheetOpen.value = true
-    } else if (!receiptContext.workOrderId || !receiptContext.skuId) {
-      // 上下文不完整则关闭登记 Sheet，避免用陈旧/混合上下文提交。
-      receiptSheetOpen.value = false
     }
   },
   { immediate: true },
@@ -158,7 +174,16 @@ function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function openReceiptSheet() {
-  if (!hasReceiptContext.value || !canManageReceipts.value) return
+  if (!canManageReceipts.value) return
+  if (!hasReceiptContext.value) {
+    void router.push(
+      receiptContext.workOrderId
+        ? `/mes/work-orders/${encodeURIComponent(receiptContext.workOrderId)}`
+        : '/mes/work-orders',
+    )
+    return
+  }
+  if (!hasReceivableOutput.value) return
   receiptSheetOpen.value = true
 }
 
@@ -211,7 +236,7 @@ function isNonEmpty(value: string) {
           v-if="canManageReceipts"
           size="sm"
           type="button"
-          :disabled="!hasReceiptContext"
+          :disabled="hasReceiptContext && !hasReceivableOutput"
           @click="openReceiptSheet"
         >
           <PackageCheckIcon aria-hidden="true" />
@@ -343,6 +368,22 @@ function isNonEmpty(value: string) {
         </div>
       </template>
     </NvDataTable>
+
+    <div
+      v-if="hasReceiptContext && !hasReceivableOutput"
+      class="flex items-center gap-2 text-sm text-muted-foreground"
+    >
+      <template v-if="producedLotsPending"><NvSpinner aria-hidden="true" />加载产出批次…</template>
+      <template v-else-if="producedLotsError">
+        <span role="alert">{{
+          inlineErrorMessage(producedLotsError, '产出批次加载失败，请重试。')
+        }}</span>
+        <NvButton type="button" size="sm" variant="outline" @click="refreshProducedLots"
+          >重试</NvButton
+        >
+      </template>
+      <span v-else>该工单暂无可入库产出，可在列表查看已登记单据及成本状态。</span>
+    </div>
 
     <ReceiptCreateSheet
       v-model:open="receiptSheetOpen"
