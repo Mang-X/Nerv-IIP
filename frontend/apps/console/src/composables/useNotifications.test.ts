@@ -301,4 +301,10 @@ describe('useNotifications', () => {
 
     expect(notifications.allError.value?.message).toBe('Refresh failed')
   })
+  it('keeps an unknown refresh failure visible with a Chinese fallback', async () => {
+    coladaState.refetchError = {} as Error
+    const notifications = useNotifications()
+    await notifications.refreshNotifications()
+    expect(notifications.allError.value?.message).toBe('无法刷新通知。')
+  })
 })
