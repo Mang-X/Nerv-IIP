@@ -473,7 +473,7 @@ describe('FilePreview', () => {
     expect(wrapper.find('button[aria-label="打开 work-instruction.pdf"]').exists()).toBe(false)
   })
 
-  it('uses an unsupported state for unpreviewable files', () => {
+  it('uses an unsupported state with a Chinese source action for unpreviewable files', async () => {
     const wrapper = mount(FilePreview, {
       props: {
         src: '/files/legacy.doc',
@@ -484,6 +484,10 @@ describe('FilePreview', () => {
 
     expect(wrapper.text()).toContain('暂不支持预览')
     expect(wrapper.text()).toContain('legacy.doc')
+    await wrapper
+      .get('[data-slot="file-preview-unsupported"] button[aria-label="打开 legacy.doc"]')
+      .trigger('click')
+    expect(wrapper.emitted('openSource')?.[0]).toEqual(['/files/legacy.doc'])
   })
 
   it('keeps office canvas stable when reloading a canvas-backed document', async () => {
@@ -496,6 +500,9 @@ describe('FilePreview', () => {
 
     await flushPromises()
     expect(wrapper.find('canvas').exists()).toBe(true)
+    expect(wrapper.get('button[aria-label="缩小文档"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="上一页"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="下一页"]')).toBeTruthy()
 
     await wrapper.setProps({ src: '/files/work-instruction-v2.docx' })
     await flushPromises()
