@@ -375,7 +375,9 @@ function isNonEmpty(value: string) {
     >
       <template v-if="producedLotsPending"><NvSpinner aria-hidden="true" />加载产出批次…</template>
       <template v-else-if="producedLotsError">
-        <span role="alert">产出批次加载失败，请重试。</span>
+        <span role="alert">{{
+          inlineErrorMessage(producedLotsError, '产出批次加载失败，请重试。')
+        }}</span>
         <NvButton type="button" size="sm" variant="outline" @click="refreshProducedLots"
           >重试</NvButton
         >

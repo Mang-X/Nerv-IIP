@@ -477,10 +477,16 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(notifySpies.operationFailure).not.toHaveBeenCalled()
   })
 
-  it('surfaces a retry (not “暂无产出批次”) when produced-lot loading fails', async () => {
+  it.each([
+    [
+      { message: '当前组织不能查看该工单产出，请切换业务上下文。' },
+      '当前组织不能查看该工单产出，请切换业务上下文。',
+    ],
+    [{}, '产出批次加载失败，请重试。'],
+  ])('preserves the produced-lot rejection reason with a retry: %s', async (error, message) => {
     reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = []
-    receiptState.producedLotsError = new Error('403 forbidden')
+    receiptState.producedLotsError = error
     const wrapper = mountPage()
     await flushPromises()
 
@@ -488,7 +494,7 @@ describe('MES receipts — failed inventory posting retry', () => {
 
     // 加载失败区别于真实空态：给重试出口、不误报「暂无」，提交仍被拦截（未选批次）。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('产出批次加载失败')
+    expect(wrapper.get('[role="alert"]').text()).toBe(message)
     expect(wrapper.text()).not.toContain('该工单暂无可入库的产出批次')
     expect(wrapper.findAll('button').some((b) => b.text().includes('重试'))).toBe(true)
   })
