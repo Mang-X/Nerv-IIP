@@ -19,32 +19,33 @@ export function useMesDefectNcrs(source: () => DefectNcrSource) {
       key: ['mes-defect-ncrs', organizationId, environmentId, ...defectNos],
       enabled: hasBusinessContext({ organizationId, environmentId }) && defectNos.length > 0,
       query: async () => {
-        const ncrs: Record<string, BusinessConsoleQualityNcrItem | null> = {}
-        for (const defectNo of defectNos) {
-          let skip = 0
-          let match: BusinessConsoleQualityNcrItem | undefined
-          let total: number
-          do {
-            const response = await listBusinessConsoleQualityNcrs({
-              query: { organizationId, environmentId, keyword: defectNo, skip, take: 100 },
-              throwOnError: true,
-            })
-            const data = response.data?.data
-            if (response.data?.success !== true || !data?.items || data.total === undefined) {
-              throw new Error('NCR 关联读取失败，请刷新重试。')
-            }
-            total = data.total
-            match = data.items.find(
-              (ncr) => ncr.sourceType === 'in-process' && ncr.sourceDocumentId === defectNo,
-            )
-            if (data.items.length === 0 && skip < total) {
-              throw new Error('NCR 关联读取失败，请刷新重试。')
-            }
-            skip += data.items.length
-          } while (!match && skip < total)
-          ncrs[defectNo] = match ?? null
-        }
-        return { success: true, ncrs }
+        const entries = await Promise.all(
+          defectNos.map(async (defectNo) => {
+            let skip = 0
+            let match: BusinessConsoleQualityNcrItem | undefined
+            let total: number
+            do {
+              const response = await listBusinessConsoleQualityNcrs({
+                query: { organizationId, environmentId, keyword: defectNo, skip, take: 100 },
+                throwOnError: true,
+              })
+              const data = response.data?.data
+              if (response.data?.success !== true || !data?.items || data.total === undefined) {
+                throw new Error('NCR 关联读取失败，请刷新重试。')
+              }
+              total = data.total
+              match = data.items.find(
+                (ncr) => ncr.sourceType === 'in-process' && ncr.sourceDocumentId === defectNo,
+              )
+              if (data.items.length === 0 && skip < total) {
+                throw new Error('NCR 关联读取失败，请刷新重试。')
+              }
+              skip += data.items.length
+            } while (!match && skip < total)
+            return [defectNo, match ?? null] as const
+          }),
+        )
+        return { success: true, ncrs: Object.fromEntries(entries) }
       },
     }
   })

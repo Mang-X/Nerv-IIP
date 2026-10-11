@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { reactive, shallowRef } from 'vue'
 import { useMesDefectNcrs } from './useMesDefectNcrs'
 
@@ -28,8 +29,72 @@ function setup() {
   return { source, result }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((accept, fail) => {
+    resolve = accept
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
 describe('MES 不良的 Quality NCR 关联（#4333 公开查询合同）', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.list.mockReset()
+  })
+
+  it('starts independent defect reads together and returns only the complete batch', async () => {
+    const first = deferred<ReturnType<typeof response>>()
+    const second = deferred<ReturnType<typeof response>>()
+    api.list.mockImplementation(({ query }) =>
+      query.keyword === 'DEF-1' ? first.promise : second.promise,
+    )
+    const { source } = setup()
+    source.defectNos = ['DEF-1', 'DEF-2']
+    const pending = options().query()
+    let completed = false
+    void pending.then(() => {
+      completed = true
+    })
+    try {
+      // 请求顺序是本回归的合同：第一条未返回时，第二条已发起。
+      expect(api.list.mock.calls.map(([request]) => request.query.keyword)).toEqual([
+        'DEF-1',
+        'DEF-2',
+      ])
+      second.resolve(response([item('DEF-2', 'in-process', 'ncr-2')]))
+      await flushPromises()
+      expect(completed).toBe(false)
+      first.resolve(response([item('DEF-1')]))
+      await expect(pending).resolves.toEqual({
+        success: true,
+        ncrs: { 'DEF-1': item('DEF-1'), 'DEF-2': item('DEF-2', 'in-process', 'ncr-2') },
+      })
+    } finally {
+      first.resolve(response([item('DEF-1')]))
+      second.resolve(response([item('DEF-2', 'in-process', 'ncr-2')]))
+      await pending
+    }
+  })
+
+  it('rejects the whole batch when one concurrent read fails after another succeeds', async () => {
+    const first = deferred<ReturnType<typeof response>>()
+    const second = deferred<ReturnType<typeof response>>()
+    api.list.mockImplementation(({ query }) =>
+      query.keyword === 'DEF-1' ? first.promise : second.promise,
+    )
+    const { source } = setup()
+    source.defectNos = ['DEF-1', 'DEF-2']
+    const pending = options().query()
+    const failure = new Error('Quality read for DEF-2 failed')
+    const rejected = expect(pending).rejects.toBe(failure)
+    first.resolve(response([item('DEF-1')]))
+    await flushPromises()
+    second.reject(failure)
+    await rejected
+  })
 
   it('matches the exact defect source after approximate hits, including later pages', async () => {
     api.list

@@ -376,14 +376,17 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     })
   })
 
-  it('distinguishes not generated, loading and failed association reads and permits refresh', async () => {
+  it('keeps loading association reads distinct from not generated', async () => {
     state.qualityItems = [{ qualityItemId: 'DEF-1', sourceType: 'Defect', ncrId: null }]
     state.ncrState = 'loading'
     const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.text()).toContain('正在读取关联')
     expect(wrapper.text()).not.toContain('未生成 NCR')
-    wrapper.unmount()
+  })
+
+  it('reports failed association reads independently of loading and permits refresh', async () => {
+    state.qualityItems = [{ qualityItemId: 'DEF-1', sourceType: 'Defect', ncrId: null }]
     state.ncrState = 'error'
     const failed = mountPage()
     await flushPromises()
@@ -392,7 +395,10 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     await button(failed, '刷新').trigger('click')
     await flushPromises()
     expect(refreshNcrs).toHaveBeenCalled()
-    failed.unmount()
+  })
+
+  it('reports not generated after a successful association read without a match', async () => {
+    state.qualityItems = [{ qualityItemId: 'DEF-1', sourceType: 'Defect', ncrId: null }]
     state.ncrState = 'ready'
     state.ncrs = { 'DEF-1': null }
     const missing = mountPage()
