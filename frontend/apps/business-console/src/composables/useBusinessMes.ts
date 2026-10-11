@@ -1707,11 +1707,6 @@ export function useMesWorkOrderDetail() {
             (item) => item.requestId === readback.requestId,
           )
           if (!row) throw new Error('未取得本次收料结果，请重试读取。')
-          if (row.inventoryPostingFailureCode) {
-            throw new Error(
-              row.inventoryPostingFailureMessage || '收料过账失败，请查看领料申请状态。',
-            )
-          }
           posting = row.status === 'ReceiptPosting'
         }
         const result = await options.query(context)
