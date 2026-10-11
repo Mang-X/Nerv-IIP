@@ -81,6 +81,7 @@ const coladaState = vi.hoisted(() => ({
     string,
     () => {
       enabled?: boolean
+      autoRefetch?: (state: { status: string }) => number | false
       key?: unknown
       query?: (context: { signal: AbortSignal }) => unknown
     }
@@ -96,6 +97,7 @@ const receiptState = vi.hoisted(() => ({
 }))
 const workOrderDetailQuery = vi.hoisted(() => vi.fn())
 const lineSideInventoryFetch = vi.hoisted(() => vi.fn())
+const materialReadinessFetch = vi.hoisted(() => vi.fn())
 const authState = vi.hoisted(() => ({
   principal: {
     principalId: 'user-001',
@@ -229,7 +231,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesMaterialReadinessQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesMaterialReadiness' }],
-    query: vi.fn(),
+    query: materialReadinessFetch,
   })),
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesMaterialLotTraceability' }],
@@ -1930,6 +1932,54 @@ describe('business MES composables', () => {
     expect(getBusinessConsoleMesMaterialLotTraceabilityQueryOptions).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: { materialLotId: 'LOT-001' } }),
     )
+  })
+
+  it('收料受理后跨过 ReceiptPosting 再结束齐套自动读回，失败后重试只读取', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-RECEIPT'
+    const issueData = coladaState.queryDataRefById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )!
+    const issueRefetch = coladaState.queryRefetchById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )!
+    issueRefetch.mockImplementation(async () => {
+      issueData.value = {
+        success: true,
+        data: {
+          items: [{ requestId: 'MIR-1', workOrderId: 'WO-RECEIPT', status: 'ReceiptPosting' }],
+        },
+      }
+    })
+    materialReadinessFetch.mockResolvedValue({
+      success: true,
+      data: { readinessStatus: 'Blocked' },
+    })
+    await detail.confirmLineSideReceipt('MIR-1', { receivedQuantity: 2 })
+    const options = coladaState.queryFactoriesById.get('getBusinessConsoleMesMaterialReadiness')!()
+    expect(detail.materialReadinessPending.value).toBe(true)
+    await options.query!({ signal: new AbortController().signal })
+    expect(options.autoRefetch!({ status: 'success' })).toBe(1000)
+    expect(detail.materialReadinessPending.value).toBe(true)
+    issueRefetch.mockImplementation(async () => {
+      issueData.value = {
+        success: true,
+        data: {
+          items: [{ requestId: 'MIR-1', workOrderId: 'WO-RECEIPT', status: 'PartiallyReceived' }],
+        },
+      }
+    })
+    materialReadinessFetch.mockRejectedValueOnce(new Error('读取齐套失败'))
+    await expect(options.query!({ signal: new AbortController().signal })).rejects.toThrow(
+      '读取齐套失败',
+    )
+    expect(options.autoRefetch!({ status: 'error' })).toBe(false)
+    expect(detail.materialReadinessPending.value).toBe(true)
+    expect(await options.query!({ signal: new AbortController().signal })).toMatchObject({
+      data: { readinessStatus: 'Blocked' },
+    })
+    expect(detail.materialReadinessPending.value).toBe(false)
+    expect(options.autoRefetch!({ status: 'success' })).toBe(false)
   })
 
   it('cancels a work order with the reason payload and invalidates MES + inventory queries', async () => {

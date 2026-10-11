@@ -1612,14 +1612,6 @@ export function useMesWorkOrderDetail() {
     detailEnabled,
   )
 
-  const materialQuery = useQuery(() => ({
-    ...getBusinessConsoleMesMaterialReadinessQueryOptions({
-      path: { workOrderId: filters.workOrderId },
-      query: toContextQuery(filters),
-    }),
-    enabled: detailEnabled.value,
-  }))
-
   // 服务端按 workOrderId 过滤（facade/底层 MES 均支持）+ 完整分页取全。取消 handler 会处理该工单的全部
   // 关联单据，预览与 toast 也必须取全，故不能固定 take/只取一页——否则单工单 >一页 时仍会少算。
   const receiptQuery = useQuery(() => {
@@ -1690,6 +1682,49 @@ export function useMesWorkOrderDetail() {
       // 领料申请不再只服务取消补偿：工单详情的「领料与收料」区常驻读这份清单（#1324），
       // 所以随详情读面一起启用，而不是等到打开取消预览才拉。
       enabled: detailEnabled.value,
+    }
+  })
+
+  // 收料回执只表示受理；库存 CAP 回执前仍是 ReceiptPosting，不能用此时的旧齐套当终态。
+  const receiptReadback = shallowRef<{ workOrderId: string; requestId: string }>()
+  const receiptReadbackActive = computed(
+    () => receiptReadback.value?.workOrderId === filters.workOrderId,
+  )
+  const materialQuery = useQuery(() => {
+    const options = getBusinessConsoleMesMaterialReadinessQueryOptions({
+      path: { workOrderId: filters.workOrderId },
+      query: toContextQuery(filters),
+    })
+    return {
+      ...options,
+      enabled: detailEnabled.value,
+      query: async (context: Parameters<typeof options.query>[0]) => {
+        const readback = receiptReadbackActive.value ? receiptReadback.value : undefined
+        let posting = false
+        if (readback) {
+          await materialIssueQuery.refetch(true)
+          const row = materialIssueQuery.data.value?.data?.items?.find(
+            (item) => item.requestId === readback.requestId,
+          )
+          if (!row) throw new Error('未取得本次收料结果，请重试读取。')
+          if (row.inventoryPostingFailureCode) {
+            throw new Error(
+              row.inventoryPostingFailureMessage || '收料过账失败，请查看领料申请状态。',
+            )
+          }
+          posting = row.status === 'ReceiptPosting'
+        }
+        const result = await options.query(context)
+        if (result?.success !== true || !result.data) {
+          throw new Error(result?.message || '齐套读取失败，请重试。')
+        }
+        if (readback && !posting && receiptReadback.value === readback)
+          receiptReadback.value = undefined
+        return result
+      },
+      // 沿用应用现有 auto-refetch 插件；只等待本次收料过账，读取失败停止，交由用户重试读取。
+      autoRefetch: (state: { status: string }) =>
+        receiptReadbackActive.value && state.status !== 'error' ? 1000 : false,
     }
   })
 
@@ -1964,7 +1999,9 @@ export function useMesWorkOrderDetail() {
       >(materialQuery.data.value),
     ),
     materialReadinessError: materialQuery.error,
-    materialReadinessPending: materialQuery.isLoading,
+    materialReadinessPending: computed(
+      () => materialQuery.isLoading.value || receiptReadbackActive.value,
+    ),
     materialReadinessState: businessReadState(materialQuery, () => detailEnabled.value),
     refreshDetail: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
     refreshMaterialReadiness: () =>
@@ -1988,11 +2025,13 @@ export function useMesWorkOrderDetail() {
       requestId: string,
       body: BusinessConsoleMesConfirmLineSideReceiptRequest,
     ) => {
+      const workOrderId = filters.workOrderId
       const result = await confirmLineSideReceiptMutation.mutateAsync({
         path: { requestId },
         query: toContextQuery(filters),
         body,
       })
+      receiptReadback.value = { workOrderId, requestId }
       await refreshMaterialIssueQueries()
       return result
     },
