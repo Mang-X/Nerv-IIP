@@ -67,10 +67,11 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 })
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
+const reactiveRoute = reactive(routeState)
 const routerState = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => routeState,
+  useRoute: () => reactiveRoute,
   useRouter: () => routerState,
 }))
 
@@ -215,7 +216,7 @@ function mountPage(permissionCodes: string[] = ['business.mes.receipts.manage'])
 
 describe('MES receipts — failed inventory posting retry', () => {
   beforeEach(() => {
-    routeState.query = {}
+    reactiveRoute.query = {}
     routerState.replace.mockReset()
     notifySpies.success.mockReset()
     notifySpies.error.mockReset()
@@ -293,7 +294,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('hides the 登记完工入库 create entry for read-only users (create also needs manage)', () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     const wrapper = mountPage(['business.mes.receipts.read'])
     expect(wrapper.findAll('button').some((b) => b.text().includes('登记完工入库'))).toBe(false)
     expect(wrapper.text()).not.toContain('从工单详情发起')
@@ -352,7 +353,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   }
 
   it('成功后关闭表单并显示登记单号，下一笔须显式重新打开', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.createReceiptRequest = vi
       .fn()
       .mockResolvedValue({ success: true, data: { requestNo: 'FGR-4280-001' } })
@@ -360,7 +361,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     await flushPromises()
     await submitReceipt(wrapper)
     expect(wrapper.find('form').exists()).toBe(false)
-    routeState.query.status = 'Requested'
+    reactiveRoute.query = { ...reactiveRoute.query, status: 'Requested' }
     await flushPromises()
     expect(wrapper.find('form').exists()).toBe(false)
     expect(notifySpies.success.mock.calls[0]![0]).toContain('FGR-4280-001')
@@ -378,7 +379,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('只有工单标识的入口提供可操作的上下文恢复', async () => {
-    routeState.query = { workOrderId: 'WO-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1' }
     const wrapper = mountPage()
     const recover = wrapper.findAll('button').find((button) => button.text().includes('工单详情'))!
     expect(recover.attributes('disabled')).toBeUndefined()
@@ -387,7 +388,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('返回已登记完的工单时不自动打开空表单', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = []
     const wrapper = mountPage()
     await flushPromises()
@@ -397,7 +398,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('剩余量为零的产出批次不开放登记', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = [
       { producedLotNo: 'LOT-FG-1', goodQuantity: 8, remainingQuantity: 0 },
     ]
@@ -410,7 +411,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('复用失败登记的同一幂等键，避免失败重试产生新意图', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.createReceiptRequest = vi
       .fn()
       .mockRejectedValueOnce(new Error('lost response'))
@@ -433,7 +434,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('carries the selected produced lot in the create request (auto-selected when single)', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     const wrapper = mountPage()
     await flushPromises()
 
@@ -446,7 +447,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('blocks create and guides reporting when the work order has no produced lots', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = []
     const wrapper = mountPage()
     await flushPromises()
@@ -459,7 +460,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('blocks submit when quantity exceeds the selected lot remaining (no request, inline error)', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = [
       { producedLotNo: 'LOT-FG-1', reportNo: 'PRPT-1', goodQuantity: 8, remainingQuantity: 3 },
     ]
@@ -477,7 +478,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('surfaces a retry (not “暂无产出批次”) when produced-lot loading fails', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = []
     receiptState.producedLotsError = new Error('403 forbidden')
     const wrapper = mountPage()
@@ -493,7 +494,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('keeps success feedback when the post-create list refresh fails (no contradictory error toast)', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.refreshReceiptRequests = vi.fn(async () => {
       throw new Error('refresh 500')
     })
@@ -509,7 +510,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('maps the over-quantity backend error to the business copy even for short work order ids', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.createReceiptRequest = vi.fn(async () => {
       throw new Error('mutation rejected')
     })
@@ -553,7 +554,7 @@ describe('MES receipts — why a receipt is still waiting (#3728)', () => {
   })
 
   beforeEach(() => {
-    routeState.query = {}
+    reactiveRoute.query = {}
     receiptState.rows = [
       requested('FGR-cost-stalled', {
         unitCost: null,

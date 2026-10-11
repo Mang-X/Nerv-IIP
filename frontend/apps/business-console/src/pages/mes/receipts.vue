@@ -129,7 +129,11 @@ watch(
 )
 
 watch(
-  () => [route.query.workOrderId, route.query.skuId, route.query.quantity] as const,
+  [
+    () => route.query.workOrderId,
+    () => route.query.skuId,
+    () => route.query.quantity,
+  ],
   ([workOrderId, skuId, quantity]) => {
     receiptContext.workOrderId = firstQueryValue(workOrderId)
     receiptContext.skuId = firstQueryValue(skuId)
