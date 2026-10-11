@@ -301,6 +301,9 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
       path: '/quality/inspections',
       query: {
         inspectionTaskId,
+        ...(filters.sourceDocumentNo && filters.sourceDocumentNo === task.sourceDocumentId
+          ? { sourceDocumentNo: filters.sourceDocumentNo }
+          : {}),
         sourceDocumentId: task.sourceDocumentId ?? undefined,
         sourceType: task.sourceType ?? undefined,
         sourceService: task.sourceService ?? undefined,

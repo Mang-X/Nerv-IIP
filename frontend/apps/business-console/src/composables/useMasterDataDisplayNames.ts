@@ -89,7 +89,14 @@ export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions 
   const workshopByCode = computed(() => indexOf(workshopSource?.resources.value))
   const lineByCode = computed(() => indexOf(lineSource?.resources.value))
   const siteByCode = computed(() => indexOf(siteSource?.resources.value))
-  const shiftByCode = computed(() => indexOf(shiftSource?.resources.value))
+  const shiftByCode = computed(() => {
+    const map = new Map<string, string>()
+    for (const item of shiftSource?.resources.value ?? []) {
+      const name = item.displayName?.trim()
+      if (item.code && name) map.set(item.code, name)
+    }
+    return map
+  })
   const userById = computed(() => {
     const map = new Map<string, string>()
     for (const item of userSource?.resources.value ?? []) {

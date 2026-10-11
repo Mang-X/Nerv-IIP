@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import MesProductionContextPanel from './MesProductionContextPanel.vue'
 
-// 主数据名录：编码 → 名称；名录里没有的编码原样显示。
+// 班次名录缺失时显示中性占位。
 vi.mock('@/composables/useMasterDataDisplayNames', () => {
   const names: Record<string, string> = {
     'WC-CNC-01': '数控车削中心',
@@ -107,7 +107,8 @@ describe('MES production report context panel', () => {
 
     expect(wrapper.text()).toContain('2026-09-26 · 一号工厂')
     expect(wrapper.text()).toContain('夜班 · 2026-09-26')
-    expect(wrapper.text()).toContain('SHIFT-MIDDLE · 2026-09-26')
+    expect(wrapper.text()).toContain('— · 2026-09-26')
+    expect(wrapper.text()).not.toContain('SHIFT-MIDDLE')
     expect(wrapper.text()).not.toContain('SITE-001')
   })
 

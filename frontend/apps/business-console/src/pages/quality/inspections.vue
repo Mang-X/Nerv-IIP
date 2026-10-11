@@ -38,6 +38,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
+import { readFaceText } from '@/utils/readFace'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
@@ -689,6 +690,13 @@ async function resetInspectionTaskContext() {
   await router.replace({ query })
 }
 
+function inspectionSubmissionSubject() {
+  const sourceDocumentNo = readFaceText(firstQuery(route.query.sourceDocumentNo), '')
+  return sourceDocumentNo && sourceDocumentNo === recordForm.sourceDocumentId.trim()
+    ? `来源单据 ${sourceDocumentNo} 的检验记录`
+    : '检验记录'
+}
+
 async function submitInspectionRecord() {
   if (!hasBusinessContext(filters)) {
     notifyError('业务范围尚未就绪，请稍后重试。')
@@ -697,9 +705,8 @@ async function submitInspectionRecord() {
   if (!canCreateRecord.value) return
   const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
   if (inspectionTaskId) {
-    let response
     try {
-      response = await taskActions.startInspection(inspectionTaskId, {
+      await taskActions.startInspection(inspectionTaskId, {
         resultLines: toCharacteristicResults(),
         dispositionReason: optionalText(recordForm.dispositionReason),
         dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
@@ -718,9 +725,7 @@ async function submitInspectionRecord() {
       return
     }
     recordSheetOpen.value = false
-    notifySuccess(
-      `检验记录 ${response?.data?.inspectionRecordId ?? inspectionTaskId} 已提交，待检任务已闭合。`,
-    )
+    notifySuccess(`${inspectionSubmissionSubject()}已提交，待检任务已闭合。`)
     await router.push({
       path: '/quality/inspection-tasks',
     })
@@ -741,15 +746,14 @@ async function submitInspectionRecord() {
     dispositionReason: optionalText(recordForm.dispositionReason),
     dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
   }
-  let response
   try {
-    response = await createInspectionRecord(body)
+    await createInspectionRecord(body)
   } catch (error) {
     notifyOperationFailure('检验记录提交失败', error, '检验记录提交失败，请稍后重试。')
     return
   }
   recordSheetOpen.value = false
-  notifySuccess(`检验记录 ${response?.data?.inspectionRecordId ?? body.sourceDocumentId} 已提交。`)
+  notifySuccess(`${inspectionSubmissionSubject()}已提交。`)
 }
 
 function toCharacteristicResults(): BusinessConsoleInspectionCharacteristicResult[] {

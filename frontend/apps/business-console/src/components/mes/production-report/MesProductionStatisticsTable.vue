@@ -3,6 +3,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { ProductionStatisticsPresentationRow } from '@/features/mes-production-report/productionStatisticsPresentation'
 import { NvBadge, NvDataTable } from '@nerv-iip/ui'
 import { computed } from 'vue'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { inlineErrorMessage } from '@/utils/notify'
 import {
   describeProductionStatisticsDegradation,
@@ -22,6 +23,14 @@ const emit = defineEmits<{
   'update:page-size': [value: string]
   retry: []
 }>()
+
+const { resolveShift } = useMasterDataDisplayNames({ shifts: true })
+function shiftLabel(code?: string | null) {
+  return resolveShift(code) ?? '—'
+}
+function dimensionLabel(row: ProductionStatisticsPresentationRow) {
+  return row.dimension === 'shift' ? shiftLabel(row.dimensionValueLabel) : row.dimensionValueLabel
+}
 
 const columns: NvDataTableColumn<ProductionStatisticsPresentationRow>[] = [
   { key: 'dimensionValueLabel', header: '统计对象', cellClass: 'font-medium' },
@@ -83,14 +92,14 @@ function degradedReasons(row: ProductionStatisticsPresentationRow) {
   >
     <template #cell-dimensionValueLabel="{ row }">
       <div class="grid gap-0.5">
-        <span>{{ row.dimensionValueLabel }}</span>
+        <span>{{ dimensionLabel(row) }}</span>
         <span class="text-xs font-normal text-muted-foreground">
           {{ PRODUCTION_STATISTICS_DIMENSION_LABELS[row.dimension] }}
         </span>
       </div>
     </template>
     <template #cell-businessDate="{ row }">{{ value(row.businessDate) }}</template>
-    <template #cell-shiftCode="{ row }">{{ value(row.shiftCode) }}</template>
+    <template #cell-shiftCode="{ row }">{{ shiftLabel(row.shiftCode) }}</template>
     <template #cell-workCenterLabel="{ row }">{{ row.workCenterLabel }}</template>
     <template #cell-skuLabel="{ row }">{{ row.skuLabel }}</template>
     <template #cell-totalOutputQuantity="{ row }">{{ quantity(row.totalOutputQuantity) }}</template>
