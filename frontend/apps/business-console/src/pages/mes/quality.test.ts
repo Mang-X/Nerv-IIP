@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   operationTasks: [] as Array<Record<string, unknown>>,
   qualityItems: [] as Array<Record<string, unknown>>,
   routeQuery: {} as Record<string, string>,
+  ncrState: 'ready',
+  ncrs: {} as Record<string, Record<string, unknown> | null>,
   organizationId: 'org-1',
   environmentId: 'prod',
   writeScopeReady: true,
@@ -19,6 +21,7 @@ const state = vi.hoisted(() => ({
 const recordDefect = vi.hoisted(() => vi.fn())
 const refreshOperationTasks = vi.hoisted(() => vi.fn())
 const refreshQualityItems = vi.hoisted(() => vi.fn())
+const refreshNcrs = vi.hoisted(() => vi.fn())
 const refreshQualityWriteScope = vi.hoisted(() => vi.fn())
 const coversWorkOrder = vi.hoisted(() =>
   vi.fn(
@@ -121,6 +124,16 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
 }))
 
+vi.mock('@/composables/mes/useMesDefectNcrs', () => ({
+  useMesDefectNcrs: () => ({
+    ncrs: computed(() => state.ncrs),
+    state: computed(() => state.ncrState),
+    pending: shallowRef(false),
+    error: shallowRef(),
+    refresh: refreshNcrs,
+  }),
+}))
+
 const passthrough = { template: '<div><slot /></div>' }
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
@@ -131,6 +144,7 @@ const uiStubs = {
     props: ['rows'],
     template: `<div><div v-for="row in rows" :key="row.qualityItemId">
       <slot name="cell-sourceDocumentId" :row="row" />
+      <slot name="cell-ncrId" :row="row" />
     </div></div>`,
   },
   NvStatusBadge: true,
@@ -264,6 +278,8 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       }),
     ]
     state.qualityItems = []
+    state.ncrState = 'ready'
+    state.ncrs = {}
     state.routeQuery = {}
     state.organizationId = 'org-1'
     state.environmentId = 'prod'
@@ -275,6 +291,7 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     makeIdempotencyKey.mockReturnValue('defect-intent-key')
     refreshOperationTasks.mockResolvedValue(undefined)
     refreshQualityItems.mockResolvedValue(undefined)
+    refreshNcrs.mockResolvedValue(undefined)
     refreshQualityWriteScope.mockResolvedValue(undefined)
     recordDefect.mockResolvedValue({
       success: true,
@@ -334,6 +351,53 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       path: '/mes/work-orders/production-order-A',
       query: { operationTaskId: undefined },
     })
+  })
+
+  it('opens the generated Quality NCR before any disposition has populated the MES projection', async () => {
+    state.qualityItems = [
+      {
+        qualityItemId: 'DEF-1',
+        sourceType: 'Defect',
+        workOrderId: 'WO-2',
+        sourceDocumentId: 'WO-2-OP-10',
+        ncrId: null,
+      },
+    ]
+    state.ncrs = { 'DEF-1': { id: 'ncr-real-id', code: 'NCR-20261012-001' } }
+    const wrapper = mountPage()
+    await flushPromises()
+    const link = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((link) => link.text() === 'NCR-20261012-001')
+    expect(link).toBeDefined()
+    expect(link!.props('to')).toEqual({
+      path: '/quality/ncrs',
+      query: { ncrId: 'ncr-real-id', workOrderId: 'WO-2' },
+    })
+  })
+
+  it('distinguishes not generated, loading and failed association reads and permits refresh', async () => {
+    state.qualityItems = [{ qualityItemId: 'DEF-1', sourceType: 'Defect', ncrId: null }]
+    state.ncrState = 'loading'
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在读取关联')
+    expect(wrapper.text()).not.toContain('未生成 NCR')
+    wrapper.unmount()
+    state.ncrState = 'error'
+    const failed = mountPage()
+    await flushPromises()
+    expect(failed.text()).toContain('关联读取失败')
+    expect(failed.text()).not.toContain('未生成 NCR')
+    await button(failed, '刷新').trigger('click')
+    await flushPromises()
+    expect(refreshNcrs).toHaveBeenCalled()
+    failed.unmount()
+    state.ncrState = 'ready'
+    state.ncrs = { 'DEF-1': null }
+    const missing = mountPage()
+    await flushPromises()
+    expect(missing.text()).toContain('未生成 NCR')
   })
 
   it('submits the selected real operation context and refreshes both related read models', async () => {
