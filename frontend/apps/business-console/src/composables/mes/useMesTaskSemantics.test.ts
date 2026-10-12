@@ -11,7 +11,7 @@ import {
 } from './useMesTaskSemantics'
 
 function enabledActions(status: string): MesLifecycleActionKey[] {
-  return resolveLifecycleActions({ status })
+  return resolveLifecycleActions({ status, allowedActions: ['start'], blockReasons: [] })
     .filter((a) => a.enabled)
     .map((a) => a.key)
 }
@@ -125,6 +125,61 @@ describe('resolveLifecycleActions', () => {
   // 对齐后端 OperationTask 聚合的状态机，避免点下去才被后端顶回来。
   it('only offers 开工 from the queued state', () => {
     expect(enabledActions('Queued')).toEqual(['start'])
+  })
+
+  it.each(['WORK_ORDER_NOT_RELEASED', 'QUALITY_HOLD_ACTIVE', 'MATERIAL_SHORTAGE'])(
+    'blocks start for readiness reason %s',
+    (code) => {
+      const action = resolveLifecycleActions({
+        status: 'Queued',
+        allowedActions: [],
+        blockReasons: [code],
+      }).find((action) => action.key === 'start')!
+      expect(action.enabled).toBe(false)
+      expect(action.blockedReason).toBeTruthy()
+      expect(action.blockedReason).not.toContain(code)
+    },
+  )
+
+  it('requires the authoritative start permission, even with no listed blocker', () => {
+    expect(
+      resolveLifecycleActions({ status: 'Queued', allowedActions: [], blockReasons: [] })[0]
+        .enabled,
+    ).toBe(false)
+  })
+
+  it('does not let start permission override a blocker or the lifecycle state', () => {
+    expect(
+      resolveLifecycleActions({
+        status: 'Queued',
+        allowedActions: ['start'],
+        blockReasons: ['QUALITY_HOLD_ACTIVE'],
+      })[0].enabled,
+    ).toBe(false)
+    expect(
+      resolveLifecycleActions({
+        status: 'Completed',
+        allowedActions: ['start'],
+        blockReasons: [],
+      })[0].enabled,
+    ).toBe(false)
+  })
+
+  it('does not apply start readiness to pause, resume or complete', () => {
+    for (const [status, expected] of [
+      ['InProgress', ['pause', 'complete']],
+      ['Paused', ['resume']],
+    ] as const) {
+      expect(
+        resolveLifecycleActions({
+          status,
+          allowedActions: [],
+          blockReasons: ['QUALITY_HOLD_ACTIVE'],
+        })
+          .filter((action) => action.enabled)
+          .map((action) => action.key),
+      ).toEqual(expected)
+    }
   })
 
   it('offers 暂停 and 完工 while running, and nothing else', () => {
