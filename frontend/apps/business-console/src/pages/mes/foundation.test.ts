@@ -146,4 +146,26 @@ describe('生产准备检查页', () => {
     expect(wrapper.text()).not.toContain('可以开工')
     Object.assign(readiness, previous)
   })
+  it('会计期间缺项入口携带实际待覆盖日期与原范围', () => {
+    const issue = {
+      code: 'ACCOUNTING_PERIOD_MISSING',
+      severity: 'Blocked',
+      referenceType: 'AccountingPeriod',
+      referenceId: '2026-10-12',
+      message: '缺会计期间',
+      fixHint: '请财务开立覆盖今天的会计期间',
+    }
+    readiness.areas[0]!.issues.push(issue)
+    const wrapper = mount(FoundationPage, {
+      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
+    })
+    const url = new URL(
+      wrapper.get('a[href^="/erp/finance/accounting-period-open?"]').attributes('href')!,
+      'http://localhost',
+    )
+    expect(url.pathname).toBe('/erp/finance/accounting-period-open')
+    expect(url.searchParams.get('date')).toBe('2026-10-12')
+    expect(url.searchParams.get('foundationWorkCenterCode')).toBe('WC-TUB-01')
+    readiness.areas[0]!.issues.pop()
+  })
 })

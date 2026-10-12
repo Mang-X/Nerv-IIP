@@ -9,6 +9,7 @@ vi.mock('vue-router', () => ({
       foundationLineCode: 'LINE-A',
       foundationWorkCenterCode: 'WC-A',
       foundationSkuId: 'SKU-A',
+      foundationProductionVersionId: 'PV-A',
     },
   }),
 }))
@@ -21,5 +22,6 @@ it('维护后返回完整原范围', () => {
     lineCode: 'LINE-A',
     workCenterCode: 'WC-A',
     skuId: 'SKU-A',
+    productionVersionId: 'PV-A',
   })
 })

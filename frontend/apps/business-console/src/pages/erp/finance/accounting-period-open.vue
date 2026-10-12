@@ -2,7 +2,7 @@
 import { openBusinessConsoleErpAccountingPeriodMutationOptions } from '@nerv-iip/api-client'
 import { useMutation } from '@pinia/colada'
 import { NvButton, NvField, NvFieldGroup, NvFieldLabel, NvInput, NvPageHeader } from '@nerv-iip/ui'
-import { computed, reactive } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import FoundationReturnContext from '@/components/erp/FoundationReturnContext.vue'
@@ -24,7 +24,16 @@ const date = queryText(route.query, 'date') || today()
 const draft = reactive({ periodCode: '', startDate: date, endDate: date })
 const mutation = useMutation(openBusinessConsoleErpAccountingPeriodMutationOptions())
 const ready = computed(() => Boolean(context.organizationId && context.environmentId))
+const showErrors = shallowRef(false)
+const invalid = computed(() => ({
+  periodCode: !draft.periodCode.trim(),
+  startDate: !draft.startDate,
+  endDate: !draft.endDate || draft.endDate < draft.startDate,
+}))
+const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 async function submit() {
+  showErrors.value = true
+  if (!canSubmit.value) return
   try {
     await mutation.mutateAsync({
       body: {
@@ -47,15 +56,36 @@ async function submit() {
       准备检查需要唯一覆盖
       {{ date }} 的会计期间。请财务填写实际期间编码及起止日期；日期重叠或既有期间问题需由财务核对。
     </p>
-    <form class="mt-4 grid max-w-xl gap-4 rounded-md border p-4" @submit.prevent="submit">
+    <form
+      novalidate
+      class="mt-4 grid max-w-xl gap-4 rounded-md border p-4"
+      @submit.prevent="submit"
+    >
+      <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+        请完整填写期间编码、开始日期与结束日期（已标红），结束日期不得早于开始日期。
+      </p>
       <NvFieldGroup>
         <NvField>
           <NvFieldLabel for="period-code">期间编码</NvFieldLabel>
-          <NvInput id="period-code" v-model="draft.periodCode" required maxlength="50" />
+          <NvInput
+            id="period-code"
+            v-model="draft.periodCode"
+            required
+            maxlength="50"
+            :data-invalid="showErrors && invalid.periodCode ? '' : undefined"
+            :aria-invalid="showErrors && invalid.periodCode"
+          />
         </NvField>
         <NvField>
           <NvFieldLabel for="period-start">开始日期</NvFieldLabel>
-          <NvInput id="period-start" v-model="draft.startDate" type="date" required />
+          <NvInput
+            id="period-start"
+            v-model="draft.startDate"
+            type="date"
+            required
+            :data-invalid="showErrors && invalid.startDate ? '' : undefined"
+            :aria-invalid="showErrors && invalid.startDate"
+          />
         </NvField>
         <NvField>
           <NvFieldLabel for="period-end">结束日期</NvFieldLabel>
@@ -65,6 +95,8 @@ async function submit() {
             type="date"
             required
             :min="draft.startDate"
+            :data-invalid="showErrors && invalid.endDate ? '' : undefined"
+            :aria-invalid="showErrors && invalid.endDate"
           />
         </NvField>
       </NvFieldGroup>
