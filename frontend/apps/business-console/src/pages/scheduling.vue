@@ -1069,16 +1069,6 @@ function reasonLabel(reason?: string | null) {
               </NvButton>
               <NvButton
                 size="sm"
-                variant="outline"
-                type="button"
-                :disabled="Boolean(repreviewBlockedReason)"
-                :title="repreviewDisabledReason"
-                @click="repreviewLockedDraft"
-              >
-                <NvSpinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
-              </NvButton>
-              <NvButton
-                size="sm"
                 type="button"
                 :disabled="Boolean(publishCandidateBlockedReason)"
                 :title="publishCandidateDisabledReason"
@@ -1154,29 +1144,6 @@ function reasonLabel(reason?: string | null) {
         >
           {{ draftInvalidationReason }}
         </p>
-        <div
-          v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
-          class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
-          role="status"
-        >
-          <span>
-            {{ draft.modifiedUnlockedTaskIds.value.length }}
-            道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。
-          </span>
-          <NvButton
-            size="sm"
-            variant="outline"
-            type="button"
-            :disabled="!canManage || !draftReady || workbench.generatePending.value"
-            :title="
-              canManage
-                ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
-                : '当前账号没有排产管理权限，不能锁定修改'
-            "
-            @click="draft.lockModifiedTasks"
-            >锁定全部修改</NvButton
-          >
-        </div>
         <p v-if="firstPlanProgress" role="status" class="text-sm text-muted-foreground">
           {{ firstPlanProgress }}
         </p>
@@ -1233,6 +1200,50 @@ function reasonLabel(reason?: string | null) {
           @retry="insertion.retry"
           @select="selectInsertionCandidate"
         />
+        <section
+          aria-label="草稿编辑操作"
+          class="sticky top-14 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3 shadow-sm"
+        >
+          <div
+            v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
+            class="flex min-w-0 flex-1 flex-wrap items-center gap-3 text-sm"
+            role="status"
+          >
+            <span class="text-muted-foreground">
+              {{ draft.modifiedUnlockedTaskIds.value.length }}
+              道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。
+            </span>
+            <NvButton
+              size="sm"
+              variant="outline"
+              type="button"
+              :disabled="!canManage || !draftReady || workbench.generatePending.value"
+              :title="
+                canManage
+                  ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
+                  : '当前账号没有排产管理权限，不能锁定修改'
+              "
+              @click="draft.lockModifiedTasks"
+              >锁定全部修改</NvButton
+            >
+          </div>
+          <p
+            v-if="draft.modifiedUnlockedTaskIds.value.length === 0"
+            class="text-sm text-muted-foreground"
+          >
+            已锁定 {{ draft.lockedAssignments.value.length }} 道工序，重预览后查看结果再发布。
+          </p>
+          <NvButton
+            size="sm"
+            variant="default"
+            type="button"
+            :disabled="Boolean(repreviewBlockedReason)"
+            :title="repreviewDisabledReason"
+            @click="repreviewLockedDraft"
+          >
+            <NvSpinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
+          </NvButton>
+        </section>
         <SchedulingDraftBoard
           :model="downtimeDisplayModel"
           :feedback="draft.feedback.value"

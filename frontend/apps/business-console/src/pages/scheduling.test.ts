@@ -1805,7 +1805,12 @@ describe('APS scheduling workbench page', () => {
     await flushPromises()
     const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
     board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
-    board.vm.$emit('lock', 'assign-001', true)
+    await flushPromises()
+    const editActions = wrapper.get('[aria-label="草稿编辑操作"]')
+    await editActions
+      .findAll('button')
+      .find((button) => button.text() === '锁定全部修改')!
+      .trigger('click')
     await flushPromises()
     await wrapper
       .findAll('button')

@@ -179,7 +179,7 @@ describe('SchedulingDraftBoard', () => {
     expect(row.text()).not.toContain('日历外')
     wrapper.unmount()
   })
-  it('keeps table cells aligned with their visible headers', async () => {
+  it('offers resource and time editing alongside lock, pending and feedback', async () => {
     const wrapper = mount(SchedulingDraftBoard, {
       props: { model },
       global: {
@@ -195,14 +195,21 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
-    // 列：工单/工序 · 实际排程段 · 资源 · 开始 · 结束 · 物料 · 设备状态 · 锁定 · 待排
-    const cells = wrapper.findAll('tbody td')
-    expect(cells).toHaveLength(10)
-    expect((cells[3]!.find('input').element as HTMLInputElement).value).toBe('2026-07-24T08:00:00Z')
-    expect(cells[5]!.text()).toContain('无已记录风险')
-    expect(cells[6]!.text()).toContain('无已记录风险')
-    expect(cells[0]!.text()).toContain('未知 · 开工前请人工确认设备可用')
-    expect(cells[8]!.text()).toContain('移回待排')
+    const row = wrapper.get('tbody tr')
+    expect(
+      (row.get('[aria-label="WO-001 · OP-10 的开始时间"]').element as HTMLInputElement).value,
+    ).toBe('2026-07-24T08:00:00Z')
+    expect(
+      (row.get('[aria-label="WO-001 · OP-10 的结束时间"]').element as HTMLInputElement).value,
+    ).toBe('2026-07-24T09:00:00Z')
+    expect(row.text()).toContain('无已记录风险')
+    expect(row.text()).toContain('未知 · 开工前请人工确认设备可用')
+    const lock = row.findAll('button').find((button) => button.text() === '锁定')!
+    await lock.trigger('click')
+    expect(wrapper.emitted('lock')).toEqual([['assignment-001', true]])
+    const pending = row.findAll('button').find((button) => button.text() === '移回待排')!
+    await pending.trigger('click')
+    expect(wrapper.emitted('moveToPending')).toEqual([['assignment-001']])
   })
 
   it('shows real segments and keeps the operation lock available without collapsing the gaps (#4004)', async () => {
@@ -287,7 +294,7 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
-    expect(wrapper.findAll('tbody td')[5]!.text()).toContain('缺料待备')
+    expect(wrapper.get('tbody tr').text()).toContain('缺料待备')
   })
 
   // #1320:设备「状态未知」是数据盲区,不是不可用 —— 横幅 + 表格列都要如实说明。
@@ -325,7 +332,7 @@ describe('SchedulingDraftBoard', () => {
     await tableTab.trigger('mousedown')
     await flushPromises()
 
-    expect(wrapper.findAll('tbody td')[6]!.text()).toContain('状态未知')
+    expect(wrapper.get('tbody tr').text()).toContain('状态未知')
   })
 
   it('emits persistOverride with the task id, which the page must map to operationId', async () => {
