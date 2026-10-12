@@ -63,7 +63,8 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
             return;
         }
 
-        var referenceId = integrationEvent.Payload.DispositionType.Trim().ToLowerInvariant() switch
+        var dispositionType = integrationEvent.Payload.DispositionType.Trim().ToLowerInvariant();
+        var referenceId = dispositionType switch
         {
             QualityNcrDispositionTypes.Rework => integrationEvent.Payload.ReworkWorkOrderId,
             QualityNcrDispositionTypes.Scrap => integrationEvent.Payload.ScrapMovementId,
@@ -85,6 +86,14 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
         // 原样落库。因此「守卫量的字符串 == 落库的字符串」是构造上成立的，
         // 不依赖「两处归一化必须保持幂等等价」这条约定——那条约定一旦被谁改分叉，没有任何东西会红。
         var normalizedReferenceId = string.IsNullOrWhiteSpace(referenceId) ? null : referenceId.Trim();
+        // #4342：返工创建与首次处置结论可能乱序；同一 NCR 的首次空引用不是撤销已创建的工单。
+        if (dispositionType == QualityNcrDispositionTypes.Rework && normalizedReferenceId is null
+            && defect.NcrId == integrationEvent.Payload.NcrId
+            && defect.DispositionType == QualityNcrDispositionTypes.Rework)
+        {
+            normalizedReferenceId = defect.DispositionReferenceId;
+        }
+
         if (normalizedReferenceId is not null && MesDefectDispositionReferenceIdPolicy.ExceedsColumn(normalizedReferenceId))
         {
             await deadLetterStore.AddAsync(

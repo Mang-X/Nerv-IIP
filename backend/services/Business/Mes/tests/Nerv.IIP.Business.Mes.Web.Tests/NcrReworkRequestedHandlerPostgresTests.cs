@@ -47,11 +47,18 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
                 .HandleAsync(integrationEvent, CancellationToken.None);
             createdDomainEvent = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(coordinator.Captured);
         }
+        // #4342：CAP 的首次处置结论可能晚于返工请求；其空引用不得抹掉已创建工单。
+        await HandleInitialDispositionAsync(provider, integrationEvent);
         await HandleAsync(provider, integrationEvent);
 
         await using var assertionScope = provider.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var workOrder = await db.WorkOrders.SingleAsync(x => x.SourceNcrId == "ncr-001");
+        var sourceDefect = await db.DefectRecords.SingleAsync(x => x.DefectNo == "DEF-001");
+        Assert.Equal(workOrder.WorkOrderIdValue, sourceDefect.DispositionReferenceId);
+        Assert.Equal(DefectRecord.ReworkPendingStatus, sourceDefect.Status);
+        Assert.Equal(workOrder.SourceNcrId, sourceDefect.NcrId);
+        Assert.Equal(workOrder.SourceNcrCode, sourceDefect.NcrCode);
         Assert.Equal(WorkOrder.ReworkType, workOrder.WorkOrderType);
         Assert.Equal("WO-SOURCE-001", workOrder.SourceWorkOrderId);
         Assert.Equal("OP-SOURCE-20", workOrder.SourceOperationTaskId);
@@ -498,6 +505,8 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             "env-test",
             workOrderLevelDefect: true);
 
+        // 正常顺序：先接收空引用的首次处置结论，再实际建返工工单。
+        await HandleInitialDispositionAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
         await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
         await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-other-scope",
@@ -509,6 +518,16 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var workOrders = await db.WorkOrders.Where(x => x.SourceNcrId == "ncr-001").ToArrayAsync();
         Assert.Equal(2, workOrders.Length);
+        foreach (var workOrder in workOrders)
+        {
+            var defect = await db.DefectRecords.SingleAsync(x =>
+                x.OrganizationId == workOrder.OrganizationId &&
+                x.EnvironmentId == workOrder.EnvironmentId &&
+                x.DefectNo == workOrder.SourceDefectNo);
+            Assert.Equal(workOrder.WorkOrderIdValue, defect.DispositionReferenceId);
+            Assert.Equal(DefectRecord.ReworkPendingStatus, defect.Status);
+            Assert.Equal(workOrder.SourceNcrId, defect.NcrId);
+        }
         Assert.Contains(workOrders, x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev");
         Assert.Contains(workOrders, x => x.OrganizationId == "org-002" && x.EnvironmentId == "env-test");
         var workOrderLevel = workOrders.Single(x => x.OrganizationId == "org-002");
@@ -864,6 +883,27 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
     {
         await using var scope = provider.CreateAsyncScope();
         await CreateHandler(scope.ServiceProvider).HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleInitialDispositionAsync(
+        IServiceProvider provider, NcrReworkRequestedIntegrationEvent reworkRequest)
+    {
+        var payload = reworkRequest.Payload;
+        var disposition = new NcrDispositionDecidedIntegrationEvent(
+            $"initial-{reworkRequest.EventId}", QualityIntegrationEventTypes.DispositionDecided,
+            QualityIntegrationEventVersions.V1, reworkRequest.OccurredAtUtc,
+            QualityIntegrationEventSources.BusinessQuality, reworkRequest.CorrelationId,
+            reworkRequest.CausationId, reworkRequest.OrganizationId, reworkRequest.EnvironmentId,
+            reworkRequest.Actor, $"initial-{reworkRequest.IdempotencyKey}",
+            new NcrDispositionDecidedPayload(
+                payload.NcrId, payload.NcrCode, payload.SkuCode, payload.Quantity,
+                QualityNcrDispositionTypes.Rework, "approval-4342", null, null, null,
+                payload.RequestedAtUtc) { SourceDocumentId = payload.SourceDefectNo });
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+                db, new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(db))
+            .HandleAsync(disposition, CancellationToken.None);
     }
 
     private static async Task SeedDefectAsync(

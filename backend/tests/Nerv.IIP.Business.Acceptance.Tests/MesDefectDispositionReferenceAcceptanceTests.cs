@@ -75,19 +75,31 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
         Assert.True(
             producerWidth > PreChangeColumnMaxLength,
             $"Quality 产出列宽 {producerWidth} 未超过改前 MES 列宽 {PreChangeColumnMaxLength}，本用例失去针对性。");
-        var referenceId = Identity("RW-WO-", producerWidth);
+        // #4342 / 父 spec r1：两种实际处置引用都必须逐字读回原不良。
+        foreach (var dispositionType in new[] { QualityNcrDispositionTypes.Rework, QualityNcrDispositionTypes.Scrap })
+        {
+            var referenceId = Identity(dispositionType == QualityNcrDispositionTypes.Rework ? "RW-WO-" : "MOV-SCRAP-", producerWidth);
+            var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+            var consumer = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(dbContext, deadLetters);
 
-        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var consumer = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(dbContext, deadLetters);
+            await consumer.HandleAsync(
+                DispositionEvent($"evt-4342-{dispositionType}", DefectNo, referenceId, dispositionType),
+                CancellationToken.None);
 
-        // 不抛出：这一句本身就是「不再是 poison message」的读数（改前这里是 22001 逃逸）。
-        await consumer.HandleAsync(DispositionEvent("evt-3318-at-producer-width", DefectNo, referenceId), CancellationToken.None);
-
-        dbContext.ChangeTracker.Clear();
-        var defect = await dbContext.DefectRecords.AsNoTracking().SingleAsync();
-        Assert.Equal(referenceId, defect.DispositionReferenceId);
-        Assert.Equal(DefectRecord.ReworkPendingStatus, defect.Status);
-        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+            dbContext.ChangeTracker.Clear();
+            var defect = await dbContext.DefectRecords.AsNoTracking().SingleAsync();
+            Assert.Equal(referenceId, defect.DispositionReferenceId);
+            Assert.Equal(dispositionType, defect.DispositionType);
+            Assert.Equal(
+                dispositionType == QualityNcrDispositionTypes.Rework ? DefectRecord.ReworkPendingStatus : DefectRecord.ScrapAcceptedStatus,
+                defect.Status);
+            Assert.Equal("NCR-3318", defect.NcrId);
+            Assert.Equal("NCR-2026-3318", defect.NcrCode);
+            Assert.Equal(WorkOrderId, defect.WorkOrderId);
+            Assert.Equal("OP-3318-10", defect.OperationTaskId);
+            Assert.Equal(Sku, (await dbContext.WorkOrders.AsNoTracking().SingleAsync()).SkuId);
+            Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+        }
     }
 
     /// <summary>
@@ -199,7 +211,7 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
     {
         var now = DateTimeOffset.Parse("2026-09-10T02:00:00Z");
         dbContext.WorkOrders.Add(WorkOrder.Create(Org, Env, WorkOrderId, Sku, "PV-3318-1", 10m, 20, now.AddHours(8)));
-        dbContext.DefectRecords.Add(DefectRecord.Create(Org, Env, defectNo, WorkOrderId, "OP-3318-10", "SURFACE", 1m, now));
+        dbContext.DefectRecords.Add(DefectRecord.Create(Org, Env, defectNo, WorkOrderId, "OP-3318-10", "SURFACE", 1m, now, Sku));
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
     }
@@ -207,7 +219,8 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
     private static NcrDispositionDecidedIntegrationEvent DispositionEvent(
         string eventId,
         string defectNo,
-        string reworkWorkOrderId) =>
+        string dispositionReferenceId,
+        string dispositionType = QualityNcrDispositionTypes.Rework) =>
         new(
             eventId,
             QualityIntegrationEventTypes.DispositionDecided,
@@ -225,10 +238,10 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
                 "NCR-2026-3318",
                 Sku,
                 1m,
-                QualityNcrDispositionTypes.Rework,
+                dispositionType,
                 "approval-3318",
-                reworkWorkOrderId,
-                null,
+                dispositionType == QualityNcrDispositionTypes.Rework ? dispositionReferenceId : null,
+                dispositionType == QualityNcrDispositionTypes.Scrap ? dispositionReferenceId : null,
                 null,
                 DateTimeOffset.Parse("2026-09-10T03:00:00Z"))
             {

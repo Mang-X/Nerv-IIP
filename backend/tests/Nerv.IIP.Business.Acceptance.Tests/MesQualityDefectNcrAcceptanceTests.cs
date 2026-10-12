@@ -141,10 +141,11 @@ public sealed class MesQualityDefectNcrAcceptanceTests
     }
 
     [Theory]
-    [InlineData(null, "MES-SKU-UNRESOLVED")]
-    [InlineData("SKU-FG-1000", "SKU-FG-1000")]
+    [InlineData(null, "MES-SKU-UNRESOLVED", "scrap", DefectRecord.ScrapAcceptedStatus)]
+    [InlineData("SKU-FG-1000", "SKU-FG-1000", "scrap", DefectRecord.ScrapAcceptedStatus)]
+    [InlineData("SKU-FG-1000", "SKU-FG-1000", "rework", DefectRecord.ReworkPendingStatus)]
     public async Task Mes_defect_event_opens_quality_ncr_and_quality_disposition_updates_mes_by_payload_source_document(
-        string? skuCode, string expectedSkuCode)
+        string? skuCode, string expectedSkuCode, string dispositionType, string expectedDefectStatus)
     {
         await using var mesDb = CreateMesContext();
         await using var qualityDb = CreateQualityContext();
@@ -182,7 +183,7 @@ public sealed class MesQualityDefectNcrAcceptanceTests
         Assert.Equal(1, await qualityDb.NonconformanceReports.CountAsync());
         ncr.ClearDomainEvents();
         ncr.SubmitDisposition(
-            "scrap",
+            dispositionType,
             "approval-chain-001",
             [],
             [MrbReviewInput.Approve("qa-lead-001", "scrap accepted", DateTimeOffset.Parse("2026-06-15T10:30:00Z"))]);
@@ -199,10 +200,22 @@ public sealed class MesQualityDefectNcrAcceptanceTests
         await mesDb.SaveChangesAsync();
 
         var updatedDefect = await mesDb.DefectRecords.SingleAsync();
-        Assert.Equal(DefectRecord.ScrapAcceptedStatus, updatedDefect.Status);
+        Assert.Equal(expectedDefectStatus, updatedDefect.Status);
         Assert.Equal(ncr.Id.ToString(), updatedDefect.NcrId);
         Assert.Equal(ncr.NcrCode, updatedDefect.NcrCode);
-        Assert.Equal("scrap", updatedDefect.DispositionType);
+        Assert.Equal(dispositionType, updatedDefect.DispositionType);
+        Assert.Null(updatedDefect.DispositionReferenceId);
+        if (dispositionType == QualityNcrDispositionTypes.Rework)
+        {
+            var reworkRequest = new NcrReworkRequestedIntegrationEventConverter(
+                    new FixedQualityIntegrationEventContextAccessor())
+                .Convert(ncr.GetDomainEvents().OfType<NonconformanceReportReworkRequestedDomainEvent>().Single());
+            Assert.Equal("SKU-FG-1000", reworkRequest.Payload.SkuCode);
+            Assert.Equal(defect.DefectNo, reworkRequest.Payload.SourceDefectNo);
+            Assert.Equal(ncr.Id.ToString(), reworkRequest.Payload.NcrId);
+            Assert.Equal(ncr.NcrCode, reworkRequest.Payload.NcrCode);
+            Assert.Equal(defect.Quantity, reworkRequest.Payload.Quantity);
+        }
         var source = Assert.Single((await new ListRelatedQualityItemsQueryHandler(mesDb).Handle(
             new ListRelatedQualityItemsQuery("org-001", "env-dev", "WO-ACCEPT-001", "OP-10"),
             CancellationToken.None)).Items);
