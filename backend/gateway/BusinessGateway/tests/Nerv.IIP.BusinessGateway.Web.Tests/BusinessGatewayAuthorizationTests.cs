@@ -1340,6 +1340,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/calibration-records", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/spc/control-charts", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/capas/capa-001/actions/action-001/complete", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas/019f87d0-3f7f-7ad0-a829-7724ea91c222", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/scrap-reason-codes?search=surface&skip=0&take=10", BusinessGatewayPermissions.QualityInspectionRecordsRead);

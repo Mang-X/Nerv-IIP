@@ -1760,6 +1760,13 @@ public sealed record BusinessConsoleQualityCapaDetailRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleCompleteQualityCapaActionRequest(
+    [property: RouteParam] string CorrectiveActionId,
+    [property: RouteParam] string CorrectiveActionItemId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset CompletedAtUtc);
+
 public sealed record BusinessConsoleQualityCapaActionItem(
     string CorrectiveActionItemId,
     string ActionType,
