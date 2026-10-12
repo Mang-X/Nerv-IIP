@@ -20,15 +20,17 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
 {
     private static readonly DateTimeOffset ReleasedAtUtc = DateTimeOffset.Parse("2026-08-01T00:00:00Z");
 
-    [Fact]
-    public async Task Replay_rejects_unrecovered_backfill_and_recovers_after_source_fact_repair()
+    [Theory]
+    [InlineData(10)]
+    [InlineData(20)]
+    public async Task Replay_rejects_unrecovered_backfill_and_recovers_after_source_fact_repair(int authoritativeSequence)
     {
         await using var dbContext = CreateDbContext();
         dbContext.InspectionPlans.Add(FirstArticlePlan());
         dbContext.InspectionPlans.Add(PeriodicPlan());
         await dbContext.SaveChangesAsync();
         var store = new InMemoryIntegrationEventDeadLetterStore();
-        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "WO-001"), store);
+        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "WO-001", operationSequence: authoritativeSequence), store);
         var original = Backfill(operationIds: ["OP-10", "OP-20"]);
         await HandleBackfillAsync(dbContext, original, store);
         var letter = Assert.Single(await store.ListAsync(null, null, CancellationToken.None));
@@ -51,6 +53,9 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
         dbContext.Entry(rejected).Property(x => x.CompletionSkuCode).CurrentValue = "SKU-FG-1000";
         await dbContext.SaveChangesAsync();
         var repaired = await new IntegrationEventDeadLetterReplayExecutor(store, routes, TimeProvider.System).ReplayAsync(letter.Id, CancellationToken.None);
+        Assert.Equal(authoritativeSequence, rejected.OperationSequence);
+        if (authoritativeSequence != 10)
+            Assert.Contains(await store.ListAsync(null, null, CancellationToken.None), x => x.FailureCode == "backfill-release-fact-substituted" && x.Status == IntegrationEventDeadLetterStatus.Ignored);
         Assert.True(repaired.Succeeded, repaired.Message);
         Assert.Equal(ReleasedAtUtc.UtcDateTime, rejected.ReleasedAtUtc);
         Assert.Single(await dbContext.PeriodicInspectionRuntimeContexts.Where(x => x.OperationId == "OP-10").ToListAsync());

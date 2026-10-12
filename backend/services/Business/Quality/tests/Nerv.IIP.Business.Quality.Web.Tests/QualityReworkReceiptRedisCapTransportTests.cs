@@ -383,7 +383,7 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
         var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
         var completion = new MesOperationTaskCompletedIntegrationEvent("backfill-bad-completion", MesIntegrationEventTypes.OperationTaskCompleted, 1,
             at, MesIntegrationEventSources.BusinessMes, "corr-backfill", "cause-backfill", "org-001", "env-dev", "system:mes", "backfill-completion-key",
-            new OperationTaskCompletedPayload("WO-BACKFILL", "OP-10", "WRONG-SKU", 10, "WC-BACKFILL", 1000m, "ea", false, at));
+            new OperationTaskCompletedPayload("WO-BACKFILL", "OP-10", "WRONG-SKU", 20, "WC-BACKFILL", 1000m, "ea", false, at));
         var original = new WorkOrderReleaseProjectionBackfilledIntegrationEvent("backfill-original", MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled, 1,
             at, MesIntegrationEventSources.BusinessMes, "corr-backfill", "cause-backfill", "org-001", "env-dev", "system:mes", "backfill-original-key",
             new WorkOrderReleasedPayload("WO-BACKFILL", "SKU-BACKFILL", 1000m, at,
@@ -424,6 +424,10 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
         var finalDb = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.All(await finalDb.PeriodicInspectionOperations.AsNoTracking().ToListAsync(), x => Assert.Equal(at.UtcDateTime, x.ReleasedAtUtc));
         Assert.Equal(2, await finalDb.PeriodicInspectionRuntimeContexts.CountAsync());
+        Assert.Equal(20, (await finalDb.PeriodicInspectionOperations.AsNoTracking().SingleAsync(x => x.OperationId == "OP-10")).OperationSequence);
+        var notice = Assert.Single(await finalDb.Set<IntegrationEventDeadLetter>().AsNoTracking().Where(x => x.FailureCode == "backfill-release-fact-substituted").ToListAsync());
+        Assert.Equal(IntegrationEventDeadLetterStatus.Ignored, notice.Status);
+        Assert.Equal(original.EventId, notice.EventId);
         Assert.Single(await finalDb.ProcessedIntegrationEvents.Where(x => x.EventId == original.EventId).ToListAsync());
     }
 

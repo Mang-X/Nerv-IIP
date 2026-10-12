@@ -15,8 +15,20 @@ namespace Nerv.IIP.Business.Quality.Web;
 
 public static class QualityDeadLetterReplayServiceCollectionExtensions
 {
+    internal const string BackfillNoticeStoreKey = "quality-backfill-handled-notices";
+
     public static IServiceCollection AddQualityDeadLetterReplay(this IServiceCollection services)
     {
+        // Keep handled backfill notices in the same store without reporting them as replay rejection.
+        var original = services.Last(x => x.ServiceType == typeof(IIntegrationEventDeadLetterStore));
+        services.Remove(original);
+        services.Add(original.ImplementationInstance is { } instance
+            ? ServiceDescriptor.KeyedSingleton(typeof(IIntegrationEventDeadLetterStore), BackfillNoticeStoreKey, instance)
+            : original.ImplementationFactory is { } factory
+                ? ServiceDescriptor.DescribeKeyed(typeof(IIntegrationEventDeadLetterStore), BackfillNoticeStoreKey, (provider, _) => factory(provider), original.Lifetime)
+                : ServiceDescriptor.DescribeKeyed(typeof(IIntegrationEventDeadLetterStore), BackfillNoticeStoreKey, original.ImplementationType!, original.Lifetime));
+        services.Add(ServiceDescriptor.Describe(typeof(IIntegrationEventDeadLetterStore),
+            provider => provider.GetRequiredKeyedService<IIntegrationEventDeadLetterStore>(BackfillNoticeStoreKey), original.Lifetime));
         services.AddObservedIntegrationEventDeadLetterStore();
         Add<WmsIntegrationEvent, WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks>(services, WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks.ConsumerName,
             HasWmsTasksAsync);
