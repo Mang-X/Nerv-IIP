@@ -9,6 +9,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
+using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Wms;
@@ -136,6 +138,104 @@ public sealed class ErpDeadLetterReplayPostgresTests
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             Assert.Equal(expected, json.RootElement.GetProperty("data").GetProperty("status").GetString());
         }
+    }
+
+    [ErpCostPostgresFact]
+    public async Task Existing_receipt_business_dedup_replays_without_inbox_and_preserves_rejection_and_scope()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("ConnectionStrings:PostgreSQL", ErpPostgresLaneDatabase.ConnectionString);
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:PostgreSQL"] = ErpPostgresLaneDatabase.ConnectionString,
+                ["InternalService:BearerToken"] = "review-probe-token",
+                ["Persistence:AutoMigrate"] = "false",
+            }));
+            builder.ConfigureServices(services => services.AddSingleton<IIntegrationEventPublisher, ReceiptFixturePublisher>());
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "review-probe-token");
+        var original = new WmsIntegrationEvent("evt-review-wms", WmsIntegrationEventTypes.InboundOrderCompleted, 1,
+            DateTimeOffset.Parse("2026-10-01T00:00:00Z"), WmsIntegrationEventSources.BusinessWms, "corr", "cause",
+            "org-review", "env-review", "system:test", "wms-review-idempotency",
+            new WmsIntegrationPayload("RCV-REVIEW", null, null, null, null, null, null, "completed", null, null,
+                Lines: [new WmsIntegrationPayloadLine("10", "SKU-001", "pcs", "SITE-001", "RAW-A-01", 2m, "qualified")],
+                SourceDocumentType: "purchase-order", SourceDocumentId: "PO-REVIEW"));
+        IntegrationEventDeadLetterMessage letter;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            await scope.ServiceProvider.GetRequiredService<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>()
+                .HandleAsync(original, CancellationToken.None);
+            letter = Assert.Single(await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>()
+                .ListAsync(WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName, null, CancellationToken.None));
+            Assert.Equal("missing-source-facts", letter.FailureCode);
+            Assert.Empty(await db.ProcessedIntegrationEvents.ToListAsync());
+            var order = PurchaseOrder.Create("org-review", "env-review", "PO-REVIEW", "SUP-001", "SITE-001",
+                [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 3m, 12.5m, new DateOnly(2026, 10, 1))]);
+            order.MarkApprovalRequested("approval-review");
+            order.ReleaseAfterApproval("approval-review");
+            db.PurchaseOrders.Add(order);
+            await db.SaveChangesAsync();
+        }
+        using var receipt = await client.PostAsJsonAsync("/api/business/v1/erp/purchase-receipts", new
+        {
+            organizationId = "org-review", environmentId = "env-review", purchaseReceiptNo = "RCV-REVIEW", purchaseOrderNo = "PO-REVIEW",
+            idempotencyKey = "manual-receipt-review", inventoryPostingRoute = "wms",
+            lines = new[] { new { purchaseOrderLineNo = "10", receivedQuantity = 2m, qualityStatus = "unrestricted", locationCode = "RAW-A-01" } },
+        });
+        Assert.Equal(HttpStatusCode.OK, receipt.StatusCode);
+        using var replay = await client.PostAsync($"/api/business/v1/erp/dlq/{letter.Id}/replay", null);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        using var replayJson = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+        var replayStatus = replayJson.RootElement.GetProperty("data").GetProperty("status").GetString();
+        Assert.Equal("replayed", replayStatus);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Single(await db.PurchaseReceipts.ToListAsync());
+            Assert.False(await db.ProcessedIntegrationEvents.AnyAsync(x => x.ConsumerName == letter.ConsumerName && x.IdempotencyKey == original.IdempotencyKey));
+            Assert.Equal(IntegrationEventDeadLetterStatus.Replayed, (await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().GetAsync(letter.Id, CancellationToken.None))!.Status);
+        }
+        using var batch = await client.PostAsJsonAsync("/api/business/v1/erp/dlq/replay-batch", new { consumerName = letter.ConsumerName, status = "replayed" });
+        Assert.Equal(HttpStatusCode.OK, batch.StatusCode);
+        using var batchJson = JsonDocument.Parse(await batch.Content.ReadAsStringAsync());
+        var batchItem = Assert.Single(batchJson.RootElement.GetProperty("data").GetProperty("items").EnumerateArray());
+        Assert.True(batchItem.GetProperty("succeeded").GetBoolean());
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Single(await db.PurchaseReceipts.ToListAsync());
+            Assert.False(await db.ProcessedIntegrationEvents.AnyAsync(x => x.IdempotencyKey == original.IdempotencyKey));
+            Assert.Equal(letter.EventJson, (await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().GetAsync(letter.Id, CancellationToken.None))!.EventJson);
+        }
+        foreach (var unresolved in new[]
+        {
+            original with { EventId = "replay-other-org", IdempotencyKey = "other-org", OrganizationId = "other-org", Payload = original.Payload with { SourceDocumentType = "unhandled-source" } },
+            original with { EventId = "replay-other-env", IdempotencyKey = "other-env", EnvironmentId = "other-env", Payload = original.Payload with { SourceDocumentType = "unhandled-source" } },
+            original with { EventId = "replay-ignored", IdempotencyKey = "ignored", Payload = original.Payload with { SourceDocumentType = "unhandled-source" } },
+            original with { EventId = "replay-rejected", IdempotencyKey = "rejected", SourceService = "wrong-source" },
+        })
+        {
+            IntegrationEventDeadLetterMessage unresolvedLetter;
+            using (var scope = factory.Services.CreateScope())
+                unresolvedLetter = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+                    IntegrationEventDeadLetterMessage.Create(letter.ConsumerName, unresolved, "original", "original failure"), CancellationToken.None);
+            using var failure = await client.PostAsync($"/api/business/v1/erp/dlq/{unresolvedLetter.Id}/replay", null);
+            Assert.Equal(HttpStatusCode.OK, failure.StatusCode);
+            using var failureJson = JsonDocument.Parse(await failure.Content.ReadAsStringAsync());
+            Assert.Equal("failed", failureJson.RootElement.GetProperty("data").GetProperty("status").GetString());
+        }
+    }
+
+    private sealed class ReceiptFixturePublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private static WorkCenterCostRate Rate(string organization, string environment, DateTimeOffset from, decimal amount, int revision) =>

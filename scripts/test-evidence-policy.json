@@ -1715,9 +1715,10 @@
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Concurrent_commands_serialize_revision_allocation_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Http_configuration_and_audit_preserve_scope_revision_and_derived_rates_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Migration_persists_monthly_rate_and_enforces_scope_period_revision_on_postgres",
-        "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Original_rate_time_recovers_cost_through_single_and_batch_http_without_duplicate_cost"
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Original_rate_time_recovers_cost_through_single_and_batch_http_without_duplicate_cost",
+        "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Existing_receipt_business_dedup_replays_without_inbox_and_preserves_rejection_and_scope"
       ],
-      "expectedRuntimeTestCount": 25
+      "expectedRuntimeTestCount": 26
     },
     {
       "id": "erp-journal-voucher-no",

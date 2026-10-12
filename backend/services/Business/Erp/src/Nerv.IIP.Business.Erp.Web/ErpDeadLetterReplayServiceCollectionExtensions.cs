@@ -33,7 +33,12 @@ public static class ErpDeadLetterReplayServiceCollectionExtensions
         Add<InspectionResultIntegrationEvent, QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit>(services, QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit.ConsumerName);
         Add<ReworkWorkOrderCreatedIntegrationEvent, ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost>(services, ReworkWorkOrderCreatedIntegrationEventHandlerForAttributeCost.ConsumerName);
         Add<StockMovementPostedIntegrationEvent, StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost>(services, StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost.ConsumerName);
-        Add<WmsIntegrationEvent, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>(services, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName);
+        Add<WmsIntegrationEvent, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>(services, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName,
+            async (provider, integrationEvent, token) => await HasInboxAsync(provider, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName, integrationEvent, token)
+                || WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.IsPurchaseOrderSource(integrationEvent.Payload.SourceDocumentType)
+                    && await provider.GetRequiredService<ApplicationDbContext>().PurchaseReceipts.AsNoTracking().AnyAsync(x =>
+                        x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId
+                        && x.PurchaseReceiptNo == integrationEvent.Payload.PublicReference.Trim(), token));
         Add<WmsIntegrationEvent, WmsInboundOrderCompletedIntegrationEventHandlerForRecordSalesReturnReceipt>(services, WmsInboundOrderCompletedIntegrationEventHandlerForRecordSalesReturnReceipt.ConsumerName);
         Add<WmsIntegrationEvent, WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection>(services, WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection.ConsumerName);
         Add<WmsIntegrationEvent, WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable>(services, WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName);
@@ -42,17 +47,21 @@ public static class ErpDeadLetterReplayServiceCollectionExtensions
         return services;
     }
 
-    private static void Add<TEvent, TConsumer>(IServiceCollection services, string consumerName)
+    private static void Add<TEvent, TConsumer>(IServiceCollection services, string consumerName,
+        Func<IServiceProvider, TEvent, CancellationToken, Task<bool>>? completed = null)
         where TEvent : IIntegrationEventEnvelope
         where TConsumer : class, IIntegrationEventHandler<TEvent>
     {
         services.TryAddScoped<TConsumer>();
         services.AddIntegrationEventDeadLetterReplay<TEvent, ErpReplayConsumer<TEvent, TConsumer>>(consumerName,
             (consumer, integrationEvent, token) => consumer.HandleAsync(integrationEvent, token),
-            (provider, integrationEvent, token) => provider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents
-                .AsNoTracking().AnyAsync(x => x.ConsumerName == consumerName
-                    && x.IdempotencyKey == integrationEvent.IdempotencyKey, token));
+            completed ?? ((provider, integrationEvent, token) => HasInboxAsync(provider, consumerName, integrationEvent, token)));
     }
+
+    private static Task<bool> HasInboxAsync(IServiceProvider provider, string consumerName,
+        IIntegrationEventEnvelope integrationEvent, CancellationToken token) =>
+        provider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.AsNoTracking()
+            .AnyAsync(x => x.ConsumerName == consumerName && x.IdempotencyKey == integrationEvent.IdempotencyKey, token);
 }
 
 internal sealed class ErpReplayConsumer<TEvent, TConsumer>(TConsumer consumer, ApplicationDbContext dbContext,
