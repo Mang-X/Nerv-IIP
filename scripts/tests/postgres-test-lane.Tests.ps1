@@ -700,7 +700,7 @@ try {
     # 「物理列类型是 text」「越界 failure_code 仍是 22001」两个方向只有真库分得开，
     # InMemory provider 对两者都无感、在那上面跑会双向假绿。
     $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 11) 'The WMS member must freeze exactly its eleven governed PostgreSQL identities.'
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 18) 'The WMS member must freeze exactly its eighteen governed PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
     Assert-MethodScopedFilter -Member $wmsMember
     foreach ($wmsSource in @(

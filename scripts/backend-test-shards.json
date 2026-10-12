@@ -40,7 +40,9 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests"
+        "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests"
       ],
       "excludedTestLanes": [
         "real-postgres",

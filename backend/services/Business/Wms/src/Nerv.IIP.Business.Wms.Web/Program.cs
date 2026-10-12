@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Business.Wms.Web;
 using System.Text.Json;
 using FastEndpoints;
 using Nerv.IIP.Business.Wms.Web.Endpoints.DeadLetters;
@@ -91,6 +92,7 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddWmsDeadLetterReplay();
     builder.Services.AddHttpClient<IWcsCancellationAdapter, HttpWcsCancellationAdapter>().UseHttpClientMetrics();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();

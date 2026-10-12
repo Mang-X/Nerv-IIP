@@ -324,6 +324,18 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsDeadLetterReplayPostgresTests.cs",
+      "sourceSha256": "5b4497d2876590b4056511ecc884989470d7f3d0e6696cd563e404551a8f6b99",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "encapsulated-explicit-drop",
+          "factoryCallCount": 1,
+          "reason": "The HTTP replay fixture owns its unique database and explicitly drops it after host disposal, including initialization failure."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
       "sourceSha256": "a77bd344983ce941277dcd447fedf26ff4f3bc010b3e7bb0439d7dc2ec9d6703",
       "factoryCallCount": 2,
