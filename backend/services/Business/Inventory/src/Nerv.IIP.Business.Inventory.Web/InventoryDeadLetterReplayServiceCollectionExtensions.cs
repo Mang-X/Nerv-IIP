@@ -22,9 +22,10 @@ public static class InventoryDeadLetterReplayServiceCollectionExtensions
             async (provider, integrationEvent, token) =>
             {
                 var payload = integrationEvent.Payload;
+                var sourceDocumentId = payload.SourceDocumentId.Trim();
                 var movements = provider.GetRequiredService<ApplicationDbContext>().StockMovements.AsNoTracking().Where(x =>
                     x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId
-                    && x.SourceService == payload.SourceService && x.SourceDocumentId == payload.SourceDocumentId);
+                    && x.SourceService == payload.SourceService && x.SourceDocumentId == sourceDocumentId);
                 if (string.Equals(payload.MovementType, InventoryMovementRequestTypes.StatusTransfer, StringComparison.OrdinalIgnoreCase))
                     return await HasStatusLegsAsync(provider, integrationEvent.OrganizationId, integrationEvent.EnvironmentId,
                         payload.SourceService, payload.SourceDocumentId, payload.IdempotencyKey, token);
@@ -76,6 +77,7 @@ public static class InventoryDeadLetterReplayServiceCollectionExtensions
     private static async Task<bool> HasStatusLegsAsync(IServiceProvider provider, string organization, string environment,
         string source, string document, string key, CancellationToken token)
     {
+        document = document.Trim();
         var outbound = InventoryIdempotencyKeyPolicy.Compose(key, PostStockStatusTransferCommandHandler.OutboundLegSuffix);
         var inbound = InventoryIdempotencyKeyPolicy.Compose(key, PostStockStatusTransferCommandHandler.InboundLegSuffix);
         var movements = provider.GetRequiredService<ApplicationDbContext>().StockMovements.AsNoTracking().Where(x =>

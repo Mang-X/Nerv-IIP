@@ -35,7 +35,7 @@ public sealed class InventoryDeadLetterReplayPostgresTests
         await ResetSchemaAsync();
         await using var factory = await CreateFactoryAsync();
         using var client = Client(factory);
-        var original = Movement();
+        var original = Movement() with { Payload = Movement().Payload with { SourceDocumentId = " IN-REPLAY " } };
         var letter = await AddAsync(factory, InventoryMovementRequestedIntegrationEventHandlerForPostingMovement.ConsumerName, original);
         // Location is absent: the consumer publishes a rejection and returns normally.
         await ReplayAsync(client, letter, "failed");
@@ -52,6 +52,7 @@ public sealed class InventoryDeadLetterReplayPostgresTests
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var movement = Assert.Single(await db.StockMovements.AsNoTracking().ToListAsync());
+            Assert.Equal("IN-REPLAY", movement.SourceDocumentId);
             Assert.Equal(original.Payload.IdempotencyKey, movement.IdempotencyKey);
             Assert.Equal(5m, movement.Quantity);
             Assert.Equal(10m, Assert.Single(await db.StockLedgers.AsNoTracking().ToListAsync()).InventoryValue);
@@ -163,6 +164,22 @@ public sealed class InventoryDeadLetterReplayPostgresTests
             Assert.Equal(7m, (await db.StockLedgers.SingleAsync(x => x.OrganizationId == "org-replay" && x.QualityStatus == "quality")).OnHandQuantity);
             Assert.Equal(3m, (await db.StockLedgers.SingleAsync(x => x.OrganizationId == "org-replay" && x.QualityStatus == "unrestricted")).OnHandQuantity);
             Assert.Equal(10m, (await db.StockLedgers.SingleAsync(x => x.OrganizationId == "other-org")).OnHandQuantity);
+        }
+        // The original posting trims document identity while retaining the incoming envelope.
+        var padded = original with
+        {
+            EventId = "evt-quality-padded", IdempotencyKey = "quality-padded-key",
+            Payload = original.Payload with { SourceDocumentId = " IN-PADDED " },
+        };
+        var paddedLetter = await AddAsync(factory, letter.ConsumerName, padded);
+        await ReplayAsync(client, paddedLetter, "replayed");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var legs = await db.StockMovements.Where(x => x.SourceDocumentId == "IN-PADDED").ToListAsync();
+            Assert.Equal(2, legs.Count);
+            Assert.Equal(0m, legs.Sum(x => x.Quantity));
+            Assert.Equal(4, await db.StockMovements.CountAsync());
         }
         // Wrong original consumer must not consume a Quality event merely because one exists in the service.
         var wrong = await AddAsync(factory, InventoryMovementRequestedIntegrationEventHandlerForPostingMovement.ConsumerName, original with { EventId = "evt-wrong-consumer" });
