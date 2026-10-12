@@ -510,16 +510,16 @@ try {
         Assert-Contract (Test-Path -LiteralPath $laneSourcePath -PathType Leaf) "Lane source '$($smallServiceMember.source)' must exist."
         Assert-LaneOwnedDatabase -SourcePath $laneSourcePath -InnerDatabaseFactory ([string]$smallServiceMember.innerDatabaseFactory)
     }
-    # AppHub 是唯一的 test-owned 成员：NERV-822 要求它的三条用例各自拥有临时数据库，并在初始化前
+    # AppHub 的 test-owned 成员：NERV-822 要求其用例各自拥有临时数据库，并在初始化前
     # 断言"不在非自有库上初始化"。lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
     $appHubMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'apphub-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract ([string]::Equals([string]$appHubMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'AppHub owns its temporary databases per NERV-822 and must be registered as test-owned.'
-    Assert-Contract (@($appHubMember.expectedTestIdentities).Count -eq 3) 'The AppHub member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract (@($appHubMember.expectedTestIdentities).Count -eq 5) 'The AppHub member must freeze exactly its five PostgreSQL identities.'
     $appHubSourcePath = Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs'
-    $appHubSource = [IO.File]::ReadAllText($appHubSourcePath)
+    $appHubSource = [IO.File]::ReadAllText($appHubSourcePath) + [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubDeadLetterReplayPostgresTests.cs'))
     Assert-Contract ($appHubSource.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) 'A test-owned member must build its databases through the governed PostgreSqlTestDatabase helper.'
     Assert-Contract ($appHubSource.Contains('.AssertOwns(', [StringComparison]::Ordinal)) 'The NERV-822 guard that refuses to initialize outside the owned database must stay.'
-    Assert-Contract (([regex]::Matches($appHubSource, '\.AssertOwns\(')).Count -ge 3) 'Every AppHub PostgreSQL test must assert it initializes inside its own temporary database.'
+    Assert-Contract (([regex]::Matches($appHubSource, '\.AssertOwns\(')).Count -ge 5) 'Every AppHub PostgreSQL test must assert it initializes inside its own temporary database.'
     # 2026-08-13 裁决：lane 成员默认 test-owned——NERV-822 正把手写建库统一收敛到共享 helper，
     # runner 注入的成员库只保留给确有失败诊断价值的成员。因此不再断言"唯一 test-owned"，
     # 改为断言两种归属都还有成员（任一清空，它那半边契约就不再被行使）且每个成员都显式声明。
@@ -685,9 +685,9 @@ try {
 
     # AppHub 曾有两条"环境变量缺失就 return"的静默空跑用例；lane 只有在它们真正被冻结、
     # 且缺变量时是显式 skip 的情况下才算证明了 AppHub 的 PostgreSQL 语义。
-    $appHubSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs'))
+    $appHubSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs')) + [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubDeadLetterReplayPostgresTests.cs'))
     Assert-Contract (-not $appHubSource.Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)) 'AppHub PostgreSQL tests must not silently return when the governed connection string is missing.'
-    Assert-Contract ((([regex]::Matches($appHubSource, '\[AppHubRealPostgresFact\]')).Count) -eq 3) 'All three AppHub PostgreSQL tests must be gated by the visible-skip fact attribute.'
+    Assert-Contract ((([regex]::Matches($appHubSource, '\[AppHubRealPostgresFact\]')).Count) -eq 5) 'All five AppHub PostgreSQL tests must be gated by the visible-skip fact attribute.'
     $silentSkipSourcePath = Join-Path $fixtureRoot 'silent-skip-apphub-source.cs'
     [IO.File]::WriteAllText($silentSkipSourcePath, "if (string.IsNullOrWhiteSpace(connectionString))`n{`n    return;`n}`n", [Text.UTF8Encoding]::new($false))
     $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
