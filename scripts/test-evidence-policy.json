@@ -414,6 +414,12 @@
       "sourcePath": "backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayRedisCacheInvalidationTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_REDIS to run real Redis dual PlatformGateway HTTP invalidation tests\\.\";$"
+    },
+    {
+      "id": "maintenance-dead-letter-replay-postgres",
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceDeadLetterReplayPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL Maintenance dead-letter replay tests\\.\";$"
     }
   ],
   "rules": [
@@ -2060,6 +2066,26 @@
         "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Cancelled_in_flight_read_during_scoped_invalidation_cannot_publish_old_value"
       ],
       "expectedRuntimeTestCount": 7
+    },
+    {
+      "id": "maintenance-dead-letter-replay-postgres",
+      "sourceId": "maintenance-dead-letter-replay-postgres",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Maintenance\\.Web\\.Tests\\.MaintenanceDeadLetterReplayPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL Maintenance dead-letter replay tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterReplayPostgresTests.Production_http_replay_recovers_alarm_clear_and_device_plans_without_duplicate_work_orders",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterReplayPostgresTests.Guard_rejection_and_command_failure_do_not_complete_or_leave_inbox_facts"
+      ],
+      "expectedRuntimeTestCount": 2
     }
   ]
 }
