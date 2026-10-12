@@ -12,8 +12,8 @@ const principal = {
   permissionCodes: [
     'business.mes.work-orders.read',
     'business.mes.work-orders.manage',
-    'business.mes.operation-tasks.read',
-    'business.mes.operation-tasks.manage',
+    'business.mes.operations.read',
+    'business.mes.operations.manage',
   ],
 }
 const session = {
@@ -109,12 +109,20 @@ for (const surface of ['工序页', '工单详情'] as const) {
     const disabledStart = await openStart()
     await expect(disabledStart).toBeDisabled()
     await expect(disabledStart).toHaveAttribute('title', /工单未下达.*先在工单列表下达/)
-    await page.screenshot({ path: testInfo.outputPath('blocked.png'), fullPage: true })
+    await page.screenshot({
+      path: testInfo.outputPath('blocked.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
     expect(startRequests).toBe(0)
     blocked = false
     const enabledStart = await openStart()
     await expect(enabledStart).toBeEnabled()
-    await page.screenshot({ path: testInfo.outputPath('ready.png'), fullPage: true })
+    await page.screenshot({
+      path: testInfo.outputPath('ready.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
     await enabledStart.click()
     await expect.poll(() => startRequests).toBe(1)
   })
