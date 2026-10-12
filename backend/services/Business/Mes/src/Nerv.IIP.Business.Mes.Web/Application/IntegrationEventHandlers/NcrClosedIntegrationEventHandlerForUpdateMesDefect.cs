@@ -31,24 +31,23 @@ public sealed class NcrClosedIntegrationEventHandlerForUpdateMesDefect(
 
     private async Task HandleValidEventAsync(NcrClosedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
+        var payload = integrationEvent.Payload;
+        // 关闭回传没有 SourceDocumentId；首次处置可能尚未建立同范围 NCR 来源关联。
+        // 未关联时由既有 CAP 有限重试保留原关闭事实，不先登记为成功消费。
+        var defect = payload.DispositionType == QualityNcrDispositionTypes.Scrap
+            ? await dbContext.DefectRecords.SingleOrDefaultAsync(
+                x => x.OrganizationId == integrationEvent.OrganizationId
+                    && x.EnvironmentId == integrationEvent.EnvironmentId
+                    && x.NcrId == payload.NcrId,
+                cancellationToken)
+                ?? throw new InvalidOperationException($"MES defect source for quality NCR '{payload.NcrId}' is not available yet.")
+            : null;
+
         if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
         }
 
-        var payload = integrationEvent.Payload;
-        if (payload.DispositionType != QualityNcrDispositionTypes.Scrap)
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return;
-        }
-
-        // 关闭回传没有 SourceDocumentId；沿首次处置已经建立的同范围 NCR 关联定位原不良。
-        var defect = await dbContext.DefectRecords.SingleOrDefaultAsync(
-            x => x.OrganizationId == integrationEvent.OrganizationId
-                && x.EnvironmentId == integrationEvent.EnvironmentId
-                && x.NcrId == payload.NcrId,
-            cancellationToken);
         if (defect is null)
         {
             await dbContext.SaveChangesAsync(cancellationToken);

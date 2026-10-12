@@ -78,6 +78,12 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
         Assert.True(
             producerWidth > PreChangeColumnMaxLength,
             $"Quality 产出列宽 {producerWidth} 未超过改前 MES 列宽 {PreChangeColumnMaxLength}，本用例失去针对性。");
+        await AssertClosureBeforeAssociationRecoversAsync(producerWidth);
+        await AcceptancePostgresLaneDatabase.ResetSchemaAsync(MesFacts.Schema);
+        dbContext.ChangeTracker.Clear();
+        await dbContext.Database.MigrateAsync();
+        await SeedDefectAsync(dbContext, DefectNo);
+
         // #4342 / 父 spec r1：两种实际处置引用都必须逐字读回原不良。
         foreach (var dispositionType in new[] { QualityNcrDispositionTypes.Rework, QualityNcrDispositionTypes.Scrap })
         {
@@ -93,20 +99,20 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
             if (dispositionType == QualityNcrDispositionTypes.Scrap)
             {
                 var closed = ClosedEvent("evt-4342-scrap-closed", referenceId);
-                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
+                await Assert.ThrowsAsync<InvalidOperationException>(() => HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
                 {
                     OrganizationId = "other-org", EventId = "evt-4342-other-org", IdempotencyKey = "quality:closed:other-org",
-                });
-                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
+                }));
+                await Assert.ThrowsAsync<InvalidOperationException>(() => HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
                 {
                     EnvironmentId = "other-env", EventId = "evt-4342-other-env", IdempotencyKey = "quality:closed:other-env",
-                });
-                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
+                }));
+                await Assert.ThrowsAsync<InvalidOperationException>(() => HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
                 {
                     EventId = "evt-4342-other-ncr",
                     IdempotencyKey = "quality:ncr-closed:other-ncr",
                     Payload = closed.Payload with { NcrId = "other-ncr" },
-                });
+                }));
                 dbContext.ChangeTracker.Clear();
                 Assert.Null((await dbContext.DefectRecords.AsNoTracking().SingleAsync()).DispositionReferenceId);
 
@@ -312,6 +318,42 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
             new NcrClosedPayload("NCR-3318", "NCR-2026-3318", Sku, 1m,
                 QualityNcrDispositionTypes.Scrap, null, referenceId, null,
                 "Actual scrap movement associated", DateTimeOffset.Parse("2026-09-10T04:00:00Z")));
+
+    private static async Task AssertClosureBeforeAssociationRecoversAsync(int producerWidth)
+    {
+        var referenceId = Identity("MOV-SCRAP-", producerWidth);
+        var closed = ClosedEvent("evt-4342-closed-before-association", referenceId);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        Exception? initialFailure;
+        // 每次投递使用独立 DbContext，与 CAP consumer scope 的失败后重试边界一致。
+        await using (var firstDelivery = CreateMesDbContext())
+        {
+            initialFailure = await Record.ExceptionAsync(() => HandleRegisteredClosedAsync(firstDelivery, deadLetters, closed));
+        }
+
+        await using (var initialDisposition = CreateMesDbContext())
+        {
+            var defect = await initialDisposition.DefectRecords.AsNoTracking().SingleAsync();
+            Assert.Null(defect.NcrId);
+            Assert.Null(defect.DispositionReferenceId);
+            await new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(initialDisposition, deadLetters)
+                .HandleAsync(DispositionEvent("evt-4342-association-after-closed", DefectNo, null, QualityNcrDispositionTypes.Scrap), CancellationToken.None);
+        }
+
+        await using (var redelivery = CreateMesDbContext())
+        {
+            await HandleRegisteredClosedAsync(redelivery, deadLetters, closed);
+        }
+
+        await using var readback = CreateMesDbContext();
+        var updated = await readback.DefectRecords.AsNoTracking().SingleAsync();
+        Assert.Equal(referenceId, updated.DispositionReferenceId);
+        Assert.Equal(DefectRecord.ScrapAcceptedStatus, updated.Status);
+        Assert.Equal("NCR-3318", updated.NcrId);
+        Assert.Equal(DateTimeOffset.Parse("2026-09-10T04:00:00Z"), updated.ClosedAtUtc);
+        Assert.IsType<InvalidOperationException>(initialFailure);
+        Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
+    }
 
     private static async Task HandleRegisteredClosedAsync(
         MesDbContext dbContext,
