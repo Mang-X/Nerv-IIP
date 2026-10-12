@@ -140,8 +140,11 @@ public sealed class MesQualityDefectNcrAcceptanceTests
             });
     }
 
-    [Fact]
-    public async Task Mes_defect_event_opens_quality_ncr_and_quality_disposition_updates_mes_by_payload_source_document()
+    [Theory]
+    [InlineData(null, "MES-SKU-UNRESOLVED")]
+    [InlineData("SKU-FG-1000", "SKU-FG-1000")]
+    public async Task Mes_defect_event_opens_quality_ncr_and_quality_disposition_updates_mes_by_payload_source_document(
+        string? skuCode, string expectedSkuCode)
     {
         await using var mesDb = CreateMesContext();
         await using var qualityDb = CreateQualityContext();
@@ -153,12 +156,13 @@ public sealed class MesQualityDefectNcrAcceptanceTests
             "OP-10",
             "SURFACE",
             2m,
-            DateTimeOffset.Parse("2026-06-15T10:00:00Z"));
+            DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+            skuCode);
         mesDb.DefectRecords.Add(defect);
         await mesDb.SaveChangesAsync();
 
         var defectRaisedEvent = new DefectRaisedIntegrationEventConverter()
-            .Convert(new DefectRaisedDomainEvent(defect));
+            .Convert(defect.GetDomainEvents().OfType<DefectRaisedDomainEvent>().Single());
         var qualityHandler = new DefectRaisedIntegrationEventHandlerForOpenNcr(
             qualityDb,
             new QualityCommandExecutingSender(qualityDb),
@@ -170,7 +174,12 @@ public sealed class MesQualityDefectNcrAcceptanceTests
         var ncr = await qualityDb.NonconformanceReports.SingleAsync();
         Assert.Equal(defect.DefectNo, ncr.SourceDocumentId);
         Assert.Equal("in-process", ncr.SourceType);
-        Assert.Equal("MES-SKU-UNRESOLVED", ncr.SkuCode);
+        Assert.Equal(expectedSkuCode, ncr.SkuCode);
+        Assert.Equal("org-001", ncr.OrganizationId);
+        Assert.Equal("env-dev", ncr.EnvironmentId);
+        await qualityHandler.HandleAsync(defectRaisedEvent, CancellationToken.None);
+        await qualityDb.SaveChangesAsync();
+        Assert.Equal(1, await qualityDb.NonconformanceReports.CountAsync());
         ncr.ClearDomainEvents();
         ncr.SubmitDisposition(
             "scrap",

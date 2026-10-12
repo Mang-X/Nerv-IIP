@@ -56,7 +56,7 @@ public sealed class DefectRaisedIntegrationEventHandlerForOpenNcr(
                     integrationEvent.EnvironmentId,
                     MesDefectSourceType,
                     payload.DefectNo,
-                    UnknownMesSkuCode,
+                    string.IsNullOrWhiteSpace(payload.SkuCode) ? UnknownMesSkuCode : payload.SkuCode,
                     payload.Quantity,
                     payload.DefectCode,
                     null,

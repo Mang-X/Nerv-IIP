@@ -13,9 +13,11 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class QualityDefectRaisedConsumerTests
 {
     [Theory]
-    [InlineData(null)]
-    [InlineData("SKU-FG-1000")]
-    public async Task Defect_raised_consumer_creates_ncr_with_mes_defect_no_as_source_document(string? skuCode)
+    [InlineData(null, "MES-SKU-UNRESOLVED")]
+    [InlineData("", "MES-SKU-UNRESOLVED")]
+    [InlineData(" ", "MES-SKU-UNRESOLVED")]
+    [InlineData("SKU-FG-1000", "SKU-FG-1000")]
+    public async Task Defect_raised_consumer_creates_ncr_with_mes_defect_no_as_source_document(string? skuCode, string expectedSkuCode)
     {
         await using var dbContext = CreateDbContext(
             $"{nameof(Defect_raised_consumer_creates_ncr_with_mes_defect_no_as_source_document)}-{Guid.CreateVersion7():N}");
@@ -31,7 +33,9 @@ public sealed class QualityDefectRaisedConsumerTests
         var ncr = await dbContext.NonconformanceReports.SingleAsync();
         Assert.Equal("in-process", ncr.SourceType);
         Assert.Equal("DEF-001", ncr.SourceDocumentId);
-        Assert.Equal("MES-SKU-UNRESOLVED", ncr.SkuCode);
+        Assert.Equal(expectedSkuCode, ncr.SkuCode);
+        Assert.Equal("org-001", ncr.OrganizationId);
+        Assert.Equal("env-dev", ncr.EnvironmentId);
         Assert.Equal("SURFACE", ncr.DefectReason);
         Assert.Equal(2m, ncr.DefectQuantity);
     }
@@ -45,12 +49,51 @@ public sealed class QualityDefectRaisedConsumerTests
             new CommandExecutingSender(dbContext),
             new InMemoryIntegrationEventDeadLetterStore());
 
-        await handler.HandleAsync(CreateDefectRaisedEvent(defectNo: "DEF-001", eventId: "evt-defect-001"), CancellationToken.None);
-        await handler.HandleAsync(CreateDefectRaisedEvent(defectNo: "DEF-001", eventId: "evt-defect-002"), CancellationToken.None);
+        var message = CreateDefectRaisedEvent(defectNo: "DEF-001", skuCode: "SKU-FG-1000");
+        await handler.HandleAsync(message, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        await handler.HandleAsync(message with { EventId = "evt-defect-002" }, CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var ncr = Assert.Single(dbContext.NonconformanceReports);
         Assert.Equal("DEF-001", ncr.SourceDocumentId);
+        Assert.Equal("SKU-FG-1000", ncr.SkuCode);
+    }
+
+    [Fact]
+    public async Task Defect_raised_consumer_keeps_same_defect_no_separate_by_organization_and_environment()
+    {
+        await using var dbContext = CreateDbContext($"mes-defect-scope-{Guid.CreateVersion7():N}");
+        var handler = new DefectRaisedIntegrationEventHandlerForOpenNcr(
+            dbContext,
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        foreach (var (organizationId, environmentId, skuCode) in new[]
+                 {
+                     ("org-001", "env-dev", "SKU-FG-1000"),
+                     ("org-002", "env-dev", "SKU-FG-2000"),
+                     ("org-001", "env-prod", "SKU-FG-3000")
+                 })
+        {
+            var message = CreateDefectRaisedEvent("DEF-001", skuCode: skuCode) with
+            {
+                OrganizationId = organizationId,
+                EnvironmentId = environmentId,
+                IdempotencyKey = $"mes:defect-raised:{organizationId}:{environmentId}:DEF-001"
+            };
+            await handler.HandleAsync(message, CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        }
+
+        Assert.Equal(3, await dbContext.NonconformanceReports.CountAsync());
+        Assert.Equal("SKU-FG-1000", (await dbContext.NonconformanceReports.SingleAsync(
+            x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev")).SkuCode);
+        Assert.Equal("SKU-FG-2000", (await dbContext.NonconformanceReports.SingleAsync(
+            x => x.OrganizationId == "org-002" && x.EnvironmentId == "env-dev")).SkuCode);
+        Assert.Equal("SKU-FG-3000", (await dbContext.NonconformanceReports.SingleAsync(
+            x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-prod")).SkuCode);
     }
 
     [Fact]
@@ -83,7 +126,7 @@ public sealed class QualityDefectRaisedConsumerTests
         Assert.DoesNotContain("ux_ncr_mes_defect_source", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static DefectRaisedIntegrationEvent CreateDefectRaisedEvent(string defectNo, string eventId = "evt-defect-001")
+    private static DefectRaisedIntegrationEvent CreateDefectRaisedEvent(string defectNo, string eventId = "evt-defect-001", string? skuCode = null)
     {
         return new DefectRaisedIntegrationEvent(
             eventId,
@@ -103,7 +146,8 @@ public sealed class QualityDefectRaisedConsumerTests
                 "OP-10",
                 "SURFACE",
                 2m,
-                DateTimeOffset.Parse("2026-06-15T10:00:00Z")));
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                skuCode));
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)

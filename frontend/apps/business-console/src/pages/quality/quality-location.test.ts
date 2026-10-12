@@ -1,3 +1,4 @@
+import type { BusinessConsoleQualityNcrItem } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -149,7 +150,7 @@ const qualityState = vi.hoisted(() => ({
       reworkWorkOrderCreationStatus: 'created',
       reworkWorkOrderId: 'RW-001',
     },
-  ],
+  ] as BusinessConsoleQualityNcrItem[],
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -443,6 +444,15 @@ describe('quality route location behavior', () => {
     qualityState.inspectionContextInitiallyEmpty = false
     qualityState.ncrInitialContext = { organizationId: 'org-001', environmentId: 'env-dev' }
     qualityState.ncrFilters = undefined
+    qualityState.ncrs = [
+      {
+        id: 'NCR-001',
+        code: 'NCR-001',
+        status: 'open',
+        reworkWorkOrderCreationStatus: 'created',
+        reworkWorkOrderId: 'RW-001',
+      },
+    ]
     authState.permissionCodes = [
       'business.quality.ncr.read',
       'business.quality.ncr.manage',
@@ -500,6 +510,45 @@ describe('quality route location behavior', () => {
     ncrActionSpies.closeNcr.mockReset()
     ncrActionSpies.submitDisposition.mockReset()
   })
+
+  it.each([
+    ['SKU-FG-1000', 'SKU-FG-1000'],
+    ['MES-SKU-UNRESOLVED', '未解析物料'],
+  ])(
+    'shows %s consistently in the NCR list and located disposition detail',
+    async (skuCode, label) => {
+      qualityState.ncrs = [
+        {
+          id: 'NCR-MES-001',
+          code: 'NCR-MES-001',
+          sourceType: 'in-process',
+          sourceDocumentId: 'DEF-001',
+          skuCode,
+          defectQuantity: 2,
+          defectReason: 'SURFACE',
+          status: 'open',
+        },
+      ]
+      routeState.route!.query = {
+        ncrId: 'NCR-MES-001',
+        workOrderId: 'WO-001',
+        operationTaskId: 'OP-10',
+      }
+      const wrapper = mountQualityPage(NcrsPage)
+      await flushPromises()
+
+      expect(wrapper.get('[data-plan-summary]').text()).toContain(label)
+      expect(wrapper.get('[data-plan-summary]').text()).toContain('DEF-001')
+      const context = wrapper.get('section[aria-label="不合格品信息"]')
+      const material = context.findAll('dl > div').find((item) => item.get('dt').text() === '物料')!
+      expect(material.get('dd').text()).toBe(label)
+      expect(context.text()).toContain('DEF-001')
+      expect(context.text()).not.toContain('WO-001')
+      expect(context.text()).not.toContain('OP-10')
+      expect(wrapper.text()).not.toContain('MES-SKU-UNRESOLVED')
+      wrapper.unmount()
+    },
+  )
 
   it('keeps the user-selected NCR status filter when ncrId is removed from the route', async () => {
     routeState.route!.query = { ncrId: 'NCR-001' }
