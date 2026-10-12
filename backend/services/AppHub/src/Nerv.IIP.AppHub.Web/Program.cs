@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using FastEndpoints;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Web;
 using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
@@ -89,6 +90,7 @@ builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForRefreshI
 builder.Services.AddScoped<AppHubPublishedEventSink>();
 if (usePostgreSql)
 {
+    builder.Services.AddAppHubDeadLetterReplay();
     builder.Services.AddScoped<AppHubDatabaseMigrationRunner>();
     builder.Services.AddScoped<AppHubHeartbeatTimeoutScanner>();
     builder.Services.AddHostedService<AppHubHeartbeatTimeoutScanWorker>();
