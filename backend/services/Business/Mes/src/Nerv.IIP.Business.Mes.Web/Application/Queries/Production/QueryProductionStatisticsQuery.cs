@@ -43,6 +43,7 @@ public enum ProductionStatisticsDegradedReason
     HistoricalDimensionSnapshotDegraded,
     WorkCenterMissing,
     NonPositiveTotalOutput,
+    DeviceMissing,
 }
 
 public sealed class ProductionStatisticsDegradedReasonJsonConverter()
@@ -157,6 +158,7 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
                 workOrder.SkuId,
                 report.OeeWorkCenterId,
                 report.OeeDimensionResolutionStatus,
+                report.OeeDimensionDegradedReason,
                 report.OeeSiteTimezone,
                 report.OeeShiftCode,
                 report.OeeShiftStartsAt,
@@ -218,6 +220,12 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
         {
             return CalendarDayFallback(
                 row, effectiveReportedAtUtc, DefaultFactoryTimezone, ProductionStatisticsDegradedReason.HistoricalDimensionLegacyUnresolved);
+        }
+
+        if (row.DimensionDegradedReason == "device-missing")
+        {
+            return CalendarDayFallback(
+                row, effectiveReportedAtUtc, DefaultFactoryTimezone, ProductionStatisticsDegradedReason.DeviceMissing);
         }
 
         if (row.SiteTimezone is null)
@@ -394,6 +402,8 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
                 ProductionStatisticsDegradedReason.WorkCenterMissing,
             ProductionStatisticsDimension.WorkCenter when fact.Source.DimensionResolutionStatus is null =>
                 ProductionStatisticsDegradedReason.HistoricalDimensionLegacyUnresolved,
+            ProductionStatisticsDimension.WorkCenter when fact.Source.DimensionDegradedReason == "device-missing" =>
+                ProductionStatisticsDegradedReason.DeviceMissing,
             ProductionStatisticsDimension.WorkCenter when !string.Equals(
                 fact.Source.DimensionResolutionStatus,
                 "resolved",
@@ -409,6 +419,7 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
         string SkuId,
         string? WorkCenterId,
         string? DimensionResolutionStatus,
+        string? DimensionDegradedReason,
         string? SiteTimezone,
         string? ShiftCode,
         TimeOnly? ShiftStartsAt,

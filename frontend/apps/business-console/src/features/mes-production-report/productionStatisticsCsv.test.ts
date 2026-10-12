@@ -26,6 +26,19 @@ const bucket: BusinessConsoleMesProductionStatisticsBucket = {
 }
 
 describe('production statistics CSV', () => {
+  it('distinguishes missing device at reporting from legacy snapshots in page labels and CSV', () => {
+    const csv = createProductionStatisticsCsv([
+      presentProductionStatisticsRow({ ...bucket, degradedReasons: ['deviceMissing'] }),
+      presentProductionStatisticsRow({
+        ...bucket,
+        degradedReasons: ['historicalDimensionLegacyUnresolved'],
+      }),
+    ])
+    expect(csv).toContain('报工缺设备，实绩维度快照未取得')
+    expect(csv).toContain('历史维度无法解析')
+    expect(csv).not.toContain('历史站点时区缺失')
+  })
+
   it('exports producer quantities and rates with a UTF-8 BOM and stable Chinese columns', () => {
     const csv = createProductionStatisticsCsv([presentProductionStatisticsRow(bucket)])
 

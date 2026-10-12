@@ -155,7 +155,7 @@ public sealed class MesListStatusContractTests
                     "historicalLocalTimeAmbiguous", "historicalLocalTimeInvalid",
                     "historicalReportOutsideShiftWindow", "historicalShiftDefinitionInvalid",
                     "historicalShiftDefinitionMissing", "historicalTimezoneInvalid",
-                    "historicalTimezoneMissing", "nonPositiveTotalOutput", "workCenterMissing",
+                    "historicalTimezoneMissing", "nonPositiveTotalOutput", "workCenterMissing", "deviceMissing",
                 ],
                 "生产统计降级原因（DegradedReason），是原因码不是状态值域。"),
             Exempt(["available", "forbidden"],

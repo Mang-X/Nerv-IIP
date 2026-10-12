@@ -5522,7 +5522,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus = 'resolved' | 'degraded';
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason = 'historicalDimensionLegacyUnresolved' | 'historicalTimezoneMissing' | 'historicalTimezoneInvalid' | 'historicalShiftDefinitionMissing' | 'historicalShiftDefinitionInvalid' | 'historicalReportOutsideShiftWindow' | 'historicalLocalTimeInvalid' | 'historicalLocalTimeAmbiguous' | 'historicalDimensionSnapshotDegraded' | 'workCenterMissing' | 'nonPositiveTotalOutput';
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason = 'historicalDimensionLegacyUnresolved' | 'historicalTimezoneMissing' | 'historicalTimezoneInvalid' | 'historicalShiftDefinitionMissing' | 'historicalShiftDefinitionInvalid' | 'historicalReportOutsideShiftWindow' | 'historicalLocalTimeInvalid' | 'historicalLocalTimeAmbiguous' | 'historicalDimensionSnapshotDegraded' | 'workCenterMissing' | 'nonPositiveTotalOutput' | 'deviceMissing';
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsRequest = {
     [key: string]: never;

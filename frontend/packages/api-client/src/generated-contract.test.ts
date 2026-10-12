@@ -1251,6 +1251,7 @@ describe('generated API client contract', () => {
       | 'historicalDimensionSnapshotDegraded'
       | 'workCenterMissing'
       | 'nonPositiveTotalOutput'
+      | 'deviceMissing'
     >()
     expectTypeOf<BusinessConsoleMesProductionStatisticsResponse>().toBeObject()
     expectTypeOf<BusinessConsoleMesProductionStatisticsBucket>().toBeObject()

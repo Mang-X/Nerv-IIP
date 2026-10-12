@@ -4881,6 +4881,7 @@ public enum BusinessConsoleMesProductionStatisticsDegradedReason
     HistoricalDimensionSnapshotDegraded,
     WorkCenterMissing,
     NonPositiveTotalOutput,
+    DeviceMissing,
 }
 
 public sealed class BusinessConsoleMesProductionStatisticsDegradedReasonJsonConverter()
