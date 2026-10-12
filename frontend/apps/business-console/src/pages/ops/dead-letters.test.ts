@@ -237,6 +237,13 @@ describe('集成事件死信运维页', () => {
     expect(wrapper.text()).toContain('查看修复前提')
   })
 
+  it('未点名的失败码不编造维护入口，只显示原始码', async () => {
+    seedRow('Erp', 'dl-1', 'pending', 'closed-accounting-period')
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('closed-accounting-period')
+    expect(wrapper.find('a').exists()).toBe(false)
+  })
+
   it.each(['missing-work-center-cost-rate', 'missing-machine-overhead-rate'])(
     '%s 详情将冻结对象带到维护页，并保留返回坐标',
     async (failureCode) => {
