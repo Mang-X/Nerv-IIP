@@ -944,7 +944,7 @@
       "id": "inventory-postgres-profile",
       "sourceId": "inventory-postgres-profile",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Inventory\\.Web\\.Tests\\.(?:InventoryPostgresProfileTests|WorldHistoryInventorySeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Inventory\\.Web\\.Tests\\.(?:InventoryDeadLetterReplayPostgresTests|InventoryPostgresProfileTests|WorldHistoryInventorySeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Inventory PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -956,9 +956,13 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema",
-        "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+        "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Movement_http_replay_reads_persisted_stock_and_rejection_without_duplicate_posting",
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Reservation_replay_releases_original_scope_and_does_not_hide_missing_ledger",
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Quality_replay_recovers_two_status_legs_and_preserves_failure_and_scope",
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Approval_replay_requires_original_adjustment_and_posts_once"
       ],
-      "expectedRuntimeTestCount": 2
+      "expectedRuntimeTestCount": 6
     },
     {
       "id": "inventory-directory-postgres",
