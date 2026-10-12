@@ -23,7 +23,8 @@ using AppHubApplication = Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggr
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
-public sealed class AppHubPostgresProfileTests
+[Collection(WebApplicationFactoryCollection.Name)]
+public sealed partial class AppHubPostgresProfileTests
 {
     [AppHubRealPostgresFact]
     public async Task Concurrent_first_collection_health_reports_use_real_unique_constraint_and_publish_once_each()
