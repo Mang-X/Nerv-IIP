@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Business.DemandPlanning.Web;
 using System.Text.Json;
 using FastEndpoints;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.DeadLetters;
@@ -96,6 +97,7 @@ try
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddDemandPlanningDeadLetterReplay();
     builder.Services.AddScoped<DemandPlanningCodingService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
