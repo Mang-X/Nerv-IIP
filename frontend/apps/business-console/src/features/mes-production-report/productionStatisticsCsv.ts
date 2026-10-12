@@ -32,6 +32,7 @@ export const PRODUCTION_STATISTICS_DIMENSION_LABELS: Record<
 }
 
 const DEGRADATION_LABELS: Record<BusinessConsoleMesProductionStatisticsDegradedReason, string> = {
+  deviceMissing: '报工缺设备，实绩维度快照未取得',
   historicalDimensionLegacyUnresolved: '历史维度无法解析',
   historicalTimezoneMissing: '历史站点时区缺失',
   historicalTimezoneInvalid: '历史站点时区无效',

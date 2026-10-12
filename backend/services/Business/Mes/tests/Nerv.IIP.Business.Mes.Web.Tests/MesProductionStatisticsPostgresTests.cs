@@ -5,6 +5,8 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -235,6 +237,33 @@ public sealed class MesProductionStatisticsPostgresTests
             null);
         await db.SaveChangesAsync();
 
+        // #4284 Regression：新报工采集到缺设备，与真正没有快照的旧记录分别读回。
+        var provider = new HttpProductionReportOeeDimensionSnapshotProvider(
+            new MesMasterDataHttpClient(new HttpClient()),
+            new TestInternalServiceTokenProvider());
+        var missingDeviceSnapshot = await provider.CaptureAsync(
+            new ProductionReportOeeDimensionSnapshotRequest(
+                "org-001", "env-dev", null, "WC-CURRENT", null), CancellationToken.None);
+        var current = AddReportWithSnapshot(db, "org-001", "env-dev", "CURRENT", "SKU-CURRENT",
+            reportedAtUtc.AddDays(1), 7m, 0m, 0m, missingDeviceSnapshot);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var persisted = await db.ProductionReports.SingleAsync(x => x.ReportNo == current.ReportNo);
+        Assert.Equal("degraded", persisted.OeeDimensionResolutionStatus);
+        Assert.Equal("device-missing", persisted.OeeDimensionDegradedReason);
+        Assert.Null(persisted.OeeSiteTimezone);
+        Assert.Null(persisted.OeeDeviceAssetId);
+        var currentHandler = new QueryProductionStatisticsQueryHandler(db);
+        foreach (var dimension in new[] { ProductionStatisticsDimension.Day, ProductionStatisticsDimension.Shift, ProductionStatisticsDimension.WorkCenter })
+        {
+            var currentResponse = await Query(currentHandler, dimension,
+                reportedAtUtc.AddDays(1).AddMinutes(-30), reportedAtUtc.AddDays(1).AddMinutes(30));
+            var currentBucket = Assert.Single(currentResponse.Items);
+            Assert.Equal(7m, currentBucket.TotalOutputQuantity);
+            Assert.Equal(ProductionStatisticsResolutionStatus.Degraded, currentBucket.ResolutionStatus);
+            Assert.Equal("[\"deviceMissing\"]", System.Text.Json.JsonSerializer.Serialize(currentBucket.DegradedReasons));
+        }
+
         var handler = new QueryProductionStatisticsQueryHandler(db);
         var response = await Query(
             handler,
@@ -431,6 +460,11 @@ public sealed class MesProductionStatisticsPostgresTests
                 false,
                 450,
                 30));
+    }
+
+    private sealed record TestInternalServiceTokenProvider : Nerv.IIP.ServiceAuth.IInternalServiceTokenProvider
+    {
+        public string BearerToken => "internal-token";
     }
 
     private static ProductionReport AddReportWithSnapshot(

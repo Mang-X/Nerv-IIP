@@ -56238,7 +56238,8 @@
           "HistoricalLocalTimeAmbiguous",
           "HistoricalDimensionSnapshotDegraded",
           "WorkCenterMissing",
-          "NonPositiveTotalOutput"
+          "NonPositiveTotalOutput",
+          "DeviceMissing"
         ],
         "enum": [
           "historicalDimensionLegacyUnresolved",
@@ -56251,7 +56252,8 @@
           "historicalLocalTimeAmbiguous",
           "historicalDimensionSnapshotDegraded",
           "workCenterMissing",
-          "nonPositiveTotalOutput"
+          "nonPositiveTotalOutput",
+          "deviceMissing"
         ]
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsRequest": {
