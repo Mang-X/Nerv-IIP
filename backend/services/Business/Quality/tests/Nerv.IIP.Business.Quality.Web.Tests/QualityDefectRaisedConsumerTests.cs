@@ -17,7 +17,8 @@ public sealed class QualityDefectRaisedConsumerTests
     [InlineData("SKU-FG-1000")]
     public async Task Defect_raised_consumer_creates_ncr_with_mes_defect_no_as_source_document(string? skuCode)
     {
-        await using var dbContext = CreateDbContext(nameof(Defect_raised_consumer_creates_ncr_with_mes_defect_no_as_source_document));
+        await using var dbContext = CreateDbContext(
+            $"{nameof(Defect_raised_consumer_creates_ncr_with_mes_defect_no_as_source_document)}-{Guid.CreateVersion7():N}");
         var handler = new DefectRaisedIntegrationEventHandlerForOpenNcr(
             dbContext,
             new CommandExecutingSender(dbContext),
