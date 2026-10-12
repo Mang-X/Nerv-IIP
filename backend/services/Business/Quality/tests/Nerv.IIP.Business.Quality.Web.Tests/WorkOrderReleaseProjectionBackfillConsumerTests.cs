@@ -21,6 +21,46 @@ public sealed class WorkOrderReleaseProjectionBackfillConsumerTests
     private static readonly DateTimeOffset ReleasedAtUtc = DateTimeOffset.Parse("2026-08-01T00:00:00Z");
 
     [Fact]
+    public async Task Replay_rejects_unrecovered_backfill_and_recovers_after_source_fact_repair()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.InspectionPlans.Add(FirstArticlePlan());
+        dbContext.InspectionPlans.Add(PeriodicPlan());
+        await dbContext.SaveChangesAsync();
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        await HandleCompletionAsync(dbContext, OperationCompleted("OP-10", skuCode: "WO-001"), store);
+        var original = Backfill(operationIds: ["OP-10", "OP-20"]);
+        await HandleBackfillAsync(dbContext, original, store);
+        var letter = Assert.Single(await store.ListAsync(null, null, CancellationToken.None));
+        Assert.Equal("backfill-operation-rejected", letter.FailureCode);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Pending, letter.Status);
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(services, dbContext);
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<IIntegrationEventDeadLetterStore>(services, store);
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<IPeriodicInspectionOperationScopeCoordinator>(services, new PeriodicInspectionOperationScopeCoordinator(dbContext));
+        Nerv.IIP.Business.Quality.Web.QualityDeadLetterReplayServiceCollectionExtensions.AddQualityDeadLetterReplay(services);
+        using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+        var routes = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetServices<IIntegrationEventDeadLetterReplayHandler>(provider);
+        var result = await new IntegrationEventDeadLetterReplayExecutor(store, routes, TimeProvider.System).ReplayAsync(letter.Id, CancellationToken.None);
+        var rejected = await dbContext.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-10");
+        Assert.Null(rejected.ReleasedAtUtc);
+        Assert.Empty(await dbContext.PeriodicInspectionRuntimeContexts.Where(x => x.OperationId == "OP-10").ToListAsync());
+        Assert.False(result.Succeeded, $"failure=backfill-operation-rejected; OP-10 release=null; inbox={await dbContext.ProcessedIntegrationEvents.CountAsync(x => x.EventId == original.EventId)}; result={result.Status}; saved must not be Replayed");
+        Assert.Equal(IntegrationEventDeadLetterStatus.Failed, (await store.GetAsync(letter.Id, CancellationToken.None))!.Status);
+        // Model repair of the original wrong SKU without changing the archived event.
+        dbContext.Entry(rejected).Property(x => x.CompletionSkuCode).CurrentValue = "SKU-FG-1000";
+        await dbContext.SaveChangesAsync();
+        var repaired = await new IntegrationEventDeadLetterReplayExecutor(store, routes, TimeProvider.System).ReplayAsync(letter.Id, CancellationToken.None);
+        Assert.True(repaired.Succeeded, repaired.Message);
+        Assert.Equal(ReleasedAtUtc.UtcDateTime, rejected.ReleasedAtUtc);
+        Assert.Single(await dbContext.PeriodicInspectionRuntimeContexts.Where(x => x.OperationId == "OP-10").ToListAsync());
+        Assert.Single(await dbContext.PeriodicInspectionRuntimeContexts.Where(x => x.OperationId == "OP-20").ToListAsync());
+        Assert.Equal(IntegrationEventDeadLetterStatus.Replayed, (await store.GetAsync(letter.Id, CancellationToken.None))!.Status);
+        await new IntegrationEventDeadLetterReplayExecutor(store, routes, TimeProvider.System).ReplayAsync(letter.Id, CancellationToken.None);
+        Assert.Equal(2, await dbContext.PeriodicInspectionRuntimeContexts.CountAsync());
+    }
+
+    [Fact]
     public async Task Backfill_lifts_the_operation_out_of_not_synchronized()
     {
         await using var dbContext = CreateDbContext();

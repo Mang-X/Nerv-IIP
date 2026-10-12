@@ -138,11 +138,14 @@ internal static class PeriodicInspectionReleaseProjection
                             dbContext,
                             consumerName,
                             integrationEvent,
-                            ct))
+                            ct)
+                        && authority != ReleaseFactAuthority.ReconstructedLowerBound)
                     {
                         return;
                     }
 
+                    // A backfill inbox records the envelope, including per-operation rejections.
+                    // Retry only missing release projections; already released operations still skip below.
                     foreach (var operationPayload in operations)
                     {
                         var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(

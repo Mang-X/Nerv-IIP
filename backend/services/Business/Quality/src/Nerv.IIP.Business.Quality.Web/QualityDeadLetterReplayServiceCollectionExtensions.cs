@@ -25,15 +25,18 @@ public static class QualityDeadLetterReplayServiceCollectionExtensions
                 await AllReceiptLinesCompletedAsync(provider, evt, token));
         Add<MesOperationTaskCompletedIntegrationEvent, MesOperationCompletedIntegrationEventHandlerForCreateInspectionTasks>(services, MesOperationCompletedIntegrationEventHandlerForCreateInspectionTasks.ConsumerName,
             (provider, evt, token) => evt.Payload.RequiresQualityInspection
-                ? HasTaskAsync(provider, evt, evt.IdempotencyKey, token) : Task.FromResult(true));
+                ? HasSourceTaskAsync(provider, evt, QualityInspectionSourceTypes.Operation, QualityInspectionSourceServices.Mes,
+                    evt.Payload.WorkOrderId, evt.Payload.OperationTaskId, evt.Payload.SkuCode, evt.IdempotencyKey, token) : Task.FromResult(true));
         Add<FinishedGoodsReceiptRequestedIntegrationEvent, MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCreateInspectionTasks>(services, MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCreateInspectionTasks.ConsumerName,
-            (provider, evt, token) => HasTaskAsync(provider, evt, evt.IdempotencyKey, token));
+            (provider, evt, token) => HasSourceTaskAsync(provider, evt, QualityInspectionSourceTypes.Final, QualityInspectionSourceServices.Mes,
+                evt.Payload.RequestNo, evt.Payload.WorkOrderId, evt.Payload.SkuCode, evt.IdempotencyKey, token));
         Add<ProductionReportRecordedIntegrationEvent, MesProductionReportRecordedIntegrationEventHandlerForCreateFirstArticleInspectionTask>(services, MesProductionReportRecordedIntegrationEventHandlerForCreateFirstArticleInspectionTask.ConsumerName,
             (provider, evt, token) => evt.Payload.IsReversal ? Task.FromResult(true)
                 : HasTaskAsync(provider, evt, FirstArticleInspection.TriggerIdempotencyKey(evt.OrganizationId, evt.EnvironmentId,
                     evt.Payload.WorkOrderId, evt.Payload.OperationTaskId), token));
         Add<WorkOrderReleasedIntegrationEvent, WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts>(services, WorkOrderReleasedIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName);
-        Add<WorkOrderReleaseProjectionBackfilledIntegrationEvent, WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts>(services, WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName);
+        Add<WorkOrderReleaseProjectionBackfilledIntegrationEvent, WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts>(services, WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName,
+            HasBackfillProjectionAsync);
         Add<ProductionReportRecordedIntegrationEvent, ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection>(services, ProductionReportRecordedIntegrationEventHandlerForTrackPeriodicInspection.ConsumerName);
         Add<MesOperationTaskCompletedIntegrationEvent, MesOperationTaskCompletedIntegrationEventHandlerForClosePeriodicInspection>(services, MesOperationTaskCompletedIntegrationEventHandlerForClosePeriodicInspection.ConsumerName);
         Add<InspectionResultIntegrationEvent, InspectionResultIntegrationEventHandlerForEvaluateSpc>(services, InspectionResultIntegrationEventHandlerForEvaluateSpc.ConsumerName);
@@ -64,6 +67,24 @@ public static class QualityDeadLetterReplayServiceCollectionExtensions
                 .ProcessedIntegrationEvents.AsNoTracking()
                 .AnyAsync(x => x.ConsumerName == consumerName && x.EventId == evt.EventId, token)));
 
+    private static Task<bool> HasSourceTaskAsync(IServiceProvider provider, IIntegrationEventEnvelope evt,
+        string sourceType, string sourceService, string documentId, string? lineId, string sku, string key, CancellationToken token) =>
+        InspectionTaskGeneration.TaskExistsAsync(provider.GetRequiredService<ApplicationDbContext>(), evt.OrganizationId,
+            evt.EnvironmentId, sourceType, sourceService, documentId, lineId, sku, key, token);
+
+    private static async Task<bool> HasBackfillProjectionAsync(IServiceProvider provider,
+        WorkOrderReleaseProjectionBackfilledIntegrationEvent evt, CancellationToken token)
+    {
+        var db = provider.GetRequiredService<ApplicationDbContext>();
+        if (!await db.ProcessedIntegrationEvents.AnyAsync(x => x.ConsumerName == WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName
+            && x.EventId == evt.EventId, token)) return false;
+        var operations = evt.Payload.Operations!.Select(x => x.OperationId.Trim()).ToArray();
+        var workOrderId = evt.Payload.WorkOrderId.Trim();
+        return await db.PeriodicInspectionOperations.CountAsync(x => x.OrganizationId == evt.OrganizationId
+            && x.EnvironmentId == evt.EnvironmentId && x.WorkOrderId == workOrderId
+            && operations.Contains(x.OperationId) && x.ReleasedAtUtc != null, token) == operations.Length;
+    }
+
     private static Task<bool> HasTaskAsync(IServiceProvider provider, IIntegrationEventEnvelope evt, string key, CancellationToken token) =>
         provider.GetRequiredService<ApplicationDbContext>().InspectionTasks.AsNoTracking()
             .AnyAsync(x => x.OrganizationId == evt.OrganizationId && x.EnvironmentId == evt.EnvironmentId
@@ -74,7 +95,8 @@ public static class QualityDeadLetterReplayServiceCollectionExtensions
     {
         foreach (var line in evt.Payload.Lines ?? [])
             if (!InspectionTaskGeneration.ShouldSkipInspection(line.QualityStatus)
-                && !await HasTaskAsync(provider, evt, $"{evt.IdempotencyKey}:{line.LineReference}", token)) return false;
+                && !await HasSourceTaskAsync(provider, evt, QualityInspectionSourceTypes.Receiving, QualityInspectionSourceServices.Erp,
+                    evt.Payload.PurchaseReceiptNo, line.LineReference, line.SkuCode, $"{evt.IdempotencyKey}:{line.LineReference}", token)) return false;
         return true;
     }
 
@@ -87,7 +109,8 @@ public static class QualityDeadLetterReplayServiceCollectionExtensions
                     payload.UomCode, payload.SiteCode, payload.LocationCode, payload.Quantity.Value, payload.Status)];
         foreach (var line in lines)
             if (!InspectionTaskGeneration.ShouldSkipInspection(line.Status)
-                && !await HasTaskAsync(provider, evt, $"{evt.IdempotencyKey}:{line.LineReference}", token)) return false;
+                && !await HasSourceTaskAsync(provider, evt, QualityInspectionSourceTypes.Receiving, QualityInspectionSourceTypes.Wms,
+                    payload.PublicReference, line.LineReference, line.SkuCode, $"{evt.IdempotencyKey}:{line.LineReference}", token)) return false;
         return true;
     }
 
@@ -103,7 +126,7 @@ public static class QualityDeadLetterReplayServiceCollectionExtensions
         return ncr is not null && Math.Abs(payload.Quantity) == ncr.DefectQuantity
             && (ncr.DispositionType == QualityNcrDispositionTypes.Scrap && ncr.ScrapMovementId == payload.InventoryMovementId
                 || ncr.DispositionType == QualityNcrDispositionTypes.ConditionalRelease && ncr.Status == "closed"
-                    && payload.MovementType == InventoryMovementTypes.StatusTransferIn
-                    && payload.QualityStatus == InventoryQualityStatuses.Restricted && payload.Quantity > 0);
+                    && string.Equals(payload.MovementType, InventoryMovementTypes.StatusTransferIn, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(payload.QualityStatus, InventoryQualityStatuses.Restricted, StringComparison.OrdinalIgnoreCase) && payload.Quantity > 0);
     }
 }

@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Wms;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 using System.Net;
 using System.Net.Http.Headers;
@@ -111,10 +113,13 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
                 .ListAsync(ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr.ConsumerName, null, CancellationToken.None));
             Assert.Equal("quality.reworkWorkOrderCreated.bindingConflict", letter.FailureCode);
         }
+        await AssertDeadLetterPersistedAsync(factory, letter, IntegrationEventDeadLetterStatus.Pending);
         await ReplayStatusAsync(client, letter.Id, "failed");
+        await AssertDeadLetterPersistedAsync(factory, letter, IntegrationEventDeadLetterStatus.Failed);
         await SubmitReworkDispositionAsync(factory, ncrId);
         await ReplayStatusAsync(client, letter.Id, "replayed");
         await ReplayStatusAsync(client, letter.Id, "replayed");
+        await AssertDeadLetterPersistedAsync(factory, letter, IntegrationEventDeadLetterStatus.Replayed);
         IntegrationEventDeadLetterMessage noHandler;
         using (var scope = factory.Services.CreateScope())
         {
@@ -319,6 +324,155 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
     {
         public Task<SpcEvaluationResponse> Handle(EvaluateSpcControlChartCommand request, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("controlled-spc-evaluation-failure");
+    }
+
+    [QualityReworkReceiptPostgresRedisFact]
+    public async Task Source_identity_replay_reuses_existing_receiving_task_on_redis_cap()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await QualityPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        await InitializeAsync(factory);
+        var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        var original = new WmsIntegrationEvent("wms-source-first", WmsIntegrationEventTypes.InboundOrderCompleted, 1,
+            at, WmsIntegrationEventSources.BusinessWms, "corr-source", "cause-source", "org-001", "env-dev", "system:wms", "first-trigger",
+            new WmsIntegrationPayload("IN-DLQ", null, null, null, null, null, null, "completed", null, null,
+                Lines: [new WmsIntegrationPayloadLine("LINE-001", "SKU-RM-1000", "ea", "SITE-001", "LOC-001", 2m, "inspection-required")]));
+        IntegrationEventDeadLetterMessage letter;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var plan = InspectionPlan.Create("org-001", "env-dev", "RECEIVING-SOURCE", "receiving", "SKU-RM-1000", null, null, null, null);
+            plan.AddCharacteristic("appearance", "Appearance", "visual", "minor", true, "all");
+            plan.Activate();
+            db.InspectionPlans.Add(plan);
+            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks>()
+                .HandleAsync(original, CancellationToken.None);
+            letter = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+                IntegrationEventDeadLetterMessage.Create(WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks.ConsumerName,
+                    original with { EventId = "wms-source-retry", IdempotencyKey = "retry-trigger" }, "original-outage", "original transient failure"), CancellationToken.None);
+        }
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await AssertDeadLetterPersistedAsync(factory, letter, IntegrationEventDeadLetterStatus.Replayed);
+        using var read = factory.Services.CreateScope();
+        var task = Assert.Single(await read.ServiceProvider.GetRequiredService<ApplicationDbContext>().InspectionTasks.AsNoTracking().ToListAsync());
+        Assert.Equal("first-trigger:LINE-001", task.TriggerIdempotencyKey);
+        Assert.Equal("IN-DLQ", task.SourceDocumentId);
+        Assert.Equal("LINE-001", task.SourceDocumentLineId);
+        var foreign = await read.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+            IntegrationEventDeadLetterMessage.Create(letter.ConsumerName, original with { EventId = "wms-foreign-scope", OrganizationId = "other-org", IdempotencyKey = "foreign-trigger" },
+                "original", "original failure"), CancellationToken.None);
+        await ReplayStatusAsync(client, foreign.Id, "failed");
+        await AssertDeadLetterPersistedAsync(factory, foreign, IntegrationEventDeadLetterStatus.Failed);
+        Assert.Equal(1, await read.ServiceProvider.GetRequiredService<ApplicationDbContext>().InspectionTasks.CountAsync());
+    }
+
+    [QualityReworkReceiptPostgresRedisFact]
+    public async Task Pending_backfill_replay_waits_for_repaired_operation_fact_and_preserves_other_operations_on_redis_cap()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await QualityPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        await InitializeAsync(factory);
+        var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        var completion = new MesOperationTaskCompletedIntegrationEvent("backfill-bad-completion", MesIntegrationEventTypes.OperationTaskCompleted, 1,
+            at, MesIntegrationEventSources.BusinessMes, "corr-backfill", "cause-backfill", "org-001", "env-dev", "system:mes", "backfill-completion-key",
+            new OperationTaskCompletedPayload("WO-BACKFILL", "OP-10", "WRONG-SKU", 10, "WC-BACKFILL", 1000m, "ea", false, at));
+        var original = new WorkOrderReleaseProjectionBackfilledIntegrationEvent("backfill-original", MesIntegrationEventTypes.WorkOrderReleaseProjectionBackfilled, 1,
+            at, MesIntegrationEventSources.BusinessMes, "corr-backfill", "cause-backfill", "org-001", "env-dev", "system:mes", "backfill-original-key",
+            new WorkOrderReleasedPayload("WO-BACKFILL", "SKU-BACKFILL", 1000m, at,
+                [new ReleasedOperationPayload("OP-10", 10, "WC-BACKFILL"), new ReleasedOperationPayload("OP-20", 20, "WC-BACKFILL")]));
+        IntegrationEventDeadLetterMessage letter;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var plan = InspectionPlan.Create("org-001", "env-dev", "BACKFILL-PLAN", "operation", "SKU-BACKFILL", null, "WC-BACKFILL", null, "mes-operation", quantityInterval: 100m);
+            plan.AddCharacteristic("appearance", "Appearance", "visual", "minor", true, "all");
+            plan.Activate();
+            db.InspectionPlans.Add(plan);
+            await db.SaveChangesAsync();
+            await scope.ServiceProvider.GetRequiredService<MesOperationTaskCompletedIntegrationEventHandlerForClosePeriodicInspection>()
+                .HandleAsync(completion, CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts>()
+                .HandleAsync(original, CancellationToken.None);
+            letter = Assert.Single(await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>()
+                .ListAsync(WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts.ConsumerName, null, CancellationToken.None));
+            Assert.Equal("backfill-operation-rejected", letter.FailureCode);
+        }
+        await ReplayStatusAsync(client, letter.Id, "failed");
+        await AssertDeadLetterPersistedAsync(factory, letter, IntegrationEventDeadLetterStatus.Failed);
+        using (var repair = factory.Services.CreateScope())
+        {
+            var db = repair.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var rejected = await db.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-10");
+            Assert.Null(rejected.ReleasedAtUtc);
+            Assert.Empty(await db.PeriodicInspectionRuntimeContexts.Where(x => x.OperationId == "OP-10").ToListAsync());
+            Assert.Equal(at.UtcDateTime, (await db.PeriodicInspectionOperations.SingleAsync(x => x.OperationId == "OP-20")).ReleasedAtUtc);
+            db.Entry(rejected).Property(x => x.CompletionSkuCode).CurrentValue = "SKU-BACKFILL";
+            await db.SaveChangesAsync();
+        }
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await AssertDeadLetterPersistedAsync(factory, letter, IntegrationEventDeadLetterStatus.Replayed);
+        using var read = factory.Services.CreateScope();
+        var finalDb = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.All(await finalDb.PeriodicInspectionOperations.AsNoTracking().ToListAsync(), x => Assert.Equal(at.UtcDateTime, x.ReleasedAtUtc));
+        Assert.Equal(2, await finalDb.PeriodicInspectionRuntimeContexts.CountAsync());
+        Assert.Single(await finalDb.ProcessedIntegrationEvents.Where(x => x.EventId == original.EventId).ToListAsync());
+    }
+
+    [QualityReworkReceiptPostgresRedisFact]
+    public async Task Inventory_disposition_replay_accepts_original_case_insensitive_values_on_redis_cap()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await QualityPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        await InitializeAsync(factory);
+        var ncrId = await AddOpenNcrAsync(factory);
+        var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        IntegrationEventDeadLetterMessage letter;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ncr = await db.NonconformanceReports.SingleAsync(x => x.Id == ncrId);
+            ncr.SubmitDisposition(QualityNcrDispositionTypes.ConditionalRelease, "approval-release", ["release-evidence"],
+                [MrbReviewInput.Approve("qa-manager", "approved", at)]);
+            await db.SaveChangesAsync();
+            var original = new StockMovementPostedIntegrationEvent("inventory-uppercase", InventoryIntegrationEventTypes.StockMovementPosted, 1,
+                at, InventoryIntegrationEventSources.BusinessInventory, "corr-inventory", "cause-inventory", ncr.OrganizationId, ncr.EnvironmentId, "system:inventory", "inventory-uppercase-key",
+                new StockMovementPostedPayload("MOV-RELEASE", "STATUS-TRANSFER-IN", InventoryMovementSourceServices.Quality, ncr.Id.ToString(), null,
+                    "inventory-uppercase-key", ncr.SkuCode, "ea", "SITE-001", "LOC-001", ncr.BatchNo, ncr.SerialNo, "RESTRICTED", "company", null, ncr.DefectQuantity, at, null, null));
+            letter = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+                IntegrationEventDeadLetterMessage.Create(StockMovementPostedIntegrationEventHandlerForCompleteQualityNcrInventoryDisposition.ConsumerName,
+                    original, "original-outage", "original transient failure"), CancellationToken.None);
+        }
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await AssertDeadLetterPersistedAsync(factory, letter, IntegrationEventDeadLetterStatus.Replayed);
+        using var read = factory.Services.CreateScope();
+        var ncrRead = Assert.Single(await read.ServiceProvider.GetRequiredService<ApplicationDbContext>().NonconformanceReports.AsNoTracking().ToListAsync());
+        Assert.Equal("closed", ncrRead.Status);
+        Assert.Equal(QualityNcrDispositionTypes.ConditionalRelease, ncrRead.DispositionType);
+    }
+
+    private static async Task AssertDeadLetterPersistedAsync(WebApplicationFactory<Program> factory,
+        IntegrationEventDeadLetterMessage original, IntegrationEventDeadLetterStatus expected)
+    {
+        using var scope = factory.Services.CreateScope();
+        var row = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Set<IntegrationEventDeadLetter>()
+            .AsNoTracking().SingleAsync(x => x.Id == original.Id);
+        Assert.Equal(expected, row.Status);
+        Assert.Equal(original.ConsumerName, row.ConsumerName);
+        Assert.Equal(original.EventId, row.EventId);
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(original.EventJson), JsonNode.Parse(row.EventJson)));
     }
 
     private static async Task ReplayStatusAsync(HttpClient client, Guid id, string expected)

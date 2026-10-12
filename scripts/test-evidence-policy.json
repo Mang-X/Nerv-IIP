@@ -831,9 +831,12 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Dead_letter_http_recovers_original_ncr_binding_and_reports_business_rejection_on_redis_cap",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Dead_letter_http_selects_only_original_operation_consumer_and_creates_one_inspection_on_redis_cap",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Spc_consumer_http_commits_inbox_with_one_alert_and_accepts_no_alert_on_redis_cap",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Spc_evaluation_exception_rolls_back_completion_and_outbox_on_redis_cap"
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Spc_evaluation_exception_rolls_back_completion_and_outbox_on_redis_cap",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Source_identity_replay_reuses_existing_receiving_task_on_redis_cap",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Pending_backfill_replay_waits_for_repaired_operation_fact_and_preserves_other_operations_on_redis_cap",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Inventory_disposition_replay_accepts_original_case_insensitive_values_on_redis_cap"
       ],
-      "expectedRuntimeTestCount": 5
+      "expectedRuntimeTestCount": 8
     },
     {
       "id": "mes-rework-receipt-postgres-redis",

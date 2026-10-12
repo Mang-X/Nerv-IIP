@@ -29,6 +29,31 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 public sealed class QualityInspectionTaskWorkflowTests
 {
     [Fact]
+    public async Task Replay_recognizes_existing_inspection_task_by_source_identity()
+    {
+        await using var dbContext = CreateDbContext(nameof(Replay_recognizes_existing_inspection_task_by_source_identity));
+        dbContext.InspectionPlans.Add(ActivePlan("PROBE-PLAN", "receiving", "SKU-RM-1000"));
+        await dbContext.SaveChangesAsync();
+        var original = WmsInboundCompleted("IN-001", "LINE-001", "SKU-RM-1000", "inspection-required");
+        await CreateWmsHandler(dbContext).HandleAsync(original, CancellationToken.None);
+        var retry = original with { EventId = "probe-retry-event", IdempotencyKey = "probe-retry-key" };
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var letter = await store.AddAsync(IntegrationEventDeadLetterMessage.Create(
+            WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks.ConsumerName, retry,
+            "transient", "original database outage"), CancellationToken.None);
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(services, dbContext);
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<IIntegrationEventDeadLetterStore>(services, store);
+        Nerv.IIP.Business.Quality.Web.QualityDeadLetterReplayServiceCollectionExtensions.AddQualityDeadLetterReplay(services);
+        using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+        var routes = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetServices<IIntegrationEventDeadLetterReplayHandler>(provider);
+        var result = await new IntegrationEventDeadLetterReplayExecutor(store, routes, TimeProvider.System).ReplayAsync(letter.Id, CancellationToken.None);
+        var task = Assert.Single(await dbContext.InspectionTasks.ToListAsync());
+        Assert.Equal(original.IdempotencyKey + ":LINE-001", task.TriggerIdempotencyKey);
+        Assert.True(result.Succeeded, $"source=IN-001/LINE-001/SKU-RM-1000; tasks=1; originalKey={task.TriggerIdempotencyKey}; retryKey={retry.IdempotencyKey}; replay={result.Status}; message={result.Message}");
+    }
+
+    [Fact]
     public async Task Wms_inbound_completed_creates_pending_receiving_task_for_matching_plan()
     {
         await using var dbContext = CreateDbContext(nameof(Wms_inbound_completed_creates_pending_receiving_task_for_matching_plan));
