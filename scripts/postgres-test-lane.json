@@ -811,6 +811,24 @@
         "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Member_account_directory_lists_only_enabled_members_of_the_organization_environment_on_postgres",
         "Nerv.IIP.Iam.Web.Tests.IamMemberAccountDirectoryPostgresTests.Production_planner_query_filters_role_scope_and_active_accounts_on_postgres"
       ]
+    },
+    {
+      "id": "maintenance-dead-letter-replay-postgres",
+      "service": "Maintenance",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterReplayPostgresTests",
+      "databasePrefix": "nerv_maintenance_replay",
+      "diagnosticSchemas": [
+        "maintenance",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterReplayPostgresTests.Production_http_replay_recovers_alarm_clear_and_device_plans_without_duplicate_work_orders",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceDeadLetterReplayPostgresTests.Guard_rejection_and_command_failure_do_not_complete_or_leave_inbox_facts"
+      ]
     }
   ],
   "scaleSeedExemptions": [

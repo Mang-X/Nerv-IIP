@@ -85,6 +85,7 @@ try
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
     builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
+    builder.Services.AddMaintenanceDeadLetterReplay();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderCommand>, CreateMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderV2Command>, CreateMaintenanceWorkOrderV2CommandLock>();
