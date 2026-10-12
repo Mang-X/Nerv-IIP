@@ -3302,6 +3302,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleN
     reason: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityCapaActionRequest = {
+    organizationId: string;
+    environmentId: string;
+    completedAtUtc: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringEntityResponse | null;
 };
@@ -14911,6 +14917,42 @@ export type CloseBusinessConsoleQualityNcrResponses = {
 };
 
 export type CloseBusinessConsoleQualityNcrResponse = CloseBusinessConsoleQualityNcrResponses[keyof CloseBusinessConsoleQualityNcrResponses];
+
+export type CompleteBusinessConsoleQualityCapaActionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityCapaActionRequest;
+    path: {
+        correctiveActionId: string;
+        correctiveActionItemId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete';
+};
+
+export type CompleteBusinessConsoleQualityCapaActionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleQualityCapaActionError = CompleteBusinessConsoleQualityCapaActionErrors[keyof CompleteBusinessConsoleQualityCapaActionErrors];
+
+export type CompleteBusinessConsoleQualityCapaActionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type CompleteBusinessConsoleQualityCapaActionResponse = CompleteBusinessConsoleQualityCapaActionResponses[keyof CompleteBusinessConsoleQualityCapaActionResponses];
 
 export type ListBusinessConsoleEngineeringDocumentsData = {
     body?: never;

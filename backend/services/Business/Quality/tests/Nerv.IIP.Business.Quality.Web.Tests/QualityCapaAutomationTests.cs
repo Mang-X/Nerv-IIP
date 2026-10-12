@@ -18,6 +18,46 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 
 public sealed class QualityCapaAutomationTests
 {
+    [Theory]
+    [InlineData("org-001", "env-dev", true)]
+    [InlineData("org-other", "env-dev", false)]
+    [InlineData("org-001", "env-other", false)]
+    public async Task Complete_action_enforces_capa_scope_and_reads_back_completed(string organizationId, string environmentId, bool allowed)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var due = DateTimeOffset.Parse("2026-10-30T00:00:00Z");
+        var completed = DateTimeOffset.Parse("2026-10-12T08:00:00Z");
+        var capa = CorrectiveAction.OpenStandalone("org-001", "env-dev", "CAPA-SCOPE", "cause", "contain", "owner", due);
+        capa.AddAction("corrective", "Correct", "owner", due);
+        capa.AddAction("preventive", "Prevent", "owner", due);
+        db.CorrectiveActions.Add(capa);
+        await db.SaveChangesAsync();
+        var handler = new CompleteCorrectiveActionItemCommandHandler(new CorrectiveActionRepository(db));
+        foreach (var action in capa.Actions)
+        {
+            var command = new CompleteCorrectiveActionItemCommand(capa.Id, action.Id, "qa-user", completed, organizationId, environmentId);
+            if (allowed)
+            {
+                await handler.Handle(command, CancellationToken.None);
+            }
+            else
+            {
+                await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
+            }
+        }
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var readback = await db.CorrectiveActions.Include(x => x.Actions).SingleAsync();
+        Assert.All(readback.Actions, action =>
+        {
+            Assert.Equal(allowed ? "completed" : "open", action.Status);
+            Assert.Equal(allowed ? "qa-user" : null, action.CompletedByUserId);
+            Assert.Equal(allowed ? completed : (DateTimeOffset?)null, action.CompletedAtUtc);
+        });
+    }
+
     [Fact]
     public async Task High_severity_scrap_disposition_automatically_opens_linked_capa()
     {

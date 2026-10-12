@@ -8,6 +8,19 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Quality;
 
+public sealed class BusinessConsoleCompleteQualityCapaActionRequestValidator
+    : Validator<BusinessConsoleCompleteQualityCapaActionRequest>
+{
+    public BusinessConsoleCompleteQualityCapaActionRequestValidator()
+    {
+        RuleFor(x => x.CorrectiveActionId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CorrectiveActionItemId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CompletedAtUtc).NotEmpty();
+    }
+}
+
 public sealed class BusinessConsoleNcrCloseRequestValidator : Validator<BusinessConsoleNcrCloseRequest>
 {
     public BusinessConsoleNcrCloseRequestValidator()
@@ -1542,4 +1555,31 @@ public sealed class CloseBusinessConsoleQualityNcrEndpoint(
             RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
     }
+}
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete")]
+[BusinessGatewayOperationId("completeBusinessConsoleQualityCapaAction")]
+public sealed class CompleteBusinessConsoleQualityCapaActionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCompleteQualityCapaActionRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityNcrManage)
+{
+    protected override string OrganizationId(BusinessConsoleCompleteQualityCapaActionRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleCompleteQualityCapaActionRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleCompleteQualityCapaActionRequest request) => "capa";
+    protected override string? ResourceId(BusinessConsoleCompleteQualityCapaActionRequest request) => request.CorrectiveActionId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleCompleteQualityCapaActionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.CompleteCorrectiveActionItemAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
 }

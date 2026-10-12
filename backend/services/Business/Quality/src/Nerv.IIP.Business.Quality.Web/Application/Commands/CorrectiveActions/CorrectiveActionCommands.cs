@@ -81,15 +81,22 @@ public sealed record CompleteCorrectiveActionItemCommand(
     CorrectiveActionId CorrectiveActionId,
     CorrectiveActionItemId CorrectiveActionItemId,
     string CompletedByUserId,
-    DateTimeOffset CompletedAtUtc) : ICommand;
+    DateTimeOffset CompletedAtUtc,
+    string? OrganizationId = null,
+    string? EnvironmentId = null) : ICommand;
 
 public sealed class CompleteCorrectiveActionItemCommandHandler(ICorrectiveActionRepository repository)
     : ICommandHandler<CompleteCorrectiveActionItemCommand>
 {
     public async Task Handle(CompleteCorrectiveActionItemCommand request, CancellationToken cancellationToken)
     {
-        var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
-            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
+        var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken);
+        if (capa is null
+            || (request.OrganizationId is not null && capa.OrganizationId != request.OrganizationId)
+            || (request.EnvironmentId is not null && capa.EnvironmentId != request.EnvironmentId))
+        {
+            throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
+        }
         capa.CompleteAction(request.CorrectiveActionItemId, request.CompletedByUserId, request.CompletedAtUtc);
     }
 }

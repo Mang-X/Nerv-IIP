@@ -135,6 +135,12 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityCapaDetailRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
+        string internalBearerToken,
+        BusinessConsoleCompleteQualityCapaActionRequest request,
+        string actor,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
         string internalBearerToken,
         BusinessConsoleQualityReasonListRequest request,
@@ -716,6 +722,25 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
+        string internalBearerToken,
+        BusinessConsoleCompleteQualityCapaActionRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            CorrectiveActionPath(request.CorrectiveActionId)
+                + $"/actions/{Uri.EscapeDataString(request.CorrectiveActionItemId)}/complete",
+            new DownstreamCompleteCorrectiveActionItemRequest(
+                request.CorrectiveActionId,
+                request.CorrectiveActionItemId,
+                actor,
+                request.CompletedAtUtc,
+                request.OrganizationId,
+                request.EnvironmentId),
+            cancellationToken);
+
     public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
         string internalBearerToken,
         BusinessConsoleQualityReasonListRequest request,
@@ -1210,6 +1235,14 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Decision,
         string? Comment,
         DateTimeOffset ReviewedAtUtc);
+
+    private sealed record DownstreamCompleteCorrectiveActionItemRequest(
+        string CorrectiveActionId,
+        string CorrectiveActionItemId,
+        string CompletedByUserId,
+        DateTimeOffset CompletedAtUtc,
+        string OrganizationId,
+        string EnvironmentId);
 
     private sealed record DownstreamCloseNcrRequest(
         string NcrId,
