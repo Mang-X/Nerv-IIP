@@ -39,10 +39,10 @@
 | MasterData | 51 | 46 | 1 | 4 |
 | Mes | 82 | 74 | 3 | 5 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
-| Quality | 49 | 37 | 11 | 1 |
+| Quality | 49 | 38 | 10 | 1 |
 | Scheduling | 36 | 33 | 1 | 2 |
 | Wms | 57 | 47 | 5 | 5 |
-| **Total** | **544** | **464** | **41** | **39** |
+| **Total** | **544** | **465** | **40** | **39** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 

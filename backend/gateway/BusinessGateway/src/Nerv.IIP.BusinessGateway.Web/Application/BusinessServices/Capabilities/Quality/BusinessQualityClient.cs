@@ -135,6 +135,12 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityCapaDetailRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> VerifyCorrectiveActionEffectivenessAsync(
+        string internalBearerToken,
+        BusinessConsoleVerifyQualityCapaEffectivenessRequest request,
+        string actor,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
         string internalBearerToken,
         BusinessConsoleCompleteQualityCapaActionRequest request,
@@ -722,6 +728,25 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleAcceptedResponse> VerifyCorrectiveActionEffectivenessAsync(
+        string internalBearerToken,
+        BusinessConsoleVerifyQualityCapaEffectivenessRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            CorrectiveActionPath(request.CorrectiveActionId) + "/effectiveness",
+            new DownstreamVerifyCorrectiveActionEffectivenessRequest(
+                request.CorrectiveActionId,
+                actor,
+                request.Result,
+                request.VerifiedAtUtc,
+                request.EffectivenessInspectionRecordId,
+                request.OrganizationId,
+                request.EnvironmentId),
+            cancellationToken);
+
     public Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
         string internalBearerToken,
         BusinessConsoleCompleteQualityCapaActionRequest request,
@@ -1235,6 +1260,15 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Decision,
         string? Comment,
         DateTimeOffset ReviewedAtUtc);
+
+    private sealed record DownstreamVerifyCorrectiveActionEffectivenessRequest(
+        string CorrectiveActionId,
+        string VerifiedByUserId,
+        string Result,
+        DateTimeOffset VerifiedAtUtc,
+        string EffectivenessInspectionRecordId,
+        string OrganizationId,
+        string EnvironmentId);
 
     private sealed record DownstreamCompleteCorrectiveActionItemRequest(
         string CorrectiveActionId,

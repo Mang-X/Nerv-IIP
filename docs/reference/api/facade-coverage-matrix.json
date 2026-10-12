@@ -4594,8 +4594,13 @@
       "method": "POST",
       "route": "/api/business/v1/quality/capas/{correctiveActionId}/effectiveness",
       "operationId": "verifyBusinessQualityCapaEffectiveness",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "verifyBusinessConsoleQualityCapaEffectiveness"
+      ]
     },
     {
       "service": "Quality",

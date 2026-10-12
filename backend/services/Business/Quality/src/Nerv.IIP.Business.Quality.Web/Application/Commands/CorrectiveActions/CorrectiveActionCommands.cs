@@ -106,7 +106,9 @@ public sealed record VerifyCorrectiveActionEffectivenessCommand(
     string VerifiedByUserId,
     string Result,
     DateTimeOffset VerifiedAtUtc,
-    InspectionRecordId? EffectivenessInspectionRecordId = null) : ICommand;
+    InspectionRecordId? EffectivenessInspectionRecordId = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null) : ICommand;
 
 public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(
     ICorrectiveActionRepository repository,
@@ -116,8 +118,13 @@ public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(
 {
     public async Task Handle(VerifyCorrectiveActionEffectivenessCommand request, CancellationToken cancellationToken)
     {
-        var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
-            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
+        var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken);
+        if (capa is null
+            || (request.OrganizationId is not null && capa.OrganizationId != request.OrganizationId)
+            || (request.EnvironmentId is not null && capa.EnvironmentId != request.EnvironmentId))
+        {
+            throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
+        }
         var (inspectionRecordId, inspectionResult) = await ResolveEffectivenessInspectionAsync(capa, request, cancellationToken);
         capa.VerifyEffectiveness(
             request.VerifiedByUserId,

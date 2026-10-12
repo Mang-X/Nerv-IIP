@@ -3308,6 +3308,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     completedAtUtc: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVerifyQualityCapaEffectivenessRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    result?: string;
+    verifiedAtUtc?: string;
+    effectivenessInspectionRecordId?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringEntityResponse | null;
 };
@@ -14953,6 +14961,35 @@ export type CompleteBusinessConsoleQualityCapaActionResponses = {
 };
 
 export type CompleteBusinessConsoleQualityCapaActionResponse = CompleteBusinessConsoleQualityCapaActionResponses[keyof CompleteBusinessConsoleQualityCapaActionResponses];
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVerifyQualityCapaEffectivenessRequest;
+    path: {
+        correctiveActionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/quality/capas/{correctiveActionId}/effectiveness';
+};
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessResponse = VerifyBusinessConsoleQualityCapaEffectivenessResponses[keyof VerifyBusinessConsoleQualityCapaEffectivenessResponses];
 
 export type ListBusinessConsoleEngineeringDocumentsData = {
     body?: never;
