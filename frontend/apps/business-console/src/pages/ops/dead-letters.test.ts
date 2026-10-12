@@ -39,6 +39,7 @@ const state = vi.hoisted(() => ({
   items: [] as Array<Record<string, unknown>>,
   unavailableSources: [] as Array<{ service: string; reason?: string }>,
   replayResults: new Map<string, DeadLetterReplayResult>(),
+  replayTargets: [] as DeadLetterTarget[],
   /** 下一次重放直接抛出的错误；设了它，`nextOutcome` 就不生效。 */
   nextReplayError: undefined as unknown,
   /** 下一次重放的返回值——`noHandler` 是「按了也不会有任何变化」那一档。 */
@@ -89,6 +90,7 @@ vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
         metricsPending: ref(false),
         refresh: vi.fn(async () => undefined),
         replayOne: vi.fn(async (target: DeadLetterTarget) => {
+          state.replayTargets.push(target)
           const rowKey = deadLetterRowKey(target.service, target.deadLetterId)
           if (state.nextReplayError) {
             // 行上记录由 composable 负责（其单测另证）；这里照同一分类复刻，只为给页面喂状态。
@@ -204,6 +206,7 @@ describe('集成事件死信运维页', () => {
     state.unavailableSources = []
     // 真实 composable 暴露的是 reactive Map；用普通 Map 会让「结果写进去了但没重渲染」看起来像页面缺陷。
     state.replayResults = reactive(new Map())
+    state.replayTargets = []
     state.nextReplayError = undefined
     state.nextBatchResults = []
     state.nextOutcome = { status: 'replayed', succeeded: true }
@@ -230,6 +233,32 @@ describe('集成事件死信运维页', () => {
   })
 
   // #4285 Regression：对象取自原事件，维护后返回同一事件与登记。
+  it('维护返回坐标直接打开原事件详情，详情重放保留原目标与发起状态', async () => {
+    Object.assign(routeQuery, { service: 'Erp', deadLetterId: 'dl-return' })
+    state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-return' }
+    state.selectedDeadLetter = {
+      id: 'dl-return',
+      status: 'failed',
+      eventId: 'EV-RETURN',
+      eventType: 'erp.OperationActualTimeLaborCost',
+    }
+    state.nextOutcome = { status: 'noHandler', succeeded: false }
+    await mountPage()
+    const drawer = document.querySelector('[role="dialog"]')!
+    expect(drawer).not.toBeNull()
+    expect(drawer.textContent).toContain('EV-RETURN')
+    const replay = [...drawer.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '重放此事件',
+    )!
+    replay.click()
+    await flushPromises()
+    expect(state.replayTargets).toEqual([
+      { service: 'Erp', deadLetterId: 'dl-return', statusAtAttempt: 'failed' },
+    ])
+    expect(drawer.textContent).toContain('该服务无重放能力')
+    expect(toastSpy.success).not.toHaveBeenCalled()
+  })
+
   it('列表先打开事件详情，不带空对象进入维护页', async () => {
     seedRow()
     const wrapper = await mountPage()
