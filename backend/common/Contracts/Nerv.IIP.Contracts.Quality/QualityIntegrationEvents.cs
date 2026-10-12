@@ -160,7 +160,8 @@ public sealed record DefectRaisedPayload(
     string? OperationTaskId,
     string DefectCode,
     decimal Quantity,
-    DateTimeOffset RecordedAtUtc);
+    DateTimeOffset RecordedAtUtc,
+    string? SkuCode = null);
 
 public sealed record NcrOpenedIntegrationEvent(
     string EventId,

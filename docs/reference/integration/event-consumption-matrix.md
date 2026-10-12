@@ -75,7 +75,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | ProductEngineering | `RoutingReleasedIntegrationEvent` | ProductEngineering | 当前下游主要通过查询/解析边界使用 | `producer-only-until-feature` |
 | ProductEngineering | `ProductionVersionCreatedIntegrationEvent` | ProductEngineering | MES | `consumed-internally` |
 | ProductEngineering | `EngineeringChangeReleasedIntegrationEvent` | ProductEngineering | 当前下游主要通过查询/解析边界使用 | `producer-only-until-feature` |
-| Quality | `DefectRaisedIntegrationEvent` | MES / Quality 公共契约生产路径 | Quality | `consumed-internally` |
+| Quality | `DefectRaisedIntegrationEvent` | MES / Quality 公共契约生产路径 | Quality | `consumed-internally`。MES 登记命令从同组织、环境的来源工单取得 `SkuId`，在 payload 可选字段 `skuCode` 发布；缺字段的旧消息按 `null` 读取。按 ADR 0011 保持 v1、既有路由与不良编号幂等键。当前 Quality 消费者容忍该字段，NCR 的产品消费规则另由 Quality 实现负责 |
 | Quality | `NcrOpenedIntegrationEvent` | Quality | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | Quality | `NcrDispositionDecidedIntegrationEvent` | Quality | MES | `consumed-internally` |
 | Quality | `NcrReworkRequestedIntegrationEvent` | Quality | MES | `consumed-internally` |

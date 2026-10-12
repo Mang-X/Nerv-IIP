@@ -193,4 +193,4 @@ public sealed record FinishedGoodsReceiptRequestedDomainEvent(
     decimal Quantity,
     string IdempotencyKey) : IDomainEvent;
 
-public sealed record DefectRaisedDomainEvent(DefectRecord DefectRecord) : IDomainEvent;
+public sealed record DefectRaisedDomainEvent(DefectRecord DefectRecord, string? SkuCode = null) : IDomainEvent;

@@ -706,7 +706,8 @@ public sealed class DefectRaisedIntegrationEventConverter
                 defect.OperationTaskId,
                 defect.DefectCode,
                 defect.Quantity,
-                defect.RecordedAtUtc));
+                defect.RecordedAtUtc,
+                domainEvent.SkuCode));
     }
 }
 

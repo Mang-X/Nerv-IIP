@@ -66,7 +66,8 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
         string? operationTaskId,
         string defectCode,
         decimal quantity,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        string? skuCode = null)
     {
         var defect = new DefectRecord(
             organizationId,
@@ -77,7 +78,7 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
             defectCode,
             quantity,
             recordedAtUtc);
-        defect.AddDomainEvent(new DefectRaisedDomainEvent(defect));
+        defect.AddDomainEvent(new DefectRaisedDomainEvent(defect, skuCode));
         return defect;
     }
 
