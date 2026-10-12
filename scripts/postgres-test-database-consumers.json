@@ -148,6 +148,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceDeadLetterReplayPostgresTests.cs",
+      "sourceSha256": "7caaf101e41740fb031b69528f19f979a6bbd6716a7b8c42a500441bb03651c9",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 2,
+          "ownerVariable": "database",
+          "reason": "Maintenance replay recovery surfaces owned PostgreSQL cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs",
       "sourceSha256": "1863ff8da3ed832182f3368bcbf1afb080ca3ba0915011b877120e9fc08c562f",
       "factoryCallCount": 1,
