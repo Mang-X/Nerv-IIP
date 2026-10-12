@@ -72,7 +72,7 @@ async function submit() {
             v-model="draft.periodCode"
             required
             maxlength="50"
-            :data-invalid="showErrors && invalid.periodCode ? '' : undefined"
+            :invalid="showErrors && invalid.periodCode"
             :aria-invalid="showErrors && invalid.periodCode"
           />
         </NvField>
@@ -83,7 +83,7 @@ async function submit() {
             v-model="draft.startDate"
             type="date"
             required
-            :data-invalid="showErrors && invalid.startDate ? '' : undefined"
+            :invalid="showErrors && invalid.startDate"
             :aria-invalid="showErrors && invalid.startDate"
           />
         </NvField>
@@ -95,7 +95,7 @@ async function submit() {
             type="date"
             required
             :min="draft.startDate"
-            :data-invalid="showErrors && invalid.endDate ? '' : undefined"
+            :invalid="showErrors && invalid.endDate"
             :aria-invalid="showErrors && invalid.endDate"
           />
         </NvField>

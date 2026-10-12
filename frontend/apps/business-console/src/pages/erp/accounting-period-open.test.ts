@@ -48,10 +48,20 @@ it('首次展示不标红，提交空期间编码显示汇总与红框且不请�
     global: { stubs: { BusinessLayout: { template: '<main><slot /></main>' } } },
   })
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-  expect(wrapper.get('#period-code').attributes('data-invalid')).toBeUndefined()
+  expect(
+    wrapper
+      .get('#period-code')
+      .element.closest('[data-slot="nv-input"]')
+      ?.getAttribute('data-invalid'),
+  ).toBeNull()
   await wrapper.get('form').trigger('submit')
   expect(wrapper.get('[role="alert"]').text()).toContain('期间编码')
-  expect(wrapper.get('#period-code').attributes('data-invalid')).toBe('')
+  expect(
+    wrapper
+      .get('#period-code')
+      .element.closest('[data-slot="nv-input"]')
+      ?.getAttribute('data-invalid'),
+  ).toBe('true')
   expect(state.submit).not.toHaveBeenCalled()
   expect(state.success).not.toHaveBeenCalled()
 })
@@ -63,12 +73,27 @@ it('日期缺失或结束早于开始时标出既有字段并阻止请求', asyn
   await wrapper.get('#period-start').setValue('')
   await wrapper.get('#period-end').setValue('')
   await wrapper.get('form').trigger('submit')
-  expect(wrapper.get('#period-start').attributes('data-invalid')).toBe('')
-  expect(wrapper.get('#period-end').attributes('data-invalid')).toBe('')
+  expect(
+    wrapper
+      .get('#period-start')
+      .element.closest('[data-slot="nv-input"]')
+      ?.getAttribute('data-invalid'),
+  ).toBe('true')
+  expect(
+    wrapper
+      .get('#period-end')
+      .element.closest('[data-slot="nv-input"]')
+      ?.getAttribute('data-invalid'),
+  ).toBe('true')
   expect(state.submit).not.toHaveBeenCalled()
   await wrapper.get('#period-start').setValue('2026-10-12')
   await wrapper.get('#period-end').setValue('2026-10-11')
   await wrapper.get('form').trigger('submit')
-  expect(wrapper.get('#period-end').attributes('data-invalid')).toBe('')
+  expect(
+    wrapper
+      .get('#period-end')
+      .element.closest('[data-slot="nv-input"]')
+      ?.getAttribute('data-invalid'),
+  ).toBe('true')
   expect(state.submit).not.toHaveBeenCalled()
 })
