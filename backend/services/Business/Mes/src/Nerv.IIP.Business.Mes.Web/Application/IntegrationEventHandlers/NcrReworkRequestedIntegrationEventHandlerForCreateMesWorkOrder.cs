@@ -237,6 +237,13 @@ public sealed class NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrd
                 null),
             reworkRouting);
         dbContext.OperationTasks.AddRange(reworkOperationTasks);
+        // #4342：首次 Quality 处置结论还没有返工工单号；实际建单时在同一事务回写原不良。
+        defect.AcceptDisposition(
+            payload.NcrId,
+            payload.NcrCode,
+            QualityNcrDispositionTypes.Rework,
+            reworkWorkOrder.WorkOrderIdValue,
+            payload.RequestedAtUtc);
     }
 
     private static bool Matches(WorkOrder workOrder, NcrReworkRequestedPayload payload) =>

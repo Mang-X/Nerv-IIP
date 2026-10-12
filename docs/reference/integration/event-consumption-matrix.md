@@ -79,7 +79,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Quality | `NcrOpenedIntegrationEvent` | Quality | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | Quality | `NcrDispositionDecidedIntegrationEvent` | Quality | MES | `consumed-internally` |
 | Quality | `NcrReworkRequestedIntegrationEvent` | Quality | MES | `consumed-internally` |
-| Quality | `NcrClosedIntegrationEvent` | Quality | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| Quality | `NcrClosedIntegrationEvent` | Quality | MES：报废关闭后，按同组织/环境已建立的 NCR 来源关联回写原不良的库存移动引用；首次来源关联未就绪时不登记 inbox，抛出临时失败交既有 CAP 有限重试；关联就绪后原事实可重放 | `consumed-internally`。首次空引用处置结论晚到不清空已知返工/报废引用 |
 | Quality | `InspectionResultIntegrationEvent`（passed/conditional/rejected） | Quality | Inventory、MES、Scheduling；RMA 场景下 ERP 处理相应财务结果 | `consumed-internally` |
 | Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
 | Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
