@@ -280,7 +280,7 @@ try {
     $member = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'inventory-postgres-profile' -RepositoryRoot $repoRoot
     # 拆解②的单条试点在 #1561 之后扩为两条；#2228 再加入线边余额聚合的真实 PostgreSQL 翻译证据。
     # 两条 InventoryDirectory external 用例形态与成员一致，已并入本成员；同类 Docker 夹具仍留在 deferred 条目里。
-    Assert-Contract (@($member.expectedTestIdentities).Count -eq 3) 'The Inventory member must freeze its profile test and both external directory-backed PostgreSQL tests.'
+    Assert-Contract (@($member.expectedTestIdentities).Count -eq 7) 'The Inventory member must freeze its profile test, both external directory-backed tests and four dead-letter recovery proofs.'
     $expectedTestIdentitySet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@($member.expectedTestIdentities),
         [StringComparer]::Ordinal)
