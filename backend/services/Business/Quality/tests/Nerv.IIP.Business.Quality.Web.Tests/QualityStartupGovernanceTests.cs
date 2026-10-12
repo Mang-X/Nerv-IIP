@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Quality.Infrastructure;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
@@ -106,16 +107,17 @@ public sealed class QualityStartupGovernanceTests
     [Fact]
     public async Task Integration_event_dead_letter_store_uses_persistent_quality_db_store()
     {
-        await using var factory = CreateFactory();
+        object? persistentStoreKey = null;
+        await using var factory = CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            persistentStoreKey = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IIntegrationEventDeadLetterStore)
+                && descriptor.IsKeyedService
+                && descriptor.KeyedImplementationType == typeof(PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>)).ServiceKey;
+        }));
         using var scope = factory.Services.CreateScope();
-
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
-
-        Assert.True(
-            store.GetType().FullName?.StartsWith(
-                "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Quality.Infrastructure.ApplicationDbContext,",
-                StringComparison.Ordinal) is true,
-            $"Expected persistent Quality DB dead-letter store but received {store.GetType().FullName}.");
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>());
+        Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(
+            scope.ServiceProvider.GetRequiredKeyedService<IIntegrationEventDeadLetterStore>(persistentStoreKey));
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

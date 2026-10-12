@@ -59,7 +59,7 @@
       "tier": "core",
       "status": "active",
       "project": "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj",
-      "filter": "FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres|FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Dead_letter_http_recovers_original_ncr_binding_and_reports_business_rejection_on_redis_cap|FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Dead_letter_http_selects_only_original_operation_consumer_and_creates_one_inspection_on_redis_cap|FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Spc_consumer_http_commits_inbox_with_one_alert_and_accepts_no_alert_on_redis_cap|FullyQualifiedName=Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Spc_evaluation_exception_rolls_back_completion_and_outbox_on_redis_cap",
       "databasePrefix": "nerv_iip_quality",
       "capVersionPrefix": "n2809quality",
       "diagnosticSchemas": [
@@ -67,7 +67,11 @@
         "cap"
       ],
       "expectedTestIdentities": [
-        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres"
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Redis_cap_transport_recovers_replayed_receipt_and_preserves_the_first_system_binding_in_postgres",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Dead_letter_http_recovers_original_ncr_binding_and_reports_business_rejection_on_redis_cap",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Dead_letter_http_selects_only_original_operation_consumer_and_creates_one_inspection_on_redis_cap",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Spc_consumer_http_commits_inbox_with_one_alert_and_accepts_no_alert_on_redis_cap",
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReworkReceiptRedisCapTransportTests.Spc_evaluation_exception_rolls_back_completion_and_outbox_on_redis_cap"
       ]
     },
     {

@@ -1,3 +1,12 @@
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.Spc;
 using System.Data.Common;
 using DotNetCore.CAP;
 using DotNetCore.CAP.Internal;
@@ -79,6 +88,245 @@ public sealed class QualityReworkReceiptRedisCapTransportTests
                 .SingleAsync(token);
             Assert.True(receivedCount >= 5, $"Expected at least five delivered receipts, observed {receivedCount}.");
         });
+    }
+
+    // #4356: exercise the original production consumer through the existing HTTP replay entry.
+    [QualityReworkReceiptPostgresRedisFact]
+    public async Task Dead_letter_http_recovers_original_ncr_binding_and_reports_business_rejection_on_redis_cap()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await QualityPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        await InitializeAsync(factory);
+        var ncrId = await AddOpenNcrAsync(factory);
+        var receipt = await BuildReceiptAsync(factory, ncrId, "RW-DLQ-001", "receipt-original-dlq");
+        IntegrationEventDeadLetterMessage letter;
+        using (var scope = factory.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr>()
+                .HandleAsync(receipt, CancellationToken.None);
+            letter = Assert.Single(await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>()
+                .ListAsync(ReworkWorkOrderCreatedIntegrationEventHandlerForBindQualityNcr.ConsumerName, null, CancellationToken.None));
+            Assert.Equal("quality.reworkWorkOrderCreated.bindingConflict", letter.FailureCode);
+        }
+        await ReplayStatusAsync(client, letter.Id, "failed");
+        await SubmitReworkDispositionAsync(factory, ncrId);
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        IntegrationEventDeadLetterMessage noHandler;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+            noHandler = await store.AddAsync(IntegrationEventDeadLetterMessage.Create("undeclared-quality-consumer", receipt,
+                "original-failure", "retained failure"), CancellationToken.None);
+            noHandler = (await store.GetAsync(noHandler.Id, CancellationToken.None))!;
+            await store.AddAsync(IntegrationEventDeadLetterMessage.Create(letter.ConsumerName,
+                receipt with { EventId = "receipt-conflict-dlq", Payload = receipt.Payload with { ReworkWorkOrderId = "RW-CONFLICT" } },
+                "original", "original failure"), CancellationToken.None);
+            await store.AddAsync(IntegrationEventDeadLetterMessage.Create(letter.ConsumerName,
+                receipt with { EventId = "receipt-duplicate-dlq" }, "original", "original failure"), CancellationToken.None);
+        }
+        using var batch = await client.PostAsJsonAsync("/api/business/v1/quality/dlq/replay-batch", new { status = "pending" });
+        Assert.Equal(HttpStatusCode.OK, batch.StatusCode);
+        using var json = JsonDocument.Parse(await batch.Content.ReadAsStringAsync());
+        var items = json.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(4, items.Length);
+        Assert.Equal(2, items.Count(x => x.GetProperty("status").GetString() == "replayed"));
+        Assert.Contains(items, x => x.GetProperty("status").GetString() == "noHandler");
+        Assert.Contains(items, x => x.GetProperty("status").GetString() == "failed");
+        Assert.Contains(items, x => x.GetProperty("status").GetString() == "replayed");
+        using var read = factory.Services.CreateScope();
+        var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = Assert.Single(await db.NonconformanceReports.AsNoTracking().ToListAsync());
+        Assert.Equal("RW-DLQ-001", ncr.ReworkWorkOrderId);
+        var storeRead = read.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var saved = await storeRead.GetAsync(letter.Id, CancellationToken.None);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Replayed, saved!.Status);
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(letter.EventJson), JsonNode.Parse(saved.EventJson)));
+        Assert.Equal(noHandler, await storeRead.GetAsync(noHandler.Id, CancellationToken.None));
+    }
+
+    [QualityReworkReceiptPostgresRedisFact]
+    public async Task Dead_letter_http_selects_only_original_operation_consumer_and_creates_one_inspection_on_redis_cap()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await QualityPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        await InitializeAsync(factory);
+        var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        var original = new MesOperationTaskCompletedIntegrationEvent("operation-original-dlq", MesIntegrationEventTypes.OperationTaskCompleted, 1,
+            at, QualityIntegrationEventSources.BusinessMes, "corr-original", "cause-original", "org-001", "env-dev", "system:mes", "operation-original-key",
+            new OperationTaskCompletedPayload("WO-DLQ", "OP-DLQ", "SKU-DLQ", 10, "WC-DLQ", 4m, "ea", true, at));
+        IntegrationEventDeadLetterMessage letter;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var plan = InspectionPlan.Create("org-001", "env-dev", "PLAN-DLQ", "operation", "SKU-DLQ", null, "WC-DLQ", null, "operation-task");
+            plan.AddCharacteristic("appearance", "Appearance", "visual", "minor", true, "all");
+            plan.Activate();
+            db.InspectionPlans.Add(plan);
+            await db.SaveChangesAsync();
+            letter = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+                IntegrationEventDeadLetterMessage.Create(MesOperationCompletedIntegrationEventHandlerForCreateInspectionTasks.ConsumerName,
+                    original, "database-unavailable", "original transient database outage"), CancellationToken.None);
+        }
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        await ReplayStatusAsync(client, letter.Id, "replayed");
+        using var read = factory.Services.CreateScope();
+        var dbRead = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var task = Assert.Single(await dbRead.InspectionTasks.AsNoTracking().ToListAsync());
+        Assert.Equal("WO-DLQ", task.SourceDocumentId);
+        Assert.Equal("OP-DLQ", task.SourceDocumentLineId);
+        Assert.Equal(original.IdempotencyKey, task.TriggerIdempotencyKey);
+        Assert.Equal(at, task.CreatedAtUtc);
+        Assert.Empty(await dbRead.ProcessedIntegrationEvents.AsNoTracking().ToListAsync());
+        Assert.Empty(await dbRead.PeriodicInspectionOperations.ToListAsync());
+    }
+
+    [QualityReworkReceiptPostgresRedisFact]
+    public async Task Spc_consumer_http_commits_inbox_with_one_alert_and_accepts_no_alert_on_redis_cap()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await QualityPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        await InitializeAsync(factory);
+        var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        InspectionPlan plan;
+        InspectionPlan warmupPlan;
+        using (var setup = factory.Services.CreateScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            plan = InspectionPlan.Create("org-001", "env-dev", "SPC-DLQ", "operation", "SKU-SPC", null, "WC-SPC", null, "mes-operation");
+            plan.AddCharacteristic("length", "Length", "caliper", "major", true, "subgroup-2",
+                InspectionCharacteristicTypes.Variable, 10m, 9m, 12m, "mm", null);
+            plan.Activate();
+            db.InspectionPlans.Add(plan);
+            for (var i = 0; i < 12; i++)
+            {
+                var record = InspectionRecord.CreateFromPlan(plan, "operation", "mes-operation", $"SPC-WO-{i}", null,
+                    "SKU-SPC", 1m, null, null, null, [InspectionResultLineInput.Measure("length", 10m + i / 10m, "mm", [])], null, []);
+                db.InspectionRecords.Add(record);
+                db.Entry(record).Property(x => x.CreatedAtUtc).CurrentValue = at.UtcDateTime.AddMinutes(i);
+            }
+            warmupPlan = InspectionPlan.Create("org-001", "env-dev", "SPC-WARMUP-DLQ", "operation", "SKU-WARMUP", null, "WC-SPC", null, "mes-operation");
+            warmupPlan.AddCharacteristic("length", "Length", "caliper", "major", true, "subgroup-2",
+                InspectionCharacteristicTypes.Variable, 10m, 9m, 12m, "mm", null);
+            warmupPlan.Activate();
+            db.InspectionPlans.Add(warmupPlan);
+            db.InspectionRecords.Add(InspectionRecord.CreateFromPlan(warmupPlan, "operation", "mes-operation", "SPC-WARMUP-WO", null,
+                "SKU-WARMUP", 1m, null, null, null, [InspectionResultLineInput.Measure("length", 10m, "mm", [])], null, []));
+            await db.SaveChangesAsync();
+        }
+        var original = new InspectionResultIntegrationEvent("spc-original-dlq", QualityIntegrationEventTypes.InspectionPassed, 1,
+            at, QualityIntegrationEventSources.BusinessQuality, "corr-spc", "cause-spc", "org-001", "env-dev", "system:quality", "spc-original-key",
+            new InspectionResultPayload("record-spc", plan.Id.ToString(), "operation", "mes-operation", "SPC-WO", "SKU-SPC", 1m,
+                "passed", null, [], at, ResultLines: [new InspectionResultLinePayload("length", 11.1m, "11.1", "mm", "passed", null, null)]));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var unexecuted = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+                IntegrationEventDeadLetterMessage.Create(InspectionResultIntegrationEventHandlerForEvaluateSpc.ConsumerName,
+                    original with { EventId = "spc-missing-plan", Payload = original.Payload with { InspectionPlanId = Guid.CreateVersion7().ToString() } },
+                    "missing-plan", "original missing plan"), CancellationToken.None);
+            await ReplayStatusAsync(client, unexecuted.Id, "failed");
+            Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToListAsync());
+        }
+        foreach (var evt in new[] { original, original with { EventId = "spc-no-alert-dlq", IdempotencyKey = "spc-no-alert-key", Payload = original.Payload with { InspectionPlanId = warmupPlan.Id.ToString(), SkuCode = "SKU-WARMUP" } } })
+        {
+            IntegrationEventDeadLetterMessage letter;
+            using (var scope = factory.Services.CreateScope())
+                letter = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+                    IntegrationEventDeadLetterMessage.Create(InspectionResultIntegrationEventHandlerForEvaluateSpc.ConsumerName,
+                        evt, "original-transient-failure", "original evaluation outage"), CancellationToken.None);
+            await ReplayStatusAsync(client, letter.Id, "replayed");
+            await ReplayStatusAsync(client, letter.Id, "replayed");
+            using var read = factory.Services.CreateScope();
+            var saved = await read.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().GetAsync(letter.Id, CancellationToken.None);
+            Assert.Equal(evt.EventId, saved!.EventId);
+            Assert.True(JsonNode.DeepEquals(JsonNode.Parse(letter.EventJson), JsonNode.Parse(saved.EventJson)));
+        }
+        using (var outerScope = factory.Services.CreateScope())
+        {
+            var unit = outerScope.ServiceProvider.GetRequiredService<ITransactionUnitOfWork>();
+            await using var transaction = await unit.BeginTransactionAsync(CancellationToken.None);
+            unit.CurrentTransaction = transaction;
+            try
+            {
+                await outerScope.ServiceProvider.GetRequiredService<InspectionResultIntegrationEventHandlerForEvaluateSpc>()
+                    .HandleAsync(original with { EventId = "spc-outer-transaction", IdempotencyKey = "spc-outer-key",
+                        Payload = original.Payload with { InspectionPlanId = warmupPlan.Id.ToString(), SkuCode = "SKU-WARMUP" } }, CancellationToken.None);
+                await unit.CommitAsync(CancellationToken.None);
+            }
+            finally
+            {
+                unit.CurrentTransaction = null;
+            }
+        }
+        using var finalRead = factory.Services.CreateScope();
+        var finalDb = finalRead.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(3, await finalDb.ProcessedIntegrationEvents.CountAsync());
+        var prefix = finalRead.ServiceProvider.GetRequiredService<IOptions<CapOptions>>().Value.TopicNamePrefix;
+        var name = string.IsNullOrWhiteSpace(prefix) ? nameof(SpcAlertRaisedIntegrationEvent) : $"{prefix}.{nameof(SpcAlertRaisedIntegrationEvent)}";
+        Assert.Equal(1, await finalDb.Database.SqlQuery<int>($"""SELECT count(*)::int AS "Value" FROM cap.published WHERE "Name" = {name}""").SingleAsync());
+    }
+
+    [QualityReworkReceiptPostgresRedisFact]
+    public async Task Spc_evaluation_exception_rolls_back_completion_and_outbox_on_redis_cap()
+    {
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await QualityPostgresLaneDatabase.ResetCapSchemaAsync();
+        await using var factory = CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services.AddScoped<IRequestHandler<EvaluateSpcControlChartCommand, SpcEvaluationResponse>, FailingSpcEvaluation>()));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        await InitializeAsync(factory);
+        var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        IntegrationEventDeadLetterMessage letter;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var plan = InspectionPlan.Create("org-001", "env-dev", "SPC-FAULT", "operation", "SKU-FAULT", null, "WC-SPC", null, "mes-operation");
+            plan.AddCharacteristic("length", "Length", "caliper", "major", true, "subgroup-2",
+                InspectionCharacteristicTypes.Variable, 10m, 9m, 12m, "mm", null);
+            plan.Activate();
+            db.InspectionPlans.Add(plan);
+            await db.SaveChangesAsync();
+            var original = new InspectionResultIntegrationEvent("spc-fault-original", QualityIntegrationEventTypes.InspectionPassed, 1,
+                at, QualityIntegrationEventSources.BusinessQuality, "corr-fault", "cause-fault", "org-001", "env-dev", "system:quality", "spc-fault-key",
+                new InspectionResultPayload("fault-record", plan.Id.ToString(), "operation", "mes-operation", "FAULT-WO", "SKU-FAULT", 1m,
+                    "passed", null, [], at, ResultLines: [new InspectionResultLinePayload("length", 10m, "10", "mm", "passed", null, null)]));
+            letter = await scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(
+                IntegrationEventDeadLetterMessage.Create(InspectionResultIntegrationEventHandlerForEvaluateSpc.ConsumerName,
+                    original, "original-evaluation-outage", "original failure"), CancellationToken.None);
+        }
+        await ReplayStatusAsync(client, letter.Id, "failed");
+        using var read = factory.Services.CreateScope();
+        var readDb = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await readDb.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(0, await readDb.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM cap.published").SingleAsync());
+        var saved = await read.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().GetAsync(letter.Id, CancellationToken.None);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Failed, saved!.Status);
+        Assert.Contains("controlled-spc-evaluation-failure", saved.FailureMessage, StringComparison.Ordinal);
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(letter.EventJson), JsonNode.Parse(saved.EventJson)));
+    }
+
+    private sealed class FailingSpcEvaluation : IRequestHandler<EvaluateSpcControlChartCommand, SpcEvaluationResponse>
+    {
+        public Task<SpcEvaluationResponse> Handle(EvaluateSpcControlChartCommand request, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("controlled-spc-evaluation-failure");
+    }
+
+    private static async Task ReplayStatusAsync(HttpClient client, Guid id, string expected)
+    {
+        using var response = await client.PostAsync($"/api/business/v1/quality/dlq/{id}/replay", null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(expected, json.RootElement.GetProperty("data").GetProperty("status").GetString());
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
