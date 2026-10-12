@@ -2,8 +2,21 @@
   "schemaVersion": 1,
   "consumers": [
     {
+      "sourcePath": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubDeadLetterReplayPostgresTests.cs",
+      "sourceSha256": "d67ab386de1e6f5f4e87a59f71cab9d50073f84de9d0260fb8002200fd9d3876",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 2,
+          "ownerVariable": "database",
+          "reason": "AppHub replay recovery proofs surface owned PostgreSQL cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs",
-      "sourceSha256": "5acc6a61ad98757928e08591335504deb73eb6119b7c1beadbdd80cc273caf5d",
+      "sourceSha256": "fd64f2b4938147018441ab046efd6d09525f9b31cf100028c8ceb3dea8783276",
       "factoryCallCount": 3,
       "ownerships": [
         {
