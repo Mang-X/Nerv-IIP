@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
@@ -31,7 +32,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
 
     public async Task HandleAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+        await consumerGuard.HandleAsync(integrationEvent, (ev, token) => HandleValidEventAsync(ev, false, token), cancellationToken);
     }
 
     [CapSubscribe(nameof(InspectionResultIntegrationEvent), Group = ConsumerName)]
@@ -40,7 +41,10 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
         return HandleAsync(integrationEvent, cancellationToken);
     }
 
-    private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    internal Task ReplayAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+        consumerGuard.HandleAsync(integrationEvent, (ev, token) => HandleValidEventAsync(ev, true, token), cancellationToken);
+
+    private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, bool replay, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
         if (!string.Equals(payload.SourceService, QualityInspectionSourceTypes.Wms, StringComparison.OrdinalIgnoreCase)
@@ -49,7 +53,11 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
             return;
         }
 
-        if (!await WmsProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        var inbox = await dbContext.ProcessedIntegrationEvents.SingleOrDefaultAsync(
+            x => x.ConsumerName == ConsumerName && x.IdempotencyKey == integrationEvent.IdempotencyKey, cancellationToken);
+        if (inbox is not null && (!replay || inbox.EventId != integrationEvent.EventId
+            || inbox.EventType != integrationEvent.EventType || inbox.EventVersion != integrationEvent.EventVersion
+            || inbox.SourceService != integrationEvent.SourceService))
         {
             return;
         }
@@ -70,6 +78,19 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
+        }
+
+        // Historical rejection could have committed inbox before the business fact. Keep that
+        // identity: only the selected replay may resume its still-uninspected original receipt line.
+        if (inbox is not null)
+        {
+            var matches = inbound.Lines.Where(x => x.SkuCode == WmsText.Required(payload.SkuCode, nameof(payload.SkuCode))
+                && x.LotNo == WmsText.Optional(payload.StockRelease?.LotNo ?? payload.LotNo)
+                && x.SerialNo == WmsText.Optional(payload.StockRelease?.SerialNo ?? payload.SerialNo)).ToArray();
+            if (inbound.Status != InboundOrderStatus.PendingQualityCheck
+                || matches.Length != 1 || matches[0].InspectionRecordId is not null
+                || matches[0].QualityGateStatus != InboundQualityGateStatuses.Pending)
+                return;
         }
 
         try
@@ -97,8 +118,11 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             await DeadLetterDivergenceAsync(integrationEvent, exception, cancellationToken);
+            return;
         }
 
+        if (inbox is null)
+            await WmsProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

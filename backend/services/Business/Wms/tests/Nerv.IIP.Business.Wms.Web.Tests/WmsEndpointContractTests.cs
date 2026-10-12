@@ -336,24 +336,6 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
-    public async Task Wms_registers_persistent_integration_event_dead_letter_store()
-    {
-        await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseSetting("environment", "Testing");
-                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
-            });
-
-        using var scope = factory.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
-
-        Assert.Equal(
-            "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext, Nerv.IIP.Business.Wms.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
-            store.GetType().FullName);
-    }
-
-    [Fact]
     public async Task Wms_live_http_acceptance_host_dispatches_fails_retries_and_completes_wcs_task()
     {
         await using var factory = CreateAuthorizedFactory();

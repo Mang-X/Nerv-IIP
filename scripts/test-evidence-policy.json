@@ -414,6 +414,12 @@
       "sourcePath": "backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayRedisCacheInvalidationTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_REDIS to run real Redis dual PlatformGateway HTTP invalidation tests\\.\";$"
+    },
+    {
+      "id": "wms-deadletter-replay",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsDeadLetterReplayPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS dead-letter HTTP recovery tests\\.\";$"
     }
   ],
   "rules": [
@@ -2056,6 +2062,29 @@
         "Nerv.IIP.PlatformGateway.Web.Tests.GatewayRedisCacheInvalidationTests.Cancelled_in_flight_read_during_scoped_invalidation_cannot_publish_old_value"
       ],
       "expectedRuntimeTestCount": 7
+    },
+    {
+      "id": "wms-deadletter-replay",
+      "sourceId": "wms-deadletter-replay",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.(WmsDeadLetterReplayPostgresTests|WmsDeadLetterBusinessReplayPostgresTests)\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS dead-letter HTTP recovery tests\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Quality_rejection_does_not_commit_inbox_and_recovers_original_event_through_http_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Legacy_failed_inbox_recovers_only_matching_unfinished_quality_fact_and_preserves_existing_effect_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Inventory_receipts_select_original_success_or_failure_and_batch_reads_persistent_results_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Outbound_material_issue_return_and_expiration_restore_original_documents_without_duplicates_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Wcs_adapter_failure_rolls_back_inbox_before_http_retry_and_duplicate_replay_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 5
     }
   ]
 }

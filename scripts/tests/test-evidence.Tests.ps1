@@ -1542,7 +1542,8 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # MasterData 员工账号唯一冲突的真库用例复用既有 masterdata-postgres 属性与理由，不新增 source。增至 62。
 # #2140 新增独立 RealRedisCacheFact source（5 条真实 Redis ProviderBehavior 用例，一属性一规则），62 + 1 = 63。
 # #4172 新增真实双 PlatformGateway HTTP/Redis source，3 条用例归属 redis-cap；63 + 1 = 64。
-Assert-Equal 64 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# #4357 adds the WMS dead-letter HTTP recovery PostgreSQL source; 64 + 1 = 65.
+Assert-Equal 65 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
