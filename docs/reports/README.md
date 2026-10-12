@@ -24,6 +24,7 @@
 
 ## Spike 调查
 
+- [APS 发布后 MES 作业范围与导航（2026-10-12）](spikes/aps-mes-scope-navigation-2026-10-12.md)：连续五轮真实页面未复现范围丢失，保留读取、缓存与异步传播证据及待批准的窄恢复候选；只证明报告基线。
 - [停机登记范围拒绝与恢复（2026-10-11）](spikes/mes-downtime-scope-rejection-2026-10-11.md)：真实管理员与最小角色复现组织范围误拒绝，分列错误传输、直连 CORS 与事件恢复证据；只证明报告基线。
 - [GS1 解析库兼容与维护收益（2026-10-07）](spikes/gs1-parser-library-evaluation-2026-10-07.md)：固定官方候选与前后端合同矩阵，分别给出 go/no-go；只证明报告基线。
 - [Redis 命令锁库净替代评估（2026-10-09）](spikes/redis-command-lock-library-evaluation-2026-10-09.md)：固定 NetCorePal / DistributedLock 包与时间、取消、释放合同，结论为 no-go；只证明报告基线。
