@@ -108,7 +108,8 @@ internal static class PeriodicInspectionReleaseProjection
         WorkOrderReleasedPayload payload,
         string consumerName,
         ReleaseFactAuthority authority,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IIntegrationEventDeadLetterStore? handledNoticeStore = null)
     {
         try
         {
@@ -138,11 +139,14 @@ internal static class PeriodicInspectionReleaseProjection
                             dbContext,
                             consumerName,
                             integrationEvent,
-                            ct))
+                            ct)
+                        && authority != ReleaseFactAuthority.ReconstructedLowerBound)
                     {
                         return;
                     }
 
+                    // A backfill inbox records the envelope, including per-operation rejections.
+                    // Retry only missing release projections; already released operations still skip below.
                     foreach (var operationPayload in operations)
                     {
                         var operation = await PeriodicInspectionOperationEventProcessing.LoadOrCreateAsync(
@@ -272,7 +276,7 @@ internal static class PeriodicInspectionReleaseProjection
                         if (facts.Substitutions.Count > 0)
                         {
                             await PeriodicInspectionOperationEventProcessing.RecordBackfillNoticeAsync(
-                                deadLetterStore,
+                                handledNoticeStore ?? deadLetterStore,
                                 consumerName,
                                 integrationEvent,
                                 "backfill-release-fact-substituted",
@@ -342,7 +346,9 @@ internal static class PeriodicInspectionReleaseProjection
 public sealed class WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerForCreatePeriodicInspectionContexts(
     ApplicationDbContext dbContext,
     IPeriodicInspectionOperationScopeCoordinator scopeCoordinator,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    [FromKeyedServices(QualityDeadLetterReplayServiceCollectionExtensions.BackfillNoticeStoreKey)]
+    IIntegrationEventDeadLetterStore? handledNoticeStore = null)
     : IIntegrationEventHandler<WorkOrderReleaseProjectionBackfilledIntegrationEvent>, ICapSubscribe
 {
     /// <summary>
@@ -381,7 +387,8 @@ public sealed class WorkOrderReleaseProjectionBackfilledIntegrationEventHandlerF
             integrationEvent.Payload,
             ConsumerName,
             ReleaseFactAuthority.ReconstructedLowerBound,
-            cancellationToken);
+            cancellationToken,
+            handledNoticeStore);
 }
 
 [IntegrationEventConsumer(nameof(ProductionReportRecordedIntegrationEvent), ConsumerName)]

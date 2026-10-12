@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Business.Quality.Web;
 using System.Text.Json;
 using DotNetCore.CAP;
 using FastEndpoints;
@@ -123,6 +124,7 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddQualityDeadLetterReplay();
     builder.Services.AddScoped<IReworkWorkOrderBindingWriter, PostgresReworkWorkOrderBindingWriter>();
     builder.Services.AddScoped<ReworkWorkOrderBindingStore>();
     builder.Services.AddHttpContextAccessor();

@@ -82,19 +82,28 @@ public sealed class InspectionResultIntegrationEventHandlerForEvaluateSpc(
                 SubgroupSize = ResolveSubgroupSize(plan.Characteristics.SingleOrDefault(x => x.CharacteristicCode == characteristicCode)?.SamplingRule),
             })
             .ToArray();
-        foreach (var characteristic in measuredCharacteristics)
+        if (measuredCharacteristics.Length == 0)
         {
-            await sender.Send(
-                new EvaluateSpcControlChartCommand(
-                    integrationEvent.OrganizationId,
-                    integrationEvent.EnvironmentId,
-                    payload.SkuCode,
-                    characteristic.CharacteristicCode,
-                    plan.WorkCenterId,
-                    characteristic.SubgroupSize,
-                    Take: 125),
-                cancellationToken);
+            return;
         }
+
+        await QualityIntegrationEventInboxConsumption.ExecuteAsync(dbContext, ConsumerName, integrationEvent,
+            async () =>
+            {
+                foreach (var characteristic in measuredCharacteristics)
+                {
+                    await sender.Send(
+                        new EvaluateSpcControlChartCommand(
+                            integrationEvent.OrganizationId,
+                            integrationEvent.EnvironmentId,
+                            payload.SkuCode,
+                            characteristic.CharacteristicCode,
+                            plan.WorkCenterId,
+                            characteristic.SubgroupSize,
+                            Take: 125),
+                        cancellationToken);
+                }
+            }, cancellationToken);
     }
 
     private static int ResolveSubgroupSize(string? samplingRule)

@@ -1,3 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.Quality.Infrastructure;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
@@ -106,16 +110,31 @@ public sealed class QualityStartupGovernanceTests
     [Fact]
     public async Task Integration_event_dead_letter_store_uses_persistent_quality_db_store()
     {
-        await using var factory = CreateFactory();
-        using var scope = factory.Services.CreateScope();
-
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
-
-        Assert.True(
-            store.GetType().FullName?.StartsWith(
-                "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Quality.Infrastructure.ApplicationDbContext,",
-                StringComparison.Ordinal) is true,
-            $"Expected persistent Quality DB dead-letter store but received {store.GetType().FullName}.");
+        var database = $"quality-store-{Guid.CreateVersion7()}";
+        await using var factory = CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(database));
+        }));
+        var at = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+        var original = new IntegrationEventDeadLetterMessage(Guid.CreateVersion7(), "quality-store-probe", "original-event", "quality.test", 1,
+            "business-quality", "original-key", "fixture", "{}", "original", "preserved failure", IntegrationEventDeadLetterStatus.Pending, at, null);
+        using (var write = factory.Services.CreateScope())
+            await write.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>().AddAsync(original, CancellationToken.None);
+        using (var read = factory.Services.CreateScope())
+        {
+            var row = Assert.Single(await read.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .Set<IntegrationEventDeadLetter>().AsNoTracking().ToListAsync());
+            Assert.Equal(original.Id, row.Id);
+            Assert.Equal(original.EventId, row.EventId);
+            Assert.Equal(original.FailureMessage, row.FailureMessage);
+            await read.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>()
+                .MarkReplayedAsync(original.Id, at, CancellationToken.None);
+        }
+        using var freshRead = factory.Services.CreateScope();
+        Assert.Equal(IntegrationEventDeadLetterStatus.Replayed, (await freshRead.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .Set<IntegrationEventDeadLetter>().AsNoTracking().SingleAsync()).Status);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

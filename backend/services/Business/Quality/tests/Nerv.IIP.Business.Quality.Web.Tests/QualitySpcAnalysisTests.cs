@@ -240,6 +240,41 @@ public sealed class QualitySpcAnalysisTests
         Assert.Empty(deadLetters.Messages);
     }
 
+    // ADR0011 #19 and #4356: consumer dedup is distinct from direct evaluation commands.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Same_inspection_event_is_evaluated_once_and_records_completion_even_without_alert(bool hasTrend)
+    {
+        using var provider = CreateInMemoryMediatorProvider();
+        InspectionPlan plan;
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            plan = NewVariablePlan("IQP-SPC-INBOX", lowerSpecLimit: 9m, upperSpecLimit: 12m);
+            db.InspectionPlans.Add(plan);
+            AddMeasurements(db, plan, hasTrend
+                ? [10.0m, 10.1m, 10.2m, 10.3m, 10.4m, 10.5m, 10.6m, 10.7m, 10.8m, 10.9m, 11.0m, 11.1m]
+                : [10.0m]);
+            await db.SaveChangesAsync();
+        }
+        var original = NewInspectionResultEvent(plan);
+        for (var i = 0; i < 2; i++)
+        {
+            using var scope = provider.CreateScope();
+            await new InspectionResultIntegrationEventHandlerForEvaluateSpc(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                scope.ServiceProvider.GetRequiredService<ISender>(),
+                new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(original, CancellationToken.None);
+        }
+        var alerts = provider.GetRequiredService<RecordingIntegrationEventPublisher>().Published.OfType<SpcAlertRaisedIntegrationEvent>();
+        Assert.Equal(hasTrend ? 1 : 0, alerts.Count());
+        using var read = provider.CreateScope();
+        var inbox = Assert.Single(await read.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(original.EventId, inbox.EventId);
+        Assert.Equal(InspectionResultIntegrationEventHandlerForEvaluateSpc.ConsumerName, inbox.ConsumerName);
+    }
+
     [Fact]
     public async Task Spc_rule_detection_reports_maximal_trend_run()
     {

@@ -431,22 +431,9 @@ internal static class InspectionTaskGeneration
                 x.SourceDocumentId == normalizedSourceDocumentId &&
                 x.SourceDocumentLineId == normalizedSourceDocumentLineId &&
                 x.SkuCode == normalizedSkuCode)
-            ||
-            await dbContext.InspectionTasks.AnyAsync(
-                x => x.OrganizationId == organizationId &&
-                    x.EnvironmentId == environmentId &&
-                    x.TriggerIdempotencyKey == normalizedTriggerIdempotencyKey,
-                cancellationToken)
-            ||
-            await dbContext.InspectionTasks.AnyAsync(
-                x => x.OrganizationId == organizationId &&
-                    x.EnvironmentId == environmentId &&
-                    x.SourceType == normalizedSourceType &&
-                    x.SourceService == normalizedSourceService &&
-                    x.SourceDocumentId == normalizedSourceDocumentId &&
-                    x.SourceDocumentLineId == normalizedSourceDocumentLineId &&
-                    x.SkuCode == normalizedSkuCode,
-                cancellationToken))
+            || await TaskExistsAsync(dbContext, organizationId, environmentId, normalizedSourceType,
+                normalizedSourceService, normalizedSourceDocumentId, normalizedSourceDocumentLineId,
+                normalizedSkuCode, normalizedTriggerIdempotencyKey, cancellationToken))
         {
             return;
         }
@@ -531,22 +518,25 @@ internal static class InspectionTaskGeneration
         }
     }
 
-    private static Task<bool> TaskAlreadyExistsAsync(
-        ApplicationDbContext dbContext,
-        InspectionTask task,
-        CancellationToken cancellationToken)
+    private static Task<bool> TaskAlreadyExistsAsync(ApplicationDbContext dbContext, InspectionTask task, CancellationToken token) =>
+        TaskExistsAsync(dbContext, task.OrganizationId, task.EnvironmentId, task.SourceType, task.SourceService,
+            task.SourceDocumentId, task.SourceDocumentLineId, task.SkuCode, task.TriggerIdempotencyKey, token);
+
+    // One persisted business identity for generation and replay completion readback.
+    public static Task<bool> TaskExistsAsync(ApplicationDbContext dbContext, string organizationId, string environmentId,
+        string sourceType, string sourceService, string sourceDocumentId, string? sourceDocumentLineId,
+        string skuCode, string triggerIdempotencyKey, CancellationToken token)
     {
-        return dbContext.InspectionTasks.AnyAsync(
-            x =>
-                x.OrganizationId == task.OrganizationId &&
-                x.EnvironmentId == task.EnvironmentId &&
-                (x.TriggerIdempotencyKey == task.TriggerIdempotencyKey ||
-                    (x.SourceType == task.SourceType &&
-                     x.SourceService == task.SourceService &&
-                     x.SourceDocumentId == task.SourceDocumentId &&
-                     x.SourceDocumentLineId == task.SourceDocumentLineId &&
-                     x.SkuCode == task.SkuCode)),
-            cancellationToken);
+        var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
+        var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
+        var normalizedDocumentId = sourceDocumentId.Trim();
+        var normalizedLineId = string.IsNullOrWhiteSpace(sourceDocumentLineId) ? null : sourceDocumentLineId.Trim();
+        var normalizedSku = skuCode.Trim();
+        var normalizedKey = triggerIdempotencyKey.Trim();
+        return dbContext.InspectionTasks.AnyAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId
+            && (x.TriggerIdempotencyKey == normalizedKey || x.SourceType == normalizedSourceType
+                && x.SourceService == normalizedSourceService && x.SourceDocumentId == normalizedDocumentId
+                && x.SourceDocumentLineId == normalizedLineId && x.SkuCode == normalizedSku), token);
     }
 
     private static bool IsDuplicateInspectionTaskConflict(DbUpdateException exception)
