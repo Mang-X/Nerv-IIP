@@ -48,7 +48,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             createdDomainEvent = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(coordinator.Captured);
         }
         // #4342：CAP 的首次处置结论可能晚于返工请求；其空引用不得抹掉已创建工单。
-        await HandleInitialDispositionAsync(provider, integrationEvent);
+        await NcrReworkRequestedPostgresFixtures.HandleInitialDispositionAsync(provider, integrationEvent);
         await HandleAsync(provider, integrationEvent);
 
         await using var assertionScope = provider.CreateAsyncScope();
@@ -412,7 +412,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         await using var provider = await CreateMigratedProviderAsync();
         await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(eventId: "evt-missing-defect"));
         await NcrReworkRequestedPostgresFixtures.SeedSourceAsync(provider, "org-001", "env-dev");
-        await SeedDefectAsync(provider, "org-001", "env-dev", "DEF-OP-MISMATCH", "OP-OTHER");
+        await NcrReworkRequestedPostgresFixtures.SeedDefectAsync(provider, "org-001", "env-dev", "DEF-OP-MISMATCH", "OP-OTHER");
         await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-sku-mismatch",
             skuCode: "SKU-WRONG",
@@ -425,7 +425,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             eventId: "evt-operation-mismatch",
             sourceDefectNo: "DEF-OP-MISMATCH",
             idempotencyKey: "quality:rework:operation-wrong"));
-        await SeedSourceWithoutRoutingAsync(provider, "org-route-missing", "env-dev");
+        await NcrReworkRequestedPostgresFixtures.SeedSourceWithoutRoutingAsync(provider, "org-route-missing", "env-dev");
         await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-route-missing",
             organizationId: "org-route-missing",
@@ -506,7 +506,7 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
             workOrderLevelDefect: true);
 
         // 正常顺序：先接收空引用的首次处置结论，再实际建返工工单。
-        await HandleInitialDispositionAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
+        await NcrReworkRequestedPostgresFixtures.HandleInitialDispositionAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
         await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent());
         await HandleAsync(provider, NcrReworkRequestedPostgresFixtures.CreateEvent(
             eventId: "evt-other-scope",
@@ -850,81 +850,10 @@ public sealed class NcrReworkRequestedHandlerPostgresTests
         return provider;
     }
 
-    private static async Task SeedSourceWithoutRoutingAsync(
-        IServiceProvider provider,
-        string organizationId,
-        string environmentId)
-    {
-        await using var scope = provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        db.WorkOrders.Add(WorkOrder.Create(
-            organizationId,
-            environmentId,
-            "WO-SOURCE-NO-ROUTE",
-            "SKU-001",
-            "PV-001",
-            10m,
-            100,
-            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
-            "PCS"));
-        db.DefectRecords.Add(DefectRecord.Create(
-            organizationId,
-            environmentId,
-            "DEF-NO-ROUTE",
-            "WO-SOURCE-NO-ROUTE",
-            null,
-            "surface-defect",
-            3m,
-            DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
-        await db.SaveChangesAsync();
-    }
-
     private static async Task HandleAsync(IServiceProvider provider, NcrReworkRequestedIntegrationEvent integrationEvent)
     {
         await using var scope = provider.CreateAsyncScope();
         await CreateHandler(scope.ServiceProvider).HandleAsync(integrationEvent, CancellationToken.None);
-    }
-
-    private static async Task HandleInitialDispositionAsync(
-        IServiceProvider provider, NcrReworkRequestedIntegrationEvent reworkRequest)
-    {
-        var payload = reworkRequest.Payload;
-        var disposition = new NcrDispositionDecidedIntegrationEvent(
-            $"initial-{reworkRequest.EventId}", QualityIntegrationEventTypes.DispositionDecided,
-            QualityIntegrationEventVersions.V1, reworkRequest.OccurredAtUtc,
-            QualityIntegrationEventSources.BusinessQuality, reworkRequest.CorrelationId,
-            reworkRequest.CausationId, reworkRequest.OrganizationId, reworkRequest.EnvironmentId,
-            reworkRequest.Actor, $"initial-{reworkRequest.IdempotencyKey}",
-            new NcrDispositionDecidedPayload(
-                payload.NcrId, payload.NcrCode, payload.SkuCode, payload.Quantity,
-                QualityNcrDispositionTypes.Rework, "approval-4342", null, null, null,
-                payload.RequestedAtUtc) { SourceDocumentId = payload.SourceDefectNo });
-        await using var scope = provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
-                db, new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(db))
-            .HandleAsync(disposition, CancellationToken.None);
-    }
-
-    private static async Task SeedDefectAsync(
-        IServiceProvider provider,
-        string organizationId,
-        string environmentId,
-        string defectNo,
-        string operationTaskId)
-    {
-        await using var scope = provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        db.DefectRecords.Add(DefectRecord.Create(
-            organizationId,
-            environmentId,
-            defectNo,
-            "WO-SOURCE-001",
-            operationTaskId,
-            "surface-defect",
-            3m,
-            DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
-        await db.SaveChangesAsync();
     }
 
     private static NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder CreateHandler(

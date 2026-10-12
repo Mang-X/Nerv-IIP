@@ -5,6 +5,8 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -101,6 +103,77 @@ internal static class NcrReworkRequestedPostgresFixtures
             3m,
             DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
         await db.SaveChangesAsync();
+    }
+
+    public static async Task SeedSourceWithoutRoutingAsync(
+        IServiceProvider provider,
+        string organizationId,
+        string environmentId)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.WorkOrders.Add(WorkOrder.Create(
+            organizationId,
+            environmentId,
+            "WO-SOURCE-NO-ROUTE",
+            "SKU-001",
+            "PV-001",
+            10m,
+            100,
+            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
+            "PCS"));
+        db.DefectRecords.Add(DefectRecord.Create(
+            organizationId,
+            environmentId,
+            "DEF-NO-ROUTE",
+            "WO-SOURCE-NO-ROUTE",
+            null,
+            "surface-defect",
+            3m,
+            DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task SeedDefectAsync(
+        IServiceProvider provider,
+        string organizationId,
+        string environmentId,
+        string defectNo,
+        string operationTaskId)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.DefectRecords.Add(DefectRecord.Create(
+            organizationId,
+            environmentId,
+            defectNo,
+            "WO-SOURCE-001",
+            operationTaskId,
+            "surface-defect",
+            3m,
+            DateTimeOffset.Parse("2026-08-29T07:00:00Z")));
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task HandleInitialDispositionAsync(
+        IServiceProvider provider, NcrReworkRequestedIntegrationEvent reworkRequest)
+    {
+        var payload = reworkRequest.Payload;
+        var disposition = new NcrDispositionDecidedIntegrationEvent(
+            $"initial-{reworkRequest.EventId}", QualityIntegrationEventTypes.DispositionDecided,
+            QualityIntegrationEventVersions.V1, reworkRequest.OccurredAtUtc,
+            QualityIntegrationEventSources.BusinessQuality, reworkRequest.CorrelationId,
+            reworkRequest.CausationId, reworkRequest.OrganizationId, reworkRequest.EnvironmentId,
+            reworkRequest.Actor, $"initial-{reworkRequest.IdempotencyKey}",
+            new NcrDispositionDecidedPayload(
+                payload.NcrId, payload.NcrCode, payload.SkuCode, payload.Quantity,
+                QualityNcrDispositionTypes.Rework, "approval-4342", null, null, null,
+                payload.RequestedAtUtc) { SourceDocumentId = payload.SourceDefectNo });
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+                db, new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(db))
+            .HandleAsync(disposition, CancellationToken.None);
     }
 
     public static NcrReworkRequestedIntegrationEvent CreateEvent(
