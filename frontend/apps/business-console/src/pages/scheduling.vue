@@ -1202,7 +1202,7 @@ function reasonLabel(reason?: string | null) {
         />
         <section
           aria-label="草稿编辑操作"
-          class="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3 shadow-sm"
+          class="sticky top-14 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3 shadow-sm"
         >
           <div
             v-if="draft.modifiedUnlockedTaskIds.value.length > 0"
