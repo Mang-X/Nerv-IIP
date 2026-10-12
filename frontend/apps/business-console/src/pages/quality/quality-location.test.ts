@@ -527,6 +527,7 @@ describe('quality route location behavior', () => {
           defectQuantity: 2,
           defectReason: 'SURFACE',
           status: 'open',
+          reworkWorkOrderCreationStatus: 'not-requested',
         },
       ]
       routeState.route!.query = {
