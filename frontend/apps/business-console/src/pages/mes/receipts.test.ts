@@ -284,6 +284,31 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(notifySpies.success).toHaveBeenCalled()
   })
 
+  it('成本等待项携带原工单与登记单进入核实入口', async () => {
+    receiptState.rows = [
+      {
+        receiptRequestId: 'receipt-1',
+        requestNo: 'FGR-001',
+        workOrderId: 'WO-001',
+        receiptStatus: 'Requested',
+        unitCost: null,
+      },
+    ]
+    const wrapper = mountPage(['business.mes.receipts.read', 'business.dlq.read'])
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '核实成本等待项')!
+      .trigger('click')
+    expect(routerState.push).toHaveBeenCalledWith({
+      path: '/ops/dead-letters',
+      query: {
+        service: 'Erp',
+        workOrderId: 'WO-001',
+        receiptNo: 'FGR-001',
+      },
+    })
+  })
+
   it('hides the retry button for read-only users without receipts.manage', () => {
     const wrapper = mountPage(['business.mes.receipts.read'])
     const retry = wrapper

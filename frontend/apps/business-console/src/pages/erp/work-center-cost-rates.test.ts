@@ -5,8 +5,11 @@ import type {
 import { NvMetricStrip } from '@nerv-iip/ui'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { reactive, shallowRef } from 'vue'
 import WorkCenterCostRatesPage from './finance/work-center-cost-rates.vue'
+
+const queryState = reactive<Record<string, string>>({})
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: queryState }) }))
 
 const state = vi.hoisted(() => ({
   current: undefined as unknown,
@@ -75,6 +78,7 @@ function createState(items: BusinessConsoleErpWorkCenterCostRateItem[]) {
 }
 
 const stubs = {
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
   BusinessLayout: { template: '<main><slot /></main>' },
   NvSheet: {
     props: ['open'],
@@ -110,9 +114,31 @@ const history = () => [
 
 describe('工作中心费率', () => {
   beforeEach(() => {
+    for (const key of Object.keys(queryState)) delete queryState[key]
     state.permissionCodes = ['business.erp.finance.read', 'business.erp.finance.manage']
     data = createState(history())
     state.current = data
+  })
+
+  it('从等待事件进入时选中原工作中心，并返回同一事件和登记', async () => {
+    Object.assign(queryState, {
+      workCenterId: 'WC-OTHER',
+      workOrderId: 'WO-001',
+      operationTaskId: 'WO-001-OP-10',
+      service: 'Erp',
+      deadLetterId: 'dl-1',
+      receiptNo: 'FGR-001',
+      atUtc: '2026-10-10T02:00:00Z',
+    })
+    const wrapper = render()
+    await flushPromises()
+    expect(data.workCenterId.value).toBe('WC-OTHER')
+    expect(wrapper.text()).toContain('WO-001-OP-10')
+    const link = wrapper.findAll('a').find((a) => a.text() === '返回等待事件')!
+    const query = new URL(link.attributes('href')!, 'http://localhost').searchParams
+    expect(query.get('deadLetterId')).toBe('dl-1')
+    expect(query.get('service')).toBe('Erp')
+    expect(query.get('receiptNo')).toBe('FGR-001')
   })
 
   it('以当前生效修订为当前费率，并区分被取代、未生效与已过期的修订', async () => {

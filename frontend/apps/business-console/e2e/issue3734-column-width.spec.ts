@@ -55,7 +55,7 @@ test('NvDataTable：声明宽 == 渲染宽，Tailwind 类与 CSS 尺寸两种写
     { header: '单位成本', expectedPx: 112, style: 'class' },
     { header: '入库状态', expectedPx: 192, style: 'class' },
     { header: '登记时间', expectedPx: 176, style: 'dimension' },
-    { header: '操作', expectedPx: 112, style: 'class' },
+    { header: '操作', expectedPx: 208, style: 'class' },
   ])
 
   // 票面验收第 2 条：〈入库状态〉的徽标完整显示，不再被截成一个字。

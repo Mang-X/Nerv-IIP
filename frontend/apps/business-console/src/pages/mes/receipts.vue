@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { receiptPendingReason } from '@nerv-iip/business-core'
+import { queryText } from '@/components/erp/costRecovery'
 import ReceiptCreateSheet from '@/components/mes/ReceiptCreateSheet.vue'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
@@ -63,6 +64,28 @@ const { resolveSku } = useMesDisplayNames()
 
 const route = useRoute()
 const router = useRouter()
+watch(
+  () => [route.query.workOrderId, route.query.receiptNo],
+  () => {
+    filters.workOrderId = queryText(route.query, 'workOrderId') || undefined
+    filters.keyword = queryText(route.query, 'receiptNo') || undefined
+    resetPage()
+  },
+  { immediate: true },
+)
+const canReadWaitingEvents = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.deadLettersRead),
+)
+function openWaitingEvents(row: ReceiptRow) {
+  void router.push({
+    path: '/ops/dead-letters',
+    query: {
+      service: 'Erp',
+      workOrderId: row.workOrderId,
+      receiptNo: row.requestNo,
+    },
+  })
+}
 const receiptSheetOpen = shallowRef(false)
 const quickViewWorkOrderId = ref<string | null>(null)
 
@@ -167,7 +190,7 @@ const columns: NvDataTableColumn<ReceiptRow>[] = [
   // 〈登记时间〉用 CSS 尺寸写法：`w-*` 与尺寸串是 `width` 的两种等价写法，
   // 票面要求两种都验到，这里给它一份真实的生产用法（#3734）。
   { key: 'requestedAtUtc', header: '登记时间', width: '176px' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-52' },
 ]
 
 function openWorkOrder(workOrderId?: string | null) {
@@ -255,6 +278,13 @@ function isNonEmpty(value: string) {
       </template>
     </NvPageHeader>
 
+    <p v-if="filters.workOrderId" class="my-3 text-sm">
+      当前工单 {{ filters.workOrderId
+      }}<template v-if="filters.keyword"> · 完工登记 {{ filters.keyword }}</template>
+      <NvButton size="sm" variant="outline" @click="router.replace({ query: {} })"
+        >查看全部登记</NvButton
+      >
+    </p>
     <NvToolbar :show-search="false">
       <template #filters>
         <NvSelect v-model="statusFilter">
@@ -356,6 +386,19 @@ function isNonEmpty(value: string) {
             <RotateCcwIcon v-else aria-hidden="true" />
             重试
           </NvButton>
+          <NvButton
+            v-if="
+              canReadWaitingEvents &&
+              row.workOrderId &&
+              row.receiptStatus === 'Requested' &&
+              row.unitCost == null
+            "
+            size="sm"
+            type="button"
+            variant="outline"
+            @click="openWaitingEvents(row)"
+            >核实成本等待项</NvButton
+          >
           <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderNo ?? ''}`">
             <NvDropdownMenuItem
               :disabled="!row.workOrderId"
