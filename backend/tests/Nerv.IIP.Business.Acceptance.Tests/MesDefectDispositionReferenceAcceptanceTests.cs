@@ -191,7 +191,7 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
         Assert.Equal(DefectRecord.ScrapAcceptedStatus, scrap.Status);
         Assert.Null(scrap.DispositionReferenceId);
         var closedDeadLetter = Assert.Single(await deadLetters.ListAsync(
-            "business-mes.quality-ncr-closed", null, CancellationToken.None));
+            NcrClosedIntegrationEventHandlerForUpdateMesDefect.ConsumerName, null, CancellationToken.None));
         Assert.Equal(MesDefectDispositionReferenceIdPolicy.OverlongFailureCode, closedDeadLetter.FailureCode);
         Assert.DoesNotContain(overBound, closedDeadLetter.FailureMessage, StringComparison.Ordinal);
     }
