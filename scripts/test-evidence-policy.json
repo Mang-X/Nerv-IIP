@@ -1276,7 +1276,7 @@
       "id": "industrialtelemetry-postgres",
       "sourceId": "industrialtelemetry-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.IndustrialTelemetry\\.Web\\.Tests\\.(?:IndustrialTelemetryDeviceControlReadFaceTests|IndustrialTelemetryHistorianTests|IndustrialTelemetryIdempotentConcurrencyTests|IndustrialTelemetryOeeAggregatePostgresTests|IndustrialTelemetryOeeHistoricalFactPostgresTests|IndustrialTelemetryOeePostgresQueryTests|WorldHistoryDeviceSeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.IndustrialTelemetry\\.Web\\.Tests\\.(?:IndustrialTelemetryDeadLetterReplayPostgresTests|IndustrialTelemetryDeviceControlReadFaceTests|IndustrialTelemetryHistorianTests|IndustrialTelemetryIdempotentConcurrencyTests|IndustrialTelemetryOeeAggregatePostgresTests|IndustrialTelemetryOeeHistoricalFactPostgresTests|IndustrialTelemetryOeePostgresQueryTests|WorldHistoryDeviceSeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL IndustrialTelemetry regressions\\.$",
       "allowedLanes": [
         "backend"
@@ -1287,6 +1287,8 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeadLetterReplayPostgresTests.Original_attempt_outcomes_recover_without_false_success_or_duplicate_effects_on_postgres",
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeadLetterReplayPostgresTests.Oee_replays_original_report_and_reversal_only_when_source_facts_exist_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeviceControlReadFaceTests.History_filters_by_device_status_and_time_window_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryHistorianTests.Postgres_downsampling_executes_pending_window_antijoin_queries",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests.Concurrent_shelve_with_same_key_replays_the_loser_on_postgres",
@@ -1305,7 +1307,7 @@
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Oee_query_filters_production_facts_by_datetimeoffset_window_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests.Full_scale_device_history_seed_stays_within_the_startup_budget_and_reruns_clean"
       ],
-      "expectedRuntimeTestCount": 17
+      "expectedRuntimeTestCount": 19
     },
     {
       "id": "maintenance-world-history",
