@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Business.Inventory.Web;
 using System.Text.Json;
 using FastEndpoints;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.DeadLetters;
@@ -101,6 +102,7 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
+    builder.Services.AddInventoryDeadLetterReplay();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IInventoryIntegrationEventContextAccessor, HttpInventoryIntegrationEventContextAccessor>();

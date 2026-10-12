@@ -1279,7 +1279,7 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
-    public async Task Inventory_registers_persistent_integration_event_dead_letter_store()
+    public async Task Inventory_registers_original_consumers_for_dead_letter_replay()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -1290,11 +1290,24 @@ public sealed class InventoryEndpointContractTests
             });
 
         using var scope = factory.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
-
-        Assert.Equal(
-            "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext, Nerv.IIP.Business.Inventory.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
-            store.GetType().FullName);
+        var handlers = scope.ServiceProvider.GetServices<IIntegrationEventDeadLetterReplayHandler>().ToArray();
+        // Durable storage behavior is covered by InventoryDeadLetterReplayPostgresTests.
+        // This fast probe verifies that the actual host reaches every declared production consumer.
+        var consumerTypes = typeof(Program).Assembly.GetTypes().Where(type =>
+            type.Namespace == "Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers"
+            && type.GetInterfaces().Any(contract => contract.IsGenericType
+                && contract.GetGenericTypeDefinition() == typeof(NetCorePal.Extensions.DistributedTransactions.IIntegrationEventHandler<>)));
+        foreach (var consumer in consumerTypes)
+        {
+            var contract = consumer.GetInterfaces().Single(type => type.IsGenericType
+                && type.GetGenericTypeDefinition() == typeof(NetCorePal.Extensions.DistributedTransactions.IIntegrationEventHandler<>));
+            var consumerName = (string)consumer.GetField("ConsumerName")!.GetValue(null)!;
+            var message = new IntegrationEventDeadLetterMessage(Guid.NewGuid(), consumerName, "event", "type", 1, "source", "key",
+                contract.GenericTypeArguments[0].FullName!, "{}", "original", "original failure", IntegrationEventDeadLetterStatus.Pending,
+                DateTimeOffset.Parse("2026-10-01T00:00:00Z"), null);
+            Assert.Single(handlers, handler => handler.CanReplay(message));
+        }
+        Assert.Equal(4, handlers.Length);
     }
 
     [Fact]
