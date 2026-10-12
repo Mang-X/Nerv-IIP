@@ -587,7 +587,7 @@ try {
     Assert-Contract ($qualityPinnedBuilders -eq 7) 'The Quality lane sources must keep exactly their seven pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 16) 'The IndustrialTelemetry member must freeze exactly its sixteen governed PostgreSQL identities.'
+    Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 18) 'The IndustrialTelemetry member must freeze exactly its eighteen governed PostgreSQL identities.'
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember

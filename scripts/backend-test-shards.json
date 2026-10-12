@@ -203,6 +203,7 @@
         "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj"
       ],
       "excludedTestClasses": [
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeadLetterReplayPostgresTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests",
         "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests"

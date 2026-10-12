@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Business.IndustrialTelemetry.Web;
 using System.Text.Json;
 using FastEndpoints;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.DeadLetters;
@@ -120,6 +121,7 @@ try
             x.UseDashboard();
         });
     }
+    builder.Services.AddIndustrialTelemetryDeadLetterReplay();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
 
     builder.Services.AddMediatR(cfg =>
