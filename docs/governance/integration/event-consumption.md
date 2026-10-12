@@ -40,3 +40,9 @@
 3. “没有内部消费者”不自动是缺陷。审计事实、外部扩展事实或查询面已经覆盖的交接可以合法保持 producer-only/audit-only。
 4. Issue 编号可以作为 provenance 链接，但完成/开放状态、日期化复核过程和一次性扫描结果不得写成 Reference 的当前权威字段。
 5. 不为事件矩阵新增永久扫描 registry 或自然语言 checker；如果某个关键消费关系必须机器保证，应在真正契约/消费者测试中验证。
+
+## 死信重放接入
+
+重放按原 `ConsumerName` 与事件 CLR 类型显式声明，调用该消费者的原处理入口，保留原信封与载荷。不得广播重投或按事件类型任取第一个消费者。未声明的组合返回 `NoHandler`，原行保持不变。
+
+共享声明入口与拒绝观察由 [`DeclaredIntegrationEventDeadLetterReplay.cs`](../../../backend/common/Messaging/Nerv.IIP.Messaging.CAP/DeclaredIntegrationEventDeadLetterReplay.cs) 拥有：服务先用 `AddObservedIntegrationEventDeadLetterStore` 包装已有 store，再用 `AddIntegrationEventDeadLetterReplay<TEvent, TConsumer>` 提供消费调用和持久完成事实读回。消费期间同一消费者、事件类型与事件身份重新写死信，或持久完成事实不存在，均不得标为成功；异常沿用执行器失败处理。服务负责沿用原事务与 inbox，不在共享模块写业务规则。ERP 的接入样例见 [`ErpDeadLetterReplayServiceCollectionExtensions.cs`](../../../backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/ErpDeadLetterReplayServiceCollectionExtensions.cs)。

@@ -298,7 +298,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
         return ReceiptProjectionDecision.Record;
     }
 
-    private static bool IsPurchaseOrderSource(string sourceDocumentType)
+    internal static bool IsPurchaseOrderSource(string? sourceDocumentType)
     {
         return string.Equals(sourceDocumentType, WmsSourceDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase)
             || string.Equals(sourceDocumentType, "erp-purchase-order", StringComparison.OrdinalIgnoreCase);
