@@ -2424,13 +2424,13 @@ public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext, M
 
     public async Task<MesAcceptedResponse> Handle(RecordDefectCommand request, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.WorkOrders.AnyAsync(
+        var workOrder = await dbContext.WorkOrders.AsNoTracking().SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderIdValue == request.WorkOrderId,
             cancellationToken);
 
-        if (!exists)
+        if (workOrder is null)
         {
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
@@ -2470,7 +2470,8 @@ public sealed class RecordDefectCommandHandler(ApplicationDbContext dbContext, M
             request.OperationTaskId,
             request.DefectCode,
             request.Quantity,
-            request.RecordedAtUtc);
+            request.RecordedAtUtc,
+            workOrder.SkuId);
         dbContext.DefectRecords.Add(defect);
         return new MesAcceptedResponse("Accepted", defect.DefectNo, request.RecordedAtUtc);
     }
