@@ -366,19 +366,13 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
             />
           </NvTabsContent>
           <NvTabsContent value="table" class="max-h-[34rem] overflow-auto rounded-md border">
-            <table class="w-full text-sm">
-              <thead class="sticky top-0 z-10 bg-muted text-left [&_th]:whitespace-nowrap">
+            <table class="w-full table-fixed text-sm">
+              <thead class="sticky top-0 z-10 bg-muted text-left">
                 <tr>
-                  <th class="p-2">工单 / 工序</th>
-                  <th class="p-2">实际排程段</th>
-                  <th class="p-2">资源</th>
-                  <th class="p-2">开始</th>
-                  <th class="p-2">结束</th>
-                  <th class="p-2">方案物料风险</th>
-                  <th class="p-2">方案设备风险</th>
-                  <th class="p-2">锁定</th>
-                  <th class="p-2">待排</th>
-                  <th class="p-2">即时反馈 / 交期差</th>
+                  <th class="w-[22%] p-2">工单 / 工序</th>
+                  <th class="w-[30%] p-2">资源与时间</th>
+                  <th class="w-[22%] p-2">锁定 / 待排</th>
+                  <th class="w-[26%] p-2">即时反馈 / 风险</th>
                 </tr>
               </thead>
               <tbody>
@@ -387,17 +381,46 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                     (item) => item.type === 'operation' && !item.blockKind,
                   )"
                   :key="task.id"
-                  class="border-t"
+                  class="border-t align-top"
                 >
-                  <td class="min-w-64 p-2">
+                  <td class="break-words p-2">
                     <p class="font-medium">{{ task.orderId }} · {{ task.operationId }}</p>
                     <TaskFacts :task="task" class="mt-2" />
                   </td>
-                  <td class="p-2">
+                  <td class="space-y-2 p-2">
+                    <p class="text-xs text-muted-foreground">资源</p>
+                    <NvEntityPicker
+                      class="w-full"
+                      :disabled="readOnly || task.locked"
+                      :model-value="task.resourceId"
+                      :options="resourceOptions"
+                      title="选择资源"
+                      placeholder="选择资源"
+                      empty-text="本排程没有可用资源"
+                      :show-code="false"
+                      :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
+                      @update:model-value="emit('update', task.id, { resourceId: $event })"
+                    />
+                    <p class="text-xs text-muted-foreground">开始</p>
+                    <NvInput
+                      class="h-8 w-full min-w-0"
+                      :aria-label="`${task.orderId} · ${task.operationId} 的开始时间`"
+                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
+                      :model-value="task.startUtc"
+                      @update:model-value="emit('update', task.id, { startUtc: String($event) })"
+                    />
+                    <p class="text-xs text-muted-foreground">结束</p>
+                    <NvInput
+                      class="h-8 w-full min-w-0"
+                      :aria-label="`${task.orderId} · ${task.operationId} 的结束时间`"
+                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
+                      :model-value="task.endUtc"
+                      @update:model-value="emit('update', task.id, { endUtc: String($event) })"
+                    />
                     <p
                       v-for="(segment, index) in task.segments"
                       :key="index"
-                      class="whitespace-nowrap text-xs"
+                      class="break-words text-xs"
                     >
                       第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
                       {{ formatDateTime(segment.endUtc) }}
@@ -410,55 +433,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                     </p>
                     <span v-else class="text-xs text-muted-foreground">连续排程</span>
                   </td>
-                  <td class="p-2">
-                    <NvEntityPicker
-                      class="min-w-40"
-                      :disabled="readOnly || task.locked"
-                      :model-value="task.resourceId"
-                      :options="resourceOptions"
-                      title="选择资源"
-                      placeholder="选择资源"
-                      empty-text="本排程没有可用资源"
-                      :show-code="false"
-                      :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
-                      @update:model-value="emit('update', task.id, { resourceId: $event })"
-                    />
-                  </td>
-                  <td class="p-2">
-                    <NvInput
-                      class="h-8 min-w-48"
-                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
-                      :model-value="task.startUtc"
-                      @update:model-value="emit('update', task.id, { startUtc: String($event) })"
-                    />
-                  </td>
-                  <td class="p-2">
-                    <NvInput
-                      class="h-8 min-w-48"
-                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
-                      :model-value="task.endUtc"
-                      @update:model-value="emit('update', task.id, { endUtc: String($event) })"
-                    />
-                  </td>
-                  <td class="p-2">
-                    <span
-                      v-if="task.materialRisk"
-                      class="inline-flex items-center rounded border border-warning/50 bg-warning/10 px-1.5 text-xs font-semibold text-warning"
-                      :title="task.materialRisk.message"
-                      >缺料待备</span
-                    >
-                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
-                  </td>
-                  <td class="p-2">
-                    <span
-                      v-if="task.equipmentRisk"
-                      class="inline-flex items-center rounded border border-border bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
-                      :title="task.equipmentRisk.message"
-                      >状态未知</span
-                    >
-                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
-                  </td>
-                  <td class="p-2">
+                  <td class="space-y-2 p-2">
                     <div class="flex flex-wrap items-center gap-1.5">
                       <NvButton
                         size="sm"
@@ -497,8 +472,6 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                         title="该工序的资源与起止时间已固定，之后重新排程也保持不变。刷新页面后此标记不再显示，但锁定仍然有效。"
                       />
                     </div>
-                  </td>
-                  <td class="p-2">
                     <NvButton
                       size="sm"
                       variant="ghost"
@@ -508,8 +481,24 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                       >移回待排</NvButton
                     >
                   </td>
-                  <td class="min-w-64 p-2">
+                  <td class="space-y-2 break-words p-2">
                     <SchedulingDraftFeedback :feedback="feedback?.tasks[task.id]" />
+                    <p class="text-xs text-muted-foreground">方案物料风险</p>
+                    <span
+                      v-if="task.materialRisk"
+                      class="inline-flex items-center rounded border border-warning/50 bg-warning/10 px-1.5 text-xs font-semibold text-warning"
+                      :title="task.materialRisk.message"
+                      >缺料待备</span
+                    >
+                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
+                    <p class="text-xs text-muted-foreground">方案设备风险</p>
+                    <span
+                      v-if="task.equipmentRisk"
+                      class="inline-flex items-center rounded border border-border bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
+                      :title="task.equipmentRisk.message"
+                      >状态未知</span
+                    >
+                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
                   </td>
                 </tr>
               </tbody>
