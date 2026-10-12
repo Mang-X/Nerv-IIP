@@ -385,7 +385,10 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                 >
                   <td class="break-words p-2">
                     <p class="font-medium">{{ task.orderId }} · {{ task.operationId }}</p>
-                    <TaskFacts :task="task" class="mt-2" />
+                    <TaskFacts
+                      :task="task"
+                      class="mt-2 [&_dl>div]:flex-col [&_dl>div]:gap-0.5 [&_dd]:min-w-0 [&_dd]:text-left [&_dd]:[overflow-wrap:anywhere]"
+                    />
                   </td>
                   <td class="space-y-2 p-2">
                     <p class="text-xs text-muted-foreground">资源</p>
