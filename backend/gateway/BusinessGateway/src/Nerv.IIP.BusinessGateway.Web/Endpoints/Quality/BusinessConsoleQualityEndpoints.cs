@@ -1583,3 +1583,30 @@ public sealed class CompleteBusinessConsoleQualityCapaActionEndpoint(
             RequireAuthorizedPrincipalId(),
             cancellationToken);
 }
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/capas/{correctiveActionId}/effectiveness")]
+[BusinessGatewayOperationId("verifyBusinessConsoleQualityCapaEffectiveness")]
+public sealed class VerifyBusinessConsoleQualityCapaEffectivenessEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleVerifyQualityCapaEffectivenessRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityNcrManage)
+{
+    protected override string OrganizationId(BusinessConsoleVerifyQualityCapaEffectivenessRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleVerifyQualityCapaEffectivenessRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleVerifyQualityCapaEffectivenessRequest request) => "capa";
+    protected override string? ResourceId(BusinessConsoleVerifyQualityCapaEffectivenessRequest request) => request.CorrectiveActionId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleVerifyQualityCapaEffectivenessRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.VerifyCorrectiveActionEffectivenessAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
+}

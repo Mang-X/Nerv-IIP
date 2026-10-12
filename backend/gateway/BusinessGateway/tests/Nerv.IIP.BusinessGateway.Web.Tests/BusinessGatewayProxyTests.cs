@@ -34,6 +34,56 @@ public sealed class BusinessGatewayProxyTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public async Task Capa_effectiveness_requires_manage_permission_and_forwards_trusted_actor(bool allowed)
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new { success = true, data = new { accepted = true } });
+        });
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed() : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(new HttpBusinessQualityClient(downstream));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/quality/capas/capa-001/effectiveness",
+            new { organizationId = "org-001", environmentId = "env-dev", result = "No recurrence", effectivenessInspectionRecordId = "inspection-001", verifiedAtUtc = "2026-10-12T08:00:00Z", verifiedByUserId = "forged-user" });
+
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.QualityNcrManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("capa", auth.LastRequirement.ResourceType);
+        Assert.Equal("capa-001", auth.LastRequirement.ResourceId);
+        if (!allowed)
+        {
+            Assert.Empty(handler.Requests);
+            return;
+        }
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal("/api/business/v1/quality/capas/capa-001/effectiveness", forwarded.RequestUri!.AbsolutePath);
+        Assert.Equal("internal-test-token", forwarded.Headers.Authorization!.Parameter);
+        using var body = JsonDocument.Parse(requestBody!);
+        Assert.Equal("user-admin", body.RootElement.GetProperty("verifiedByUserId").GetString());
+        Assert.Equal("org-001", body.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", body.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("capa-001", body.RootElement.GetProperty("correctiveActionId").GetString());
+        Assert.Equal("inspection-001", body.RootElement.GetProperty("effectivenessInspectionRecordId").GetString());
+        Assert.Equal("No recurrence", body.RootElement.GetProperty("result").GetString());
+        Assert.Equal(DateTimeOffset.Parse("2026-10-12T08:00:00Z"), body.RootElement.GetProperty("verifiedAtUtc").GetDateTimeOffset());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public async Task Capa_action_completion_requires_manage_permission_and_forwards_trusted_actor(bool allowed)
     {
         string? requestBody = null;
@@ -18658,6 +18708,12 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
             ],
             1));
     }
+
+    public Task<BusinessConsoleAcceptedResponse> VerifyCorrectiveActionEffectivenessAsync(
+        string internalBearerToken,
+        BusinessConsoleVerifyQualityCapaEffectivenessRequest request,
+        string actor,
+        CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleAcceptedResponse(true));
 
     public Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
         string internalBearerToken,
