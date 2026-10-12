@@ -33,6 +33,7 @@ import { computed, reactive, shallowRef } from 'vue'
 import { useErpWorkCenterMachineOverheadRates } from '@/composables/useErpCostAccounting'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { currencyOptionsIncluding } from '@/data/currencyReference'
+import FoundationReturnContext from '@/components/erp/FoundationReturnContext.vue'
 import CostRecoveryContext from '@/components/erp/CostRecoveryContext.vue'
 import { queryText } from '@/components/erp/costRecovery'
 import { useRoute } from 'vue-router'
@@ -214,6 +215,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
+    <FoundationReturnContext />
     <CostRecoveryContext />
     <NvToolbar :show-search="false">
       <template #filters>

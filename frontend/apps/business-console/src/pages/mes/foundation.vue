@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleMesReadinessArea,
-  BusinessConsoleMesReadinessIssue,
-} from '@nerv-iip/api-client'
+import type { BusinessConsoleMesReadinessArea } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesFoundationReadiness } from '@/composables/useBusinessMes'
 import {
@@ -24,6 +21,8 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import FoundationIssues from '@/components/mes/FoundationIssues.vue'
 import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
@@ -34,6 +33,7 @@ definePage({
   },
 })
 
+const route = useRoute()
 const { filters, readiness, readinessError, readinessPending, refreshReadiness } =
   useMesFoundationReadiness()
 
@@ -69,6 +69,18 @@ const productionVersionValue = scopeModel('productionVersionId')
 const lineChoices = computed(() => lineOptions(siteValue.value))
 const workCenterChoices = computed(() => workCenterOptions(siteValue.value, lineValue.value))
 const productionVersionChoices = computed(() => productionVersionOptions(skuValue.value))
+
+// 注册层级 watcher 前恢复整组范围，避免清掉合法子级。
+for (const field of [
+  'siteCode',
+  'lineCode',
+  'workCenterCode',
+  'skuId',
+  'productionVersionId',
+] as const) {
+  const value = route.query[field]
+  if (typeof value === 'string') filters[field] = value
+}
 
 // 层级规则：上游一变，下游已选值立即作废（否则会留下「A 厂 + B 厂产线」这种不存在的组合）。
 watch(siteValue, () => {
@@ -110,27 +122,24 @@ const issueSegments = computed(() => [
   { key: 'blocking', label: '阻塞', value: blockingIssues.value.length, tone: 'danger' as const },
   { key: 'warning', label: '警告', value: warningIssues.value.length, tone: 'warning' as const },
 ])
-// 就绪卡的落点是「现在能不能开工、下一步做什么」，不是复述状态码。
+// 就绪卡的落点是「基础缺项是什么、下一步做什么」，不是复述状态码。
 const readinessGuidance = computed(() => {
   // 读失败与「还没查」是两种状态：错误条已删，卡片自己不能把失败说成未发起（#2946）。
   if (readinessError.value)
-    return '就绪检查结果没取到，先在下方表格里重试读取，再据此判断能否开工。'
-  if (!readiness.value) return '填写上方范围后点「重新检查」，按工厂、产线或工作中心核对开工条件。'
-  if (blockingIssues.value.length) return '先逐条清掉阻塞项，再回到工单与派工下达生产。'
-  if (warningIssues.value.length) return '警告不阻断开工，建议开工前确认一遍再放行。'
-  return '各检查区域均已就绪，可以进入工单与派工下达生产。'
+    return '就绪检查结果没取到，先在下方表格里重试读取，再判断基础准备缺项。'
+  if (!readiness.value)
+    return '填写上方范围后点「重新检查」，按工厂、产线或工作中心核对基础准备条件。'
+  if (blockingIssues.value.length) return '先按下方类别补齐基础数据，再重新检查。'
+  if (warningIssues.value.length) return '基础检查有提醒，请查看对象明细并确认。'
+  return '已检查的基础区域均已就绪；工序能否开工仍以工序开工检查为准。'
 })
 const readinessStatusPill = computed(() => {
   if (readinessError.value) return { label: '结论未取得', tone: 'neutral' as const }
   if (!readiness.value) return { label: '尚未检查', tone: 'neutral' as const }
-  if (blockingIssues.value.length) return { label: '不能开工', tone: 'danger' as const }
-  if (warningIssues.value.length) return { label: '可开工，有提醒', tone: 'warning' as const }
-  return { label: '可以开工', tone: 'success' as const }
+  if (blockingIssues.value.length) return { label: '基础准备有阻塞', tone: 'danger' as const }
+  if (warningIssues.value.length) return { label: '基础准备有提醒', tone: 'warning' as const }
+  return { label: '基础准备就绪', tone: 'success' as const }
 })
-
-function issueText(issue: BusinessConsoleMesReadinessIssue) {
-  return issue.message ?? issue.code ?? '未命名问题'
-}
 
 const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
   { key: 'areaCode', header: '检查区域', cellClass: 'font-medium', width: 'w-40' },
@@ -161,8 +170,8 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
     </NvPageHeader>
 
     <p class="text-sm text-muted-foreground">
-      开工、释放、派工前的辅助就绪检查；不替代主数据 / 工程 / 库存 /
-      质量各自的维护入口。可选填范围缩小检查。
+      按所选范围核对基础准备缺项。此检查不核验员工与技能、人员授权或具体工序的开工条件，
+      不能据此宣称现场派工就绪。工序开工以具体工序的检查结果为准。
     </p>
 
     <div class="grid gap-3 rounded-lg border bg-card p-4">
@@ -247,7 +256,7 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <NvMetricCard
         variant="alert"
-        label="开工就绪"
+        label="基础准备"
         :value="overall.label"
         :tone="overall.tone"
         :status="readinessStatusPill"
@@ -263,25 +272,6 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
         unit="项"
         :segments="issueSegments"
       />
-    </div>
-
-    <!-- IA：就绪检查的核心是「什么挡着我开工」——阻塞项前置成醒目清单。 -->
-    <div
-      v-if="blockingIssues.length"
-      class="grid gap-1 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm"
-      role="alert"
-    >
-      <span class="font-medium text-destructive"
-        >{{ blockingIssues.length }} 项阻塞，需先处理：</span
-      >
-      <ul class="ml-4 list-disc text-destructive/90">
-        <li v-for="(issue, i) in blockingIssues" :key="i">
-          {{ issueText(issue) }}
-          <span v-if="issue.fixHint" class="block text-destructive/80"
-            >去处理：{{ issue.fixHint }}</span
-          >
-        </li>
-      </ul>
     </div>
 
     <NvDataTable
@@ -301,15 +291,7 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
         <NvStatusBadge :label="statusMeta(row.status).label" :tone="statusMeta(row.status).tone" />
       </template>
       <template #cell-issues="{ row }">
-        <div v-if="row.issues?.length" class="grid gap-1">
-          <div v-for="(issue, i) in row.issues" :key="i">
-            <span>{{ issueText(issue) }}</span>
-            <span v-if="issue.fixHint" class="block text-xs text-muted-foreground"
-              >去处理：{{ issue.fixHint }}</span
-            >
-          </div>
-        </div>
-        <span v-else class="text-muted-foreground">无问题</span>
+        <FoundationIssues :issues="row.issues ?? []" :filters="filters" />
       </template>
     </NvDataTable>
   </BusinessLayout>
