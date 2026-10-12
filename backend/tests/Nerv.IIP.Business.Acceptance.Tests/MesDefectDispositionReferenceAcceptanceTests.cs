@@ -3,14 +3,17 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DistributedTransactions;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
@@ -83,8 +86,43 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
             var consumer = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(dbContext, deadLetters);
 
             await consumer.HandleAsync(
-                DispositionEvent($"evt-4342-{dispositionType}", DefectNo, referenceId, dispositionType),
+                DispositionEvent($"evt-4342-{dispositionType}", DefectNo,
+                    dispositionType == QualityNcrDispositionTypes.Scrap ? null : referenceId, dispositionType),
                 CancellationToken.None);
+
+            if (dispositionType == QualityNcrDispositionTypes.Scrap)
+            {
+                var closed = ClosedEvent("evt-4342-scrap-closed", referenceId);
+                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
+                {
+                    OrganizationId = "other-org", EventId = "evt-4342-other-org", IdempotencyKey = "quality:closed:other-org",
+                });
+                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
+                {
+                    EnvironmentId = "other-env", EventId = "evt-4342-other-env", IdempotencyKey = "quality:closed:other-env",
+                });
+                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
+                {
+                    EventId = "evt-4342-other-ncr",
+                    IdempotencyKey = "quality:ncr-closed:other-ncr",
+                    Payload = closed.Payload with { NcrId = "other-ncr" },
+                });
+                dbContext.ChangeTracker.Clear();
+                Assert.Null((await dbContext.DefectRecords.AsNoTracking().SingleAsync()).DispositionReferenceId);
+
+                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed);
+                dbContext.ChangeTracker.Clear();
+                Assert.Equal(referenceId, (await dbContext.DefectRecords.AsNoTracking().SingleAsync()).DispositionReferenceId);
+                // 同一关闭事实重投不改引用；首次空引用结论晚到也不能清空关闭结果。
+                await HandleRegisteredClosedAsync(dbContext, deadLetters, closed with
+                {
+                    EventId = "evt-4342-scrap-closed-replay",
+                    Payload = closed.Payload with { ScrapMovementId = "wrong-movement" },
+                });
+                await consumer.HandleAsync(
+                    DispositionEvent("evt-4342-scrap-initial-late", DefectNo, null, dispositionType),
+                    CancellationToken.None);
+            }
 
             dbContext.ChangeTracker.Clear();
             var defect = await dbContext.DefectRecords.AsNoTracking().SingleAsync();
@@ -97,6 +135,10 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
             Assert.Equal("NCR-2026-3318", defect.NcrCode);
             Assert.Equal(WorkOrderId, defect.WorkOrderId);
             Assert.Equal("OP-3318-10", defect.OperationTaskId);
+            if (dispositionType == QualityNcrDispositionTypes.Scrap)
+            {
+                Assert.Equal(DateTimeOffset.Parse("2026-09-10T04:00:00Z"), defect.ClosedAtUtc);
+            }
             Assert.Equal(Sku, (await dbContext.WorkOrders.AsNoTracking().SingleAsync()).SkuId);
             Assert.Empty(await deadLetters.ListAsync(null, null, CancellationToken.None));
         }
@@ -139,6 +181,19 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
             deadLetter.FailureMessage,
             StringComparison.Ordinal);
         Assert.DoesNotContain(overBound, deadLetter.FailureMessage, StringComparison.Ordinal);
+
+        await consumer.HandleAsync(
+            DispositionEvent("evt-4342-scrap-before-over-bound-close", DefectNo, null, QualityNcrDispositionTypes.Scrap),
+            CancellationToken.None);
+        await HandleRegisteredClosedAsync(dbContext, deadLetters, ClosedEvent("evt-4342-over-bound-close", overBound));
+        dbContext.ChangeTracker.Clear();
+        var scrap = await dbContext.DefectRecords.AsNoTracking().SingleAsync();
+        Assert.Equal(DefectRecord.ScrapAcceptedStatus, scrap.Status);
+        Assert.Null(scrap.DispositionReferenceId);
+        var closedDeadLetter = Assert.Single(await deadLetters.ListAsync(
+            "business-mes.quality-ncr-closed", null, CancellationToken.None));
+        Assert.Equal(MesDefectDispositionReferenceIdPolicy.OverlongFailureCode, closedDeadLetter.FailureCode);
+        Assert.DoesNotContain(overBound, closedDeadLetter.FailureMessage, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -219,7 +274,7 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
     private static NcrDispositionDecidedIntegrationEvent DispositionEvent(
         string eventId,
         string defectNo,
-        string dispositionReferenceId,
+        string? dispositionReferenceId,
         string dispositionType = QualityNcrDispositionTypes.Rework) =>
         new(
             eventId,
@@ -247,6 +302,35 @@ public sealed class MesDefectDispositionReferenceAcceptanceTests
             {
                 SourceDocumentId = defectNo,
             });
+
+    private static NcrClosedIntegrationEvent ClosedEvent(string eventId, string referenceId) =>
+        new(
+            eventId, QualityIntegrationEventTypes.NcrClosed, QualityIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-09-10T04:00:00Z"), QualityIntegrationEventSources.BusinessQuality,
+            "corr-4342-scrap-closed", $"cause-{eventId}", Org, Env, "quality",
+            "quality:ncr-closed:org-001:env-dev:NCR-2026-3318",
+            new NcrClosedPayload("NCR-3318", "NCR-2026-3318", Sku, 1m,
+                QualityNcrDispositionTypes.Scrap, null, referenceId, null,
+                "Actual scrap movement associated", DateTimeOffset.Parse("2026-09-10T04:00:00Z")));
+
+    private static async Task HandleRegisteredClosedAsync(
+        MesDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetters,
+        NcrClosedIntegrationEvent integrationEvent)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(dbContext);
+        services.AddSingleton(deadLetters);
+        services.AddMesIntegrationEventConsumers();
+        await using var provider = services.BuildServiceProvider();
+        // 使用实际 MES 注册：没有活动关闭消费者时，业务引用断言应失败。
+        foreach (var registration in services.Where(x => x.ImplementationType is not null
+            && typeof(IIntegrationEventHandler<NcrClosedIntegrationEvent>).IsAssignableFrom(x.ImplementationType)))
+        {
+            var handler = (IIntegrationEventHandler<NcrClosedIntegrationEvent>)provider.GetRequiredService(registration.ServiceType);
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+    }
 
     private static MesDbContext CreateMesDbContext() =>
         new(
