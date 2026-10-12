@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -6,6 +6,7 @@ import { formatDateTime } from '@/utils/format'
 import WorkOrderDetailSheet from './WorkOrderDetailSheet.vue'
 
 const readFace = vi.hoisted(() => ({
+  operationTasks: [] as Record<string, unknown>[],
   materialReadiness: undefined as Record<string, unknown> | undefined,
 }))
 
@@ -39,7 +40,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     detail: ref({
       workOrderId: 'WO-1',
       status: 'created',
-      operationTasks: [],
+      operationTasks: readFace.operationTasks,
       blockingReasons: [],
     }),
     detailError: ref(undefined),
@@ -56,7 +57,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     completeOperationTask: vi.fn(),
     filters: reactive({ organizationId: 'org', environmentId: 'dev' }),
     operationScopeMessage: ref(''),
-    operationScopeReady: ref(false),
+    operationScopeReady: ref(true),
     pauseOperationTask: vi.fn(),
     resumeOperationTask: vi.fn(),
     startOperationTask: vi.fn(),
@@ -75,7 +76,11 @@ function mountSheet() {
         NvSheetTitle: slotStub,
         NvSheetDescription: slotStub,
         NvSheetFooter: slotStub,
-        NvDataTable: { props: ['rows'], template: '<div />' },
+        NvDataTable: {
+          props: ['rows'],
+          template:
+            '<div><div v-for="row in rows"><slot name="cell-actions" :row="row" /></div></div>',
+        },
         NvButton: slotStub,
         DispatchAssignDialog: true,
         WorkOrderSourceFacts: true,
@@ -126,4 +131,44 @@ describe('工单行内抽屉的齐套读面', () => {
     expect(wrapper.text()).not.toContain('已齐套')
     wrapper.unmount()
   })
+})
+
+describe('工单详情开工 readiness', () => {
+  it.each([
+    {
+      blockReasons: ['WORK_ORDER_NOT_RELEASED'],
+      allowedActions: [],
+      disabled: true,
+      reason: '先在工单列表下达',
+    },
+    {
+      blockReasons: ['QUALITY_HOLD_ACTIVE'],
+      allowedActions: [],
+      disabled: true,
+      reason: '处理质量冻结',
+    },
+    { blockReasons: [], allowedActions: ['start'], disabled: false, reason: undefined },
+  ])(
+    '反映权威开工检查 $blockReasons',
+    async ({ blockReasons, allowedActions, disabled, reason }) => {
+      readFace.operationTasks = [
+        { operationTaskId: 'OP-CNC-10', status: 'Queued', blockReasons, allowedActions },
+      ]
+      const wrapper = mountSheet()
+      await flushPromises()
+      await wrapper
+        .get('[data-slot="nv-dropdown-menu-trigger"]')
+        .trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      const start = [...document.body.querySelectorAll('[role="menuitem"]')].find(
+        (item) => item.textContent?.trim() === '开工',
+      )!
+      expect(start).toBeTruthy()
+      expect(start.getAttribute('data-disabled') !== null).toBe(disabled)
+      if (reason) expect(start.getAttribute('title')).toContain(reason)
+      else expect(start.getAttribute('title')).toBeNull()
+      wrapper.unmount()
+      readFace.operationTasks = []
+    },
+  )
 })

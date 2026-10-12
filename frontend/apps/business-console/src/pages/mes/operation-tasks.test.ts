@@ -74,7 +74,8 @@ vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
   useRouter: () => ({ push: routerPush }),
 }))
-vi.mock('@nerv-iip/business-core', () => ({
+vi.mock('@nerv-iip/business-core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/business-core')>()),
   openSopFileContent: vi.fn(async () => {}),
   statusActionGate: () => ({ executable: true, legalNoop: false }),
 }))
@@ -326,4 +327,43 @@ describe('operation-tasks 首件检验记录入口', () => {
       query: { view: 'first-article-records' },
     })
   })
+})
+
+describe('工序页开工 readiness', () => {
+  it.each([
+    {
+      blockReasons: ['WORK_ORDER_NOT_RELEASED'],
+      allowedActions: [],
+      disabled: true,
+      reason: '先在工单列表下达',
+    },
+    {
+      blockReasons: ['QUALITY_HOLD_ACTIVE'],
+      allowedActions: [],
+      disabled: true,
+      reason: '处理质量冻结',
+    },
+    { blockReasons: [], allowedActions: ['start'], disabled: false, reason: undefined },
+  ])(
+    '反映权威开工检查 $blockReasons',
+    async ({ blockReasons, allowedActions, disabled, reason }) => {
+      state.operationRows = [
+        { operationTaskId: 'OP-CNC-10', status: 'Queued', blockReasons, allowedActions },
+      ]
+      const wrapper = mountPage()
+      await flushPromises()
+      await wrapper
+        .get('[data-slot="nv-dropdown-menu-trigger"]')
+        .trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      const start = [...document.body.querySelectorAll('[role="menuitem"]')].find(
+        (item) => item.textContent?.trim() === '开工',
+      )!
+      expect(start).toBeTruthy()
+      expect(start.getAttribute('data-disabled') !== null).toBe(disabled)
+      if (reason) expect(start.getAttribute('title')).toContain(reason)
+      else expect(start.getAttribute('title')).toBeNull()
+      wrapper.unmount()
+    },
+  )
 })
