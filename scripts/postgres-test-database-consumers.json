@@ -40,6 +40,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningDeadLetterReplayPostgresTests.cs",
+      "sourceSha256": "9d2f897a076b2da70ccfb0c9747113a7d8596a6d11ebc3e577c3f23fe1e5f0e5",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "Sales-demand replay persistence evidence must surface owned database cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
       "sourceSha256": "99d00ddcb019ccbe575c4d4617f884b1ec914efcee27eaec6a881bd2303aa8e5",
       "factoryCallCount": 5,
