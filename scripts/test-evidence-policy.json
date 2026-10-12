@@ -2082,9 +2082,11 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests.Legacy_failed_inbox_recovers_only_matching_unfinished_quality_fact_and_preserves_existing_effect_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Inventory_receipts_select_original_success_or_failure_and_batch_reads_persistent_results_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Outbound_material_issue_return_and_expiration_restore_original_documents_without_duplicates_on_postgres",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Wcs_adapter_failure_rolls_back_inbox_before_http_retry_and_duplicate_replay_on_postgres"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Wcs_adapter_failure_rolls_back_inbox_before_http_retry_and_duplicate_replay_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Delivery_normalized_document_replays_original_event_without_duplicates_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Rma_normalized_document_replays_original_event_without_duplicates_on_postgres"
       ],
-      "expectedRuntimeTestCount": 5
+      "expectedRuntimeTestCount": 7
     }
   ]
 }

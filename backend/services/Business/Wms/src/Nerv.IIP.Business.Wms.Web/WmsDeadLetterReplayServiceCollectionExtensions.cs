@@ -27,7 +27,7 @@ public static class WmsDeadLetterReplayServiceCollectionExtensions
                 string.Equals(ev.SourceService, WmsIntegrationEventSources.BusinessErp, StringComparison.OrdinalIgnoreCase)
                 && await Db(provider).OutboundOrders.AsNoTracking().AnyAsync(x => x.OrganizationId == ev.OrganizationId
                     && x.EnvironmentId == ev.EnvironmentId && x.SourceDocumentType == WmsSourceDocumentTypes.DeliveryOrder
-                    && x.SourceDocumentId == ev.Payload.DeliveryOrderNo, token));
+                    && x.SourceDocumentId == ev.Payload.DeliveryOrderNo.Trim(), token));
         Add<MesMaterialIssueRequestedIntegrationEvent, MesMaterialIssueRequestedIntegrationEventHandler>(services,
             MesMaterialIssueRequestedIntegrationEventHandler.ConsumerName, async (provider, ev, token) =>
                 string.Equals(ev.SourceService, MesIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase)
@@ -41,7 +41,7 @@ public static class WmsDeadLetterReplayServiceCollectionExtensions
                 await HasInboxAsync(provider, ErpSalesReturnAuthorizedIntegrationEventHandler.ConsumerName, ev, token)
                 && await Db(provider).InboundOrders.AsNoTracking().AnyAsync(x => x.OrganizationId == ev.OrganizationId
                     && x.EnvironmentId == ev.EnvironmentId && x.SourceDocumentType == WmsSourceDocumentTypes.SalesReturnRma
-                    && x.SourceDocumentId == ev.Payload.RmaNo, token));
+                    && x.SourceDocumentId == ev.Payload.RmaNo.Trim(), token));
         Add<InspectionResultIntegrationEvent, QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate>(services,
             QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName, QualityCompletedAsync,
             (consumer, ev, token) => consumer.ReplayAsync(ev, token));

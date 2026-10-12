@@ -25,6 +25,52 @@ public sealed class WmsDeadLetterBusinessReplayPostgresTests
     private static readonly DateTimeOffset OriginalTime = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
 
     [WmsDeadLetterReplayPostgresFact]
+    public async Task Delivery_normalized_document_replays_original_event_without_duplicates_on_postgres()
+    {
+        await using var f = await ReplayFixture.CreateAsync();
+        var ev = new WmsOutboundOrderRequestedIntegrationEvent("space-delivery", WmsIntegrationEventTypes.OutboundOrderRequested, 1, OriginalTime,
+            WmsIntegrationEventSources.BusinessErp, "corr", "cause", "org-replay", "env-replay", "system:erp", "space-delivery",
+            new WmsOutboundOrderRequestedPayload(" DO-SPACE ", "SO", "CUSTOMER", "SITE", [new WmsOutboundOrderRequestedLine("1", "SKU", "kg", "LOC", "LOT", 5m)]));
+        var letter = await f.AddLetterAsync(ev, WmsOutboundOrderRequestedIntegrationEventHandler.ConsumerName);
+        using var response = await f.Client.PostAsync($"/api/business/v1/wms/dlq/{letter.Id}/replay", null);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var scope = f.Factory.Services.CreateScope();
+        var document = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().OutboundOrders.SingleAsync();
+        Assert.Equal("DO-SPACE", document.SourceDocumentId);
+        Assert.Equal("DO-SPACE", document.OutboundOrderNo);
+        using var json = JsonDocument.Parse(body);
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("status").GetString() == "replayed",
+            $"Persisted OutboundOrderNo={document.OutboundOrderNo}; SourceDocumentId={document.SourceDocumentId}; HTTP={body}");
+        await f.ReplayAsync(letter, "replayed");
+        await f.ReplayAsync(letter, "replayed");
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().OutboundOrders.CountAsync());
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Rma_normalized_document_replays_original_event_without_duplicates_on_postgres()
+    {
+        await using var f = await ReplayFixture.CreateAsync();
+        var ev = new SalesReturnAuthorizedIntegrationEvent("space-rma", ErpIntegrationEventTypes.SalesReturnAuthorized, 1, OriginalTime,
+            ErpIntegrationEventSources.BusinessErp, "corr", "cause", "org-replay", "env-replay", "system:erp", "space-rma",
+            new SalesReturnAuthorizedPayload(" RMA-SPACE ", "SO", "CUSTOMER", "SITE", [new SalesReturnAuthorizedLinePayload("1", "SKU", "kg", 5m, "LOC", "LOT")]));
+        var letter = await f.AddLetterAsync(ev, ErpSalesReturnAuthorizedIntegrationEventHandler.ConsumerName);
+        using var response = await f.Client.PostAsync($"/api/business/v1/wms/dlq/{letter.Id}/replay", null);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var scope = f.Factory.Services.CreateScope();
+        var document = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().InboundOrders.SingleAsync();
+        Assert.Equal("RMA-SPACE", document.SourceDocumentId);
+        Assert.Equal("RMA-SPACE", document.InboundOrderNo);
+        using var json = JsonDocument.Parse(body);
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("status").GetString() == "replayed",
+            $"Persisted InboundOrderNo={document.InboundOrderNo}; SourceDocumentId={document.SourceDocumentId}; HTTP={body}");
+        await f.ReplayAsync(letter, "replayed");
+        await f.ReplayAsync(letter, "replayed");
+        Assert.Equal(1, await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().InboundOrders.CountAsync());
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
     public async Task Inventory_receipts_select_original_success_or_failure_and_batch_reads_persistent_results_on_postgres()
     {
         await using var f = await ReplayFixture.CreateAsync();
