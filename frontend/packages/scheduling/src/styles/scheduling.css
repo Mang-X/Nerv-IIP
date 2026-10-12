@@ -92,6 +92,8 @@
        里是 'Inter Variable',改完这两行后无人引用 → 浏览器不会再去外网取字体。 */
     --dhx-gantt-font-family: var(--font-sans);
     --dhx-gantt-font-size: 0.8125rem;
+    --dhx-gantt-base-colors-text-base: var(--foreground);
+    --dhx-gantt-base-colors-text-light: var(--muted-foreground);
     --dhx-gantt-base-colors-border: var(--nv-scheduling-hairline);
     --dhx-gantt-base-colors-border-light: color-mix(in oklch, var(--border), transparent 60%);
     --dhx-gantt-scale-border-horizontal: 1px solid var(--nv-scheduling-hairline);
@@ -230,7 +232,7 @@
     border-right: none !important;
   }
   .nerv-gantt-dhx .gantt_grid_data .gantt_cell {
-    color: var(--foreground);
+    color: var(--foreground) !important;
     font-size: 0.78rem;
     /* 左栏信息居中:资源名与产能指标都水平居中,读起来更整齐、不贴边。 */
     text-align: center;
@@ -253,7 +255,7 @@
     width: 100%;
   }
   .nerv-gantt-dhx .gantt_scale_cell {
-    color: var(--muted-foreground);
+    color: var(--muted-foreground) !important;
     font-size: 0.72rem;
   }
   /* 资源排产板班次带(早/中/夜班):本班加重,非工作班次淡化 + 轻底纹 */
@@ -371,15 +373,15 @@
   /* 班次边界:交班时刻起的第一格左侧一条竖线,让"这一格属于哪个班"一眼可辨。
      只在后端带出工作日历时出现(见 DhtmlxEngine.shiftStarts)。 */
   .nerv-gantt-dhx .gantt_task_cell.nerv-shift-start {
-    border-left: 1px dashed color-mix(in srgb, var(--foreground) 22%, transparent) !important;
+    border-left: 1px dashed color-mix(in srgb, var(--foreground) 55%, transparent) !important;
   }
   .nerv-gantt-dhx .gantt_task_content {
-    color: var(--foreground);
+    color: var(--foreground) !important;
     font-weight: 500;
   }
   /* 条形右侧工序名:轻盈、可读 */
   .nerv-gantt-dhx .gantt_side_content {
-    color: var(--foreground);
+    color: var(--foreground) !important;
     font-size: 0.74rem;
     font-weight: 500;
     padding: 0 8px;
@@ -537,8 +539,8 @@
   /* 卡片底色混向 --card(近白浅染),全圈细边(不做左侧色条);工序识别靠底色 + WO 号 + 图例 */
   .nerv-gantt-dhx .gantt_task_line:has(.nerv-card) {
     /* 关键:向 transparent 混合(保留工序色相);严禁向 --card 混合——暗色下 --card 带红色相会把所有卡片染成暗红。 */
-    background-color: color-mix(in oklch, var(--bar), transparent 90%) !important;
-    border: 1px solid color-mix(in oklch, var(--bar), transparent 55%) !important;
+    background-color: color-mix(in oklch, var(--bar), transparent 78%) !important;
+    border: 1.5px solid color-mix(in oklch, var(--bar), var(--foreground) 35%) !important;
     /* 按卡片自身宽度做信息降级(纯 CSS container query) */
     container-type: inline-size;
   }
@@ -638,7 +640,7 @@
     font-weight: 700;
     font-size: 0.76rem;
     letter-spacing: 0.01em;
-    color: color-mix(in oklch, var(--bar), var(--foreground) 32%);
+    color: var(--foreground);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -689,6 +691,8 @@
     overflow: hidden;
   }
   .nerv-gantt-dhx .nerv-card-tags {
+    overflow: hidden;
+    flex-wrap: wrap;
     display: flex;
     gap: 5px;
     margin-top: auto;
@@ -730,6 +734,12 @@
     height: 100% !important;
     line-height: 1.35 !important;
     white-space: normal !important;
+  }
+
+  .nerv-gantt-dhx[data-view='order'] .gantt_tree_content {
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* 拖拽落点预览:卡片大小的虚影,跟随指针落在目标泳道的时间位置(DHTMLX 重绘不影响) */
@@ -894,7 +904,7 @@
   }
 
   /* 依赖连线:整条(含拐角)统一中性细线,不再出现不一致的灰拐角。关键路径连线用 warning。
-   中性色偏弱,提一档:向 foreground 混一点。整条连线淡入。 */
+   向 foreground 混合提高亮暗主题中的辨识度。整条连线淡入。 */
   .nerv-gantt-dhx .gantt_task_link {
     animation: nerv-link-in var(--nv-duration-slow) var(--nv-ease-out-expo) both;
   }
@@ -910,21 +920,21 @@
     background-color: color-mix(
       in oklch,
       var(--muted-foreground),
-      var(--foreground) 22%
+      var(--foreground) 55%
     ) !important;
   }
   .nerv-gantt-dhx .gantt_link_arrow_right {
     border-left-color: color-mix(
       in oklch,
       var(--muted-foreground),
-      var(--foreground) 22%
+      var(--foreground) 55%
     ) !important;
   }
   .nerv-gantt-dhx .gantt_link_arrow_left {
     border-right-color: color-mix(
       in oklch,
       var(--muted-foreground),
-      var(--foreground) 22%
+      var(--foreground) 55%
     ) !important;
   }
   .nerv-gantt-dhx .gantt_critical_link .gantt_line_wrapper div {
@@ -935,7 +945,7 @@
   }
   /* 拐角用 border 画的,要单独改 border-color,否则保持默认灰 */
   .nerv-gantt-dhx .gantt_task_link .gantt_link_corner {
-    border-color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 22%) !important;
+    border-color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 55%) !important;
   }
   .nerv-gantt-dhx .gantt_critical_link .gantt_link_corner {
     border-color: var(--nv-warning) !important;
@@ -963,6 +973,23 @@
     opacity: 1;
   }
 
+  .nerv-tip-row {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 10px;
+  }
+  .nerv-tip-key {
+    color: var(--muted-foreground);
+  }
+  .nerv-tip-value {
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+  .gantt_tooltip {
+    max-width: min(360px, calc(100vw - 24px));
+    white-space: normal !important;
+  }
+
   /* tooltip:玻璃浮层(有目的的 glass) */
   .gantt_tooltip {
     background-color: color-mix(in oklch, var(--card), transparent 8%) !important;
@@ -981,7 +1008,7 @@
   /* 资源板自绘 tooltip(.nerv-tip):跟指针高频移动的浮层,不用玻璃(backdrop-filter 每帧重采样背景
    → 顿挫)。改近实心背景 + 发丝边框 + 阴影,只靠 transform 定位(GPU 合成,不触发 layout)。 */
   .nerv-tip {
-    max-width: 320px;
+    max-width: min(360px, calc(100vw - 24px));
     color: var(--foreground);
     background: color-mix(in oklch, var(--popover), transparent 4%);
     border: 1px solid var(--border);

@@ -282,6 +282,8 @@ export function cardHtml(t: ScheduleTask): string {
   const rush = t.isRush ? `<span class="nerv-card-rush" title="插单">${RUSH_ICON}</span>` : ''
   const lock = t.locked ? `<span class="nerv-card-lock" title="已锁定">${LOCK_SVG}</span>` : ''
   const due = t.dueUtc ? fmtMd(t.dueUtc) : ''
+  const time = (iso: string) =>
+    new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
   const kit = t.kitting != null ? Math.round(t.kitting * 100) : null
   const kitCls = kit == null ? '' : kit >= 100 ? 'ok' : kit >= 80 ? 'warn' : 'bad'
   const co = t.changeoverMin ? `换型 ${t.changeoverMin}m` : ''
@@ -306,7 +308,9 @@ export function cardHtml(t: ScheduleTask): string {
       : ''
   return `<div class="nerv-card">
     <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${rush}${alert}${lock}</span></div>
-    <div class="nerv-card-r2">${t.product ?? ''}<span class="nerv-card-op"> · ${t.operationId}</span></div>
+    <div class="nerv-card-r2" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</div>
+    <div class="nerv-card-r3 nerv-card-time">${time(t.startUtc)}–${time(t.endUtc)}${t.status ? ` · ${escapeHtml(t.status.label)}` : ''}</div>
+    ${t.product ? `<div class="nerv-card-r3">${escapeHtml(t.product)}</div>` : ''}
     <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
     ${taskFactRows(t)
       .map(
@@ -378,7 +382,7 @@ export function tooltipHtml(t: ScheduleTask): string {
   ]
     .filter(Boolean)
     .join('')
-  const head = `<div style="font-weight:700;font-size:13px;letter-spacing:.01em;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid color-mix(in oklch,var(--foreground),transparent 88%);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${t.orderId}</span>${badges}</div>`
+  const head = `<div style="font-weight:700;font-size:13px;letter-spacing:.01em;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid color-mix(in oklch,var(--foreground),transparent 88%);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${escapeHtml(t.orderId)}</span>${badges}</div>`
   const rows: Array<[string, string]> = [
     ['工序', t.text || '—'],
     ...taskFactRows(t),
@@ -402,7 +406,7 @@ export function tooltipHtml(t: ScheduleTask): string {
   const body = rows
     .map(
       ([k, v]) =>
-        `<div style="display:flex;gap:10px;justify-content:space-between"><span style="opacity:.7">${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`,
+        `<div class="nerv-tip-row"><span class="nerv-tip-key">${escapeHtml(k)}</span><span class="nerv-tip-value">${escapeHtml(v)}</span></div>`,
     )
     .join('')
   return head + body
@@ -971,7 +975,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       const t = task.nerv
       if (t?.type !== 'operation') return ''
       const lock = t.locked ? `<span class="nerv-card-lock">${LOCK_SVG}</span>` : ''
-      return `<span class="nerv-bar-label">${task.text ?? ''}${t.downtimeRisk ? ' · 停机风险' : ''}${lock}</span>`
+      return `<span class="nerv-bar-label">${escapeHtml(task.text ?? '')}${t.downtimeRisk ? ' · 停机风险' : ''}${lock}</span>`
     }
     // 时间线底纹讲三件事:
     // ① 工作 / 非工作——有后端工作日历时按日历判定(休息日、班次之外都算非工作),
