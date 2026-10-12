@@ -166,7 +166,7 @@ const ncrContextItems = computed(() => {
   return [
     { label: '来源单据', value: ncr.sourceDocumentId },
     { label: '来源类型', value: labelFor(QUALITY_SOURCE_TYPE_LABELS, ncr.sourceType) },
-    { label: '物料', value: ncr.skuCode },
+    { label: '物料', value: ncrSkuLabel(ncr.skuCode) },
     { label: '不合格数量', value: ncr.defectQuantity },
     { label: '不合格原因', value: ncr.defectReason },
     { label: '批次', value: ncr.batchNo },
@@ -382,11 +382,14 @@ function splitCsv(value: string) {
     .filter(Boolean)
   return values.length ? values : undefined
 }
+function ncrSkuLabel(skuCode?: string | null) {
+  return skuCode === 'MES-SKU-UNRESOLVED' ? '未解析物料' : skuCode
+}
 function qualityItemSummary(item: BusinessConsoleQualityNcrItem) {
   const values = [
     labelFor(QUALITY_SOURCE_TYPE_LABELS, item.sourceType) || undefined,
     item.sourceDocumentId,
-    item.skuCode,
+    ncrSkuLabel(item.skuCode),
     item.defectQuantity === undefined || item.defectQuantity === null
       ? undefined
       : String(item.defectQuantity),
