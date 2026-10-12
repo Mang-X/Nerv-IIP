@@ -2,6 +2,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, defineComponent, reactive, ref, shallowRef } from 'vue'
 
+const routeQuery = reactive<Record<string, string>>({})
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: routeQuery }),
+  useRouter: () => ({ replace: vi.fn() }),
+}))
+
 import DeadLettersPage from './dead-letters.vue'
 import type {
   DeadLetterBatchRowResult,
@@ -193,6 +199,7 @@ async function mountPage() {
 
 describe('集成事件死信运维页', () => {
   beforeEach(() => {
+    for (const key of Object.keys(routeQuery)) delete routeQuery[key]
     state.items = []
     state.unavailableSources = []
     // 真实 composable 暴露的是 reactive Map；用普通 Map 会让「结果写进去了但没重渲染」看起来像页面缺陷。
@@ -222,79 +229,102 @@ describe('集成事件死信运维页', () => {
     expect(text).toContain('计数因此偏小')
   })
 
-  /**
-   * 三种失败码各自的中文原因片段、链接文案与**链接目标**——目标是票面要交付的「补数据
-   * 入口」本身，链接文案对不对不能代表跳得对不对，必须连 `to` 一起断言（B1 复审实测：
-   * 把 `linkPath` 改错、或整条 `unavailable-machine-time-fact` 删掉，此前的用例仍然全绿）。
-   */
-  const KNOWN_FAILURE_CASES = [
-    {
-      failureCode: 'missing-work-center-cost-rate',
-      reasonFragment: '该工作中心在报工时点没有生效的人工费率修订',
-      linkLabel: '去补充工作中心费率',
-      linkPath: '/erp/finance/work-center-cost-rates',
-    },
-    {
-      failureCode: 'missing-machine-overhead-rate',
-      reasonFragment: '该工作中心在完工日期所属的会计期间没有机器制造费用率',
-      linkLabel: '去补充机器制造费用率',
-      linkPath: '/erp/finance/machine-overhead-rates',
-    },
-    {
-      failureCode: 'unavailable-machine-time-fact',
-      reasonFragment: 'MES 未提供或未确认权威的机器工时数据',
-      linkLabel: '去派工看板核实',
-      linkPath: '/mes/dispatch',
-    },
-  ] as const
-
-  it.each(KNOWN_FAILURE_CASES)(
-    '列表里 $failureCode 显示中文原因，且「去补数据」链接指向 $linkPath',
-    async ({ failureCode, reasonFragment, linkLabel, linkPath }) => {
-      seedRow('Erp', 'dl-1', 'pending', failureCode)
-      const wrapper = await mountPage()
-
-      expect(wrapper.text()).toContain(reasonFragment)
-      const link = wrapper.findAll('a').find((a) => a.text() === linkLabel)
-      expect(link, `未找到链接文案「${linkLabel}」`).toBeDefined()
-      expect(link!.attributes('href')).toBe(linkPath)
-    },
-  )
-
-  it('未点名的失败码不编造中文原因，只显示原始码', async () => {
-    seedRow('Erp', 'dl-1', 'pending', 'closed-accounting-period')
+  // #4285 Regression：对象取自原事件，维护后返回同一事件与登记。
+  it('列表先打开事件详情，不带空对象进入维护页', async () => {
+    seedRow()
     const wrapper = await mountPage()
-
-    expect(wrapper.text()).toContain('closed-accounting-period')
-    expect(wrapper.find('a').exists()).toBe(false)
+    expect(wrapper.find('a[href="/erp/finance/work-center-cost-rates"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('查看修复前提')
   })
 
-  it.each(KNOWN_FAILURE_CASES)(
-    '详情抽屉里 $failureCode 显示中文原因，且链接指向 $linkPath',
-    async ({ failureCode, reasonFragment, linkLabel, linkPath }) => {
-      seedRow('Erp', 'dl-1', 'pending', failureCode)
-      state.permissionCodes = ['business.dlq.read', 'business.dlq.manage']
+  it.each(['missing-work-center-cost-rate', 'missing-machine-overhead-rate'])(
+    '%s 详情将冻结对象带到维护页，并保留返回坐标',
+    async (failureCode) => {
+      seedRow()
       state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-1' }
       state.selectedDeadLetter = {
         id: 'dl-1',
-        status: 'pending',
-        eventType: 'erp.OperationActualTimeLaborCost',
         failureCode,
+        eventId: 'EV-01',
+        eventJson: JSON.stringify({
+          Payload: {
+            WorkOrderId: 'WO-001',
+            OperationTaskId: 'WO-001-OP-10',
+            WorkCenterId: 'WC-CNC-01',
+            CompletedAtUtc: '2026-10-10T02:00:00Z',
+          },
+        }),
       }
       const wrapper = await mountPage()
       await wrapper
         .findAll('button')
-        .find((b) => b.text().includes('详情'))
-        ?.trigger('click')
+        .find((b) => b.text() === '详情')!
+        .trigger('click')
       await flushPromises()
-
-      const detailText = document.body.textContent ?? ''
-      expect(detailText).toContain(reasonFragment)
-      const link = [...document.querySelectorAll('a')].find((a) => a.textContent === linkLabel)
-      expect(link, `详情抽屉未找到链接文案「${linkLabel}」`).toBeDefined()
-      expect(link!.getAttribute('href')).toBe(linkPath)
+      const link = [...document.querySelectorAll('a')].find((a) =>
+        a.textContent?.includes('去补充'),
+      )!
+      const destination = new URL(link.getAttribute('href')!, 'http://localhost')
+      expect(destination.pathname).toBe(
+        failureCode === 'missing-work-center-cost-rate'
+          ? '/erp/finance/work-center-cost-rates'
+          : '/erp/finance/machine-overhead-rates',
+      )
+      const query = destination.searchParams
+      expect(query.get('workCenterId')).toBe('WC-CNC-01')
+      expect(query.get('workOrderId')).toBe('WO-001')
+      expect(query.get('operationTaskId')).toBe('WO-001-OP-10')
+      expect(query.get('deadLetterId')).toBe('dl-1')
+      expect(query.get('service')).toBe('Erp')
+      expect(document.body.textContent).toContain('2026-10-10')
     },
   )
+
+  it('选择其他工单事件时不把原登记单号附到另一工单', async () => {
+    Object.assign(routeQuery, { workOrderId: 'WO-ORIGINAL', receiptNo: 'FGR-ORIGINAL' })
+    seedRow()
+    state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-1' }
+    state.selectedDeadLetter = {
+      id: 'dl-1',
+      failureCode: 'missing-work-center-cost-rate',
+      eventJson: JSON.stringify({
+        payload: { workOrderId: 'WO-OTHER', workCenterId: 'WC-CNC-01' },
+      }),
+    }
+    const wrapper = await mountPage()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '详情')!
+      .trigger('click')
+    await flushPromises()
+    const link = [...document.querySelectorAll('a')].find((a) =>
+      a.textContent?.includes('查看原完工登记与入库终态'),
+    )!
+    const query = new URL(link.getAttribute('href')!, 'http://localhost').searchParams
+    expect(query.get('workOrderId')).toBe('WO-OTHER')
+    expect(query.has('receiptNo')).toBe(false)
+  })
+
+  it('冻结机器事实缺失只核实原工单，明确不能事后派工补录', async () => {
+    seedRow('Erp', 'dl-1', 'pending', 'unavailable-machine-time-fact')
+    state.selectedTarget = { service: 'Erp', deadLetterId: 'dl-1' }
+    state.selectedDeadLetter = {
+      id: 'dl-1',
+      failureCode: 'unavailable-machine-time-fact',
+      eventJson: JSON.stringify({
+        Payload: { WorkOrderId: 'WO-001', OperationTaskId: 'WO-001-OP-10' },
+      }),
+    }
+    const wrapper = await mountPage()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '详情')!
+      .trigger('click')
+    await flushPromises()
+    expect(document.querySelector('a[href="/mes/dispatch"]')).toBeNull()
+    expect(document.body.textContent).toContain('不能通过事后派工或补录改变原事件')
+    expect(document.querySelector('a[href="/mes/work-orders/WO-001"]')).not.toBeNull()
+  })
 
   it('超时与不可用对用户不是同一句话', async () => {
     state.unavailableSources = [{ service: 'Erp', reason: 'sourceTimeout' }]

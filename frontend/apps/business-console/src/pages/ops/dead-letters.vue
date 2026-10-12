@@ -4,6 +4,10 @@ import type {
   IntegrationEventDeadLetterStatus,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import DeadLetterCostRecovery from '@/components/erp/DeadLetterCostRecovery.vue'
+import CostRecoveryContext from '@/components/erp/CostRecoveryContext.vue'
+import { queryText } from '@/components/erp/costRecovery'
+import { useRoute, useRouter } from 'vue-router'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -43,7 +47,7 @@ import {
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { BanIcon, RotateCwIcon, ShieldAlertIcon } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 definePage({
   meta: {
@@ -81,7 +85,22 @@ const {
   unavailableSources,
 } = useBusinessDeadLetters()
 
+const route = useRoute()
+const router = useRouter()
 const detailOpen = ref(false)
+watch(
+  () => [route.query.service, route.query.deadLetterId],
+  () => {
+    const service = queryText(route.query, 'service')
+    const id = queryText(route.query, 'deadLetterId')
+    if (service) filters.service = service
+    if (service && id) {
+      selectedRowKey.value = deadLetterRowKey(service, id)
+      detailOpen.value = true
+    }
+  },
+  { immediate: true },
+)
 const ignoreReason = ref('')
 
 const auth = useAuthStore()
@@ -184,41 +203,19 @@ function reasonText(source: DeadLetterUnavailableSource) {
 
 interface FailureHint {
   reason: string
-  linkPath: string
-  linkLabel: string
 }
 
-/**
- * 三种基础数据缺失类失败码的中文说明与「去补数据」入口。
- * 只覆盖 #3772 票面点名的三种——其余失败码仍只显示原始码与消息，不在本票范围内猜译。
- *
- * `missing-machine-overhead-rate`：ERP 把解析机器制造费用率时的任何已知异常都记成这个码
- * （含「会计期间未唯一匹配」等），不只是「没有生效修订」这一种情形，故措辞留有余地——
- * 具体原因仍以同屏的「失败原因」为准
- * （`OperationMachineOverheadSettlementIntegrationEventHandlers.cs:425`、
- * `WorkCenterMachineOverheadRateQueries.cs:170`）。
- *
- * `unavailable-machine-time-fact`：机器工时事实和设备号是 MES 在工序完工时一次性冻结进
- * 事件载荷的（`OperationTask.cs:367-375`），ERP 只读载荷判定（同 handler `:382-388`）。
- * 指向派工看板是因为「核实工时数据是否正确」要去 MES 侧看，不代表补完当前工单就能重放
- * 通过——事后补录不会改已发布事件的载荷，同一事件重放大概率仍会再次进入这个死信。
- */
+// 列表没有事件载荷，先打开详情恢复原对象，不能直接跳到无上下文的维护页。
 const KNOWN_FAILURE_REASONS: Record<string, FailureHint> = {
   'missing-work-center-cost-rate': {
     reason: '该工作中心在报工时点没有生效的人工费率修订。',
-    linkPath: '/erp/finance/work-center-cost-rates',
-    linkLabel: '去补充工作中心费率',
   },
   'missing-machine-overhead-rate': {
     reason:
       '该工作中心在完工日期所属的会计期间没有机器制造费用率，或完工日期未能唯一匹配到会计期间。',
-    linkPath: '/erp/finance/machine-overhead-rates',
-    linkLabel: '去补充机器制造费用率',
   },
   'unavailable-machine-time-fact': {
     reason: 'MES 未提供或未确认权威的机器工时数据，机器制造费用暂无法结算。',
-    linkPath: '/mes/dispatch',
-    linkLabel: '去派工看板核实',
   },
 }
 
@@ -333,6 +330,9 @@ function openDetail(row: DeadLetterRow) {
   selectedRowKey.value = rowKeyOf(row)
   ignoreReason.value = ''
   detailOpen.value = true
+  void router.replace({
+    query: { ...route.query, service: row.service, deadLetterId: row.deadLetterId },
+  })
 }
 
 function announce(outcome: DeadLetterReplayOutcome, subject: string) {
@@ -358,6 +358,20 @@ async function handleReplayRow(row: DeadLetterRow) {
     notifyReplayError(error, isReplayUnanswered(error) ? 1 : 0)
   }
 }
+
+async function handleReplayDetail() {
+  const target = selectedTarget.value
+  if (!target || !selectedDeadLetter.value) return
+  try {
+    announce(
+      await replayOne({ ...target, statusAtAttempt: selectedDeadLetter.value.status }),
+      '该事件',
+    )
+  } catch (error) {
+    notifyReplayError(error, isReplayUnanswered(error) ? 1 : 0)
+  }
+}
+const detailReplayResult = computed(() => replayResults.get(selectedRowKey.value))
 
 async function handleReplaySelected() {
   // 整批走完才返回：列表与计数已统一失效，选中也已由 composable 收成「仅被拒绝的行」。
@@ -426,6 +440,7 @@ function formatPayload(value: string | null | undefined) {
         </template>
       </NvPageHeader>
 
+      <CostRecoveryContext />
       <p
         v-if="hasUnavailableSource"
         class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
@@ -549,12 +564,13 @@ function formatPayload(value: string | null | undefined) {
             <p class="mt-1 text-xs text-muted-foreground">
               {{ row.failureHint.reason }}
             </p>
-            <RouterLink
-              :to="row.failureHint.linkPath"
-              class="mt-1 inline-block text-xs text-brand underline-offset-4 hover:underline"
+            <button
+              type="button"
+              class="mt-1 text-xs text-brand hover:underline"
+              @click="openDetail(row)"
             >
-              {{ row.failureHint.linkLabel }}
-            </RouterLink>
+              查看修复前提
+            </button>
           </template>
         </template>
 
@@ -640,12 +656,6 @@ function formatPayload(value: string | null | undefined) {
               <dt class="text-muted-foreground">处理建议</dt>
               <dd class="break-words">
                 {{ selectedFailureHint.reason }}
-                <RouterLink
-                  :to="selectedFailureHint.linkPath"
-                  class="mt-1 block text-sm text-brand underline-offset-4 hover:underline"
-                >
-                  {{ selectedFailureHint.linkLabel }}
-                </RouterLink>
               </dd>
             </template>
             <dt class="text-muted-foreground">死信时间</dt>
@@ -654,6 +664,30 @@ function formatPayload(value: string | null | undefined) {
             <dd>{{ formatTime(selectedDeadLetter.replayedAtUtc) }}</dd>
           </dl>
 
+          <div v-if="canManage" class="flex items-center gap-2">
+            <NvButton
+              type="button"
+              size="sm"
+              :disabled="
+                actionPending ||
+                selectedDeadLetter.status === 'replayed' ||
+                selectedDeadLetter.status === 'ignored'
+              "
+              @click="handleReplayDetail"
+              >重放此事件</NvButton
+            >
+            <span v-if="detailReplayResult?.answered">{{
+              REPLAY_LABELS[detailReplayResult.outcome.status].label
+            }}</span>
+            <span v-else-if="detailReplayResult">{{ UNANSWERED_DISPLAY.label }}</span>
+          </div>
+          <DeadLetterCostRecovery
+            v-if="selectedFailureHint && selectedTarget"
+            :detail="selectedDeadLetter"
+            :service="selectedTarget.service"
+            :receipt-no="queryText(route.query, 'receiptNo')"
+            :receipt-work-order-id="queryText(route.query, 'workOrderId')"
+          />
           <div class="grid gap-1">
             <span class="text-muted-foreground">事件内容</span>
             <pre class="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed">{{

@@ -33,6 +33,10 @@ import { computed, reactive, shallowRef } from 'vue'
 import { useErpWorkCenterMachineOverheadRates } from '@/composables/useErpCostAccounting'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { currencyOptionsIncluding } from '@/data/currencyReference'
+import CostRecoveryContext from '@/components/erp/CostRecoveryContext.vue'
+import { queryText } from '@/components/erp/costRecovery'
+import { useRoute } from 'vue-router'
+import { watch } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -59,6 +63,15 @@ const canManage = computed(() =>
 const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
 
 const rates = useErpWorkCenterMachineOverheadRates()
+const route = useRoute()
+watch(
+  () => route.query.workCenterId,
+  () => {
+    const workCenterId = queryText(route.query, 'workCenterId')
+    if (workCenterId) rates.workCenterId.value = workCenterId
+  },
+  { immediate: true },
+)
 // 会计期间编码默认取本月（如 2026-09），与财务开立期间的惯例一致；可改为其它期间。
 rates.accountingPeriodCode.value = today().slice(0, 7)
 const periodDraft = shallowRef(rates.accountingPeriodCode.value)
@@ -201,6 +214,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
+    <CostRecoveryContext />
     <NvToolbar :show-search="false">
       <template #filters>
         <NvEntityPicker

@@ -204,6 +204,7 @@ type MesListStatus = NonNullable<
 >
 
 export interface MesListFilters {
+  workOrderId?: string
   organizationId: string
   environmentId: string
   status?: string
@@ -2880,7 +2881,7 @@ export function useMesFinishedGoodsReceipts() {
   const receiptsQuery = useQuery(() =>
     withBusinessContextEnabled(
       listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
-        query: toListQuery(filters),
+        query: { ...toListQuery(filters), workOrderId: filters.workOrderId || undefined },
       }),
       filters,
     ),

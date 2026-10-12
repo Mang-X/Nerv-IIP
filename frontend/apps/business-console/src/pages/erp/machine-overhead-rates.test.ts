@@ -1,3 +1,4 @@
+vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
 import type {
   BusinessConsoleErpWorkCenterMachineOverheadRateItem,
   BusinessConsoleErpWorkCenterMachineOverheadRateListResponse,

@@ -28,6 +28,10 @@ import { computed, reactive, shallowRef } from 'vue'
 import { useErpWorkCenterCostRates } from '@/composables/useErpCostAccounting'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { currencyOptionsIncluding } from '@/data/currencyReference'
+import CostRecoveryContext from '@/components/erp/CostRecoveryContext.vue'
+import { queryText } from '@/components/erp/costRecovery'
+import { useRoute } from 'vue-router'
+import { watch } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -53,6 +57,15 @@ const canManage = computed(() =>
 const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
 
 const costs = useErpWorkCenterCostRates()
+const route = useRoute()
+watch(
+  () => route.query.workCenterId,
+  () => {
+    const workCenterId = queryText(route.query, 'workCenterId')
+    if (workCenterId) costs.workCenterId.value = workCenterId
+  },
+  { immediate: true },
+)
 const items = computed(() => costs.rates.value?.items ?? [])
 const current = computed(() => items.value.find((row) => row.isCurrentEffectiveRevision))
 // 同一工作中心的币种在首个修订后固定；列表按版本倒序，取任一行即可。
@@ -159,6 +172,7 @@ async function submit() {
       </template>
     </NvPageHeader>
 
+    <CostRecoveryContext />
     <NvToolbar :show-search="false">
       <template #filters>
         <NvEntityPicker
