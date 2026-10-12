@@ -1,6 +1,6 @@
 # 最小权限连续旅程准备核验（2026-10-12）
 
-本报告对应 [#4365](https://github.com/Mang-X/Nerv-IIP/issues/4365) 与 [#4288 spec r1](https://github.com/Mang-X/Nerv-IIP/issues/4288)。只交付前提准备及公开能力缺口；生产、排程和父级组合验收由后续切片执行。
+本报告对应 [#4365](https://github.com/Mang-X/Nerv-IIP/issues/4365) 与 [#4288 spec r1](https://github.com/Mang-X/Nerv-IIP/issues/4288)。只交付前提准备、期间补核验及证明边界；生产、排程和父级组合验收由后续切片执行。
 
 ## 版本与环境
 
@@ -24,12 +24,12 @@
 8. 公开读取 SKU、已发布路线及生产版本，用 `/engineering/production-versions/resolve` 输入 `skuCode=FG-QJ-P1-L`、`effectiveDate=2026-10-12`、`lotSize=10` 核实当前 V2。本票不创建工单、operationTask 或物料/产出批次终态。后续旅程可采用批次号 `J4365-MAIN`，但 materialLotId/producedLotId/workOrderId/operationTaskId 必须由真实业务返回后登记，当前没有这些强 ID。
 9. 每道工序准备独立 UTF-8 `.txt` 验收指引，含产品、路线、工序和工作中心、前序/质量/设备/物料门禁、正常 UI 开始/报工与同 ID 读回规则，并声明非现场生产规程。`POST /files/sop-documents/upload-sessions` 传 `fileName/contentType=text/plain/expectedSizeBytes/checksum(SHA256)`；向返回 uploadUrl 发送 tus PATCH（`Tus-Resumable:1.0.0`、`Upload-Offset:0`、`Content-Type:application/offset+octet-stream`、org/env query），确认 offset 等于字节数，再 `POST .../{uploadSessionId}/complete`。随后 `/engineering/sops/publish` 传 `documentNumber=SOP-J4365-<operationCode>`、`revision=1`、工序、工作中心、路线/修订、`effectiveDate=2026-10-01` 和真实 fileId。文件不能跨多个 document 共用同 fileId+revision：现有工程文档唯一键限制该组合。`/engineering/sops/current` 按相同工序/工作中心/路线和 `asOfDate=2026-10-12` 读回 Published，再以现场账号 `GET /files/sop-documents/{fileId}/content` 核实字节和 SHA256。
 10. 质检账号创建并启用首件方案 `IP-J4365-FIRST`：`POST /quality/inspection-plans`，`category=first-article`、`skuCode=FG-QJ-P1-L`、`workCenterId=WC-FA-01`，单个 characteristic 为 `VISUAL-J4365`，`method=visual`、`severity=major`、`required=true`、`samplingRule=all`、`characteristicType=attribute`；再 `POST /quality/inspection-plans/{inspectionPlanId}/activate`。不要给首件方案配置巡检 assignee/interval。读取方案须为 active；不创建检验结果或 NCR。
-11. `/erp/finance/accounting-periods` POST 建 `2026-10-J4365`、`startDate=2026-10-01/endDate=2026-10-31`。每个路线工作中心调用 `/erp/finance/work-center-cost-rates` POST，`hourlyRate=60`、`currencyCode=CNY`、`effectiveFromUtc=2026-10-01T00:00:00Z`，结束为空；原时点 `2026-10-12T12:00:00Z` GET 应选 revision 1。机时费率 POST `/erp/finance/work-center-machine-overhead-rates`，同 periodCode，`applicability=applicable`、`fixedOverheadBudget=1000`、`variableOverheadBudget=200`、`normalCapacityMachineHours=100`、CNY。由财务账号 GET 回读 revision 1；这些数值仅为可复算验收输入（机时费率 12 CNY/h），不是外部报价或既有业务成本。期间 Open/日期公开读回缺口见后文，不能由费率 GET 代证。
+11. `/erp/finance/accounting-periods` POST 建 `2026-10-J4365`、`startDate=2026-10-01/endDate=2026-10-31`。每个路线工作中心调用 `/erp/finance/work-center-cost-rates` POST，`hourlyRate=60`、`currencyCode=CNY`、`effectiveFromUtc=2026-10-01T00:00:00Z`，结束为空；原时点 `2026-10-12T12:00:00Z` GET 应选 revision 1。机时费率 POST `/erp/finance/work-center-machine-overhead-rates`，同 periodCode，`applicability=applicable`、`fixedOverheadBudget=1000`、`variableOverheadBudget=200`、`normalCapacityMachineHours=100`、CNY。由财务账号 GET 回读 revision 1；这些数值仅为可复算验收输入（机时费率 12 CNY/h），不是外部报价或既有业务成本。期间状态用财务账号 GET `/erp/finance/work-center-machine-overhead-reconciliations?accountingPeriodCode=2026-10-J4365` 核实 `accountingPeriodStatus=open`，Items 可以为空，不创建对账终态。现场账号 GET `/mes/foundation-readiness?workCenterCode=<路线工作中心>`，确认真实返回 ERP 区域 `status=Ready/issues=[]`；该区域按 UTC 当日核实唯一期间覆盖，不能以 source-unavailable、缺失 ERP 区域或仅未出现错误码代证。此处 org/env query 同前；当日核验不证明任意历史/未来日期。
 12. 每个账号经真实 Business Console 登录页面进入下表页面。计划员打开“新建 MPS”可读取成品、工厂和单位候选，但取消而不保存；其余读取职责内页面与 API。退出本人会话；交接前用 `fullstack stop -SessionId <本次 session>` 停止自有资源，保留清理回执，不删除其他会话。
 
 上述非幂等创建只运行一次；发现错误先公开读回已提交状态，再按既有入口补正，不盲重放。示例 `idempotencyKey` 可按 `j4365-<操作>-<实体编码>` 区分；新运行要在其隔离环境重新创建并保存新 ID，不把旧 evidence 自动升格。
 
-## 本次身份与最小授权
+## R1 身份与最小授权
 
 组织级 scope 用于计划、物料、质量和财务的现有组织读写行为；现场和交接为八个工作中心的显式 grant。账号均无 IAM 管理权限、无平台管理员角色、无 internal 权限。准备阶段合成账号不代表真实员工的职业认证。
 
@@ -51,7 +51,7 @@
 - `finance`：`business.erp.finance.manage`, `business.erp.finance.read`, `business.inventory.ledger.read`, `business.masterdata.resources.read`, `business.mes.receipts.manage`, `business.mes.receipts.read`, `business.mes.work-orders.read`。
 - `handover`：`business.masterdata.resources.read`, `business.mes.downtime.read`, `business.mes.handovers.manage`, `business.mes.handovers.read`, `business.mes.operations.read`, `business.mes.reporting.read`, `business.mes.work-orders.read`。
 
-## 本次产品、工序与前提读回
+## R1 产品、工序与前提读回
 
 当前生产版本 `01a12fed-3f5f-7428-8220-7f941a60e802`，MBOM `MBOM-FG-QJ-P1-L:2`，路线 `ROUTING-FG-QJ-P1-L:1`；按上述日期/批量公开 resolve 为 active。SKU `FG-QJ-P1-L` 公开读回 active。
 
@@ -68,25 +68,45 @@
 
 六名员工 active；三个早班组各含现场/交接账号（交接为组长），人员技能矩阵已读回有效期间。八份 SOP 均 Published 且匹配路线修订 1；现场账号可读全部文件。人工费率 revision 1 在选定原时点有效，机时费率在选定期间 revision 1 可读。首件方案 `IP-J4365-FIRST` 公开读回 active；没有检验结果。
 
-## 准备度与缺口
+## 准备度与证明边界
 
 | #4365 标准 | 本次结果 | 边界 |
 | --- | --- | --- |
 | 版本、可重复操作、org/env、产品和工序强 ID | 已记录 | 真实批次/工单/operationTask 尚未产生，交给连续旅程通过正常 UI 产生 |
 | 各岗位真实登录及公开 principal/permission/scope | 已执行 | 六账号本人改密、API login/me 和真实登录页；现场/交接精确范围以及范围外 403 |
-| 必要主数据公开核实有效，不预造终态 | 大部分成立，期间状态未核实 | SKU、生产版本、员工/技能/班组、SOP、费率、检验方案已公开读回；期间只有创建 ID 与存在性间接校验 |
-| 缺公开能力记录精确缺口与 owner | 已记录 | 下述缺口不在本 PR 新造能力 |
+| 必要主数据公开核实有效，不预造终态 | R1 主数据与 R2 期间已分别核实 | R1 主数据读回保持原版本；R2 补证 Open 与 UTC 当日唯一覆盖，不声称两会话已完成连续组合旅程 |
+| 缺公开能力记录精确缺口与 owner | 已纠正期间归因 | 既有公开 GET 足够补验期间；本轮没有证明需要新增端点或财务机制 |
 
-1. **会计期间状态缺口**：BusinessGateway `/erp/finance/accounting-periods` 仅 POST，GET 返回 **405**；ERP `ErpSalesFinanceEndpoints.cs` 同样只有 open/close/reopen。Open 回执 `accountingPeriodId` 为 `01a12ff1-45ce-74e2-b603-c5c4e0946247`。配置机时费率只检查期间存在，不核实 Open 或日期。因此本报告不声称期间 Open/日期已公开读回；该必要前提保持未验收。owner 为 `Business.Erp` 的 `AccountingPeriodAggregate`、finance endpoints 与其 Gateway facade。单独 Scope Gate 时，若新增 Gateway/OpenAPI/codegen 合同，触发契约生成链升级规则，应先批准窄拆分；本票不扩为财务模型或全端角色改造。
-2. **岗位目录未建模**：所有 `/me/work-context` 的 `issues` 保留 `position-master-not-modeled`，`resolutionStatus=incomplete`。现场/交接已取得八工作中心的真实 `authorizedScopes/selectedScope`；这不是完整岗位模型验证。owner 为 MasterData `GetPrincipalWorkContextQuery`；本旅程沿现有授权模型，未增加岗位体系。
+1. **期间归因修正**：R1 实测单一路径 `/erp/finance/accounting-periods` GET 返回 405，只能证明该路径不接受 GET，不能推出“无公开状态读回能力”。既有 `/erp/finance/work-center-machine-overhead-reconciliations` 返回 `accountingPeriodStatus`，与 Items 是否非空无关；已有 MES `/mes/foundation-readiness` 的 ERP 区域核 UTC 当日唯一期间。R2 已按下节补实际读回，不新增合同。owner 为 Business.Erp 的期间/机时查询、Business.Mes 准备度与 BusinessGateway facade。Open 命令遇已有期间直接返回 ID，不校验其 Open 或请求日期，因此原创建回执 `01a12ff1-45ce-74e2-b603-c5c4e0946247` 仍不作为状态/日期证据。
+2. **岗位目录未建模**：R1 `/me/work-context` 原始回执中，现场/交接为 `resolutionStatus=ready-with-gaps`，其余四账号为 `incomplete`，不是六个都为 incomplete。共同保留 `position-master-not-modeled`；四个后台账号还保留 `shift-not-assigned/team-not-assigned`。现场/交接已取得八工作中心的真实 `authorizedScopes/selectedScope`；这不是完整岗位模型验证。owner 为 MasterData `GetPrincipalWorkContextQuery`；本旅程沿现有授权模型，未增加岗位体系。
 3. **准备数据的适用期**：原时点、技能与期间用于 2026-10-12 十月旅程。后续组合版本或执行日期变化时，重新准备并读回受影响项；本票费率不能冒充旧工单原时点费率。当前一个总装技能关系不代表所有工序/真实硬件均已具备职业技能认证。
+
+## R2 期间补核验（2026-10-12）
+
+补证源于 [R1 独立审核](https://github.com/Mang-X/Nerv-IIP/pull/4369#pullrequestreview-5490604062)，没有实施新增端点。运行版本仍为 `e25aa18c100201ac5fb9e67fdf7168a36cca7391`，新会话 `nerv-38e3-e09306` 通过受治理 start 重新构建。该版本与最初真栈 `fb1f0da6432e7fa0aff46bcc977c655bb180c087` 只差本报告，运行代码/配置/依赖没有变化；R1 证据归档不覆盖或改写。
+
+本会话只重建财务/现场账号及期间、路线八工作中心费率，公开 IAM 创建/绑定 scope、本人改密与 login/me 沿上述入口。permissionCodes 与 R1 两岗位完全相同，且无 admin 角色；生成强 ID 为：
+
+| 岗位 | principalId | roleId | 公开读面权限 / scope |
+| --- | --- | --- | --- |
+| 财务 | `user-01a1300e85977ebd8cd6fb658ebc975b` | `role-01a1300e85587d7491e461da74c76cf0` | `business.erp.finance.read` / `org-001` |
+| 现场 | `user-01a1300e8774776aa5e410eac8f54366` | `role-01a1300e875871fbbaf92acd0bbc2d94` | `business.mes.foundation.read` / 路线八工作中心 |
+
+期间创建输入仍为 `2026-10-J4365`、`2026-10-01..2026-10-31`，新 periodId 为 `01a1300e-8ec0-720d-bc74-cb977df4d381`。真正成功依据是以下公开回执，不是该 ID：
+
+- 创建前财务 GET 对账列表：`accountingPeriodStatus=null/totalCount=0/items=[]`；现场 GET `foundation-readiness?workCenterCode=WC-FA-01` 返回真实 ERP 区域 `status=Blocked`，明确 `ACCOUNTING_PERIOD_MISSING`。负向状态不能被“错误码未出现”断言判绿。
+- 准备后财务 GET：`org-001/env-dev/accountingPeriodCode=2026-10-J4365/accountingPeriodStatus=open`，`totalCount=0/items=[]`；`reconciliationStatus=unavailable/reconciliationUnavailableReason=reconciliation_not_recorded` 原样保留。这证明期间 Open，不证明对账完成。
+- 2026-10-12 `12:20:24.459969..12:20:25.044717 UTC`，现场账号对八个路线工作中心分别 GET foundation-readiness。八个回执都含唯一 `areaCode=erp`，`status=Ready/issues=[]`。ERP 查询按存储 StartDate/EndDate 唯一匹配 UTC 当日；本次成功证明当日可取得期间，不能扩为整月每一天或任意历史/未来日期已验。
+- 财务 GET 同期间 `WC-FA-01` 机时费率，回读 `currentRevision=1/applicability=applicable`；期间名与准备输入一致。
+
+实际命令 `python3 /tmp/nerv4365-r2-period.py > artifacts/issue-4365-r2/period-verification.log 2>&1`，自然 exit 0，输出 `RESULT 15 passed; existing public period status and UTC-day coverage verified; reconciliation items=0`。15 项包括两身份精确比较、两创建前负向回执、Open 空 Items 回执、八个完整 ERP 区域、同期间费率及 UTC 日期边界。本次没有重复六岗位 UI、SOP 或完整连续旅程；这些仍只引用 R1 原证据，不伪造为 R2 全组同栈执行。
 
 ## 实际证据与未跑项
 
 - 脱敏 evidence 位于本工作树 `artifacts/issue-4365/`：`roles.json`、六份 `context-*.json`、`workers-final.json`、`skill-final.json`、三个 TEAM 成员读面、`production-version-resolve.json`、`sops-verified.json`、`read-rate-*.json`、`read-machine-rate-*.json`、`quality-plans-final.json`、`verification.log/verification-summary.json` 和岗位 PNG。口令、token 与连接串不入包。
-- 实际请求工具为本次本地一次性 Python HTTP 调用；准备操作序列见上文，不添加永久 seed/测试 runner。正式门禁及最终 head、PR CI 在 PR 正文记录，不将 baseline 真栈结果当新 SHA 的重新运行。本 PR diff 仅报告，运行代码、配置与依赖文件和 baseline 相同；后续父验收仍须固定最终组合 SHA。
+- 实际请求工具为本次本地一次性 Python HTTP 调用；准备操作序列见上文，不添加永久 seed/测试 runner。R2 补证位于 `artifacts/issue-4365-r2/`（principals、period-before/status、八份 foundation、summary 与脚本/日志），绑定上节运行 SHA。正式门禁及最终 head、PR CI 在 PR 正文记录，不将 baseline 真栈结果当新 SHA 的重新运行。本 PR diff 仅报告，运行代码、配置与依赖文件和 baseline 相同；后续父验收仍须固定最终组合 SHA。
 - 本次不执行 MPS/MRP/工单生成、物料收发与消耗/冲销、开工报工、NCR 返工/报废、完工成本恢复、库存入账或交接终态；没有用 admin 代行这些业务动作。设备、打印、PDA、跨班次/午夜、父级组合验收均未运行。
-- 公开读面的空计划/工序/领料/成本/交接列表只是未预造终态的背景，不作为连续业务通过证据。八份 SOP 与 active 检验方案是前提，不是质量/生产终态。
+- R1 的 57 项断言只记录实际执行与相应谓词通过，部分 scope/worker 谓词的鉴别力有限；原始回执核对不能被计数替代，也不把 57 称为完整鉴别力证明。公开读面的空计划/工序/领料/成本/交接列表只是未预造终态的背景，不作为连续业务通过证据。八份 SOP 与 active 检验方案是前提，不是质量/生产终态。
 - 初始化遇到的错误已按真实公开合同纠正：班组使用 `EARLY`（不是 `SHIFT-EARLY`）；技能关系先补对应码表；SOP 使用独立 fileId；首件方案不配置巡检派发字段。没有修改实现来放宽这些约束。浏览器等待使用的文案不匹配超时、短时 preview reconnect 不作业务失败或通过证据；后续实际页面/公开读回分别记录。
 
 资源停止回执与 evidence hash 在交接前归档；数据随 session 专属卷清理，下一席位按本报告在自身固定版本重建，不复用本次已停止的 runtime。
