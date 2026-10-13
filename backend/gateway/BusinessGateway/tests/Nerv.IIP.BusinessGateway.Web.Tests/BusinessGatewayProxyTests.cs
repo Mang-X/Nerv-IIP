@@ -4529,6 +4529,14 @@ public sealed class BusinessGatewayProxyTests
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessIamAccountDirectoryClient>();
+            services.AddSingleton<IBusinessIamAccountDirectoryClient>(new HttpBusinessIamAccountDirectoryClient(
+                new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"success":true,"data":{"pageIndex":1,"pageSize":1,"totalCount":0,"items":[]}}
+                        """, System.Text.Encoding.UTF8, "application/json"),
+                })) { BaseAddress = new Uri("http://iam.local") }));
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);

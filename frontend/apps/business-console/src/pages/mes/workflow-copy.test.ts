@@ -698,17 +698,28 @@ describe('MES workflow copy', () => {
     )
   })
 
-  it('shows the operator name while preserving trace node identities', () => {
-    mesSpies.traceabilityNodes = [
-      { nodeId: 'user-operator', nodeType: 'Operator', displayName: 'user-operator' },
-      { nodeId: 'WO-001', nodeType: 'WorkOrder', displayName: 'WO-001' },
-    ]
-    const wrapper = mountMesPage(TraceabilityPage)
-    expect(wrapper.text()).toContain('王建国')
-    expect(wrapper.text()).toContain('WO-001')
-    expect(wrapper.text()).not.toContain('user-operator')
-    expect(mesSpies.traceabilityNodes[0].nodeId).toBe('user-operator')
-  })
+  it.each(['work-order', 'batch', 'material-lot'])(
+    'shows IAM operator names in %s traceability without employee linkage',
+    (mode) => {
+      routeState.query = { mode }
+      mesSpies.traceabilityNodes = [
+        { nodeId: 'user-admin', nodeType: 'Operator', displayName: '李工' },
+        { nodeId: 'user-missing', nodeType: 'Operator', displayName: '姓名不可用' },
+        { nodeId: 'user-operator', nodeType: 'Operator', displayName: 'IAM 王工' },
+        { nodeId: 'WO-001', nodeType: 'WorkOrder', displayName: '订单一' },
+      ]
+      const wrapper = mountMesPage(TraceabilityPage)
+      expect(wrapper.text()).toContain('李工')
+      expect(wrapper.text()).toContain('IAM 王工')
+      expect(wrapper.text()).toContain('姓名不可用')
+      expect(wrapper.text()).toContain('WO-001')
+      expect(wrapper.text()).toContain('订单一')
+      expect(wrapper.text()).not.toContain('user-admin')
+      expect(wrapper.text()).not.toContain('user-missing')
+      expect(wrapper.text()).not.toContain('王建国')
+      expect(mesSpies.traceabilityNodes[0].nodeId).toBe('user-admin')
+    },
+  )
 
   it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {
     routeState.query = { batchOrSerial: 'LOT-001', mode: 'batch' }
