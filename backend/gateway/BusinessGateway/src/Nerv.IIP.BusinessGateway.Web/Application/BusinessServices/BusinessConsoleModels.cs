@@ -5582,7 +5582,9 @@ public sealed record BusinessConsoleMesProductionReportDetail(
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
     string? ReportedBy = null,
-    IReadOnlyCollection<string>? SerialNumbers = null);
+    IReadOnlyCollection<string>? SerialNumbers = null,
+    [property: Description("当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。")]
+    string? ReportedByDisplayName = null);
 
 public sealed record BusinessConsoleMesConsumedMaterialLot(
     string MaterialId,
@@ -5638,7 +5640,9 @@ public sealed record BusinessConsoleMesProductionReportRow(
     decimal? OperationActualMachineHours = null,
     [property: Description("提交本条报工的操作人引用；升级前的历史报工为 null。")]
     string? ReportedBy = null,
-    IReadOnlyCollection<string>? SerialNumbers = null);
+    IReadOnlyCollection<string>? SerialNumbers = null,
+    [property: Description("当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。")]
+    string? ReportedByDisplayName = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,

@@ -1826,6 +1826,7 @@ public sealed class GetBusinessConsoleMesWipSummaryEndpoint(
 public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListWithoutStatusRequest, BusinessConsoleMesProductionReportListResponse>(
         auth,
@@ -1835,11 +1836,22 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesListWithoutStatusRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesProductionReportListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesProductionReportListResponse> ForwardAsync(
         BusinessConsoleMesListWithoutStatusRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        var names = await MesOperatorDisplayNames.ResolveAsync(iamAccounts, tokenProvider.BearerToken,
+            request.OrganizationId, request.EnvironmentId, response.Items.Select(report => report.ReportedBy), cancellationToken);
+        return response with
+        {
+            Items = response.Items.Select(report => report with
+            {
+                ReportedByDisplayName = report.ReportedBy is { } userId ? names.GetValueOrDefault(userId) : null,
+            }).ToArray(),
+        };
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1887,6 +1899,7 @@ public sealed class BusinessConsoleMesProductionStatisticsRequestValidator
 public sealed class GetBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionReportDetailRequest, BusinessConsoleMesProductionReportDetailResponse>(
         auth,
@@ -1896,15 +1909,26 @@ public sealed class GetBusinessConsoleMesProductionReportEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesProductionReportDetailRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesProductionReportDetailResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesProductionReportDetailResponse> ForwardAsync(
         BusinessConsoleMesProductionReportDetailRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.GetProductionReportAsync(
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.GetProductionReportAsync(
             tokenProvider.BearerToken,
             request.ReportNo,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
+        var names = await MesOperatorDisplayNames.ResolveAsync(iamAccounts, tokenProvider.BearerToken,
+            request.OrganizationId, request.EnvironmentId, [response.Report.ReportedBy], cancellationToken);
+        return response with
+        {
+            Report = response.Report with
+            {
+                ReportedByDisplayName = response.Report.ReportedBy is { } userId ? names.GetValueOrDefault(userId) : null,
+            },
+        };
+    }
 }
 
 [Tags("Business Console MES")]
