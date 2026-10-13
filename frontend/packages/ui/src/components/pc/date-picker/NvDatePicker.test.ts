@@ -1,8 +1,86 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
 import NvDatePicker from './NvDatePicker.vue'
 
 describe('NvDatePicker', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  // PublicContract：#4385 与 #3905 获批 spec r1，locale 只影响日历日期展示。
+  it.each([
+    ['zh-CN', '2026/1/1'],
+    ['en-US', '1/1/2026'],
+  ])('按 %s 显示固定日历日期，保持 ISO 模型', (locale, expected) => {
+    const wrapper = mount(NvDatePicker, { props: { modelValue: '2026-01-01', locale } })
+    expect(wrapper.get('button').text()).toBe(expected)
+    expect(wrapper.props('modelValue')).toBe('2026-01-01')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('响应式 locale 切换只更新展示；未传 locale 保留 ISO，空值保留占位', async () => {
+    const wrapper = mount(NvDatePicker, {
+      props: { modelValue: '2026-06-18', locale: 'zh-CN', placeholder: '业务日期' },
+    })
+    expect(wrapper.get('button').text()).toBe('2026/6/18')
+    await wrapper.setProps({ locale: 'en-US' })
+    expect(wrapper.get('button').text()).toBe('6/18/2026')
+    expect(wrapper.props('modelValue')).toBe('2026-06-18')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.setProps({ locale: undefined })
+    expect(wrapper.get('button').text()).toBe('2026-06-18')
+    await wrapper.setProps({ modelValue: '', locale: 'zh-CN' })
+    expect(wrapper.get('button').text()).toBe('业务日期')
+    wrapper.unmount()
+  })
+
+  it('本地化展示下真实日历选择回传 ISO，清除回传空串', async () => {
+    const wrapper = mount(NvDatePicker, {
+      attachTo: document.body,
+      props: {
+        modelValue: '2026-06-18',
+        locale: 'en-US',
+        clearable: true,
+        'onUpdate:modelValue': (value: string) => wrapper.setProps({ modelValue: value }),
+      },
+    })
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    const day = Array.from(document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell')).find(
+      (cell) => cell.textContent?.trim() === '19',
+    )!
+    day.click()
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['2026-06-19'])
+    expect(wrapper.get('button').text()).toBe('6/19/2026')
+    await wrapper.get('[aria-label="清除所选日期"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.[1]).toEqual([''])
+    expect(wrapper.get('button').text()).toBe('选择日期')
+    wrapper.unmount()
+  })
+
+  it('本地化展示保留禁用和标签、校验关联', () => {
+    const wrapper = mount(NvDatePicker, {
+      props: {
+        modelValue: '2026-06-18',
+        locale: 'zh-CN',
+        disabled: true,
+        clearable: true,
+        id: 'business-date',
+        ariaInvalid: true,
+        ariaDescribedby: 'date-error',
+      },
+    })
+    const trigger = wrapper.get('button')
+    expect(trigger.attributes('disabled')).toBeDefined()
+    expect(trigger.attributes('id')).toBe('business-date')
+    expect(trigger.attributes('aria-invalid')).toBe('true')
+    expect(trigger.attributes('aria-describedby')).toBe('date-error')
+    expect(wrapper.find('[aria-label="清除所选日期"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('forwards validation semantics to the focusable trigger', () => {
     const wrapper = mount(NvDatePicker, {
       props: {

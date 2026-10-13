@@ -3,7 +3,7 @@
 桌面产品 UI 的日期/时间控件，从 `@nerv-iip/ui` 导出：
 
 - `NvDatePicker` — 单个日期。`v-model` 为 `YYYY-MM-DD` 字符串或 `null`；
-  props 为 `placeholder`、`disabled`。
+  支持可选 `locale` 控制已选日期展示，省略时保持 ISO 显示；完整属性契约见[文档站](../../apps/design-system/docs/components/desktop/date-picker.md)。
 - `NvDateRangePicker` — 日期范围。`v-model` 为 `DateRange`
   (`{ start: string | null, end: string | null }`) 或 `null`。
 - `NvTimePicker` — 用于排程/时间窗口输入的时间选择。
@@ -17,6 +17,7 @@
 1. 值保持为兼容 DateOnly 的字符串；消费者在应用边界将其转换为 endpoint DTO。
 2. 禁用和可清除状态由 props 处理；页面不得重新实现清除按钮。
 3. 触发器保持紧凑，适用于工具栏筛选器和表单字段。
+4. `NvDatePicker` 的 `locale` 只影响展示；响应式 locale 切换不改变模型，选择回传 `YYYY-MM-DD`，清除回传空串。日期不随宿主时区偏移。
 
 ## 用法
 

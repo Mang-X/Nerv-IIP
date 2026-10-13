@@ -14,6 +14,8 @@ import NvButton from '../button/NvButton.vue'
 const props = withDefaults(
   defineProps<{
     modelValue?: string | null
+    /** 仅本地化已选日期展示；省略时保留 YYYY-MM-DD。 */
+    locale?: string
     id?: string
     placeholder?: string
     disabled?: boolean
@@ -26,6 +28,18 @@ const props = withDefaults(
   { modelValue: null, placeholder: '选择日期', disabled: false, clearable: false },
 )
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+
+const displayValue = computed(() => {
+  if (!props.modelValue) return props.placeholder
+  if (!props.locale) return props.modelValue
+  // 模型是日历日期，固定 UTC 解析与格式化，避免宿主时区把日期移到前一天。
+  return new Intl.DateTimeFormat(props.locale, {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${props.modelValue}T00:00:00Z`))
+})
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 const open = ref(false)
@@ -116,7 +130,7 @@ function clear() {
           <template #leading
             ><CalendarIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true"
           /></template>
-          <span class="truncate tabular-nums">{{ modelValue || placeholder }}</span>
+          <span class="truncate tabular-nums">{{ displayValue }}</span>
         </NvButton>
       </PopoverTrigger>
       <!-- 清除叉与触发器是**兄弟**而不是子节点：塞在按钮里会产出非法嵌套的
