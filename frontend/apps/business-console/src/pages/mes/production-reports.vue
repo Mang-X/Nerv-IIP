@@ -88,7 +88,7 @@ const {
 const { page, pageSize } = usePagedList(filters)
 const candidateQueue = useMesTelemetryProductionReportCandidates()
 // 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
-const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+const { resolveDevice, resolveUser } = useMasterDataDisplayNames({ devices: true, users: true })
 const { resolveSkuLabel } = useMesDisplayNames()
 type TelemetryCandidate = (typeof candidateQueue.candidates.value)[number]
 /** 候选当前处境：优先说明为什么挂起，没挂起就说它在队列里的状态。 */
@@ -443,6 +443,7 @@ const columns: NvDataTableColumn<ReportRow>[] = [
     accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
   { key: 'actualHours', header: '实际工时', width: 'w-36' },
+  { key: 'reportedBy', header: '操作人', accessor: (r) => resolveUser(r.reportedBy) ?? '—' },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
 ]
@@ -699,6 +700,16 @@ async function dismissCandidate(candidateId?: string) {
               <dt class="text-muted-foreground">返工</dt>
               <dd class="font-medium tabular-nums">
                 {{ formatQuantity(reverseTarget.reworkQuantity) }}
+              </dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-muted-foreground">操作人</dt>
+              <dd class="font-medium">
+                {{
+                  reverseProductionReportDetailMatchesTarget
+                    ? (resolveUser(reverseProductionReportDetail?.report?.reportedBy) ?? '—')
+                    : '—'
+                }}
               </dd>
             </div>
             <div class="flex justify-between gap-2">
