@@ -1020,3 +1020,24 @@ describe('报工操作人展示', () => {
     rows[0]!.reportedByDisplayName = saved
   })
 })
+
+describe('报工详情日期展示', () => {
+  it.each([
+    ['2026-10-13T09:00:00', '2026-10-13 09:00'],
+    ['本次录入', '本次录入'],
+  ])('将 %s 按统一日期语义显示为 %s', async (value, expected) => {
+    const saved = rows[0]!.reportedAtUtc
+    rows[0]!.reportedAtUtc = value
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    try {
+      const button = wrapper.findAll('button').find((item) => item.text() === 'PRPT-000001')!
+      await button.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="dialog"]').text()).toContain(expected)
+      expect(wrapper.get('[role="dialog"]').text()).not.toContain('Invalid Date')
+    } finally {
+      wrapper.unmount()
+      rows[0]!.reportedAtUtc = saved
+    }
+  })
+})

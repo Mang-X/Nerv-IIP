@@ -100,7 +100,7 @@ public sealed class BusinessMesReporterDisplayNameTests
     {
         var ids = Enumerable.Range(1, 101).Select(index => $"user-{index:D3}").ToArray();
         var mes = new MesHandler(false, ids);
-        var iam = new IamHandler();
+        var iam = new IamHandler(namesForRequestedIds: true);
         await using var lease = Lease(FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.MesReportingRead), mes, iam);
         using var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -112,6 +112,11 @@ public sealed class BusinessMesReporterDisplayNameTests
         Assert.Equal(ids.Order(), requestedIds.Order());
         Assert.Contains("pageSize=100", iam.Queries[0]);
         Assert.Contains("pageSize=1", iam.Queries[1]);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var reports = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(ids.Length, reports.Length);
+        Assert.Equal(ids, reports.Select(report => report.GetProperty("reportedBy").GetString()));
+        Assert.Equal(ids.Select(id => $"姓名-{id}"), reports.Select(report => report.GetProperty("reportedByDisplayName").GetString()));
     }
 
     private static string Url(bool detail) => "/api/business-console/v1/mes/production-reports" +
@@ -151,7 +156,7 @@ public sealed class BusinessMesReporterDisplayNameTests
         }
     }
 
-    private sealed class IamHandler(string? displayName = "王建国", bool memberExists = true) : HttpMessageHandler
+    private sealed class IamHandler(string? displayName = "王建国", bool memberExists = true, bool namesForRequestedIds = false) : HttpMessageHandler
     {
         public List<string> Queries { get; } = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -159,6 +164,15 @@ public sealed class BusinessMesReporterDisplayNameTests
             Assert.Equal("/internal/iam/v1/member-accounts", request.RequestUri!.AbsolutePath);
             Assert.Equal("internal-token", request.Headers.Authorization?.Parameter);
             Queries.Add(Uri.UnescapeDataString(request.RequestUri.Query));
+            if (namesForRequestedIds)
+            {
+                var ids = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri.Query)["userIds"].ToArray();
+                return Task.FromResult(Json(new
+                {
+                    pageIndex = 1, pageSize = ids.Length, totalCount = ids.Length,
+                    items = ids.Select(id => new { userId = id, loginName = $"login-{id}", displayName = $"姓名-{id}", enabled = true }),
+                }));
+            }
             var account = new { userId = "user-admin", loginName = "admin", displayName, enabled = false };
             return Task.FromResult(Json(new { pageIndex = 1, pageSize = 1, totalCount = memberExists ? 1 : 0, items = memberExists ? new[] { account } : [] }));
         }

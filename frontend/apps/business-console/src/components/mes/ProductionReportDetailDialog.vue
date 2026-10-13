@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useMesProductionReportDetail } from '@/composables/useBusinessMes'
 import { inlineErrorMessage } from '@/utils/notify'
+import { formatDateTime } from '@/utils/format'
 import {
   NvButton,
   NvDialog,
@@ -29,9 +30,7 @@ const fields = computed(() => [
   { label: '操作人', value: report.value?.reportedByDisplayName?.trim() || '姓名不可用' },
   {
     label: '报工时间',
-    value: report.value?.reportedAtUtc
-      ? new Date(report.value.reportedAtUtc).toLocaleString()
-      : '—',
+    value: formatDateTime(report.value?.reportedAtUtc),
   },
   { label: '良品', value: report.value?.goodQuantity ?? 0 },
   { label: '报废', value: report.value?.scrapQuantity ?? 0 },
