@@ -2646,6 +2646,29 @@ export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
   }
 }
 
+export function useMesProductionReportDetail(reportNo: MaybeRefOrGetter<string | null>) {
+  const filters = defaultContext()
+  const query = useQuery(() => ({
+    ...getBusinessConsoleMesProductionReportQueryOptions({
+      path: { reportNo: toValue(reportNo) ?? '' },
+      query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+    }),
+    enabled: hasBusinessContext(filters) && !!toValue(reportNo),
+  }))
+  return {
+    detail: computed(() => {
+      const response = unwrapData<
+        BusinessConsoleMesProductionReportDetailResponse,
+        BusinessConsoleMesProductionReportDetailEnvelope
+      >(query.data.value)
+      return response?.report?.reportNo === toValue(reportNo) ? response : undefined
+    }),
+    detailError: query.error,
+    detailPending: query.isLoading,
+    refresh: () => query.refetch(),
+  }
+}
+
 export function useMesProductionReports() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()

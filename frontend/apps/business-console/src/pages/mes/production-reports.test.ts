@@ -20,11 +20,14 @@ interface ReportFixture extends BusinessConsoleMesProductionReportRow {
   reworkQuantity: number
   reportedAtUtc: string
   workOrderStatus: string
+  reportedByDisplayName?: string | null
 }
 
 const rows: ReportFixture[] = [
   // A 可冲销原单(工单在制、无冲销互链字段)
   {
+    reportedBy: 'user-admin',
+    reportedByDisplayName: '王建国',
     productionReportId: 'pr-a',
     reportNo: 'PRPT-000001',
     workOrderId: 'WO-1',
@@ -208,6 +211,12 @@ vi.mock('@/composables/useBusinessMes', async () => {
       scrapReasonCodes: shallowRef([]),
       refreshScrapReasonCodes: vi.fn(),
     }),
+    useMesProductionReportDetail: () => ({
+      detail: shallowRef({ report: rows[0], consumedMaterialLots: [], laborAllocations: [] }),
+      detailError: shallowRef(undefined),
+      detailPending: shallowRef(false),
+      refresh: vi.fn(),
+    }),
     useMesProductionReports: () => ({
       filters: mesState.filters,
       // 按 keyword 过滤时返回对方那一行(模拟服务端跨页返回),否则返回本页三行——让跨页定位的
@@ -349,6 +358,12 @@ function mountReports(permissionCodes: string[]) {
             </select>
           `,
         },
+        NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+        NvDialogContent: { template: '<section role="dialog"><slot /></section>' },
+        NvDialogHeader: { template: '<header><slot /></header>' },
+        NvDialogTitle: { template: '<h2><slot /></h2>' },
+        NvDialogDescription: { template: '<p><slot /></p>' },
+        NvDialogFooter: { template: '<footer><slot /></footer>' },
         NvSpinner: true,
       },
     },
@@ -390,14 +405,14 @@ beforeEach(() => {
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
   it('shows the reporting operator in the list and original report detail', async () => {
-    const row = { ...rows[0], reportedBy: 'user-operator' }
+    const row = { ...rows[0], reportedBy: 'user-operator', reportedByDisplayName: '王建国' }
     mesState.guardRows = [row]
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     await flushPromises()
     expect(wrapper.get('[data-testid="data-table"]').text()).toContain('操作人')
     expect(wrapper.get('[data-testid="row"]').text()).toContain('王建国')
     mesState.detail.value = {
-      report: { ...row, reportedBy: 'user-detail-operator' },
+      report: { ...row, reportedBy: 'user-detail-operator', reportedByDisplayName: '李俊华' },
       consumedMaterialLots: [],
     }
     ;(wrapper.vm as unknown as { openReverse: (target: typeof row) => void }).openReverse(row)
@@ -409,11 +424,13 @@ describe('production reports page — reversal permission & cross-page interlink
     expect(wrapper.text()).not.toContain('user-detail-operator')
   })
 
-  it('shows a placeholder for an identity outside the worker directory', async () => {
-    mesState.guardRows = [{ ...rows[0], reportedBy: 'user-admin' }]
+  it('shows name unavailable when IAM does not provide a display name', async () => {
+    mesState.guardRows = [{ ...rows[0], reportedBy: 'user-admin', reportedByDisplayName: null }]
     const wrapper = mountReports(['business.mes.reporting.read'])
     await flushPromises()
-    expect(wrapper.get('[data-testid="row"] [data-column="reportedBy"]').text()).toBe('—')
+    expect(wrapper.get('[data-testid="row"] [data-column="reportedByDisplayName"]').text()).toBe(
+      '姓名不可用',
+    )
     expect(wrapper.text()).not.toContain('user-admin')
   })
 
@@ -974,5 +991,55 @@ describe('production reports page — 遥测报工候选转正', () => {
       'WO-2',
       '019fbb41-0210-7000-8000-000000000210',
     )
+  })
+})
+
+describe('报工操作人展示', () => {
+  it('报工只读用户在列表和独立详情看到 IAM 人名，未关联员工也不展示裸引用', async () => {
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    expect(wrapper.findAll('[data-testid="row"]')[0]!.text()).toContain('王建国')
+    const report = wrapper.findAll('button').find((button) => button.text() === 'PRPT-000001')
+    expect(report).toBeDefined()
+    await report!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('王建国')
+    expect(wrapper.get('[role="dialog"]').text()).not.toContain('user-admin')
+    expect(wrapper.get('[role="dialog"]').text()).not.toContain('冲销')
+    wrapper.unmount()
+  })
+
+  it('IAM 姓名缺失时显示姓名不可用，不以身份引用兜底', async () => {
+    const saved = rows[0]!.reportedByDisplayName
+    rows[0]!.reportedByDisplayName = null
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    expect(wrapper.findAll('[data-testid="row"]')[0]!.text()).toContain('姓名不可用')
+    const report = wrapper.findAll('button').find((button) => button.text() === 'PRPT-000001')
+    await report!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('姓名不可用')
+    expect(wrapper.text()).not.toContain('user-admin')
+    wrapper.unmount()
+    rows[0]!.reportedByDisplayName = saved
+  })
+})
+
+describe('报工详情日期展示', () => {
+  it.each([
+    ['2026-10-13T09:00:00', '2026-10-13 09:00'],
+    ['本次录入', '本次录入'],
+  ])('将 %s 按统一日期语义显示为 %s', async (value, expected) => {
+    const saved = rows[0]!.reportedAtUtc
+    rows[0]!.reportedAtUtc = value
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    try {
+      const button = wrapper.findAll('button').find((item) => item.text() === 'PRPT-000001')!
+      await button.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[role="dialog"]').text()).toContain(expected)
+      expect(wrapper.get('[role="dialog"]').text()).not.toContain('Invalid Date')
+    } finally {
+      wrapper.unmount()
+      rows[0]!.reportedAtUtc = saved
+    }
   })
 })

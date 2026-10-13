@@ -56028,6 +56028,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "reportedByDisplayName": {
+            "type": "string",
+            "description": "当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。",
+            "nullable": true
           }
         }
       },
@@ -56410,6 +56415,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "reportedByDisplayName": {
+            "type": "string",
+            "description": "当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。",
+            "nullable": true
           }
         }
       },

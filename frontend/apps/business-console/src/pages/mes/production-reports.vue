@@ -4,6 +4,7 @@ import type {
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
 import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
+import ProductionReportDetailDialog from '@/components/mes/ProductionReportDetailDialog.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
@@ -85,10 +86,11 @@ const {
   reverseProductionReport,
   reverseProductionReportPending,
 } = useMesProductionReports()
+const detailReportNo = shallowRef<string | null>(null)
 const { page, pageSize } = usePagedList(filters)
 const candidateQueue = useMesTelemetryProductionReportCandidates()
 // 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
-const { resolveDevice, resolveUser } = useMasterDataDisplayNames({ devices: true, users: true })
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 const { resolveSkuLabel } = useMesDisplayNames()
 type TelemetryCandidate = (typeof candidateQueue.candidates.value)[number]
 /** 候选当前处境：优先说明为什么挂起，没挂起就说它在队列里的状态。 */
@@ -443,7 +445,11 @@ const columns: NvDataTableColumn<ReportRow>[] = [
     accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
   { key: 'actualHours', header: '实际工时', width: 'w-36' },
-  { key: 'reportedBy', header: '操作人', accessor: (r) => resolveUser(r.reportedBy) ?? '—' },
+  {
+    key: 'reportedByDisplayName',
+    header: '操作人',
+    accessor: (r) => r.reportedByDisplayName?.trim() || '姓名不可用',
+  },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
 ]
@@ -538,7 +544,15 @@ async function dismissCandidate(candidateId?: string) {
           @mouseleave="clearFocus"
         >
           <div class="flex flex-wrap items-center gap-1.5">
-            <span>{{ row.reportNo?.trim() || '—' }}</span>
+            <button
+              v-if="row.reportNo"
+              type="button"
+              class="text-primary underline-offset-4 hover:underline"
+              @click="detailReportNo = row.reportNo"
+            >
+              {{ row.reportNo }}
+            </button>
+            <span v-else>—</span>
             <NvStatusBadge v-if="isReversalRow(row)" label="负向冲销" tone="danger" />
             <NvStatusBadge v-else-if="isAlreadyReversed(row)" label="已冲销" tone="warning" />
           </div>
@@ -652,6 +666,8 @@ async function dismissCandidate(candidateId?: string) {
       </template>
     </NvDataTable>
 
+    <ProductionReportDetailDialog v-model:report-no="detailReportNo" />
+
     <!-- 冲销确认(破坏性,原因必填),A1 §2.5。用 :open + @update:open 统一拦截关闭(pending 时禁关) -->
     <NvAlertDialog :open="reverseOpen" @update:open="onReverseOpenChange">
       <NvAlertDialogContent class="sm:max-w-lg">
@@ -707,8 +723,9 @@ async function dismissCandidate(candidateId?: string) {
               <dd class="font-medium">
                 {{
                   reverseProductionReportDetailMatchesTarget
-                    ? (resolveUser(reverseProductionReportDetail?.report?.reportedBy) ?? '—')
-                    : '—'
+                    ? reverseProductionReportDetail?.report?.reportedByDisplayName?.trim() ||
+                      '姓名不可用'
+                    : '姓名不可用'
                 }}
               </dd>
             </div>

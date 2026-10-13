@@ -37,6 +37,8 @@ PlatformGateway 与 BusinessGateway 分别拥有自己的 OpenAPI 输出和生�
 
 跨服务调用中的“内部服务身份”和“终端用户已获授权”是两种不同事实：内部服务令牌只证明服务调用方；需要向下游传递额外用户权限结果时，由入口 Gateway 先完成 IAM 检查，再传递受信任的最小授权声明。具体安全规则属于 Governance，不在 Architecture 重复编码。
 
+BusinessGateway 的报工列表和详情在 MES 读取授权与响应范围确定后，为响应内出现的操作人引用读取同一组织/环境的 IAM 当前显示名。MES 保留原始身份与报工事实，IAM 保留姓名事实；公开投影只增加可空姓名，不开放账号目录、登录名或其它账号资料。
+
 ## Platform SDK 边界
 
 Platform SDK 是平台向应用、Connector Host 和扩展提供的稳定能力集合，模块与能力基线由 [`../platform/sdk.md`](../platform/sdk.md) 维护。SDK 应从 OpenAPI、公开 DTO 和版本化协议生成或包装，不依赖服务端 Domain、Infrastructure 或数据库模型；SDK/ApplicationVersion 的版本治理见 Governance。

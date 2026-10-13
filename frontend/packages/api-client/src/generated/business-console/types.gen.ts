@@ -5477,6 +5477,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      */
     reportedBy?: string | null;
     serialNumbers?: Array<string> | null;
+    /**
+     * 当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。
+     */
+    reportedByDisplayName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {
@@ -5573,6 +5577,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
      */
     reportedBy?: string | null;
     serialNumbers?: Array<string> | null;
+    /**
+     * 当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。
+     */
+    reportedByDisplayName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot = {
