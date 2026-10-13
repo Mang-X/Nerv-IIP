@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
+import { i18n } from '@/i18n'
 import InspectionsPage from './inspections.vue'
 import PlansPage from './plans.vue'
 import WorkOrdersPage from './work-orders.vue'
@@ -267,6 +268,7 @@ function mountOptions() {
 }
 
 beforeEach(() => {
+  i18n.global.locale.value = 'zh-CN'
   state.maintenanceFilters = reactive({
     organizationId: 'org-001',
     environmentId: 'env-dev',
@@ -1409,6 +1411,89 @@ describe('maintenance plans page', () => {
     // Must not hide the calendar date behind a bare runtime-only "读取失败".
     expect(wrapper.text()).not.toContain('运行小时（读取失败）')
   })
+
+  // PublicContract：#3905 r1 / #4387；真实日期交互保持 ISO 请求和既有当天默认值。
+  it.each(['plan', 'generate'] as const)(
+    '%s 日期选择、响应式 locale 与清空保持请求语义',
+    async (kind) => {
+      const wrapper = mount(PlansPage, mountOptions())
+      await flushPromises()
+      const openingText = kind === 'plan' ? '新建保养计划' : '生成到期工单'
+      ;[...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.includes(openingText))!
+        .click()
+      await flushPromises()
+
+      const id = kind === 'plan' ? 'plan-starts' : 'gen-date'
+      const today = new Date().toISOString().slice(0, 10)
+      const trigger = bodyWrapper<HTMLButtonElement>(`#${id}`)
+      expect(document.querySelector(`label[for="${id}"]`)).not.toBeNull()
+      expect(trigger.text()).toBe(
+        new Intl.DateTimeFormat('zh-CN', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          timeZone: 'UTC',
+        }).format(new Date(`${today}T00:00:00Z`)),
+      )
+      await trigger.trigger('click')
+      await flushPromises()
+      const selectedDay = [...document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell')].find(
+        (button) => button.textContent?.trim() === '19',
+      )!
+      selectedDay.click()
+      await flushPromises()
+      const picked = `${today.slice(0, 7)}-19`
+      i18n.global.locale.value = 'en-US'
+      await flushPromises()
+      expect(trigger.text()).toBe(
+        new Intl.DateTimeFormat('en-US', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          timeZone: 'UTC',
+        }).format(new Date(`${picked}T00:00:00Z`)),
+      )
+
+      if (kind === 'plan') {
+        await bodyWrapper<HTMLInputElement>('#plan-device').setValue('DEV-SMT-01')
+        await bodyWrapper<HTMLInputElement>('#plan-owner').setValue('设备保全班')
+      }
+      await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+      await flushPromises()
+      const request = kind === 'plan' ? state.createPlan : state.generateDue
+      const field = kind === 'plan' ? 'startsOn' : 'businessDate'
+      expect(request.mock.calls[0][0][field]).toBe(picked)
+
+      ;[...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.includes(openingText))!
+        .click()
+      await flushPromises()
+      await bodyWrapper<HTMLButtonElement>(`#${id}`).trigger('click')
+      await flushPromises()
+      ;[...document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell')]
+        .find((button) => button.textContent?.trim() === '19')!
+        .click()
+      await flushPromises()
+      const picker = document.querySelector(`#${id}`)!.closest('[data-slot="nv-date-picker"]')!
+      ;(picker.querySelector('[aria-label="清除所选日期"]') as HTMLButtonElement).click()
+      await flushPromises()
+      expect(document.querySelector(`#${id}`)?.textContent).toContain('选择日期')
+      if (kind === 'plan') {
+        // 清空日期不会绕过原有必填校验。
+        await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+        await flushPromises()
+        expect(request).toHaveBeenCalledTimes(1)
+        expect(document.body.textContent).toContain('请完善标红的必填项。')
+        await bodyWrapper<HTMLInputElement>('#plan-device').setValue('DEV-SMT-01')
+        await bodyWrapper<HTMLInputElement>('#plan-owner').setValue('设备保全班')
+      }
+      await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+      await flushPromises()
+      expect(request.mock.calls[1][0][field]).toBe(today)
+      wrapper.unmount()
+    },
+  )
 
   it('creates a genuine runtime-only plan (no calendar interval)', async () => {
     mount(PlansPage, mountOptions())
