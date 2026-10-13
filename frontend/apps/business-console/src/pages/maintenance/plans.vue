@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { i18n } from '@/i18n'
 import type {
   BusinessConsoleCreateMaintenancePlanRequest,
   BusinessConsoleMaintenancePlanItem,
@@ -24,6 +25,7 @@ import {
 } from '@/utils/notify'
 import {
   NvButton,
+  NvDatePicker,
   NvDataTable,
   NvDialog,
   NvDialogClose,
@@ -37,13 +39,14 @@ import {
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
-  NvInput,
   NvPageHeader,
   NvRowActions,
   NvSpinner,
 } from '@nerv-iip/ui'
 import { CalendarClockIcon, PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
+
+const locale = i18n.global.locale
 
 definePage({
   meta: {
@@ -357,7 +360,12 @@ async function submitGenerate() {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="gen-date">业务日期</NvFieldLabel>
-              <NvInput id="gen-date" v-model="generateForm.businessDate" type="date" />
+              <NvDatePicker
+                id="gen-date"
+                v-model="generateForm.businessDate"
+                :locale="locale"
+                clearable
+              />
             </NvField>
           </NvFieldGroup>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { i18n } from '@/i18n'
 import type {
   BusinessConsoleCreateMaintenancePlanRequest,
   BusinessConsoleMaintenancePlanItem,
@@ -6,6 +7,7 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   NvButton,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -35,6 +37,8 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useEquipmentTeamCatalog } from '@/composables/useEquipmentPickerCatalog'
+
+const locale = i18n.global.locale
 
 type TriggerMode = 'calendar' | 'runtime' | 'both'
 type DialogMode = 'create' | 'edit'
@@ -332,7 +336,7 @@ function submitForm() {
 
           <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-starts">起始日期</NvFieldLabel>
-            <NvInput id="plan-starts" v-model="form.startsOn" type="date" />
+            <NvDatePicker id="plan-starts" v-model="form.startsOn" :locale="locale" clearable />
           </NvField>
 
           <NvField v-if="!isEditMode" class="sm:col-span-2">
