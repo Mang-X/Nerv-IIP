@@ -9,6 +9,7 @@ import { ref } from 'vue'
 const planDate = ref('2026-06-18')
 const emptyDate = ref()
 const range = ref({ start: '2026-06-10', end: '2026-06-18' })
+const locale = ref('zh-CN')
 </script>
 
 # NvDatePicker 日期选择器
@@ -25,6 +26,24 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 
 ```vue
 <NvDatePicker v-model="planDate" placeholder="选择日期" />
+```
+
+## 本地化日期显示
+
+可选 `locale` 仅控制已选日期的展示：`2026-06-18` 在 `zh-CN` 下显示 `2026/6/18`，在 `en-US` 下显示 `6/18/2026`。响应式切换 locale 不改变模型；选择仍回传 `YYYY-MM-DD`，清除仍回传空串。日期按日历日期处理，不随宿主时区偏移。省略 `locale` 时保留原有 ISO 显示；日历标题、星期与操作文案沿用现有中文。
+
+<Demo>
+  <div style="display:flex;flex-direction:column;gap:12px;max-width:240px">
+    <select v-model="locale" aria-label="日期显示语言">
+      <option value="zh-CN">简体中文</option>
+      <option value="en-US">English (US)</option>
+    </select>
+    <NvDatePicker v-model="planDate" :locale="locale" clearable />
+  </div>
+</Demo>
+
+```vue
+<NvDatePicker v-model="planDate" :locale="locale" clearable />
 ```
 
 ## 占位与禁用
@@ -88,16 +107,17 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 
 ### NvDatePicker
 
-| 属性               | 说明                             | 类型                      | 默认       |
-| ------------------ | -------------------------------- | ------------------------- | ---------- |
-| `v-model`          | 绑定日期（`YYYY-MM-DD` 字符串）  | `string \| null`          | `null`     |
-| `id`               | 触发按钮 ID，用于关联字段标签    | `string`                  | —          |
-| `placeholder`      | 未选中占位文本                   | `string`                  | `选择日期` |
-| `disabled`         | 是否禁用                         | `boolean`                 | `false`    |
-| `clearable`        | 是否允许清除已选日期（回传空串） | `boolean`                 | `false`    |
-| `aria-invalid`     | 字段是否处于校验失败状态         | `boolean`                 | `false`    |
-| `aria-describedby` | 关联字段错误说明元素的 ID        | `string`                  | —          |
-| `class`            | 触发按钮宽度                     | `HTMLAttributes['class']` | —          |
+| 属性               | 说明                                  | 类型                      | 默认       |
+| ------------------ | ------------------------------------- | ------------------------- | ---------- |
+| `v-model`          | 绑定日期（`YYYY-MM-DD` 字符串）       | `string \| null`          | `null`     |
+| `id`               | 触发按钮 ID，用于关联字段标签         | `string`                  | —          |
+| `locale`           | 已选日期的显示 locale，省略时显示 ISO | `string`                  | —          |
+| `placeholder`      | 未选中占位文本                        | `string`                  | `选择日期` |
+| `disabled`         | 是否禁用                              | `boolean`                 | `false`    |
+| `clearable`        | 是否允许清除已选日期（回传空串）      | `boolean`                 | `false`    |
+| `aria-invalid`     | 字段是否处于校验失败状态              | `boolean`                 | `false`    |
+| `aria-describedby` | 关联字段错误说明元素的 ID             | `string`                  | —          |
+| `class`            | 触发按钮宽度                          | `HTMLAttributes['class']` | —          |
 
 ### NvDateRangePicker
 
