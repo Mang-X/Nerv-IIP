@@ -320,6 +320,7 @@ function refreshReport() {
             id="oee-business-date"
             v-model="filters.businessDate"
             :locale="locale"
+            class="[&_[data-slot=nv-button]]:gap-1 [&_[data-slot=nv-button]]:pl-2"
             clearable
           />
         </NvField>
