@@ -723,7 +723,8 @@ async function dismissCandidate(candidateId?: string) {
               <dd class="font-medium">
                 {{
                   reverseProductionReportDetailMatchesTarget
-                    ? reverseProductionReportDetail?.report?.reportedByDisplayName?.trim() || '姓名不可用'
+                    ? reverseProductionReportDetail?.report?.reportedByDisplayName?.trim() ||
+                      '姓名不可用'
                     : '姓名不可用'
                 }}
               </dd>

@@ -428,7 +428,9 @@ describe('production reports page — reversal permission & cross-page interlink
     mesState.guardRows = [{ ...rows[0], reportedBy: 'user-admin', reportedByDisplayName: null }]
     const wrapper = mountReports(['business.mes.reporting.read'])
     await flushPromises()
-    expect(wrapper.get('[data-testid="row"] [data-column="reportedByDisplayName"]').text()).toBe('姓名不可用')
+    expect(wrapper.get('[data-testid="row"] [data-column="reportedByDisplayName"]').text()).toBe(
+      '姓名不可用',
+    )
     expect(wrapper.text()).not.toContain('user-admin')
   })
 
