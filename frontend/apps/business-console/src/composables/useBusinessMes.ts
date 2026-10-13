@@ -520,6 +520,7 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
     requireSelectedScope,
     selectedScope,
     scopeMessage,
+    scopeError: workContextQuery.error,
     scopeOptions,
     scopePending: workContextQuery.isLoading,
     scopeReady,
@@ -2078,7 +2079,10 @@ export function useMesOperationTasks() {
   const queryCache = useQueryCache()
 
   const operationTasksScopeReady = computed(
-    () => hasBusinessContext(filters) && operationListScope.scopeReady.value,
+    () =>
+      hasBusinessContext(filters) &&
+      operationListScope.scopeReady.value &&
+      !operationListScope.scopeError.value,
   )
   const operationTasksIdentity = computed(() => {
     const selectedScope = operationListScope.selectedScope.value
@@ -2214,6 +2218,7 @@ export function useMesOperationTasks() {
     operationTasksTotal: computed(() => envelopeTotal(operationTasksResponse.value)),
     operationListScope: operationListScope.selectedScope,
     operationListScopeMessage: operationListScope.scopeMessage,
+    operationListScopeError: operationListScope.scopeError,
     operationListScopePending: operationListScope.scopePending,
     operationListScopeReady: operationListScope.scopeReady,
     operationScopeMessage: operationScope.scopeMessage,
@@ -2225,7 +2230,9 @@ export function useMesOperationTasks() {
       body: BusinessConsoleMesOperationTaskActionRequest,
     ) => performOperationAction('pause', pauseMutation, operationTaskId, context, body),
     refreshOperationTasks: () =>
-      operationTasksScopeReady.value ? operationTasksQuery.refetch() : Promise.resolve(),
+      operationTasksScopeReady.value
+        ? operationTasksQuery.refetch()
+        : operationListScope.refreshScope(),
     resumeOperationTask: async (
       operationTaskId: string,
       context: MesContextFilters,
