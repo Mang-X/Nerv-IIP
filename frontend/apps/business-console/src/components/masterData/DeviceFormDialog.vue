@@ -24,6 +24,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,
   NvCheckbox,
+  NvDatePicker,
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
@@ -47,6 +48,9 @@ import {
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { i18n } from '@/i18n'
+
+const locale = i18n.global.locale
 
 const props = defineProps<{
   /** 要编辑的设备行；不传即新建。 */
@@ -470,7 +474,12 @@ async function submit() {
           </NvField>
           <NvField>
             <NvFieldLabel for="dev-purchase-date">购置日期</NvFieldLabel>
-            <NvInput id="dev-purchase-date" v-model="form.purchaseDate" type="date" />
+            <NvDatePicker
+              id="dev-purchase-date"
+              v-model="form.purchaseDate"
+              :locale="locale"
+              clearable
+            />
           </NvField>
           <NvField>
             <NvFieldLabel for="dev-purchase-cost">购置成本</NvFieldLabel>
@@ -494,7 +503,12 @@ async function submit() {
           </NvField>
           <NvField>
             <NvFieldLabel for="dev-warranty">保修到期</NvFieldLabel>
-            <NvInput id="dev-warranty" v-model="form.warrantyExpiresOn" type="date" />
+            <NvDatePicker
+              id="dev-warranty"
+              v-model="form.warrantyExpiresOn"
+              :locale="locale"
+              clearable
+            />
           </NvField>
           <NvField>
             <NvFieldLabel for="dev-supplier">供应商</NvFieldLabel>
@@ -526,7 +540,7 @@ async function submit() {
           </NvField>
           <NvField>
             <NvFieldLabel for="dev-retired">退役日期</NvFieldLabel>
-            <NvInput id="dev-retired" v-model="form.retiredOn" type="date" />
+            <NvDatePicker id="dev-retired" v-model="form.retiredOn" :locale="locale" clearable />
           </NvField>
           <NvField
             orientation="horizontal"
