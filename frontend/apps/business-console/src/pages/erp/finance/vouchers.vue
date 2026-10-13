@@ -29,7 +29,14 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
-import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate, stableRowKey } from '../shared'
+import {
+  pickerInvalidClass,
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatAmount,
+  formatDate,
+  stableRowKey,
+} from '../shared'
 
 const { locale } = i18n.global
 
@@ -272,9 +279,7 @@ async function submit() {
                 :locale="locale"
                 clearable
                 :aria-invalid="showErrors && invalid.postingDate"
-                :class="
-                  showErrors && invalid.postingDate ? '[&>button]:border-destructive' : undefined
-                "
+                :class="pickerInvalidClass(showErrors && invalid.postingDate)"
               />
             </NvField>
             <NvField>

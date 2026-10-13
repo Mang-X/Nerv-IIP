@@ -204,6 +204,7 @@ describe('工作中心费率', () => {
     await flushPromises()
     expect(wrapper.get('#erp-wcr-from').text()).toBe('11/1/2026')
     i18n.global.locale.value = 'zh-CN'
+    await wrapper.get('#erp-wcr-reason').setValue('十一月起执行新工价')
     await wrapper.get('[aria-label="清除所选日期"]').trigger('click')
     await wrapper.get('form').trigger('submit')
     expect(data.addRevision).not.toHaveBeenCalled()
@@ -212,6 +213,7 @@ describe('工作中心费率', () => {
       'border-destructive',
     )
     await chooseEffectiveDate(wrapper)
+    await wrapper.get('#erp-wcr-reason').setValue('')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(data.addRevision).not.toHaveBeenCalled()

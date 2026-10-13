@@ -331,9 +331,7 @@ async function submit() {
                 :locale="locale"
                 clearable
                 :aria-invalid="showErrors && invalid.requiredDate"
-                :class="
-                  showErrors && invalid.requiredDate ? '[&>button]:border-destructive' : undefined
-                "
+                :class="pickerInvalidClass(showErrors && invalid.requiredDate)"
               />
             </NvField>
           </NvFieldGroup>

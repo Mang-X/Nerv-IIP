@@ -363,9 +363,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
                 :locale="locale"
                 clearable
                 :aria-invalid="showErrors && invalid.expiresOn"
-                :class="
-                  showErrors && invalid.expiresOn ? '[&>button]:border-destructive' : undefined
-                "
+                :class="pickerInvalidClass(showErrors && invalid.expiresOn)"
               />
             </NvField>
             <NvField>
@@ -406,9 +404,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
                 :locale="locale"
                 clearable
                 :aria-invalid="showErrors && invalid.requiredDate"
-                :class="
-                  showErrors && invalid.requiredDate ? '[&>button]:border-destructive' : undefined
-                "
+                :class="pickerInvalidClass(showErrors && invalid.requiredDate)"
               />
             </NvField>
             <NvField>

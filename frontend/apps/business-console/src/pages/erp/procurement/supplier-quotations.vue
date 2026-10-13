@@ -40,6 +40,7 @@ import { RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import {
   UNAVAILABLE_TEXT,
+  pickerInvalidClass,
   erpReadState,
   formatAmount,
   formatDate,
@@ -408,9 +409,7 @@ async function submit() {
                 :locale="locale"
                 clearable
                 :aria-invalid="showErrors && invalid.promisedDate"
-                :class="
-                  showErrors && invalid.promisedDate ? '[&>button]:border-destructive' : undefined
-                "
+                :class="pickerInvalidClass(showErrors && invalid.promisedDate)"
               />
             </NvField>
             <NvField class="sm:col-span-2">

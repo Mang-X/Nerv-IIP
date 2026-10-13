@@ -40,7 +40,7 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { today } from '@/utils/format'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
-import { UNAVAILABLE_TEXT, formatAmount, formatDateTime } from '../shared'
+import { pickerInvalidClass, UNAVAILABLE_TEXT, formatAmount, formatDateTime } from '../shared'
 
 const { locale } = i18n.global
 
@@ -267,9 +267,7 @@ async function submit() {
                 :locale="locale"
                 clearable
                 :aria-invalid="showErrors && invalid.effectiveFrom"
-                :class="
-                  showErrors && invalid.effectiveFrom ? '[&>button]:border-destructive' : undefined
-                "
+                :class="pickerInvalidClass(showErrors && invalid.effectiveFrom)"
               />
             </NvField>
             <NvField>
