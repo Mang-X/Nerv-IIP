@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import SkillsPage from './skills.vue'
+import { i18n } from '@/i18n'
 
 const stub = vi.hoisted(() => ({
   assign: vi.fn().mockResolvedValue({}),
@@ -243,6 +244,67 @@ describe('master-data skills page (matrix)', () => {
 
     expect(wrapper.text()).toContain('请完整填写带 * 的必填项')
     expect(stub.assign).not.toHaveBeenCalled()
+  })
+
+  it('真实生效日期选择器随 locale 显示，提交 ISO，清空即时生效', async () => {
+    resetMatrix()
+    stub.assign.mockClear()
+    const previousLocale = i18n.global.locale.value
+    i18n.global.locale.value = 'zh-CN'
+    const wrapper = mount(SkillsPage, {
+      attachTo: document.body,
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } },
+    })
+    try {
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('登记技能'))!
+        .trigger('click')
+      await flushPromises()
+      await wrapper
+        .findAll('select')
+        .find((s) => s.html().includes('usr-1'))!
+        .setValue('usr-1')
+      await wrapper
+        .findAll('select')
+        .find((s) => s.html().includes('SKILL-WELD'))!
+        .setValue('SKILL-WELD')
+      await wrapper
+        .findAll('select')
+        .find((s) => s.html().includes('senior'))!
+        .setValue('senior')
+      expect(wrapper.find('label[for="skill-from"]').exists()).toBe(true)
+      await wrapper.get('#skill-from').trigger('click')
+      await flushPromises()
+      const now = new Date()
+      const day = Array.from(document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell')).find(
+        (cell) => cell.textContent?.trim() === '16',
+      )!
+      day.click()
+      await flushPromises()
+      expect(wrapper.get('#skill-from').text()).toBe(
+        `${now.getFullYear()}/${now.getMonth() + 1}/16`,
+      )
+      i18n.global.locale.value = 'en-US'
+      await flushPromises()
+      expect(wrapper.get('#skill-from').text()).toBe(
+        `${now.getMonth() + 1}/16/${now.getFullYear()}`,
+      )
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(stub.assign.mock.calls.at(-1)?.[0]).toMatchObject({
+        effectiveFrom: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-16`,
+      })
+      await wrapper.get('[aria-label="清除所选日期"]').trigger('click')
+      expect(wrapper.get('#skill-from').text()).toBe('选择日期')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(stub.assign.mock.calls.at(-1)?.[0]).toMatchObject({ effectiveFrom: undefined })
+    } finally {
+      wrapper.unmount()
+      i18n.global.locale.value = previousLocale
+    }
   })
 
   it('assigns a skill and refreshes the matrix on success', async () => {

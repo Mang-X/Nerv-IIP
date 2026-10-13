@@ -4,6 +4,7 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
 import DevicesPage from './devices.vue'
+import { i18n } from '@/i18n'
 
 const stub = vi.hoisted(() => ({
   create: vi.fn().mockResolvedValue({ data: { code: 'EQ-NEW' } }),
@@ -253,6 +254,12 @@ const dialogStubs = {
 // 设备类别/供应商/父设备已从自由文本改成只选控件（内部自带 reka Dialog，会撞上上面的
 // NvDialog 桩）。桩成带同名 id 的输入位，用例继续用 `#dev-*` 表达「选中了某个候选」。
 const pickerStubs = {
+  NvDatePicker: {
+    props: ['modelValue', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],
     emits: ['update:modelValue'],
@@ -310,6 +317,81 @@ async function fillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper.find('#dev-component-name-0').setValue('伺服电机')
   await flushPromises()
 }
+
+// DomainInvariant：#4386 / #3905 spec r1，真实日期组件交互后仍提交 ISO 或 undefined。
+describe('设备编辑日期', () => {
+  it('编辑三项日期时响应式本地化，选择和清空保持更新载荷', async () => {
+    actionStub.update.mockClear()
+    const previousLocale = i18n.global.locale.value
+    i18n.global.locale.value = 'zh-CN'
+    const wrapper = mount(DeviceFormDialog, {
+      attachTo: document.body,
+      props: { open: true, editing: { code: 'EQ-01', retiredOn: '2026-06-18' } },
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...pickerStubs,
+          ...selectStubs,
+          NvDatePicker: false,
+        },
+      },
+    })
+    try {
+      await flushPromises()
+      const dates = [
+        ['#dev-purchase-date', '2025/1/15', '1/15/2025', '2025-01-16', '1/16/2025'],
+        ['#dev-warranty', '2027/1/14', '1/14/2027', '2027-01-16', '1/16/2027'],
+        ['#dev-retired', '2026/6/18', '6/18/2026', '2026-06-16', '6/16/2026'],
+      ]
+      for (const [id, zh] of dates) expect(wrapper.get(id!).text()).toBe(zh)
+      i18n.global.locale.value = 'en-US'
+      await flushPromises()
+      for (const [id, , en] of dates) expect(wrapper.get(id!).text()).toBe(en)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(actionStub.update.mock.calls.at(-1)?.[1]).toMatchObject({
+        purchaseDate: '2025-01-15',
+        warrantyExpiresOn: '2027-01-14',
+        retiredOn: '2026-06-18',
+      })
+      for (const [id, , , , selected] of dates) {
+        expect(wrapper.find(`label[for="${id!.slice(1)}"]`).exists()).toBe(true)
+        await wrapper.get(id!).trigger('click')
+        await flushPromises()
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell'))
+          .find((cell) => cell.textContent?.trim() === '16')!
+          .click()
+        await flushPromises()
+        expect(wrapper.get(id!).text()).toBe(selected)
+      }
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(actionStub.update.mock.calls.at(-1)?.[1]).toMatchObject({
+        purchaseDate: dates[0]![3],
+        warrantyExpiresOn: dates[1]![3],
+        retiredOn: dates[2]![3],
+      })
+      for (const [id] of dates)
+        await wrapper
+          .get(id!)
+          .element.parentElement!.querySelector<HTMLButtonElement>('[aria-label="清除所选日期"]')!
+          .click()
+      await flushPromises()
+      for (const [id] of dates) expect(wrapper.get(id!).text()).toBe('选择日期')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(actionStub.update.mock.calls.at(-1)?.[1]).toMatchObject({
+        purchaseDate: undefined,
+        warrantyExpiresOn: undefined,
+        retiredOn: undefined,
+      })
+    } finally {
+      wrapper.unmount()
+      i18n.global.locale.value = previousLocale
+    }
+  })
+})
 
 describe('master-data devices page', () => {
   it('renders the title, sample row and create button', async () => {
