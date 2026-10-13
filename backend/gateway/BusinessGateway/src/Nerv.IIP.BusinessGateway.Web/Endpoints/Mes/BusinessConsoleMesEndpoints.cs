@@ -2900,44 +2900,45 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(
         CancellationToken cancellationToken)
     {
         var response = await LoadTraceabilityAsync(request, cancellationToken);
-        var names = await MesOperatorDisplayNames.ResolveAsync(iamAccounts, InternalBearerToken,
+        var inspectionNodeIds = response.Nodes
+            .Where(x => string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))
+            .Select(x => x.NodeId)
+            .ToHashSet(StringComparer.Ordinal);
+        var namesTask = MesOperatorDisplayNames.ResolveAsync(iamAccounts, InternalBearerToken,
             OrganizationId(request), EnvironmentId(request),
             response.Nodes.Where(node => string.Equals(node.NodeType, "Operator", StringComparison.Ordinal))
                 .Select(node => node.NodeId), cancellationToken);
-        response = response with
+        if (inspectionNodeIds.Count > 0)
+        {
+            var qualityTask = AuthorizationClient.CheckAsync(
+                bearerToken,
+                new BusinessGatewayPermissionRequirement(
+                    BusinessGatewayPermissions.MesQualityRead,
+                    OrganizationId(request),
+                    EnvironmentId(request),
+                    null,
+                    null),
+                BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+                cancellationToken);
+            await Task.WhenAll(namesTask, qualityTask);
+            if (!(await qualityTask).IsAllowed)
+            {
+                response = response with
+                {
+                    Nodes = [.. response.Nodes.Where(x => !string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))],
+                    Edges = [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))],
+                };
+            }
+        }
+
+        var names = await namesTask;
+        return response with
         {
             Nodes = [.. response.Nodes.Select(node =>
                 string.Equals(node.NodeType, "Operator", StringComparison.Ordinal)
                     ? node with { DisplayName = names.GetValueOrDefault(node.NodeId) ?? "姓名不可用" }
                     : node)],
         };
-        var inspectionNodeIds = response.Nodes
-            .Where(x => string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))
-            .Select(x => x.NodeId)
-            .ToHashSet(StringComparer.Ordinal);
-        if (inspectionNodeIds.Count == 0)
-        {
-            return response;
-        }
-
-        var quality = await AuthorizationClient.CheckAsync(
-            bearerToken,
-            new BusinessGatewayPermissionRequirement(
-                BusinessGatewayPermissions.MesQualityRead,
-                OrganizationId(request),
-                EnvironmentId(request),
-                null,
-                null),
-            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
-            cancellationToken);
-        if (quality.IsAllowed)
-        {
-            return response;
-        }
-
-        return new BusinessConsoleMesTraceabilityResponse(
-            [.. response.Nodes.Where(x => !string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))],
-            [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))]);
     }
 }
 
