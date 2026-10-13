@@ -2,6 +2,8 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, nextTick, reactive, ref, shallowRef } from 'vue'
 
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ locale: ref('zh-CN') }) }))
+
 import TelemetryAlarmRulesPage from './telemetry/alarm-rules.vue'
 import TelemetryHistoryPage from './telemetry/history.vue'
 import TelemetryOeePage from './telemetry/oee.vue'
@@ -165,6 +167,7 @@ vi.mock('@nerv-iip/ui', () => ({
   // 指标卡族桩件：保持「标签 空格 值」的可读文本形状，断言可以直接匹配一整段读数。
   // 日期区间桩件：把当前区间挂到 data-* 上便于断言，点击时提交一段固定区间，
   // 用来验证页面把"本地日历日"翻译成查询用的 ISO 瞬时。
+  NvDatePicker: { template: '<button>选择日期</button>' },
   NvDateRangePicker: {
     props: ['modelValue', 'placeholder'],
     emits: ['update:modelValue'],

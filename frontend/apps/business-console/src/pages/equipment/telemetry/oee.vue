@@ -22,10 +22,10 @@ import {
   NvBadge,
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDateRangePicker,
   NvField,
   NvFieldLabel,
-  NvInput,
   NvLineChart,
   NvPageHeader,
   NvSelect,
@@ -37,6 +37,7 @@ import {
 } from '@nerv-iip/ui'
 import { LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
 
@@ -49,6 +50,7 @@ definePage({
 })
 
 const route = useRoute()
+const { locale } = useI18n()
 const defaultWindow = recentOeeWindow(7)
 
 const dimensions: Array<{ value: BusinessConsoleTelemetryOeeAggregateDimension; label: string }> = [
@@ -313,8 +315,13 @@ function refreshReport() {
           />
         </NvField>
         <NvField>
-          <NvFieldLabel>业务日</NvFieldLabel>
-          <NvInput v-model="filters.businessDate" type="date" />
+          <NvFieldLabel for="oee-business-date">业务日</NvFieldLabel>
+          <NvDatePicker
+            id="oee-business-date"
+            v-model="filters.businessDate"
+            :locale="locale"
+            clearable
+          />
         </NvField>
       </div>
     </section>
