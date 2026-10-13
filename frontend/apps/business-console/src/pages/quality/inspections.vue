@@ -16,6 +16,7 @@ import {
   useQualityInspectionPlanCharacteristics,
   useQualityInspectionPlans,
 } from '@/composables/useBusinessQuality'
+import { useQualityOperationContext } from '@/composables/useQualityOperationContext'
 import { useQualityInspectionTaskActions } from '@/composables/useQualityInspectionTasks'
 import {
   useQualityInspectionPlanCatalog,
@@ -140,7 +141,7 @@ const recordForm = reactive({
   sourceType: 'operation',
   sourceService: 'mes-operation',
   sourceDocumentId: '',
-  skuCode: 'SKU-001',
+  skuCode: '',
   inspectedQuantity: '1' as NumericFieldValue,
   batchNo: '',
   serialNo: '',
@@ -166,6 +167,50 @@ function changeSourceType(value: unknown) {
 
 // 上下文穿透：从工单/工序/收货带入来源单据、批次、序列号。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const contextOperationTaskId = computed(() => firstQuery(route.query.operationTaskId))
+const isOperationInspectionFlow = computed(
+  () => !!contextOperationTaskId.value && !firstQuery(route.query.inspectionTaskId),
+)
+const operationContext = useQualityOperationContext(filters, () =>
+  isOperationInspectionFlow.value ? contextWorkOrderId.value : '',
+)
+const contextOperation = computed(() =>
+  operationContext.detail.value?.workOrderId === contextWorkOrderId.value
+    ? operationContext.detail.value.operationTasks?.find(
+        (task) => task.operationTaskId === contextOperationTaskId.value,
+      )
+    : undefined,
+)
+const operationContextReady = computed(
+  () =>
+    !!contextOperation.value &&
+    !!operationContext.detail.value?.skuId?.trim() &&
+    !operationContext.pending.value &&
+    !operationContext.errorMessage.value,
+)
+const operationContextMessage = computed(() => {
+  if (!isOperationInspectionFlow.value || operationContextReady.value) return ''
+  if (operationContext.errorMessage.value) return operationContext.errorMessage.value
+  if (operationContext.pending.value || !hasBusinessContext(filters)) return '正在加载工序检验对象…'
+  return '未取得该工序的产品上下文，请重试检验对象。'
+})
+watch(
+  [
+    isOperationInspectionFlow,
+    operationContextReady,
+    () => operationContext.detail.value?.skuId,
+    contextWorkOrderId,
+    contextOperationTaskId,
+  ],
+  ([operationFlow, ready, skuId, workOrderId]) => {
+    if (!operationFlow) return
+    recordForm.skuCode = ready ? skuId!.trim() : ''
+    recordForm.sourceDocumentId = workOrderId
+    recordForm.sourceType = 'operation'
+    recordForm.sourceService = 'mes-operation'
+  },
+  { immediate: true, flush: 'sync' },
+)
 const targetInspectionPlanId = computed(() => firstQuery(route.query.inspectionPlanId))
 const targetInspectionPlan = computed(() =>
   targetInspectionPlanId.value
@@ -251,7 +296,7 @@ watch(
     const batch = firstQuery(query.batchNo) || firstQuery(query.materialLotId)
     const serial = firstQuery(query.serialNo)
     if (source) recordForm.sourceDocumentId = source
-    if (skuCode) recordForm.skuCode = skuCode
+    if (skuCode && !isOperationInspectionFlow.value) recordForm.skuCode = skuCode
     if (quantity) recordForm.inspectedQuantity = quantity
     if (batch) recordForm.batchNo = batch
     if (serial) recordForm.serialNo = serial
@@ -335,7 +380,7 @@ const recordPlanModel = computed({
     characteristicsAppliedPlanId.value = ''
     recordForm.resultLines = [emptyLine()]
     const plan = planCatalog.inspectionPlans.value.find((item) => item.id === value)
-    if (plan?.skuCode) recordForm.skuCode = plan.skuCode
+    if (plan?.skuCode && !isOperationInspectionFlow.value) recordForm.skuCode = plan.skuCode
   },
 })
 
@@ -395,6 +440,16 @@ const recordContextItems = computed(() => [
   { label: '来源类型', value: sourceTypeLabel(recordForm.sourceType) },
   { label: '来源单据', value: recordForm.sourceDocumentId },
   { label: '物料', value: recordForm.skuCode },
+  ...(isOperationInspectionFlow.value
+    ? [
+        {
+          label: '来源工序',
+          value:
+            contextOperation.value?.operationCode ||
+            (contextOperation.value ? `工序 ${contextOperation.value.operationSequence}` : ''),
+        },
+      ]
+    : []),
   { label: '检验数量', value: recordForm.inspectedQuantity },
   { label: '批次', value: recordForm.batchNo },
   { label: '序列号', value: recordForm.serialNo },
@@ -428,6 +483,9 @@ const submitBlockers = computed<string[]>(() => {
     blockers.push(
       '该待检任务当前不允许提交检验（可能已被他人接手或已闭合），请返回待检工作台重新选取任务。',
     )
+  }
+  if (isOperationInspectionFlow.value && !operationContextReady.value) {
+    blockers.push(operationContextMessage.value)
   }
   if (!isNonEmpty(recordForm.sourceType)) blockers.push('请选择来源类型。')
   if (!isNonEmpty(recordForm.sourceService)) blockers.push('请选择来源服务。')
@@ -544,7 +602,8 @@ function formatSpecification(characteristic: {
 }
 function useInspectionPlan(plan: BusinessConsoleQualityItem) {
   recordForm.inspectionPlanId = plan.id ?? ''
-  if (plan.skuCode && !firstQuery(route.query.skuCode)) recordForm.skuCode = plan.skuCode
+  if (plan.skuCode && !isOperationInspectionFlow.value && !firstQuery(route.query.skuCode))
+    recordForm.skuCode = plan.skuCode
   if (plan.category?.trim().toLowerCase() === 'first-article') {
     recordForm.sourceType = 'first-article'
     recordForm.sourceService = 'mes-operation'
@@ -996,12 +1055,29 @@ function isPresent(value: string | undefined | null): value is string {
         <form class="grid content-start gap-4" @submit.prevent="submitInspectionRecord">
           <!-- 从待检任务行进入：来源单据 / 物料 / 数量 / 批次 全部由任务带出，只读呈现。 -->
           <CarriedContextSummary
-            v-if="isInspectionTaskFlow"
+            v-if="isInspectionTaskFlow || isOperationInspectionFlow"
             label="检验对象"
             :items="recordContextItems"
           />
 
-          <NvFieldGroup v-else class="grid gap-3 sm:grid-cols-2">
+          <div
+            v-if="isOperationInspectionFlow && operationContextMessage"
+            class="flex items-center gap-2 text-sm"
+            aria-live="polite"
+          >
+            <NvSpinner v-if="operationContext.pending.value" aria-hidden="true" />
+            {{ operationContextMessage }}
+            <NvButton
+              v-if="!operationContext.pending.value"
+              type="button"
+              variant="outline"
+              size="sm"
+              @click="operationContext.refresh"
+            >
+              重试检验对象
+            </NvButton>
+          </div>
+          <NvFieldGroup v-if="!isInspectionTaskFlow" class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="record-plan">检验方案</NvFieldLabel>
               <NvEntityPicker
@@ -1016,7 +1092,7 @@ function isPresent(value: string | undefined | null): value is string {
                 aria-label="检验方案"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel>来源类型</NvFieldLabel>
               <NvSelect :model-value="recordForm.sourceType" @update:model-value="changeSourceType">
                 <NvSelectTrigger aria-label="来源类型"><NvSelectValue /></NvSelectTrigger>
@@ -1029,7 +1105,7 @@ function isPresent(value: string | undefined | null): value is string {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel>来源服务</NvFieldLabel>
               <NvSelect v-model="recordForm.sourceService">
                 <NvSelectTrigger aria-label="来源服务"><NvSelectValue /></NvSelectTrigger>
@@ -1045,7 +1121,7 @@ function isPresent(value: string | undefined | null): value is string {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel for="record-source-document">来源单据</NvFieldLabel>
               <SourceDocumentPicker
                 id="record-source-document"
@@ -1053,7 +1129,7 @@ function isPresent(value: string | undefined | null): value is string {
                 :kind="SOURCE_DOCUMENT_KINDS[recordForm.sourceType]"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel for="record-sku">SKU</NvFieldLabel>
               <DirectoryPicker
                 id="record-sku"
