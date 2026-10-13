@@ -1,0 +1,34 @@
+PASS exact run SHA
+PASS six distinct public principals linked to actual active workers
+PASS operation and handover only eight work-center grants
+PASS all82 actual UI write receipts have payload response correlation
+PASS no HTTP5xx UI write
+PASS before-planning-mps empty
+PASS before-planning-mrp-runs empty
+PASS before-planning-suggestions empty
+PASS before-mes-work-orders empty
+PASS same MPS Draft Reviewed Released with planner identity
+PASS MRP Completed MPS input no degradation13 suggestions
+PASS accepted suggestion creates same WO and same MPS lineage
+PASS 11 exact received quantities and material Ready
+PASS rejected receive kept first MIR requested0
+PASS UI operation inspection actual passed and correct SKU
+PASS actual sort-and-screen closed NCR and MES return
+PASS real WO OP80 InProgress during handover and after incoming accept
+PASS two principals accepted same nonempty manual WIP and unfinished snapshots
+PASS same WO completed2 all8 Completed and produced batch from OP80
+PASS ERP stop requested null cost notPosted0 same lot
+PASS actual Posted same FGR same lot inventory2 remaining0
+PASS cost all8 actual machine settlements available and original period open
+PASS observed stable delta equals last operation machine overhead
+PASS public accumulated equals capitalized plus public variance
+PASS same movement sources actual voucher and public FGR inventory
+PASS actual voucher debit equals credit
+PASS actual finished goods debit matches public unit cost and quantity
+PASS actual variance debit matches public delta and late OP80
+PASS actual WIP credit and aggregate clearance cover accumulated cost
+PASS actual inventory valuation matches same public lot quantity and unit cost
+PASS OP80 machine posting preceded actual final receipt accounting
+PASS own runtime Stopped cleanup0 and container volume network0
+PASS own observer exited and exact password scan0
+Archive facts validated; acceptance awaits independent review
