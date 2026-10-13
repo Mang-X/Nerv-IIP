@@ -7,6 +7,7 @@ import {
   NvButton,
   NvField,
   NvFieldLabel,
+  NvFieldError,
   NvInput,
   NvSelect,
   NvSelectContent,
@@ -278,9 +279,9 @@ const wipColumns = [
             :disabled="disabled"
             :invalid="showQuantityError && !quantityValid"
           />
-          <p v-if="showQuantityError && !quantityValid" class="text-xs text-destructive">
+          <NvFieldError v-if="showQuantityError && !quantityValid">
             请输入不小于零的人工清点数量。
-          </p>
+          </NvFieldError>
         </NvField>
         <NvButton
           type="button"

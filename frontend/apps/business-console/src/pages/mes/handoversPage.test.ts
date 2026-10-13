@@ -30,8 +30,8 @@ const state = vi.hoisted(() => ({
     {
       workOrderId: 'WO-C',
       quantity: 50,
-      completedQuantity: 50,
-      status: 'completed',
+      completedQuantity: 20,
+      status: 'cancelled',
       operationTasks: [],
     },
   ],
@@ -555,6 +555,16 @@ describe('MES handovers read-face guard', () => {
     await wrapper.get('[data-testid="create-handover-form"]').trigger('submit')
     expect(mutations.createShiftHandover.mock.calls[0]?.[0].wipItems ?? []).toEqual([])
     expect(mutations.createShiftHandover.mock.calls[0]?.[0].unfinishedWorkOrders ?? []).toEqual([])
+  })
+
+  it('announces an empty counted quantity and does not add a WIP row', async () => {
+    const wrapper = mountPage()
+    await openCreateWithWorkOrder(wrapper)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="handover-add-wip"]').trigger('click')
+    expect(wrapper.get('[role="alert"]').text()).toContain('请输入不小于零的人工清点数量')
+    expect(wrapper.find('[data-testid="handover-added-wip"]').exists()).toBe(false)
+    expect(mutations.createShiftHandover).not.toHaveBeenCalled()
   })
 
   it('does not confirm a terminal order or add details after a failed read', async () => {
