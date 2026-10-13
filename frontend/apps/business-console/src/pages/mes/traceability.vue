@@ -7,6 +7,7 @@ import {
 } from '@/composables/useBusinessMes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { buildWorkOrderPickerOptions } from '@/composables/mes/workOrderPickerOptions'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
 import { labelFor, TRACE_NODE_TYPE_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -84,6 +85,7 @@ watch(
   { immediate: true },
 )
 
+const { resolveUser } = useMasterDataDisplayNames({ users: true })
 const nodes = computed(() => traceability.value?.nodes ?? [])
 const errorMessage = computed(() => inlineErrorMessage(traceabilityError.value))
 const batchModel = computed({
@@ -133,7 +135,12 @@ const traceCells = computed<NvMetricStripCell[]>(() => [
 
 type NodeRow = (typeof nodes)['value'][number]
 const columns: NvDataTableColumn<NodeRow>[] = [
-  { key: 'nodeId', header: '节点', cellClass: 'font-medium' },
+  {
+    key: 'nodeId',
+    header: '节点',
+    cellClass: 'font-medium',
+    accessor: (r) => (r.nodeType === 'Operator' ? (resolveUser(r.nodeId) ?? '—') : r.nodeId),
+  },
   {
     key: 'nodeType',
     header: '类型',
@@ -142,7 +149,11 @@ const columns: NvDataTableColumn<NodeRow>[] = [
     // 词表缺项时只显原码，不编造中文。
     accessor: (r) => labelFor(TRACE_NODE_TYPE_LABELS, r.nodeType) || '未标注',
   },
-  { key: 'displayName', header: '名称' },
+  {
+    key: 'displayName',
+    header: '名称',
+    accessor: (r) => (r.nodeType === 'Operator' ? (resolveUser(r.nodeId) ?? '—') : r.displayName),
+  },
   { key: 'status', header: '状态', width: 'w-28' },
 ]
 function firstQuery(value: unknown) {

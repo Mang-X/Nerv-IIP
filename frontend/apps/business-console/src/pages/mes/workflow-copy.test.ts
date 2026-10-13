@@ -23,6 +23,7 @@ const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
   refreshReceiptRequests: vi.fn(async () => undefined),
   retryInventoryPosting: vi.fn(async () => undefined),
+  traceabilityNodes: [] as Array<{ nodeId: string; nodeType: string; displayName: string }>,
   traceabilityFilters: undefined as
     | { batchOrSerial: string; materialLotId: string; mode: string; workOrderId: string }
     | undefined,
@@ -46,8 +47,12 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
 }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({
-    resources: ref([]),
+  useBusinessMasterDataResources: (resourceType: string) => ({
+    resources: ref(
+      resourceType === 'worker'
+        ? [{ code: 'EMP001', userId: 'user-operator', displayName: '王建国' }]
+        : [],
+    ),
     resourcesPending: ref(false),
     filters: reactive({}),
   }),
@@ -271,7 +276,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     return {
       filters,
       refreshTraceability: vi.fn(),
-      traceability: ref({ edges: [], nodes: [] }),
+      traceability: ref({ edges: [], nodes: mesSpies.traceabilityNodes }),
       traceabilityError: ref(undefined),
       traceabilityPending: ref(false),
     }
@@ -398,6 +403,7 @@ const uiStubs = {
   NvDataTable: {
     props: ['rows', 'columns', 'rowKey', 'sort', 'clientSort', 'loading', 'emptyMessage'],
     template: `<div><template v-for="(row, i) in rows" :key="i">
+      <span v-for="column in row.nodeType ? columns : []" :key="column.key">{{ column.accessor ? column.accessor(row) : row[column.key] }}</span>
       <slot name="cell-sourceDemandReference" :row="row" />
       <slot name="cell-sourceSystem" :row="row" />
       <slot name="cell-workOrderId" :row="row" />
@@ -577,6 +583,7 @@ describe('MES workflow copy', () => {
     mesSpies.createReceiptRequest.mockClear()
     mesSpies.refreshReceiptRequests.mockClear()
     mesSpies.traceabilityFilters = undefined
+    mesSpies.traceabilityNodes = []
   })
 
   it('keeps work-order reporting row-context driven with no typed context fields', () => {
@@ -689,6 +696,18 @@ describe('MES workflow copy', () => {
         workOrderId: 'WO-001',
       }),
     )
+  })
+
+  it('shows the operator name while preserving trace node identities', () => {
+    mesSpies.traceabilityNodes = [
+      { nodeId: 'user-operator', nodeType: 'Operator', displayName: 'user-operator' },
+      { nodeId: 'WO-001', nodeType: 'WorkOrder', displayName: 'WO-001' },
+    ]
+    const wrapper = mountMesPage(TraceabilityPage)
+    expect(wrapper.text()).toContain('王建国')
+    expect(wrapper.text()).toContain('WO-001')
+    expect(wrapper.text()).not.toContain('user-operator')
+    expect(mesSpies.traceabilityNodes[0].nodeId).toBe('user-operator')
   })
 
   it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {

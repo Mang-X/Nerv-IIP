@@ -138,6 +138,10 @@ const mesState = vi.hoisted(() => ({
 vi.mock('@/composables/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: () => (mesState.catalogResolved ? '五轴加工中心' : undefined),
+    resolveUser: (id?: string | null) =>
+      (({ 'user-operator': '王建国', 'user-detail-operator': '李俊华' }) as Record<string, string>)[
+        id ?? ''
+      ],
   }),
 }))
 
@@ -259,7 +263,7 @@ const tableStub = {
     <section data-testid="data-table">
       <span v-for="column in columns" :key="column.key">{{ column.header }}</span>
       <div v-for="row in rows" :key="row.productionReportId" data-testid="row">
-        <span v-for="column in columns" :key="column.key">
+        <span v-for="column in columns" :key="column.key" :data-column="column.key">
           {{ column.accessor ? column.accessor(row) : '' }}
         </span>
         <slot name="cell-reportNo" :row="row" />
@@ -385,6 +389,34 @@ beforeEach(() => {
 })
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
+  it('shows the reporting operator in the list and original report detail', async () => {
+    const row = { ...rows[0], reportedBy: 'user-operator' }
+    mesState.guardRows = [row]
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+    expect(wrapper.get('[data-testid="data-table"]').text()).toContain('操作人')
+    expect(wrapper.get('[data-testid="row"]').text()).toContain('王建国')
+    mesState.detail.value = {
+      report: { ...row, reportedBy: 'user-detail-operator' },
+      consumedMaterialLots: [],
+    }
+    ;(wrapper.vm as unknown as { openReverse: (target: typeof row) => void }).openReverse(row)
+    await flushPromises()
+    const detail = wrapper.get('[aria-label="原报工明细"]')
+    expect(detail.text()).toContain('李俊华')
+    expect(detail.text()).not.toContain('王建国')
+    expect(wrapper.text()).not.toContain('user-operator')
+    expect(wrapper.text()).not.toContain('user-detail-operator')
+  })
+
+  it('shows a placeholder for an identity outside the worker directory', async () => {
+    mesState.guardRows = [{ ...rows[0], reportedBy: 'user-admin' }]
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    await flushPromises()
+    expect(wrapper.get('[data-testid="row"] [data-column="reportedBy"]').text()).toBe('—')
+    expect(wrapper.text()).not.toContain('user-admin')
+  })
+
   it('shows the operation cumulative actual hours without treating them as per-report allocation', async () => {
     const wrapper = mountReports(['business.mes.reporting.read'])
     await flushPromises()
