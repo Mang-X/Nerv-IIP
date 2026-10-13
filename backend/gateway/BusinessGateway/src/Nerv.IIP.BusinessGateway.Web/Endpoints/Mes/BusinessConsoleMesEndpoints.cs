@@ -2879,12 +2879,17 @@ internal static class BusinessConsoleMesShiftHandoverPrincipal
 /// 绕开本基类；兜住这一整类的是三个读面 × 两种权限态的门面用例矩阵。
 /// </para>
 /// </summary>
-public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusinessGatewayAuthorizationClient auth)
+public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIamAccountDirectoryClient iamAccounts,
+    IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<TRequest, BusinessConsoleMesTraceabilityResponse>(
         auth,
         BusinessGatewayPermissions.MesTraceabilityRead)
     where TRequest : notnull
 {
+    protected string InternalBearerToken => tokenProvider.BearerToken;
+
     protected abstract Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         TRequest request,
         CancellationToken cancellationToken);
@@ -2899,29 +2904,41 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
             .Where(x => string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))
             .Select(x => x.NodeId)
             .ToHashSet(StringComparer.Ordinal);
-        if (inspectionNodeIds.Count == 0)
+        var namesTask = MesOperatorDisplayNames.ResolveAsync(iamAccounts, InternalBearerToken,
+            OrganizationId(request), EnvironmentId(request),
+            response.Nodes.Where(node => string.Equals(node.NodeType, "Operator", StringComparison.Ordinal))
+                .Select(node => node.NodeId), cancellationToken);
+        if (inspectionNodeIds.Count > 0)
         {
-            return response;
+            var qualityTask = AuthorizationClient.CheckAsync(
+                bearerToken,
+                new BusinessGatewayPermissionRequirement(
+                    BusinessGatewayPermissions.MesQualityRead,
+                    OrganizationId(request),
+                    EnvironmentId(request),
+                    null,
+                    null),
+                BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+                cancellationToken);
+            await Task.WhenAll(namesTask, qualityTask);
+            if (!(await qualityTask).IsAllowed)
+            {
+                response = response with
+                {
+                    Nodes = [.. response.Nodes.Where(x => !string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))],
+                    Edges = [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))],
+                };
+            }
         }
 
-        var quality = await AuthorizationClient.CheckAsync(
-            bearerToken,
-            new BusinessGatewayPermissionRequirement(
-                BusinessGatewayPermissions.MesQualityRead,
-                OrganizationId(request),
-                EnvironmentId(request),
-                null,
-                null),
-            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
-            cancellationToken);
-        if (quality.IsAllowed)
+        var names = await namesTask;
+        return response with
         {
-            return response;
-        }
-
-        return new BusinessConsoleMesTraceabilityResponse(
-            [.. response.Nodes.Where(x => !string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))],
-            [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))]);
+            Nodes = [.. response.Nodes.Select(node =>
+                string.Equals(node.NodeType, "Operator", StringComparison.Ordinal)
+                    ? node with { DisplayName = names.GetValueOrDefault(node.NodeId) ?? "姓名不可用" }
+                    : node)],
+        };
     }
 }
 
@@ -2931,8 +2948,9 @@ public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(IBusiness
 public sealed class GetBusinessConsoleMesWorkOrderTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByWorkOrderRequest>(auth)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByWorkOrderRequest>(auth, iamAccounts, tokenProvider)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.OrganizationId;
 
@@ -2942,7 +2960,7 @@ public sealed class GetBusinessConsoleMesWorkOrderTraceabilityEndpoint(
         BusinessConsoleMesTraceabilityByWorkOrderRequest request,
         CancellationToken cancellationToken) =>
         mes.GetWorkOrderTraceabilityAsync(
-            tokenProvider.BearerToken,
+            InternalBearerToken,
             request.WorkOrderId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
@@ -2954,8 +2972,9 @@ public sealed class GetBusinessConsoleMesWorkOrderTraceabilityEndpoint(
 public sealed class GetBusinessConsoleMesBatchTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByBatchRequest>(auth)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByBatchRequest>(auth, iamAccounts, tokenProvider)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByBatchRequest request) => request.OrganizationId;
 
@@ -2965,7 +2984,7 @@ public sealed class GetBusinessConsoleMesBatchTraceabilityEndpoint(
         BusinessConsoleMesTraceabilityByBatchRequest request,
         CancellationToken cancellationToken) =>
         mes.GetBatchTraceabilityAsync(
-            tokenProvider.BearerToken,
+            InternalBearerToken,
             request.BatchOrSerial,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
@@ -2977,8 +2996,9 @@ public sealed class GetBusinessConsoleMesBatchTraceabilityEndpoint(
 public sealed class GetBusinessConsoleMesMaterialLotTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
-    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByMaterialLotRequest>(auth)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByMaterialLotRequest>(auth, iamAccounts, tokenProvider)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByMaterialLotRequest request) => request.OrganizationId;
 
@@ -2988,7 +3008,7 @@ public sealed class GetBusinessConsoleMesMaterialLotTraceabilityEndpoint(
         BusinessConsoleMesTraceabilityByMaterialLotRequest request,
         CancellationToken cancellationToken) =>
         mes.GetMaterialLotTraceabilityAsync(
-            tokenProvider.BearerToken,
+            InternalBearerToken,
             request.MaterialLotId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
