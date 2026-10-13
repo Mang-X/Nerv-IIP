@@ -56,6 +56,10 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 const state = vi.hoisted(() => ({
   filters: undefined as unknown as Record<string, unknown>,
   operationRows: [] as BusinessConsoleMesOperationTaskRow[],
+  scopeError: undefined as unknown,
+  scopePending: false,
+  tasksState: 'ready',
+  refresh: vi.fn(),
 }))
 
 // 派工弹窗的技能筛选改取技能目录主数据（中文 skillName）；目录不是本用例被测对象。
@@ -117,7 +121,8 @@ vi.mock('@/composables/useBusinessMes', async () => {
       scopeSelectionValue: ref(undefined),
       scopeReady: ref(true),
       scopeMessage: ref(''),
-      scopePending: ref(false),
+      scopePending: computed(() => state.scopePending),
+      scopeError: computed(() => state.scopeError),
       scopeUnavailable: ref(false),
       selectedScope: ref(undefined),
       principalIdentity: ref('principal-test'),
@@ -160,7 +165,12 @@ vi.mock('@/composables/useBusinessMes', async () => {
         id: 'WC-A',
         displayName: '精加工一线',
       })),
-      operationListScopeMessage: computed(() => ''),
+      operationListScopeError: computed(() => state.scopeError),
+      operationListScopePending: computed(() => state.scopePending),
+      operationTasksState: computed(() => state.tasksState),
+      operationListScopeMessage: computed(() =>
+        state.scopeError ? '作业范围核验失败，当前操作已禁用。请刷新后重试。' : '',
+      ),
       operationListScopeReady: computed(() => true),
       operationScopeMessage: computed(() => ''),
       operationScopePending: shallowRef(false),
@@ -168,7 +178,7 @@ vi.mock('@/composables/useBusinessMes', async () => {
       operationTasksLastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
       operationTasksHasSuccessfulResponse: computed(() => true),
       operationTasksHasFailedResponse: computed(() => false),
-      refreshOperationTasks: vi.fn(),
+      refreshOperationTasks: state.refresh,
       startOperationTask: vi.fn(),
       pauseOperationTask: vi.fn(),
       resumeOperationTask: vi.fn(),
@@ -196,12 +206,29 @@ function mountPage() {
       stubs: {
         BusinessLayout: passthrough,
         WorkOrderQuickView: true,
-        NvPageHeader: { template: '<header><slot name="actions" /></header>' },
+        NvPageHeader: {
+          props: ['count'],
+          template: '<header>{{ count }}<slot name="actions" /></header>',
+        },
         NvToolbar: { template: '<div><slot name="filters" /><slot name="actions" /></div>' },
         NvDataTable: {
-          props: ['rows', 'columns', 'rowKey', 'page', 'pageSize', 'totalItems', 'loading', 'sort'],
+          props: [
+            'rows',
+            'columns',
+            'rowKey',
+            'page',
+            'pageSize',
+            'totalItems',
+            'loading',
+            'sort',
+            'error',
+            'errorMessage',
+            'emptyMessage',
+          ],
           template: `
             <div data-testid="table">
+              <p v-if="error" role="alert">{{ errorMessage }}<button @click="$emit('retry')">重新加载</button></p>
+              <p v-else-if="!loading && !rows.length">{{ emptyMessage }}</p>
               <span v-for="column in columns" :key="column.key">{{ column.header }}</span>
               <div v-for="row in rows" :key="row.operationTaskId" data-testid="operation-row">
                 <slot name="cell-actualHours" :row="row" />
@@ -366,4 +393,54 @@ describe('工序页开工 readiness', () => {
       wrapper.unmount()
     },
   )
+})
+
+describe('工序范围读取状态', () => {
+  beforeEach(() => {
+    state.operationRows = []
+    state.scopeError = undefined
+    state.scopePending = false
+    state.tasksState = 'ready'
+    state.refresh.mockClear()
+  })
+
+  it('范围失败显示任务尚未读取，表格恢复动作与页头刷新均接入重读', async () => {
+    state.scopeError = new Error('范围传输失败')
+    state.tasksState = 'idle'
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('范围读取失败')
+    expect(wrapper.text()).toContain('尚未读取任务')
+    expect(wrapper.text()).not.toContain('0 个工序任务')
+    expect(wrapper.text()).not.toContain('当前没有工序任务')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '刷新')!
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '重新加载')!
+      .trigger('click')
+    expect(state.refresh).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('范围读取中不展示零任务或真实空列表文案', async () => {
+    state.scopePending = true
+    state.tasksState = 'idle'
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('尚未读取任务')
+    expect(wrapper.text()).not.toContain('0 个工序任务')
+    expect(wrapper.text()).not.toContain('当前没有工序任务')
+    wrapper.unmount()
+  })
+
+  it('任务成功返回空列表时仍显示真实零任务', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('0 个工序任务')
+    expect(wrapper.text()).toContain('当前没有工序任务')
+    wrapper.unmount()
+  })
 })

@@ -98,6 +98,9 @@ const {
   operationTasksError,
   operationTasksPending,
   operationTasksTotal,
+  operationTasksState,
+  operationListScopeError,
+  operationListScopePending,
   operationListScopeMessage,
   operationScopeMessage,
   operationScopeReady,
@@ -250,7 +253,19 @@ function rowKey(task: Row) {
   return task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`
 }
 
-const errorMessage = computed(() => inlineErrorMessage(operationTasksError.value))
+const taskReadError = computed(() => operationListScopeError.value ?? operationTasksError.value)
+const errorMessage = computed(() =>
+  operationListScopeError.value
+    ? '范围读取失败，尚未读取任务。请重新加载。'
+    : inlineErrorMessage(operationTasksError.value),
+)
+const taskCount = computed(() => {
+  if (operationListScopeError.value) return '范围读取失败，尚未读取任务'
+  if (operationTasksState.value === 'idle') return '尚未读取任务'
+  if (operationTasksState.value === 'loading') return '正在读取任务…'
+  if (operationTasksState.value === 'error') return '任务读取失败'
+  return `${operationTasksTotal.value} 个工序任务`
+})
 
 function resetFilters() {
   keyword.value = ''
@@ -496,17 +511,13 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="工序执行"
-      :breadcrumbs="[{ label: '制造执行' }]"
-      :count="`${operationTasksTotal} 个工序任务`"
-    >
+    <NvPageHeader title="工序执行" :breadcrumbs="[{ label: '制造执行' }]" :count="taskCount">
       <template #actions>
         <NvButton
           size="sm"
           type="button"
           variant="outline"
-          :disabled="operationTasksPending"
+          :disabled="operationTasksPending || operationListScopePending"
           @click="refreshOperationTasks"
         >
           <RefreshCwIcon aria-hidden="true" />
@@ -526,7 +537,11 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>
-        <MesWorkScopeSelect permission-code="business.mes.operations.read" />
+        <MesWorkScopeSelect
+          permission-code="business.mes.operations.read"
+          :read-failed="!!operationListScopeError"
+          :read-pending="operationListScopePending"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="工序状态"
             ><NvSelectValue
@@ -605,12 +620,16 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       :rows="pagedTasks"
       :row-key="rowKey"
       :client-sort="false"
-      :loading="operationTasksPending"
-      :error="operationTasksError"
+      :loading="operationTasksPending || operationListScopePending"
+      :error="taskReadError"
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。"
+      :empty-message="
+        operationTasksState === 'ready'
+          ? '当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。'
+          : '尚未读取任务，请先确认作业范围。'
+      "
       @retry="refreshOperationTasks"
     >
       <template #cell-operationSequence="{ row }">
