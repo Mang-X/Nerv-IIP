@@ -135,6 +135,7 @@ async function createHarness() {
           h(MesWorkScopeSelect, {
             permissionCode: 'business.mes.operations.read',
             readFailed: !!list!.operationListScopeError.value,
+            readPending: list!.operationListScopePending.value,
           }),
           h(
             'span',

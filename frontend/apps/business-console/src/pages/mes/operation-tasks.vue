@@ -540,6 +540,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
         <MesWorkScopeSelect
           permission-code="business.mes.operations.read"
           :read-failed="!!operationListScopeError"
+          :read-pending="operationListScopePending"
         />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="工序状态"

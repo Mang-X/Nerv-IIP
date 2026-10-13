@@ -24,12 +24,13 @@ const props = defineProps<{
   /** 用于解析授权范围的权限码（如 business.mes.work-orders.read）。 */
   permissionCode: string
   readFailed?: boolean
+  readPending?: boolean
 }>()
 
 const scope = useMesWorkScopeSelection(props.permissionCode)
 const selection = scope.scopeSelectionValue
 const placeholder = computed(() => {
-  if (scope.scopePending.value) return '正在读取作业范围…'
+  if (props.readPending) return '正在读取作业范围…'
   if (props.readFailed) return '范围读取失败'
   return hasOptions.value ? '选择作业范围' : '无可选授权范围'
 })
@@ -41,7 +42,7 @@ const hasOptions = computed(() => scope.scopeOptions.value.length > 0)
     <span class="text-sm text-muted-foreground">作业范围</span>
     <NvSelect
       v-model="selection"
-      :disabled="!hasOptions || scope.scopePending.value || !!props.readFailed"
+      :disabled="!hasOptions || props.readPending || !!props.readFailed"
     >
       <NvSelectTrigger class="h-9 min-w-40" aria-label="作业范围">
         <NvSelectValue :placeholder="placeholder" />
