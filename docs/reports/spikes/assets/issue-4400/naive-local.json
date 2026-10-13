@@ -1,0 +1,123 @@
+{
+  "timezoneId": "Asia/Shanghai",
+  "planId": "plan-01a135df9bde769cbc91b1f1b12b5373",
+  "operationId": "WO-20261013-000001-OP-10",
+  "cases": [
+    {
+      "name": "naive-local-wall-time",
+      "start": "2026-10-14T02:25:29",
+      "end": "2026-10-14T02:32:29",
+      "beforeReload": {
+        "status": 200,
+        "success": true,
+        "message": "",
+        "task": {
+          "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+          "orderId": "WO-20261013-000001",
+          "operationId": "WO-20261013-000001-OP-10",
+          "resourceId": "WC-TUB-01",
+          "workCenterId": "WC-TUB-01",
+          "startUtc": "2026-10-14T02:25:29+08:00",
+          "endUtc": "2026-10-14T02:32:29+08:00",
+          "locked": false,
+          "segments": null
+        }
+      },
+      "after": {
+        "uiStart": "2026-10-14T02:25:29+08:00",
+        "uiEnd": "2026-10-14T02:32:29+08:00",
+        "read": {
+          "status": 200,
+          "success": true,
+          "message": "",
+          "task": {
+            "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+            "orderId": "WO-20261013-000001",
+            "operationId": "WO-20261013-000001-OP-10",
+            "resourceId": "WC-TUB-01",
+            "workCenterId": "WC-TUB-01",
+            "startUtc": "2026-10-14T02:25:29+08:00",
+            "endUtc": "2026-10-14T02:32:29+08:00",
+            "locked": false,
+            "segments": null
+          }
+        },
+        "visibleMessage": "\n方案物料风险\n\n缺料待备\n\n方案设备风险\n\n状态未知\n\n\nWO-20261013-000001 · WO-20261013-000001-OP-20\n\n工单进度\n0 / 1\n交期差\n提前 4301.99745 分钟\n当前到料\n缺料 · 未知到料日\n当前设备\n未知 · 开工前请人工确认设备可用\n订单 / 客户与前后依赖\n\t\n\n资源\n\nWC-ROD-01\n\n开始\n\n结束\n\n连续排程\t\n锁定\n持久锁定\n移回待排\t\n\n草案即时反馈\n\n前序倒置：开始早于前序工序 WO-20261013-000001-OP-10 结束。\n\n交期差 · 提前 4302 分钟\n方案交期 · 2026-10-16 23:25\n\n方案物料风险\n\n缺料待备\n\n方案设备风险\n\n状态未知\n\n\nWO-20261013-000001 · WO-20261013-000001-OP-30\n\n工单进度\n0 / 1\n交期差\n提前 4293.99745 分钟\n当前到料\n缺料 · 未知到料日\n当前设备\n未知 · 开工前请人工确认设备可用\n订单 / 客户与前后依赖\n\t\n\n资源\n\nWC-GRD-01\n\n开始\n\n结束\n\n连续排程\t\n锁定\n持久锁定\n移回待排\t\n\n草案即时反馈\n\n日历、占用及前序未发现问题\n\n交期差 · 提前 4294 分钟\n方案交期 · 2026-10-16 23:25\n\n方案物料风险\n\n缺料待备\n\n方案设备风险\n\n状态未知"
+      }
+    },
+    {
+      "name": "explicit-shanghai-offset",
+      "start": "2026-10-14T02:25:29+08:00",
+      "end": "2026-10-14T02:32:29+08:00",
+      "beforeReload": {
+        "status": 200,
+        "success": true,
+        "message": "",
+        "task": {
+          "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+          "orderId": "WO-20261013-000001",
+          "operationId": "WO-20261013-000001-OP-10",
+          "resourceId": "WC-TUB-01",
+          "workCenterId": "WC-TUB-01",
+          "startUtc": "2026-10-14T02:25:29+08:00",
+          "endUtc": "2026-10-14T02:32:29+08:00",
+          "locked": false,
+          "segments": null
+        }
+      },
+      "after": {
+        "uiStart": "2026-10-14T02:25:29+08:00",
+        "uiEnd": "2026-10-14T02:32:29+08:00",
+        "read": {
+          "status": 200,
+          "success": true,
+          "message": "",
+          "task": {
+            "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+            "orderId": "WO-20261013-000001",
+            "operationId": "WO-20261013-000001-OP-10",
+            "resourceId": "WC-TUB-01",
+            "workCenterId": "WC-TUB-01",
+            "startUtc": "2026-10-14T02:25:29+08:00",
+            "endUtc": "2026-10-14T02:32:29+08:00",
+            "locked": false,
+            "segments": null
+          }
+        },
+        "visibleMessage": "\n方案物料风险\n\n缺料待备\n\n方案设备风险\n\n状态未知\n\n\nWO-20261013-000001 · WO-20261013-000001-OP-20\n\n工单进度\n0 / 1\n交期差\n提前 4301.99745 分钟\n当前到料\n缺料 · 未知到料日\n当前设备\n未知 · 开工前请人工确认设备可用\n订单 / 客户与前后依赖\n\t\n\n资源\n\nWC-ROD-01\n\n开始\n\n结束\n\n连续排程\t\n锁定\n持久锁定\n移回待排\t\n\n草案即时反馈\n\n前序倒置：开始早于前序工序 WO-20261013-000001-OP-10 结束。\n\n交期差 · 提前 4302 分钟\n方案交期 · 2026-10-16 23:25\n\n方案物料风险\n\n缺料待备\n\n方案设备风险\n\n状态未知\n\n\nWO-20261013-000001 · WO-20261013-000001-OP-30\n\n工单进度\n0 / 1\n交期差\n提前 4293.99745 分钟\n当前到料\n缺料 · 未知到料日\n当前设备\n未知 · 开工前请人工确认设备可用\n订单 / 客户与前后依赖\n\t\n\n资源\n\nWC-GRD-01\n\n开始\n\n结束\n\n连续排程\t\n锁定\n持久锁定\n移回待排\t\n\n草案即时反馈\n\n日历、占用及前序未发现问题\n\n交期差 · 提前 4294 分钟\n方案交期 · 2026-10-16 23:25\n\n方案物料风险\n\n缺料待备\n\n方案设备风险\n\n状态未知"
+      }
+    }
+  ],
+  "requests": [
+    {
+      "method": "PUT",
+      "status": 200,
+      "correlationId": "83786cf776aa427587ac23664d1be760"
+    },
+    {
+      "method": "PUT",
+      "status": 200,
+      "correlationId": "6f2fd5010460433f9bcaf7d7bb4f390d"
+    }
+  ],
+  "baseline": {
+    "uiStart": "2026-10-13T17:25:29.452+00:00",
+    "uiEnd": "2026-10-13T17:32:29.452+00:00",
+    "read": {
+      "status": 200,
+      "success": true,
+      "message": "",
+      "task": {
+        "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T17:25:29.452+00:00",
+        "endUtc": "2026-10-13T17:32:29.452+00:00",
+        "locked": false,
+        "segments": null
+      }
+    }
+  }
+}
