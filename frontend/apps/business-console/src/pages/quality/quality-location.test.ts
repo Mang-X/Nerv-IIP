@@ -106,6 +106,29 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   listBusinessConsoleQualityInspectionTasks: qualityTaskRead,
 }))
 
+const operationContextState = vi.hoisted(() => ({
+  detail: undefined as { value: Record<string, unknown> | undefined } | undefined,
+  pending: undefined as { value: boolean } | undefined,
+  error: undefined as { value: string } | undefined,
+  refresh: vi.fn(),
+}))
+vi.mock('@/composables/useQualityOperationContext', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useQualityOperationContext: () => {
+      operationContextState.detail = shallowRef()
+      operationContextState.pending = shallowRef(true)
+      operationContextState.error = shallowRef('')
+      return {
+        detail: operationContextState.detail,
+        pending: operationContextState.pending,
+        errorMessage: operationContextState.error,
+        refresh: operationContextState.refresh,
+      }
+    },
+  }
+})
+
 const qualityState = vi.hoisted(() => ({
   inspectionFilters: undefined as
     | {
@@ -509,6 +532,66 @@ describe('quality route location behavior', () => {
     })
     ncrActionSpies.closeNcr.mockReset()
     ncrActionSpies.submitDisposition.mockReset()
+  })
+
+  it('uses the work-order product for operation inspection and submits its real source', async () => {
+    routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }
+    const wrapper = mountQualityPage(InspectionsPage)
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      recordForm: {
+        skuCode: string
+        resultLines: Array<{ characteristicCode: string; observedValue: string }>
+      }
+      submitInspectionRecord: () => Promise<void>
+    }
+    expect(wrapper.text()).toContain('正在加载工序检验对象')
+    expect(vm.recordForm.skuCode).toBe('')
+    vm.recordForm.resultLines[0]!.characteristicCode = 'DIM-01'
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await vm.submitInspectionRecord()
+    expect(createRecordSpy).not.toHaveBeenCalled()
+
+    operationContextState.detail!.value = {
+      workOrderId: 'WO-ROD-02',
+      skuId: 'SF-ROD-01',
+      operationTasks: [
+        { operationTaskId: 'OP-ROD-10', operationSequence: 10, operationCode: 'OP10' },
+      ],
+    }
+    operationContextState.pending!.value = false
+    await flushPromises()
+    expect(wrapper.text()).toContain('SF-ROD-01')
+    expect(wrapper.text()).toContain('OP10')
+    expect(vm.recordForm.skuCode).toBe('SF-ROD-01')
+    await vm.submitInspectionRecord()
+    expect(createRecordSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'operation',
+        sourceService: 'mes-operation',
+        sourceDocumentId: 'WO-ROD-02',
+        skuCode: 'SF-ROD-01',
+      }),
+    )
+    wrapper.unmount()
+  })
+
+  it('blocks a failed operation context and offers retry without a default product', async () => {
+    routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }
+    const wrapper = mountQualityPage(InspectionsPage)
+    await flushPromises()
+    operationContextState.pending!.value = false
+    operationContextState.error!.value = '工单读取失败'
+    await flushPromises()
+    expect(wrapper.text()).toContain('工单读取失败')
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试检验对象')!
+    expect(retry).toBeDefined()
+    await retry.trigger('click')
+    expect(operationContextState.refresh).toHaveBeenCalled()
+    expect((wrapper.vm as unknown as { recordForm: { skuCode: string } }).recordForm.skuCode).toBe(
+      '',
+    )
+    wrapper.unmount()
   })
 
   it.each([
