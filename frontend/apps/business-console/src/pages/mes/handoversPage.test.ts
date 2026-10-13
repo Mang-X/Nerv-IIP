@@ -274,7 +274,7 @@ const stubs = {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', ($event.target.type === \'number\' && $event.target.value !== \'\') ? $event.target.valueAsNumber : $event.target.value)" />',
   },
   NvMetricCard: { props: ['label', 'value'], template: '<div>{{ label }} {{ value }}</div>' },
   NvPageHeader: {

@@ -20,7 +20,6 @@ import { useMesWorkOrders, useMesWorkOrderDetail } from '@/composables/useBusine
 import MesWorkScopeSelect from './MesWorkScopeSelect.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
-const { statusLabel } = useMesReferenceLabels()
 import { notifyError } from '@/utils/notify'
 
 const props = defineProps<{ organizationId: string; environmentId: string; disabled: boolean }>()
@@ -31,11 +30,12 @@ const unfinishedWorkOrders = defineModel<BusinessConsoleMesShiftHandoverUnfinish
   'unfinishedWorkOrders',
   { required: true },
 )
+const { statusLabel } = useMesReferenceLabels()
 const orders = useMesWorkOrders()
 const order = useMesWorkOrderDetail()
 const selectedWorkOrderId = shallowRef('')
 const selectedOperationId = shallowRef('order')
-const countedQuantity = shallowRef('')
+const countedQuantity = shallowRef<string | number>('')
 const showQuantityError = shallowRef(false)
 const keyword = computed({
   get: () => orders.filters.keyword ?? '',
@@ -62,7 +62,7 @@ const detail = computed(() =>
 const operations = computed(() => detail.value?.operationTasks ?? [])
 const quantityValid = computed(
   () =>
-    countedQuantity.value.trim() !== '' &&
+    String(countedQuantity.value).trim() !== '' &&
     Number.isFinite(Number(countedQuantity.value)) &&
     Number(countedQuantity.value) >= 0,
 )
