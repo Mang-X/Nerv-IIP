@@ -1,0 +1,19 @@
+[
+  {
+    "mutation": "wrong-variance-amount",
+    "exitCode": 1,
+    "failedChecks": [
+      "actual voucher debit equals credit",
+      "actual variance debit matches public delta and late OP80"
+    ],
+    "evidencePlane": "synthetic archive mutation; not runtime"
+  },
+  {
+    "mutation": "wrong-movement-source",
+    "exitCode": 1,
+    "failedChecks": [
+      "same movement sources actual voucher and public FGR inventory"
+    ],
+    "evidencePlane": "synthetic archive mutation; not runtime"
+  }
+]
