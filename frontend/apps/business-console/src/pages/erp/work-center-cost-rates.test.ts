@@ -4,8 +4,9 @@ import type {
 } from '@nerv-iip/api-client'
 import { NvMetricStrip } from '@nerv-iip/ui'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive, shallowRef } from 'vue'
+import { i18n } from '@/i18n'
 import WorkCenterCostRatesPage from './finance/work-center-cost-rates.vue'
 
 const queryState = reactive<Record<string, string>>({})
@@ -91,7 +92,32 @@ const stubs = {
   NvSheetHeader: { template: '<header><slot /></header>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
 }
-const render = () => mount(WorkCenterCostRatesPage, { global: { stubs } })
+const render = () => mount(WorkCenterCostRatesPage, { attachTo: document.body, global: { stubs } })
+
+async function chooseEffectiveDate(wrapper: ReturnType<typeof render>) {
+  await wrapper.get('#erp-wcr-from').trigger('click')
+  await flushPromises()
+  const month = () =>
+    document.querySelector('[data-slot="popover-content"] .tabular-nums')!.textContent!.trim()
+  for (let i = 0; i < 120 && month() !== '2026 年 11 月'; i++) {
+    const [year, m] = month().match(/\d+/g)!.map(Number)
+    const direction = year * 12 + m > 2026 * 12 + 11 ? '上个月' : '下个月'
+    document.querySelector<HTMLButtonElement>(`[aria-label="${direction}"]`)!.click()
+    await flushPromises()
+  }
+  expect(month()).toBe('2026 年 11 月')
+  Array.from(document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell'))
+    .find(
+      (cell) =>
+        cell.textContent?.trim() === '1' && !cell.className.includes('text-muted-foreground/40'),
+    )!
+    .click()
+  await flushPromises()
+}
+
+afterEach(() => {
+  i18n.global.locale.value = 'zh-CN'
+})
 
 let data: ReturnType<typeof createState>
 const history = () => [
@@ -171,7 +197,21 @@ describe('工作中心费率', () => {
     expect(currency.attributes('disabled')).toBeDefined()
 
     await wrapper.get('#erp-wcr-rate').setValue('70.5')
-    await wrapper.get('#erp-wcr-from').setValue('2026-11-01')
+    // #3905 r1：操作真实日历，并保留本地零点的费率业务语义。
+    await chooseEffectiveDate(wrapper)
+    expect(wrapper.get('#erp-wcr-from').text()).toBe('2026/11/1')
+    i18n.global.locale.value = 'en-US'
+    await flushPromises()
+    expect(wrapper.get('#erp-wcr-from').text()).toBe('11/1/2026')
+    i18n.global.locale.value = 'zh-CN'
+    await wrapper.get('[aria-label="清除所选日期"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    expect(data.addRevision).not.toHaveBeenCalled()
+    expect(wrapper.get('#erp-wcr-from').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('#erp-wcr-from').element.parentElement!.className).toContain(
+      'border-destructive',
+    )
+    await chooseEffectiveDate(wrapper)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(data.addRevision).not.toHaveBeenCalled()

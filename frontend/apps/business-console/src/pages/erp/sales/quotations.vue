@@ -8,9 +8,11 @@ import { usePagedList } from '@/composables/usePagedList'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { i18n } from '@/i18n'
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -47,6 +49,8 @@ import {
   pickerInvalidClass,
   readCount,
 } from '../shared'
+
+const { locale } = i18n.global
 
 definePage({
   meta: { requiresAuth: true, title: '销售报价', requiredPermissions: ['business.erp.sales.read'] },
@@ -353,11 +357,15 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               <NvFieldLabel for="erp-quo-expires">
                 有效期至 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-quo-expires"
                 v-model="form.expiresOn"
-                type="date"
-                :data-invalid="showErrors && invalid.expiresOn ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.expiresOn"
+                :class="
+                  showErrors && invalid.expiresOn ? '[&>button]:border-destructive' : undefined
+                "
               />
             </NvField>
             <NvField>
@@ -392,11 +400,15 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               <NvFieldLabel for="erp-quo-required">
                 需求日期 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-quo-required"
                 v-model="form.requiredDate"
-                type="date"
-                :data-invalid="showErrors && invalid.requiredDate ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.requiredDate"
+                :class="
+                  showErrors && invalid.requiredDate ? '[&>button]:border-destructive' : undefined
+                "
               />
             </NvField>
             <NvField>

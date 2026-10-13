@@ -8,9 +8,11 @@ import { usePagedList } from '@/composables/usePagedList'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { i18n } from '@/i18n'
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -40,6 +42,8 @@ import {
   pickerInvalidClass,
   readCount,
 } from '../shared'
+
+const { locale } = i18n.global
 
 definePage({
   meta: {
@@ -321,11 +325,15 @@ async function submit() {
               <NvFieldLabel for="erp-rfq-date">
                 需求日期 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-rfq-date"
                 v-model="form.requiredDate"
-                type="date"
-                :data-invalid="showErrors && invalid.requiredDate ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.requiredDate"
+                :class="
+                  showErrors && invalid.requiredDate ? '[&>button]:border-destructive' : undefined
+                "
               />
             </NvField>
           </NvFieldGroup>

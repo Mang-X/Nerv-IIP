@@ -4,9 +4,11 @@ import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpJournalVouchers } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { i18n } from '@/i18n'
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -28,6 +30,8 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, formatDate, stableRowKey } from '../shared'
+
+const { locale } = i18n.global
 
 definePage({
   meta: {
@@ -262,11 +266,15 @@ async function submit() {
               <NvFieldLabel for="erp-jv-date">
                 过账日期 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-jv-date"
                 v-model="form.postingDate"
-                type="date"
-                :data-invalid="showErrors && invalid.postingDate ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.postingDate"
+                :class="
+                  showErrors && invalid.postingDate ? '[&>button]:border-destructive' : undefined
+                "
               />
             </NvField>
             <NvField>
