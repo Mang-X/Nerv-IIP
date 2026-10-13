@@ -13,9 +13,11 @@ import { usePagedList } from '@/composables/usePagedList'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { i18n } from '@/i18n'
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -49,6 +51,8 @@ import {
   formatQuantity,
   pickerInvalidClass,
 } from '../shared'
+
+const { locale } = i18n.global
 
 definePage({
   meta: {
@@ -415,11 +419,13 @@ async function submit() {
               <NvFieldLabel for="erp-po-date">
                 承诺日期 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-po-date"
                 v-model="form.promisedDate"
-                type="date"
-                :data-invalid="showErrors && invalid.promisedDate ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.promisedDate"
+                :class="pickerInvalidClass(showErrors && invalid.promisedDate)"
               />
             </NvField>
           </NvFieldGroup>
