@@ -7,7 +7,6 @@ import {
 } from '@/composables/useBusinessMes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { buildWorkOrderPickerOptions } from '@/composables/mes/workOrderPickerOptions'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
 import { labelFor, TRACE_NODE_TYPE_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -85,7 +84,6 @@ watch(
   { immediate: true },
 )
 
-const { resolveUser } = useMasterDataDisplayNames({ users: true })
 const nodes = computed(() => traceability.value?.nodes ?? [])
 const errorMessage = computed(() => inlineErrorMessage(traceabilityError.value))
 const batchModel = computed({
@@ -139,7 +137,7 @@ const columns: NvDataTableColumn<NodeRow>[] = [
     key: 'nodeId',
     header: '节点',
     cellClass: 'font-medium',
-    accessor: (r) => (r.nodeType === 'Operator' ? (resolveUser(r.nodeId) ?? '—') : r.nodeId),
+    accessor: (r) => (r.nodeType === 'Operator' ? r.displayName : r.nodeId),
   },
   {
     key: 'nodeType',
@@ -152,7 +150,7 @@ const columns: NvDataTableColumn<NodeRow>[] = [
   {
     key: 'displayName',
     header: '名称',
-    accessor: (r) => (r.nodeType === 'Operator' ? (resolveUser(r.nodeId) ?? '—') : r.displayName),
+    accessor: (r) => r.displayName,
   },
   { key: 'status', header: '状态', width: 'w-28' },
 ]
