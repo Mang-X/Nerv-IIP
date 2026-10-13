@@ -10,6 +10,31 @@ const TECHNICAL_USER_PATTERN = /user-emp-/i
 
 const state = vi.hoisted(() => ({
   catalogResolved: true,
+  workScope: { kind: 'team', id: 'TEAM-A' },
+  workReadError: null as unknown,
+  workOrders: [
+    {
+      workOrderId: 'WO-A',
+      quantity: 100,
+      completedQuantity: 20,
+      status: 'started',
+      operationTasks: [{ operationTaskId: 'OT-A', operationCode: '装配' }],
+    },
+    {
+      workOrderId: 'WO-B',
+      quantity: 50,
+      completedQuantity: 10,
+      status: 'released',
+      operationTasks: [{ operationTaskId: 'OT-B', operationCode: '检验' }],
+    },
+    {
+      workOrderId: 'WO-C',
+      quantity: 50,
+      completedQuantity: 20,
+      status: 'cancelled',
+      operationTasks: [],
+    },
+  ],
   principal: {
     permissionCodes: ['business.mes.handovers.manage'] as string[],
   },
@@ -118,6 +143,39 @@ vi.mock('@/composables/useBusinessMes', () => {
   detailFace.error = ref()
   detailFace.hasDetail = ref(true)
   return {
+    useMesWorkOrders: () => ({
+      filters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        keyword: '',
+        skip: 0,
+        take: 20,
+      }),
+      workOrders: computed(() => reactive(state).workOrders),
+      workOrdersTotal: ref(3),
+      workOrdersError: computed(() => reactive(state).workReadError),
+      workOrdersPending: ref(false),
+      workOrderReadScope: computed(() => reactive(state).workScope),
+      workOrderReadScopeReady: ref(true),
+      workOrderReadScopeMessage: ref(''),
+      refreshWorkOrders: vi.fn(),
+    }),
+    useMesWorkOrderDetail: () => {
+      const filters = reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: '',
+      })
+      return {
+        filters,
+        detail: computed(() =>
+          reactive(state).workOrders.find((row) => row.workOrderId === filters.workOrderId),
+        ),
+        detailError: computed(() => reactive(state).workReadError),
+        detailPending: ref(false),
+        refreshDetail: vi.fn(),
+      }
+    },
     useMesShiftHandovers: () => ({
       filters: reactive(state.filters),
       handovers: computed(() => [state.row]),
@@ -171,6 +229,7 @@ vi.mock('@/composables/usePagedList', () => ({
 }))
 
 const stubs = {
+  MesWorkScopeSelect: { template: '<div />' },
   BusinessLayout: { template: '<main><slot /></main>' },
   NvButton: {
     props: ['disabled'],
@@ -215,7 +274,7 @@ const stubs = {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template:
-      '<input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', ($event.target.type === \'number\' && $event.target.value !== \'\') ? $event.target.valueAsNumber : $event.target.value)" />',
   },
   NvMetricCard: { props: ['label', 'value'], template: '<div>{{ label }} {{ value }}</div>' },
   NvPageHeader: {
@@ -299,6 +358,8 @@ function mountPage() {
 
 describe('MES handovers read-face guard', () => {
   beforeEach(() => {
+    state.workScope.id = 'TEAM-A'
+    state.workReadError = null
     state.catalogResolved = true
     state.principal.permissionCodes = ['business.mes.handovers.manage']
     state.filters.organizationId = 'org-001'
@@ -420,6 +481,105 @@ describe('MES handovers read-face guard', () => {
     expect(mutations.createShiftHandover.mock.calls[0]?.[0]).not.toHaveProperty('openIssueIds')
     expect(mutations.refreshHandovers).toHaveBeenCalledTimes(1)
     expect(mutations.notifySuccess).toHaveBeenCalledWith('班次交接已受理。')
+  })
+
+  async function openCreateWithWorkOrder(
+    wrapper: ReturnType<typeof mountPage>,
+    workOrderId = 'WO-A',
+  ) {
+    await wrapper.get('[aria-label="新建班次交接"]').trigger('click')
+    await wrapper.get('[data-testid="handover-create-shift"]').setValue('EARLY')
+    await wrapper.get('[data-testid="handover-create-team"]').setValue('TEAM-A')
+    await wrapper.get('[data-testid="handover-work-order"]').setValue(workOrderId)
+    await flushPromises()
+  }
+
+  it('submits manually counted WIP and explicitly confirmed current unfinished progress', async () => {
+    mutations.createShiftHandover.mockResolvedValueOnce(acceptedResponse())
+    const wrapper = mountPage()
+    await openCreateWithWorkOrder(wrapper)
+    expect(wrapper.get('[data-testid="handover-wip-quantity"]').element).toHaveProperty('value', '')
+    await wrapper.get('[data-testid="handover-operation"]').setValue('OT-A')
+    await wrapper.get('[data-testid="handover-wip-quantity"]').setValue('7')
+    await wrapper.get('[data-testid="handover-add-wip"]').trigger('click')
+    await wrapper.get('[data-testid="handover-confirm-unfinished"]').trigger('click')
+    await wrapper.get('[data-testid="create-handover-form"]').trigger('submit')
+    await flushPromises()
+    expect(mutations.createShiftHandover).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wipItems: [{ workOrderId: 'WO-A', operationTaskId: 'OT-A', quantity: 7 }],
+        unfinishedWorkOrders: [
+          {
+            workOrderId: 'WO-A',
+            plannedQuantity: 100,
+            completedQuantity: 20,
+            workOrderStatus: 'started',
+          },
+        ],
+      }),
+    )
+  })
+
+  it('switches work orders without submitting the old operation or progress', async () => {
+    const wrapper = mountPage()
+    await openCreateWithWorkOrder(wrapper)
+    await wrapper.get('[data-testid="handover-operation"]').setValue('OT-A')
+    await wrapper.get('[data-testid="handover-wip-quantity"]').setValue('7')
+    await wrapper.get('[data-testid="handover-add-wip"]').trigger('click')
+    await wrapper.get('[data-testid="handover-confirm-unfinished"]').trigger('click')
+    await wrapper.get('[data-testid="handover-work-order"]').setValue('WO-B')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="handover-operation"]').text()).not.toContain('装配')
+    expect(wrapper.get('[data-testid="handover-operation"]').text()).toContain('检验')
+    expect(wrapper.get('[data-testid="handover-wip-quantity"]').element).toHaveProperty('value', '')
+    await wrapper.get('[data-testid="handover-operation"]').setValue('OT-B')
+    await wrapper.get('[data-testid="handover-wip-quantity"]').setValue('3')
+    await wrapper.get('[data-testid="handover-add-wip"]').trigger('click')
+    await wrapper.get('[data-testid="create-handover-form"]').trigger('submit')
+    expect(mutations.createShiftHandover).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wipItems: [{ workOrderId: 'WO-B', operationTaskId: 'OT-B', quantity: 3 }],
+      }),
+    )
+    expect(mutations.createShiftHandover.mock.calls[0]?.[0].unfinishedWorkOrders ?? []).toEqual([])
+  })
+
+  it('clears added details when the authorized scope changes', async () => {
+    const wrapper = mountPage()
+    await openCreateWithWorkOrder(wrapper)
+    await wrapper.get('[data-testid="handover-wip-quantity"]').setValue('7')
+    await wrapper.get('[data-testid="handover-add-wip"]').trigger('click')
+    await wrapper.get('[data-testid="handover-confirm-unfinished"]').trigger('click')
+    reactive(state.workScope).id = 'TEAM-B'
+    await flushPromises()
+    await wrapper.get('[data-testid="create-handover-form"]').trigger('submit')
+    expect(mutations.createShiftHandover.mock.calls[0]?.[0].wipItems ?? []).toEqual([])
+    expect(mutations.createShiftHandover.mock.calls[0]?.[0].unfinishedWorkOrders ?? []).toEqual([])
+  })
+
+  it('announces an empty counted quantity and does not add a WIP row', async () => {
+    const wrapper = mountPage()
+    await openCreateWithWorkOrder(wrapper)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="handover-add-wip"]').trigger('click')
+    expect(wrapper.get('[role="alert"]').text()).toContain('请输入不小于零的人工清点数量')
+    expect(wrapper.find('[data-testid="handover-added-wip"]').exists()).toBe(false)
+    expect(mutations.createShiftHandover).not.toHaveBeenCalled()
+  })
+
+  it('does not confirm a terminal order or add details after a failed read', async () => {
+    const wrapper = mountPage()
+    await openCreateWithWorkOrder(wrapper, 'WO-C')
+    expect(
+      wrapper.get('[data-testid="handover-confirm-unfinished"]').attributes('disabled'),
+    ).toBeDefined()
+    await wrapper.get('[data-testid="handover-work-order"]').setValue('WO-A')
+    reactive(state).workReadError = new Error('unavailable')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="handover-retry-work-orders"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="handover-add-wip"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="create-handover-form"]').trigger('submit')
+    expect(mutations.createShiftHandover.mock.calls[0]?.[0].wipItems ?? []).toEqual([])
   })
 
   it('keeps the create idempotency key for a retry after an operation failure', async () => {

@@ -57,6 +57,7 @@ import {
   MES_HANDOVER_ISSUE_SEVERITY_LABELS,
   MES_HANDOVER_STATUS_LABELS,
 } from '@/data/businessLabels'
+import HandoverDetailsEditor from '@/components/mes/HandoverDetailsEditor.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -295,6 +296,8 @@ const createShowErrors = ref(false)
 const createPending = ref(false)
 const createIdempotencyKey = ref('')
 const createForm = reactive({ shiftId: '', teamId: '' })
+const createWipItems = ref<BusinessConsoleMesShiftHandoverWipItem[]>([])
+const createUnfinishedWorkOrders = ref<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder[]>([])
 const selectedShift = computed(() =>
   shiftOptions.value.find((option) => option.value === createForm.shiftId),
 )
@@ -309,6 +312,8 @@ const createFormReady = computed(
 )
 
 function resetCreateForm() {
+  createWipItems.value = []
+  createUnfinishedWorkOrders.value = []
   createForm.shiftId = ''
   createForm.teamId = ''
   createShowErrors.value = false
@@ -366,6 +371,10 @@ async function submitCreate() {
     shiftId: createForm.shiftId,
     teamId: createForm.teamId,
     teamName: selectedTeam.value?.label,
+    ...(createWipItems.value.length ? { wipItems: createWipItems.value } : {}),
+    ...(createUnfinishedWorkOrders.value.length
+      ? { unfinishedWorkOrders: createUnfinishedWorkOrders.value }
+      : {}),
     idempotencyKey:
       createIdempotencyKey.value ||
       (createIdempotencyKey.value = makeIdempotencyKey('mes-handover-create')),
@@ -797,7 +806,7 @@ function formatDateTime(value?: string | null) {
     </NvSheet>
 
     <NvDialog v-if="canManageHandovers" v-model:open="createDialogOpen">
-      <NvDialogContent>
+      <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>创建班次交接</NvDialogTitle>
           <NvDialogDescription class="sr-only"
@@ -854,7 +863,14 @@ function formatDateTime(value?: string | null) {
               </p>
             </NvField>
           </NvFieldGroup>
-          <p class="text-xs text-muted-foreground">未结事项会按你当前可见的范围自动带入。</p>
+          <HandoverDetailsEditor
+            v-if="createDialogOpen"
+            v-model:wip-items="createWipItems"
+            v-model:unfinished-work-orders="createUnfinishedWorkOrders"
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+            :disabled="createPending"
+          />
           <NvDialogFooter>
             <NvButton
               type="button"
