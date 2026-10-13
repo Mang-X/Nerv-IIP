@@ -234,6 +234,12 @@ const orderDialogStubs = {
 
 // 新建报价弹窗：实体选择器桩成可直接读写的输入位，用例只关心提交体里的单位来自哪里。
 const dialogStubs = {
+  // 本组验证单位随物料提交；日期的真实交互由 date-inputs.test.ts 覆盖。
+  NvDatePicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: `<input :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />`,
+  },
   ...dialogShellStubs,
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],

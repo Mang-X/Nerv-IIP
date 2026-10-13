@@ -4,6 +4,7 @@ import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvEntityPicker,
   NvField,
   NvFieldDescription,
@@ -34,11 +35,14 @@ import { queryText } from '@/components/erp/costRecovery'
 import { useRoute } from 'vue-router'
 import { watch } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { i18n } from '@/i18n'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { today } from '@/utils/format'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
-import { UNAVAILABLE_TEXT, formatAmount, formatDateTime } from '../shared'
+import { pickerInvalidClass, UNAVAILABLE_TEXT, formatAmount, formatDateTime } from '../shared'
+
+const { locale } = i18n.global
 
 definePage({
   meta: {
@@ -257,11 +261,13 @@ async function submit() {
               <NvFieldLabel for="erp-wcr-from">
                 生效日期 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-wcr-from"
                 v-model="form.effectiveFrom"
-                type="date"
-                :data-invalid="showErrors && invalid.effectiveFrom ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.effectiveFrom"
+                :class="pickerInvalidClass(showErrors && invalid.effectiveFrom)"
               />
             </NvField>
             <NvField>

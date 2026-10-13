@@ -10,9 +10,11 @@ import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { i18n } from '@/i18n'
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -38,6 +40,7 @@ import { RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import {
   UNAVAILABLE_TEXT,
+  pickerInvalidClass,
   erpReadState,
   formatAmount,
   formatDate,
@@ -45,6 +48,8 @@ import {
   formatQuantity,
   readCount,
 } from '../shared'
+
+const { locale } = i18n.global
 
 definePage({
   meta: {
@@ -398,11 +403,13 @@ async function submit() {
               <NvFieldLabel for="erp-sq-date">
                 承诺交期 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-sq-date"
                 v-model="form.promisedDate"
-                type="date"
-                :data-invalid="showErrors && invalid.promisedDate ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.promisedDate"
+                :class="pickerInvalidClass(showErrors && invalid.promisedDate)"
               />
             </NvField>
             <NvField class="sm:col-span-2">
