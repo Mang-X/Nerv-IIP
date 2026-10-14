@@ -84,7 +84,9 @@ import {
   XIcon,
 } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES } from '@/permissions'
 
 const {
   acceptSuggestion,
@@ -137,6 +139,11 @@ const {
   downstreamStatuses,
 } = useBusinessPlanning()
 const router = useRouter()
+const route = useRoute()
+const auth = useAuthStore()
+const canReadWorkOrders = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesWorkOrdersRead),
+)
 const orderUrgencies = useOrderUrgencies(
   computed(() => demands.value.map((demand) => demand.sourceReference)),
 )
@@ -423,6 +430,36 @@ function locatePlanningSuggestion(suggestionId: string, runId: string) {
   focusedSuggestionId.value = suggestionId
   activeTab.value = 'suggestions'
 }
+// 来源强 ID 来自工单 sourcePlanReference；运行从实际建议读回，不猜最近批次。
+const sourceSuggestionId = computed(() =>
+  typeof route.query.suggestionId === 'string' ? route.query.suggestionId.trim() : '',
+)
+const sourceRunId = computed(() =>
+  typeof route.query.runId === 'string' ? route.query.runId.trim() : '',
+)
+watch(
+  [sourceSuggestionId, sourceRunId],
+  ([suggestionId, runId]) => {
+    if (!suggestionId && !runId) return
+    suggestionFilters.status = 'all'
+    suggestionTypeFilter.type = 'all'
+    focusedSuggestionId.value = ''
+    activeTab.value = 'suggestions'
+    if (runId) suggestionRunChoice.value = runId
+  },
+  { immediate: true },
+)
+watch(
+  [sourceSuggestionId, sourceRunId, suggestions, mrpRuns],
+  ([suggestionId, runId]) => {
+    if (!suggestionId || focusedSuggestionId.value === suggestionId) return
+    const source = suggestions.value.find((row) => row.suggestionId === suggestionId)
+    if (!source?.runId || (runId && source.runId !== runId)) return
+    if (!mrpRuns.value.some((run) => run.runId === source.runId)) return
+    locatePlanningSuggestion(suggestionId, source.runId)
+  },
+  { immediate: true },
+)
 function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
   if (!row.suggestionId) return
   locatePlanningSuggestion(row.suggestionId, runSelection.runId)
@@ -525,8 +562,13 @@ function isComponentRow(row: BusinessConsoleMrpPeggingItem): boolean {
 const visibleSuggestions = computed(() => {
   const t = suggestionTypeFilter.type
   // 'all' 哨兵 = 不过滤（reka 的 SelectItem 不允许空串 value，故用 'all' 代替原空串）。
-  if (!t || t === 'all') return scopedSuggestions.value
-  return scopedSuggestions.value.filter((s) => s.suggestionType === t)
+  const rows =
+    !t || t === 'all'
+      ? scopedSuggestions.value
+      : scopedSuggestions.value.filter((s) => s.suggestionType === t)
+  // 表格默认分页；将定位行放到首屏，不改变其它建议的相对次序。
+  const focused = rows.find((row) => row.suggestionId === focusedSuggestionId.value)
+  return focused ? [focused, ...rows.filter((row) => row !== focused)] : rows
 })
 const suggestionTypeFilterOptions = [
   { label: '全部类型', value: 'all' },
@@ -587,11 +629,11 @@ const peggingColumns: NvDataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
 const suggestionColumns: NvDataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
   // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
   { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
-  { key: 'skuCode', header: 'SKU' },
+  { key: 'skuCode', header: 'SKU', width: 'w-32' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'requiredDate', header: '需求日', width: 'w-28' },
-  { key: 'reasonCode', header: '原因' },
-  { key: 'downstream', header: '承接单据', width: 'w-40' },
+  { key: 'reasonCode', header: '原因', width: 'w-80' },
+  { key: 'downstream', header: '承接单据', width: 'w-56' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '', align: 'end', width: 'w-48' },
 ]
@@ -1823,6 +1865,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </div>
       </div>
       <NvDataTable
+        :key="focusedSuggestionId"
         :columns="suggestionColumns"
         :rows="visibleSuggestions"
         :row-class="
@@ -1915,10 +1958,29 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </template>
         <template #cell-downstream="{ row }">
           <div v-if="row.downstreamDocumentId" class="grid gap-1 text-sm">
-            <span
-              >{{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·
-              {{ row.downstreamDocumentId }}</span
-            >
+            <div class="grid gap-1">
+              <span
+                >{{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·</span
+              >
+              <NvButton
+                v-if="suggestionWorkOrderId(row) && canReadWorkOrders"
+                size="sm"
+                type="button"
+                variant="ghost"
+                class="justify-start px-0"
+                @click="
+                  router.push(
+                    downstreamRoute(
+                      row.downstreamService,
+                      row.downstreamDocumentType,
+                      row.downstreamDocumentId,
+                    ),
+                  )
+                "
+                >{{ row.downstreamDocumentId }}</NvButton
+              >
+              <span v-else>{{ row.downstreamDocumentId }}</span>
+            </div>
             <NvStatusBadge
               v-if="
                 row.suggestionType === 'planned-work-order' ||
