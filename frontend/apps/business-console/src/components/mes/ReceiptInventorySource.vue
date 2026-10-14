@@ -127,7 +127,9 @@ const balanceColumns: NvDataTableColumn<Balance>[] = [
             empty-message="暂无该入库单的库存移动。"
           >
             <template #cell-qualityStatus="{ row }"
-              ><NvStatusBadge :value="row.qualityStatus"
+              ><NvStatusBadge
+                :value="row.qualityStatus"
+                :label="labelFor(QUALITY_STATUS_LABELS, row.qualityStatus)"
             /></template>
           </NvDataTable>
           <h3 class="font-semibold">对应库存余额</h3>
@@ -154,7 +156,9 @@ const balanceColumns: NvDataTableColumn<Balance>[] = [
             empty-message="暂无对应库存余额。"
           >
             <template #cell-qualityStatus="{ row }"
-              ><NvStatusBadge :value="row.qualityStatus"
+              ><NvStatusBadge
+                :value="row.qualityStatus"
+                :label="labelFor(QUALITY_STATUS_LABELS, row.qualityStatus)"
             /></template>
           </NvDataTable>
         </template>
