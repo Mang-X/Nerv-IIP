@@ -50,6 +50,7 @@ async function mountTrace(
       { path: '/mes/traceability', component: TraceabilityPage },
       { path: '/mes/work-orders/:workOrderId', component: { template: '<div />' } },
       { path: '/barcode/scans', component: { template: '<div />' } },
+      { path: '/mes/production-reports', component: { template: '<div />' } },
     ],
   })
   await router.push(`/mes/traceability${query}`)
@@ -73,7 +74,7 @@ async function mountTrace(
         NvDataTable: {
           props: ['rows'],
           template:
-            '<div><div v-for="row in rows" :key="row.nodeId"><slot name="cell-nodeId" :row="row">{{ row.nodeId }}</slot></div></div>',
+            '<div><div v-for="row in rows" :key="row.nodeId"><slot name="cell-nodeId" :row="row">{{ row.nodeId }}</slot><slot name="cell-reportDetail" :row="row" /></div></div>',
         },
         NvPageHeader: { template: '<header><slot name="actions" /></header>' },
         NvToolbar: { template: '<div><slot name="filters" /></div>' },
@@ -212,5 +213,46 @@ describe('追溯工单与工序接力（#4411 fixture 页面行为）', () => {
     expect(nodeLink(wrapper, 'task-20')).toBeUndefined()
     wrapper.unmount()
     state.nodes.pop()
+  })
+})
+
+describe('追溯页面报工入口', () => {
+  it('点击序列来源使用真实 ReportNo 并保存地址栏之外的实际查询筛选', async () => {
+    const savedNodes = state.nodes
+    const savedEdges = state.edges
+    state.nodes = [
+      { nodeId: 'SN-1002', nodeType: 'Serial', displayName: 'SN-1002' },
+      { nodeId: 'PRPT-900', nodeType: 'ProductionReport', displayName: 'PRPT-900' },
+    ]
+    state.edges = [{ fromNodeId: 'PRPT-900', toNodeId: 'SN-1002', relationType: 'produced-serial' }]
+    const { wrapper, router } = await mountTrace('?mode=batch&filter=retained', [
+      'business.mes.traceability.read',
+      'business.mes.reporting.read',
+    ])
+    try {
+      await wrapper.get('input[aria-label="批次或物料批"]').setValue('SN-1002')
+      const source = wrapper.findAll('a').find((link) => link.text() === '序列 · PRPT-900')!
+      await source.trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.query.reportNo).toBe('PRPT-900')
+      expect(router.currentRoute.value.query.sourceNodeType).toBe('Serial')
+      expect(router.currentRoute.value.query.sourceNodeId).toBe('SN-1002')
+      const returnTo = new URL(
+        String(router.currentRoute.value.query.traceabilityReturn),
+        'https://console.example',
+      )
+      expect(returnTo.pathname).toBe('/mes/traceability')
+      expect(Object.fromEntries(returnTo.searchParams)).toEqual({
+        mode: 'batch',
+        filter: 'retained',
+        workOrderId: '',
+        batchOrSerial: 'SN-1002',
+        materialLotId: 'SN-1002',
+      })
+    } finally {
+      wrapper.unmount()
+      state.nodes = savedNodes
+      state.edges = savedEdges
+    }
   })
 })
