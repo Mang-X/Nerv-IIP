@@ -340,7 +340,12 @@ function firstQuery(value: unknown) {
         <p v-if="row.reason" class="mt-1 text-xs text-muted-foreground">{{ row.reason }}</p>
       </template>
       <template #cell-reportDetail="{ row }">
-        <TraceReportLinks :node="row" :graph="traceability" :return-to="reportReturnTo" />
+        <span
+          v-if="row.nodeType === 'BatchOrSerial' && row.status === 'Unknown'"
+          class="text-sm text-muted-foreground"
+          >未找到匹配的批次/序列事实，暂无可查看详情</span
+        >
+        <TraceReportLinks v-else :node="row" :graph="traceability" :return-to="reportReturnTo" />
       </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
