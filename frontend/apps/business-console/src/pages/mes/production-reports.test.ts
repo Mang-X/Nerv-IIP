@@ -157,8 +157,15 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 
-const routerState = vi.hoisted(() => ({ push: vi.fn() }))
-vi.mock('vue-router', () => ({ useRouter: () => routerState }))
+const routerState = vi.hoisted(() => ({
+  push: vi.fn(),
+  query: {} as Record<string, string | string[]>,
+}))
+vi.mock('vue-router', () => ({
+  useRouter: () => routerState,
+  useRoute: () => routerState,
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+}))
 
 vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   useProductionReportSerialOptions: () => ({
@@ -211,8 +218,16 @@ vi.mock('@/composables/useBusinessMes', async () => {
       scrapReasonCodes: shallowRef([]),
       refreshScrapReasonCodes: vi.fn(),
     }),
-    useMesProductionReportDetail: () => ({
-      detail: shallowRef({ report: rows[0], consumedMaterialLots: [], laborAllocations: [] }),
+    useMesProductionReportDetail: (reportNo: () => string | null) => ({
+      detail: computed(() =>
+        reportNo()
+          ? {
+              report: { ...rows[0], reportNo: reportNo() },
+              consumedMaterialLots: [],
+              laborAllocations: [],
+            }
+          : undefined,
+      ),
       detailError: shallowRef(undefined),
       detailPending: shallowRef(false),
       refresh: vi.fn(),
@@ -371,6 +386,7 @@ function mountReports(permissionCodes: string[]) {
 }
 
 beforeEach(() => {
+  routerState.query = {}
   mesState.reverseProductionReport.mockReset()
   mesState.reverseProductionReport.mockResolvedValue({ data: { reportNo: 'PRPT-000902' } })
   if (mesState.filters) {
@@ -1040,6 +1056,52 @@ describe('报工详情日期展示', () => {
     } finally {
       wrapper.unmount()
       rows[0]!.reportedAtUtc = saved
+    }
+  })
+})
+
+describe('追溯报工深链', () => {
+  it.each(['单值', '数组'] as const)(
+    '仅读用户按分页外 ReportNo 自动打开详情并保留返回查询（%s）',
+    async (queryKind) => {
+      const returnTo = '/mes/traceability?mode=batch&batchOrSerial=LOT-009999&workOrderId=WO-9'
+      routerState.query = {
+        reportNo: 'PRPT-009999',
+        sourceNodeType: 'ProductionReport',
+        sourceNodeId: 'PRPT-009999',
+        traceabilityReturn: queryKind === '数组' ? [returnTo, '/mes/work-orders'] : returnTo,
+      }
+      const wrapper = mountReports(['business.mes.reporting.read'])
+      await flushPromises()
+      expect(wrapper.get('[role="dialog"]').text()).toContain('报工详情 · PRPT-009999')
+      expect(wrapper.get('[role="dialog"]').text()).toContain('返回追溯')
+      expect(wrapper.get('[role="dialog"] a').attributes('href')).toBe(returnTo)
+      expect(wrapper.get('[role="dialog"]').text()).toContain('12')
+      expect(
+        wrapper.findAll('[data-testid="row"]').some((row) => row.text().includes('PRPT-009999')),
+      ).toBe(false)
+      wrapper.unmount()
+    },
+  )
+
+  it('来源产出批次与报工详情不一致时页面解释并停止呈现事实', async () => {
+    routerState.query = {
+      reportNo: 'PRPT-009999',
+      sourceNodeType: 'ProducedLot',
+      sourceNodeId: 'LOT-20261014-000001',
+      traceabilityReturn: '/mes/traceability?mode=batch&batchOrSerial=LOT-20261014-000001',
+    }
+    // 公开详情 fixture 返回同一报工单号和良品 12，但没有来源节点所指的产出批次。
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    try {
+      await flushPromises()
+      const dialog = wrapper.get('[role="dialog"]')
+      expect(dialog.text()).toContain('报工详情 · PRPT-009999')
+      expect(dialog.text()).toContain('来源节点与报工产出事实不匹配')
+      expect(dialog.text()).not.toContain('良品')
+      expect(dialog.find('[aria-label="产出事实"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
     }
   })
 })

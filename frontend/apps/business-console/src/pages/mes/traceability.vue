@@ -9,6 +9,7 @@ import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { buildWorkOrderPickerOptions } from '@/composables/mes/workOrderPickerOptions'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
 import { labelFor, TRACE_NODE_TYPE_LABELS } from '@/data/businessLabels'
+import TraceReportLinks from '@/components/mes/TraceReportLinks.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -47,6 +48,19 @@ const { filters, refreshTraceability, traceability, traceabilityError, traceabil
 const { statusLabel } = useMesReferenceLabels()
 const route = useRoute()
 const router = useRouter()
+const reportReturnTo = computed(
+  () =>
+    router.resolve({
+      path: '/mes/traceability',
+      query: {
+        ...route.query,
+        mode: filters.mode,
+        workOrderId: filters.workOrderId,
+        batchOrSerial: filters.batchOrSerial,
+        materialLotId: filters.materialLotId,
+      },
+    }).fullPath,
+)
 const auth = useAuthStore()
 const canReadReceipts = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes('business.mes.receipts.read'),
@@ -215,6 +229,7 @@ const columns: NvDataTableColumn<NodeRow>[] = [
   },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'receipts', header: '入库来源', width: 'w-48' },
+  { key: 'reportDetail', header: '报工详情' },
 ]
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
@@ -323,6 +338,9 @@ function firstQuery(value: unknown) {
         }}</RouterLink>
         <span v-else>{{ row.nodeType === 'Operator' ? row.displayName : row.nodeId }}</span>
         <p v-if="row.reason" class="mt-1 text-xs text-muted-foreground">{{ row.reason }}</p>
+      </template>
+      <template #cell-reportDetail="{ row }">
+        <TraceReportLinks :node="row" :graph="traceability" :return-to="reportReturnTo" />
       </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />

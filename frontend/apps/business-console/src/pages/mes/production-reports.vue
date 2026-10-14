@@ -4,6 +4,8 @@ import type {
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
 import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
+import { RouterLink } from 'vue-router'
+import { useProductionReportDetailSelection } from '@/composables/mes/useProductionReportDetailSelection'
 import ProductionReportDetailDialog from '@/components/mes/ProductionReportDetailDialog.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
@@ -86,7 +88,7 @@ const {
   reverseProductionReport,
   reverseProductionReportPending,
 } = useMesProductionReports()
-const detailReportNo = shallowRef<string | null>(null)
+const { detailReportNo, detailSource, reportReturnTo } = useProductionReportDetailSelection()
 const { page, pageSize } = usePagedList(filters)
 const candidateQueue = useMesTelemetryProductionReportCandidates()
 // 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
@@ -490,6 +492,9 @@ async function dismissCandidate(candidateId?: string) {
       :count="`${productionReportsTotal} 条报工`"
     >
       <template #actions>
+        <NvButton v-if="reportReturnTo" variant="outline" size="sm" as-child>
+          <RouterLink :to="reportReturnTo">返回追溯</RouterLink>
+        </NvButton>
         <NvButton
           size="sm"
           type="button"
@@ -666,7 +671,12 @@ async function dismissCandidate(candidateId?: string) {
       </template>
     </NvDataTable>
 
-    <ProductionReportDetailDialog v-model:report-no="detailReportNo" />
+    <ProductionReportDetailDialog
+      v-model:report-no="detailReportNo"
+      :source-node-type="detailSource.nodeType"
+      :source-node-id="detailSource.nodeId"
+      :return-to="reportReturnTo"
+    />
 
     <!-- 冲销确认(破坏性,原因必填),A1 §2.5。用 :open + @update:open 统一拦截关闭(pending 时禁关) -->
     <NvAlertDialog :open="reverseOpen" @update:open="onReverseOpenChange">
