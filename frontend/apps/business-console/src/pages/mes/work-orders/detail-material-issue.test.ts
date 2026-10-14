@@ -251,7 +251,7 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
   it('详情加载中不能发起缺上下文的完工登记', async () => {
     state.detail = {}
     state.detailPending = true
-    const wrapper = mountDetail(['business.mes.work-orders.read'])
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.receipts.read'])
     const entry = wrapper.findAll('button').find((button) => button.text() === '完工入库')!
     expect(entry.attributes('disabled')).toBeDefined()
     await entry.trigger('click')
@@ -259,7 +259,7 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
   })
 
   it('详情就绪后带真实成品和数量进入完工登记', async () => {
-    const wrapper = mountDetail(['business.mes.work-orders.read'])
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.receipts.read'])
     await wrapper
       .findAll('button')
       .find((button) => button.text() === '完工入库')!
