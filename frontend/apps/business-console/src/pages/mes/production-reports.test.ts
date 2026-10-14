@@ -1075,4 +1075,25 @@ describe('追溯报工深链', () => {
     ).toBe(false)
     wrapper.unmount()
   })
+
+  it('来源产出批次与报工详情不一致时页面解释并停止呈现事实', async () => {
+    routerState.query = {
+      reportNo: 'PRPT-009999',
+      sourceNodeType: 'ProducedLot',
+      sourceNodeId: 'LOT-20261014-000001',
+      traceabilityReturn: '/mes/traceability?mode=batch&batchOrSerial=LOT-20261014-000001',
+    }
+    // 公开详情 fixture 返回同一报工单号和良品 12，但没有来源节点所指的产出批次。
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    try {
+      await flushPromises()
+      const dialog = wrapper.get('[role="dialog"]')
+      expect(dialog.text()).toContain('报工详情 · PRPT-009999')
+      expect(dialog.text()).toContain('来源节点与报工产出事实不匹配')
+      expect(dialog.text()).not.toContain('良品')
+      expect(dialog.find('[aria-label="产出事实"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
+  })
 })
