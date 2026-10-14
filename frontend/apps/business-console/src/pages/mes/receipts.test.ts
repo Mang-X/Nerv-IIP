@@ -68,7 +68,14 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const reactiveRoute = reactive(routeState)
-const routerState = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }))
+const routerState = vi.hoisted(() => ({
+  replace: vi.fn(),
+  push: vi.fn(),
+  resolve: (target: string) => ({
+    path: target.split('?')[0],
+    query: Object.fromEntries(new URLSearchParams(target.split('?')[1])),
+  }),
+}))
 
 vi.mock('vue-router', () => ({
   useRoute: () => reactiveRoute,
@@ -162,6 +169,11 @@ const tableStub = {
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   WorkOrderQuickView: true,
+  ReceiptInventorySource: {
+    props: ['receipt'],
+    template:
+      '<section data-testid="inventory-source">{{ receipt.requestNo }} {{ receipt.workOrderId }} {{ receipt.producedLotNo }}</section>',
+  },
   NvPageHeader: { template: '<header><slot name="actions" /></header>' },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
   NvDataTable: tableStub,
@@ -253,6 +265,45 @@ describe('MES receipts — failed inventory posting retry', () => {
         requestedAtUtc: '2026-07-14T03:00:00Z',
       },
     ]
+  })
+
+  it('真实多条登记逐单打开来源，缺台账权限不读取库存', async () => {
+    receiptState.rows[0].producedLotNo = 'LOT-001'
+    receiptState.rows[1].producedLotNo = 'LOT-002'
+    const wrapper = mountPage(['business.mes.receipts.read', 'business.inventory.ledger.read'])
+    const buttons = wrapper.findAll('button').filter((button) => button.text() === '库存来源')
+    expect(buttons).toHaveLength(2)
+    await buttons[1].trigger('click')
+    expect(wrapper.get('[data-testid="inventory-source"]').text()).toBe('FGR-000002 WO-2 LOT-002')
+    wrapper.unmount()
+    const denied = mountPage(['business.mes.receipts.read'])
+    expect(denied.text()).toContain('无库存台账读取权限')
+    expect(denied.find('[data-testid="inventory-source"]').exists()).toBe(false)
+    expect(denied.findAll('button').some((button) => button.text() === '库存来源')).toBe(false)
+  })
+
+  it('返回追溯恢复原查询，来源参数不能跳到其它页面', async () => {
+    reactiveRoute.query = {
+      traceReturn:
+        '/mes/traceability?mode=batch&workOrderId=WO-1&batchOrSerial=LOT-1&materialLotId=MAT-1',
+    }
+    const wrapper = mountPage(['business.mes.receipts.read'])
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '返回追溯')!
+      .trigger('click')
+    expect(routerState.push).toHaveBeenLastCalledWith({
+      path: '/mes/traceability',
+      query: {
+        mode: 'batch',
+        workOrderId: 'WO-1',
+        batchOrSerial: 'LOT-1',
+        materialLotId: 'MAT-1',
+      },
+    })
+    reactiveRoute.query = { traceReturn: '/ops/dead-letters?mode=batch' }
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('返回追溯')
   })
 
   it('offers a status filter option for failed postings', () => {

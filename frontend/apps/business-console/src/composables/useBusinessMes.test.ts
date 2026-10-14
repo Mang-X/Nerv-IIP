@@ -8,6 +8,7 @@ import {
   closeBusinessConsoleMesWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
+  getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
@@ -51,6 +52,7 @@ import {
   useMesDispatchTasks,
   useMesDowntimeEvents,
   useMesFoundationReadiness,
+  useMesReceiptInventorySource,
   useMesFinishedGoodsReceipts,
   useMesLineSideInventoryBalances,
   useMesCurrentOperationSops,
@@ -113,6 +115,10 @@ const authState = vi.hoisted(() => ({
 const reactiveAuthState = reactive(authState)
 
 vi.mock('@nerv-iip/api-client', () => ({
+  getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions: vi.fn(({ path, query }) => ({
+    key: [{ _id: 'getBusinessConsoleMesFinishedGoodsReceiptInventoryLink', path, query }],
+    query: vi.fn(),
+  })),
   cancelBusinessConsoleMesWorkOrder: vi.fn(async () => ({
     data: { success: true },
     response: { status: 200 },
@@ -3052,5 +3058,31 @@ describe('business MES composables', () => {
     expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
     expect(result.lineSideInventoryError.value).toBeNull()
     expect(result.lineSideInventoryBalances.value.map((item) => item.skuCode)).toEqual(['SKU-OK'])
+  })
+})
+
+describe('MES receipt inventory source', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+  it('首次登记列表请求已限定真实工单，不先读取全部登记', () => {
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    useMesFinishedGoodsReceipts({ workOrderId: 'WO-001', requestNo: 'FGR-001' })
+    expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toHaveBeenLastCalledWith(
+      {
+        query: expect.objectContaining({ workOrderId: 'WO-001', keyword: 'FGR-001' }),
+      },
+    )
+  })
+  it('以真实 FGR 与工单及当前组织环境读取来源', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-4414', environmentId: 'env-4414' })
+    useMesReceiptInventorySource(() => ({ requestNo: 'FGR-001', workOrderId: 'WO-001' }))
+    expect(
+      getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions,
+    ).toHaveBeenLastCalledWith({
+      path: { requestNo: 'FGR-001' },
+      query: { organizationId: 'org-4414', environmentId: 'env-4414', workOrderId: 'WO-001' },
+    })
   })
 })
