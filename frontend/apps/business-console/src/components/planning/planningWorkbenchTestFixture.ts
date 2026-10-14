@@ -44,6 +44,7 @@ vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
 }))
 
 const routerPush = vi.hoisted(() => vi.fn())
+const planningRoute = vi.hoisted(() => ({ query: {} as Record<string, unknown> }))
 const planningSpies = vi.hoisted(() => ({
   // 需求池刷新后"某类需求整类消失"要能在用例里复现 → 把 demands 的 ref 交出来供测试改写。
   demandsRef: null as { value: Array<Record<string, unknown>> } | null,
@@ -331,9 +332,11 @@ vi.mock('@/composables/useBusinessMasterData', async () => {
   }
 })
 
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: routerPush }),
-}))
+vi.mock('vue-router', async () => {
+  const { reactive } = await vi.importActual<typeof import('vue')>('vue')
+  const route = reactive(planningRoute)
+  return { useRouter: () => ({ push: routerPush }), useRoute: () => route }
+})
 
 // 反馈走真实分层透传（notifyOperationFailure / inlineErrorMessage），只把 toast 换成 spy。
 vi.mock('@/utils/notify', async (importOriginal) => ({
@@ -444,7 +447,10 @@ vi.mock('@nerv-iip/ui', async () => {
     NvSelectValue: Shell,
     NvSpinner: Shell,
     NvStatusBadge: defineComponent({ props: ['label'], template: '<span>{{ label }}</span>' }),
-    NvTabs: Shell,
+    NvTabs: defineComponent({
+      props: ['modelValue'],
+      template: '<div :data-active-tab="modelValue"><slot /></div>',
+    }),
     NvTabsContent: Shell,
     NvTabsList: Shell,
     NvTabsTrigger: Shell,
@@ -452,4 +458,4 @@ vi.mock('@nerv-iip/ui', async () => {
   }
 })
 
-export { planningSpies, routerPush }
+export { planningSpies, routerPush, planningRoute }
