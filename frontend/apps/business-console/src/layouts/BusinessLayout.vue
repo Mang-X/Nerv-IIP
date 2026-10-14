@@ -23,7 +23,17 @@ const permissionCodes = computed(() =>
 const currentDomainId = computed(() => resolveDomainId(route.path))
 
 // Top capability areas, RBAC-filtered (permissive default — see navigation.ts).
-const topDomains = computed(() => permittedBy(BUSINESS_DOMAINS, permissionCodes.value))
+const topDomains = computed(() =>
+  permittedBy(BUSINESS_DOMAINS, permissionCodes.value).flatMap((domain) => {
+    if (domain.id !== 'mes') return [domain]
+
+    const firstPage = permittedBy(
+      DOMAIN_SIDE_NAV.mes.flatMap((group) => group.items),
+      permissionCodes.value,
+    )[0]
+    return firstPage ? [{ ...domain, to: firstPage.to }] : []
+  }),
+)
 
 // Current domain's side nav, with empty groups dropped after permission filtering.
 const sideNav = computed(() =>
