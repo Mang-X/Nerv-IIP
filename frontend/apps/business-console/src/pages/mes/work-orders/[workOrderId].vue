@@ -176,7 +176,7 @@ const traceSourceMessage = computed(() => {
     route.query.traceOrganizationId !== filters.organizationId ||
     route.query.traceEnvironmentId !== filters.environmentId
   ) {
-    return '当前组织或环境与追溯来源不一致，请返回追溯重新查询。'
+    return '当前查看范围已改变，请返回追溯重新查询。'
   }
   if (!sourceDetail.value) return ''
   if (sourceDetail.value.workOrderId !== filters.workOrderId) {

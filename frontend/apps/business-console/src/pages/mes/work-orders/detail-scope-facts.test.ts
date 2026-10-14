@@ -193,30 +193,36 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
   it.each([
     {
       workOrderId: 'WO-OTHER',
-      operationTasks: [{ operationTaskId: 'task-20' }],
+      operationTasks: [{ operationTaskId: 'task-20', operationTaskNo: 'WO-OTHER-OP-20' }],
+      hiddenOperationTaskNo: 'WO-OTHER-OP-20',
       expected: '工单详情与追溯来源不一致',
     },
     {
       workOrderId: 'WO-1',
-      operationTasks: [{ operationTaskId: 'task-10' }],
+      operationTasks: [{ operationTaskId: 'task-10', operationTaskNo: 'WO-1-OP-10' }],
+      hiddenOperationTaskNo: 'WO-1-OP-10',
       expected: '工单详情中未找到来源工序',
     },
-  ])('公开详情与来源不一致时解释并停止展示错误对象：$expected', ({ expected, ...detail }) => {
-    routeState.query = {
-      traceReturn: '/mes/traceability?mode=batch&batchOrSerial=SER-001',
-      traceOrganizationId: 'org',
-      traceEnvironmentId: 'dev',
-      operationTaskId: 'task-20',
-    }
-    detailState.detail = detail
-    const wrapper = mountDetail()
-    expect(wrapper.get('[role="alert"][data-testid="trace-source-message"]').text()).toContain(
-      expected,
-    )
-    expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(0)
-    expect(wrapper.text()).toContain('返回追溯')
-    wrapper.unmount()
-  })
+  ])(
+    '公开详情与来源不一致时解释并停止展示错误对象：$expected',
+    ({ expected, hiddenOperationTaskNo, ...detail }) => {
+      routeState.query = {
+        traceReturn: '/mes/traceability?mode=batch&batchOrSerial=SER-001',
+        traceOrganizationId: 'org',
+        traceEnvironmentId: 'dev',
+        operationTaskId: 'task-20',
+      }
+      detailState.detail = detail
+      const wrapper = mountDetail()
+      expect(wrapper.get('[role="alert"][data-testid="trace-source-message"]').text()).toContain(
+        expected,
+      )
+      expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(0)
+      expect(wrapper.text()).not.toContain(hiddenOperationTaskNo)
+      expect(wrapper.text()).toContain('返回追溯')
+      wrapper.unmount()
+    },
+  )
 
   it('组织环境已变时解释上下文不一致，不把另一范围的详情冒称来源对象', () => {
     routeState.query = {
@@ -224,11 +230,16 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
       traceOrganizationId: 'other-org',
       traceEnvironmentId: 'dev',
     }
-    detailState.detail = { workOrderId: 'WO-1', operationTasks: [] }
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-10', operationTaskNo: 'WO-1-OP-10' }],
+    }
     const wrapper = mountDetail()
     expect(wrapper.get('[data-testid="trace-source-message"]').text()).toContain(
-      '当前组织或环境与追溯来源不一致',
+      '当前查看范围已改变',
     )
+    expect(wrapper.text()).not.toContain('WO-1-OP-10')
+    expect(wrapper.text()).toContain('返回追溯')
     wrapper.unmount()
   })
 
