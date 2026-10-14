@@ -33,6 +33,7 @@ import {
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
+import SchedulingWorkOrderLink from '@/components/scheduling/SchedulingWorkOrderLink.vue'
 import SchedulingDaySchedule from '@/components/scheduling/SchedulingDaySchedule.vue'
 import { useSchedulingPlanCsv } from '@/composables/useSchedulingPlanCsv'
 import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
@@ -1649,7 +1650,11 @@ function reasonLabel(reason?: string | null) {
               >
                 <div class="flex items-center justify-between gap-3">
                   <p class="text-sm font-medium text-foreground">
-                    {{ assignmentText(assignment) }}
+                    <SchedulingWorkOrderLink
+                      :work-order-id="assignment.orderId"
+                      :operation-task-id="assignment.operationId"
+                      >{{ assignmentText(assignment) }}</SchedulingWorkOrderLink
+                    >
                   </p>
                   <OrderUrgencyBadge
                     :order-reference="assignment.orderId ?? ''"

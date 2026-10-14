@@ -2,6 +2,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { SchedulingToolbar, type ScheduleModel } from '@nerv-iip/scheduling'
 import { beforeEach, expect, it, vi } from 'vitest'
 import SchedulingDraftBoard from './SchedulingDraftBoard.vue'
+import { createPinia, setActivePinia } from 'pinia'
+
+beforeEach(() => setActivePinia(createPinia()))
 
 const runtime = vi.hoisted(() => ({
   ready: Promise.resolve(),

@@ -1,11 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import type { ScheduleModel } from '@nerv-iip/scheduling'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { SchedulingToolbar, SchedulingLegend, TaskDetailPanel } from '@nerv-iip/scheduling'
 import SchedulingDraftBoard from './SchedulingDraftBoard.vue'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { NvInput } from '@nerv-iip/ui'
+beforeEach(() => setActivePinia(createPinia()))
 
 function chartStub(name: string) {
   return defineComponent({

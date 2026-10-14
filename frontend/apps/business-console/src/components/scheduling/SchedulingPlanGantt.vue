@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SchedulingWorkOrderFacts } from '@/composables/useBusinessMes'
 import SchedulingPlanOrders from './SchedulingPlanOrders.vue'
+import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import type {
   BusinessConsoleResourceItem,
@@ -721,6 +722,15 @@ function setLaneOrder(value: LaneOrder) {
           <TaskDetailPanel :task="selectedTask" :read-only="true" />
 
           <div class="grid gap-3 px-4 py-3">
+            <p v-if="selectedKind !== 'block'" class="text-sm">
+              工单
+              <SchedulingWorkOrderLink
+                :work-order-id="selectedTask.orderId"
+                :operation-task-id="
+                  selectedKind === 'operation' ? selectedTask.operationId : undefined
+                "
+              />
+            </p>
             <dl class="grid gap-2 text-xs">
               <div v-if="selectedWorkCenterLabel" class="flex justify-between gap-3">
                 <dt class="text-muted-foreground">工作中心</dt>
