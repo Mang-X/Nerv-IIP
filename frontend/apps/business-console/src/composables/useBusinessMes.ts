@@ -18,6 +18,7 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleMesShiftHandoverMutationOptions,
+  getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
@@ -2904,8 +2905,12 @@ export function useMesWorkOrderProducedLots(workOrderId: () => string) {
   }
 }
 
-export function useMesFinishedGoodsReceipts() {
+export function useMesFinishedGoodsReceipts(
+  initial: { workOrderId?: string; requestNo?: string } = {},
+) {
   const filters = defaultFilters()
+  filters.workOrderId = initial.workOrderId
+  filters.keyword = initial.requestNo
   const queryCache = useQueryCache()
 
   const receiptsQuery = useQuery(() =>
@@ -2992,6 +2997,36 @@ export function useMesFinishedGoodsReceipts() {
     receiptRequestsState: businessReadState(receiptsQuery, () => hasBusinessContext(filters)),
     receiptRequestsTotal: computed(() => envelopeTotal(receiptsQuery.data.value)),
     refreshReceiptRequests: () => refetchWithBusinessContext(filters, receiptsQuery),
+  }
+}
+
+/** 复用 FGR 来源读面；调用方仅在具有入库及库存台账读取权限时挂载。 */
+export function useMesReceiptInventorySource(
+  receipt: () => { requestNo?: string | null; workOrderId?: string | null },
+) {
+  const filters = defaultFilters()
+  const query = useQuery(() => {
+    const selected = receipt()
+    const options = withBusinessContextEnabled(
+      getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions({
+        path: { requestNo: selected.requestNo ?? '' },
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          workOrderId: selected.workOrderId ?? undefined,
+        },
+      }),
+      filters,
+    )
+    return {
+      ...options,
+      enabled: options.enabled && !!selected.requestNo && !!selected.workOrderId,
+    }
+  })
+  return {
+    source: computed(() => query.data.value?.data),
+    sourcePending: query.isLoading,
+    sourceError: query.error,
   }
 }
 

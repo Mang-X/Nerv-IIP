@@ -2,6 +2,7 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { receiptPendingReason } from '@nerv-iip/business-core'
 import { queryText } from '@/components/erp/costRecovery'
+import ReceiptInventorySource from '@/components/mes/ReceiptInventorySource.vue'
 import ReceiptCreateSheet from '@/components/mes/ReceiptCreateSheet.vue'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
@@ -49,6 +50,7 @@ definePage({
 
 // 路由页只负责编排：列表 + 状态筛选（URL 同步）+ 逐行重试 + 权限门控 + 工单上下文；
 // 登记表单/产出批次/提交封装在 ReceiptCreateSheet + useReceiptCreateForm（Vue best-practices §2）。
+const route = useRoute()
 const {
   filters,
   receiptRequests,
@@ -58,12 +60,29 @@ const {
   refreshReceiptRequests,
   retryInventoryPosting,
   isRetrying,
-} = useMesFinishedGoodsReceipts()
+} = useMesFinishedGoodsReceipts({
+  workOrderId: queryText(route.query, 'workOrderId') || undefined,
+  requestNo: queryText(route.query, 'receiptNo') || undefined,
+})
 const { page, pageSize, resetPage } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { resolveSku } = useMesDisplayNames()
 
-const route = useRoute()
 const router = useRouter()
+const traceReturn = computed(() => {
+  const target = queryText(route.query, 'traceReturn')
+  if (!target.startsWith('/mes/traceability?')) return undefined
+  const resolved = router.resolve(target)
+  return resolved.path === '/mes/traceability'
+    ? { path: '/mes/traceability', query: resolved.query }
+    : undefined
+})
+const selectedReceipt = shallowRef<ReceiptRow | null>(null)
+watch(
+  () => [route.query.workOrderId, filters.organizationId, filters.environmentId],
+  () => {
+    selectedReceipt.value = null
+  },
+)
 watch(
   () => [route.query.workOrderId, route.query.receiptNo],
   () => {
@@ -112,6 +131,9 @@ const statusOptions = mesReceiptStatusOptions
 // 重试端点要求 business.mes.receipts.manage（网关 MesReceiptsManage），页面路由只需 read。
 // 无 manage 权限的只读用户不应看到重试/创建入口，否则点击必得 403（前后端操作级权限同步）。
 const auth = useAuthStore()
+const canReadInventory = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.inventory.ledger.read'),
+)
 const canManageReceipts = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.mesReceiptsManage),
 )
@@ -197,6 +219,7 @@ const columns: NvDataTableColumn<ReceiptRow>[] = [
     width: 'w-48',
     cellClass: 'whitespace-normal break-all',
   },
+  { key: 'producedLotNo', header: '产出批次', width: 'w-48' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'unitCost', header: '单位成本', align: 'end', width: 'w-28' },
   { key: 'receiptStatus', header: '入库状态', width: 'w-48' },
@@ -267,6 +290,9 @@ function isNonEmpty(value: string) {
       :count="`${receiptRequestsTotal} 条入库登记`"
     >
       <template #actions>
+        <NvButton v-if="traceReturn" size="sm" variant="outline" @click="router.push(traceReturn)"
+          >返回追溯</NvButton
+        >
         <!-- 登记完工入库调用创建端点（需 receipts.manage）：无 manage 权限的只读用户不显示创建入口。 -->
         <NvButton
           v-if="canManageReceipts"
@@ -294,7 +320,10 @@ function isNonEmpty(value: string) {
     <p v-if="filters.workOrderId" class="my-3 text-sm">
       当前工单 {{ filters.workOrderId
       }}<template v-if="filters.keyword"> · 完工登记 {{ filters.keyword }}</template>
-      <NvButton size="sm" variant="outline" @click="router.replace({ query: {} })"
+      <NvButton
+        size="sm"
+        variant="outline"
+        @click="router.replace({ query: { traceReturn: route.query.traceReturn } })"
         >查看全部登记</NvButton
       >
     </p>
@@ -338,6 +367,7 @@ function isNonEmpty(value: string) {
         <span v-if="row.requestNo">{{ row.requestNo }}</span>
         <span v-else class="text-muted-foreground">—</span>
       </template>
+      <template #cell-producedLotNo="{ row }">{{ row.producedLotNo || '—' }}</template>
       <template #cell-workOrderId="{ row }">
         <button
           v-if="row.workOrderId"
@@ -386,6 +416,16 @@ function isNonEmpty(value: string) {
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <div class="flex items-center justify-end gap-1">
+          <NvButton
+            v-if="canReadInventory && row.requestNo && row.workOrderId"
+            size="sm"
+            variant="outline"
+            @click="selectedReceipt = row"
+            >库存来源</NvButton
+          >
+          <span v-else-if="!canReadInventory" class="text-xs text-muted-foreground"
+            >无库存台账读取权限</span
+          >
           <!-- 失败重试为该行高频主动作（A1 §2）：行内直达，重试中仅本行禁用 + spinner。 -->
           <NvButton
             v-if="canRetry(row)"
@@ -441,7 +481,15 @@ function isNonEmpty(value: string) {
       <span v-else>该工单暂无可入库产出，可在列表查看已登记单据及成本状态。</span>
     </div>
 
+    <ReceiptInventorySource
+      v-if="selectedReceipt && canReadInventory"
+      :key="selectedReceipt.requestNo ?? ''"
+      :receipt="selectedReceipt"
+      @close="selectedReceipt = null"
+    />
+
     <ReceiptCreateSheet
+      v-if="canManageReceipts"
       v-model:open="receiptSheetOpen"
       :organization-id="filters.organizationId"
       :environment-id="filters.environmentId"

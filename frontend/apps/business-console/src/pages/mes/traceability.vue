@@ -27,7 +27,8 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
@@ -42,6 +43,29 @@ const { filters, refreshTraceability, traceability, traceabilityError, traceabil
   useMesTraceability()
 const { statusLabel } = useMesReferenceLabels()
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+const canReadReceipts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.mes.receipts.read'),
+)
+function receiptTarget(workOrderId: string) {
+  return {
+    path: '/mes/receipts',
+    query: {
+      workOrderId,
+      traceReturn: router.resolve({
+        path: '/mes/traceability',
+        query: {
+          ...route.query,
+          mode: filters.mode,
+          workOrderId: filters.workOrderId,
+          batchOrSerial: filters.batchOrSerial,
+          materialLotId: filters.materialLotId,
+        },
+      }).fullPath,
+    },
+  }
+}
 
 /** 选择器一页拉多少工单：足够铺满下拉，其余靠服务端搜索收敛，不做「拉全量再本地过滤」。 */
 const WORK_ORDER_PAGE_SIZE = 50
@@ -153,6 +177,7 @@ const columns: NvDataTableColumn<NodeRow>[] = [
     accessor: (r) => r.displayName,
   },
   { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'receipts', header: '入库来源', width: 'w-48' },
 ]
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
@@ -243,6 +268,18 @@ function firstQuery(value: unknown) {
       empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
       @retry="refreshTraceability"
     >
+      <template #cell-receipts="{ row }">
+        <template v-if="row.nodeType === 'WorkOrder' && row.status !== 'Unknown' && row.nodeId">
+          <RouterLink
+            v-if="canReadReceipts"
+            :to="receiptTarget(row.nodeId)"
+            class="text-brand hover:underline"
+          >
+            查看完工入库
+          </RouterLink>
+          <span v-else class="text-sm text-muted-foreground">无完工入库读取权限</span>
+        </template>
+      </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
       </template>
