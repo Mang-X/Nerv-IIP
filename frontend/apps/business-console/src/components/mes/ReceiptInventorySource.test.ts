@@ -32,7 +32,7 @@ function mountSource() {
         NvDataTable: {
           props: ['columns', 'rows', 'emptyMessage'],
           template:
-            '<section><p v-if="!rows.length">{{ emptyMessage }}</p><div v-for="(row, index) in rows" :key="index"><span v-for="column in columns" :key="column.key">{{ row[column.key] }}</span></div></section>',
+            '<section><p v-if="!rows.length">{{ emptyMessage }}</p><table><thead><tr><th v-for="column in columns" :key="column.key">{{ column.header }}</th></tr></thead><tbody><tr v-for="(row, index) in rows" :key="index"><td v-for="column in columns" :key="column.key">{{ column.accessor ? column.accessor(row) : row[column.key] }}</td></tr></tbody></table></section>',
         },
       },
     },
@@ -81,7 +81,8 @@ describe('FGR 库存来源事实', () => {
         },
       ],
     }
-    const text = mountSource().text()
+    const wrapper = mountSource()
+    const text = wrapper.text()
     for (const fact of [
       'WO-001',
       'LOT-001',
@@ -93,9 +94,36 @@ describe('FGR 库存来源事实', () => {
       '剩余 0',
     ])
       expect(text).toContain(fact)
-    expect(text).toContain('8')
-    expect(text).toContain('3')
-    expect(text).toContain('5')
+    const tables = wrapper.findAll('table')
+    const movementTable = tables.find((table) =>
+      table.findAll('th').some((header) => header.text() === '移动数量'),
+    )!
+    const movementHeaders = movementTable.findAll('th').map((header) => header.text())
+    const movementRow = movementTable
+      .findAll('tbody tr')
+      .find((row) =>
+        ['FGR-001', 'FG-001', 'LOT-001', 'FG-A'].every((identity) =>
+          row.findAll('td').some((cell) => cell.text() === identity),
+        ),
+      )!
+    expect(movementRow).toBeDefined()
+    expect(movementRow.findAll('td')[movementHeaders.indexOf('移动数量')].text()).toBe('8')
+
+    const balanceTable = tables.find((table) =>
+      table.findAll('th').some((header) => header.text() === '在库数量'),
+    )!
+    const balanceHeaders = balanceTable.findAll('th').map((header) => header.text())
+    const balanceRow = balanceTable
+      .findAll('tbody tr')
+      .find((row) =>
+        ['FG-001', 'LOT-001', 'FG-A'].every((identity) =>
+          row.findAll('td').some((cell) => cell.text() === identity),
+        ),
+      )!
+    expect(balanceRow).toBeDefined()
+    expect(balanceRow.findAll('td')[balanceHeaders.indexOf('在库数量')].text()).toBe('8')
+    expect(balanceRow.findAll('td')[balanceHeaders.indexOf('预留数量')].text()).toBe('3')
+    expect(balanceRow.findAll('td')[balanceHeaders.indexOf('可用数量')].text()).toBe('5')
   })
   it.each([
     ['notPosted', '未过账', false],

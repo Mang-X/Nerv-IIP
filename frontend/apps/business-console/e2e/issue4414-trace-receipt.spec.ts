@@ -160,6 +160,33 @@ test('从真实工单选择多条 FGR 中的第二条，核对库存来源并恢
   await expect(source).toContainText('产出批次 LOT-20261014-002')
   await expect(source).toContainText('FG-A')
   await expect(source.getByText('待检', { exact: true })).toHaveCount(2)
+  const movementTable = source
+    .getByRole('table')
+    .filter({ has: page.getByRole('columnheader', { name: '移动数量', exact: true }) })
+  const movementRow = movementTable
+    .getByRole('row')
+    .filter({ has: page.getByRole('cell', { name: 'FGR-20261014-002', exact: true }) })
+    .filter({ has: page.getByRole('cell', { name: 'LOT-20261014-002', exact: true }) })
+    .filter({ has: page.getByRole('cell', { name: 'FG-A', exact: true }) })
+  await expect(movementRow).toHaveCount(1)
+  const movementHeaders = await movementTable.getByRole('columnheader').allTextContents()
+  await expect(movementRow.getByRole('cell').nth(movementHeaders.indexOf('移动数量'))).toHaveText(
+    '8',
+  )
+  const balanceTable = source
+    .getByRole('table')
+    .filter({ has: page.getByRole('columnheader', { name: '在库数量', exact: true }) })
+  const balanceRow = balanceTable
+    .getByRole('row')
+    .filter({ has: page.getByRole('cell', { name: 'FG-TUB-001', exact: true }) })
+    .filter({ has: page.getByRole('cell', { name: 'LOT-20261014-002', exact: true }) })
+    .filter({ has: page.getByRole('cell', { name: 'FG-A', exact: true }) })
+  await expect(balanceRow).toHaveCount(1)
+  const balanceHeaders = await balanceTable.getByRole('columnheader').allTextContents()
+  await expect(balanceRow.getByRole('cell').nth(balanceHeaders.indexOf('在库数量'))).toHaveText('8')
+  await expect(balanceRow.getByRole('cell').nth(balanceHeaders.indexOf('预留数量'))).toHaveText('3')
+  await expect(balanceRow.getByRole('cell').nth(balanceHeaders.indexOf('可用数量'))).toHaveText('5')
+
   const clippedText = await source.locator('td').evaluateAll((cells) =>
     cells.flatMap((cell) => {
       const bounds = cell.getBoundingClientRect()

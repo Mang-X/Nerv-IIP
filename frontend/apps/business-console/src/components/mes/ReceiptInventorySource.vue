@@ -17,6 +17,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { labelFor, QUALITY_STATUS_LABELS } from '@/data/businessLabels'
+import { inventoryExpiryRowKey } from '@/utils/inventoryExpiryPresentation'
 
 const props = defineProps<{ receipt: BusinessConsoleMesReceiptRequestRow }>()
 const emit = defineEmits<{ close: [] }>()
@@ -136,21 +137,7 @@ const balanceColumns: NvDataTableColumn<Balance>[] = [
           <h3 class="font-semibold">对应库存余额</h3>
           <NvDataTable
             class="min-w-0"
-            :row-key="
-              (row) =>
-                JSON.stringify([
-                  row.skuCode,
-                  row.siteCode,
-                  row.locationCode,
-                  row.lotNo,
-                  row.serialNo,
-                  row.qualityStatus,
-                  row.ownerType,
-                  row.ownerId,
-                  row.productionDate,
-                  row.expiryDate,
-                ])
-            "
+            :row-key="(row) => inventoryExpiryRowKey(row, row.skuCode ?? '')"
             :columns="balanceColumns"
             :rows="balances"
             :searchable="false"
