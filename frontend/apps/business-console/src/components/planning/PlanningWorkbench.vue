@@ -629,11 +629,11 @@ const peggingColumns: NvDataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
 const suggestionColumns: NvDataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
   // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
   { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
-  { key: 'skuCode', header: 'SKU' },
+  { key: 'skuCode', header: 'SKU', width: 'w-32' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'requiredDate', header: '需求日', width: 'w-28' },
-  { key: 'reasonCode', header: '原因' },
-  { key: 'downstream', header: '承接单据', width: 'w-40' },
+  { key: 'reasonCode', header: '原因', width: 'w-80' },
+  { key: 'downstream', header: '承接单据', width: 'w-56' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '', align: 'end', width: 'w-48' },
 ]
@@ -1958,7 +1958,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </template>
         <template #cell-downstream="{ row }">
           <div v-if="row.downstreamDocumentId" class="grid gap-1 text-sm">
-            <div class="flex items-center gap-1">
+            <div class="grid gap-1">
               <span
                 >{{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·</span
               >
@@ -1967,6 +1967,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
                 size="sm"
                 type="button"
                 variant="ghost"
+                class="justify-start px-0"
                 @click="
                   router.push(
                     downstreamRoute(
