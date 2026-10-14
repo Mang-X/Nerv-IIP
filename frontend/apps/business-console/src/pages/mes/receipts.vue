@@ -415,7 +415,7 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
       <template #cell-actions="{ row }">
-        <div class="flex items-center justify-end gap-1">
+        <div class="flex flex-wrap items-center justify-end gap-1">
           <NvButton
             v-if="canReadInventory && row.requestNo && row.workOrderId"
             size="sm"
@@ -423,7 +423,9 @@ function isNonEmpty(value: string) {
             @click="selectedReceipt = row"
             >库存来源</NvButton
           >
-          <span v-else-if="!canReadInventory" class="text-xs text-muted-foreground"
+          <span
+            v-else-if="!canReadInventory"
+            class="w-full text-xs whitespace-normal text-muted-foreground"
             >无库存台账读取权限</span
           >
           <!-- 失败重试为该行高频主动作（A1 §2）：行内直达，重试中仅本行禁用 + spinner。 -->
