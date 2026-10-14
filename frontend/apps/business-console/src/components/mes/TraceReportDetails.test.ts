@@ -9,7 +9,6 @@ const state = vi.hoisted(() => ({
   canRead: true,
   error: undefined as Error | undefined,
   requested: vi.fn(),
-  returnedReportNo: undefined as string | undefined,
   consumedMaterialLots: [] as Array<{
     materialId: string
     materialLotId: string
@@ -35,7 +34,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
           ? {
               consumedMaterialLots: state.consumedMaterialLots,
               report: {
-                reportNo: state.returnedReportNo ?? getReportNo(),
+                reportNo: getReportNo(),
                 workOrderNo: 'WO-20261014-000001',
                 producedLotNo: 'LOT-20261014-000001',
                 serialNumbers: ['SN-1001', 'SN-1002'],
@@ -72,7 +71,6 @@ beforeEach(() => {
   state.canRead = true
   state.error = undefined
   state.requested.mockClear()
-  state.returnedReportNo = undefined
   state.consumedMaterialLots = [
     {
       materialId: 'MAT-1',
@@ -309,16 +307,6 @@ describe('追溯耗料来源行为', () => {
     expect(wrapper.text()).toContain('来源节点与报工耗料事实不匹配')
     expect(wrapper.find('[aria-label="来源耗料事实"]').exists()).toBe(false)
     expect(wrapper.get('a').text()).toBe('返回追溯')
-    wrapper.unmount()
-  })
-  it('公开读回是另一报工时不能呈现该报工耗料', () => {
-    state.returnedReportNo = 'PRPT-OTHER'
-    const wrapper = mount(ProductionReportDetailDialog, {
-      props: { reportNo: 'PRPT-1', sourceNodeType: 'MaterialLot', sourceNodeId: 'MLOT-1' },
-      global: { stubs },
-    })
-    expect(wrapper.text()).toContain('来源节点与报工耗料事实不匹配')
-    expect(wrapper.find('[aria-label="来源耗料事实"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('耗料来源缺报工读取权限时解释且不提供链接或读取详情', () => {

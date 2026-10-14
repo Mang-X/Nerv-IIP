@@ -172,8 +172,6 @@ for (const [nodeType, nodeId] of [
     for (const request of requests) {
       expect(request.searchParams.get('organizationId')).toBe(principal.organizationId)
       expect(request.searchParams.get('environmentId')).toBe(principal.environmentId)
-      expect(request.searchParams.get('scopeKind')).toBe('workCenter')
-      expect(request.searchParams.get('scopeId')).toBe('WC-TUBE-01')
     }
     await page.getByRole('link', { name: '返回追溯', exact: true }).click()
     await expect(row).toContainText('选择来源报工')

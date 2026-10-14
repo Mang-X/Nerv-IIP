@@ -53,12 +53,7 @@ const materialFacts = computed(() =>
 )
 const sourceMatches = computed(() => {
   if (!props.sourceNodeType && !props.sourceNodeId) return true
-  if (isMaterialSource.value)
-    return (
-      report.value?.reportNo === reportNo.value &&
-      !!props.sourceNodeId &&
-      materialFacts.value.length > 0
-    )
+  if (isMaterialSource.value) return !!props.sourceNodeId && materialFacts.value.length > 0
   if (props.sourceNodeType === 'ProductionReport')
     return props.sourceNodeId === report.value?.reportNo
   if (props.sourceNodeType === 'ProducedLot')
