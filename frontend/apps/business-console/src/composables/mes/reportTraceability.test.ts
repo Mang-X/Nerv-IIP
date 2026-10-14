@@ -45,3 +45,52 @@ describe('来源报工身份', () => {
     expect(traceabilityReturnPath(firstTraceQuery('/mes/work-orders'))).toBeUndefined()
   })
 })
+
+const materialGraph = {
+  nodes: [
+    { nodeId: 'MAT-1', nodeType: 'Material' },
+    { nodeId: 'MLOT-1', nodeType: 'MaterialLot' },
+    { nodeId: 'MLOT-2', nodeType: 'MaterialLot' },
+    { nodeId: 'MIR-1', nodeType: 'MaterialIssueRequest' },
+    { nodeId: 'PRPT-1', nodeType: 'ProductionReport' },
+    { nodeId: 'PRPT-2', nodeType: 'ProductionReport' },
+  ],
+  edges: [
+    { fromNodeId: 'MAT-1', toNodeId: 'MLOT-1', relationType: 'has-lot' },
+    { fromNodeId: 'MAT-1', toNodeId: 'MLOT-2', relationType: 'has-lot' },
+    { fromNodeId: 'MIR-1', toNodeId: 'MLOT-1', relationType: 'received-lot' },
+    { fromNodeId: 'MLOT-1', toNodeId: 'PRPT-1', relationType: 'consumed-by-report' },
+    { fromNodeId: 'MLOT-1', toNodeId: 'PRPT-2', relationType: 'consumed-by-report' },
+    { fromNodeId: 'MLOT-2', toNodeId: 'PRPT-2', relationType: 'consumed-by-report' },
+  ],
+}
+describe('耗料来源身份', () => {
+  it.each([
+    ['Material', 'MAT-1'],
+    ['MaterialLot', 'MLOT-1'],
+    ['MaterialIssueRequest', 'MIR-1'],
+  ])('%s 沿真实物料批耗料边保留多个报工来源', (nodeType, nodeId) => {
+    expect(reportTraceSources(materialGraph, { nodeType, nodeId })).toEqual([
+      { reportNo: 'PRPT-1', nodeType, nodeId },
+      { reportNo: 'PRPT-2', nodeType, nodeId },
+    ])
+  })
+  it('关系缺失或反向时不推导耗料来源，也不把同值产出作为耗料', () => {
+    expect(reportTraceSources(materialGraph, { nodeType: 'Material', nodeId: 'MIR-1' })).toEqual([])
+    expect(
+      reportTraceSources(materialGraph, { nodeType: 'MaterialLot', nodeId: 'MLOT-404' }),
+    ).toEqual([])
+    expect(
+      reportTraceSources(
+        {
+          nodes: materialGraph.nodes,
+          edges: [
+            { fromNodeId: 'PRPT-1', toNodeId: 'MLOT-1', relationType: 'consumed-by-report' },
+            { fromNodeId: 'PRPT-2', toNodeId: 'MLOT-1', relationType: 'produced-lot' },
+          ],
+        },
+        { nodeType: 'MaterialLot', nodeId: 'MLOT-1' },
+      ),
+    ).toEqual([])
+  })
+})
