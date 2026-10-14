@@ -699,7 +699,7 @@ describe('quality route location behavior', () => {
     expect(wrapper.text()).not.toContain('登记同工序不良')
   })
 
-  it.each([{}, { workOrderId: 'WO-ROD-02' }])(
+  it.each<Record<string, string>>([{}, { workOrderId: 'WO-ROD-02' }])(
     'keeps normal inspection entry without inventing an operation: %j',
     async (query) => {
       routeState.route!.query = query
