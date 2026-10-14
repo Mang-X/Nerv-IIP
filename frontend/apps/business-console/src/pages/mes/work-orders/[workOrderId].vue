@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { traceabilityReturnPath } from '@/composables/mes/traceWorkOrderLink'
 import WorkOrderSourceFacts from '@/components/mes/WorkOrderSourceFacts.vue'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type {
@@ -122,7 +123,7 @@ const {
   returnLineSideMaterialPending,
   createMaterialIssueRequest,
   createMaterialIssueRequestPending,
-  detail,
+  detail: sourceDetail,
   detailError,
   detailPending,
   filters,
@@ -144,20 +145,15 @@ const {
   workOrderManageScopeReady,
   workOrderReadScope,
   workOrderReadScopeMessage,
-} = useMesWorkOrderDetail()
+} = useMesWorkOrderDetail(() => {
+  const value = (route.params as Record<string, string | string[] | undefined>).workOrderId
+  return (Array.isArray(value) ? value[0] : value) ?? ''
+})
 const workOrderTransformations = useMesWorkOrderTransformations({
   filters,
   readScope: workOrderReadScope,
   manageScope: workOrderManageScope,
 })
-
-watch(
-  () => (route.params as Record<string, string | string[] | undefined>).workOrderId,
-  (value) => {
-    filters.workOrderId = (Array.isArray(value) ? value[0] : value) ?? ''
-  },
-  { immediate: true },
-)
 
 // 工序行的班次只有标识，班次名在主数据里（shifts: true 才会拉这份名录）。
 const { resolveShiftLabel, resolveSkuLabel } = useMesDisplayNames({ shifts: true })
@@ -173,6 +169,30 @@ const canReadInspectionRecords = computed(() =>
   permissionCodes.value.includes(P.qualityInspectionRecordsRead),
 )
 
+const traceReturn = computed(() => traceabilityReturnPath(route.query.traceReturn))
+const traceSourceMessage = computed(() => {
+  if (!traceReturn.value) return ''
+  if (
+    route.query.traceOrganizationId !== filters.organizationId ||
+    route.query.traceEnvironmentId !== filters.environmentId
+  ) {
+    return '当前查看范围已改变，请返回追溯重新查询。'
+  }
+  if (!sourceDetail.value) return ''
+  if (sourceDetail.value.workOrderId !== filters.workOrderId) {
+    return '工单详情与追溯来源不一致，请返回追溯核对。'
+  }
+  const operationTaskId = route.query.operationTaskId
+  if (
+    operationTaskId &&
+    !sourceDetail.value.operationTasks?.some((task) => task.operationTaskId === operationTaskId)
+  ) {
+    return '工单详情中未找到来源工序，请返回追溯核对。'
+  }
+  return ''
+})
+// 公开读回与来源身份不一致时，不把另一对象的事实展示成来源工单。
+const detail = computed(() => (traceSourceMessage.value ? undefined : sourceDetail.value))
 const operationTasks = computed(() => detail.value?.operationTasks ?? [])
 const workOrderLabel = computed(() => readFaceText(filters.workOrderId, '未编号工单'))
 // 工单质量保留（活跃 + 已释放周期）。定位键齐备（sourceService + sourceDocumentId）的才渲染。
@@ -995,6 +1015,9 @@ function formatStatus(value?: string | null) {
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
     >
       <template #actions>
+        <NvButton v-if="traceReturn" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="traceReturn">返回追溯</RouterLink>
+        </NvButton>
         <!-- 对该单排产：只生成一个含本工单的新方案（MAN-694 / #1262）。 -->
         <NvButton
           v-if="canRecordEngineeringDecision"
@@ -1131,6 +1154,15 @@ function formatStatus(value?: string | null) {
         </NvTooltipProvider>
       </template>
     </NvPageHeader>
+
+    <p
+      v-if="traceSourceMessage"
+      role="alert"
+      data-testid="trace-source-message"
+      class="text-sm text-destructive"
+    >
+      {{ traceSourceMessage }}
+    </p>
 
     <!-- v-if 按需挂载：关闭时不持有候选工单查询，也不残留上一次的窗口输入。 -->
     <SingleOrderSchedulingDialog
@@ -1300,11 +1332,14 @@ function formatStatus(value?: string | null) {
       >
         <template #cell-operationTaskId="{ row }">
           <span
+            class="flex flex-col items-start gap-1"
             :data-andon-source="
               Boolean(row.operationTaskId && route.query.operationTaskId === row.operationTaskId)
             "
           >
-            {{ row.operationTaskNo?.trim() || '—' }}
+            <span class="break-all whitespace-normal">{{
+              row.operationTaskNo?.trim() || '—'
+            }}</span>
             <NvStatusBadge
               v-if="row.operationTaskId && route.query.operationTaskId === row.operationTaskId"
               label="来源工序"
