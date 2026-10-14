@@ -157,8 +157,12 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 
-const routerState = vi.hoisted(() => ({ push: vi.fn() }))
-vi.mock('vue-router', () => ({ useRouter: () => routerState }))
+const routerState = vi.hoisted(() => ({ push: vi.fn(), query: {} as Record<string, string> }))
+vi.mock('vue-router', () => ({
+  useRouter: () => routerState,
+  useRoute: () => routerState,
+  RouterLink: { template: '<a><slot /></a>' },
+}))
 
 vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   useProductionReportSerialOptions: () => ({
@@ -211,8 +215,16 @@ vi.mock('@/composables/useBusinessMes', async () => {
       scrapReasonCodes: shallowRef([]),
       refreshScrapReasonCodes: vi.fn(),
     }),
-    useMesProductionReportDetail: () => ({
-      detail: shallowRef({ report: rows[0], consumedMaterialLots: [], laborAllocations: [] }),
+    useMesProductionReportDetail: (reportNo: () => string | null) => ({
+      detail: computed(() =>
+        reportNo()
+          ? {
+              report: { ...rows[0], reportNo: reportNo() },
+              consumedMaterialLots: [],
+              laborAllocations: [],
+            }
+          : undefined,
+      ),
       detailError: shallowRef(undefined),
       detailPending: shallowRef(false),
       refresh: vi.fn(),
@@ -371,6 +383,7 @@ function mountReports(permissionCodes: string[]) {
 }
 
 beforeEach(() => {
+  routerState.query = {}
   mesState.reverseProductionReport.mockReset()
   mesState.reverseProductionReport.mockResolvedValue({ data: { reportNo: 'PRPT-000902' } })
   if (mesState.filters) {
@@ -1041,5 +1054,25 @@ describe('报工详情日期展示', () => {
       wrapper.unmount()
       rows[0]!.reportedAtUtc = saved
     }
+  })
+})
+
+describe('追溯报工深链', () => {
+  it('仅读用户按分页外 ReportNo 自动打开详情并保留返回查询', async () => {
+    routerState.query = {
+      reportNo: 'PRPT-009999',
+      sourceNodeType: 'ProductionReport',
+      sourceNodeId: 'PRPT-009999',
+      traceabilityReturn: '/mes/traceability?mode=batch&batchOrSerial=LOT-009999&workOrderId=WO-9',
+    }
+    const wrapper = mountReports(['business.mes.reporting.read'])
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('报工详情 · PRPT-009999')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('返回追溯')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('12')
+    expect(
+      wrapper.findAll('[data-testid="row"]').some((row) => row.text().includes('PRPT-009999')),
+    ).toBe(false)
+    wrapper.unmount()
   })
 })
