@@ -4,6 +4,8 @@ import { computed, defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPlanGantt from './SchedulingPlanGantt.vue'
+import { useAuthStore } from '@/stores/auth'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 vi.mock('@/composables/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => undefined }),
@@ -105,6 +107,37 @@ function mountGantt(props: Record<string, unknown>) {
     global: { plugins: [createPinia()] },
   })
 }
+
+// DomainInvariant: #4419，真实方案工序进入同 WO/OP，入口服从目标读权限。
+it('有工单读权限时从方案工序打开同一工单并保留来源工序', async () => {
+  const pinia = createPinia()
+  useAuthStore(pinia).$patch({
+    principal: {
+      principalId: 'planner',
+      principalType: 'user',
+      organizationId: 'org',
+      environmentId: 'dev',
+      loginName: 'planner',
+      permissionCodes: ['business.mes.work-orders.read'],
+    },
+  })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+  })
+  await router.push('/scheduling')
+  const wrapper = mount(SchedulingPlanGantt, {
+    props: { plan: { ...plan(), status: 'generated' } },
+    global: { plugins: [pinia, router] },
+  })
+  await wrapper.get('button[data-operation="a2"]').trigger('click')
+  const link = wrapper.get('[data-testid="scheduling-task-detail"] a')
+  await link.trigger('click')
+  await flushPromises()
+  expect(router.currentRoute.value.path).toBe('/mes/work-orders/WO-2026-03008')
+  expect(router.currentRoute.value.query).toEqual({ operationTaskId: 'OP-20' })
+  wrapper.unmount()
+})
 
 const GROUP_ASSIGNMENTS = [
   {

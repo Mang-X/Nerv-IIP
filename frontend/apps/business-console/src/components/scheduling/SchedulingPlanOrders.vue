@@ -4,6 +4,7 @@ import type { ScheduleModel, ScheduleTask } from '@nerv-iip/scheduling'
 import { operationTaskStatusLabel, workOrderStatusLabel } from '@nerv-iip/business-core'
 import { NvDataTable, NvStatusBadge, type NvDataTableColumn } from '@nerv-iip/ui'
 import { computed } from 'vue'
+import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
 
 const props = defineProps<{
   model: ScheduleModel
@@ -92,8 +93,10 @@ function progress(order: SchedulingWorkOrderFacts | undefined, tasks: ScheduleTa
       <div v-for="order in group.orders" :key="order.id" class="mb-3 last:mb-0">
         <div class="mb-2 flex flex-wrap items-center justify-between gap-1 text-xs">
           <span class="font-medium"
-            >{{ order.order?.workOrderNo || order.id }} ·
-            {{ workOrderStatusLabel(order.order?.executionStatus ?? order.order?.status) }}</span
+            ><SchedulingWorkOrderLink :work-order-id="order.id">{{
+              order.order?.workOrderNo || order.id
+            }}</SchedulingWorkOrderLink>
+            · {{ workOrderStatusLabel(order.order?.executionStatus ?? order.order?.status) }}</span
           >
           <span class="text-muted-foreground"
             >工单进度 {{ progress(order.order, order.tasks) }}</span
