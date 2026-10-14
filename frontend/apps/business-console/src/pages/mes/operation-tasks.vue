@@ -46,6 +46,7 @@ import {
 import { usePagedList } from '@/composables/usePagedList'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useAuthStore } from '@/stores/auth'
 import {
   NvButton,
   NvDataTable,
@@ -113,6 +114,12 @@ const {
 const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 
 const router = useRouter()
+const auth = useAuthStore()
+const canCallQuality = computed(() =>
+  ['business.quality.inspection-records.read', 'business.quality.inspection-records.create'].every(
+    (permission) => (auth.principal?.permissionCodes ?? []).includes(permission),
+  ),
+)
 // devices:true：工序读面只回设备编码，中文设备名要靠设备台账名录在前端补。
 const { resolveDevice, resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({
   shifts: true,
@@ -137,6 +144,7 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
 const quickViewWorkOrderId = ref<string | null>(null)
+const quickViewOperationTaskId = ref<string | null>(null)
 // 报工在本页行内直接打开，上下文随行带出，不再跳到工单页只带两个 ID。
 const reportOpen = ref(false)
 const reportContext = ref<ProductionReportContext | null>(null)
@@ -287,8 +295,10 @@ function toggleInvalidatedFilter() {
   statusFilter.value = invalidatedFilterActive.value ? 'all' : invalidatedStatus
 }
 
-function openWorkOrder(workOrderId?: string | null) {
-  if (workOrderId) quickViewWorkOrderId.value = workOrderId
+function openWorkOrder(task: Row) {
+  if (!task.workOrderId) return
+  quickViewOperationTaskId.value = task.operationTaskId ?? null
+  quickViewWorkOrderId.value = task.workOrderId
 }
 function openSops(task: Row) {
   selectedSopTask.value = task
@@ -640,7 +650,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           v-if="row.workOrderId"
           type="button"
           class="text-brand underline-offset-4 hover:underline"
-          @click="openWorkOrder(row.workOrderId)"
+          @click="openWorkOrder(row)"
         >
           {{ row.workOrderNo ?? row.workOrderId }}
         </button>
@@ -761,15 +771,15 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
               <FileCheckIcon aria-hidden="true" />
               首件检验记录
             </NvDropdownMenuItem>
-            <NvDropdownMenuItem
-              :disabled="!row.workOrderId"
-              @click="openWorkOrder(row.workOrderId)"
-            >
+            <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row)">
               <EyeIcon aria-hidden="true" />
               查看工单
             </NvDropdownMenuItem>
             <NvDropdownMenuSeparator />
-            <NvDropdownMenuItem @click="openRoute('/quality/inspections', row)">
+            <NvDropdownMenuItem
+              v-if="canCallQuality"
+              @click="openRoute('/quality/inspections', row)"
+            >
               <ShieldCheckIcon aria-hidden="true" />
               呼叫质检
             </NvDropdownMenuItem>
@@ -852,7 +862,10 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       @reported="refreshOperationTasks"
     />
 
-    <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
+    <WorkOrderQuickView
+      v-model:work-order-id="quickViewWorkOrderId"
+      :operation-task-id="quickViewOperationTaskId"
+    />
 
     <DispatchAssignDialog
       v-model:open="assignOpen"

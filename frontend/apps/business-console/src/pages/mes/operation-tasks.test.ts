@@ -56,6 +56,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 const state = vi.hoisted(() => ({
   filters: undefined as unknown as Record<string, unknown>,
   operationRows: [] as BusinessConsoleMesOperationTaskRow[],
+  permissionCodes: [] as string[],
   scopeError: undefined as unknown,
   scopePending: false,
   tasksState: 'ready',
@@ -73,6 +74,14 @@ vi.mock('@/composables/usePromotedCatalogs', async () => {
   }
 })
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    get principal() {
+      return { permissionCodes: state.permissionCodes }
+    },
+  }),
+}))
+
 const routerPush = vi.fn()
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
@@ -87,7 +96,10 @@ vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref('20') }),
 }))
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({
-  useMesDisplayNames: () => ({ resolveWorkCenter: (v?: string | null) => v ?? '无' }),
+  useMesDisplayNames: () => ({
+    resolveWorkCenter: (v?: string | null) => v ?? '无',
+    resolveSkuLabel: (v?: string | null) => v ?? '无',
+  }),
 }))
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: () => ({
@@ -153,6 +165,13 @@ vi.mock('@/composables/useBusinessMes', async () => {
       scrapReasonCodes: shallowRef([]),
       refreshScrapReasonCodes: vi.fn(),
     }),
+    useMesWorkOrderDetail: () => ({
+      filters: reactive({ workOrderId: '' }),
+      detail: ref({ workOrderId: 'WO-A', operationTasks: [] }),
+      detailError: shallowRef(undefined),
+      detailPending: ref(false),
+    }),
+    describeMesReadinessReasons: () => [],
     describeMesReadinessReason: (v: string) => ({ code: v, label: v, nextStep: '' }),
     useMesOperationTasks: () => ({
       filters: state.filters,
@@ -200,12 +219,12 @@ vi.mock('@/composables/useBusinessMes', async () => {
 
 const passthrough = { template: '<div><slot /></div>' }
 
-function mountPage() {
+function mountPage(realQuickView = false) {
   return mount(OperationTasksPage, {
     global: {
       stubs: {
         BusinessLayout: passthrough,
-        WorkOrderQuickView: true,
+        WorkOrderQuickView: realQuickView ? false : true,
         NvPageHeader: {
           props: ['count'],
           template: '<header>{{ count }}<slot name="actions" /></header>',
@@ -231,6 +250,7 @@ function mountPage() {
               <p v-else-if="!loading && !rows.length">{{ emptyMessage }}</p>
               <span v-for="column in columns" :key="column.key">{{ column.header }}</span>
               <div v-for="row in rows" :key="row.operationTaskId" data-testid="operation-row">
+                <slot name="cell-workOrderId" :row="row" />
                 <slot name="cell-actualHours" :row="row" />
                 <slot name="cell-actions" :row="row" />
               </div>
@@ -441,6 +461,103 @@ describe('工序范围读取状态', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('0 个工序任务')
     expect(wrapper.text()).toContain('当前没有工序任务')
+    wrapper.unmount()
+  })
+})
+
+describe('工序执行的授权质检与工单来源接力', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    state.permissionCodes = []
+    state.scopeError = undefined
+    state.scopePending = false
+    state.tasksState = 'ready'
+    state.operationRows = [{ operationTaskId: 'OP-20', workOrderId: 'WO-A', workCenterId: 'WC-A' }]
+  })
+
+  async function openMenu(wrapper: ReturnType<typeof mountPage>) {
+    await wrapper.get('[data-slot="nv-dropdown-menu-trigger"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    return [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+  }
+
+  it.each([
+    { permissions: [] },
+    { permissions: ['business.quality.inspection-records.read'] },
+    { permissions: ['business.quality.inspection-records.create'] },
+  ])('缺目标读取或创建权限时不提供呼叫质检死路 $permissions', async ({ permissions }) => {
+    state.permissionCodes = permissions
+    const wrapper = mountPage()
+    const items = await openMenu(wrapper)
+    expect(items.some((item) => item.textContent?.includes('呼叫质检'))).toBe(false)
+    expect(routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('有目标读取及创建权限时呼叫质检保留同工单工序与工作中心', async () => {
+    state.permissionCodes = [
+      'business.quality.inspection-records.read',
+      'business.quality.inspection-records.create',
+    ]
+    const wrapper = mountPage()
+    const items = await openMenu(wrapper)
+    const entry = items.find((item) => item.textContent?.includes('呼叫质检'))!
+    expect(entry).toBeTruthy()
+    entry.click()
+    await flushPromises()
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/quality/inspections',
+      query: {
+        workOrderId: 'WO-A',
+        operationTaskId: 'OP-20',
+        workCenterId: 'WC-A',
+      },
+    })
+    wrapper.unmount()
+  })
+
+  it.each(['工单编号', '查看工单'])('%s经速览打开完整详情保留原工序', async (entry) => {
+    const wrapper = mountPage(true)
+    await flushPromises()
+    if (entry === '工单编号') {
+      await wrapper.get('[data-testid="operation-row"] button').trigger('click')
+    } else {
+      const items = await openMenu(wrapper)
+      items.find((item) => item.textContent?.includes('查看工单'))!.click()
+    }
+    await flushPromises()
+    const openFull = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.includes('打开完整详情'),
+    )!
+    expect(openFull).toBeTruthy()
+    openFull.click()
+    await flushPromises()
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/mes/work-orders/WO-A',
+      query: { operationTaskId: 'OP-20' },
+    })
+    wrapper.unmount()
+  })
+
+  it('再次从工单级行打开速览不沿用上一行的工序', async () => {
+    state.operationRows.push({ workOrderId: 'WO-A' })
+    const wrapper = mountPage(true)
+    await flushPromises()
+    await wrapper.findAll('[data-testid="operation-row"]')[0].get('button').trigger('click')
+    await flushPromises()
+    const close = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '关闭',
+    )!
+    close.click()
+    await flushPromises()
+    await wrapper.findAll('[data-testid="operation-row"]')[1].get('button').trigger('click')
+    await flushPromises()
+    const openFull = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.includes('打开完整详情'),
+    )!
+    openFull.click()
+    await flushPromises()
+    expect(routerPush).toHaveBeenCalledWith('/mes/work-orders/WO-A')
     wrapper.unmount()
   })
 })
