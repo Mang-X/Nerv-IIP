@@ -562,8 +562,13 @@ function isComponentRow(row: BusinessConsoleMrpPeggingItem): boolean {
 const visibleSuggestions = computed(() => {
   const t = suggestionTypeFilter.type
   // 'all' 哨兵 = 不过滤（reka 的 SelectItem 不允许空串 value，故用 'all' 代替原空串）。
-  if (!t || t === 'all') return scopedSuggestions.value
-  return scopedSuggestions.value.filter((s) => s.suggestionType === t)
+  const rows =
+    !t || t === 'all'
+      ? scopedSuggestions.value
+      : scopedSuggestions.value.filter((s) => s.suggestionType === t)
+  // 表格默认分页；将定位行放到首屏，不改变其它建议的相对次序。
+  const focused = rows.find((row) => row.suggestionId === focusedSuggestionId.value)
+  return focused ? [focused, ...rows.filter((row) => row !== focused)] : rows
 })
 const suggestionTypeFilterOptions = [
   { label: '全部类型', value: 'all' },
@@ -1860,6 +1865,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </div>
       </div>
       <NvDataTable
+        :key="focusedSuggestionId"
         :columns="suggestionColumns"
         :rows="visibleSuggestions"
         :row-class="

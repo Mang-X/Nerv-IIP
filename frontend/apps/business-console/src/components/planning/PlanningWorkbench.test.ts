@@ -91,7 +91,25 @@ describe('PlanningWorkbench', () => {
     ]
     await nextTick()
     expect(wrapper.findAll('.cell-skuCode.bg-primary\\/10')).toHaveLength(1)
-    expect(wrapper.get('[data-select-value="run-old"]').exists()).toBe(true)
+    expect(wrapper.find('[data-select-value="run-old"]').exists()).toBe(true)
+  })
+
+  it('来源位于批次第十三行时仍在建议首屏可见', async () => {
+    planningRoute.query = { suggestionId: 'source-last' }
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.suggestionsRef!.value = [
+      ...Array.from({ length: 12 }, (_, index) => ({
+        suggestionId: `other-${index}`,
+        runId: 'run-001',
+        skuCode: `FG-${index}`,
+        status: 'Open',
+      })),
+      { suggestionId: 'source-last', runId: 'run-001', skuCode: 'FG-ORIGINAL', status: 'Accepted' },
+    ]
+    await nextTick()
+    const cells = wrapper.findAll('.cell-skuCode').filter((cell) => cell.text().startsWith('FG-'))
+    expect(cells[0]!.text()).toContain('FG-ORIGINAL')
+    expect(cells[0]!.classes()).toContain('bg-primary/10')
   })
 
   it('仅运行来源显示指定历史运行，不高亮任何虚构建议', async () => {
@@ -130,7 +148,7 @@ describe('PlanningWorkbench', () => {
   it('普通无来源入口保留需求池落点', () => {
     const wrapper = mount(PlanningWorkbench)
     expect(wrapper.get('[data-active-tab]').attributes('data-active-tab')).toBe('demands')
-    expect(wrapper.get('[data-select-value="latest"]').exists()).toBe(true)
+    expect(wrapper.find('[data-select-value="latest"]').exists()).toBe(true)
   })
 
   it('无来源入口仍显示需求池和最近完成运行，重复来源参数不定位', () => {
@@ -138,7 +156,7 @@ describe('PlanningWorkbench', () => {
     const wrapper = mount(PlanningWorkbench)
     expect(wrapper.get('[data-active-tab]').attributes('data-active-tab')).toBe('demands')
     expect(wrapper.findAll('.cell-skuCode.bg-primary\\/10')).toHaveLength(0)
-    expect(wrapper.get('[data-select-value="latest"]').exists()).toBe(true)
+    expect(wrapper.find('[data-select-value="latest"]').exists()).toBe(true)
   })
 
   it('作废手工需求后保留页面追溯入口', async () => {
