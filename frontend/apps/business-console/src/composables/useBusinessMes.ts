@@ -1574,8 +1574,18 @@ export function useMesOverview() {
   }
 }
 
-export function useMesWorkOrderDetail() {
+export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
   const filters = defaultWorkOrderContext()
+  // 路由入口在查询创建前提供对象身份，避免同一详情再进入时先命中空 ID 再切到缓存。
+  if (workOrderId !== undefined) {
+    watch(
+      () => toValue(workOrderId),
+      (value) => {
+        filters.workOrderId = value
+      },
+      { immediate: true },
+    )
+  }
   const workOrderReadScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
   const workOrderManageScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_MANAGE_PERMISSION)
   const queryCache = useQueryCache()
