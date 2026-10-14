@@ -23,7 +23,7 @@ const routeState = vi.hoisted(() => ({
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a :data-to="to"><slot /></a>' },
 }))
 
 vi.mock('@/composables/useScheduleInvalidation', () => ({
@@ -157,6 +157,78 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(1)
     expect(wrapper.get('[data-andon-source="true"]').text()).toContain('WO-1-OP-20')
     expect(wrapper.get('[data-andon-source="true"]').text()).toContain('来源工序')
+    wrapper.unmount()
+  })
+
+  it('追溯来源在详情提供限定到追溯页的返回入口，保留原查询', () => {
+    const traceReturn = '/mes/traceability?mode=batch&batchOrSerial=SER-001&workOrderId=WO-QUERY'
+    routeState.query = {
+      traceReturn,
+      traceOrganizationId: 'org',
+      traceEnvironmentId: 'dev',
+      operationTaskId: 'task-20',
+    }
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-20', operationTaskNo: 'WO-1-OP-20' }],
+    }
+    const wrapper = mountDetail()
+    const back = wrapper.findAll('a').find((link) => link.text() === '返回追溯')!
+    expect(back.attributes('data-to')).toBe(traceReturn)
+    expect(wrapper.text()).toContain('来源工序')
+    expect(wrapper.text()).not.toContain('与追溯来源不一致')
+    wrapper.unmount()
+  })
+
+  it.each(['https://example.com/', '/mes/work-orders/WO-OTHER', '//example.com/mes/traceability'])(
+    '不把任意返回地址 %s 变成导航入口',
+    (traceReturn) => {
+      routeState.query = { traceReturn }
+      const wrapper = mountDetail()
+      expect(wrapper.text()).not.toContain('返回追溯')
+      wrapper.unmount()
+    },
+  )
+
+  it.each([
+    {
+      workOrderId: 'WO-OTHER',
+      operationTasks: [{ operationTaskId: 'task-20' }],
+      expected: '工单详情与追溯来源不一致',
+    },
+    {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-10' }],
+      expected: '工单详情中未找到来源工序',
+    },
+  ])('公开详情与来源不一致时解释并停止展示错误对象：$expected', ({ expected, ...detail }) => {
+    routeState.query = {
+      traceReturn: '/mes/traceability?mode=batch&batchOrSerial=SER-001',
+      traceOrganizationId: 'org',
+      traceEnvironmentId: 'dev',
+      operationTaskId: 'task-20',
+    }
+    detailState.detail = detail
+    const wrapper = mountDetail()
+    expect(wrapper.get('[role="alert"][data-testid="trace-source-message"]').text()).toContain(
+      expected,
+    )
+    expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('返回追溯')
+    wrapper.unmount()
+  })
+
+  it('组织环境已变时解释上下文不一致，不把另一范围的详情冒称来源对象', () => {
+    routeState.query = {
+      traceReturn: '/mes/traceability?workOrderId=WO-1',
+      traceOrganizationId: 'other-org',
+      traceEnvironmentId: 'dev',
+    }
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [] }
+    const wrapper = mountDetail()
+    expect(wrapper.get('[data-testid="trace-source-message"]').text()).toContain(
+      '当前组织或环境与追溯来源不一致',
+    )
     wrapper.unmount()
   })
 
