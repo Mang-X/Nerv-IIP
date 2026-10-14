@@ -160,6 +160,33 @@ test('从真实工单选择多条 FGR 中的第二条，核对库存来源并恢
   await expect(source).toContainText('产出批次 LOT-20261014-002')
   await expect(source).toContainText('FG-A')
   await expect(source.getByText('待检', { exact: true })).toHaveCount(2)
+  const clippedText = await source.locator('td').evaluateAll((cells) =>
+    cells.flatMap((cell) => {
+      const bounds = cell.getBoundingClientRect()
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT)
+      const failures: string[] = []
+      let node: Node | null
+      while ((node = walker.nextNode())) {
+        if (!node.textContent?.trim()) continue
+        const range = document.createRange()
+        range.selectNodeContents(node)
+        if (
+          [...range.getClientRects()].some(
+            (rect) => rect.left < bounds.left - 1 || rect.right > bounds.right + 1,
+          )
+        )
+          failures.push(node.textContent)
+      }
+      return failures
+    }),
+  )
+  expect(clippedText, '库存来源事实留在所属单元格').toEqual([])
+  const dialogBounds = await page.getByRole('dialog').boundingBox()
+  const closeBounds = await source.getByRole('button', { name: '关闭库存来源' }).boundingBox()
+  expect(closeBounds!.x + closeBounds!.width).toBeLessThanOrEqual(
+    dialogBounds!.x + dialogBounds!.width,
+  )
+
   await page.screenshot({
     path: testInfo.outputPath('receipt-inventory-source.png'),
     fullPage: true,

@@ -49,9 +49,9 @@ const movementColumns: NvDataTableColumn<Movement>[] = [
   { key: 'lotNo', width: 'w-48', cellClass: 'whitespace-normal break-all', header: '库存批次' },
   { key: 'serialNo', width: 'w-48', cellClass: 'whitespace-normal break-all', header: '序列号' },
   { key: 'locationCode', width: 'w-48', cellClass: 'whitespace-normal break-all', header: '库位' },
-  { key: 'quantity', header: '移动数量' },
-  { key: 'uomCode', header: '单位' },
-  { key: 'qualityStatus', header: '质量状态' },
+  { key: 'quantity', width: 'w-28', header: '移动数量' },
+  { key: 'uomCode', width: 'w-28', header: '单位' },
+  { key: 'qualityStatus', width: 'w-28', header: '质量状态' },
   {
     key: 'postedAtUtc',
     width: 'w-48',
@@ -64,11 +64,11 @@ const balanceColumns: NvDataTableColumn<Balance>[] = [
   { key: 'lotNo', width: 'w-48', cellClass: 'whitespace-normal break-all', header: '库存批次' },
   { key: 'serialNo', width: 'w-48', cellClass: 'whitespace-normal break-all', header: '序列号' },
   { key: 'locationCode', width: 'w-48', cellClass: 'whitespace-normal break-all', header: '库位' },
-  { key: 'onHandQuantity', header: '在库数量' },
-  { key: 'reservedQuantity', header: '预留数量' },
-  { key: 'availableQuantity', header: '可用数量' },
-  { key: 'uomCode', header: '单位' },
-  { key: 'qualityStatus', header: '质量状态' },
+  { key: 'onHandQuantity', width: 'w-28', header: '在库数量' },
+  { key: 'reservedQuantity', width: 'w-28', header: '预留数量' },
+  { key: 'availableQuantity', width: 'w-28', header: '可用数量' },
+  { key: 'uomCode', width: 'w-28', header: '单位' },
+  { key: 'qualityStatus', width: 'w-28', header: '质量状态' },
 ]
 </script>
 
@@ -86,7 +86,7 @@ const balanceColumns: NvDataTableColumn<Balance>[] = [
         <NvDialogTitle>入库库存来源</NvDialogTitle>
         <NvDialogDescription>核对所选入库单的过账与库存事实</NvDialogDescription>
       </NvDialogHeader>
-      <section class="my-4 grid gap-4 rounded-md border p-4" aria-label="入库库存来源">
+      <section class="my-4 grid min-w-0 gap-4 rounded-md border p-4" aria-label="入库库存来源">
         <div class="flex items-center justify-between gap-2">
           <h2 class="text-lg font-semibold">库存来源 · {{ receipt.requestNo }}</h2>
           <NvButton size="sm" variant="outline" @click="$emit('close')">关闭库存来源</NvButton>
@@ -119,6 +119,7 @@ const balanceColumns: NvDataTableColumn<Balance>[] = [
           </p>
           <h3 class="font-semibold">库存移动</h3>
           <NvDataTable
+            class="min-w-0"
             :columns="movementColumns"
             :rows="movements"
             row-key="movementId"
@@ -134,6 +135,7 @@ const balanceColumns: NvDataTableColumn<Balance>[] = [
           </NvDataTable>
           <h3 class="font-semibold">对应库存余额</h3>
           <NvDataTable
+            class="min-w-0"
             :row-key="
               (row) =>
                 JSON.stringify([
