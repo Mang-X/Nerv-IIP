@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProductionReportMaterialFacts from './ProductionReportMaterialFacts.vue'
 import { useMesProductionReportDetail } from '@/composables/useBusinessMes'
 import { inlineErrorMessage } from '@/utils/notify'
 import { formatDateTime } from '@/utils/format'
@@ -38,8 +39,21 @@ const serialNumbers = computed(() =>
       ? [report.value.serialNo]
       : [],
 )
+const isMaterialSource = computed(() =>
+  ['Material', 'MaterialLot', 'MaterialIssueRequest'].includes(props.sourceNodeType ?? ''),
+)
+const materialFacts = computed(() =>
+  (detail.value?.consumedMaterialLots ?? []).filter((fact) => {
+    if (props.sourceNodeType === 'Material') return fact.materialId === props.sourceNodeId
+    if (props.sourceNodeType === 'MaterialLot') return fact.materialLotId === props.sourceNodeId
+    if (props.sourceNodeType === 'MaterialIssueRequest')
+      return fact.materialIssueRequestNo === props.sourceNodeId
+    return false
+  }),
+)
 const sourceMatches = computed(() => {
   if (!props.sourceNodeType && !props.sourceNodeId) return true
+  if (isMaterialSource.value) return !!props.sourceNodeId && materialFacts.value.length > 0
   if (props.sourceNodeType === 'ProductionReport')
     return props.sourceNodeId === report.value?.reportNo
   if (props.sourceNodeType === 'ProducedLot')
@@ -81,7 +95,13 @@ const fields = computed(() => [
       <div v-else-if="detailPending || !report" class="flex items-center gap-2">
         <NvSpinner class="size-4" /> 加载报工详情…
       </div>
-      <p v-else-if="!sourceMatches">来源节点与报工产出事实不匹配，无法定位该产出。</p>
+      <p v-else-if="!sourceMatches">
+        {{
+          isMaterialSource
+            ? '来源节点与报工耗料事实不匹配，无法定位该耗料。'
+            : '来源节点与报工产出事实不匹配，无法定位该产出。'
+        }}
+      </p>
       <div v-else class="space-y-6">
         <dl class="grid grid-cols-2 gap-4 text-sm">
           <div v-for="field in fields" :key="field.label">
@@ -89,6 +109,7 @@ const fields = computed(() => [
             <dd class="mt-1 font-medium">{{ field.value }}</dd>
           </div>
         </dl>
+        <ProductionReportMaterialFacts v-if="isMaterialSource" :facts="materialFacts" />
         <section
           v-if="report.producedLotNo || serialNumbers.length"
           class="space-y-3"

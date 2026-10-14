@@ -9,6 +9,13 @@ const state = vi.hoisted(() => ({
   canRead: true,
   error: undefined as Error | undefined,
   requested: vi.fn(),
+  consumedMaterialLots: [] as Array<{
+    materialId: string
+    materialLotId: string
+    consumedQuantity: number
+    uomCode: string
+    materialIssueRequestNo: string
+  }>,
 }))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
@@ -25,6 +32,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
         state.requested(getReportNo())
         return getReportNo()
           ? {
+              consumedMaterialLots: state.consumedMaterialLots,
               report: {
                 reportNo: getReportNo(),
                 workOrderNo: 'WO-20261014-000001',
@@ -63,6 +71,36 @@ beforeEach(() => {
   state.canRead = true
   state.error = undefined
   state.requested.mockClear()
+  state.consumedMaterialLots = [
+    {
+      materialId: 'MAT-1',
+      materialLotId: 'MLOT-1',
+      consumedQuantity: 7.5,
+      uomCode: 'kg',
+      materialIssueRequestNo: 'MIR-1',
+    },
+    {
+      materialId: 'MAT-1',
+      materialLotId: 'MLOT-2',
+      consumedQuantity: 3,
+      uomCode: 'kg',
+      materialIssueRequestNo: 'MIR-2',
+    },
+    {
+      materialId: 'MAT-2',
+      materialLotId: 'MLOT-1',
+      consumedQuantity: 2,
+      uomCode: 'm',
+      materialIssueRequestNo: 'MIR-3',
+    },
+    {
+      materialId: 'MAT-3',
+      materialLotId: 'MLOT-3',
+      consumedQuantity: 9,
+      uomCode: 'ea',
+      materialIssueRequestNo: 'MIR-1',
+    },
+  ]
 })
 
 describe('追溯来源报工行为', () => {
@@ -169,6 +207,131 @@ describe('追溯来源报工行为', () => {
     })
     expect(wrapper.text()).toContain('报工不存在')
     expect(wrapper.find('[aria-label="产出事实"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('追溯耗料来源行为', () => {
+  it.each([
+    ['Material', 'MAT-1', 'has-lot'],
+    ['MaterialLot', 'MLOT-1', ''],
+    ['MaterialIssueRequest', 'MIR-1', 'received-lot'],
+  ])('%s 多来源可选择并带原身份与完整查询进入报工', async (nodeType, nodeId, relationType) => {
+    const r = router()
+    await r.push('/mes/traceability')
+    const wrapper = mount(TraceReportLinks, {
+      props: {
+        node: { nodeType, nodeId },
+        returnTo,
+        graph: {
+          nodes: [
+            { nodeType: 'MaterialLot', nodeId: 'MLOT-1' },
+            { nodeType: 'ProductionReport', nodeId: 'PRPT-1' },
+            { nodeType: 'ProductionReport', nodeId: 'PRPT-2' },
+          ],
+          edges: [
+            ...(relationType ? [{ fromNodeId: nodeId, toNodeId: 'MLOT-1', relationType }] : []),
+            { fromNodeId: 'MLOT-1', toNodeId: 'PRPT-1', relationType: 'consumed-by-report' },
+            { fromNodeId: 'MLOT-1', toNodeId: 'PRPT-2', relationType: 'consumed-by-report' },
+          ],
+        },
+      },
+      global: { plugins: [r] },
+    })
+    expect(wrapper.text()).toContain('选择来源报工')
+    expect(wrapper.findAll('a')).toHaveLength(2)
+    await wrapper.findAll('a')[1]!.trigger('click')
+    await flushPromises()
+    expect(r.currentRoute.value.query).toEqual({
+      reportNo: 'PRPT-2',
+      sourceNodeType: nodeType,
+      sourceNodeId: nodeId,
+      traceabilityReturn: returnTo,
+    })
+    wrapper.unmount()
+  })
+  it.each([
+    ['Material', 'MAT-1', [0, 1]],
+    ['MaterialLot', 'MLOT-1', [0, 2]],
+    ['MaterialIssueRequest', 'MIR-1', [0, 3]],
+  ])(
+    '%s 只显示同身份耗料明细及原单位数量并返回原查询',
+    async (sourceNodeType, sourceNodeId, indices) => {
+      const r = router()
+      await r.push('/mes/production-reports')
+      const wrapper = mount(ProductionReportDetailDialog, {
+        props: { reportNo: 'PRPT-2', sourceNodeType, sourceNodeId, returnTo },
+        global: { stubs, plugins: [r] },
+      })
+      const section = wrapper.get('[aria-label="来源耗料事实"]')
+      expect(section.text()).toContain('来源耗料事实')
+      const facts = section.findAll('dl')
+      expect(facts).toHaveLength(2)
+      for (const [i, index] of indices.entries()) {
+        const row = state.consumedMaterialLots[index!]!
+        expect(facts[i]!.text()).toBe(
+          `物料编号${row.materialId}物料批编号${row.materialLotId}耗用数量${row.consumedQuantity}单位${row.uomCode}领料申请号${row.materialIssueRequestNo}`,
+        )
+      }
+      expect(section.text()).not.toContain('SKU')
+      await wrapper.get('a').trigger('click')
+      await flushPromises()
+      expect(r.currentRoute.value.fullPath).toBe(returnTo)
+      wrapper.unmount()
+    },
+  )
+  it.each([
+    ['Material', 'MLOT-1'],
+    ['MaterialLot', 'MAT-1'],
+    ['MaterialIssueRequest', 'MLOT-1'],
+  ])('%s 不能通过其他类型同值编号命中详情', (sourceNodeType, sourceNodeId) => {
+    const wrapper = mount(ProductionReportDetailDialog, {
+      props: { reportNo: 'PRPT-1', sourceNodeType, sourceNodeId },
+      global: { stubs },
+    })
+    expect(wrapper.text()).toContain('来源节点与报工耗料事实不匹配')
+    expect(wrapper.find('[aria-label="来源耗料事实"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('图候选报工存在但无耗料事实时解释，保留返回入口', () => {
+    state.consumedMaterialLots = []
+    const wrapper = mount(ProductionReportDetailDialog, {
+      props: {
+        reportNo: 'PRPT-1',
+        sourceNodeType: 'MaterialLot',
+        sourceNodeId: 'MLOT-1',
+        returnTo,
+      },
+      global: { stubs, plugins: [router()] },
+    })
+    expect(wrapper.text()).toContain('来源节点与报工耗料事实不匹配')
+    expect(wrapper.find('[aria-label="来源耗料事实"]').exists()).toBe(false)
+    expect(wrapper.get('a').text()).toBe('返回追溯')
+    wrapper.unmount()
+  })
+  it('耗料来源缺报工读取权限时解释且不提供链接或读取详情', () => {
+    state.canRead = false
+    const link = mount(TraceReportLinks, {
+      props: { node: { nodeType: 'MaterialLot', nodeId: 'MLOT-1' }, returnTo },
+    })
+    expect(link.text()).toContain('无报工读取权限')
+    expect(link.find('a').exists()).toBe(false)
+    link.unmount()
+    const detail = mount(ProductionReportDetailDialog, {
+      props: { reportNo: 'PRPT-1', sourceNodeType: 'MaterialLot', sourceNodeId: 'MLOT-1' },
+      global: { stubs },
+    })
+    expect(detail.text()).toContain('无报工读取权限')
+    expect(state.requested).toHaveBeenCalledWith(null)
+    expect(detail.find('[aria-label="来源耗料事实"]').exists()).toBe(false)
+    detail.unmount()
+  })
+  it('无真实耗料关系时解释且不猜来源报工', () => {
+    const wrapper = mount(TraceReportLinks, {
+      props: { node: { nodeType: 'MaterialLot', nodeId: 'MLOT-404' }, returnTo },
+    })
+    expect(wrapper.text()).toContain('无匹配的来源报工')
+    expect(wrapper.find('a').exists()).toBe(false)
     wrapper.unmount()
   })
 })
