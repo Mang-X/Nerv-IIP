@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-import { planningSpies, routerPush } from './planningWorkbenchTestFixture'
+import { planningSpies, routerPush, planningRoute } from './planningWorkbenchTestFixture'
 import PlanningWorkbench from './PlanningWorkbench.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -15,6 +15,7 @@ describe('PlanningWorkbench', () => {
     planningSpies.acceptSuggestion.mockReset()
     planningSpies.cancelDemand.mockReset()
     routerPush.mockReset()
+    planningRoute.query = {}
     planningSpies.toastError.mockReset()
     planningSpies.toastSuccess.mockReset()
     planningSpies.toastWarning.mockReset()
@@ -23,6 +24,121 @@ describe('PlanningWorkbench', () => {
     planningSpies.activeMrpRun.failureReason = ''
     planningSpies.activeMrpRun.suggestionCount = null
     planningSpies.resetDemands()
+  })
+
+  // Regression / DomainInvariant: #4417 accepted WO continuity and source identity.
+  it('已承接建议的真实工单单号可进入同工单详情', async () => {
+    useAuthStore().principal = { permissionCodes: ['business.mes.work-orders.read'] }
+    const wrapper = mount(PlanningWorkbench)
+    const link = wrapper
+      .findAll('.cell-downstream button')
+      .find((button) => button.text() === 'WO-2026-0007')!
+    expect(link).toBeDefined()
+    await link.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({ path: '/mes/work-orders/WO-2026-0007' })
+  })
+
+  it('无工单读权或非工单承接时保留单号文本', async () => {
+    const wrapper = mount(PlanningWorkbench)
+    expect(wrapper.findAll('.cell-downstream button')).toHaveLength(0)
+    expect(wrapper.text()).toContain('WO-2026-0007')
+    useAuthStore().principal = { permissionCodes: ['business.mes.work-orders.read'] }
+    planningSpies.suggestionsRef!.value = [
+      {
+        suggestionId: 'purchase-1',
+        runId: 'run-001',
+        status: 'Accepted',
+        downstreamService: 'business-erp',
+        downstreamDocumentType: 'purchase-order',
+        downstreamDocumentId: 'PO-1001',
+      },
+    ]
+    await nextTick()
+    expect(wrapper.findAll('.cell-downstream button')).toHaveLength(0)
+    expect(wrapper.text()).toContain('PO-1001')
+  })
+
+  it('来源建议定位在异步读回后显示并高亮指定历史运行的原建议', async () => {
+    planningRoute.query = { suggestionId: 'source-old', runId: 'run-old' }
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'run-new', status: 'Completed' },
+      { runId: 'run-old', status: 'Completed' },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      { suggestionId: 'new-1', runId: 'run-new', skuCode: 'FG-NEW', status: 'Open' },
+      { suggestionId: 'source-old', runId: 'run-old', skuCode: 'FG-ORIGINAL', status: 'Accepted' },
+    ]
+    await nextTick()
+    const cells = wrapper.findAll('.cell-skuCode')
+    expect(cells.map((cell) => cell.text())).not.toContain('FG-NEWFG-NEW')
+    const source = cells.filter((cell) => cell.classes().includes('bg-primary/10'))
+    expect(source).toHaveLength(1)
+    expect(source[0]!.text()).toContain('FG-ORIGINAL')
+    expect(planningSpies.suggestionFiltersRef!.status).toBe('all')
+    expect(wrapper.get('[data-active-tab]').attributes('data-active-tab')).toBe('suggestions')
+  })
+
+  it('工单来源仅带建议强ID时解析该建议所属运行，不使用最近运行', async () => {
+    planningRoute.query = { suggestionId: 'source-old' }
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'run-new', status: 'Completed' },
+      { runId: 'run-old', status: 'Completed' },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      { suggestionId: 'source-old', runId: 'run-old', skuCode: 'FG-ORIGINAL', status: 'Accepted' },
+    ]
+    await nextTick()
+    expect(wrapper.findAll('.cell-skuCode.bg-primary\\/10')).toHaveLength(1)
+    expect(wrapper.get('[data-select-value="run-old"]').exists()).toBe(true)
+  })
+
+  it('仅运行来源显示指定历史运行，不高亮任何虚构建议', async () => {
+    planningRoute.query = { runId: 'run-old' }
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'run-new', status: 'Completed' },
+      { runId: 'run-old', status: 'Completed' },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      { suggestionId: 'old-1', runId: 'run-old', skuCode: 'FG-ORIGINAL' },
+      { suggestionId: 'new-1', runId: 'run-new', skuCode: 'FG-NEW' },
+    ]
+    await nextTick()
+    expect(wrapper.text()).toContain('FG-ORIGINAL')
+    expect(wrapper.text()).not.toContain('FG-NEW')
+    expect(wrapper.findAll('.cell-skuCode.bg-primary\\/10')).toHaveLength(0)
+    expect(wrapper.get('[data-active-tab]').attributes('data-active-tab')).toBe('suggestions')
+  })
+
+  it('建议与运行来源不匹配时不冒认另一运行的原建议', async () => {
+    planningRoute.query = { suggestionId: 'source-old', runId: 'run-new' }
+    const wrapper = mount(PlanningWorkbench)
+    planningSpies.mrpRunsRef!.value = [
+      { runId: 'run-new', status: 'Completed' },
+      { runId: 'run-old', status: 'Completed' },
+    ]
+    planningSpies.suggestionsRef!.value = [
+      { suggestionId: 'source-old', runId: 'run-old', skuCode: 'FG-ORIGINAL' },
+    ]
+    await nextTick()
+    expect(wrapper.text()).not.toContain('FG-ORIGINAL')
+    expect(wrapper.findAll('.cell-skuCode.bg-primary\\/10')).toHaveLength(0)
+  })
+
+  it('普通无来源入口保留需求池落点', () => {
+    const wrapper = mount(PlanningWorkbench)
+    expect(wrapper.get('[data-active-tab]').attributes('data-active-tab')).toBe('demands')
+    expect(wrapper.get('[data-select-value="latest"]').exists()).toBe(true)
+  })
+
+  it('无来源入口仍显示需求池和最近完成运行，重复来源参数不定位', () => {
+    planningRoute.query = { suggestionId: ['source-old', 'other'] }
+    const wrapper = mount(PlanningWorkbench)
+    expect(wrapper.get('[data-active-tab]').attributes('data-active-tab')).toBe('demands')
+    expect(wrapper.findAll('.cell-skuCode.bg-primary\\/10')).toHaveLength(0)
+    expect(wrapper.get('[data-select-value="latest"]').exists()).toBe(true)
   })
 
   it('作废手工需求后保留页面追溯入口', async () => {
