@@ -27,7 +27,10 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { traceWorkOrderTarget } from '@/composables/mes/traceWorkOrderLink'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
@@ -42,6 +45,11 @@ const { filters, refreshTraceability, traceability, traceabilityError, traceabil
   useMesTraceability()
 const { statusLabel } = useMesReferenceLabels()
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+const canReadWorkOrder = computed(
+  () => auth.principal?.permissionCodes?.includes(P.mesWorkOrdersRead) ?? false,
+)
 
 /** 选择器一页拉多少工单：足够铺满下拉，其余靠服务端搜索收敛，不做「拉全量再本地过滤」。 */
 const WORK_ORDER_PAGE_SIZE = 50
@@ -85,6 +93,37 @@ watch(
 )
 
 const nodes = computed(() => traceability.value?.nodes ?? [])
+const nodeRows = computed(() =>
+  nodes.value.map((node) => {
+    const target = traceWorkOrderTarget(node, traceability.value)
+    const isWorkOrderNode = node.nodeType === 'WorkOrder' || node.nodeType === 'OperationTask'
+    const reason = isWorkOrderNode && !canReadWorkOrder.value ? '缺少工单读取权限' : target.reason
+    const to =
+      target.workOrderId && !reason
+        ? {
+            path: `/mes/work-orders/${encodeURIComponent(target.workOrderId)}`,
+            query: {
+              operationTaskId: target.operationTaskId,
+              traceOrganizationId: filters.organizationId,
+              traceEnvironmentId: filters.environmentId,
+              traceReturn: router.resolve({
+                path: '/mes/traceability',
+                query: {
+                  ...route.query,
+                  mode: filters.mode,
+                  workOrderId: filters.workOrderId,
+                  batchOrSerial: filters.batchOrSerial,
+                  materialLotId: filters.materialLotId,
+                  serialNo: undefined,
+                  batchNo: undefined,
+                },
+              }).fullPath,
+            },
+          }
+        : undefined
+    return { ...node, to, reason }
+  }),
+)
 const errorMessage = computed(() => inlineErrorMessage(traceabilityError.value))
 const batchModel = computed({
   get: () => filters.batchOrSerial ?? '',
@@ -131,7 +170,7 @@ const traceCells = computed<NvMetricStripCell[]>(() => [
   { key: 'edges', label: '上下游关联', value: traceability.value?.edges?.length ?? 0, unit: '条' },
 ])
 
-type NodeRow = (typeof nodes)['value'][number]
+type NodeRow = (typeof nodeRows)['value'][number]
 const columns: NvDataTableColumn<NodeRow>[] = [
   {
     key: 'nodeId',
@@ -233,7 +272,7 @@ function firstQuery(value: unknown) {
 
     <NvDataTable
       :columns="columns"
-      :rows="nodes"
+      :rows="nodeRows"
       row-key="nodeId"
       :loading="traceabilityPending"
       :error="traceabilityError"
@@ -243,6 +282,13 @@ function firstQuery(value: unknown) {
       empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
       @retry="refreshTraceability"
     >
+      <template #cell-nodeId="{ row }">
+        <RouterLink v-if="row.to" :to="row.to" class="text-primary hover:underline">{{
+          row.nodeId
+        }}</RouterLink>
+        <span v-else>{{ row.nodeType === 'Operator' ? row.displayName : row.nodeId }}</span>
+        <p v-if="row.reason" class="mt-1 text-xs text-muted-foreground">{{ row.reason }}</p>
+      </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
       </template>
