@@ -16,6 +16,7 @@ import {
 import type { BusinessConsoleSchedulingMaterialShortageSummary } from '@nerv-iip/api-client'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import SchedulingDraftFeedback from './SchedulingDraftFeedback.vue'
+import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import type { EntityPickerOption } from '@nerv-iip/ui'
@@ -530,6 +531,15 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
             :read-only="readOnly"
             @toggle-lock="(taskId, locked) => emit('lock', taskId, locked)"
           />
+          <p v-if="!selectedTask.blockKind" class="px-4 py-3 text-sm">
+            工单
+            <SchedulingWorkOrderLink
+              :work-order-id="selectedTask.orderId"
+              :operation-task-id="
+                selectedTask.type === 'operation' ? selectedTask.operationId : undefined
+              "
+            />
+          </p>
           <SchedulingDraftFeedback
             v-if="selectedTask.type === 'operation' && !selectedTask.blockKind"
             class="px-4 py-3"

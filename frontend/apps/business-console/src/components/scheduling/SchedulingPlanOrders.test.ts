@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import SchedulingPlanOrders from './SchedulingPlanOrders.vue'
 import { toModel } from '@nerv-iip/scheduling'
+beforeEach(() => setActivePinia(createPinia()))
 
 // DomainInvariant: #3628 销售单层级、真实工序状态与页内定位。
 describe('计划销售单侧栏', () => {
