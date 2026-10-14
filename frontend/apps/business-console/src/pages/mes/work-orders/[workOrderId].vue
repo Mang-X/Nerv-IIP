@@ -169,6 +169,20 @@ const canReadInspectionRecords = computed(() =>
   permissionCodes.value.includes(P.qualityInspectionRecordsRead),
 )
 
+const canReadReports = computed(() => permissionCodes.value.includes(P.mesReportingRead))
+const canReadInventory = computed(() => permissionCodes.value.includes(P.inventoryLedgerRead))
+const canReadReceipts = computed(() => permissionCodes.value.includes(P.mesReceiptsRead))
+const sourceSuggestionRoute = computed(() => {
+  const source = detail.value?.sourcePlanReference
+  if (
+    !permissionCodes.value.includes(P.planningMrpRead) ||
+    source?.sourceDocumentType !== 'PlanningSuggestion' ||
+    !source.sourceDocumentId
+  )
+    return undefined
+  return { path: '/planning', query: { suggestionId: source.sourceDocumentId } }
+})
+
 const traceReturn = computed(() => traceabilityReturnPath(route.query.traceReturn))
 const traceSourceMessage = computed(() => {
   if (!traceReturn.value) return ''
@@ -1018,6 +1032,9 @@ function formatStatus(value?: string | null) {
         <NvButton v-if="traceReturn" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="traceReturn">返回追溯</RouterLink>
         </NvButton>
+        <NvButton v-if="sourceSuggestionRoute" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="sourceSuggestionRoute">返回来源建议</RouterLink>
+        </NvButton>
         <!-- 对该单排产：只生成一个含本工单的新方案（MAN-694 / #1262）。 -->
         <NvButton
           v-if="canRecordEngineeringDecision"
@@ -1090,6 +1107,7 @@ function formatStatus(value?: string | null) {
           </NvTooltip>
         </NvTooltipProvider>
         <NvButton
+          v-if="canReadReports"
           size="sm"
           type="button"
           variant="outline"
@@ -1099,6 +1117,7 @@ function formatStatus(value?: string | null) {
           报工记录
         </NvButton>
         <NvButton
+          v-if="canReadReceipts"
           size="sm"
           type="button"
           variant="outline"
@@ -1109,6 +1128,7 @@ function formatStatus(value?: string | null) {
           完工入库
         </NvButton>
         <NvButton
+          v-if="canReadInspectionRecords"
           size="sm"
           type="button"
           variant="outline"
@@ -1461,7 +1481,7 @@ function formatStatus(value?: string | null) {
       </NvDataTable>
       <!-- 全厂库存对照入口：穿透到库存可用量页，核对「原料仓有没有货」。 -->
       <RouterLink
-        v-if="materialShortageCount > 0"
+        v-if="materialShortageCount > 0 && canReadInventory"
         class="justify-self-start text-sm font-medium text-brand hover:underline"
         :to="{ path: '/inventory/availability' }"
         >去库存可用量核对全厂是否有货</RouterLink
