@@ -22,6 +22,7 @@ import { useRouter } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
 
 // 当前要速览的工单（null = 关闭）。任何页面只要 v-model:work-order-id 一个 ref 即可就地速览，不跳页。
+const props = defineProps<{ operationTaskId?: string | null }>()
 const workOrderId = defineModel<string | null>('workOrderId', { default: null })
 const router = useRouter()
 const { detail, detailError, detailPending, filters } = useMesWorkOrderDetail()
@@ -59,7 +60,11 @@ const blockingReasons = computed(() => describeMesReadinessReasons(detail.value?
 function openFull() {
   const id = workOrderId.value
   workOrderId.value = null
-  if (id) void router.push(`/mes/work-orders/${encodeURIComponent(id)}`)
+  if (!id) return
+  const path = `/mes/work-orders/${encodeURIComponent(id)}`
+  void router.push(
+    props.operationTaskId ? { path, query: { operationTaskId: props.operationTaskId } } : path,
+  )
 }
 </script>
 
