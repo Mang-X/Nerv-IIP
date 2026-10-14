@@ -1,6 +1,7 @@
 import { computed, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { firstTraceQuery, traceabilityReturn } from './reportTraceability'
+import { firstTraceQuery } from './reportTraceability'
+import { traceabilityReturnPath } from './traceWorkOrderLink'
 
 /** 只读详情的选择状态：列表选择和追溯深链共用，来源身份仅绑定原深链报工。 */
 export function useProductionReportDetailSelection() {
@@ -23,7 +24,9 @@ export function useProductionReportDetailSelection() {
       nodeId: firstTraceQuery(route.query.sourceNodeId),
     }
   })
-  const reportReturnTo = computed(() => traceabilityReturn(route.query.traceabilityReturn))
+  const reportReturnTo = computed(() =>
+    traceabilityReturnPath(firstTraceQuery(route.query.traceabilityReturn)),
+  )
 
   return { detailReportNo, detailSource, reportReturnTo }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { reportTraceSources, traceabilityReturn } from './reportTraceability'
+import { firstTraceQuery, reportTraceSources } from './reportTraceability'
+import { traceabilityReturnPath } from './traceWorkOrderLink'
 
 const graph = {
   nodes: [
@@ -37,8 +38,10 @@ describe('来源报工身份', () => {
   })
   it('返回保留追溯查询且不能跳到外站或别的业务页', () => {
     const target = '/mes/traceability?mode=batch&batchOrSerial=LOT-1&workOrderId=WO-1'
-    expect(traceabilityReturn(target)).toBe(target)
-    expect(traceabilityReturn('https://other.example/mes/traceability')).toBeUndefined()
-    expect(traceabilityReturn('/mes/work-orders')).toBeUndefined()
+    expect(traceabilityReturnPath(firstTraceQuery(target))).toBe(target)
+    expect(
+      traceabilityReturnPath(firstTraceQuery('https://other.example/mes/traceability')),
+    ).toBeUndefined()
+    expect(traceabilityReturnPath(firstTraceQuery('/mes/work-orders'))).toBeUndefined()
   })
 })

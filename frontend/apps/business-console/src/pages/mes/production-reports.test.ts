@@ -157,11 +157,14 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 
-const routerState = vi.hoisted(() => ({ push: vi.fn(), query: {} as Record<string, string> }))
+const routerState = vi.hoisted(() => ({
+  push: vi.fn(),
+  query: {} as Record<string, string | string[]>,
+}))
 vi.mock('vue-router', () => ({
   useRouter: () => routerState,
   useRoute: () => routerState,
-  RouterLink: { template: '<a><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
 vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
@@ -1058,23 +1061,28 @@ describe('报工详情日期展示', () => {
 })
 
 describe('追溯报工深链', () => {
-  it('仅读用户按分页外 ReportNo 自动打开详情并保留返回查询', async () => {
-    routerState.query = {
-      reportNo: 'PRPT-009999',
-      sourceNodeType: 'ProductionReport',
-      sourceNodeId: 'PRPT-009999',
-      traceabilityReturn: '/mes/traceability?mode=batch&batchOrSerial=LOT-009999&workOrderId=WO-9',
-    }
-    const wrapper = mountReports(['business.mes.reporting.read'])
-    await flushPromises()
-    expect(wrapper.get('[role="dialog"]').text()).toContain('报工详情 · PRPT-009999')
-    expect(wrapper.get('[role="dialog"]').text()).toContain('返回追溯')
-    expect(wrapper.get('[role="dialog"]').text()).toContain('12')
-    expect(
-      wrapper.findAll('[data-testid="row"]').some((row) => row.text().includes('PRPT-009999')),
-    ).toBe(false)
-    wrapper.unmount()
-  })
+  it.each(['单值', '数组'] as const)(
+    '仅读用户按分页外 ReportNo 自动打开详情并保留返回查询（%s）',
+    async (queryKind) => {
+      const returnTo = '/mes/traceability?mode=batch&batchOrSerial=LOT-009999&workOrderId=WO-9'
+      routerState.query = {
+        reportNo: 'PRPT-009999',
+        sourceNodeType: 'ProductionReport',
+        sourceNodeId: 'PRPT-009999',
+        traceabilityReturn: queryKind === '数组' ? [returnTo, '/mes/work-orders'] : returnTo,
+      }
+      const wrapper = mountReports(['business.mes.reporting.read'])
+      await flushPromises()
+      expect(wrapper.get('[role="dialog"]').text()).toContain('报工详情 · PRPT-009999')
+      expect(wrapper.get('[role="dialog"]').text()).toContain('返回追溯')
+      expect(wrapper.get('[role="dialog"] a').attributes('href')).toBe(returnTo)
+      expect(wrapper.get('[role="dialog"]').text()).toContain('12')
+      expect(
+        wrapper.findAll('[data-testid="row"]').some((row) => row.text().includes('PRPT-009999')),
+      ).toBe(false)
+      wrapper.unmount()
+    },
+  )
 
   it('来源产出批次与报工详情不一致时页面解释并停止呈现事实', async () => {
     routerState.query = {

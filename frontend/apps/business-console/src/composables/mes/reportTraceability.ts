@@ -43,10 +43,3 @@ export function firstTraceQuery(value: unknown): string {
       ? value[0]
       : ''
 }
-
-// 返回仅限本功能的追溯页，不接收外站或其他业务目标。
-export function traceabilityReturn(value: unknown): string | undefined {
-  const target = firstTraceQuery(value)
-  if (target === '/mes/traceability' || target.startsWith('/mes/traceability?')) return target
-  return undefined
-}
