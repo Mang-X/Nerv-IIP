@@ -15,9 +15,15 @@ const props = defineProps<{
 const auth = useAuthStore()
 const canRead = computed(() => (auth.principal?.permissionCodes ?? []).includes(P.mesReportingRead))
 const supported = computed(() =>
-  ['ProductionReport', 'ProducedLot', 'Serial', 'ProducedLotOrSerial'].includes(
-    props.node.nodeType ?? '',
-  ),
+  [
+    'ProductionReport',
+    'ProducedLot',
+    'Serial',
+    'ProducedLotOrSerial',
+    'Material',
+    'MaterialLot',
+    'MaterialIssueRequest',
+  ].includes(props.node.nodeType ?? ''),
 )
 const sources = computed(() => reportTraceSources(props.graph, props.node))
 </script>
@@ -51,7 +57,9 @@ const sources = computed(() => reportTraceSources(props.graph, props.node))
               ? '序列'
               : source.nodeType === 'ProducedLot'
                 ? '批次'
-                : '报工'
+                : source.nodeType === 'ProductionReport'
+                  ? '报工'
+                  : '耗料'
           }}
           · {{ source.reportNo }}
         </RouterLink>
