@@ -578,7 +578,11 @@ describe('quality route location behavior', () => {
 
   // #4421：批准的同 WO/OP 接力，不创建领域关联或自动登记不良。
   async function submittedOperationPage(
-    permissions = ['business.mes.quality.read', 'business.mes.quality.write'],
+    permissions = [
+      'business.mes.quality.read',
+      'business.mes.quality.write',
+      'business.mes.operations.read',
+    ],
   ) {
     authState.permissionCodes.push(...permissions)
     routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }
@@ -624,11 +628,12 @@ describe('quality route location behavior', () => {
   })
 
   it.each([
-    { permissions: [] },
-    { permissions: ['business.mes.quality.read'] },
-    { permissions: ['business.mes.quality.write'] },
+    { permissions: ['business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.read', 'business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.write', 'business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.read', 'business.mes.quality.write'] },
   ])(
-    'hides submitted defect continuation without both target permissions: %j',
+    'hides submitted defect continuation without all target permissions: %j',
     async ({ permissions }) => {
       const { wrapper, vm } = await submittedOperationPage(permissions)
       await vm.submitInspectionRecord()

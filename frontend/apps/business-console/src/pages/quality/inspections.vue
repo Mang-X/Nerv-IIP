@@ -194,7 +194,11 @@ const submittedOperationSource = shallowRef<{
   operationTaskId: string
 } | null>(null)
 const canContinueDefect = computed(() =>
-  ['business.mes.quality.read', 'business.mes.quality.write'].every((permission) =>
+  [
+    'business.mes.quality.read',
+    'business.mes.quality.write',
+    'business.mes.operations.read',
+  ].every((permission) =>
     (auth.principal?.permissionCodes ?? []).includes(permission),
   ),
 )
