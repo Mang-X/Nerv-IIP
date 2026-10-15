@@ -74,6 +74,7 @@
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.3.0.106239" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="10.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.10.1" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.13" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
     <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.9.0" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.9.0" />
