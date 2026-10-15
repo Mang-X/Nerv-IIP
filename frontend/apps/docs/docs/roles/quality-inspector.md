@@ -15,6 +15,10 @@
 | 6   | 在 `/quality/reason-codes` 维护原因码                                       | 检验与处置有统一原因口径               | ✅ 可用                                                                                                                                                             |
 | 7   | 在 `/quality/analysis` 看质量分析，在 `/mes/traceability` 做批次追溯        | 质量趋势与问题批次可解释               | 🟡 部分可用：质量分析与 CAPA 读面、SPC 控制图未交付（[#677](https://github.com/Mang-X/Nerv-IIP/issues/677)、[#725](https://github.com/Mang-X/Nerv-IIP/issues/725)） |
 
+## 从工序检验接续现场不良
+
+✅ 可用：有效工单、工序来源的检验提交后，可在已有授权内接续同来源不良登记并返回来源工序。操作步骤见[从工序检验接续现场不良](/how-to/continue-operation-inspection)。
+
 ## 从现场不良接续处置
 
 - ✅ 可用：`/mes/quality` 不良记录 → 真实 NCR 编号 → `/quality/ncrs` 对应处置详情；未生成 NCR 与关联读取失败分别提示。

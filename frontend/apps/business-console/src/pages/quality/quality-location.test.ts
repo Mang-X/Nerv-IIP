@@ -183,7 +183,7 @@ vi.mock('vue-router', async (importOriginal) => {
 
   return {
     ...actual,
-    RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+    RouterLink: { name: 'RouterLink', props: ['to'], template: '<a data-router-link><slot /></a>' },
     useRoute: () => routeState.route,
     useRouter: () => ({ push: routerSpies.push, replace: routerSpies.replace }),
   }
@@ -575,6 +575,152 @@ describe('quality route location behavior', () => {
     )
     wrapper.unmount()
   })
+
+  // #4421：批准的同 WO/OP 接力，不创建领域关联或自动登记不良。
+  async function submittedOperationPage(
+    permissions = [
+      'business.mes.quality.read',
+      'business.mes.quality.write',
+      'business.mes.operations.read',
+    ],
+  ) {
+    authState.permissionCodes.push(...permissions)
+    routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }
+    const wrapper = mountQualityPage(InspectionsPage)
+    operationContextState.detail!.value = {
+      workOrderId: 'WO-ROD-02',
+      skuId: 'SF-ROD-01',
+      operationTasks: [{ operationTaskId: 'OP-ROD-10', operationSequence: 10 }],
+    }
+    operationContextState.pending!.value = false
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ characteristicCode: string; observedValue: string }> }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.characteristicCode = 'DIM-01'
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await flushPromises()
+    return { wrapper, vm }
+  }
+  function sourceLinks(wrapper: ReturnType<typeof mountQualityPage>) {
+    return wrapper.findAllComponents({ name: 'RouterLink' })
+  }
+
+  it('offers same-operation defect registration only after successful inspection submission', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+    await vm.submitInspectionRecord()
+    await flushPromises()
+    const link = sourceLinks(wrapper).find((item) => item.text() === '登记同工序不良')!
+    expect(link).toBeDefined()
+    expect(link.props('to')).toEqual({
+      path: '/mes/quality',
+      query: { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' },
+    })
+    expect(createRecordSpy).toHaveBeenCalledOnce()
+    expect(routerSpies.push).not.toHaveBeenCalled()
+    const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+    expect(back.props('to')).toEqual({
+      path: '/mes/work-orders/WO-ROD-02',
+      query: { operationTaskId: 'OP-ROD-10' },
+    })
+  })
+
+  it.each([
+    { permissions: ['business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.read', 'business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.write', 'business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.read', 'business.mes.quality.write'] },
+  ])(
+    'hides submitted defect continuation without all target permissions: %j',
+    async ({ permissions }) => {
+      const { wrapper, vm } = await submittedOperationPage(permissions)
+      await vm.submitInspectionRecord()
+      await flushPromises()
+      expect(createRecordSpy).toHaveBeenCalledOnce()
+      expect(wrapper.text()).not.toContain('登记同工序不良')
+    },
+  )
+
+  it('does not offer defect continuation after inspection submission fails', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    createRecordSpy.mockRejectedValueOnce(new Error('检验拒绝'))
+    await vm.submitInspectionRecord()
+    await flushPromises()
+    expect(notifySpies.operationFailure).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+  })
+
+  it('drops submitted continuation when the source work order changes', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    await vm.submitInspectionRecord()
+    await flushPromises()
+    expect(wrapper.text()).toContain('登记同工序不良')
+    routeState.route!.query = { workOrderId: 'WO-OTHER' }
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+    const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+    expect(back.props('to')).toEqual({
+      path: '/mes/work-orders/WO-OTHER',
+      query: { operationTaskId: undefined },
+    })
+  })
+
+  it('never returns or continues an operation absent from the source work order', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    operationContextState.detail!.value = {
+      workOrderId: 'WO-ROD-02',
+      skuId: 'SF-ROD-01',
+      operationTasks: [{ operationTaskId: 'OP-OTHER' }],
+    }
+    await flushPromises()
+    await vm.submitInspectionRecord()
+    expect(createRecordSpy).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+    const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+    expect(back.props('to')).toEqual({
+      path: '/mes/work-orders/WO-ROD-02',
+      query: { operationTaskId: undefined },
+    })
+  })
+
+  it('does not restore old continuation when the source changes during submission', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    let finish!: () => void
+    createRecordSpy.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const submission = vm.submitInspectionRecord()
+    routeState.route!.query = { workOrderId: 'WO-OTHER' }
+    await flushPromises()
+    finish()
+    await submission
+    await flushPromises()
+    expect(createRecordSpy).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+  })
+
+  it.each<Record<string, string>>([{}, { workOrderId: 'WO-ROD-02' }])(
+    'keeps normal inspection entry without inventing an operation: %j',
+    async (query) => {
+      routeState.route!.query = query
+      const wrapper = mountQualityPage(InspectionsPage)
+      await flushPromises()
+      expect(wrapper.text()).toContain('创建检验记录')
+      expect(wrapper.text()).not.toContain('登记同工序不良')
+      if (query.workOrderId) {
+        const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+        expect(back.props('to')).toEqual({
+          path: '/mes/work-orders/WO-ROD-02',
+          query: { operationTaskId: undefined },
+        })
+      }
+    },
+  )
 
   it('blocks a failed operation context and offers retry without a default product', async () => {
     routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }

@@ -188,6 +188,39 @@ const operationContextReady = computed(
     !operationContext.pending.value &&
     !operationContext.errorMessage.value,
 )
+// 只接续成功提交时已公开核实的工单/工序；不把检验记录当不良领域关联。
+const submittedOperationSource = shallowRef<{
+  workOrderId: string
+  operationTaskId: string
+} | null>(null)
+const canContinueDefect = computed(() =>
+  ['business.mes.quality.read', 'business.mes.quality.write', 'business.mes.operations.read'].every(
+    (permission) => (auth.principal?.permissionCodes ?? []).includes(permission),
+  ),
+)
+const defectContinuationRoute = computed(() =>
+  submittedOperationSource.value && canContinueDefect.value
+    ? { path: '/mes/quality', query: submittedOperationSource.value }
+    : undefined,
+)
+const sourceWorkOrderRoute = computed(() => ({
+  path: `/mes/work-orders/${encodeURIComponent(contextWorkOrderId.value)}`,
+  query: {
+    operationTaskId: operationContextReady.value ? contextOperationTaskId.value : undefined,
+  },
+}))
+const operationSourceIdentity = computed(() =>
+  [
+    auth.principal?.principalId,
+    filters.organizationId,
+    filters.environmentId,
+    contextWorkOrderId.value,
+    contextOperationTaskId.value,
+  ].join(':'),
+)
+watch(operationSourceIdentity, () => {
+  submittedOperationSource.value = null
+})
 const operationContextMessage = computed(() => {
   if (!isOperationInspectionFlow.value || operationContextReady.value) return ''
   if (operationContext.errorMessage.value) return operationContext.errorMessage.value
@@ -805,6 +838,16 @@ async function submitInspectionRecord() {
     dispositionReason: optionalText(recordForm.dispositionReason),
     dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
   }
+  const sourceIdentity = operationSourceIdentity.value
+  const operationSource =
+    isOperationInspectionFlow.value &&
+    operationContextReady.value &&
+    body.sourceType === 'operation' &&
+    body.sourceService === 'mes-operation' &&
+    body.sourceDocumentId === contextWorkOrderId.value
+      ? { workOrderId: contextWorkOrderId.value, operationTaskId: contextOperationTaskId.value }
+      : null
+  submittedOperationSource.value = null
   try {
     await createInspectionRecord(body)
   } catch (error) {
@@ -812,6 +855,8 @@ async function submitInspectionRecord() {
     return
   }
   recordSheetOpen.value = false
+  if (sourceIdentity === operationSourceIdentity.value)
+    submittedOperationSource.value = operationSource
   notifySuccess(`${inspectionSubmissionSubject()}已提交。`)
 }
 
@@ -910,10 +955,11 @@ function isPresent(value: string | undefined | null): value is string {
           <Settings2Icon aria-hidden="true" />
           配置首件检验方案
         </NvButton>
+        <NvButton v-if="defectContinuationRoute" size="sm" type="button" as-child>
+          <RouterLink :to="defectContinuationRoute">登记同工序不良</RouterLink>
+        </NvButton>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
-            >返回工单 {{ contextWorkOrderId }}</RouterLink
-          >
+          <RouterLink :to="sourceWorkOrderRoute">返回工单 {{ contextWorkOrderId }}</RouterLink>
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="scanAuditRoute">扫码记录</RouterLink>
