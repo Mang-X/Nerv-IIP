@@ -2529,7 +2529,8 @@ public sealed record ConfirmDowntimeRecoveryCommand(
     string OrganizationId,
     string EnvironmentId,
     string DowntimeEventId,
-    DateTimeOffset RecoveredAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset RecoveredAtUtc,
+    IReadOnlyCollection<string>? AuthorizedWorkCenterIds = null) : ICommand<MesAcceptedResponse>;
 
 public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<ConfirmDowntimeRecoveryCommand, MesAcceptedResponse>
@@ -2555,6 +2556,12 @@ public sealed class ConfirmDowntimeRecoveryCommandHandler(ApplicationDbContext d
 
         downtime = downtime
             ?? throw new KnownException($"未找到停机事件，DowntimeEventId = {request.DowntimeEventId}");
+
+        if (request.AuthorizedWorkCenterIds is not null
+            && !request.AuthorizedWorkCenterIds.Contains(downtime.WorkCenterId, StringComparer.Ordinal))
+        {
+            throw new UnauthorizedAccessException("work-scope-not-authorized");
+        }
 
         downtime.Close(request.RecoveredAtUtc);
         return new MesAcceptedResponse("Accepted", request.DowntimeEventId, request.RecoveredAtUtc);

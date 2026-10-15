@@ -541,7 +541,9 @@ public sealed record ListDowntimeEventsRequest(
     string? Status = null,
     string? ReasonCode = null,
     DateTimeOffset? WindowStartUtc = null,
-    DateTimeOffset? WindowEndUtc = null);
+    DateTimeOffset? WindowEndUtc = null,
+    bool RestrictToWorkCenters = false,
+    string? AuthorizedWorkCenterIds = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -575,7 +577,8 @@ public sealed record RecoverDowntimeRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string DowntimeEventId,
-    DateTimeOffset? RecoveredAtUtc);
+    DateTimeOffset? RecoveredAtUtc,
+    string[]? AuthorizedWorkCenterIds = null);
 
 public sealed record StartChangeoverRequest(
     string OrganizationId,
@@ -1858,7 +1861,10 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Status,
             req.ReasonCode,
             req.WindowStartUtc,
-            req.WindowEndUtc), ct);
+            req.WindowEndUtc,
+            req.RestrictToWorkCenters
+                ? (req.AuthorizedWorkCenterIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                : null), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1892,12 +1898,20 @@ public sealed class ConfirmDowntimeRecoveryEndpoint(ISender sender, TimeProvider
 
     public override async Task HandleAsync(RecoverDowntimeRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ConfirmDowntimeRecoveryCommand(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.DowntimeEventId,
-            req.RecoveredAtUtc ?? timeProvider.GetUtcNow()), ct);
-        await Send.OkAsync(response, ct);
+        try
+        {
+            var response = await sender.Send(new ConfirmDowntimeRecoveryCommand(
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.DowntimeEventId,
+                req.RecoveredAtUtc ?? timeProvider.GetUtcNow(),
+                req.AuthorizedWorkCenterIds), ct);
+            await Send.OkAsync(response, ct);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            await Send.ForbiddenAsync(ct);
+        }
     }
 }
 

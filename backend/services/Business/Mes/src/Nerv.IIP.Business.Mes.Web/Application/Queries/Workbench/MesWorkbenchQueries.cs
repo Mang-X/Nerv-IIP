@@ -2174,7 +2174,8 @@ public sealed record ListDowntimeEventsQuery(
     string? Status = null,
     string? ReasonCode = null,
     DateTimeOffset? WindowStartUtc = null,
-    DateTimeOffset? WindowEndUtc = null) : IQuery<MesDowntimeEventListResponse>;
+    DateTimeOffset? WindowEndUtc = null,
+    IReadOnlyCollection<string>? AuthorizedWorkCenterIds = null) : IQuery<MesDowntimeEventListResponse>;
 
 public sealed record MesDowntimeEventListResponse(
     IReadOnlyCollection<MesDowntimeEventRow> Items,
@@ -2224,6 +2225,11 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 x.EnvironmentId == tenant.EnvironmentId &&
                 x.FromUtc >= windowStartUtc &&
                 x.FromUtc < windowEndUtc);
+
+        if (request.AuthorizedWorkCenterIds is not null)
+        {
+            query = query.Where(x => request.AuthorizedWorkCenterIds.Contains(x.WorkCenterId));
+        }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
         {

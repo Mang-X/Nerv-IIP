@@ -18,6 +18,52 @@ public sealed class MesDowntimeRecoveryPersistenceTests
     private const string Org = "org-001";
     private const string Env = "env-dev";
 
+    // #4443：授权必须基于命中事件的真实 WC；业务单号与 Guid 两条查找路径均不得绕过。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Recovery_outside_authorized_work_centers_is_rejected_without_changing_event(bool useGuid)
+    {
+        await using var connection = await CreateOpenSqliteConnectionAsync();
+        await using var dbContext = CreateSqliteDbContext(connection);
+        await dbContext.Database.EnsureCreatedAsync();
+        var downtime = WorkCenterUnavailability.Open(Org, Env, "DT-OUTSIDE", "WC-B",
+            DateTimeOffset.Parse("2026-07-30T01:00:00Z"), null, "DT-OUTSIDE-REASON", null);
+        dbContext.WorkCenterUnavailabilities.Add(downtime);
+        await dbContext.SaveChangesAsync();
+        var id = useGuid ? downtime.Id.Id.ToString() : downtime.DowntimeEventNo;
+        var handler = new ConfirmDowntimeRecoveryCommandHandler(dbContext);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(
+            new ConfirmDowntimeRecoveryCommand(Org, Env, id,
+                DateTimeOffset.Parse("2026-07-30T03:00:00Z"), ["WC-A"]), CancellationToken.None));
+        // 即便外层提交，拒绝路径也不得已经修改聚合。
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        Assert.Null((await dbContext.WorkCenterUnavailabilities.SingleAsync()).ToUtc);
+    }
+
+    [Fact]
+    public async Task Recovery_with_matching_scope_closes_only_event_in_current_tenant()
+    {
+        await using var connection = await CreateOpenSqliteConnectionAsync();
+        await using var dbContext = CreateSqliteDbContext(connection);
+        await dbContext.Database.EnsureCreatedAsync();
+        dbContext.WorkCenterUnavailabilities.AddRange(
+            WorkCenterUnavailability.Open(Org, Env, "DT-SHARED", "WC-A",
+                DateTimeOffset.Parse("2026-07-30T01:00:00Z"), null, "DT-MECH", null),
+            WorkCenterUnavailability.Open("org-other", Env, "DT-SHARED", "WC-A",
+                DateTimeOffset.Parse("2026-07-30T01:00:00Z"), null, "DT-MECH", null));
+        await dbContext.SaveChangesAsync();
+        var recoveredAt = DateTimeOffset.Parse("2026-07-30T03:00:00Z");
+        await new ConfirmDowntimeRecoveryCommandHandler(dbContext).Handle(
+            new ConfirmDowntimeRecoveryCommand(Org, Env, "DT-SHARED", recoveredAt, ["WC-A"]), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        Assert.Equal(recoveredAt, (await dbContext.WorkCenterUnavailabilities.SingleAsync(x => x.OrganizationId == Org)).ToUtc);
+        Assert.Null((await dbContext.WorkCenterUnavailabilities.SingleAsync(x => x.OrganizationId == "org-other")).ToUtc);
+    }
+
     [Fact]
     public async Task Recover_by_downtime_event_no_translates_and_closes_event_on_relational_provider()
     {
