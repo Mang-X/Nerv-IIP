@@ -43,7 +43,7 @@ public sealed class IamSeedService(
     ];
 
     /// <summary>
-    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，以及生产计划员角色，
+    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，以及生产计划员和停机班组长角色，
     /// 不覆盖已存在的行。例外：为已有固定 ID 的生产计划员角色补工作台读取权限，仍是旧英文默认名的平台管理员角色一次性改为中文名
     /// （manifest <c>iam-platform-admin-role-name-zh:v1</c>，见 <see cref="RenameLegacyAdministratorRoleAsync"/>）。组织/环境/管理员/角色 id 读 <c>Iam:Seed:*</c>（与产品基线 seed 同源）。
     /// 新建管理员时初始口令只来自部署配置 <c>Iam:Seed:AdminPassword</c>，须满足口令策略，并标记首次登录须改密。
@@ -71,6 +71,7 @@ public sealed class IamSeedService(
                 passwordChangeRequired: true);
         }, cancellationToken);
         await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
+        await EnsureMesDowntimeTeamLeaderAsync(dbContext, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -140,6 +141,7 @@ public sealed class IamSeedService(
         }
 
         await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
+        await EnsureMesDowntimeTeamLeaderAsync(dbContext, cancellationToken);
 
         var (role, user) = await EnsurePlatformAdministratorAsync(
             dbContext,
@@ -263,6 +265,21 @@ public sealed class IamSeedService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task EnsureMesDowntimeTeamLeaderAsync(
+        ApplicationDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var definition = NervIipSeedRoles.MesDowntimeTeamLeader;
+        var roleId = new RoleId(definition.RoleId);
+        if (await dbContext.Roles.AnyAsync(role => role.Id == roleId, cancellationToken)) return;
+
+        var normalizedName = Role.NormalizeName(definition.RoleName);
+        var nameTaken = await dbContext.Roles.AnyAsync(role => role.NormalizedRoleName == normalizedName, cancellationToken);
+        var roleName = nameTaken ? "班组长（停机登记，系统预置）" : definition.RoleName;
+        // 模板不授予组织全权；部署方通过既有成员数据范围配置实际工作中心。
+        dbContext.Roles.Add(new Role(roleId, roleName, definition.PermissionCodes));
     }
 
     private static async Task EnsureProductionPlannerAsync(

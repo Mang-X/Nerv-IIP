@@ -18,6 +18,87 @@ namespace Nerv.IIP.Iam.Web.Tests;
 /// </summary>
 public sealed class IamErpRoleSeedTests
 {
+    // #4440：岗位只授予停机接力所需动作；具体工作中心由成员范围单独配置。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Team_leader_template_supports_downtime_without_granting_organization_scope(bool bootstrap)
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        if (bootstrap) await seed.BootstrapAsync();
+        else await seed.SeedAsync();
+
+        var role = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        Assert.Equal("班组长（停机登记）", role.RoleName);
+        Assert.Equal(new[]
+        {
+            "business.maintenance.downtime-reasons.read",
+            "business.masterdata.resources.read",
+            "business.mes.downtime.manage",
+            "business.mes.downtime.read",
+            "business.mes.operations.read",
+            "business.mes.work-orders.read",
+        }, role.Permissions.Select(permission => permission.PermissionCode).Order(StringComparer.Ordinal));
+        Assert.Empty(role.DataScopes);
+        Assert.DoesNotContain(await dbContext.Memberships.Include(member => member.Roles).ToListAsync(),
+            member => member.Roles.Any(binding => binding.RoleId == role.Id));
+    }
+
+    [Fact]
+    public async Task Team_leader_reseed_preserves_operator_adjusted_permissions_and_scope()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        var role = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        role.ReplacePermissions(["business.mes.downtime.read"]);
+        role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.WorkCenter, "WC-A")]);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await seed.BootstrapAsync();
+        await seed.SeedAsync();
+        role = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        Assert.Equal(["business.mes.downtime.read"], role.Permissions.Select(permission => permission.PermissionCode));
+        Assert.Equal([new DataScopeBinding(DataScopeBinding.WorkCenter, "WC-A")],
+            role.DataScopes.Select(scope => new DataScopeBinding(scope.ScopeType, scope.ScopeCode)));
+    }
+
+    [Fact]
+    public void Team_leader_template_in_memory_requires_explicit_member_scope()
+    {
+        var store = new InMemoryIamStore();
+        var role = Assert.Single(store.Roles, role => role.RoleId == "role-mes-downtime-team-leader");
+        Assert.Equal(6, role.PermissionCodes.Count);
+        Assert.Contains("business.mes.downtime.manage", role.PermissionCodes);
+        Assert.Contains("business.maintenance.downtime-reasons.read", role.PermissionCodes);
+        store.ReplaceMembershipRoles("user-admin", "org-001", "env-dev", [role.RoleId]);
+        Assert.Empty(store.ListPermissionDataScopeGrants("user-admin", "org-001", "env-dev", "business.mes.downtime.manage"));
+        store.ReplaceMembershipDataScopes("user-admin", "org-001", "env-dev", [new DataScopeBinding(DataScopeBinding.WorkCenter, "WC-A")]);
+        var grant = Assert.Single(store.ListPermissionDataScopeGrants("user-admin", "org-001", "env-dev", "business.mes.downtime.manage"));
+        Assert.Equal("work-center", grant.ScopeKind);
+        Assert.Equal("WC-A", grant.ScopeId);
+    }
+
+    [Fact]
+    public async Task Team_leader_template_preserves_a_same_name_custom_role()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.Roles.Add(new Role(new RoleId("custom-leader"), "班组长（停机登记）", ["business.mes.downtime.read"]));
+        await dbContext.SaveChangesAsync();
+        await CreateSeed(dbContext).BootstrapAsync();
+        var roles = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes).ToListAsync();
+        var template = Assert.Single(roles, role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        Assert.Equal("班组长（停机登记，系统预置）", template.RoleName);
+        Assert.Empty(template.DataScopes);
+        Assert.Equal(["business.mes.downtime.read"],
+            Assert.Single(roles, role => role.Id == new RoleId("custom-leader")).Permissions.Select(permission => permission.PermissionCode));
+    }
+
     [Fact]
     public async Task Bootstrap_creates_planner_role_with_workbench_read_permissions()
     {

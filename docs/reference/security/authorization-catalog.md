@@ -204,6 +204,12 @@ IAM 仅在对应角色缺失时创建默认角色；重复 seed 不应覆盖同 
 
 内部 `GET /internal/iam/v1/production-planner-members` 只供服务身份调用，要求 `organizationId`、`environmentId`，按页返回该角色的有效账号 ID；账号禁用或过期时不在结果中。
 
+## 默认停机班组长角色
+
+`role-mes-downtime-team-leader`（班组长（停机登记））由 `IamFacts.cs` 定义，在基线 seed 和启动引导中只补缺创建；已有角色的权限、名称、范围和成员不覆盖。同名运营角色保留，系统角色使用「班组长（停机登记，系统预置）」名称。
+
+该模板仅包含工单、工序、资源、停机读权限、停机管理权限及 Maintenance 停机原因目录读取权限，不包含交接、质检、维修写权或普通操作员扩权。**默认无数据范围，也不自动分配账号**；须通过现有成员数据范围配置实际 WorkCenter，不给 Organization scope。账号、员工及班组准备见[停机班组长账号准备](../../runbooks/mes-downtime-team-leader.md)。
+
 ## Console IAM facade 映射
 
 下表用于导航当前 Console IAM 操作；Gateway 代码仍是 operationId 与 permission 的最终事实源。

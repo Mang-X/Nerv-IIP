@@ -44,6 +44,18 @@ public static class NervIipSeedRoles
     public const string PlatformAdministratorRoleName = "平台管理员";
     public const string ProductionPlannerRoleId = "role-production-planner";
 
+    public static readonly SeedRoleDefinition MesDowntimeTeamLeader = new(
+        "role-mes-downtime-team-leader",
+        "班组长（停机登记）",
+        [
+            "business.masterdata.resources.read",
+            "business.mes.work-orders.read",
+            "business.mes.operations.read",
+            "business.mes.downtime.read",
+            "business.mes.downtime.manage",
+            "business.maintenance.downtime-reasons.read",
+        ]);
+
     public static readonly SeedRoleDefinition ProductionPlanner = new(
         ProductionPlannerRoleId,
         "生产计划员",
