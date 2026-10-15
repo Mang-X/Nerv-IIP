@@ -132,6 +132,11 @@ const closeForm = reactive({
 
 // 上下文穿透：从工单带入时提供返回入口；返工工单绑定只读取 MES 回执事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const contextOperationTaskId = computed(() => firstQuery(route.query.operationTaskId))
+const sourceWorkOrderRoute = computed(() => ({
+  path: `/mes/work-orders/${encodeURIComponent(contextWorkOrderId.value)}`,
+  query: { operationTaskId: contextOperationTaskId.value || undefined },
+}))
 // 从 MES 质量项点具体 NCR 带入时，定位并自动打开对应 NCR 处置抽屉。
 const targetNcrId = computed(() => firstQuery(route.query.ncrId))
 const targetNcr = computed(() =>
@@ -454,10 +459,14 @@ watch(
       :count="`${ncrsTotal} 条 NCR`"
     >
       <template #actions>
-        <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
-            >返回工单 {{ contextWorkOrderId }}</RouterLink
-          >
+        <NvButton
+          v-if="contextWorkOrderId && canReadMesWorkOrders"
+          size="sm"
+          type="button"
+          variant="outline"
+          as-child
+        >
+          <RouterLink :to="sourceWorkOrderRoute">返回工单 {{ contextWorkOrderId }}</RouterLink>
         </NvButton>
         <NvButton
           size="sm"
