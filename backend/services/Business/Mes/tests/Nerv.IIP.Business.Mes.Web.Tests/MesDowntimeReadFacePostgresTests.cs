@@ -25,9 +25,12 @@ public sealed class MesDowntimeReadFacePostgresTests
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var dbContext = await CreateMigratedDbContextAsync();
         dbContext.WorkCenterUnavailabilities.AddRange(
-            WorkCenterUnavailability.Open(Org, Env, "DT-A1", "WC-A", AsOfUtc.AddHours(-3), null, "DT-A", null),
-            WorkCenterUnavailability.Open(Org, Env, "DT-A2", "WC-A", AsOfUtc.AddHours(-2), null, "DT-A", null),
-            WorkCenterUnavailability.Open(Org, Env, "DT-B1", "WC-B", AsOfUtc.AddMinutes(-30), null, "DT-SECRET-B", null),
+            WorkCenterUnavailability.Open(Org, Env, "DT-A1", "WC-A", AsOfUtc.AddHours(-3), null, "DT-A", null,
+                "WO-A1", "OP-A1"),
+            WorkCenterUnavailability.Open(Org, Env, "DT-A2", "WC-A", AsOfUtc.AddHours(-2), null, "DT-A", null,
+                "WO-A2", "OP-A2"),
+            WorkCenterUnavailability.Open(Org, Env, "DT-B1", "WC-B", AsOfUtc.AddMinutes(-30), null, "DT-SECRET-B", null,
+                "WO-B1", "OP-B1"),
             WorkCenterUnavailability.Open(Org, Env, "DT-B2", "WC-B", AsOfUtc.AddMinutes(-20), null, "DT-SECRET-B", null),
             WorkCenterUnavailability.Open(Org, Env, "DT-B3", "WC-B", AsOfUtc.AddMinutes(-10), null, "DT-SECRET-B", null),
             WorkCenterUnavailability.Open("org-other", Env, "DT-OTHER", "WC-A", AsOfUtc.AddHours(-1), null, "DT-SECRET-TENANT", null));
@@ -36,7 +39,10 @@ public sealed class MesDowntimeReadFacePostgresTests
         var handler = CreateHandler(dbContext);
         var response = await handler.Handle(new ListDowntimeEventsQuery(Org, Env, null, null,
             Skip: 1, Take: 1, AuthorizedWorkCenterIds: ["WC-A"]), CancellationToken.None);
-        Assert.Equal("DT-A1", Assert.Single(response.Items).DowntimeEventId);
+        var authorizedRow = Assert.Single(response.Items);
+        Assert.Equal("DT-A1", authorizedRow.DowntimeEventId);
+        Assert.Equal("WO-A1", authorizedRow.WorkOrderId);
+        Assert.Equal("OP-A1", authorizedRow.OperationTaskId);
         Assert.Equal(2, response.Total);
         var summary = Assert.Single(response.ReasonSummary);
         Assert.Equal("DT-A", summary.ReasonCode);
@@ -54,7 +60,7 @@ public sealed class MesDowntimeReadFacePostgresTests
         Assert.Equal(new[] { "DT-A", "DT-SECRET-B" }, organization.ReasonSummary.Select(x => x.ReasonCode).Order(StringComparer.Ordinal));
     }
 
-    /// <summary>#48 字段归位：停机事实不挂工单，WorkOrderId 一律为空；工作中心码只放 WorkCenterId。</summary>
+    /// <summary>#48/#4442：无来源事件保持空值，不以 WC 猜工单；有来源事件经范围过滤后保留自身来源。</summary>
     [MesRealPostgresFact]
     public async Task Downtime_list_rows_keep_work_center_code_out_of_work_order_field_on_postgres()
     {
