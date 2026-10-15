@@ -2288,11 +2288,10 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
             .OrderByDescending(x => x.FromUtc)
             .Skip(page.Skip)
             .Take(page.Take)
-            // #48 字段归位：停机事实不挂工单，WorkOrderId 一律为空；工作中心码只放 WorkCenterId。
             .Select(x => new MesDowntimeEventRow(
                 x.DowntimeEventNo,
-                null,
-                null,
+                x.WorkOrderId,
+                x.OperationTaskId,
                 x.DeviceAssetId,
                 x.ToUtc == null ? WorkCenterUnavailability.OpenStatus : WorkCenterUnavailability.RecoveredStatus,
                 x.FromUtc,

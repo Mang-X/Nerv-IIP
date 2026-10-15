@@ -21,7 +21,7 @@
     },
     {
       "path": "backend/Directory.Packages.props",
-      "sha256": "5b2b7e7f87039738072d249fa2f230a61758b461e28cf0e9209862fa846d17d8"
+      "sha256": "d306d6639c740ea0b681bd75cbe3f0a9abb5c802f31e82442512f02188d44049"
     },
     {
       "path": "backend/Directory.Build.props",
