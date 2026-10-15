@@ -838,6 +838,9 @@ public sealed class InMemoryIamStore
                 };
         }
 
+        var teamLeader = NervIipSeedRoles.MesDowntimeTeamLeader;
+        _roles.Add(new RoleFact(teamLeader.RoleId, teamLeader.RoleName, teamLeader.PermissionCodes.ToHashSet(StringComparer.Ordinal)));
+
         var now = DateTimeOffset.UtcNow;
         _users.Add(new UserFact(
             "user-admin",
