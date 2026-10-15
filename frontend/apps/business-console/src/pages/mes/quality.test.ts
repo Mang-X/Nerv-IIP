@@ -223,6 +223,7 @@ function mountPageWithAuth(
     'business.mes.quality.read',
     'business.mes.quality.write',
     'business.mes.operations.read',
+    'business.quality.ncr.read',
   ],
 ) {
   const pinia = createPinia()
@@ -359,7 +360,8 @@ describe('MES 质量页 — 缺陷登记入口', () => {
         qualityItemId: 'DEF-1',
         sourceType: 'Defect',
         workOrderId: 'WO-2',
-        sourceDocumentId: 'WO-2-OP-10',
+        sourceDocumentId: 'display-is-not-operation',
+        operationTaskId: 'OP-real-source',
         ncrId: null,
       },
     ]
@@ -372,8 +374,45 @@ describe('MES 质量页 — 缺陷登记入口', () => {
     expect(link).toBeDefined()
     expect(link!.props('to')).toEqual({
       path: '/quality/ncrs',
-      query: { ncrId: 'ncr-real-id', workOrderId: 'WO-2' },
+      query: { ncrId: 'ncr-real-id', workOrderId: 'WO-2', operationTaskId: 'OP-real-source' },
     })
+  })
+
+  it('opens a work-order-only NCR without borrowing an operation from the route or display text', async () => {
+    state.routeQuery = { workOrderId: 'WO-other', operationTaskId: 'OP-other' }
+    state.qualityItems = [
+      {
+        qualityItemId: 'DEF-order',
+        sourceType: 'Defect',
+        workOrderId: 'WO-order',
+        sourceDocumentId: 'WO-order-OP-10',
+        operationTaskId: null,
+      },
+    ]
+    state.ncrs = { 'DEF-order': { id: 'ncr-order', code: 'NCR-order' } }
+    const wrapper = mountPage()
+    await flushPromises()
+    const link = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((link) => link.text() === 'NCR-order')
+    expect(link).toBeDefined()
+    expect(link!.props('to')).toEqual({
+      path: '/quality/ncrs',
+      query: { ncrId: 'ncr-order', workOrderId: 'WO-order', operationTaskId: undefined },
+    })
+  })
+
+  it('shows the real NCR as text without a dead link when NCR read permission is absent', async () => {
+    state.qualityItems = [{ qualityItemId: 'DEF-1', workOrderId: 'WO-2', operationTaskId: 'OP-2' }]
+    state.ncrs = { 'DEF-1': { id: 'ncr-real-id', code: 'NCR-real' } }
+    const wrapper = mountPage(['business.mes.quality.read', 'business.mes.work-orders.read'])
+    await flushPromises()
+    expect(wrapper.text()).toContain('NCR-real')
+    expect(
+      wrapper
+        .findAllComponents({ name: 'RouterLink' })
+        .some((link) => link.props('to').path === '/quality/ncrs'),
+    ).toBe(false)
   })
 
   it('keeps loading association reads distinct from not generated', async () => {

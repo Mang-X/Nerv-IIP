@@ -70,6 +70,9 @@ const {
 const qualityWriteScope = useMesWorkScopeSelection(P.mesQualityWrite)
 const refreshQualityWriteScope = qualityWriteScope.refreshScope
 const auth = useAuthStore()
+const canReadNcr = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.qualityNcrRead),
+)
 const { keyword } = useMesKeywordFilter(filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
@@ -538,12 +541,13 @@ async function submitDefect() {
       </template>
       <template #cell-ncrId="{ row }">
         <RouterLink
-          v-if="row.ncrId"
+          v-if="row.ncrId && canReadNcr"
           :to="{
             path: '/quality/ncrs',
             query: {
               ncrId: row.ncrId,
               workOrderId: row.workOrderId ?? undefined,
+              operationTaskId: row.operationTaskId ?? undefined,
             },
           }"
           :title="row.ncrCode || row.ncrId"
@@ -551,6 +555,7 @@ async function submitDefect() {
         >
           {{ row.ncrCode || row.ncrId }}
         </RouterLink>
+        <span v-else-if="row.ncrId">{{ row.ncrCode || row.ncrId }}</span>
         <span v-else class="text-muted-foreground">{{
           ncrState === 'error'
             ? '关联读取失败'
