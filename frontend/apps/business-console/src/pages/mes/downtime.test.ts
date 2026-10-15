@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { computed, reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createMemoryHistory, createRouter } from 'vue-router'
 import DowntimePage from './downtime.vue'
 
 // #1323：停机恢复入口用例——恢复通道不能只活在 API 里，页面必须可点。
@@ -11,8 +12,10 @@ const notifyMocks = vi.hoisted(() => ({
   notifyOperationFailure: vi.fn(),
 }))
 
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {} }),
+const routeQuery = reactive<Record<string, string | string[]>>({})
+vi.mock('vue-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-router')>()),
+  useRoute: () => ({ query: routeQuery }),
 }))
 
 const openRow = {
@@ -263,6 +266,7 @@ const segmentRenderingMetricCard = {
 }
 
 beforeEach(() => {
+  for (const key of Object.keys(routeQuery)) delete routeQuery[key]
   filters.organizationId = 'org'
   filters.environmentId = 'dev'
   filters.reasonCode = undefined
@@ -601,4 +605,49 @@ describe('MES downtime reason read face', () => {
       '换型调整=0.5',
     ])
   })
+})
+
+describe('downtime source return', () => {
+  it.each([{ workOrderId: 'WO-ID-001', operationTaskId: 'OP-001' }, { workOrderId: 'WO-ID-001' }])(
+    'returns to the supplied work order and preserves only an explicit operation: %j',
+    async (query) => {
+      Object.assign(routeQuery, query)
+      permissionCodes.push('business.mes.work-orders.read')
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          { path: '/', component: { template: '<div />' } },
+          { path: '/mes/work-orders/:workOrderId', component: { template: '<div />' } },
+        ],
+      })
+      await router.push('/')
+      const wrapper = mount(DowntimePage, { global: { plugins: [router], stubs } })
+      await wrapper.get('a').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/mes/work-orders/WO-ID-001')
+      expect(router.currentRoute.value.query).toEqual(
+        query.operationTaskId ? { operationTaskId: 'OP-001' } : {},
+      )
+      expect(recordDowntimeEvent).not.toHaveBeenCalled()
+      expect(recoverDowntimeEvent).not.toHaveBeenCalled()
+      wrapper.unmount()
+    },
+  )
+
+  it.each([
+    { query: {}, canRead: true },
+    { query: { operationTaskId: 'OP-001' }, canRead: true },
+    { query: { workOrderId: 'WO-ID-001', operationTaskId: 'OP-001' }, canRead: false },
+  ])(
+    'keeps normal downtime actions without an unauthorized or guessed return: %j',
+    ({ query, canRead }) => {
+      Object.assign(routeQuery, query)
+      if (canRead) permissionCodes.push('business.mes.work-orders.read')
+      const wrapper = mountPage()
+      expect(wrapper.find('a').exists()).toBe(false)
+      expect(wrapper.text()).toContain('登记停机')
+      expect(wrapper.text()).toContain('设备与停机')
+      wrapper.unmount()
+    },
+  )
 })
