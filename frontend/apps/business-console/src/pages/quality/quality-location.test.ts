@@ -2,6 +2,7 @@ import type { BusinessConsoleQualityNcrItem } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import InspectionsPage from './inspections.vue'
 import NcrsPage from './ncrs.vue'
@@ -790,6 +791,59 @@ describe('quality route location behavior', () => {
 
     expect(qualityState.ncrFilters!.keyword).toBeUndefined()
     expect(qualityState.ncrFilters!.status).toBe('open')
+  })
+
+  it.each<{ name: string; query: Record<string, string>; expected: string }>([
+    {
+      name: 'operation source',
+      query: { workOrderId: 'WO-source', operationTaskId: 'OP-source' },
+      expected: '/mes/work-orders/WO-source?operationTaskId=OP-source',
+    },
+    {
+      name: 'work-order source',
+      query: { workOrderId: 'WO-source' },
+      expected: '/mes/work-orders/WO-source',
+    },
+  ])('returns NCR $name without guessing another operation', async ({ query, expected }) => {
+    routeState.route!.query = query
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    const link = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((item) => item.text().startsWith('返回工单'))
+    expect(link).toBeDefined()
+    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    expect(router.resolve(link!.props('to')).fullPath).toBe(expected)
+    wrapper.unmount()
+  })
+
+  it.each<{ name: string; query: Record<string, string>; permissions: string[] }>([
+    { name: 'no source', query: {}, permissions: ['business.mes.work-orders.read'] },
+    {
+      name: 'operation without work order',
+      query: { operationTaskId: 'OP-source' },
+      permissions: ['business.mes.work-orders.read'],
+    },
+    {
+      name: 'no destination permission',
+      query: { workOrderId: 'WO-source', operationTaskId: 'OP-source' },
+      permissions: [],
+    },
+  ])('keeps NCR usable with $name and no return dead end', async ({ query, permissions }) => {
+    routeState.route!.query = query
+    authState.permissionCodes = ['business.quality.ncr.read', ...permissions]
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('不合格品处理')
+    expect(
+      wrapper
+        .findAllComponents({ name: 'RouterLink' })
+        .filter((item) => item.text().startsWith('返回工单')),
+    ).toHaveLength(0)
+    expect(wrapper.text()).toContain('查看详情')
+    wrapper.unmount()
   })
 
   it('keeps NCR read access separate from manage actions and MES work-order navigation', async () => {
