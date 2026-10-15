@@ -2446,12 +2446,18 @@ public sealed class BusinessConsoleMesCreateReceiptRequestValidator
 public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    PrincipalWorkScopeResolver workScopeResolver,
     IBusinessMaintenanceClient maintenance,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesDowntimeEventListRequest, BusinessConsoleMesDowntimeEventListResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesDowntimeEventListRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesDowntimeEventListRequest request) => request.EnvironmentId;
@@ -2461,7 +2467,11 @@ public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var response = await mes.ListDowntimeEventsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        var authorizedWorkCenterIds = await workScopeResolver.ResolveDowntimeWorkCentersAsync(
+            AuthorizationResult, request.OrganizationId, request.EnvironmentId,
+            BusinessGatewayPermissions.MesDowntimeRead, request.WorkCenterId, cancellationToken);
+        var response = await mes.ListDowntimeEventsAsync(
+            tokenProvider.BearerToken, request, cancellationToken, authorizedWorkCenterIds);
         return await MesDowntimeReasonNameEnricher.EnrichAsync(
             response,
             maintenance,
@@ -2666,20 +2676,32 @@ public sealed class BusinessConsoleMesRecordDowntimeEventV2RequestValidator
 public sealed class ConfirmBusinessConsoleMesDowntimeRecoveryEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecoverDowntimeEventRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesRecoverDowntimeEventRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesRecoverDowntimeEventRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesRecoverDowntimeEventRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ConfirmDowntimeRecoveryAsync(tokenProvider.BearerToken, request.DowntimeEventId, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var authorizedWorkCenterIds = await workScopeResolver.ResolveDowntimeWorkCentersAsync(
+            AuthorizationResult, request.OrganizationId, request.EnvironmentId,
+            BusinessGatewayPermissions.MesDowntimeManage, null, cancellationToken);
+        return await mes.ConfirmDowntimeRecoveryAsync(
+            tokenProvider.BearerToken, request.DowntimeEventId, request, cancellationToken, authorizedWorkCenterIds);
+    }
 }
 
 [Tags("Business Console MES")]

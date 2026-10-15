@@ -4140,7 +4140,8 @@ public sealed class BusinessGatewayProxyTests
     [Fact]
     public async Task Mes_downtime_list_resolves_reason_names_from_the_maintenance_directory_for_rows_and_summary()
     {
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+            [new("role", "reader", "organization", "org-001", [BusinessGatewayPermissions.MesDowntimeRead], OrganizationWide: true)]);
         var mes = new RecordingMesClient
         {
             DowntimeEventListResponse = new(
@@ -4166,6 +4167,8 @@ public sealed class BusinessGatewayProxyTests
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
         });
@@ -4204,7 +4207,8 @@ public sealed class BusinessGatewayProxyTests
     public async Task Mes_downtime_list_degrades_to_unresolved_reason_names_when_the_maintenance_directory_is_unavailable(
         Exception failure)
     {
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+            [new("role", "reader", "organization", "org-001", [BusinessGatewayPermissions.MesDowntimeRead], OrganizationWide: true)]);
         var mes = new RecordingMesClient
         {
             DowntimeEventListResponse = new(
@@ -4222,6 +4226,8 @@ public sealed class BusinessGatewayProxyTests
         {
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
         });
@@ -22973,13 +22979,18 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         new([], 0, []);
 
     public BusinessConsoleMesDowntimeEventListRequest? LastDowntimeEventListRequest { get; private set; }
+    public IReadOnlyCollection<string>? LastDowntimeAuthorizedWorkCenterIds { get; private set; }
+    public IReadOnlyCollection<string>? LastRecoveryAuthorizedWorkCenterIds { get; private set; }
+    public string? LastRecoveryEventId { get; private set; }
 
     public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
         string internalBearerToken,
         BusinessConsoleMesDowntimeEventListRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? authorizedWorkCenterIds = null)
     {
         LastDowntimeEventListRequest = request;
+        LastDowntimeAuthorizedWorkCenterIds = authorizedWorkCenterIds;
         return Task.FromResult(DowntimeEventListResponse);
     }
 
@@ -23008,8 +23019,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string downtimeEventId,
         BusinessConsoleMesRecoverDowntimeEventRequest request,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException();
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? authorizedWorkCenterIds = null)
+    {
+        LastRecoveryEventId = downtimeEventId;
+        LastRecoveryAuthorizedWorkCenterIds = authorizedWorkCenterIds;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
         string internalBearerToken,

@@ -420,22 +420,62 @@ public sealed class BusinessMesAcceptedReceiptClientTests
         Assert.Equal(3.25m, json.GetProperty("completedQuantity").GetDecimal());
     }
 
+    // #4443：空授权集合不能在 HTTP 序列化后退化为 organization scope。
+    [Theory]
+    [InlineData("organization")]
+    [InlineData("empty")]
+    [InlineData("work-centers")]
+    public async Task Downtime_scope_transport_preserves_unrestricted_empty_and_work_center_scopes(string scope)
+    {
+        IReadOnlyCollection<string>? ids = scope == "organization" ? null : scope == "empty" ? [] : ["WC-A", "WC-C"];
+        Uri? uri = null;
+        var client = ClientReturning("""{"data":{"items":[],"total":0,"reasonSummary":[]}}""",
+            capturedUri: value => uri = value);
+        await client.ListDowntimeEventsAsync("internal-token", new("org", "env"), CancellationToken.None, ids);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri!.Query);
+        Assert.Equal(ids is not null, query.ContainsKey("restrictToWorkCenters"));
+        if (ids is not null)
+        {
+            Assert.Equal("true", query["restrictToWorkCenters"].ToString());
+            query.TryGetValue("authorizedWorkCenterIds", out var workCenters);
+            Assert.Equal(string.Join(',', ids), workCenters.ToString());
+        }
+
+        string? body = null;
+        client = ClientReturning(AcceptedJson("DT-A"), capturedBody: value => body = value);
+        await client.ConfirmDowntimeRecoveryAsync("internal-token", "DT-A",
+            new("DT-A", "org", "env", DateTimeOffset.Parse("2026-10-16T12:00:00Z")), CancellationToken.None, ids);
+        using var json = JsonDocument.Parse(body!);
+        var property = json.RootElement.GetProperty("authorizedWorkCenterIds");
+        if (ids is null)
+        {
+            Assert.Equal(JsonValueKind.Null, property.ValueKind);
+        }
+        else
+        {
+            Assert.Equal(ids, property.EnumerateArray().Select(x => x.GetString()!).ToArray());
+        }
+    }
+
     private static string AcceptedJson(string referenceId, string status = "Accepted") =>
         "{\"data\":{\"status\":\"" + status + "\",\"referenceId\":\"" + referenceId + "\",\"acceptedAtUtc\":\"2026-07-31T08:00:00Z\"}}";
 
     private static HttpBusinessMesClient ClientReturning(
         string json,
         IDictionary<string, string>? capturedHeaders = null,
-        Action<string>? capturedBody = null) =>
-        new(new HttpClient(new StubHandler(json, capturedHeaders, capturedBody)) { BaseAddress = new Uri("http://mes") });
+        Action<string>? capturedBody = null,
+        Action<Uri>? capturedUri = null) =>
+        new(new HttpClient(new StubHandler(json, capturedHeaders, capturedBody, capturedUri)) { BaseAddress = new Uri("http://mes") });
 
     private sealed class StubHandler(
         string json,
         IDictionary<string, string>? capturedHeaders,
-        Action<string>? capturedBody) : HttpMessageHandler
+        Action<string>? capturedBody,
+        Action<Uri>? capturedUri) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            capturedUri?.Invoke(request.RequestUri!);
             if (capturedHeaders is not null)
             {
                 foreach (var header in request.Headers)

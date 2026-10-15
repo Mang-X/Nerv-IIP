@@ -301,7 +301,8 @@ public interface IBusinessMesClient
     Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
         string internalBearerToken,
         BusinessConsoleMesDowntimeEventListRequest request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? authorizedWorkCenterIds = null);
 
     Task<BusinessConsoleAcceptedResponse> RecordDowntimeEventAsync(
         string internalBearerToken,
@@ -317,7 +318,8 @@ public interface IBusinessMesClient
         string internalBearerToken,
         string downtimeEventId,
         BusinessConsoleMesRecoverDowntimeEventRequest request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? authorizedWorkCenterIds = null);
 
     Task<BusinessConsoleMesShiftHandoverListResponse> ListShiftHandoversAsync(
         string internalBearerToken,
@@ -1174,11 +1176,14 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     public Task<BusinessConsoleMesDowntimeEventListResponse> ListDowntimeEventsAsync(
         string internalBearerToken,
         BusinessConsoleMesDowntimeEventListRequest request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? authorizedWorkCenterIds = null) =>
         SendAsync<BusinessConsoleMesDowntimeEventListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/downtime-events?" + DowntimeEventListQuery(request),
+            "/api/business/v1/mes/downtime-events?" + JoinQuery(DowntimeEventListQuery(request),
+                Query(("restrictToWorkCenters", authorizedWorkCenterIds is not null ? true : null),
+                    ("authorizedWorkCenterIds", authorizedWorkCenterIds is null ? null : string.Join(',', authorizedWorkCenterIds)))),
             null,
             cancellationToken);
 
@@ -1220,11 +1225,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         string downtimeEventId,
         BusinessConsoleMesRecoverDowntimeEventRequest request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? authorizedWorkCenterIds = null) =>
         SendAcceptedAsync(
             internalBearerToken,
             $"/api/business/v1/mes/downtime-events/{Uri.EscapeDataString(downtimeEventId)}/recover",
-            request,
+            new { request.OrganizationId, request.EnvironmentId, request.RecoveredAtUtc, AuthorizedWorkCenterIds = authorizedWorkCenterIds },
             MesDowntimeEventDocumentType,
             cancellationToken);
 

@@ -19,7 +19,48 @@ public sealed class MesDowntimeReadFacePostgresTests
     private const string Env = "env-dev";
     private static readonly DateTimeOffset AsOfUtc = DateTimeOffset.Parse("2026-07-30T10:30:00Z");
 
-    /// <summary>#48 字段归位：停机事实不挂工单，WorkOrderId 一律为空；工作中心码只放 WorkCenterId。</summary>
+    // Regression / DomainInvariant：#4443。B 比 A 新且数量/原因不同，分页后过滤或只过滤 items 均会红。
+    private static async Task AssertAuthorizedWorkCenterReadFaceAsync()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = await CreateMigratedDbContextAsync();
+        dbContext.WorkCenterUnavailabilities.AddRange(
+            WorkCenterUnavailability.Open(Org, Env, "DT-A1", "WC-A", AsOfUtc.AddHours(-3), null, "DT-A", null,
+                "WO-A1", "OP-A1"),
+            WorkCenterUnavailability.Open(Org, Env, "DT-A2", "WC-A", AsOfUtc.AddHours(-2), null, "DT-A", null,
+                "WO-A2", "OP-A2"),
+            WorkCenterUnavailability.Open(Org, Env, "DT-B1", "WC-B", AsOfUtc.AddMinutes(-30), null, "DT-SECRET-B", null,
+                "WO-B1", "OP-B1"),
+            WorkCenterUnavailability.Open(Org, Env, "DT-B2", "WC-B", AsOfUtc.AddMinutes(-20), null, "DT-SECRET-B", null),
+            WorkCenterUnavailability.Open(Org, Env, "DT-B3", "WC-B", AsOfUtc.AddMinutes(-10), null, "DT-SECRET-B", null),
+            WorkCenterUnavailability.Open("org-other", Env, "DT-OTHER", "WC-A", AsOfUtc.AddHours(-1), null, "DT-SECRET-TENANT", null));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var handler = CreateHandler(dbContext);
+        var response = await handler.Handle(new ListDowntimeEventsQuery(Org, Env, null, null,
+            Skip: 1, Take: 1, AuthorizedWorkCenterIds: ["WC-A"]), CancellationToken.None);
+        var authorizedRow = Assert.Single(response.Items);
+        Assert.Equal("DT-A1", authorizedRow.DowntimeEventId);
+        Assert.Equal("WO-A1", authorizedRow.WorkOrderId);
+        Assert.Equal("OP-A1", authorizedRow.OperationTaskId);
+        Assert.Equal(2, response.Total);
+        var summary = Assert.Single(response.ReasonSummary);
+        Assert.Equal("DT-A", summary.ReasonCode);
+        Assert.Equal(2, summary.OpenCount);
+        Assert.Equal(300m, summary.DurationMinutes);
+
+        var denied = await handler.Handle(new ListDowntimeEventsQuery(Org, Env, null, null,
+            AuthorizedWorkCenterIds: []), CancellationToken.None);
+        Assert.Empty(denied.Items);
+        Assert.Equal(0, denied.Total);
+        Assert.Empty(denied.ReasonSummary);
+
+        var organization = await handler.Handle(new ListDowntimeEventsQuery(Org, Env, null, null), CancellationToken.None);
+        Assert.Equal(5, organization.Total);
+        Assert.Equal(new[] { "DT-A", "DT-SECRET-B" }, organization.ReasonSummary.Select(x => x.ReasonCode).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>#48/#4442：无来源事件保持空值，不以 WC 猜工单；有来源事件经范围过滤后保留自身来源。</summary>
     [MesRealPostgresFact]
     public async Task Downtime_list_rows_keep_work_center_code_out_of_work_order_field_on_postgres()
     {
@@ -40,6 +81,9 @@ public sealed class MesDowntimeReadFacePostgresTests
         Assert.Null(row.WorkOrderId);
         Assert.Equal("WC-04", row.WorkCenterId);
         Assert.Equal("DT-MECH", row.ReasonCode);
+
+        // 复用该已登记的真实 PostgreSQL 读面用例，补 #4443 主体范围不变量；不创建新的 lane 身份。
+        await AssertAuthorizedWorkCenterReadFaceAsync();
     }
 
     /// <summary>

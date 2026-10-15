@@ -107,6 +107,45 @@ public sealed class PrincipalWorkScopeResolver(
             selections.SelectMany(x => x.WorkCenterIds).Distinct(StringComparer.Ordinal).ToArray());
     }
 
+    // 停机事实只归属 WC；不把 self/team 投影成并不存在的停机所有者。
+    public async Task<IReadOnlyCollection<string>?> ResolveDowntimeWorkCentersAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? requestedWorkCenterId,
+        CancellationToken cancellationToken)
+    {
+        var (_, resolution, _) = await ResolveContextAsync(authorization,
+            organizationId, environmentId, permissionCode, null, null, cancellationToken);
+        if (!string.Equals(authorization!.AuthorizedOrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(authorization.AuthorizedEnvironmentId, environmentId, StringComparison.Ordinal))
+        {
+            throw Forbidden();
+        }
+
+        if (resolution.AuthorizedScopes.Any(x => x.Kind == "organization" && x.Id == organizationId))
+        {
+            return null;
+        }
+
+        // 候选 WC（含车间展开）已经 canonical resolver 与当前 permission grants 求交。
+        var workCenterIds = resolution.AuthorizedScopes
+            .Where(x => x.Kind == "work-center")
+            .Select(x => x.Id)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (workCenterIds.Length == 0
+            || (!string.IsNullOrWhiteSpace(requestedWorkCenterId)
+                && !workCenterIds.Contains(requestedWorkCenterId, StringComparer.Ordinal)))
+        {
+            throw Forbidden();
+        }
+
+        return workCenterIds;
+    }
+
     private async Task<(BusinessMasterDataPrincipalWorkContextResponse Context,
         PrincipalWorkContextAuthorizationResolution Resolution, string PrincipalId)> ResolveContextAsync(
         BusinessGatewayAuthorizationResult? authorization,
