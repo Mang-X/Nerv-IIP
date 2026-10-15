@@ -41,7 +41,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES } from '@/permissions'
 import {
@@ -257,6 +257,14 @@ const canManageDowntime = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesDowntimeManage),
 )
 const canRecover = canManageDowntime
+const canReadWorkOrders = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesWorkOrdersRead),
+)
+const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const sourceWorkOrderRoute = computed(() => ({
+  path: `/mes/work-orders/${encodeURIComponent(contextWorkOrderId.value)}`,
+  query: { operationTaskId: firstQuery(route.query.operationTaskId) || undefined },
+}))
 
 type OperationTask = (typeof operationTasks)['value'][number]
 type DowntimeTarget = {
@@ -549,6 +557,15 @@ function formatDateTime(value?: string | null) {
       :count="`${downtimeEventsTotal} 条停机事件`"
     >
       <template #actions>
+        <NvButton
+          v-if="contextWorkOrderId && canReadWorkOrders"
+          size="sm"
+          type="button"
+          variant="outline"
+          as-child
+        >
+          <RouterLink :to="sourceWorkOrderRoute">返回工单 {{ contextWorkOrderId }}</RouterLink>
+        </NvButton>
         <NvButton
           size="sm"
           type="button"
