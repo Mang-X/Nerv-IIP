@@ -1936,7 +1936,7 @@ public static class MasterDataEndpointContracts
         new(typeof(ChangeToolingStatusEndpoint), "POST", "/api/business/v1/master-data/tooling-assets/status", BusinessPermissionCodes.MasterDataResourcesManage, "changeBusinessMasterDataToolingStatus"),
         new(typeof(RecordToolingUsageEndpoint), "POST", "/api/business/v1/master-data/tooling-assets/usage", BusinessPermissionCodes.MasterDataResourcesManage, "recordBusinessMasterDataToolingUsage"),
         new(typeof(ImportChangeoverMatrixEndpoint), "POST", "/api/business/v1/master-data/changeover-matrix/import", BusinessPermissionCodes.MasterDataResourcesManage, "importBusinessMasterDataChangeoverMatrix"),
-        new(typeof(ResolveSchedulingTimeContextEndpoint), "POST", "/api/business/v1/master-data/scheduling-time-context/resolve", SchedulingTimeContextAuthorization.Permission, "resolveSchedulingTimeContext"),
+        new(typeof(ResolveSchedulingTimeContextEndpoint), "POST", "/api/business/v1/master-data/scheduling-time-context/resolve", SchedulingTimeContextAuthorization.Permission, "resolveBusinessMasterDataSchedulingTimeContext"),
         new(typeof(ResolveSchedulingToolingFactsEndpoint), "POST", "/api/business/v1/master-data/scheduling-tooling-facts/resolve", BusinessPermissionCodes.MasterDataResourcesRead, "resolveBusinessMasterDataSchedulingToolingFacts"),
         new(typeof(CreateReferenceDataCodeEndpoint), "POST", "/api/business/v1/master-data/reference-data", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataReferenceDataCode"),
         new(typeof(ListProductCategoriesEndpoint), "GET", "/api/business/v1/master-data/product-categories", BusinessPermissionCodes.MasterDataProductsRead, "listBusinessMasterDataProductCategories"),
