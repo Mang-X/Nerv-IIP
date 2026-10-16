@@ -196,7 +196,7 @@ public sealed class IamPlatformAdministratorTests : IClassFixture<WebApplication
             Assert.Equal("env-dev", Assert.Single(await db.Environments.ToListAsync()).Id.Id);
             var roles = await db.Roles.ToListAsync();
             Assert.Equal(
-                ["role-existing-planner", "role-platform-admin", "role-production-planner"],
+                ["role-existing-planner", "role-mes-downtime-team-leader", "role-platform-admin", "role-production-planner"],
                 roles.Select(role => role.Id.Id).Order(StringComparer.Ordinal));
             Assert.Equal("生产计划员", roles.Single(role => role.Id == new RoleId("role-existing-planner")).RoleName);
             Assert.Equal("生产计划员（系统预置）", roles.Single(role => role.Id == new RoleId("role-production-planner")).RoleName);
