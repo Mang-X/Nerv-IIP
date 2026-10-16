@@ -16,6 +16,21 @@ import type {
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 让断言不依赖真实名录查询。挂载仍装一个新 Pinia（见各 mount 的 plugins）：
 // SchedulingPlanGantt 里未被 mock 的 useMesDisplayNames() 需要 active Pinia。
+vi.mock('@/composables/useSchedulingTimeContext', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSchedulingTimeContext: () => ({
+      items: computed(() =>
+        ['WC-CNC', 'WC-ASSEMBLY'].map((workCenterCode) => ({
+          workCenterCode,
+          plantCode: 'NB',
+          timezone: 'Asia/Shanghai',
+        })),
+      ),
+      error: computed(() => null),
+    }),
+  }
+})
 vi.mock('@/composables/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {

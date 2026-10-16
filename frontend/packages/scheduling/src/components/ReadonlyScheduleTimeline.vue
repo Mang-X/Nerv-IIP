@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
+import { scheduleTime } from '../model/factory-time'
 import { computed } from 'vue'
 import type { TimeScale } from '../engine/engine'
 import { freezeWindow, projectFreezeWindow } from '../model/freeze-window'
@@ -66,6 +67,10 @@ const stepMs = computed(() => (resolvedScale.value === 'shift' ? EIGHT_HOURS : O
 
 function floorToLocalBoundary(timestamp: number) {
   const value = new Date(timestamp)
+  if (props.model.timezones) {
+    const step = stepMs.value
+    return Math.floor(timestamp / step) * step
+  }
   if (resolvedScale.value === 'day') {
     value.setHours(0, 0, 0, 0)
   } else {
@@ -75,6 +80,7 @@ function floorToLocalBoundary(timestamp: number) {
 }
 
 function nextLocalBoundary(timestamp: number) {
+  if (props.model.timezones) return timestamp + stepMs.value
   const value = new Date(timestamp)
   if (resolvedScale.value === 'day') value.setDate(value.getDate() + 1)
   else value.setHours(value.getHours() + 8)
@@ -263,6 +269,13 @@ const groupLabel = computed(() => {
 })
 
 function tickLabel(timestamp: number) {
+  if (props.model.timezones)
+    return props.model.timezones
+      .map(
+        (zone) =>
+          `${zone} · ${scheduleTime(new Date(timestamp).toISOString(), zone, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+      )
+      .join(' / ')
   const value = new Date(timestamp)
   if (resolvedScale.value === 'shift') {
     const start = value.toLocaleTimeString('zh-CN', {
@@ -288,7 +301,7 @@ function taskTime(task: ScheduleTask) {
     minute: '2-digit',
     hour12: false,
   }
-  return `${new Date(task.startUtc).toLocaleString('zh-CN', options)}–${new Date(task.endUtc).toLocaleString('zh-CN', options)}`
+  return `${task.factoryTimeLabel ?? ''} ${scheduleTime(task.startUtc, task.timezone, options)}–${scheduleTime(task.endUtc, task.timezone, options)}`
 }
 
 function taskLabel(task: ScheduleTask) {

@@ -70,3 +70,21 @@ it('explains downtime risk without replacing conflict or moving the operation', 
   expect(wrapper.text()).toContain('设备停机影响此工序')
   expect(wrapper.text()).toContain('选定候选前保持原排程')
 })
+
+// #4405 r1 / #4449：详情与表格共享对应工厂时间；只读不能出现锁定编辑。
+it.each([
+  ['Asia/Shanghai', '16:00', '18:00'],
+  ['UTC', '08:00', '10:00'],
+])('renders factory timezone %s in readonly operation details', (timezone, start, end) => {
+  const wrapper = mount(TaskDetailPanel, {
+    props: {
+      task: { ...task(), timezone, factoryTimeLabel: `宁波工厂 · ${timezone}` },
+      readOnly: true,
+    },
+  })
+  expect(wrapper.text()).toContain(`宁波工厂 · ${timezone}`)
+  expect(wrapper.text()).toContain(start)
+  expect(wrapper.text()).toContain(end)
+  expect(wrapper.find('button').exists()).toBe(false)
+  wrapper.unmount()
+})

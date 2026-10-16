@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { TaskFacts, toModel, withWorkOrderFacts } from '@nerv-iip/scheduling'
+import {
+  withFactoryTimeContext,
+  scheduleTime,
+  TaskFacts,
+  toModel,
+  withWorkOrderFacts,
+} from '@nerv-iip/scheduling'
 import type {
   BusinessConsoleSchedulingAssignment,
   BusinessConsoleSchedulingConflict,
@@ -212,13 +218,31 @@ const draftDisplayModel = computed(() =>
 )
 const detailTasks = computed(() =>
   planDetail.value
-    ? withWorkOrderFacts(
-        toModel(planDetail.value),
-        displayWorkOrders.value,
-        Boolean(associatedWorkOrders.error.value),
+    ? withFactoryTimeContext(
+        withWorkOrderFacts(
+          toModel(planDetail.value),
+          displayWorkOrders.value,
+          Boolean(associatedWorkOrders.error.value),
+        ),
+        planFactoryTimeContext.items.value,
       ).tasks
     : [],
 )
+function assignmentTime(assignment: BusinessConsoleSchedulingAssignment, instant?: string | null) {
+  const zone =
+    planFactoryTimeContext.items.value?.find(
+      (item) => item.workCenterCode === assignment.workCenterId,
+    )?.timezone ?? ''
+  return instant
+    ? scheduleTime(instant, zone, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '—'
+}
 function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
   return detailTasks.value.find(
     (task) =>
@@ -231,6 +255,13 @@ function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
 const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
 const factoryTimeContext = useSchedulingTimeContext(
   () => persistedDraftPlan.value?.planId,
+  () => ({
+    organizationId: schedulingFilters.organizationId,
+    environmentId: schedulingFilters.environmentId,
+  }),
+)
+const planFactoryTimeContext = useSchedulingTimeContext(
+  () => planDetail.value?.planId,
   () => ({
     organizationId: schedulingFilters.organizationId,
     environmentId: schedulingFilters.environmentId,
@@ -1471,6 +1502,7 @@ function reasonLabel(reason?: string | null) {
           >下载方案 CSV</NvButton
         >
         <SchedulingPlanGantt
+          :time-context="planFactoryTimeContext.items.value"
           :plan="planDetail"
           :summary="selectedPlanSummary"
           :work-orders="displayWorkOrders"
@@ -1686,19 +1718,20 @@ function reasonLabel(reason?: string | null) {
                   class="mt-3"
                 />
                 <p class="mt-1 text-sm text-muted-foreground">
+                  <span class="block">{{ assignmentTask(assignment)?.factoryTimeLabel }}</span>
                   <template v-if="assignment.segments?.length">
                     <span
                       v-for="(segment, index) in assignment.segments"
                       :key="index"
                       class="block"
                     >
-                      第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
-                      {{ formatDateTime(segment.endUtc) }}
+                      第 {{ index + 1 }} 段 · {{ assignmentTime(assignment, segment.startUtc) }} 至
+                      {{ assignmentTime(assignment, segment.endUtc) }}
                     </span>
                   </template>
                   <template v-else>
-                    {{ formatDateTime(assignment.startUtc) }} 至
-                    {{ formatDateTime(assignment.endUtc) }}
+                    {{ assignmentTime(assignment, assignment.startUtc) }} 至
+                    {{ assignmentTime(assignment, assignment.endUtc) }}
                   </template>
                 </p>
               </div>

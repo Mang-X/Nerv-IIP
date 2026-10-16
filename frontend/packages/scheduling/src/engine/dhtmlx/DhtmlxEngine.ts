@@ -1,3 +1,5 @@
+import { factoryTimeInput, scheduleTime } from '../../model/factory-time'
+import { factoryUnit } from './factory-scale'
 import { freezeWindow, projectFreezeWindow } from '../../model/freeze-window'
 import { taskFactRows } from '../../model/task-facts'
 import type { ScheduleModel, ScheduleTask, TimeScale } from '../../model/types'
@@ -241,7 +243,9 @@ const ALERT_ICON = lucide(
   '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   12,
 )
-const fmtMd = (iso: string) => {
+const fmtMd = (iso: string, timezone?: string) => {
+  if (timezone !== undefined)
+    return scheduleTime(iso, timezone, { month: '2-digit', day: '2-digit' })
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? ''
@@ -257,6 +261,8 @@ const BLOCK_LABEL: Record<NonNullable<ScheduleTask['blockKind']>, string> = {
 /** 资源时间块(维护/停机/换线/换型)背景带的低调内标签(与格子融合,非卡片)。 */
 function blockLabelHtml(t: ScheduleTask): string {
   const fmtHm = (iso: string) => {
+    if (t.timezone !== undefined)
+      return scheduleTime(iso, t.timezone, { hour: '2-digit', minute: '2-digit' })
     const d = new Date(iso)
     return Number.isNaN(d.getTime())
       ? ''
@@ -281,9 +287,9 @@ export function cardHtml(t: ScheduleTask): string {
     : ''
   const rush = t.isRush ? `<span class="nerv-card-rush" title="插单">${RUSH_ICON}</span>` : ''
   const lock = t.locked ? `<span class="nerv-card-lock" title="已锁定">${LOCK_SVG}</span>` : ''
-  const due = t.dueUtc ? fmtMd(t.dueUtc) : ''
+  const due = t.dueUtc ? fmtMd(t.dueUtc, t.timezone) : ''
   const time = (iso: string) =>
-    new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    scheduleTime(iso, t.timezone, { hour: '2-digit', minute: '2-digit' })
   const kit = t.kitting != null ? Math.round(t.kitting * 100) : null
   const kitCls = kit == null ? '' : kit >= 100 ? 'ok' : kit >= 80 ? 'warn' : 'bad'
   const co = t.changeoverMin ? `换型 ${t.changeoverMin}m` : ''
@@ -389,9 +395,10 @@ export function tooltipHtml(t: ScheduleTask): string {
     ...(t.product ? ([['产品', t.product]] as Array<[string, string]>) : []),
     ...(t.resourceId ? ([['资源', t.resourceId]] as Array<[string, string]>) : []),
     ...(t.owner ? ([['负责人', t.owner]] as Array<[string, string]>) : []),
-    ['起止', `${fmt(t.startUtc)} → ${fmt(t.endUtc)}`],
+    ...(t.factoryTimeLabel ? [['工厂时区', t.factoryTimeLabel] as [string, string]] : []),
+    ['起止', `${fmt(t.startUtc, t.timezone)} → ${fmt(t.endUtc, t.timezone)}`],
     ...(t.quantity != null ? ([['数量', String(t.quantity)]] as Array<[string, string]>) : []),
-    ...(t.dueUtc ? ([['交期', fmt(t.dueUtc)]] as Array<[string, string]>) : []),
+    ...(t.dueUtc ? ([['交期', fmt(t.dueUtc, t.timezone)]] as Array<[string, string]>) : []),
     ...(t.kitting != null ? ([['齐套', pct(t.kitting)]] as Array<[string, string]>) : []),
     ...(t.changeoverMin ? ([['换型', `${t.changeoverMin} 分钟`]] as Array<[string, string]>) : []),
     ...(t.load != null ? ([['占用', pct(t.load)]] as Array<[string, string]>) : []),
@@ -830,6 +837,38 @@ export class DhtmlxEngine implements SchedulingEngine {
   private scalesFor(): Array<Record<string, unknown>> {
     const scale = this.resolveScale()
     const base = SCALE_CONFIG[scale]
+    if (this.model?.timezones?.length && this.gantt?.date) {
+      const dates = this.gantt.date as unknown as Record<string, unknown>
+      const factoryRows =
+        this.options.view === 'resource' && scale === 'hour'
+          ? [base[0], { unit: 'hour', step: 8, shift: true }, base[1]]
+          : base
+      const rows = this.model.timezones.flatMap((timezone, index) =>
+        factoryRows.map((row) => {
+          const unit = String(row.unit)
+          const key = `factory_${index}_${unit}`
+          const calendar = factoryUnit(timezone, unit)
+          dates[`${key}_start`] = calendar.start
+          dates[`add_${key}`] = calendar.add
+          return {
+            ...row,
+            unit: key,
+            format:
+              'shift' in row
+                ? (date: Date) => {
+                    const hour = Number(
+                      factoryTimeInput(date.toISOString(), timezone).slice(11, 13),
+                    )
+                    return `${timezone} · ${hour < 8 ? '夜班 00–08' : hour < 16 ? '早班 08–16' : '中班 16–24'}`
+                  }
+                : calendar.format,
+          }
+        }),
+      )
+      this.gantt.config.scale_height = rows.length * 25
+      this.gantt.config.min_column_width = 140
+      return rows
+    }
     if (this.options.view === 'resource' && scale === 'hour') {
       return [base[0], { unit: 'hour', step: 8, format: shiftLabel, css: shiftCss }, base[1]]
     }
@@ -959,7 +998,7 @@ export class DhtmlxEngine implements SchedulingEngine {
               new Date(segment.startUtc),
               new Date(segment.endUtc),
             )
-            return `<div class="nerv-segment" style="left:${pos.left - origin}px;width:${pos.width}px" title="第 ${index + 1} 段 · ${fmt(segment.startUtc)} 至 ${fmt(segment.endUtc)}">${isResource ? cardHtml(t!) : ''}</div>`
+            return `<div class="nerv-segment" style="left:${pos.left - origin}px;width:${pos.width}px" title="第 ${index + 1} 段 · ${fmt(segment.startUtc, t!.timezone)} 至 ${fmt(segment.endUtc, t!.timezone)}">${isResource ? cardHtml(t!) : ''}</div>`
           })
           .join('')
       }
@@ -1205,7 +1244,8 @@ export class DhtmlxEngine implements SchedulingEngine {
   }
 
   private fmtHm(d: Date): string {
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const task = this.model?.tasks.find((task) => task.id === this.dragTaskId)
+    return scheduleTime(d.toISOString(), task?.timezone, { hour: '2-digit', minute: '2-digit' })
   }
 
   /** 自定义拖拽提交:按虚影位置算出新时间(横向)+ 目标泳道(纵向),写回任务后走统一上报。 */
@@ -1741,7 +1781,14 @@ export class DhtmlxEngine implements SchedulingEngine {
   }
 }
 
-function fmt(isoVal?: string): string {
+function fmt(isoVal?: string, timezone?: string): string {
+  if (isoVal && timezone !== undefined)
+    return scheduleTime(isoVal, timezone, {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   if (!isoVal) return '—'
   const d = new Date(isoVal)
   return Number.isNaN(d.getTime())

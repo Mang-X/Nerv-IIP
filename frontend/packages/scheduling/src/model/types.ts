@@ -56,6 +56,10 @@ export interface DimensionValue {
 export type LaneOrder = 'busiest' | 'name' | 'onlyScheduled'
 
 export interface ScheduleTask {
+  /** 展示时区来自已授权工厂上下文；空字符串表示未解析，不回退到浏览器。 */
+  timezone?: string
+  factoryTimeLabel?: string
+
   /** assignmentId 优先,缺则 `${orderId}:${operationId}`。 */
   id: string
   orderId: string
@@ -288,6 +292,9 @@ export interface DraftFeedback {
 }
 
 export interface ScheduleModel {
+  /** 当前图面工厂时区；多时区各自显示刻度，不默选第一工厂。 */
+  timezones?: string[]
+
   tasks: ScheduleTask[]
   links: ScheduleLink[]
   resources: ScheduleResource[]

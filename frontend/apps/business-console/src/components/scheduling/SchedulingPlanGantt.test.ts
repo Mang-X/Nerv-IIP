@@ -103,7 +103,15 @@ function plan(patch: Record<string, unknown> = {}) {
 
 function mountGantt(props: Record<string, unknown>) {
   return mount(SchedulingPlanGantt, {
-    props: { workOrders: [], ...props },
+    props: {
+      workOrders: [],
+      timeContext: ['WC-ROD-01', 'WC-CNC-02', 'WC-UNASSIGNED'].map((workCenterCode) => ({
+        workCenterCode,
+        plantCode: 'NB',
+        timezone: 'Asia/Shanghai',
+      })),
+      ...props,
+    },
     global: { plugins: [createPinia()] },
   })
 }
