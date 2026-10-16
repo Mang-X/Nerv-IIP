@@ -385,7 +385,7 @@
     },
     {
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPlatformAdministratorTests.cs",
-      "sourceSha256": "3b18170260210e4a5f22b53e21a386bd2f7e3992404318450d3fd5208f4c3586",
+      "sourceSha256": "c6a515ca96d989e7ac2fcfa58d24bdbf86021973bb60b683af20ff1dbb4f8226",
       "factoryCallCount": 1,
       "ownerships": [
         {
