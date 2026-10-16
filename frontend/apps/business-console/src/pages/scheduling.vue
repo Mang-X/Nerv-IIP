@@ -229,10 +229,7 @@ const detailTasks = computed(() =>
     : [],
 )
 function assignmentTime(assignment: BusinessConsoleSchedulingAssignment, instant?: string | null) {
-  const zone =
-    planFactoryTimeContext.items.value?.find(
-      (item) => item.workCenterCode === assignment.workCenterId,
-    )?.timezone ?? ''
+  const zone = assignmentTask(assignment)?.timezone ?? ''
   return instant
     ? scheduleTime(instant, zone, {
         year: 'numeric',
@@ -269,6 +266,9 @@ const planFactoryTimeContext = useSchedulingTimeContext(
 )
 watch(factoryTimeContext.error, (error) => {
   if (error) notifyError(error, '工厂时区暂不可读取，当前草案已保留。')
+})
+watch(planFactoryTimeContext.error, (error) => {
+  if (error) notifyError(error, '方案工厂时区暂不可读取，请稍后重试。')
 })
 const downtime = useSchedulingDowntime(
   () => persistedDraftPlan.value?.planId,

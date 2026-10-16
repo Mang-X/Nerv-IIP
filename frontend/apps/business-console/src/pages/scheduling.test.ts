@@ -127,16 +127,18 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
 const downtimeImpact = shallowRef<import('@nerv-iip/api-client').SchedulingDowntimeImpactResponse>()
 const downtimeNow = shallowRef(new Date('2026-10-09T08:00:00.000Z'))
 let downtimeBaseline: () => string | undefined
+const planTimeContextError = shallowRef<unknown>()
+const factoryTimezone = shallowRef('Asia/Shanghai')
 vi.mock('@/composables/useSchedulingTimeContext', () => ({
-  useSchedulingTimeContext: () => ({
+  useSchedulingTimeContext: (planId: () => string | undefined) => ({
     items: computed(() =>
       ['WC-CNC', 'WC-ASSEMBLY'].map((workCenterCode) => ({
         workCenterCode,
         plantCode: 'NB',
-        timezone: 'Asia/Shanghai',
+        timezone: factoryTimezone.value,
       })),
     ),
-    error: shallowRef(),
+    error: computed(() => (planId() ? planTimeContextError.value : undefined)),
   }),
 }))
 vi.mock('@/composables/useSchedulingDowntime', () => ({
@@ -546,6 +548,8 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  planTimeContextError.value = undefined
+  factoryTimezone.value = 'Asia/Shanghai'
   downtimeImpact.value = undefined
   localCandidateCallback.readSelectedPlan.mockReset()
   localCandidateCallback.readSelectedPlan.mockImplementation(
@@ -2316,3 +2320,62 @@ it('generates from the downtime banner, selects the actual candidate and confirm
   expect(stub.releasePlan).toHaveBeenCalledWith(plan.planId)
   wrapper.unmount()
 })
+
+// Regression: PR #4453 R1 / #4405 r1。无当前草案的历史方案请求也必须显示失败 toast。
+it.each(['Failed to fetch', '503 Service Unavailable'])(
+  'notifies a historical-plan time-context failure without a current draft: %s',
+  async (message) => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+    expect(savedDrafts.value).toEqual([])
+    expect(detailSelection.planId).toBe('plan-001')
+    stub.toastError.mockClear()
+    planTimeContextError.value = new Error(message)
+    await flushPromises()
+    expect(stub.toastError).toHaveBeenCalledWith(
+      expect.stringContaining(message.startsWith('503') ? '服务暂时不可用' : '网络异常'),
+    )
+    expect(detailSelection.planId).toBe('plan-001')
+    wrapper.unmount()
+  },
+)
+
+it.each([false, true])(
+  'keeps plan details readable for an invalid factory timezone and recovers when resolved (segmented=%s)',
+  async (segmented) => {
+    const originalSegments = planOne.assignments![0]!.segments
+    factoryTimezone.value = 'Mars/Base'
+    if (segmented)
+      planOne.assignments![0]!.segments = [
+        { startUtc: planOne.assignments![0]!.startUtc!, endUtc: planOne.assignments![0]!.endUtc! },
+      ]
+    routeStub.query = { planId: 'plan-001' }
+    let wrapper: ReturnType<typeof mount> | undefined
+    try {
+      expect(() => {
+        wrapper = mount(SchedulingPage, {
+          global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+        })
+      }).not.toThrow()
+      await flushPromises()
+      expect(wrapper!.text()).toContain('排程方案明细')
+      expect(wrapper!.text()).toContain('工厂时区未解析')
+      if (segmented) expect(wrapper!.text()).toContain('第 1 段')
+      expect(detailSelection.planId).toBe('plan-001')
+      factoryTimezone.value = 'Asia/Shanghai'
+      await flushPromises()
+      expect(wrapper!.text()).not.toContain('工厂时区未解析')
+      expect(wrapper!.text()).toContain('Asia/Shanghai')
+      expect(detailSelection.planId).toBe('plan-001')
+    } finally {
+      wrapper?.unmount()
+      planOne.assignments![0]!.segments = originalSegments
+    }
+  },
+)
