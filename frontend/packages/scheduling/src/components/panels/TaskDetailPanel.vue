@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { scheduleTime } from '../../model/factory-time'
 import TaskFacts from './TaskFacts.vue'
 import '../../styles/scheduling.css'
 import { NvButton } from '@nerv-iip/ui'
@@ -42,6 +43,13 @@ const BLOCK = {
 
 function fmt(iso?: string) {
   if (!iso) return '—'
+  if (props.task?.timezone !== undefined)
+    return scheduleTime(iso, props.task.timezone, {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? iso
@@ -55,6 +63,8 @@ function fmt(iso?: string) {
 }
 function fmtDate(iso?: string) {
   if (!iso) return '—'
+  if (props.task?.timezone !== undefined)
+    return scheduleTime(iso, props.task.timezone, { month: '2-digit', day: '2-digit' })
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? iso
@@ -75,6 +85,9 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
 
 <template>
   <div class="border-b border-border/60">
+    <p v-if="task?.factoryTimeLabel" class="px-4 pt-3 text-xs text-muted-foreground">
+      {{ task.factoryTimeLabel }}
+    </p>
     <div v-if="!task" class="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
       <span class="text-sm font-medium text-muted-foreground">未选择工序</span>
     </div>

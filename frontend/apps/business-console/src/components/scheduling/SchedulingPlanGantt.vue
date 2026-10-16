@@ -4,6 +4,7 @@ import SchedulingPlanOrders from './SchedulingPlanOrders.vue'
 import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import type {
+  SchedulingTimeContextItem,
   BusinessConsoleResourceItem,
   BusinessConsoleMesWorkOrderItem,
   BusinessConsoleSchedulePlan,
@@ -12,6 +13,8 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   conflictReasonLabel,
+  withFactoryTimeContext,
+  scheduleTime,
   ResourceSchedulerBoard,
   SchedulingLegend,
   SchedulingToolbar,
@@ -46,6 +49,7 @@ import {
 import { computed, shallowRef, watch } from 'vue'
 
 const props = defineProps<{
+  timeContext?: SchedulingTimeContextItem[]
   plan?: BusinessConsoleSchedulePlan
   summary?: BusinessConsoleSchedulingPlanSummaryResponse
   loading?: boolean
@@ -290,12 +294,15 @@ const model = computed<ScheduleModel | undefined>(() => {
     },
     resolveWorkCenter,
   )
-  return {
-    ...mapped,
-    tasks: grouped.tasks,
-    groupDimensions: SCHEDULING_GROUP_DIMENSIONS,
-    groupValues: grouped.groupValues,
-  }
+  return withFactoryTimeContext(
+    {
+      ...mapped,
+      tasks: grouped.tasks,
+      groupDimensions: SCHEDULING_GROUP_DIMENSIONS,
+      groupValues: grouped.groupValues,
+    },
+    props.timeContext,
+  )
 })
 
 // 图例只列本方案实际用到的分类（不罗列全色板）。
@@ -451,7 +458,14 @@ const resourceCount = computed(() => model.value?.resources.length ?? 0)
 const planRange = computed(() => {
   const horizon = model.value?.horizon
   if (!horizon?.startUtc || !horizon.endUtc) return '暂无有效时间范围'
-  return `${formatDateTime(horizon.startUtc)} 至 ${formatDateTime(horizon.endUtc)}`
+  return (
+    model.value?.timezones
+      ?.map(
+        (zone) =>
+          `${zone} · ${scheduleTime(horizon.startUtc, zone)} 至 ${scheduleTime(horizon.endUtc, zone)}`,
+      )
+      .join('；') || '工厂时区尚未读取'
+  )
 })
 const invalidationReason = computed(() =>
   props.summary?.isInvalidated
@@ -492,11 +506,6 @@ function isForbidden(error: unknown, visited = new Set<object>()): boolean {
     return true
   }
   return isForbidden(record.response, visited) || isForbidden(record.cause, visited)
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function setGroupBy(value: string) {

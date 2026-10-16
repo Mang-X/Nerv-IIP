@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   GanttChart,
+  withFactoryTimeContext,
   ResourceSchedulerBoard,
   SchedulingToolbar,
   SchedulingLegend,
@@ -87,6 +88,9 @@ function editTime(
   }
   if (instant && instant !== task[field]) emit('update', task.id, { [field]: instant })
 }
+const timedModel = computed(() =>
+  props.model ? withFactoryTimeContext(props.model, props.timeContext) : undefined,
+)
 const view = shallowRef('gantt')
 const scale = shallowRef<TimeScale>('auto')
 const ganttRef = shallowRef<InstanceType<typeof GanttChart>>()
@@ -94,7 +98,7 @@ const resourceRef = shallowRef<InstanceType<typeof ResourceSchedulerBoard>>()
 const activeBoard = computed(() => (view.value === 'gantt' ? ganttRef.value : resourceRef.value))
 const selectedTaskId = shallowRef('')
 const selectedTask = computed(() =>
-  props.model?.tasks.find((task) => task.id === selectedTaskId.value),
+  timedModel.value?.tasks.find((task) => task.id === selectedTaskId.value),
 )
 const attentionTasks = computed(() =>
   (props.model?.tasks ?? []).flatMap((task) => {
@@ -377,7 +381,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
             <GanttChart
               ref="ganttRef"
               :scale="scale"
-              :model="model"
+              :model="timedModel"
               @task-select="selectedTaskId = $event"
               :read-only="readOnly"
               @task-drag-end="handleMove"
@@ -388,7 +392,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
             <ResourceSchedulerBoard
               ref="resourceRef"
               :scale="scale"
-              :model="model"
+              :model="timedModel"
               @task-select="selectedTaskId = $event"
               :read-only="readOnly"
               @task-drag-end="handleMove"
@@ -600,7 +604,7 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
       </div>
       <SchedulingLegend
         v-if="view !== 'table'"
-        :model="model"
+        :model="timedModel"
         :scale="scale"
         :view="view === 'gantt' ? 'order' : 'resource'"
         :categories="legendCategories"

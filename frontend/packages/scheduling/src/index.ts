@@ -56,3 +56,10 @@ export { isDhtmlxAvailable, preloadGantt } from './engine/dhtmlx/loader'
 
 export { taskFactRows, withWorkOrderFacts } from './model/task-facts'
 export { default as TaskFacts } from './components/panels/TaskFacts.vue'
+
+export {
+  factoryTimeInput,
+  factoryTimeInstant,
+  scheduleTime,
+  withFactoryTimeContext,
+} from './model/factory-time'

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { toModel } from '../../model/aps-mapper'
 import { samplePlan, samplePlanWithCalendar } from '../../model/fixtures'
 import type { SchedulingEngineOptions } from '../engine'
-import { DhtmlxEngine } from './DhtmlxEngine'
+import { withFactoryTimeContext } from '../../model/factory-time'
+import { cardHtml, tooltipHtml, DhtmlxEngine } from './DhtmlxEngine'
 
 // 用假 gantt 工厂注入,在 CI(无真实 DHTMLX)下覆盖适配器的「模型→parse / 事件归一化 / 命令」逻辑。
 // 真实 DOM 渲染由 Playwright(真浏览器)验证,见 apps/business-console e2e/visual。
@@ -584,3 +585,77 @@ describe('DhtmlxEngine 时间线底纹(工作日历 / 班次 / 资源时间块)'
 function el() {
   return document.createElement('div')
 }
+
+// Regression / DomainInvariant: #4449 与父 #4405 r1，不能用浏览器时区解释工厂时间。
+it('aligns factory ticks and renders task time without shifting real drag coordinates', async () => {
+  const fake = makeFakeGantt()
+  const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+  engine.mount(el(), { ...options(), scale: 'hour' })
+  const model = toModel(samplePlan)
+  const op = model.tasks.find((task) => task.type === 'operation')!
+  op.startUtc = '2026-10-16T16:00:00Z'
+  op.endUtc = '2026-10-16T18:00:00Z'
+  const timed = withFactoryTimeContext(model, [
+    {
+      workCenterCode: op.workCenterId!,
+      plantCode: 'NB',
+      plantName: '宁波工厂',
+      timezone: 'Asia/Shanghai',
+    },
+  ])
+  engine.setData(timed)
+  const scales = fake.state.config.scales as { unit: string; format: (date: Date) => string }[]
+  const hour = scales[1]
+  expect(hour.format(new Date(op.startUtc))).toContain('Asia/Shanghai · 00:00')
+  const dateApi = fake.gantt.date as unknown as Record<string, (date: Date, count?: number) => Date>
+  expect(dateApi[`${scales[0].unit}_start`](new Date('2026-10-16T22:00:00Z')).toISOString()).toBe(
+    '2026-10-16T16:00:00.000Z',
+  )
+  const row = fake.state.parsed.data.find((task) => task.id === op.id)!
+  expect(row.start_date!.toISOString()).toBe('2026-10-16T16:00:00.000Z')
+  expect(tooltipHtml(timed.tasks.find((task) => task.id === op.id)!)).toContain('10/17 00:00')
+  expect(cardHtml(timed.tasks.find((task) => task.id === op.id)!)).toContain('00:00–02:00')
+  const payloads: unknown[] = []
+  engine.on('taskDragEnd', (value) => payloads.push(value))
+  row.start_date = new Date('2026-10-16T17:00:00Z')
+  row.end_date = new Date('2026-10-16T19:00:00Z')
+  vi.useFakeTimers()
+  try {
+    fake.fire('onAfterTaskDrag', op.id, 'move')
+    await vi.runAllTimersAsync()
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        taskId: op.id,
+        startUtc: '2026-10-16T17:00:00.000Z',
+        endUtc: '2026-10-16T19:00:00.000Z',
+        kind: 'move',
+      }),
+    )
+    row.end_date = new Date('2026-10-16T20:00:00Z')
+    fake.fire('onAfterTaskDrag', op.id, 'resize')
+    await vi.runAllTimersAsync()
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        startUtc: '2026-10-16T17:00:00.000Z',
+        endUtc: '2026-10-16T20:00:00.000Z',
+        kind: 'resize',
+      }),
+    )
+  } finally {
+    vi.useRealTimers()
+    engine.destroy()
+  }
+})
+
+it('shows named scales for every factory timezone instead of choosing the first factory', () => {
+  const fake = makeFakeGantt()
+  const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+  engine.mount(el(), { ...options(), scale: 'hour' })
+  engine.setData({ ...toModel(samplePlan), timezones: ['Asia/Shanghai', 'UTC'] })
+  const scales = fake.state.config.scales as { format: (date: Date) => string }[]
+  expect(scales).toHaveLength(4)
+  const instant = new Date('2026-10-16T16:00:00Z')
+  expect(scales[1].format(instant)).toContain('Asia/Shanghai · 00:00')
+  expect(scales[3].format(instant)).toContain('UTC · 16:00')
+  engine.destroy()
+})

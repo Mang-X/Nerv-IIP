@@ -415,7 +415,9 @@ describe('SchedulingDraftBoard', () => {
     expect(toolbar.props('matchCount')).toBe(1)
     expect(gantt.vm.command).toHaveBeenCalledWith({ kind: 'revealTask', taskId: 'assignment-001' })
     expect(gantt.vm.command).toHaveBeenCalledWith({ kind: 'selectTask', taskId: 'assignment-001' })
-    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(model.tasks[0])
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(
+      expect.objectContaining(model.tasks[0]),
+    )
     await switchTab(wrapper, '资源排产板')
     const resource = wrapper.findComponent({ name: 'ResourceSchedulerBoard' })
     expect(resource.props('scale')).toBe('day')
@@ -451,18 +453,24 @@ describe('SchedulingDraftBoard', () => {
       ],
     }
     await wrapper.setProps({ model: changed })
-    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(changed.tasks[0])
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(
+      expect.objectContaining(changed.tasks[0]),
+    )
     expect(wrapper.findComponent(SchedulingToolbar).props('matchCount')).toBe(0)
     expect(wrapper.findComponent(SchedulingLegend).text()).toContain('锁定')
     await wrapper.setProps({ model })
-    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(model.tasks[0])
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(
+      expect.objectContaining(model.tasks[0]),
+    )
     expect(wrapper.findComponent(SchedulingToolbar).props('matchCount')).toBe(1)
     expect(wrapper.findComponent(SchedulingLegend).text()).not.toContain('锁定')
     await wrapper.setProps({ model: { ...model, tasks: [] } })
     expect(wrapper.findComponent(TaskDetailPanel).exists()).toBe(false)
     expect(wrapper.findComponent(SchedulingToolbar).props('matchCount')).toBe(0)
     await wrapper.setProps({ model })
-    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(model.tasks[0])
+    expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(
+      expect.objectContaining(model.tasks[0]),
+    )
     wrapper.unmount()
   })
 
@@ -515,4 +523,30 @@ describe('SchedulingDraftBoard', () => {
     expect(wrapper.findComponent(TaskDetailPanel).exists()).toBe(false)
     wrapper.unmount()
   })
+})
+
+it('shares the real work-center factory timezone between table, charts and selected details', async () => {
+  const wrapper = mount(SchedulingDraftBoard, {
+    props: {
+      model,
+      timeContext: [
+        { workCenterCode: 'WC-1', plantCode: 'NB', timezone: 'Asia/Shanghai' },
+        { workCenterCode: 'RES-1', plantCode: 'OTHER', timezone: 'UTC' },
+      ],
+    },
+    global: { stubs: charts },
+  })
+  wrapper.findComponent({ name: 'GanttChart' }).vm.$emit('taskSelect', model.tasks[0].id)
+  await flushPromises()
+  expect(wrapper.findComponent(TaskDetailPanel).props('task')).toEqual(
+    expect.objectContaining({
+      ...model.tasks[0],
+      timezone: 'Asia/Shanghai',
+      factoryTimeLabel: 'NB · Asia/Shanghai',
+    }),
+  )
+  expect(wrapper.findComponent({ name: 'GanttChart' }).props('model').tasks[0].timezone).toBe(
+    'Asia/Shanghai',
+  )
+  wrapper.unmount()
 })

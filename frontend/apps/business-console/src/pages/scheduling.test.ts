@@ -127,8 +127,24 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
 const downtimeImpact = shallowRef<import('@nerv-iip/api-client').SchedulingDowntimeImpactResponse>()
 const downtimeNow = shallowRef(new Date('2026-10-09T08:00:00.000Z'))
 let downtimeBaseline: () => string | undefined
+const planTimeContextError = shallowRef<unknown>()
+const factoryTimezone = shallowRef('Asia/Shanghai')
+const assemblyTimezone = shallowRef<string>()
 vi.mock('@/composables/useSchedulingTimeContext', () => ({
-  useSchedulingTimeContext: () => ({ items: computed(() => []), error: shallowRef() }),
+  useSchedulingTimeContext: (planId: () => string | undefined) => ({
+    items: computed(() =>
+      ['WC-CNC', 'WC-ASSEMBLY'].map((workCenterCode) => ({
+        workCenterCode,
+        plantCode:
+          workCenterCode === 'WC-ASSEMBLY' && assemblyTimezone.value ? 'NB-ASSEMBLY' : 'NB',
+        timezone:
+          workCenterCode === 'WC-ASSEMBLY'
+            ? (assemblyTimezone.value ?? factoryTimezone.value)
+            : factoryTimezone.value,
+      })),
+    ),
+    error: computed(() => (planId() ? planTimeContextError.value : undefined)),
+  }),
 }))
 vi.mock('@/composables/useSchedulingDowntime', () => ({
   useSchedulingDowntime: (planId: () => string | undefined) => {
@@ -537,6 +553,9 @@ const sheetStubs = {
 }
 
 beforeEach(() => {
+  planTimeContextError.value = undefined
+  factoryTimezone.value = 'Asia/Shanghai'
+  assemblyTimezone.value = undefined
   downtimeImpact.value = undefined
   localCandidateCallback.readSelectedPlan.mockReset()
   localCandidateCallback.readSelectedPlan.mockImplementation(
@@ -2305,5 +2324,114 @@ it('generates from the downtime banner, selects the actual candidate and confirm
   confirm.click()
   await flushPromises()
   expect(stub.releasePlan).toHaveBeenCalledWith(plan.planId)
+  wrapper.unmount()
+})
+
+// Regression: PR #4453 R1 / #4405 r1。无当前草案的历史方案请求也必须显示失败 toast。
+it.each(['Failed to fetch', '503 Service Unavailable'])(
+  'notifies a historical-plan time-context failure without a current draft: %s',
+  async (message) => {
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+    const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特图'))!
+    await ganttTab.trigger('focus')
+    await ganttTab.trigger('mousedown')
+    await flushPromises()
+    expect(savedDrafts.value).toEqual([])
+    expect(detailSelection.planId).toBe('plan-001')
+    stub.toastError.mockClear()
+    planTimeContextError.value = new Error(message)
+    await flushPromises()
+    expect(stub.toastError).toHaveBeenCalledWith(
+      expect.stringContaining(message.startsWith('503') ? '服务暂时不可用' : '网络异常'),
+    )
+    expect(detailSelection.planId).toBe('plan-001')
+    wrapper.unmount()
+  },
+)
+
+it.each([false, true])(
+  'keeps plan details readable for an invalid factory timezone and recovers when resolved (segmented=%s)',
+  async (segmented) => {
+    const assignment = planOne.assignments[0]! as NonNullable<
+      BusinessConsoleSchedulePlan['assignments']
+    >[number]
+    const originalSegments = assignment.segments
+    factoryTimezone.value = 'Mars/Base'
+    if (segmented)
+      assignment.segments = [
+        { startUtc: planOne.assignments![0]!.startUtc!, endUtc: planOne.assignments![0]!.endUtc! },
+      ]
+    routeStub.query = { planId: 'plan-001' }
+    let wrapper: ReturnType<typeof mount> | undefined
+    try {
+      expect(() => {
+        wrapper = mount(SchedulingPage, {
+          global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+        })
+      }).not.toThrow()
+      await flushPromises()
+      expect(wrapper!.text()).toContain('排程方案明细')
+      expect(wrapper!.text()).toContain('工厂时区未解析')
+      const overview = wrapper!
+        .findAll('section')
+        .find((section) => section.findAll('h3').some((heading) => heading.text() === '计划概览'))!
+      expect(overview.text()).toContain('工厂时区未解析')
+      if (segmented) expect(wrapper!.text()).toContain('第 1 段')
+      expect(detailSelection.planId).toBe('plan-001')
+      factoryTimezone.value = 'Asia/Shanghai'
+      await flushPromises()
+      expect(wrapper!.text()).not.toContain('工厂时区未解析')
+      expect(wrapper!.text()).toContain('Asia/Shanghai')
+      expect(detailSelection.planId).toBe('plan-001')
+    } finally {
+      wrapper?.unmount()
+      assignment.segments = originalSegments
+    }
+  },
+)
+
+// Regression: PR #4453 R2 / #4405 r1 故事6，概览和工序必须共用已验证工厂时区。
+it.each([
+  ['Asia/Shanghai', '2026/07/02 16:00 至 2026/07/02 23:00'],
+  ['UTC', '2026/07/02 08:00 至 2026/07/02 15:00'],
+])(
+  'shows the plan overview and assignments in the same factory timezone: %s',
+  async (zone, range) => {
+    factoryTimezone.value = zone!
+    routeStub.query = { planId: 'plan-001' }
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+    })
+    await flushPromises()
+    const overview = wrapper
+      .findAll('section')
+      .find((section) => section.findAll('h3').some((heading) => heading.text() === '计划概览'))!
+    expect(overview.text().replaceAll('-', '/')).toContain(range)
+    expect(wrapper.text()).toContain(zone)
+    expect(wrapper.text()).toContain(
+      zone === 'Asia/Shanghai'
+        ? '2026/07/02 16:00 至 2026/07/02 18:00'
+        : '2026/07/02 08:00 至 2026/07/02 10:00',
+    )
+    wrapper.unmount()
+  },
+)
+
+it('does not collapse a mixed-factory plan overview into one timezone', async () => {
+  assemblyTimezone.value = 'UTC'
+  routeStub.query = { planId: 'plan-001' }
+  const wrapper = mount(SchedulingPage, {
+    global: { plugins: [createPinia()], stubs: { ...layoutStub, ...sheetStubs } },
+  })
+  await flushPromises()
+  const overview = wrapper
+    .findAll('section')
+    .find((section) => section.findAll('h3').some((heading) => heading.text() === '计划概览'))!
+  expect(overview.text()).toContain('跨工厂时区，请查看各工序时间')
+  expect(wrapper.text()).toContain('Asia/Shanghai')
+  expect(wrapper.text()).toContain('UTC')
   wrapper.unmount()
 })

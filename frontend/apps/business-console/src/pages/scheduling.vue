@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { TaskFacts, toModel, withWorkOrderFacts } from '@nerv-iip/scheduling'
+import {
+  withFactoryTimeContext,
+  scheduleTime,
+  TaskFacts,
+  toModel,
+  withWorkOrderFacts,
+} from '@nerv-iip/scheduling'
 import type {
   BusinessConsoleSchedulingAssignment,
   BusinessConsoleSchedulingConflict,
@@ -212,13 +218,28 @@ const draftDisplayModel = computed(() =>
 )
 const detailTasks = computed(() =>
   planDetail.value
-    ? withWorkOrderFacts(
-        toModel(planDetail.value),
-        displayWorkOrders.value,
-        Boolean(associatedWorkOrders.error.value),
+    ? withFactoryTimeContext(
+        withWorkOrderFacts(
+          toModel(planDetail.value),
+          displayWorkOrders.value,
+          Boolean(associatedWorkOrders.error.value),
+        ),
+        planFactoryTimeContext.items.value,
       ).tasks
     : [],
 )
+function assignmentTime(assignment: BusinessConsoleSchedulingAssignment, instant?: string | null) {
+  const zone = assignmentTask(assignment)?.timezone ?? ''
+  return instant
+    ? scheduleTime(instant, zone, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '—'
+}
 function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
   return detailTasks.value.find(
     (task) =>
@@ -236,8 +257,18 @@ const factoryTimeContext = useSchedulingTimeContext(
     environmentId: schedulingFilters.environmentId,
   }),
 )
+const planFactoryTimeContext = useSchedulingTimeContext(
+  () => planDetail.value?.planId,
+  () => ({
+    organizationId: schedulingFilters.organizationId,
+    environmentId: schedulingFilters.environmentId,
+  }),
+)
 watch(factoryTimeContext.error, (error) => {
   if (error) notifyError(error, '工厂时区暂不可读取，当前草案已保留。')
+})
+watch(planFactoryTimeContext.error, (error) => {
+  if (error) notifyError(error, '方案工厂时区暂不可读取，请稍后重试。')
 })
 const downtime = useSchedulingDowntime(
   () => persistedDraftPlan.value?.planId,
@@ -545,8 +576,7 @@ function conflictSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
     .join('，')
 }
 
-// 本地日期一律走 `@/utils/format` 的「YYYY-MM-DD HH:mm」。裸 `toLocaleString()` 跟的是
-// **浏览器 UI 语言**，装英文系统的机器上排程明细里满屏 `1/5/2026, 8:00:00 AM`（#1418）。
+// 方案范围沿用工序已验证的工厂时区；混合时区不折算为单一工厂。
 
 function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]) {
   const timestamps = assignments
@@ -558,7 +588,13 @@ function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]
 
   if (timestamps.length === 0) return '无'
 
-  return `${formatDateTime(timestamps[0]!.toISOString())} 至 ${formatDateTime(timestamps[timestamps.length - 1]!.toISOString())}`
+  const timezones = new Set(
+    assignments.map((assignment) => assignmentTask(assignment)?.timezone ?? ''),
+  )
+  if (timezones.has('')) return '工厂时区未解析'
+  if (timezones.size > 1) return '跨工厂时区，请查看各工序时间'
+
+  return `${assignmentTime(assignments[0]!, timestamps[0]!.toISOString())} 至 ${assignmentTime(assignments[0]!, timestamps[timestamps.length - 1]!.toISOString())}`
 }
 
 function openDetail(planId: string | undefined) {
@@ -1471,6 +1507,7 @@ function reasonLabel(reason?: string | null) {
           >下载方案 CSV</NvButton
         >
         <SchedulingPlanGantt
+          :time-context="planFactoryTimeContext.items.value"
           :plan="planDetail"
           :summary="selectedPlanSummary"
           :work-orders="displayWorkOrders"
@@ -1686,19 +1723,20 @@ function reasonLabel(reason?: string | null) {
                   class="mt-3"
                 />
                 <p class="mt-1 text-sm text-muted-foreground">
+                  <span class="block">{{ assignmentTask(assignment)?.factoryTimeLabel }}</span>
                   <template v-if="assignment.segments?.length">
                     <span
                       v-for="(segment, index) in assignment.segments"
                       :key="index"
                       class="block"
                     >
-                      第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
-                      {{ formatDateTime(segment.endUtc) }}
+                      第 {{ index + 1 }} 段 · {{ assignmentTime(assignment, segment.startUtc) }} 至
+                      {{ assignmentTime(assignment, segment.endUtc) }}
                     </span>
                   </template>
                   <template v-else>
-                    {{ formatDateTime(assignment.startUtc) }} 至
-                    {{ formatDateTime(assignment.endUtc) }}
+                    {{ assignmentTime(assignment, assignment.startUtc) }} 至
+                    {{ assignmentTime(assignment, assignment.endUtc) }}
                   </template>
                 </p>
               </div>
