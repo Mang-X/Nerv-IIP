@@ -2349,10 +2349,13 @@ it.each(['Failed to fetch', '503 Service Unavailable'])(
 it.each([false, true])(
   'keeps plan details readable for an invalid factory timezone and recovers when resolved (segmented=%s)',
   async (segmented) => {
-    const originalSegments = planOne.assignments![0]!.segments
+    const assignment = planOne.assignments[0]! as NonNullable<
+      BusinessConsoleSchedulePlan['assignments']
+    >[number]
+    const originalSegments = assignment.segments
     factoryTimezone.value = 'Mars/Base'
     if (segmented)
-      planOne.assignments![0]!.segments = [
+      assignment.segments = [
         { startUtc: planOne.assignments![0]!.startUtc!, endUtc: planOne.assignments![0]!.endUtc! },
       ]
     routeStub.query = { planId: 'plan-001' }
@@ -2375,7 +2378,7 @@ it.each([false, true])(
       expect(detailSelection.planId).toBe('plan-001')
     } finally {
       wrapper?.unmount()
-      planOne.assignments![0]!.segments = originalSegments
+      assignment.segments = originalSegments
     }
   },
 )
