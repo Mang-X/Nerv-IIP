@@ -576,8 +576,7 @@ function conflictSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
     .join('，')
 }
 
-// 本地日期一律走 `@/utils/format` 的「YYYY-MM-DD HH:mm」。裸 `toLocaleString()` 跟的是
-// **浏览器 UI 语言**，装英文系统的机器上排程明细里满屏 `1/5/2026, 8:00:00 AM`（#1418）。
+// 方案范围沿用工序已验证的工厂时区；混合时区不折算为单一工厂。
 
 function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]) {
   const timestamps = assignments
@@ -589,7 +588,13 @@ function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]
 
   if (timestamps.length === 0) return '无'
 
-  return `${formatDateTime(timestamps[0]!.toISOString())} 至 ${formatDateTime(timestamps[timestamps.length - 1]!.toISOString())}`
+  const timezones = new Set(
+    assignments.map((assignment) => assignmentTask(assignment)?.timezone ?? ''),
+  )
+  if (timezones.has('')) return '工厂时区未解析'
+  if (timezones.size > 1) return '跨工厂时区，请查看各工序时间'
+
+  return `${assignmentTime(assignments[0]!, timestamps[0]!.toISOString())} 至 ${assignmentTime(assignments[0]!, timestamps[timestamps.length - 1]!.toISOString())}`
 }
 
 function openDetail(planId: string | undefined) {
