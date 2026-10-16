@@ -2556,6 +2556,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfSchedulingTimeContextItem = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsMasterDataSchedulingTimeContextItem> | null;
+};
+
+export type NervIipContractsMasterDataSchedulingTimeContextItem = {
+    workCenterCode?: string;
+    plantCode?: string | null;
+    plantName?: string | null;
+    timezone?: string | null;
+    unresolvedReason?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsSchedulingSchedulingWorkingDraftContract | null;
 };
@@ -13654,6 +13666,44 @@ export type GetBusinessConsoleSchedulingInsertionPreviewJobResponses = {
 };
 
 export type GetBusinessConsoleSchedulingInsertionPreviewJobResponse = GetBusinessConsoleSchedulingInsertionPreviewJobResponses[keyof GetBusinessConsoleSchedulingInsertionPreviewJobResponses];
+
+export type GetBusinessConsoleSchedulingTimeContextData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/time-context';
+};
+
+export type GetBusinessConsoleSchedulingTimeContextErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingTimeContextError = GetBusinessConsoleSchedulingTimeContextErrors[keyof GetBusinessConsoleSchedulingTimeContextErrors];
+
+export type GetBusinessConsoleSchedulingTimeContextResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfSchedulingTimeContextItem;
+};
+
+export type GetBusinessConsoleSchedulingTimeContextResponse = GetBusinessConsoleSchedulingTimeContextResponses[keyof GetBusinessConsoleSchedulingTimeContextResponses];
 
 export type ClearBusinessConsoleSchedulingWorkingDraftData = {
     body?: never;

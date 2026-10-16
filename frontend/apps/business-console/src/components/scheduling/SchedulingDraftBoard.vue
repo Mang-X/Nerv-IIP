@@ -13,7 +13,10 @@ import {
   type TaskDragPayload,
   type DraftFeedback,
 } from '@nerv-iip/scheduling'
-import type { BusinessConsoleSchedulingMaterialShortageSummary } from '@nerv-iip/api-client'
+import type {
+  SchedulingTimeContextItem,
+  BusinessConsoleSchedulingMaterialShortageSummary,
+} from '@nerv-iip/api-client'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import SchedulingDraftFeedback from './SchedulingDraftFeedback.vue'
 import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
@@ -31,10 +34,11 @@ import {
   NvTabsTrigger,
 } from '@nerv-iip/ui'
 import { computed, shallowRef, watch } from 'vue'
-import { formatDateTime } from '@/utils/format'
+import { factoryTimeInput, factoryTimeInstant } from '@/utils/schedulingFactoryTime'
 import { WORK_CENTER_FAMILY_LIST } from '@/data/workCenterFamilies'
 
 const props = defineProps<{
+  timeContext?: SchedulingTimeContextItem[]
   model?: ScheduleModel
   feedback?: DraftFeedback
   materialShortageSummary?: BusinessConsoleSchedulingMaterialShortageSummary[] | null
@@ -58,6 +62,31 @@ const emit = defineEmits<{
   restorePending: [taskId: string]
   persistOverride: [taskId: string]
 }>()
+const timeErrors = shallowRef<Record<string, string>>({})
+function timeZone(task: ScheduleModel['tasks'][number]) {
+  const context = props.timeContext?.find((item) => item.workCenterCode === task.workCenterId)
+  return context?.timezone ?? ''
+}
+function timeContextLabel(task: ScheduleModel['tasks'][number]) {
+  const context = props.timeContext?.find((item) => item.workCenterCode === task.workCenterId)
+  if (!context) return '工厂时区尚未读取，保留当前草案'
+  if (context.unresolvedReason) return context.unresolvedReason
+  if (!factoryTimeInput(task.startUtc, timeZone(task))) return '工厂时区不可解析，保留当前草案'
+  return `${context.plantName ?? context.plantCode} · ${context.timezone}`
+}
+function editTime(
+  task: ScheduleModel['tasks'][number],
+  field: 'startUtc' | 'endUtc',
+  value: string,
+) {
+  const instant = factoryTimeInstant(value, timeZone(task), task[field])
+  const key = `${task.id}:${field}`
+  timeErrors.value = {
+    ...timeErrors.value,
+    [key]: instant ? '' : '请输入该工厂时区内唯一有效的日期时间',
+  }
+  if (instant && instant !== task[field]) emit('update', task.id, { [field]: instant })
+}
 const view = shallowRef('gantt')
 const scale = shallowRef<TimeScale>('auto')
 const ganttRef = shallowRef<InstanceType<typeof GanttChart>>()
@@ -405,29 +434,51 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
                       :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
                       @update:model-value="emit('update', task.id, { resourceId: $event })"
                     />
+                    <p class="text-xs text-muted-foreground">{{ timeContextLabel(task) }}</p>
                     <p class="text-xs text-muted-foreground">开始</p>
                     <NvInput
                       class="h-8 w-full min-w-0"
                       :aria-label="`${task.orderId} · ${task.operationId} 的开始时间`"
-                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
-                      :model-value="task.startUtc"
-                      @update:model-value="emit('update', task.id, { startUtc: String($event) })"
+                      :disabled="
+                        readOnly ||
+                        task.locked ||
+                        !factoryTimeInput(task.startUtc, timeZone(task)) ||
+                        (task.segments?.length ?? 0) > 1
+                      "
+                      :model-value="factoryTimeInput(task.startUtc, timeZone(task))"
+                      type="datetime-local"
+                      step="1"
+                      @update:model-value="editTime(task, 'startUtc', String($event))"
                     />
                     <p class="text-xs text-muted-foreground">结束</p>
                     <NvInput
                       class="h-8 w-full min-w-0"
                       :aria-label="`${task.orderId} · ${task.operationId} 的结束时间`"
-                      :disabled="readOnly || task.locked || (task.segments?.length ?? 0) > 1"
-                      :model-value="task.endUtc"
-                      @update:model-value="emit('update', task.id, { endUtc: String($event) })"
+                      :disabled="
+                        readOnly ||
+                        task.locked ||
+                        !factoryTimeInput(task.startUtc, timeZone(task)) ||
+                        (task.segments?.length ?? 0) > 1
+                      "
+                      :model-value="factoryTimeInput(task.endUtc, timeZone(task))"
+                      type="datetime-local"
+                      step="1"
+                      @update:model-value="editTime(task, 'endUtc', String($event))"
                     />
+                    <p
+                      v-if="timeErrors[`${task.id}:startUtc`] || timeErrors[`${task.id}:endUtc`]"
+                      class="text-sm text-destructive"
+                    >
+                      {{ timeErrors[`${task.id}:startUtc`] || timeErrors[`${task.id}:endUtc`] }}
+                    </p>
                     <p
                       v-for="(segment, index) in task.segments"
                       :key="index"
                       class="break-words text-xs"
                     >
-                      第 {{ index + 1 }} 段 · {{ formatDateTime(segment.startUtc) }} 至
-                      {{ formatDateTime(segment.endUtc) }}
+                      第 {{ index + 1 }} 段 ·
+                      {{ factoryTimeInput(segment.startUtc, timeZone(task)).replace('T', ' ') }} 至
+                      {{ factoryTimeInput(segment.endUtc, timeZone(task)).replace('T', ' ') }}
                     </p>
                     <p
                       v-if="(task.segments?.length ?? 0) > 1"

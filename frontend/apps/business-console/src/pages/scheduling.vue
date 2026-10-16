@@ -16,6 +16,7 @@ import {
   useBusinessScheduling,
   useSchedulingPlanSummary,
 } from '@/composables/useBusinessScheduling'
+import { useSchedulingTimeContext } from '@/composables/useSchedulingTimeContext'
 import { useMesWorkOrderFacts } from '@/composables/useBusinessMes'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -228,6 +229,16 @@ function assignmentTask(assignment: BusinessConsoleSchedulingAssignment) {
   )
 }
 const persistedDraftPlan = shallowRef<BusinessConsoleSchedulePlan>()
+const factoryTimeContext = useSchedulingTimeContext(
+  () => persistedDraftPlan.value?.planId,
+  () => ({
+    organizationId: schedulingFilters.organizationId,
+    environmentId: schedulingFilters.environmentId,
+  }),
+)
+watch(factoryTimeContext.error, (error) => {
+  if (error) notifyError(error, '工厂时区暂不可读取，当前草案已保留。')
+})
 const downtime = useSchedulingDowntime(
   () => persistedDraftPlan.value?.planId,
   () => ({
@@ -1246,6 +1257,7 @@ function reasonLabel(reason?: string | null) {
           </NvButton>
         </section>
         <SchedulingDraftBoard
+          :time-context="factoryTimeContext.items.value"
           :model="downtimeDisplayModel"
           :feedback="draft.feedback.value"
           :material-shortage-summary="persistedDraftPlan?.materialShortageSummary"

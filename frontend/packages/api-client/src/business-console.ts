@@ -3330,3 +3330,9 @@ export type {
   VerifyBusinessConsoleQualityCapaEffectivenessResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVerifyQualityCapaEffectivenessRequest as BusinessConsoleVerifyQualityCapaEffectivenessRequest,
 } from './generated/business-console'
+
+export {
+  getBusinessConsoleSchedulingTimeContext,
+  getBusinessConsoleSchedulingTimeContextQueryOptions,
+} from './generated/business-console'
+export type { NervIipContractsMasterDataSchedulingTimeContextItem as SchedulingTimeContextItem } from './generated/business-console'

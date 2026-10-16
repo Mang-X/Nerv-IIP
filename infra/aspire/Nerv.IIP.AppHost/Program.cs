@@ -111,6 +111,7 @@ var iamJwtPrivateKeyPem = builder.AddParameter("iam-jwt-private-key-pem", secret
 var iamJwtJwksJson = builder.AddParameter("iam-jwt-jwks-json", secret: true);
 var iamSecretsPepper = builder.AddParameter("iam-secrets-pepper", secret: true);
 var iamEnterpriseIdentityMfaCode = builder.AddParameter("iam-enterprise-identity-mfa-code", secret: true);
+var schedulingTimeContextSigningKey = builder.AddParameter("scheduling-time-context-signing-key", new GenerateParameterDefault { MinLength = 64 }, secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
@@ -387,6 +388,7 @@ if (rabbitmq is not null)
 
 var businessMasterData = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5107, name: "http")
+    .WithEnvironment("MasterData__SchedulingTimeContext__SigningKey", schedulingTimeContextSigningKey)
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -985,6 +987,7 @@ else
 
 var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5119, name: "http")
+    .WithEnvironment("MasterData__SchedulingTimeContext__SigningKey", schedulingTimeContextSigningKey)
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)

@@ -105,6 +105,7 @@ builder.Services.AddHttpClient<IBusinessIamAccountDirectoryClient, HttpBusinessI
 {
     client.BaseAddress = iamBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<SchedulingTimeContextClient>(client => client.BaseAddress = masterDataBaseAddress);
 builder.Services.AddHttpClient<IBusinessMasterDataClient, HttpBusinessMasterDataClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;

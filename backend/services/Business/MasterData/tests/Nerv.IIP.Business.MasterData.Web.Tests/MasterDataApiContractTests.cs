@@ -109,7 +109,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(51, contracts.Count);
+        Assert.Equal(52, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -118,7 +118,18 @@ public sealed class MasterDataApiContractTests
             Assert.Contains("BusinessMasterData", contract.OperationId, StringComparison.Ordinal);
             Assert.StartsWith("/api/business/v1/master-data/", contract.Route, StringComparison.Ordinal);
             Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PUT", "PATCH", "DELETE" });
-            Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
+            if (contract.EndpointType == typeof(ResolveSchedulingTimeContextEndpoint))
+            {
+                // PublicContract: #4405 r1 / #4448 limited projection; no directory permission grant.
+                Assert.Equal("POST", contract.HttpMethod);
+                Assert.Equal("/api/business/v1/master-data/scheduling-time-context/resolve", contract.Route);
+                Assert.Equal("resolveBusinessMasterDataSchedulingTimeContext", contract.OperationId);
+                Assert.Equal("business.scheduling.plans.read", contract.PermissionCode);
+            }
+            else
+            {
+                Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
+            }
         });
     }
 
@@ -235,18 +246,24 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
-    public void MasterData_endpoints_define_permissions_from_contracts()
+    public void MasterData_endpoints_register_contract_routes_methods_and_internal_service_policy()
     {
-        var source = File.ReadAllText(Path.Combine(MasterDataServiceRoot(), "src", "Nerv.IIP.Business.MasterData.Web", "Endpoints", "MasterData", "MasterDataEndpoints.cs"));
-        var failures = MasterDataEndpointContracts.All
-            .Where(contract =>
-                !source.Contains($"MasterDataEndpointContracts.Get<{contract.EndpointType.Name}>()", StringComparison.Ordinal) ||
-                !source.Contains("ConfigureMasterDataContract(contract);", StringComparison.Ordinal))
-            .Select(contract => $"{contract.EndpointType.Name} does not configure permission contract")
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var endpoints = factory.Services.GetRequiredService<IEnumerable<EndpointDataSource>>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
             .ToArray();
 
-        Assert.Empty(failures);
-        Assert.DoesNotContain("Description(builder => builder.WithName(contract.OperationId));", source, StringComparison.Ordinal);
+        Assert.All(MasterDataEndpointContracts.All, contract =>
+        {
+            var endpoint = Assert.Single(endpoints, endpoint =>
+                endpoint.Metadata.GetMetadata<FastEndpoints.EndpointDefinition>()?.EndpointType == contract.EndpointType);
+            Assert.Equal(contract.Route, endpoint.RoutePattern.RawText);
+            Assert.Contains(contract.HttpMethod, endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods);
+            Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                authorization => authorization.Policy == InternalServiceAuthorizationPolicy.Name);
+        });
     }
 
     [Fact]
