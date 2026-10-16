@@ -7968,6 +7968,74 @@
         ]
       }
     },
+    "/api/business-console/v1/scheduling/plans/{planId}/time-context": {
+      "get": {
+        "tags": [
+          "Business Console Scheduling",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleSchedulingTimeContext",
+        "parameters": [
+          {
+            "name": "planId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfSchedulingTimeContextItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/scheduling/plans/{planId}/working-draft": {
       "put": {
         "tags": [
@@ -45595,6 +45663,51 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingInsertionPreviewJobRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfSchedulingTimeContextItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "$ref": "#/components/schemas/NervIIPContractsMasterDataSchedulingTimeContextItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsMasterDataSchedulingTimeContextItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workCenterCode": {
+            "type": "string"
+          },
+          "plantCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "plantName": {
+            "type": "string",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "unresolvedReason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract": {
         "allOf": [

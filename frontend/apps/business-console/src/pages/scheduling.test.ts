@@ -127,6 +127,9 @@ vi.mock('@/components/mes/MesWorkScopeSelect.vue', () => ({
 const downtimeImpact = shallowRef<import('@nerv-iip/api-client').SchedulingDowntimeImpactResponse>()
 const downtimeNow = shallowRef(new Date('2026-10-09T08:00:00.000Z'))
 let downtimeBaseline: () => string | undefined
+vi.mock('@/composables/useSchedulingTimeContext', () => ({
+  useSchedulingTimeContext: () => ({ items: computed(() => []), error: shallowRef() }),
+}))
 vi.mock('@/composables/useSchedulingDowntime', () => ({
   useSchedulingDowntime: (planId: () => string | undefined) => {
     downtimeBaseline = planId

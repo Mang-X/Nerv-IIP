@@ -132,6 +132,9 @@ describe('SchedulingDraftBoard', () => {
       setup: () => () =>
         h(SchedulingDraftBoard, {
           model: draft.model.value,
+          timeContext: [
+            { workCenterCode: '车削中心', plantCode: 'SITE-1', plantName: '工厂', timezone: 'UTC' },
+          ],
           feedback: draft.feedback.value,
           onMove: draft.moveTask,
           onUpdate: draft.updateTask,
@@ -175,7 +178,7 @@ describe('SchedulingDraftBoard', () => {
     expect(wrapper.get('[data-testid="scheduling-draft-task-detail"]').text()).toContain('日历外')
     await switchTab(wrapper, '表格编辑')
     const row = wrapper.get('tbody tr')
-    row.findAllComponents(NvInput)[1]!.vm.$emit('update:modelValue', '2026-09-30T12:00:00Z')
+    row.findAllComponents(NvInput)[1]!.vm.$emit('update:modelValue', '2026-09-30T12:00:00')
     await flushPromises()
     expect(row.text()).toContain('按期')
     expect(row.text()).not.toContain('日历外')
@@ -183,7 +186,12 @@ describe('SchedulingDraftBoard', () => {
   })
   it('offers resource and time editing alongside lock, pending and feedback', async () => {
     const wrapper = mount(SchedulingDraftBoard, {
-      props: { model },
+      props: {
+        model,
+        timeContext: [
+          { workCenterCode: 'WC-1', plantCode: 'SITE-1', plantName: '工厂', timezone: 'UTC' },
+        ],
+      },
       global: {
         stubs: {
           GanttChart: charts.GanttChart,
@@ -200,10 +208,17 @@ describe('SchedulingDraftBoard', () => {
     const row = wrapper.get('tbody tr')
     expect(
       (row.get('[aria-label="WO-001 · OP-10 的开始时间"]').element as HTMLInputElement).value,
-    ).toBe('2026-07-24T08:00:00Z')
+    ).toBe('2026-07-24T08:00')
     expect(
       (row.get('[aria-label="WO-001 · OP-10 的结束时间"]').element as HTMLInputElement).value,
-    ).toBe('2026-07-24T09:00:00Z')
+    ).toBe('2026-07-24T09:00')
+    const start = row.get('[aria-label="WO-001 · OP-10 的开始时间"]')
+    await start.setValue('2026-07-24T08:00:00')
+    expect(wrapper.emitted('update')).toBeUndefined()
+    await start.setValue('2026-07-24T09:00:00')
+    expect(wrapper.emitted('update')).toEqual([
+      ['assignment-001', { startUtc: '2026-07-24T09:00:00.000Z' }],
+    ])
     expect(row.text()).toContain('无已记录风险')
     expect(row.text()).toContain('未知 · 开工前请人工确认设备可用')
     const lock = row.findAll('button').find((button) => button.text() === '锁定')!
