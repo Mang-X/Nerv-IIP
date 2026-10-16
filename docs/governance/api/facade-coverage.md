@@ -36,13 +36,13 @@
 | IndustrialTelemetry | 35 | 33 | 0 | 2 |
 | Inventory | 27 | 21 | 0 | 6 |
 | Maintenance | 34 | 30 | 1 | 3 |
-| MasterData | 51 | 46 | 1 | 4 |
+| MasterData | 52 | 47 | 1 | 4 |
 | Mes | 82 | 74 | 3 | 5 |
 | ProductEngineering | 39 | 38 | 0 | 1 |
 | Quality | 49 | 38 | 10 | 1 |
 | Scheduling | 36 | 33 | 1 | 2 |
 | Wms | 57 | 47 | 5 | 5 |
-| **Total** | **544** | **465** | **40** | **39** |
+| **Total** | **545** | **466** | **40** | **39** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 

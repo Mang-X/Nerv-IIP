@@ -1436,6 +1436,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             ["Wms"] = "Wms",
         };
         var seedCapabilities = new Dictionary<string, string>(StringComparer.Ordinal);
+        seedCapabilities[Identity("Class", "SchedulingTimeContextClient")] = "MasterData";
         var legacyDeclarations = new Dictionary<string, LegacyDeclarationContract>(StringComparer.Ordinal);
         foreach (var (clientName, capability) in capabilities)
         {
