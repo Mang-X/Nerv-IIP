@@ -6416,7 +6416,7 @@
       "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/scheduling-time-context/resolve",
-      "operationId": "resolveSchedulingTimeContext",
+      "operationId": "resolveBusinessMasterDataSchedulingTimeContext",
       "classification": "exposed",
       "note": "#4448：只返回已授权方案实际工作中心的工厂时区；需要绑定主体/租户/方案/完整请求的签名排程授权声明。",
       "gateways": [
