@@ -1,0 +1,462 @@
+{
+  "baseline": "a9b625b297e7797c058e40b428c24bf611750daf",
+  "date": "2026-10-16",
+  "session": "nerv-a016-1016ab",
+  "evidenceType": "local-real-ui-and-public-readback-not-formal-test-lane",
+  "preparation": "public IAM / MasterData / engineering SOP / inventory stock / inspection plan / finance rates; no direct SQL or terminal business results",
+  "roles": {
+    "planner": {
+      "principalId": "user-01a144cf2b017bafb6fdcf1ea4fa1a8f",
+      "permissionCodes": [
+        "business.engineering.production-versions.read",
+        "business.engineering.routings.read",
+        "business.masterdata.products.read",
+        "business.masterdata.resources.read",
+        "business.mes.work-orders.manage",
+        "business.mes.work-orders.read",
+        "business.planning.demands.manage",
+        "business.planning.demands.read",
+        "business.planning.mps.manage",
+        "business.planning.mps.read",
+        "business.planning.mps.release",
+        "business.planning.mrp.read",
+        "business.planning.mrp.run",
+        "business.planning.suggestions.manage",
+        "business.scheduling.plans.manage",
+        "business.scheduling.plans.read",
+        "business.scheduling.plans.release",
+        "notifications.messages.read",
+        "notifications.tasks.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "organization",
+          "scopeCode": "org-001"
+        }
+      ]
+    },
+    "operator": {
+      "principalId": "user-01a144cf2ce277349f8937c405b45553",
+      "permissionCodes": [
+        "business.engineering.documents.read",
+        "business.engineering.standard-operations.read",
+        "business.masterdata.resources.read",
+        "business.mes.dispatch.manage",
+        "business.mes.downtime.manage",
+        "business.mes.downtime.read",
+        "business.mes.foundation.read",
+        "business.mes.handovers.manage",
+        "business.mes.handovers.read",
+        "business.mes.materials.read",
+        "business.mes.operations.manage",
+        "business.mes.operations.read",
+        "business.mes.quality.read",
+        "business.mes.reporting.read",
+        "business.mes.reporting.write",
+        "business.mes.work-orders.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-TUB-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-ROD-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-GRD-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-VA-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-FA-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-CT-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-TS-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-PK-01"
+        }
+      ]
+    },
+    "material": {
+      "principalId": "user-01a144cf2e80738fb0b64441375e4be1",
+      "permissionCodes": [
+        "business.inventory.ledger.read",
+        "business.inventory.movements.create",
+        "business.masterdata.products.read",
+        "business.masterdata.resources.read",
+        "business.mes.materials.manage",
+        "business.mes.materials.read",
+        "business.mes.work-orders.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "organization",
+          "scopeCode": "org-001"
+        }
+      ]
+    },
+    "quality": {
+      "principalId": "user-01a144cf2ff17edc8cd539e67b8d9319",
+      "permissionCodes": [
+        "business.masterdata.products.read",
+        "business.masterdata.resources.read",
+        "business.mes.operations.read",
+        "business.mes.quality.read",
+        "business.mes.quality.write",
+        "business.mes.work-orders.read",
+        "business.quality.inspection-plans.manage",
+        "business.quality.inspection-records.create",
+        "business.quality.inspection-records.read",
+        "business.quality.ncr.manage",
+        "business.quality.ncr.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "organization",
+          "scopeCode": "org-001"
+        }
+      ]
+    },
+    "finance": {
+      "principalId": "user-01a144cf31637d8dbc9e44802183bdaa",
+      "permissionCodes": [
+        "business.erp.finance.manage",
+        "business.erp.finance.read",
+        "business.inventory.ledger.read",
+        "business.masterdata.resources.read",
+        "business.mes.receipts.manage",
+        "business.mes.receipts.read",
+        "business.mes.work-orders.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "organization",
+          "scopeCode": "org-001"
+        }
+      ]
+    },
+    "handover": {
+      "principalId": "user-01a144cf32b67af2bd534a692870e335",
+      "permissionCodes": [
+        "business.masterdata.resources.read",
+        "business.mes.downtime.read",
+        "business.mes.handovers.manage",
+        "business.mes.handovers.read",
+        "business.mes.operations.read",
+        "business.mes.reporting.read",
+        "business.mes.work-orders.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-TUB-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-ROD-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-GRD-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-VA-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-FA-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-CT-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-TS-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-PK-01"
+        }
+      ]
+    },
+    "trace": {
+      "principalId": "user-01a144eae93e7e1e9a3134292948c1ae",
+      "permissionCodes": [
+        "business.inventory.ledger.read",
+        "business.masterdata.products.read",
+        "business.masterdata.resources.read",
+        "business.mes.materials.read",
+        "business.mes.operations.read",
+        "business.mes.quality.read",
+        "business.mes.receipts.read",
+        "business.mes.reporting.read",
+        "business.mes.traceability.read",
+        "business.mes.work-orders.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "organization",
+          "scopeCode": "org-001"
+        }
+      ]
+    },
+    "lead": {
+      "principalId": "user-01a144f6557778c99bf8776a793a5d87",
+      "permissionCodes": [
+        "business.maintenance.downtime-reasons.read",
+        "business.masterdata.resources.read",
+        "business.mes.downtime.manage",
+        "business.mes.downtime.read",
+        "business.mes.operations.read",
+        "business.mes.work-orders.read"
+      ],
+      "scopes": [
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-TUB-01"
+        }
+      ]
+    }
+  },
+  "workOrder": {
+    "id": "WO-20261016-000001",
+    "sku": "FG-QJ-P1-L",
+    "quantity": 2.0,
+    "status": "completed",
+    "operationCount": 8,
+    "completedCount": 8,
+    "ready": "Ready"
+  },
+  "reports": [
+    {
+      "reportNo": "PRPT-20261016-000008",
+      "operationTaskId": "WO-20261016-000001-OP-80",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": "LOT-PRPT-20261016-000008"
+    },
+    {
+      "reportNo": "PRPT-20261016-000007",
+      "operationTaskId": "WO-20261016-000001-OP-70",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": null
+    },
+    {
+      "reportNo": "PRPT-20261016-000006",
+      "operationTaskId": "WO-20261016-000001-OP-60",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": null
+    },
+    {
+      "reportNo": "PRPT-20261016-000005",
+      "operationTaskId": "WO-20261016-000001-OP-50",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": null
+    },
+    {
+      "reportNo": "PRPT-20261016-000004",
+      "operationTaskId": "WO-20261016-000001-OP-40",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": null
+    },
+    {
+      "reportNo": "PRPT-20261016-000003",
+      "operationTaskId": "WO-20261016-000001-OP-30",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": null
+    },
+    {
+      "reportNo": "PRPT-20261016-000002",
+      "operationTaskId": "WO-20261016-000001-OP-20",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": null
+    },
+    {
+      "reportNo": "PRPT-20261016-000001",
+      "operationTaskId": "WO-20261016-000001-OP-10",
+      "goodQuantity": 2.0,
+      "scrapQuantity": 0.0,
+      "reworkQuantity": 0.0,
+      "producedLotNo": null
+    }
+  ],
+  "receipt": {
+    "requestNo": "FGR-20261016-000001",
+    "quantity": 2.0,
+    "receiptStatus": "Posted",
+    "producedLotNo": "LOT-PRPT-20261016-000008",
+    "unitCost": 3.728364
+  },
+  "inventory": {
+    "linkStatus": "posted",
+    "postedQuantity": 2.0,
+    "remainingQuantity": 0.0,
+    "producedLotNo": "LOT-PRPT-20261016-000008",
+    "receiptStatus": "Posted"
+  },
+  "cost": {
+    "actualLaborHours": 0.105493,
+    "actualLaborCost": 6.329603,
+    "totalAccumulatedCost": 7.595523,
+    "capitalizedCost": 7.456728,
+    "capitalizationVarianceAmount": 0.138795,
+    "laborVarianceStatus": "unavailable",
+    "unavailableReason": "numeric_scale_out_of_range"
+  },
+  "trace": {
+    "nodes": 29,
+    "edges": 35
+  },
+  "sop": {
+    "routeSpecificPublished": 1,
+    "mesWithoutRouting": 0
+  },
+  "knownBoundaries": [
+    "WMS pick not executed",
+    "no physical manufacturing or inspection",
+    "NCR sorting blocked by attachment ID entry",
+    "scrap/rework/MRB/central approval not rerun",
+    "cost outage/missing-rate/replay not rerun",
+    "old realtime canvas not rerun",
+    "no formal test lane or CI rerun",
+    "no repairs or tracker mutation"
+  ],
+  "screenshots": [
+    {
+      "file": "01-mps.png",
+      "sha256": "652a5fbfeab3915089a1842b219ad7023299a430a2accca4c22c986acc8e754a"
+    },
+    {
+      "file": "02-mrp-adopted.png",
+      "sha256": "b5a20de715714fbb3fc5383acbad3223e69b1b9546804e619464baf9bb1bea34"
+    },
+    {
+      "file": "03-gantt.png",
+      "sha256": "81a5adb398d1d4a2fd0192a6660b074b58101d071801dc32e90899a560ad3756"
+    },
+    {
+      "file": "04-planner-order.png",
+      "sha256": "298a7d440a8404e7d67ff79a1a609f7c4658c6839318bdb37c4851914fe4a9d6"
+    },
+    {
+      "file": "05-material-ready.png",
+      "sha256": "16b3062a0f82e478fa2c0a866bba853897c5a91772e25536e50e930f674dc667"
+    },
+    {
+      "file": "06-sop.png",
+      "sha256": "096ffa7e669978735826612b5bccc7718767c8d8f9c5f5cecbce30c8e934a5ab"
+    },
+    {
+      "file": "07-paused.png",
+      "sha256": "0fc848004b12f234ff059e0b2b7a3cc705148f681790eb729d701aff19216008"
+    },
+    {
+      "file": "08-inspection-context.png",
+      "sha256": "c3c7866e6aeb863bcb5cfa66d7b6a92ab9473d707c9fd0d6dc9c0addb977abd4"
+    },
+    {
+      "file": "09-handover.png",
+      "sha256": "2336552fa79d8daeb97d024f817a5bcb1ea306765bb20e85c71d714fd9076814"
+    },
+    {
+      "file": "10-inventory-posted.png",
+      "sha256": "e5ef435d94c711c57d7f9a432e8539a63d3cea8f15de55adee66f5d3e8813a2a"
+    },
+    {
+      "file": "11-cost-precision.png",
+      "sha256": "3444f67f915c9b3b8145164c5c8b229637903d5c3e4a54c1cc998e2925078b3a"
+    },
+    {
+      "file": "12-trace-operation.png",
+      "sha256": "aa0d111d8e56060e6bed41148bb84a94790d1b39d57ce53faa7aeaf57e4b151f"
+    },
+    {
+      "file": "13-trace-empty-lot.png",
+      "sha256": "a19973537638f40671fffed41596ee547eadf591444986acfe22899daf5a000a"
+    },
+    {
+      "file": "14-trace-report.png",
+      "sha256": "322c888bd25c4f3b7668b423d3bf4b683482129236c0a5df1838e28d76efc2a6"
+    },
+    {
+      "file": "15-scope-failed.png",
+      "sha256": "40cb1cece68af0f1eb537a76bb99fcd266ae76959ed483b1f9d7dc2916a2ee39"
+    },
+    {
+      "file": "16-scope-restored.png",
+      "sha256": "dd8a4899927b9ae861851461b7eda67689d1b88c13e25a9a035a509d7f5afe51"
+    },
+    {
+      "file": "17-operations-1440.png",
+      "sha256": "c2bd181a1b911a42b312581793f5d290c59c61d289a1ba605ec4a6add4212c3f"
+    },
+    {
+      "file": "18-operations-1024-dark.png",
+      "sha256": "02888e692e847675556a08bfaa65510ed8ee54004b7a86f8b14e95c30a2e7516"
+    },
+    {
+      "file": "19-plan-revoked.png",
+      "sha256": "6a945af3f87a93da33708daf4c9abc6557e585eb7afbc0da94625730fa579b71"
+    },
+    {
+      "file": "20-defect.png",
+      "sha256": "7791423aca595cdc2c0bc12b08629dc0c43abae8e467189b92a9113c788e2fc9"
+    },
+    {
+      "file": "21-ncr-evidence.png",
+      "sha256": "0ec067a3157610a21bae8f83383cf159c1f9518e33388aaeb8ebdfd1a057a770"
+    },
+    {
+      "file": "22-downtime-permission.png",
+      "sha256": "abbe82e0e8f77cb898c3da6420259ef536d42fa43a37ba03e0f9721d2e5f4507"
+    },
+    {
+      "file": "23-daily-report.png",
+      "sha256": "84636d793f87b734270069d3002a4a59584f387968263a1a1ddebb80a0fb15e5"
+    },
+    {
+      "file": "24-downtime-hidden.png",
+      "sha256": "a0ef88d59926ba9f4498599cd4f94fcc8a28fbf2b1f0e0e6ac7b0e397b51b5ea"
+    },
+    {
+      "file": "25-downtime-recovered.png",
+      "sha256": "c60c84ad2c2b8b278d03a494cd2cb9fcc1321861c55fd2c185a65904ed59d803"
+    },
+    {
+      "file": "26-rush-resource.png",
+      "sha256": "4a4807376cfe1d74ffa355428698bb40c2a8cb19026f203274d6f43987a09d88"
+    },
+    {
+      "file": "27-foundation.png",
+      "sha256": "565ad4736bbdf036a7f97ed67e83c048964099049a0cb1c0bf23549b54776c9b"
+    }
+  ]
+}
