@@ -5,10 +5,6 @@ namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
 
 internal static class EngineeringQueryParameters
 {
-    internal static int NormalizeSkip(int skip) => Math.Max(0, skip);
-
-    internal static int NormalizeTake(int take) => Math.Clamp(take, 1, 500);
-
     internal static string? NormalizeOptionalText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -55,16 +51,24 @@ public sealed record ListEngineeringBomsQuery(
     string? ParentItemCode,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<ListEngineeringBomsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListEngineeringBomsResponse>;
+
+public sealed class ListEngineeringBomsQueryValidator : AbstractValidator<ListEngineeringBomsQuery>
+{
+    public ListEngineeringBomsQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListEngineeringBomsQuery, ListEngineeringBomsResponse>
 {
     public async Task<ListEngineeringBomsResponse> Handle(ListEngineeringBomsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.EngineeringBoms
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         var parentItemCode = EngineeringQueryParameters.NormalizeOptionalText(request.ParentItemCode);
         if (parentItemCode is not null)
@@ -82,8 +86,8 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
         var items = await query
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
-            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new EngineeringBomListItem(
                 x.BomCode,
                 x.Revision,
@@ -182,16 +186,24 @@ public sealed record ListManufacturingBomsQuery(
     string? SkuCode,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<ListManufacturingBomsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListManufacturingBomsResponse>;
+
+public sealed class ListManufacturingBomsQueryValidator : AbstractValidator<ListManufacturingBomsQuery>
+{
+    public ListManufacturingBomsQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListManufacturingBomsQuery, ListManufacturingBomsResponse>
 {
     public async Task<ListManufacturingBomsResponse> Handle(ListManufacturingBomsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.ManufacturingBoms
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         var skuCode = EngineeringQueryParameters.NormalizeOptionalText(request.SkuCode);
         if (skuCode is not null)
@@ -210,8 +222,8 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
             .OrderBy(x => x.SkuCode)
             .ThenBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
-            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new ManufacturingBomListItem(
                 x.BomCode,
                 x.Revision,
@@ -324,16 +336,24 @@ public sealed record ListRoutingsQuery(
     string? SkuCode,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<ListRoutingsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListRoutingsResponse>;
+
+public sealed class ListRoutingsQueryValidator : AbstractValidator<ListRoutingsQuery>
+{
+    public ListRoutingsQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListRoutingsQuery, ListRoutingsResponse>
 {
     public async Task<ListRoutingsResponse> Handle(ListRoutingsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.Routings
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         var skuCode = EngineeringQueryParameters.NormalizeOptionalText(request.SkuCode);
         if (skuCode is not null)
@@ -351,8 +371,8 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
         var items = await query
             .OrderBy(x => x.RoutingCode)
             .ThenBy(x => x.Revision)
-            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
-            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new RoutingListItem(
                 x.RoutingCode,
                 x.Revision,
@@ -492,16 +512,24 @@ public sealed record ListEngineeringDocumentsQuery(
     string? ItemCode,
     string? DocumentType,
     int Skip = 0,
-    int Take = 100) : IQuery<ListEngineeringDocumentsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListEngineeringDocumentsResponse>;
+
+public sealed class ListEngineeringDocumentsQueryValidator : AbstractValidator<ListEngineeringDocumentsQuery>
+{
+    public ListEngineeringDocumentsQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListEngineeringDocumentsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListEngineeringDocumentsQuery, ListEngineeringDocumentsResponse>
 {
     public async Task<ListEngineeringDocumentsResponse> Handle(ListEngineeringDocumentsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.EngineeringDocuments
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         var itemCode = EngineeringQueryParameters.NormalizeOptionalText(request.ItemCode);
         if (itemCode is not null)
@@ -519,8 +547,8 @@ public sealed class ListEngineeringDocumentsQueryHandler(ApplicationDbContext db
         var items = await query
             .OrderBy(x => x.DocumentNumber)
             .ThenBy(x => x.Revision)
-            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
-            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new EngineeringDocumentItem(
                 x.DocumentNumber,
                 x.Revision,
@@ -727,16 +755,24 @@ public sealed record ListEngineeringItemsQuery(
     string? ItemCode,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<ListEngineeringItemsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListEngineeringItemsResponse>;
+
+public sealed class ListEngineeringItemsQueryValidator : AbstractValidator<ListEngineeringItemsQuery>
+{
+    public ListEngineeringItemsQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListEngineeringItemsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListEngineeringItemsQuery, ListEngineeringItemsResponse>
 {
     public async Task<ListEngineeringItemsResponse> Handle(ListEngineeringItemsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.EngineeringItems
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         var itemCode = EngineeringQueryParameters.NormalizeOptionalText(request.ItemCode);
         if (itemCode is not null)
@@ -754,8 +790,8 @@ public sealed class ListEngineeringItemsQueryHandler(ApplicationDbContext dbCont
         var items = await query
             .OrderBy(x => x.ItemCode)
             .ThenBy(x => x.Revision)
-            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
-            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new EngineeringItemRevisionItem(x.ItemCode, x.Revision, x.Name, x.Status.ToString(), x.CreatedAtUtc, x.UpdatedAtUtc))
             .ToArrayAsync(cancellationToken);
 
@@ -802,16 +838,24 @@ public sealed record ListEngineeringChangesQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100) : IQuery<ListEngineeringChangesResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListEngineeringChangesResponse>;
+
+public sealed class ListEngineeringChangesQueryValidator : AbstractValidator<ListEngineeringChangesQuery>
+{
+    public ListEngineeringChangesQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListEngineeringChangesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListEngineeringChangesQuery, ListEngineeringChangesResponse>
 {
     public async Task<ListEngineeringChangesResponse> Handle(ListEngineeringChangesQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.EngineeringChanges
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         var status = EngineeringQueryParameters.ParseStatusOrThrow(request.Status);
         if (status is not null)
@@ -823,8 +867,8 @@ public sealed class ListEngineeringChangesQueryHandler(ApplicationDbContext dbCo
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenBy(x => x.ChangeNumber)
-            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
-            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new EngineeringChangeItem(
                 x.ChangeNumber,
                 x.Reason,

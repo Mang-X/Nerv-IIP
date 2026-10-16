@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -43,6 +44,7 @@ internal static class ProductEngineeringWebTestFactory
                     services.RemoveAll<ApplicationDbContext>();
                     services.RemoveAll<DbContextOptions>();
                     services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                    services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
                     services.AddDbContext<ApplicationDbContext>(options =>
                         options
                             .UseInMemoryDatabase(databaseName)
