@@ -161,6 +161,15 @@ const {
   refreshCurrentSops,
 } = useMesCurrentOperationSops()
 
+const sopContextMessage = computed(() => {
+  const task = selectedSopTask.value
+  if (!task) return ''
+  if (!task.routingCode?.trim() || !task.routingRevision?.trim())
+    return '当前任务缺少工艺路线号或版本，无法确定适用的SOP。'
+  if (!task.workCenterCode?.trim()) return '当前任务缺少工作中心编码，无法确定适用的SOP。'
+  return ''
+})
+
 // --- Filters (live) ---
 const keyword = ref('')
 const statusFilter = ref('all')
@@ -329,10 +338,10 @@ function openWorkOrder(task: Row) {
 function openSops(task: Row) {
   selectedSopTask.value = task
   sopFileError.value = ''
-  sopFilters.operationCode = task.operationCode?.trim() ?? ''
-  sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
-  sopFilters.routingCode = ''
-  sopFilters.routingRevision = ''
+  sopFilters.operationCode = sopContextMessage.value ? '' : (task.operationCode?.trim() ?? '')
+  sopFilters.workCenterCode = task.workCenterCode?.trim() ?? ''
+  sopFilters.routingCode = task.routingCode?.trim() ?? ''
+  sopFilters.routingRevision = task.routingRevision?.trim() ?? ''
   sopFilters.asOfDate = ''
 }
 async function openSopFile(sop: CurrentSop) {
@@ -847,15 +856,16 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="currentSopsPending"
+          :disabled="Boolean(sopContextMessage) || currentSopsPending"
           @click="refreshCurrentSops"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新SOP
         </NvButton>
       </div>
+      <p v-if="sopContextMessage" class="text-sm text-muted-foreground">{{ sopContextMessage }}</p>
       <p
-        v-if="selectedSopErrorMessage || sopFileError"
+        v-else-if="selectedSopErrorMessage || sopFileError"
         class="text-sm text-destructive"
         role="alert"
       >
