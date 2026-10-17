@@ -1212,6 +1212,7 @@ test.describe('公开身份展示回退（#4464）', () => {
     workOrderId + '-OP-020-精密加工完整公开身份',
     workOrderId + '-OP-030-末道检验完整公开身份',
   ]
+  const opaqueTaskId = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
   const handoverId = 'SHO-20261017-000011-精密制造早班长交接单身份'
   for (const viewport of [
     { width: 1280, height: 800 },
@@ -1258,6 +1259,14 @@ test.describe('公开身份展示回退（#4464）', () => {
           status: 'InProgress',
           workCenterId: 'WC-ROD-01',
         }))
+        tasks.push({
+          operationTaskId: opaqueTaskId,
+          operationTaskNo: null,
+          workOrderId,
+          operationSequence: 40,
+          status: 'InProgress',
+          workCenterId: 'WC-ROD-01',
+        })
         const handover = {
           handoverId,
           shiftId: 'EARLY',
@@ -1283,7 +1292,7 @@ test.describe('公开身份展示回退（#4464）', () => {
               issues: [],
             }
           }
-          if (path.endsWith('/mes/operation-tasks')) data = { items: tasks, total: 2 }
+          if (path.endsWith('/mes/operation-tasks')) data = { items: tasks, total: 3 }
           if (path.endsWith(`/mes/work-orders/${workOrderId}`))
             data = { workOrderId, status: 'InProgress', operationTasks: tasks }
           if (path.endsWith('/mes/shift-handovers')) data = { items: [handover], total: 1 }
@@ -1330,11 +1339,13 @@ test.describe('公开身份展示回退（#4464）', () => {
         }
         await page.goto('/mes/operation-tasks')
         for (const id of ids) await assertIdentityFits(id)
+        await expect(page.getByTitle(opaqueTaskId, { exact: true }).first()).toHaveText('工序 40')
         await page.screenshot({ path: testInfo.outputPath('operations.png') })
         await page.goto(
           `/mes/work-orders/${encodeURIComponent(workOrderId)}?operationTaskId=${encodeURIComponent(ids[1]!)}`,
         )
         for (const id of ids) await assertIdentityFits(id)
+        await expect(page.getByTitle(opaqueTaskId, { exact: true }).first()).toHaveText('工序 40')
         await expect(page.locator('[data-andon-source="true"]')).toContainText(ids[1]!)
         await page.screenshot({ path: testInfo.outputPath('work-order.png') })
         await page.goto('/mes/handovers')

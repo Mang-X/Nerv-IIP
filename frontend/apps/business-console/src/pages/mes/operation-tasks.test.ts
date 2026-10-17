@@ -274,6 +274,18 @@ describe('operation-tasks 排程已失效 quick filter', () => {
     state.operationRows = []
   })
 
+  it('执行列表在公开身份为 UUID 时展示真实序号并保留完整身份查看', () => {
+    const id = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
+    state.operationRows = [
+      { operationTaskId: id, operationTaskNo: null, operationSequence: 20, workOrderId: 'WO-1' },
+    ]
+    const wrapper = mountPage()
+    const identity = wrapper.get(`[title="${id}"]`)
+    expect(identity.text()).toBe('工序 20')
+    expect(identity.text()).not.toContain(id)
+    wrapper.unmount()
+  })
+
   it.each([null, '', '   '])('执行列表在业务号为 %j 时显示完整任务身份', (operationTaskNo) => {
     const id = 'WO-宁波精密制造长工单-20261017-000001-OP-20'
     state.operationRows = [{ operationTaskId: id, operationTaskNo, workOrderId: 'WO-1' }]

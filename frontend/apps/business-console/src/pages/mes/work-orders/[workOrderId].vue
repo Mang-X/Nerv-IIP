@@ -96,6 +96,8 @@ import {
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
+import { operationTaskLabel } from '@/utils/mesOperationIdentity'
+
 definePage({
   meta: {
     requiresAuth: true,
@@ -383,7 +385,7 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     header: '任务',
     width: 'w-64',
     cellClass: 'font-medium whitespace-normal break-all',
-    accessor: (r) => r.operationTaskNo?.trim() || r.operationTaskId?.trim() || '未提供标识',
+    accessor: (r) => operationTaskLabel(r),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
@@ -1359,7 +1361,7 @@ function formatStatus(value?: string | null) {
             "
           >
             <span class="break-all whitespace-normal" :title="row.operationTaskId">{{
-              row.operationTaskNo?.trim() || row.operationTaskId?.trim() || '未提供标识'
+              operationTaskLabel(row)
             }}</span>
             <NvStatusBadge
               v-if="row.operationTaskId && route.query.operationTaskId === row.operationTaskId"

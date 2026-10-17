@@ -162,6 +162,21 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     wrapper.unmount()
   })
 
+  it('公开身份为系统 UUID 时用真实工序序号定位，完整身份仍可查看和匹配', () => {
+    const id = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: id, operationTaskNo: null, operationSequence: 20 }],
+    }
+    routeState.query = { operationTaskId: id }
+    const wrapper = mountDetail()
+    const source = wrapper.get('[data-andon-source="true"]')
+    expect(source.text()).toContain('工序 20')
+    expect(source.text()).not.toContain(id)
+    expect(source.get('[title]').attributes('title')).toBe(id)
+    wrapper.unmount()
+  })
+
   it('工序有业务号时优先显示业务号，同时可查看完整公开身份', () => {
     detailState.detail = {
       workOrderId: 'WO-1',
