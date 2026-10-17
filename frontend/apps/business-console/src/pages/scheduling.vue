@@ -10,7 +10,6 @@ import type {
   BusinessConsoleSchedulingAssignment,
   BusinessConsoleSchedulingConflict,
   BusinessConsoleSchedulingPlanSummaryResponse,
-  BusinessConsoleSchedulingResourceLoad,
   BusinessConsoleSchedulingUnscheduledOperation,
   BusinessConsoleSchedulingPlanRevision,
   BusinessConsoleSchedulePlan,
@@ -39,6 +38,8 @@ import {
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
+import SchedulingPlanRisks from '@/components/scheduling/SchedulingPlanRisks.vue'
+import SchedulingResourceLoads from '@/components/scheduling/SchedulingResourceLoads.vue'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
 import SchedulingWorkOrderLink from '@/components/scheduling/SchedulingWorkOrderLink.vue'
 import SchedulingDaySchedule from '@/components/scheduling/SchedulingDaySchedule.vue'
@@ -991,14 +992,6 @@ const publishCandidateDisabledReason = computed(
   () => publishCandidateBlockedReason.value ?? '把当前草案版本发布给车间执行',
 )
 
-function loadText(load: BusinessConsoleSchedulingResourceLoad) {
-  const assigned = load.assignedMinutes ?? 0
-  const available = load.availableMinutes ?? 0
-  const utilization =
-    load.utilization === undefined ? '无' : `${Math.round(load.utilization * 100)}%`
-  return `${assigned} / ${available} 分钟，利用率 ${utilization}`
-}
-
 function assignmentText(assignment: BusinessConsoleSchedulingAssignment) {
   return [
     assignment.orderId ?? '未关联工单',
@@ -1179,6 +1172,13 @@ function reasonLabel(reason?: string | null) {
         </div>
 
         <p
+          v-if="draft.model.value && publishCandidateBlockedReason"
+          role="status"
+          class="text-sm text-warning-strong"
+        >
+          发布受阻 · {{ publishCandidateBlockedReason }}
+        </p>
+        <p
           v-if="!canManage"
           class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm"
           role="status"
@@ -1195,25 +1195,30 @@ function reasonLabel(reason?: string | null) {
         <p v-if="firstPlanProgress" role="status" class="text-sm text-muted-foreground">
           {{ firstPlanProgress }}
         </p>
-        <SchedulingOrderPool
-          :candidates="workbench.schedulableCandidates.value"
-          :draft-orders="draft.orders.value"
-          :loading="workbench.candidatesPending.value"
-          :error="workbench.candidatesError.value"
-          :scope-ready="workbench.candidatesScopeReady.value"
-          :scope-message="workbench.candidatesScopeMessage.value"
-          :read-only="!canManage || !draftReady || workbench.generatePending.value"
-          @include="includeWorkbenchOrders"
-          :can-edit-priority="
-            permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
-          "
-          :save-order="saveWorkbenchOrderPriority"
-          @retry="workbench.refreshCandidates"
-        >
-          <template #scope>
-            <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
-          </template>
-        </SchedulingOrderPool>
+        <details :open="!draft.model.value" class="rounded-lg border bg-card p-3">
+          <summary class="cursor-pointer text-sm font-medium">
+            待排工单 · 已选 {{ draft.includedOrders.value.length }} 个（展开调整）
+          </summary>
+          <SchedulingOrderPool
+            :candidates="workbench.schedulableCandidates.value"
+            :draft-orders="draft.orders.value"
+            :loading="workbench.candidatesPending.value"
+            :error="workbench.candidatesError.value"
+            :scope-ready="workbench.candidatesScopeReady.value"
+            :scope-message="workbench.candidatesScopeMessage.value"
+            :read-only="!canManage || !draftReady || workbench.generatePending.value"
+            @include="includeWorkbenchOrders"
+            :can-edit-priority="
+              permissionCodes.includes(P.mesWorkOrdersManage) && workbench.priorityScopeReady.value
+            "
+            :save-order="saveWorkbenchOrderPriority"
+            @retry="workbench.refreshCandidates"
+          >
+            <template #scope>
+              <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
+            </template>
+          </SchedulingOrderPool>
+        </details>
         <SchedulingDowntimeBanner
           :impact="downtime.impact.value"
           :model="draftDisplayModel"
@@ -1279,7 +1284,8 @@ function reasonLabel(reason?: string | null) {
             v-if="draft.modifiedUnlockedTaskIds.value.length === 0"
             class="text-sm text-muted-foreground"
           >
-            已锁定 {{ draft.lockedAssignments.value.length }} 道工序，重预览后查看结果再发布。
+            本次草案 · 已选 {{ draft.includedOrders.value.length }} 个工单 · 已锁定
+            {{ draft.lockedAssignments.value.length }} 道工序；重预览后查看变化再发布。
           </p>
           <NvButton
             size="sm"
@@ -1292,6 +1298,7 @@ function reasonLabel(reason?: string | null) {
             <NvSpinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
           </NvButton>
         </section>
+        <ScheduleRevisionReview :revision="revisionResult" :base-plan="revisionBasePlan" />
         <SchedulingDraftBoard
           :time-context="factoryTimeContext.items.value"
           :model="downtimeDisplayModel"
@@ -1309,7 +1316,6 @@ function reasonLabel(reason?: string | null) {
           @move-to-pending="draft.moveTaskToPending"
           @restore-pending="draft.restorePendingTask"
         />
-        <ScheduleRevisionReview :revision="revisionResult" :base-plan="revisionBasePlan" />
       </NvTabsContent>
 
       <NvTabsContent value="table" class="grid min-w-0 gap-4">
@@ -1681,6 +1687,32 @@ function reasonLabel(reason?: string | null) {
           </section>
 
           <section class="grid gap-3">
+            <h3 class="text-sm font-semibold text-foreground">冲突与不可排原因</h3>
+            <div
+              v-if="planDetail.conflicts?.length || planDetail.unscheduledOperations?.length"
+              class="grid gap-2"
+            >
+              <p
+                v-for="conflict in planDetail.conflicts ?? []"
+                :key="conflict.conflictId ?? conflictText(conflict)"
+                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-foreground"
+              >
+                {{ conflictText(conflict) }}
+              </p>
+              <p
+                v-for="item in planDetail.unscheduledOperations ?? []"
+                :key="unscheduledText(item)"
+                class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-foreground"
+              >
+                {{ unscheduledText(item) }}
+              </p>
+            </div>
+            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              未返回冲突或不可排原因。
+            </p>
+          </section>
+
+          <section class="grid gap-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h3 class="text-sm font-semibold text-foreground">资源分配</h3>
               <UrgencyDisplayModeSelect v-model="displayMode" />
@@ -1746,108 +1778,14 @@ function reasonLabel(reason?: string | null) {
             </p>
           </section>
 
-          <section class="grid gap-3">
-            <h3 class="text-sm font-semibold text-foreground">资源负荷</h3>
-            <div v-if="planDetail.resourceLoads?.length" class="grid gap-2">
-              <div
-                v-for="load in planDetail.resourceLoads"
-                :key="load.resourceId ?? load.windowStartUtc"
-                class="rounded-md border bg-background p-3"
-              >
-                <p class="text-sm font-medium text-foreground">
-                  {{ load.resourceId ?? '未命名资源' }}
-                </p>
-                <p class="mt-1 text-sm text-muted-foreground">{{ loadText(load) }}</p>
-              </div>
-            </div>
-            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-              暂无资源负荷。
-            </p>
-          </section>
-
-          <!--
-            物料风险（软约束）：齐套是开工门槛不是排产门槛 —— 缺料工序照排进方案，
-            这里告诉规划员开工前必须补齐哪些物料，缺口多少。
-          -->
+          <SchedulingResourceLoads :loads="planDetail.resourceLoads ?? []" />
           <SchedulingMaterialShortageSummary
             :shortages="planDetail.materialShortageSummary ?? []"
           />
-          <section v-if="planDetail.materialRisks?.length" class="grid gap-3">
-            <h3 class="text-sm font-semibold text-foreground">物料风险 · 需在开工前完成备料</h3>
-            <div class="grid gap-2">
-              <div
-                v-for="risk in planDetail.materialRisks"
-                :key="`${risk.orderId}:${risk.operationId}`"
-                class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
-                data-testid="plan-material-risk"
-              >
-                <p class="font-medium">{{ risk.orderId }} · {{ risk.operationId }}</p>
-                <ul v-if="risk.shortages?.length" class="mt-1 grid gap-0.5 text-xs">
-                  <li
-                    v-for="shortage in risk.shortages"
-                    :key="`${shortage.materialId}-${shortage.materialLotId ?? ''}`"
-                    class="flex justify-between gap-3 tabular-nums"
-                  >
-                    <span>{{ shortage.materialId }}</span>
-                    <span
-                      >缺 {{ shortage.shortageQuantity }}（需
-                      {{ shortage.requiredQuantity }}）</span
-                    >
-                  </li>
-                </ul>
-                <p class="mt-1 text-xs">{{ risk.message }}</p>
-              </div>
-            </div>
-          </section>
-
-          <!--
-            设备数据风险（软约束）：无快照 / 快照过期 / 采集源不可达 —— 这是数据盲区，
-            不是设备不可用。工序照排，但开工前要人工确认设备状态。
-          -->
-          <section v-if="planDetail.equipmentRisks?.length" class="grid gap-3">
-            <h3 class="text-sm font-semibold text-foreground">
-              设备状态未知 · 开工前请人工确认设备可用
-            </h3>
-            <div class="grid gap-2">
-              <div
-                v-for="risk in planDetail.equipmentRisks"
-                :key="`${risk.orderId}:${risk.operationId}`"
-                class="rounded-md border border-border bg-muted/40 p-3 text-sm"
-                data-testid="plan-equipment-risk"
-              >
-                <p class="font-medium">
-                  {{ risk.orderId }} · {{ risk.operationId }} · {{ risk.resourceId }}
-                </p>
-                <p class="mt-1 text-xs text-muted-foreground">{{ risk.message }}</p>
-              </div>
-            </div>
-          </section>
-
-          <section class="grid gap-3">
-            <h3 class="text-sm font-semibold text-foreground">冲突与不可排原因</h3>
-            <div
-              v-if="planDetail.conflicts?.length || planDetail.unscheduledOperations?.length"
-              class="grid gap-2"
-            >
-              <p
-                v-for="conflict in planDetail.conflicts ?? []"
-                :key="conflict.conflictId ?? conflictText(conflict)"
-                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-foreground"
-              >
-                {{ conflictText(conflict) }}
-              </p>
-              <p
-                v-for="item in planDetail.unscheduledOperations ?? []"
-                :key="unscheduledText(item)"
-                class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-foreground"
-              >
-                {{ unscheduledText(item) }}
-              </p>
-            </div>
-            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-              未返回冲突或不可排原因。
-            </p>
-          </section>
+          <SchedulingPlanRisks
+            :material-risks="planDetail.materialRisks ?? []"
+            :equipment-risks="planDetail.equipmentRisks ?? []"
+          />
         </div>
 
         <div

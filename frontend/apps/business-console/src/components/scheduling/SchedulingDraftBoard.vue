@@ -19,6 +19,7 @@ import type {
   BusinessConsoleSchedulingMaterialShortageSummary,
 } from '@nerv-iip/api-client'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
+import SchedulingPlanRisks from './SchedulingPlanRisks.vue'
 import SchedulingDraftFeedback from './SchedulingDraftFeedback.vue'
 import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
@@ -301,44 +302,11 @@ const resourceOptions = computed<EntityPickerOption[]>(() =>
         </li>
       </ul>
     </section>
-    <!--
-      物料风险横幅：齐套是开工门槛不是排产门槛。缺料工单照排进方案，
-      这里显式告诉规划员「哪些工序开工前必须先备料」，避免拿着方案去发布却被 MES 齐套门拦下。
-    -->
-    <section
-      v-if="materialRisks.length"
-      class="grid gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm"
-      data-testid="scheduling-material-risks"
-    >
-      <p class="font-semibold">{{ materialRisks.length }} 道工序有物料风险 · 需在开工前完成备料</p>
-      <ul class="grid gap-1 text-xs">
-        <li v-for="risk in materialRisks" :key="`${risk.orderId}:${risk.operationId}`">
-          {{ risk.orderId }} · {{ risk.operationId }} —
-          <template v-if="risk.shortages.length">
-            {{ risk.shortages.map((s) => `${s.materialId} 缺 ${s.shortageQuantity}`).join('、') }}
-          </template>
-          <template v-else>{{ risk.message }}</template>
-        </li>
-      </ul>
-    </section>
-    <!--
-      设备数据风险横幅：「不知道」不等于「不可用」。无快照/快照过期的设备照排，
-      但必须显式告诉规划员哪些工序的设备状态是盲区，开工前要人工确认。
-    -->
-    <section
-      v-if="equipmentRisks.length"
-      class="grid gap-1.5 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm"
-      data-testid="scheduling-equipment-risks"
-    >
-      <p class="font-semibold">
-        {{ equipmentRisks.length }} 道工序的设备状态未知 · 开工前请人工确认设备可用
-      </p>
-      <ul class="grid gap-1 text-xs text-muted-foreground">
-        <li v-for="risk in equipmentRisks" :key="`${risk.orderId}:${risk.operationId}`">
-          {{ risk.orderId }} · {{ risk.operationId }} — {{ risk.message }}
-        </li>
-      </ul>
-    </section>
+    <SchedulingPlanRisks
+      v-if="model"
+      :material-risks="materialRisks"
+      :equipment-risks="equipmentRisks"
+    />
     <div
       v-if="!model"
       class="flex min-h-48 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground"
