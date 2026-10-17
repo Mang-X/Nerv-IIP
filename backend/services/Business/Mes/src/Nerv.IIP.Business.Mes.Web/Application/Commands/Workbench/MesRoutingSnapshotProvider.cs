@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.ServiceAuth;
 using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
@@ -35,13 +36,15 @@ public sealed record MesRoutingSnapshotResult(
     MesRoutingSnapshotStatus Status,
     string SourceSystem,
     IReadOnlyCollection<MesRoutingOperationSnapshot> Operations,
-    string? ProductionVersionId)
+    string? ProductionVersionId,
+    OperationTaskRoutingIdentity? RoutingIdentity = null)
 {
     public static MesRoutingSnapshotResult Captured(
         string sourceSystem,
         IReadOnlyCollection<MesRoutingOperationSnapshot> operations,
-        string? productionVersionId = null) =>
-        new(MesRoutingSnapshotStatus.Captured, sourceSystem, operations, productionVersionId);
+        string? productionVersionId = null,
+        OperationTaskRoutingIdentity? routingIdentity = null) =>
+        new(MesRoutingSnapshotStatus.Captured, sourceSystem, operations, productionVersionId, routingIdentity);
 
     public static MesRoutingSnapshotResult Missing(string sourceSystem) =>
         new(MesRoutingSnapshotStatus.Missing, sourceSystem, [], null);
@@ -166,7 +169,9 @@ public sealed class HttpMesProductEngineeringRoutingSnapshotProvider(
         return MesRoutingSnapshotResult.Captured(
             MesRoutingSnapshotSources.Captured(productionVersionId, selectedVersion.RoutingVersionId),
             operations,
-            productionVersionId);
+            productionVersionId,
+            new OperationTaskRoutingIdentity(productionVersionId, selectedVersion.RoutingVersionId,
+                selectedVersion.RoutingCode, selectedVersion.RoutingRevision));
     }
 
     private async Task<T?> SendOptionalAsync<T>(string requestUri, CancellationToken cancellationToken)

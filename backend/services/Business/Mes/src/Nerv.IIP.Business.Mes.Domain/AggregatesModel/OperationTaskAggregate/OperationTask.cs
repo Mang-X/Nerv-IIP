@@ -38,7 +38,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         decimal plannedQuantity,
         bool requiresQualityInspection,
         string? operationCode,
-        string? requiredSkillCode)
+        string? requiredSkillCode,
+        OperationTaskRoutingIdentity? routingIdentity)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -60,6 +61,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         RequiresQualityInspection = requiresQualityInspection;
         OperationCode = NormalizeOptional(operationCode);
         RequiredSkillCode = NormalizeOptional(requiredSkillCode);
+        RoutingSourceProductionVersionId = routingIdentity?.ProductionVersionId;
+        RoutingVersionId = routingIdentity?.RoutingVersionId;
+        RoutingCode = routingIdentity?.RoutingCode;
+        RoutingRevision = routingIdentity?.RoutingRevision;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -120,6 +125,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public bool RequiresQualityInspection { get; private set; }
     public string? OperationCode { get; private set; }
     public string? RequiredSkillCode { get; private set; }
+    public string? RoutingSourceProductionVersionId { get; private set; }
+    public string? RoutingVersionId { get; private set; }
+    public string? RoutingCode { get; private set; }
+    public string? RoutingRevision { get; private set; }
     public string? ScheduleInvalidationReasonCode { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
@@ -152,7 +161,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
         string? operationCode = null,
-        string? requiredSkillCode = null)
+        string? requiredSkillCode = null,
+        OperationTaskRoutingIdentity? routingIdentity = null)
     {
         return Create(
             organizationId,
@@ -172,7 +182,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             plannedQuantity,
             requiresQualityInspection,
             operationCode,
-            requiredSkillCode);
+            requiredSkillCode,
+            routingIdentity);
     }
 
     public static OperationTask Create(
@@ -193,7 +204,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
         string? operationCode = null,
-        string? requiredSkillCode = null)
+        string? requiredSkillCode = null,
+        OperationTaskRoutingIdentity? routingIdentity = null)
     {
         return new OperationTask(
             organizationId,
@@ -213,7 +225,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             plannedQuantity,
             requiresQualityInspection,
             operationCode,
-            requiredSkillCode);
+            requiredSkillCode,
+            routingIdentity);
     }
 
     public void Start(DateTimeOffset startedAtUtc)

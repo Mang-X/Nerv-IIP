@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+
 namespace Nerv.IIP.Business.Mes.Web.Application.Planning;
 
 public enum OperationTaskStatus
@@ -51,7 +53,8 @@ public sealed record PlannedOperationTask(
     string? OperationCode = null,
     bool RequiresQualityInspection = false,
     string? RequiredSkillCode = null,
-    decimal PlannedQuantity = 0m);
+    decimal PlannedQuantity = 0m,
+    OperationTaskRoutingIdentity? RoutingIdentity = null);
 
 public interface IMesPlanningStore
 {

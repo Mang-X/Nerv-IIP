@@ -56,7 +56,8 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
             plannedQuantity: operationTask.PlannedQuantity,
             requiresQualityInspection: operationTask.RequiresQualityInspection,
             operationCode: operationTask.OperationCode,
-            requiredSkillCode: operationTask.RequiredSkillCode));
+            requiredSkillCode: operationTask.RequiredSkillCode,
+            routingIdentity: operationTask.RoutingIdentity));
     }
 
     public void AddUnavailability(WorkCenterUnavailability unavailability)

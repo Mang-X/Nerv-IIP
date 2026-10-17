@@ -181,7 +181,8 @@ public sealed class CreateRushWorkOrderCommandHandler
                 operation.OperationCode,
                 operation.RequiresQualityInspection,
                 operation.RequiredSkillCode,
-                request.Quantity));
+                request.Quantity,
+                routing.RoutingIdentity));
         }
 
         if (dbContext is not null && materialSnapshotProvider is not null)

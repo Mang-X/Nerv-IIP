@@ -93,7 +93,12 @@ public sealed class ProductionReportOeeDimensionSnapshotPostgresTests
         context.Database.ExecuteSqlRawAsync("""
             ALTER TABLE mes.production_reports
             ADD COLUMN report_intent_fingerprint character varying(256) NULL;
-            ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE
+            ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE;
+            ALTER TABLE mes.operation_tasks
+            ADD COLUMN routing_source_production_version_id character varying(100) NULL,
+            ADD COLUMN routing_version_id character varying(100) NULL,
+            ADD COLUMN routing_code character varying(100) NULL,
+            ADD COLUMN routing_revision character varying(50) NULL
             """);
 
     private static async Task CloneLegacyReportAtPriorSchemaAsync(NpgsqlConnection connection)

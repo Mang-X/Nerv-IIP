@@ -842,7 +842,8 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
                     request.PlannedQuantity,
                     operation.RequiresQualityInspection,
                     operation.OperationCode,
-                    operation.RequiredSkillCode));
+                    operation.RequiredSkillCode,
+                    routingSnapshot.RoutingIdentity));
             }
         }
 
