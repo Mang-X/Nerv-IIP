@@ -382,7 +382,7 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     key: 'operationTaskId',
     header: '任务',
     cellClass: 'font-medium',
-    accessor: (r) => r.operationTaskNo?.trim() || '—',
+    accessor: (r) => r.operationTaskNo?.trim() || r.operationTaskId?.trim() || '未提供标识',
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
@@ -1357,8 +1357,8 @@ function formatStatus(value?: string | null) {
               Boolean(row.operationTaskId && route.query.operationTaskId === row.operationTaskId)
             "
           >
-            <span class="break-all whitespace-normal">{{
-              row.operationTaskNo?.trim() || '—'
+            <span class="break-all whitespace-normal" :title="row.operationTaskId">{{
+              row.operationTaskNo?.trim() || row.operationTaskId?.trim() || '未提供标识'
             }}</span>
             <NvStatusBadge
               v-if="row.operationTaskId && route.query.operationTaskId === row.operationTaskId"

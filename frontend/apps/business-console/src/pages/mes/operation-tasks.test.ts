@@ -250,6 +250,7 @@ function mountPage(realQuickView = false) {
               <p v-else-if="!loading && !rows.length">{{ emptyMessage }}</p>
               <span v-for="column in columns" :key="column.key">{{ column.header }}</span>
               <div v-for="row in rows" :key="row.operationTaskId" data-testid="operation-row">
+                <slot name="cell-operationTaskId" :row="row" />
                 <slot name="cell-workOrderId" :row="row" />
                 <slot name="cell-actualHours" :row="row" />
                 <slot name="cell-actions" :row="row" />
@@ -271,6 +272,15 @@ describe('operation-tasks 排程已失效 quick filter', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     state.operationRows = []
+  })
+
+  it.each([null, '', '   '])('执行列表在业务号为 %j 时显示完整任务身份', (operationTaskNo) => {
+    const id = 'WO-宁波精密制造长工单-20261017-000001-OP-20'
+    state.operationRows = [{ operationTaskId: id, operationTaskNo, workOrderId: 'WO-1' }]
+    const wrapper = mountPage()
+    const identity = wrapper.get(`[title="${id}"]`)
+    expect(identity.text()).toBe(id)
+    wrapper.unmount()
   })
 
   it('binds aria-pressed to the active state and toggles it on click', async () => {

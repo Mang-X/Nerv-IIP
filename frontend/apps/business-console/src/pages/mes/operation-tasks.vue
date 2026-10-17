@@ -222,7 +222,7 @@ const columns: NvDataTableColumn<Row>[] = [
     header: '工序任务',
     width: 'w-64',
     cellClass: 'font-medium whitespace-normal break-all',
-    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号',
+    accessor: (r) => r.operationTaskNo?.trim() || r.operationTaskId?.trim() || '未提供标识',
   },
   {
     key: 'workOrderId',
@@ -666,6 +666,11 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       "
       @retry="refreshOperationTasks"
     >
+      <template #cell-operationTaskId="{ row }">
+        <span class="whitespace-normal break-all" :title="row.operationTaskId">{{
+          row.operationTaskNo?.trim() || row.operationTaskId?.trim() || '未提供标识'
+        }}</span>
+      </template>
       <template #cell-operationSequence="{ row }">
         <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>
       </template>
