@@ -2107,22 +2107,28 @@ export function useMesOperationTasks() {
   })
   const operationTasksQuery = useQuery(() => {
     const selectedScope = operationListScope.selectedScope.value
-    const options = listBusinessConsoleMesOperationTasksQueryOptions({
+    const identity = operationTasksIdentity.value
+    const { key, query: executeQuery } = listBusinessConsoleMesOperationTasksQueryOptions({
       query: {
         ...toListQuery(filters),
         ...(selectedScope ? { scopeKind: selectedScope.kind, scopeId: selectedScope.id } : {}),
       },
     })
     return {
-      ...options,
-      key: [...options.key, `principal-scope:${operationTasksIdentity.value}`],
+      key: [...key, `principal-scope:${identity}`],
+      query: async (context: Parameters<typeof executeQuery>[0]) => ({
+        identity,
+        response: await executeQuery(context),
+      }),
       enabled: operationTasksScopeReady.value,
     }
   })
-  const operationTasksResponse = useScopeBoundListResponse(
-    () => operationTasksQuery.data.value,
-    operationTasksIdentity,
-    operationTasksScopeReady,
+  // 身份随查询结果缓存：切回已缓存范围时可立即恢复，晚到的其它范围结果不被重新归属。
+  const operationTasksResponse = computed(() =>
+    operationTasksScopeReady.value &&
+    operationTasksQuery.data.value?.identity === operationTasksIdentity.value
+      ? operationTasksQuery.data.value.response
+      : undefined,
   )
   const completeMutation = useMutation(completeBusinessConsoleMesOperationTaskMutationOptions())
   const pauseMutation = useMutation(pauseBusinessConsoleMesOperationTaskMutationOptions())

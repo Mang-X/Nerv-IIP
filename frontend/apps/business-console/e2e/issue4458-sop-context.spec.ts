@@ -149,7 +149,7 @@ test('切换作业范围关闭旧 SOP，晚到响应不覆盖新任务，切回�
     await expect(panel).toHaveCount(0)
     await open(0)
     await expect(panel).toContainText('管材切割一线作业指导书')
-    await page.getByRole('textbox').first().fill('WO-QJ-1001')
+    await page.getByRole('searchbox', { name: '搜索', exact: true }).fill('WO-QJ-1001')
     await expect(panel).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('task-filter-closed.png'), fullPage: true })
     expect(sopRequests.length).toBeGreaterThanOrEqual(3)
