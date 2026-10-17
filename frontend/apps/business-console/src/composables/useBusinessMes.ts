@@ -2229,7 +2229,7 @@ export function useMesOperationTasks() {
     operationTasksError: operationTasksQuery.error,
     operationTasksPending: operationTasksQuery.isLoading,
     operationTasksState: businessReadState(
-      operationTasksQuery,
+      { ...operationTasksQuery, data: operationTasksResponse },
       () => operationTasksScopeReady.value,
     ),
     operationTasksTotal: computed(() => envelopeTotal(operationTasksResponse.value)),

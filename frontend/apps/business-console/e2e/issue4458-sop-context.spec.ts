@@ -110,6 +110,7 @@ test('切换作业范围关闭旧 SOP，晚到响应不覆盖新任务，切回�
       .locator('section[aria-live="polite"]')
       .filter({ has: page.getByRole('heading', { name: /WO-QJ-1001-OP-/ }) })
     const open = async (index: number) => {
+      await expect(page.getByText('1 个工序任务', { exact: true })).toBeVisible()
       await page.getByRole('button', { name: '查看当前SOP', exact: true }).click()
       await expect(panel.getByRole('heading')).toHaveText(
         `${tasks[index]!.operationTaskNo} · ${tasks[index]!.operationCode}`,

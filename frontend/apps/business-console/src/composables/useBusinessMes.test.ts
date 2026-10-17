@@ -1310,6 +1310,7 @@ describe('business MES composables', () => {
     expect(readiness.readiness.value?.status).toBe('Ready')
     expect(tasks.operationTasks.value).toHaveLength(1)
     expect(tasks.operationTasksTotal.value).toBe(77)
+    expect(tasks.operationTasksState.value).toBe('ready')
     expect(wip.wipRows.value).toHaveLength(1)
     expect(wip.wipTotal.value).toBe(23)
   })
