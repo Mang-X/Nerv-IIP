@@ -597,7 +597,7 @@ const demandColumns: NvDataTableColumn<BusinessConsoleDemandSourceItem>[] = [
 ]
 const mpsColumns: NvDataTableColumn<BusinessConsoleMpsBucketItem>[] = [
   { key: 'bucketDate', header: '计划周期', cellClass: 'font-medium', width: 'w-32' },
-  { key: 'skuCode', header: 'SKU' },
+  { key: 'skuCode', header: 'SKU', width: 'w-64' },
   { key: 'siteCode', header: '工厂', width: 'w-40' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'status', header: '状态', width: 'w-28' },
@@ -1567,13 +1567,13 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       >
         <template #cell-bucketDate="{ row }">{{ formatDate(row.bucketDate) }}</template>
         <template #cell-skuCode="{ row }">
-          <div class="flex flex-col gap-0.5">
+          <div class="flex min-w-0 flex-col gap-0.5 whitespace-normal [overflow-wrap:anywhere]">
             <span>{{ skuLabel(row.skuCode) }}</span>
             <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
           </div>
         </template>
         <template #cell-siteCode="{ row }">
-          <div class="flex flex-col gap-0.5">
+          <div class="flex min-w-0 flex-col gap-0.5 whitespace-normal [overflow-wrap:anywhere]">
             <span>{{ siteLabel(row.siteCode) }}</span>
             <span v-if="row.siteCode" class="text-xs text-muted-foreground">{{
               row.siteCode
@@ -1589,7 +1589,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           ><NvStatusBadge :label="mpsStatus(row.status).label" :tone="mpsStatus(row.status).tone"
         /></template>
         <template #cell-reviewRelease="{ row }">
-          <div class="flex min-w-0 flex-col gap-0.5 text-sm">
+          <div
+            class="flex min-w-0 flex-col gap-0.5 text-sm whitespace-normal [overflow-wrap:anywhere]"
+          >
             <span>{{ row.reviewedBy ? `评审 ${actorName(row.reviewedBy)}` : '未评审' }}</span>
             <span class="text-muted-foreground">{{
               row.releasedBy ? `发布 ${actorName(row.releasedBy)}` : '未发布'
