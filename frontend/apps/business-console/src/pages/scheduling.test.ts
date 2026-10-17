@@ -804,7 +804,7 @@ describe('APS scheduling workbench page', () => {
         expect(draftSummary.text()).toContain('WO-20260701-001 · OP-10')
         expect(draftSummary.text()).toContain('WO-20260701-002 · OP-20')
       } else {
-        expect(draftSummary.text()).toContain('方案物料齐套 · 无缺料')
+        expect(draftSummary.text()).toContain('方案快照未记录缺料')
       }
       const expected = draftSummary.text()
       const ganttTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('甘特'))!
@@ -1840,6 +1840,18 @@ describe('APS scheduling workbench page', () => {
       .trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-change-row]').text()).toContain('RES-CNC-01 → RES-CNC-02')
+    // #4463：本次变化须先于长风险明细和图表，已有草案仍能展开调整工单。
+    const review = wrapper.get('[data-testid="schedule-revision-review"]')
+    expect(
+      review.element.compareDocumentPosition(board.element) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    const poolGroup = wrapper
+      .findComponent({ name: 'SchedulingOrderPool' })
+      .element.closest('details')!
+    expect(poolGroup.open).toBe(false)
+    poolGroup.querySelector('summary')!.click()
+    expect(poolGroup.open).toBe(true)
+
     await wrapper
       .findAll('button')
       .find((button) => button.text().includes('锁定重预览'))!

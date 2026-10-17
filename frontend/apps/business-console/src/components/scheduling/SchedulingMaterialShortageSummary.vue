@@ -14,11 +14,14 @@ defineProps<{
     <header>
       <h3 class="font-semibold">方案级缺料汇总</h3>
       <p class="text-sm text-muted-foreground">
-        整批方案的物料缺口与受影响工序，需在开工前完成备料。
+        方案生成时冻结的整批物料缺口；不代表当前 MES 齐套状态。
       </p>
     </header>
-    <p v-if="!shortages.length" class="text-sm" role="status">方案物料齐套 · 无缺料</p>
-    <div v-else class="overflow-x-auto">
+    <p v-if="!shortages.length" class="text-sm" role="status">方案快照未记录缺料</p>
+    <details v-else class="overflow-x-auto">
+      <summary class="cursor-pointer text-sm font-medium">
+        {{ shortages.length }} 项物料 / 批次缺口（展开汇总）
+      </summary>
       <table class="w-full text-left text-sm">
         <thead class="bg-muted text-muted-foreground">
           <tr>
@@ -39,18 +42,23 @@ defineProps<{
               {{ shortage.shortageQuantity }} {{ shortage.uomCode }}
             </td>
             <td class="p-2 align-top">
-              <ul class="grid gap-1">
-                <li
-                  v-for="operation in shortage.affectedOperations"
-                  :key="`${operation.orderId}:${operation.operationId}`"
-                >
-                  {{ operation.orderId }} · {{ operation.operationId }}
-                </li>
-              </ul>
+              <details>
+                <summary class="cursor-pointer">
+                  {{ shortage.affectedOperations?.length ?? 0 }} 道工序（展开查看）
+                </summary>
+                <ul class="mt-2 grid gap-1">
+                  <li
+                    v-for="operation in shortage.affectedOperations"
+                    :key="`${operation.orderId}:${operation.operationId}`"
+                  >
+                    {{ operation.orderId }} · {{ operation.operationId }}
+                  </li>
+                </ul>
+              </details>
             </td>
           </tr>
         </tbody>
       </table>
-    </div>
+    </details>
   </section>
 </template>
