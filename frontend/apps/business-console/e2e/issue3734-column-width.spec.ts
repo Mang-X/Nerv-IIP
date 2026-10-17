@@ -1009,6 +1009,7 @@ test.describe('追溯与交接长内容（#4469 fixture）', () => {
 
 test.describe('工序执行关键列可读性（#4468）', () => {
   const workOrderNo = 'WO-ROD-20261017-000128-精密活塞杆'
+  const assignedUserName = '陈立华（精密加工一线交接负责人）'
   const task = {
     operationTaskId: 'OPT-ROD-20261017-000128-OP-020',
     operationTaskNo: 'OPT-ROD-20261017-000128-OP-020',
@@ -1024,6 +1025,8 @@ test.describe('工序执行关键列可读性（#4468）', () => {
     status: 'InProgress',
     qualityStatus: 'QUALITY_PLAN_MISSING',
     plannedStartUtc: '2026-10-17T01:30:00Z',
+    assignedUserId: 'operator-chen',
+    assignedUserName,
     actualLaborHours: 12.5,
     actualMachineHours: 10.25,
   }
@@ -1107,6 +1110,12 @@ test.describe('工序执行关键列可读性（#4468）', () => {
         await expect(row).toContainText(task.operationTaskNo)
         await expect(row).toContainText(task.deviceAssetName)
         await page.screenshot({ path: testInfo.outputPath('operations-left.png'), fullPage: true })
+        const assigned = row.getByLabel(`状态：已派 ${assignedUserName}`, { exact: true })
+        await assigned.scrollIntoViewIfNeeded()
+        await page.screenshot({
+          path: testInfo.outputPath('operations-assigned.png'),
+          fullPage: true,
+        })
         const measurement = await table.evaluate((table) => {
           const headers = Array.from(table.querySelectorAll('thead th')).map((th) => ({
             header: th.textContent?.trim(),
@@ -1122,7 +1131,28 @@ test.describe('工序执行关键列可读性（#4468）', () => {
               const range = document.createRange()
               range.selectNodeContents(node)
               for (const rect of range.getClientRects()) {
-                if (rect.width && (rect.left < bounds.left - 1 || rect.right > bounds.right + 1))
+                // Text Range 包含被 truncate 裁掉的部分，只判断实际可绘制区域。
+                let left = rect.left
+                let right = rect.right
+                let top = rect.top
+                let bottom = rect.bottom
+                for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+                  const style = getComputedStyle(parent)
+                  const clip = parent.getBoundingClientRect()
+                  if (['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowX)) {
+                    left = Math.max(left, clip.left)
+                    right = Math.min(right, clip.right)
+                  }
+                  if (['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowY)) {
+                    top = Math.max(top, clip.top)
+                    bottom = Math.min(bottom, clip.bottom)
+                  }
+                }
+                if (
+                  right > left &&
+                  bottom > top &&
+                  (left < bounds.left - 1 || right > bounds.right + 1)
+                )
                   escaped.push(node.textContent.trim())
               }
             }
@@ -1130,6 +1160,14 @@ test.describe('工序执行关键列可读性（#4468）', () => {
           const container = table.closest('[data-slot="table-container"]') as HTMLElement
           return {
             headers,
+            assigned: (() => {
+              const cell = table.querySelectorAll('tbody tr:first-child td')[8]!
+              const badge = cell.querySelector('[aria-label]')!
+              return {
+                cell: cell.getBoundingClientRect().toJSON(),
+                badge: badge.getBoundingClientRect().toJSON(),
+              }
+            })(),
             escaped,
             containerWidth: container.clientWidth,
             scrollWidth: container.scrollWidth,
@@ -1143,6 +1181,15 @@ test.describe('工序执行关键列可读性（#4468）', () => {
         })
         console.log(JSON.stringify({ viewport, theme, ...measurement }))
         expect(measurement.escaped, '文本应留在所属单元格内').toEqual([])
+        expect(measurement.assigned.badge.left).toBeGreaterThanOrEqual(
+          measurement.assigned.cell.left,
+        )
+        expect(measurement.assigned.badge.right).toBeLessThanOrEqual(
+          measurement.assigned.cell.right,
+        )
+        await expect(assigned).toHaveAttribute('title', `已派 ${assignedUserName}`)
+        await expect(row).toContainText('12.5')
+        await expect(row).toContainText('10.25')
         expect(measurement.documentWidth).toBeLessThanOrEqual(measurement.viewportWidth)
         await row.getByRole('button', { name: workOrderNo, exact: true }).click()
         await expect(
