@@ -106,7 +106,12 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
             ALTER TABLE mes.material_issue_requests
             ADD COLUMN pending_receipt_intent_sent boolean NOT NULL DEFAULT FALSE,
             ADD COLUMN receipt_uses_actual_issue_value boolean NOT NULL DEFAULT FALSE;
-            ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE
+            ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE;
+            ALTER TABLE mes.operation_tasks
+            ADD COLUMN routing_source_production_version_id character varying(100) NULL,
+            ADD COLUMN routing_version_id character varying(100) NULL,
+            ADD COLUMN routing_code character varying(100) NULL,
+            ADD COLUMN routing_revision character varying(50) NULL
             """);
 
     private static Task RemoveCurrentModelCompatibilityAsync(ApplicationDbContext context) =>
@@ -116,7 +121,12 @@ public sealed class MesMaterialOwnershipSnapshotPostgresTests
             ALTER TABLE mes.material_issue_requests
             DROP COLUMN pending_receipt_intent_sent,
             DROP COLUMN receipt_uses_actual_issue_value;
-            ALTER TABLE mes.work_orders DROP COLUMN is_rush
+            ALTER TABLE mes.work_orders DROP COLUMN is_rush;
+            ALTER TABLE mes.operation_tasks
+            DROP COLUMN routing_source_production_version_id,
+            DROP COLUMN routing_version_id,
+            DROP COLUMN routing_code,
+            DROP COLUMN routing_revision
             """);
 
     private static MaterialIssueRequest CreateIssue(string requestNo, MaterialTransferAllocation allocation)

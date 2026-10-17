@@ -391,6 +391,11 @@ public sealed class MesRoutingSnapshotTests
 
         Assert.Equal(MesRoutingSnapshotStatus.Captured, result.Status);
         Assert.Equal("product-engineering-http:PV-001:opaque-routing-version-token", result.SourceSystem);
+        Assert.NotNull(result.RoutingIdentity);
+        Assert.Equal("PV-001", result.RoutingIdentity.ProductionVersionId);
+        Assert.Equal("opaque-routing-version-token", result.RoutingIdentity.RoutingVersionId);
+        Assert.Equal("ROUTE-1000", result.RoutingIdentity.RoutingCode);
+        Assert.Equal("A", result.RoutingIdentity.RoutingRevision);
         Assert.Collection(
             result.Operations,
             operation =>

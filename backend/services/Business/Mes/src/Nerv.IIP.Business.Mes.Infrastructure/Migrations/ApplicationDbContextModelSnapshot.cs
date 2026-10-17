@@ -1274,6 +1274,30 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("requires_quality_inspection")
                         .HasComment("Whether this operation completion should trigger a Quality inspection task.");
 
+                    b.Property<string>("RoutingCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("routing_code")
+                        .HasComment("Explicit engineering routing code frozen at task creation; null when no authoritative snapshot exists.");
+
+                    b.Property<string>("RoutingRevision")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("routing_revision")
+                        .HasComment("Explicit engineering routing revision frozen at task creation; null when no authoritative snapshot exists.");
+
+                    b.Property<string>("RoutingSourceProductionVersionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("routing_source_production_version_id")
+                        .HasComment("Engineering production version that supplied the task creation routing snapshot; null for unknown legacy or manual provenance.");
+
+                    b.Property<string>("RoutingVersionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("routing_version_id")
+                        .HasComment("Engineering routing version id frozen at task creation; never inferred from the current production version binding.");
+
                     b.Property<int>("RowVersion")
                         .IsConcurrencyToken()
                         .HasColumnType("integer")

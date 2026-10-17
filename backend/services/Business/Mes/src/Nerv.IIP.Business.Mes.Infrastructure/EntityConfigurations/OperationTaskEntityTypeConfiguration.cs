@@ -73,6 +73,10 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.RequiresQualityInspection).HasColumnName("requires_quality_inspection").IsRequired().HasComment("Whether this operation completion should trigger a Quality inspection task.");
         builder.Property(x => x.OperationCode).HasColumnName("operation_code").HasMaxLength(100).HasComment("ProductEngineering standard operation code used to resolve current SOP or electronic work instructions.");
         builder.Property(x => x.RequiredSkillCode).HasColumnName("required_skill_code").HasMaxLength(100).HasComment("Optional MasterData skill code frozen from the published routing snapshot when the work order is converted.");
+        builder.Property(x => x.RoutingSourceProductionVersionId).HasColumnName("routing_source_production_version_id").HasMaxLength(100).HasComment("Engineering production version that supplied the task creation routing snapshot; null for unknown legacy or manual provenance.");
+        builder.Property(x => x.RoutingVersionId).HasColumnName("routing_version_id").HasMaxLength(100).HasComment("Engineering routing version id frozen at task creation; never inferred from the current production version binding.");
+        builder.Property(x => x.RoutingCode).HasColumnName("routing_code").HasMaxLength(100).HasComment("Explicit engineering routing code frozen at task creation; null when no authoritative snapshot exists.");
+        builder.Property(x => x.RoutingRevision).HasColumnName("routing_revision").HasMaxLength(50).HasComment("Explicit engineering routing revision frozen at task creation; null when no authoritative snapshot exists.");
         builder.Property(x => x.ScheduleInvalidationReasonCode).HasColumnName("schedule_invalidation_reason_code").HasMaxLength(64).HasComment("Latest scheduling invalidation reason code when the task is schedule invalidated; cleared when a released schedule re-plans the task.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue })
             .HasName("ak_operation_tasks_scope_task");
