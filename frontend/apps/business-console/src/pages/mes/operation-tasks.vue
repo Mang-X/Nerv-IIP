@@ -102,6 +102,7 @@ const {
   operationTasksPending,
   operationTasksTotal,
   operationTasksState,
+  operationListScope,
   operationListScopeError,
   operationListScopePending,
   operationListScopeMessage,
@@ -175,6 +176,30 @@ const keyword = ref('')
 const statusFilter = ref('all')
 const workCenterFilter = ref('all')
 const shiftFilter = ref('all')
+
+function closeSops() {
+  selectedSopTask.value = null
+  sopFilters.operationCode = ''
+  sopFileError.value = ''
+}
+
+// SOP 属于打开它的任务范围；切换范围后由操作员重新选择任务。
+watch(
+  () => [
+    auth.principal?.principalId,
+    filters.organizationId,
+    filters.environmentId,
+    operationListScope.value?.kind,
+    operationListScope.value?.id,
+    keyword.value,
+    statusFilter.value,
+    workCenterFilter.value,
+    shiftFilter.value,
+    filters.skip,
+    filters.take,
+  ],
+  closeSops,
+)
 
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
@@ -852,16 +877,19 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
             }}
           </p>
         </div>
-        <NvButton
-          size="sm"
-          type="button"
-          variant="outline"
-          :disabled="Boolean(sopContextMessage) || currentSopsPending"
-          @click="refreshCurrentSops"
-        >
-          <RefreshCwIcon aria-hidden="true" />
-          刷新SOP
-        </NvButton>
+        <div class="flex items-center gap-2">
+          <NvButton
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="Boolean(sopContextMessage) || currentSopsPending"
+            @click="refreshCurrentSops"
+          >
+            <RefreshCwIcon aria-hidden="true" />
+            刷新SOP
+          </NvButton>
+          <NvButton size="sm" type="button" variant="ghost" @click="closeSops">关闭SOP</NvButton>
+        </div>
       </div>
       <p v-if="sopContextMessage" class="text-sm text-muted-foreground">{{ sopContextMessage }}</p>
       <p
