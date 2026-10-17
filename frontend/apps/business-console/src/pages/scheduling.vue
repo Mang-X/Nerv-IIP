@@ -8,9 +8,7 @@ import {
 } from '@nerv-iip/scheduling'
 import type {
   BusinessConsoleSchedulingAssignment,
-  BusinessConsoleSchedulingConflict,
   BusinessConsoleSchedulingPlanSummaryResponse,
-  BusinessConsoleSchedulingUnscheduledOperation,
   BusinessConsoleSchedulingPlanRevision,
   BusinessConsoleSchedulePlan,
   BusinessConsoleSchedulingPlanStatus,
@@ -38,6 +36,7 @@ import {
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingMaterialShortageSummary from '@/components/scheduling/SchedulingMaterialShortageSummary.vue'
+import SchedulingPlanConflicts from '@/components/scheduling/SchedulingPlanConflicts.vue'
 import SchedulingPlanRisks from '@/components/scheduling/SchedulingPlanRisks.vue'
 import SchedulingResourceLoads from '@/components/scheduling/SchedulingResourceLoads.vue'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
@@ -999,52 +998,6 @@ function assignmentText(assignment: BusinessConsoleSchedulingAssignment) {
     assignment.workCenterId ?? assignment.resourceId ?? '未分配资源',
   ].join(' · ')
 }
-
-function conflictText(conflict: BusinessConsoleSchedulingConflict) {
-  return [
-    severityLabel(conflict.severity),
-    reasonLabel(conflict.reasonCode),
-    conflict.message ?? '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
-}
-
-function unscheduledText(item: BusinessConsoleSchedulingUnscheduledOperation) {
-  return [
-    item.orderId ?? '未关联工单',
-    item.operationId ?? '工序',
-    reasonLabel(item.reasonCode),
-    item.message ?? '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
-}
-
-function severityLabel(severity?: string | null) {
-  if (severity === 'info') return '提示'
-  if (severity === 'warning') return '预警'
-  if (severity === 'error') return '阻断'
-  return ''
-}
-
-function reasonLabel(reason?: string | null) {
-  const labels: Record<string, string> = {
-    dueDate: '交期风险',
-    capacity: '产能不足',
-    calendar: '日历不可用',
-    material: '物料约束',
-    quality: '质量约束',
-    equipment: '设备约束',
-    tooling: '工装约束',
-    noEligibleResource: '无可用资源',
-    outsideHorizon: '超出排程窗口',
-    invalidLockedAssignment: '锁定分配无效',
-    predecessorUnscheduled: '前序未排',
-  }
-
-  return reason ? (labels[reason] ?? reason) : ''
-}
 </script>
 
 <template>
@@ -1686,31 +1639,11 @@ function reasonLabel(reason?: string | null) {
             </div>
           </section>
 
-          <section class="grid gap-3">
-            <h3 class="text-sm font-semibold text-foreground">冲突与不可排原因</h3>
-            <div
-              v-if="planDetail.conflicts?.length || planDetail.unscheduledOperations?.length"
-              class="grid gap-2"
-            >
-              <p
-                v-for="conflict in planDetail.conflicts ?? []"
-                :key="conflict.conflictId ?? conflictText(conflict)"
-                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-foreground"
-              >
-                {{ conflictText(conflict) }}
-              </p>
-              <p
-                v-for="item in planDetail.unscheduledOperations ?? []"
-                :key="unscheduledText(item)"
-                class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-foreground"
-              >
-                {{ unscheduledText(item) }}
-              </p>
-            </div>
-            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-              未返回冲突或不可排原因。
-            </p>
-          </section>
+          <SchedulingPlanConflicts
+            :conflicts="planDetail.conflicts ?? []"
+            :unscheduled-operations="planDetail.unscheduledOperations ?? []"
+            :generated-at-utc="planDetail.generatedAtUtc"
+          />
 
           <section class="grid gap-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
