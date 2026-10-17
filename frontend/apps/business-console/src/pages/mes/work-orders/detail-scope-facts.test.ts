@@ -169,7 +169,7 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     }
     const wrapper = mountDetail()
     expect(wrapper.text()).toContain('WO-1-OP-20')
-    expect(wrapper.get('[title="task-strong-20"]').exists()).toBe(true)
+    expect(wrapper.find('[title="task-strong-20"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
