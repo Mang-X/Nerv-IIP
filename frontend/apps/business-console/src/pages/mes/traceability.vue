@@ -211,7 +211,8 @@ const columns: NvDataTableColumn<NodeRow>[] = [
   {
     key: 'nodeId',
     header: '节点',
-    cellClass: 'font-medium',
+    width: 'w-72',
+    cellClass: 'font-medium whitespace-normal break-all',
     accessor: (r) => (r.nodeType === 'Operator' ? r.displayName : r.nodeId),
   },
   {
@@ -225,11 +226,19 @@ const columns: NvDataTableColumn<NodeRow>[] = [
   {
     key: 'displayName',
     header: '名称',
+    width: 'w-64',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.displayName,
   },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'receipts', header: '入库来源', width: 'w-48' },
-  { key: 'reportDetail', header: '报工详情' },
+  {
+    key: 'reportDetail',
+    header: '报工详情',
+    width: 'w-80',
+    cellClass:
+      'whitespace-normal break-all [&_a]:h-auto [&_a]:max-w-full [&_a]:whitespace-normal [&_a]:text-left',
+  },
 ]
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
