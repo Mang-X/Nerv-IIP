@@ -381,7 +381,8 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
   {
     key: 'operationTaskId',
     header: '任务',
-    cellClass: 'font-medium',
+    width: 'w-64',
+    cellClass: 'font-medium whitespace-normal break-all',
     accessor: (r) => r.operationTaskNo?.trim() || r.operationTaskId?.trim() || '未提供标识',
   },
   { key: 'status', header: '状态', width: 'w-24' },
