@@ -1346,6 +1346,30 @@ test.describe('公开身份展示回退（#4464）', () => {
         )
         for (const id of ids) await assertIdentityFits(id)
         await expect(page.getByTitle(opaqueTaskId, { exact: true }).first()).toHaveText('工序 40')
+        const taskTable = page
+          .locator('table')
+          .filter({ has: page.getByTitle(ids[0]!, { exact: true }) })
+        const taskLayout = await taskTable.evaluate((table) => {
+          const escaped: string[] = []
+          for (const cell of table.querySelectorAll('tbody td')) {
+            const box = cell.getBoundingClientRect()
+            const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT)
+            while (walker.nextNode()) {
+              const node = walker.currentNode
+              if (!node.textContent?.trim() || node.parentElement?.closest('.sr-only')) continue
+              const range = document.createRange()
+              range.selectNodeContents(node)
+              for (const rect of range.getClientRects()) {
+                if (rect.width && (rect.left < box.left - 1 || rect.right > box.right + 1))
+                  escaped.push(node.textContent.trim())
+              }
+            }
+          }
+          const container = table.closest('[data-slot="table-container"]')!
+          return { escaped, right: container.getBoundingClientRect().right, viewport: innerWidth }
+        })
+        expect(taskLayout.escaped, '任务身份列保留宽度后，相邻字段仍留在所属单元格').toEqual([])
+        expect(taskLayout.right).toBeLessThanOrEqual(taskLayout.viewport + 1)
         await expect(page.locator('[data-andon-source="true"]')).toContainText(ids[1]!)
         await page.screenshot({ path: testInfo.outputPath('work-order.png') })
         await page.goto('/mes/handovers')

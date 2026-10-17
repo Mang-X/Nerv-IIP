@@ -400,18 +400,30 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
   {
     key: 'workCenterId',
     header: '工作中心',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.workCenterName?.trim() || r.workCenterCode?.trim() || '—',
   },
   {
     key: 'deviceAssetId',
     header: '设备',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.deviceAssetName?.trim() || r.deviceAssetCode?.trim() || '未指定',
   },
-  { key: 'shiftId', header: '班次', accessor: (r) => resolveShiftLabel(r.shiftId) },
+  {
+    key: 'shiftId',
+    header: '班次',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => resolveShiftLabel(r.shiftId),
+  },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
   {
     key: 'qualityStatus',
     header: '质量',
+    width: 'w-32',
+    cellClass: 'whitespace-normal break-all',
     // 这一列会收到总体判定值（ready/warning/blocked），走库存质量状态表会把 `Ready`
     // 原样上屏（#1418）——统一走判定优先的口径。
     accessor: (r) => operationQualityStatusLabel(r.qualityStatus),
@@ -1339,7 +1351,7 @@ function formatStatus(value?: string | null) {
       />
     </div>
 
-    <div class="grid gap-2">
+    <div class="grid min-w-0 gap-2 [&>*]:min-w-0">
       <span class="text-sm font-semibold text-foreground">工序任务</span>
       <NvDataTable
         :columns="taskColumns"
