@@ -321,7 +321,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleMesOperationTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
-    query: vi.fn(),
+    query: vi.fn(async () => coladaState.queryDataById.get('listBusinessConsoleMesOperationTasks')),
   })),
   listBusinessConsoleMesOperationTasks: vi.fn(async () => ({
     data: {
@@ -1252,7 +1252,7 @@ describe('business MES composables', () => {
     expect(restored.restoreProductionReport('wo-serial', 'op-serial')).toBeUndefined()
   })
 
-  it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {
+  it('reads overview, foundation readiness, operation tasks, and WIP rows', async () => {
     coladaState.queryDataById.set('getBusinessConsoleMesOverview', {
       success: true,
       data: {
@@ -1286,6 +1286,10 @@ describe('business MES composables', () => {
     const overview = useMesOverview()
     const readiness = useMesFoundationReadiness()
     const tasks = useMesOperationTasks()
+    coladaState.queryDataRefById.get('listBusinessConsoleMesOperationTasks')!.value =
+      await coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')!().query!({
+        signal: new AbortController().signal,
+      })
     const wip = useMesWipSummary()
 
     expect(getBusinessConsoleMesOverviewQueryOptions).toHaveBeenCalledWith({
@@ -1306,6 +1310,7 @@ describe('business MES composables', () => {
     expect(readiness.readiness.value?.status).toBe('Ready')
     expect(tasks.operationTasks.value).toHaveLength(1)
     expect(tasks.operationTasksTotal.value).toBe(77)
+    expect(tasks.operationTasksState.value).toBe('ready')
     expect(wip.wipRows.value).toHaveLength(1)
     expect(wip.wipTotal.value).toBe(23)
   })
