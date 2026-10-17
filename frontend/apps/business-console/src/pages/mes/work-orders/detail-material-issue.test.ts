@@ -508,6 +508,20 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     },
   )
 
+  it('物料读取被拒绝时说明权限边界且不提供齐套重试，重新进入仍然如此', async () => {
+    readinessQuery.error = { response: { status: 403 } }
+    for (let visit = 0; visit < 2; visit++) {
+      const wrapper = mountDetail(['business.mes.work-orders.read'])
+      const metric = wrapper.get('[data-metric="用料齐套"]')
+      expect(metric.text()).toContain('无用料读取权限')
+      expect(metric.text()).toContain('联系管理员')
+      expect(metric.text()).not.toContain('更新失败')
+      expect(metric.find('button').exists()).toBe(false)
+      wrapper.unmount()
+    }
+    expect(state.refreshMaterialReadiness).not.toHaveBeenCalled()
+  })
+
   it('齐套读取失败时遮蔽旧的已齐套结论，重试只恢复读取', async () => {
     readinessQuery.error = new Error('读取齐套失败')
     const wrapper = mountDetail(['business.mes.work-orders.read', 'business.mes.materials.manage'])

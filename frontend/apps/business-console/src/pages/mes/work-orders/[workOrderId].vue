@@ -52,6 +52,7 @@ import { readFaceText } from '@/utils/readFace'
 import { formatDateTime as formatSnapshotCapturedAt } from '@/utils/format'
 import {
   inlineErrorMessage,
+  isForbiddenError,
   notifyError,
   notifyOperationFailure,
   notifySuccess,
@@ -364,12 +365,19 @@ const materialConclusion = computed(() =>
     ? undefined
     : materialReadiness.value,
 )
+const materialReadForbidden = computed(() => isForbiddenError(materialReadinessError.value))
+const materialIssueReadForbidden = computed(() =>
+  isForbiddenError(materialIssueRequestsError.value),
+)
+const materialReadPermissionMessage = '当前角色没有用料读取权限，请联系管理员确认岗位授权。'
 const materialReadStateLabel = computed(() =>
-  materialReadinessError.value
-    ? '齐套更新失败'
-    : materialReadinessPending.value
-      ? '正在更新齐套'
-      : '未取得',
+  materialReadForbidden.value
+    ? '无用料读取权限'
+    : materialReadinessError.value
+      ? '齐套更新失败'
+      : materialReadinessPending.value
+        ? '正在更新齐套'
+        : '未取得',
 )
 const materialTone = computed<NvMetricTone>(() => {
   if (materialConclusion.value?.readinessStatus === 'Blocked') return 'danger'
@@ -1250,7 +1258,9 @@ function formatStatus(value?: string | null) {
             ? formatStatus(materialConclusion.readinessStatus)
             : materialReadStateLabel
         "
-        :action="materialReadinessError ? { label: '重试更新齐套' } : undefined"
+        :action="
+          materialReadinessError && !materialReadForbidden ? { label: '重试更新齐套' } : undefined
+        "
         @action="refreshMaterialReadiness"
         :tone="materialTone"
         :status="
@@ -1272,11 +1282,13 @@ function formatStatus(value?: string | null) {
                 : describeMesReadinessReasons(materialConclusion.blockingReasons)
                     .map((reason) => reason.detail || reason.label)
                     .join('；')
-            : materialReadinessError
-              ? '读取未完成，请重试更新齐套，无需重复收料。'
-              : materialReadinessPending
-                ? '正在等待收料过账与最新齐套结果。'
-                : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
+            : materialReadForbidden
+              ? materialReadPermissionMessage
+              : materialReadinessError
+                ? '读取未完成，请重试更新齐套，无需重复收料。'
+                : materialReadinessPending
+                  ? '正在等待收料过账与最新齐套结果。'
+                  : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
         "
       />
     </div>
@@ -1424,7 +1436,11 @@ function formatStatus(value?: string | null) {
       <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
         {{ MATERIAL_READINESS_SCOPE_NOTE }}
       </p>
+      <p v-if="materialReadForbidden" class="text-sm text-muted-foreground" role="status">
+        {{ materialReadPermissionMessage }}
+      </p>
       <NvDataTable
+        v-else
         :columns="materialColumns"
         :rows="materialRows"
         :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
@@ -1496,14 +1512,18 @@ function formatStatus(value?: string | null) {
           type="button"
           variant="ghost"
           size="sm"
-          :disabled="materialIssueRequestsPending"
+          :disabled="materialIssueRequestsPending || materialIssueReadForbidden"
           @click="refreshMaterialIssueRequests"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
       </div>
+      <p v-if="materialIssueReadForbidden" class="text-sm text-muted-foreground" role="status">
+        {{ materialReadPermissionMessage }}
+      </p>
       <NvDataTable
+        v-else
         :columns="materialIssueColumns"
         :rows="materialIssueRows"
         :row-key="(r) => r.requestId ?? ''"

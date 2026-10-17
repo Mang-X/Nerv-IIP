@@ -23,7 +23,7 @@ import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import FoundationIssues from '@/components/mes/FoundationIssues.vue'
-import { inlineErrorMessage } from '@/utils/notify'
+import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -47,8 +47,23 @@ const {
   workCenterOptions,
   workCentersPending,
 } = useProductionScopeCatalog()
-const { skuOptions, skusPending, productionVersionOptions, productionVersionsPending } =
-  useMesMaterialVersionCatalog()
+const {
+  skuOptions,
+  skusPending,
+  skusError,
+  refreshSkus,
+  productionVersionOptions,
+  productionVersionsPending,
+} = useMesMaterialVersionCatalog()
+
+const skusForbidden = computed(() => isForbiddenError(skusError.value))
+const skuReadMessage = computed(() =>
+  skusError.value
+    ? skusForbidden.value
+      ? '当前角色没有物料读取权限，请联系管理员确认岗位授权。'
+      : '物料读取失败，请重试读取物料。'
+    : '',
+)
 
 function scopeModel(
   field: 'siteCode' | 'lineCode' | 'workCenterCode' | 'skuId' | 'productionVersionId',
@@ -230,9 +245,22 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
             placeholder="全部"
             empty-text="暂无物料，请先在基础数据维护"
             :loading="skusPending"
+            :disabled="!!skusError"
             aria-label="物料"
             clearable
           />
+          <p v-if="skuReadMessage" class="text-sm text-muted-foreground" role="status">
+            {{ skuReadMessage }}
+          </p>
+          <NvButton
+            v-if="skusError && !skusForbidden"
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="skusPending"
+            @click="refreshSkus"
+            >重试读取物料</NvButton
+          >
         </NvField>
         <NvField>
           <NvFieldLabel for="foundation-version">生产版本</NvFieldLabel>
