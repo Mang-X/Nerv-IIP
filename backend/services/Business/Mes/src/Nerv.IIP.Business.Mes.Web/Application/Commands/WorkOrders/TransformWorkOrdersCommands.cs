@@ -274,14 +274,19 @@ internal static class WorkOrderTransformationCommandSupport
             Guid.CreateVersion7().ToString("N"), source.OperationSequence, source.WorkCenterId,
             source.AlternativeWorkCenterIdList, earliestStartUtc, TimeSpan.FromTicks(source.DurationTicks),
             source.SkuCode, source.UomCode, plannedQuantity, source.RequiresQualityInspection,
-            source.OperationCode, source.RequiredSkillCode);
+            source.OperationCode, source.RequiredSkillCode, RoutingIdentity(source));
 
     public static (int Sequence, string WorkCenter, string Alternatives, long Duration,
-        string Sku, string Uom, bool Inspection, string? OperationCode, string? Skill)
+        string Sku, string Uom, bool Inspection, string? OperationCode, string? Skill, OperationTaskRoutingIdentity? Identity)
         RoutingSnapshot(OperationTask operation) =>
         (operation.OperationSequence, operation.WorkCenterId, operation.AlternativeWorkCenterIds,
             operation.DurationTicks, operation.SkuCode, operation.UomCode, operation.RequiresQualityInspection,
-            operation.OperationCode, operation.RequiredSkillCode);
+            operation.OperationCode, operation.RequiredSkillCode, RoutingIdentity(operation));
+
+    private static OperationTaskRoutingIdentity? RoutingIdentity(OperationTask source) =>
+        source.RoutingSourceProductionVersionId is null
+            ? null
+            : new(source.RoutingSourceProductionVersionId, source.RoutingVersionId!, source.RoutingCode!, source.RoutingRevision!);
 
     public static async Task<WorkOrderTransformationResult?> FindReplayAsync(
         ApplicationDbContext dbContext,

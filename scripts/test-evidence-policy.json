@@ -1626,9 +1626,11 @@
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.PostgreSQL_uom_check_constraint_rejects_whitespace_lineage",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Scoped_idempotency_key_is_enforced_by_postgresql",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Split_lineage_audit_and_work_order_version_survive_postgres_scope_recreation",
-        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token"
+        "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests.Stale_work_order_version_is_rejected_by_postgresql_concurrency_token",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesTaskRoutingIdentityPostgresTests.Split_and_merge_preserve_saved_or_unknown_task_routes_on_postgres",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesTaskRoutingIdentityPostgresTests.Merge_rejects_different_or_unknown_source_route_identity_on_postgres"
       ],
-      "expectedRuntimeTestCount": 64
+      "expectedRuntimeTestCount": 66
     },
     {
       "id": "mes-cap-postgres",
