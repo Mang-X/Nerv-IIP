@@ -167,8 +167,15 @@ public sealed class QualityFirstArticleMesQualityHoldAcceptanceTests
         Assert.True(widenIndex > 0, $"迁移 {WidenMigrationId} 必须存在于迁移清单中，否则本用例失去跨迁移语义。");
         var migrator = dbContext.GetService<IMigrator>();
         await migrator.MigrateAsync(migrations[widenIndex - 1]);
-        // 当前 WorkOrder 模型需新列；列宽证明仍保持旧目标列，前滚前移除兼容列。
-        await dbContext.Database.ExecuteSqlRawAsync("ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE");
+        // 当前 MES 模型需新列；列宽证明仍保持旧目标列，前滚前移除兼容列。
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE mes.work_orders ADD COLUMN is_rush boolean NOT NULL DEFAULT FALSE;
+            ALTER TABLE mes.operation_tasks
+            ADD COLUMN routing_source_production_version_id character varying(100) NULL,
+            ADD COLUMN routing_version_id character varying(100) NULL,
+            ADD COLUMN routing_code character varying(100) NULL,
+            ADD COLUMN routing_revision character varying(50) NULL
+            """);
 
         var workOrderId = "WO-3315-LEGACY";
         var operationTaskId = "OP-3315-LEGACY-10";
@@ -183,7 +190,14 @@ public sealed class QualityFirstArticleMesQualityHoldAcceptanceTests
         Assert.True(legacyHold.Active);
 
         // 加宽迁移在既有行之上执行。
-        await dbContext.Database.ExecuteSqlRawAsync("ALTER TABLE mes.work_orders DROP COLUMN is_rush");
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE mes.work_orders DROP COLUMN is_rush;
+            ALTER TABLE mes.operation_tasks
+            DROP COLUMN routing_source_production_version_id,
+            DROP COLUMN routing_version_id,
+            DROP COLUMN routing_code,
+            DROP COLUMN routing_revision
+            """);
         await migrator.MigrateAsync();
         dbContext.ChangeTracker.Clear();
 
