@@ -713,6 +713,8 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       </template>
       <template #cell-assignedUserName="{ row }">
         <NvStatusBadge
+          class="max-w-full"
+          :title="resolveDispatchState(row).label"
           :label="resolveDispatchState(row).label"
           :tone="resolveDispatchState(row).tone"
         />
