@@ -443,3 +443,7 @@ Business Console 的「执行与齐套 → 安灯响应」（`/mes/andon`）面�
 - ISA-95 for MES（Symestic）：https://www.symestic.com/en-us/blog/mes/isa95
 - 制造 UX 最佳实践（Emixa）：https://www.emixa.com/blog/ux-in-manufacturing-design-for-people-not-just-for-machines
 - 制造仪表盘 UX（Fuselab）：https://fuselabcreative.com/manufacturing-dashboard-ux-design/
+
+### 物料读取状态
+
+工单可读不代表可读用料齐套和领料单。物料读取被拒绝时，指标与物料表明确说明岗位权限边界并引导联系管理员，不要求反复刷新齐套。生产准备检查的物料目录同样区分权限拒绝、读取失败与真实空目录；只有可恢复的读取失败提供重试，成功读取后的空目录才提示维护基础数据。页面跳转不改变授权。

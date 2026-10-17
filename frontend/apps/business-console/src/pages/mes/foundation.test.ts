@@ -1,9 +1,11 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 import FoundationPage from './foundation.vue'
 
+const skuRead = reactive({ error: null as unknown })
+const refreshSkus = vi.fn()
 const query = reactive({ workCenterCode: 'WC-TUB-01' })
 vi.mock('vue-router', () => ({ useRoute: () => ({ query }) }))
 
@@ -67,12 +69,67 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
     skuOptions: computed(() => []),
     skusPending: ref(false),
+    skusError: computed(() => skuRead.error),
+    refreshSkus,
     productionVersionOptions: () => [],
     productionVersionsPending: ref(false),
   }),
 }))
 
 describe('生产准备检查页', () => {
+  beforeEach(() => {
+    skuRead.error = null
+    refreshSkus.mockReset()
+  })
+
+  it('物料无权限时解释边界，离开再进入仍不冒充暂无物料', () => {
+    skuRead.error = { response: { status: 403 } }
+    for (let visit = 0; visit < 2; visit++) {
+      const wrapper = mount(FoundationPage, {
+        global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
+      })
+      expect(wrapper.text()).toContain('当前角色没有物料读取权限，请联系管理员确认岗位授权。')
+      expect(wrapper.get('#foundation-sku').attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).not.toContain('重试读取物料')
+      wrapper.unmount()
+    }
+    expect(refreshSkus).not.toHaveBeenCalled()
+  })
+
+  it('物料网络失败可重试，恢复合法空数据后显示真实空目录', async () => {
+    skuRead.error = new TypeError('Failed to fetch')
+    const wrapper = mount(FoundationPage, {
+      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
+    })
+    expect(wrapper.text()).toContain('网络异常')
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试读取物料')!
+    await retry.trigger('click')
+    expect(refreshSkus).toHaveBeenCalledTimes(1)
+    skuRead.error = null
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).not.toContain('网络异常')
+    expect(wrapper.get('#foundation-sku').attributes('disabled')).toBeUndefined()
+    expect(
+      wrapper
+        .findAllComponents({ name: 'NvEntityPicker' })
+        .find((item) => item.props('id') === 'foundation-sku')
+        ?.props('emptyText'),
+    ).toBe('暂无物料，请先在基础数据维护')
+    wrapper.unmount()
+  })
+
+  it.each(['detail', 'message'])('物料读取失败保留服务端中文 %s 原因', (field) => {
+    const reason = '物料目录暂不可用，请确认数据同步状态。'
+    skuRead.error = { status: 422, [field]: reason }
+    const wrapper = mount(FoundationPage, {
+      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
+    })
+    expect(wrapper.text()).toContain(reason)
+    expect(wrapper.text()).not.toContain('物料读取失败，请重试读取物料。')
+    expect(wrapper.findAll('button').some((button) => button.text() === '重试读取物料')).toBe(true)
+    wrapper.unmount()
+  })
+
   it('每条问题都带出去哪里补的提示', () => {
     const wrapper = mount(FoundationPage, {
       global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },

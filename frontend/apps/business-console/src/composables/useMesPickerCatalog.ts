@@ -155,6 +155,8 @@ export function useMesMaterialVersionCatalog() {
   return {
     skuOptions,
     skusPending: skuCatalog.skusPending,
+    skusError: skuCatalog.skusError,
+    refreshSkus: skuCatalog.refreshSkus,
     productionVersionLabel,
     productionVersionOptions,
     productionVersionsPending: versionCatalog.productionVersionsPending,
