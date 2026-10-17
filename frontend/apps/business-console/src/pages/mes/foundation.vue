@@ -61,7 +61,7 @@ const skuReadMessage = computed(() =>
   skusError.value
     ? skusForbidden.value
       ? '当前角色没有物料读取权限，请联系管理员确认岗位授权。'
-      : '物料读取失败，请重试读取物料。'
+      : inlineErrorMessage(skusError.value, '物料读取失败，请重试读取物料。')
     : '',
 )
 

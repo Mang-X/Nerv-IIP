@@ -101,13 +101,13 @@ describe('生产准备检查页', () => {
     const wrapper = mount(FoundationPage, {
       global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
     })
-    expect(wrapper.text()).toContain('物料读取失败')
+    expect(wrapper.text()).toContain('网络异常')
     const retry = wrapper.findAll('button').find((button) => button.text() === '重试读取物料')!
     await retry.trigger('click')
     expect(refreshSkus).toHaveBeenCalledTimes(1)
     skuRead.error = null
     await wrapper.vm.$nextTick()
-    expect(wrapper.text()).not.toContain('物料读取失败')
+    expect(wrapper.text()).not.toContain('网络异常')
     expect(wrapper.get('#foundation-sku').attributes('disabled')).toBeUndefined()
     expect(
       wrapper
@@ -115,6 +115,18 @@ describe('生产准备检查页', () => {
         .find((item) => item.props('id') === 'foundation-sku')
         ?.props('emptyText'),
     ).toBe('暂无物料，请先在基础数据维护')
+    wrapper.unmount()
+  })
+
+  it.each(['detail', 'message'])('物料读取失败保留服务端中文 %s 原因', (field) => {
+    const reason = '物料目录暂不可用，请确认数据同步状态。'
+    skuRead.error = { status: 422, [field]: reason }
+    const wrapper = mount(FoundationPage, {
+      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
+    })
+    expect(wrapper.text()).toContain(reason)
+    expect(wrapper.text()).not.toContain('物料读取失败，请重试读取物料。')
+    expect(wrapper.findAll('button').some((button) => button.text() === '重试读取物料')).toBe(true)
     wrapper.unmount()
   })
 
