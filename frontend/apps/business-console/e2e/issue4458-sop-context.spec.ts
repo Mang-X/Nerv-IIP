@@ -48,6 +48,10 @@ test('切换作业范围关闭旧 SOP，晚到响应不覆盖新任务，切回�
   const oldRequest = new Promise<void>((resolve) => {
     oldStarted = resolve
   })
+  let oldHandled!: () => void
+  const oldFulfilled = new Promise<void>((resolve) => {
+    oldHandled = resolve
+  })
   await page.addInitScript(
     (stored) => localStorage.setItem('nerv-iip.business-console.auth', JSON.stringify(stored)),
     session,
@@ -79,11 +83,12 @@ test('切换作业范围关闭旧 SOP，晚到响应不覆盖新任务，切回�
       const task = tasks.find(
         (task) => task.operationCode === url.searchParams.get('operationCode'),
       )!
-      if (sopRequests.length === 1) {
+      const held = sopRequests.length === 1
+      if (held) {
         oldStarted()
         await oldResponse
       }
-      return json({
+      await json({
         items: [
           {
             documentNumber: `SOP-${task.operationCode}`,
@@ -94,70 +99,74 @@ test('切换作业范围关闭旧 SOP，晚到响应不覆盖新任务，切回�
           },
         ],
       })
+      if (held) oldHandled()
+      return
     }
     return json({ items: [] })
   })
-  await page.goto('/mes/operation-tasks')
-  const panel = page
-    .locator('section[aria-live="polite"]')
-    .filter({ has: page.getByRole('heading', { name: /WO-QJ-1001-OP-/ }) })
-  const open = async (index: number) => {
-    await page.getByRole('button', { name: '查看当前SOP', exact: true }).click()
-    await expect(panel.getByRole('heading')).toHaveText(
-      `${tasks[index]!.operationTaskNo} · ${tasks[index]!.operationCode}`,
-    )
-  }
-  const selectScope = async (index: number) => {
-    await page.getByRole('combobox', { name: '作业范围', exact: true }).click()
-    await page
-      .getByRole('option', { name: `${scopes[index]!.displayName}（工作中心）`, exact: true })
-      .click()
-    await expect(panel).toHaveCount(0)
-    await expect(
-      page.getByText(tasks[index]!.operationTaskNo, { exact: true }).first(),
-    ).toBeVisible()
-  }
-  await open(0)
-  await oldRequest
-  await selectScope(1)
-  await open(1)
-  await expect(panel).toContainText('活塞杆加工一线作业指导书')
-  const oldFinished = page.waitForResponse(
-    (response) =>
-      response.url().includes('/operation-sops/current') &&
-      new URL(response.url()).searchParams.get('operationCode') === 'OP-WB-CUT',
-  )
-  releaseOld()
-  await oldFinished
-  await expect(panel).toContainText('活塞杆加工一线作业指导书')
-  await expect(panel).not.toContainText('管材切割一线作业指导书')
-  await page.screenshot({
-    path: testInfo.outputPath('late-response-new-context.png'),
-    fullPage: true,
-  })
-  await selectScope(2)
-  await open(2)
-  await expect(panel).toContainText('总成装配一线作业指导书')
-  await selectScope(0)
-  await open(0)
-  await expect(panel).toContainText('管材切割一线作业指导书')
-  await panel.getByRole('button', { name: '关闭SOP', exact: true }).click()
-  await expect(panel).toHaveCount(0)
-  await open(0)
-  await expect(panel).toContainText('管材切割一线作业指导书')
-  await page.getByRole('textbox').first().fill('WO-QJ-1001')
-  await expect(panel).toHaveCount(0)
-  await page.screenshot({ path: testInfo.outputPath('task-filter-closed.png'), fullPage: true })
-  expect(sopRequests.length).toBeGreaterThanOrEqual(3)
-  for (const url of sopRequests) {
-    const task = tasks.find((task) => task.operationCode === url.searchParams.get('operationCode'))!
-    expect(Object.fromEntries(url.searchParams)).toMatchObject({
-      organizationId: principal.organizationId,
-      environmentId: principal.environmentId,
-      operationCode: task.operationCode,
-      workCenterCode: task.workCenterCode,
-      routingCode: task.routingCode,
-      routingRevision: task.routingRevision,
+  try {
+    await page.goto('/mes/operation-tasks', { waitUntil: 'domcontentloaded' })
+    const panel = page
+      .locator('section[aria-live="polite"]')
+      .filter({ has: page.getByRole('heading', { name: /WO-QJ-1001-OP-/ }) })
+    const open = async (index: number) => {
+      await page.getByRole('button', { name: '查看当前SOP', exact: true }).click()
+      await expect(panel.getByRole('heading')).toHaveText(
+        `${tasks[index]!.operationTaskNo} · ${tasks[index]!.operationCode}`,
+      )
+    }
+    const selectScope = async (index: number) => {
+      await page.getByRole('combobox', { name: '作业范围', exact: true }).click()
+      await page
+        .getByRole('option', { name: `${scopes[index]!.displayName}（工作中心）`, exact: true })
+        .click()
+      await expect(panel).toHaveCount(0)
+      await expect(
+        page.getByText(tasks[index]!.operationTaskNo, { exact: true }).first(),
+      ).toBeVisible()
+    }
+    await open(0)
+    await oldRequest
+    await selectScope(1)
+    await open(1)
+    await expect(panel).toContainText('活塞杆加工一线作业指导书')
+    releaseOld()
+    // 查询层可以取消旧 fetch；等待 fixture 处理完迟到结果后核对当前页面。
+    await oldFulfilled
+    await expect(panel).toContainText('活塞杆加工一线作业指导书')
+    await expect(panel).not.toContainText('管材切割一线作业指导书')
+    await page.screenshot({
+      path: testInfo.outputPath('late-response-new-context.png'),
+      fullPage: true,
     })
+    await selectScope(2)
+    await open(2)
+    await expect(panel).toContainText('总成装配一线作业指导书')
+    await selectScope(0)
+    await open(0)
+    await expect(panel).toContainText('管材切割一线作业指导书')
+    await panel.getByRole('button', { name: '关闭SOP', exact: true }).click()
+    await expect(panel).toHaveCount(0)
+    await open(0)
+    await expect(panel).toContainText('管材切割一线作业指导书')
+    await page.getByRole('textbox').first().fill('WO-QJ-1001')
+    await expect(panel).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('task-filter-closed.png'), fullPage: true })
+    expect(sopRequests.length).toBeGreaterThanOrEqual(3)
+    for (const url of sopRequests) {
+      const task = tasks.find(
+        (task) => task.operationCode === url.searchParams.get('operationCode'),
+      )!
+      expect(Object.fromEntries(url.searchParams)).toMatchObject({
+        organizationId: principal.organizationId,
+        environmentId: principal.environmentId,
+        operationCode: task.operationCode,
+        workCenterCode: task.workCenterCode,
+        routingCode: task.routingCode,
+        routingRevision: task.routingRevision,
+      })
+    }
+  } finally {
+    releaseOld()
   }
 })
