@@ -2655,6 +2655,64 @@ public sealed class BusinessGatewayProxyTests
         Assert.Null(mes.LastWorkOrderListRequest);
     }
 
+    // HttpApi / Regression: #4485 must require only MES read permission and retain work scope.
+    [Theory]
+    [InlineData("allowed")]
+    [InlineData("no-permission")]
+    [InlineData("foreign-team")]
+    public async Task Mes_task_route_identity_preserves_upstream_values_under_existing_read_scope(string scenario)
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = new[]
+            {
+                new { operationTaskId = "OP-A", workOrderId = "WO-A", status = "Queued", operationSequence = 10,
+                    workCenterId = "WC-CUT", qualityStatus = "Ready", routingCode = (string?)"ROUTE-EXPLICIT", routingRevision = (string?)"A" },
+                new { operationTaskId = "OP-UNKNOWN", workOrderId = "WO-MANUAL", status = "Queued", operationSequence = 20,
+                    workCenterId = "WC-CUT", qualityStatus = "Ready", routingCode = (string?)null, routingRevision = (string?)null },
+            },
+            total = 2,
+        }));
+        var auth = new FakeBusinessGatewayAuthorizationClient(
+            requirement => scenario != "no-permission" && requirement.PermissionCode == BusinessGatewayPermissions.MesOperationsRead,
+            scopeGrants: [new AuthorizationScopeGrant("role", "role-team-operator", "team", "TEAM-A",
+                [BusinessGatewayPermissions.MesOperationsRead])]);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new NamedPrimaryHandlerFilter("IBusinessMesClient", handler));
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
+            {
+                PrincipalWorkContext = PrincipalWorkContext(new BusinessMasterDataWorkContextCandidateScope(
+                    "team", "TEAM-A", "甲班", "active-membership", [])),
+            });
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var team = scenario == "foreign-team" ? "TEAM-B" : "TEAM-A";
+        using var response = await client.GetAsync(
+            $"/api/business-console/v1/mes/operation-tasks?organizationId=org-001&environmentId=env-dev&scopeKind=team&scopeId={team}");
+        Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.MesOperationsRead, requirement.PermissionCode));
+        if (scenario != "allowed")
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Empty(handler.Requests);
+            return;
+        }
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Contains("teamIds=TEAM-A", forwarded.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Equal("internal-test-token", forwarded.Headers.Authorization!.Parameter);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var rows = body.RootElement.GetProperty("data").GetProperty("items");
+        Assert.Equal("ROUTE-EXPLICIT", rows[0].GetProperty("routingCode").GetString());
+        Assert.Equal("A", rows[0].GetProperty("routingRevision").GetString());
+        Assert.Equal(JsonValueKind.Null, rows[1].GetProperty("routingCode").ValueKind);
+        Assert.Equal(JsonValueKind.Null, rows[1].GetProperty("routingRevision").ValueKind);
+    }
+
     [Fact]
     public async Task Mes_operation_task_list_projects_an_authorized_team_scope()
     {

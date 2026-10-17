@@ -5025,6 +5025,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceWorkOrderId?: string | null;
     sourceNcrId?: string | null;
     sourceNcrCode?: string | null;
+    /**
+     * 任务创建时保存的权威工艺路线号；无权威来源时为 null。
+     */
+    routingCode?: string | null;
+    /**
+     * 任务创建时保存的权威工艺路线修订；无权威来源时为 null。
+     */
+    routingRevision?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary = {

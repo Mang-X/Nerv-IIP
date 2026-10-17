@@ -5505,7 +5505,11 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string WorkOrderType = "standard",
     string? SourceWorkOrderId = null,
     string? SourceNcrId = null,
-    string? SourceNcrCode = null);
+    string? SourceNcrCode = null,
+    [property: Description("任务创建时保存的权威工艺路线号；无权威来源时为 null。")]
+    string? RoutingCode = null,
+    [property: Description("任务创建时保存的权威工艺路线修订；无权威来源时为 null。")]
+    string? RoutingRevision = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
