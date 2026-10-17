@@ -97,6 +97,8 @@ import {
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
+import { operationTaskLabel } from '@/utils/mesTaskIdentity'
+
 definePage({
   meta: {
     requiresAuth: true,
@@ -389,8 +391,9 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
   {
     key: 'operationTaskId',
     header: '任务',
-    cellClass: 'font-medium',
-    accessor: (r) => r.operationTaskNo?.trim() || '—',
+    width: 'w-64',
+    cellClass: 'font-medium whitespace-normal break-all',
+    accessor: (r) => operationTaskLabel(r),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
@@ -405,18 +408,30 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
   {
     key: 'workCenterId',
     header: '工作中心',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.workCenterName?.trim() || r.workCenterCode?.trim() || '—',
   },
   {
     key: 'deviceAssetId',
     header: '设备',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.deviceAssetName?.trim() || r.deviceAssetCode?.trim() || '未指定',
   },
-  { key: 'shiftId', header: '班次', accessor: (r) => resolveShiftLabel(r.shiftId) },
+  {
+    key: 'shiftId',
+    header: '班次',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => resolveShiftLabel(r.shiftId),
+  },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
   {
     key: 'qualityStatus',
     header: '质量',
+    width: 'w-32',
+    cellClass: 'whitespace-normal break-all',
     // 这一列会收到总体判定值（ready/warning/blocked），走库存质量状态表会把 `Ready`
     // 原样上屏（#1418）——统一走判定优先的口径。
     accessor: (r) => operationQualityStatusLabel(r.qualityStatus),
@@ -1348,7 +1363,7 @@ function formatStatus(value?: string | null) {
       />
     </div>
 
-    <div class="grid gap-2">
+    <div class="grid min-w-0 gap-2 [&>*]:min-w-0">
       <span class="text-sm font-semibold text-foreground">工序任务</span>
       <NvDataTable
         :columns="taskColumns"
@@ -1369,8 +1384,8 @@ function formatStatus(value?: string | null) {
               Boolean(row.operationTaskId && route.query.operationTaskId === row.operationTaskId)
             "
           >
-            <span class="break-all whitespace-normal">{{
-              row.operationTaskNo?.trim() || '—'
+            <span class="break-all whitespace-normal" :title="row.operationTaskId">{{
+              operationTaskLabel(row)
             }}</span>
             <NvStatusBadge
               v-if="row.operationTaskId && route.query.operationTaskId === row.operationTaskId"

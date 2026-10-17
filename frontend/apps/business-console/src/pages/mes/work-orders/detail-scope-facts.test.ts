@@ -146,6 +146,48 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     detailState.scopeMessage = ''
   })
 
+  // #4464：缺业务号时仍能按公开身份区分任务；显示值不承担来源工序匹配。
+  it.each([null, '', '   '])('工序业务号为 %j 时完整呈现真实公开身份', (operationTaskNo) => {
+    const id = 'WO-宁波精密制管长工单-20261017-000001-OP-20'
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: id, operationTaskNo }],
+    }
+    routeState.query = { operationTaskId: id }
+    const wrapper = mountDetail()
+    const source = wrapper.get('[data-andon-source="true"]')
+    expect(source.text()).toContain(id)
+    expect(source.get('[title]').attributes('title')).toBe(id)
+    expect(source.text()).toContain('来源工序')
+    wrapper.unmount()
+  })
+
+  it('公开身份为系统 UUID 时用真实工序序号定位，完整身份仍可查看和匹配', () => {
+    const id = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: id, operationTaskNo: null, operationSequence: 20 }],
+    }
+    routeState.query = { operationTaskId: id }
+    const wrapper = mountDetail()
+    const source = wrapper.get('[data-andon-source="true"]')
+    expect(source.text()).toContain('工序 20')
+    expect(source.text()).not.toContain(id)
+    expect(source.get('[title]').attributes('title')).toBe(id)
+    wrapper.unmount()
+  })
+
+  it('工序有业务号时优先显示业务号，同时可查看完整公开身份', () => {
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-strong-20', operationTaskNo: 'WO-1-OP-20' }],
+    }
+    const wrapper = mountDetail()
+    expect(wrapper.text()).toContain('WO-1-OP-20')
+    expect(wrapper.find('[title="task-strong-20"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('来源建议返回使用公开强ID，不从当前query猜测建议或run', () => {
     routeState.query = { suggestionId: 'unrelated-suggestion', runId: 'unrelated-run' }
     detailState.detail = {

@@ -365,6 +365,7 @@ describe('MES handovers read-face guard', () => {
     state.filters.organizationId = 'org-001'
     state.filters.environmentId = 'env-dev'
     state.row.handoverId = 'handover-001'
+    state.detail.handoverId = 'handover-001'
     state.row.shiftId = 'EARLY'
     state.row.teamId = 'TEAM-A'
     state.row.teamName = '总装早班一组'
@@ -392,6 +393,27 @@ describe('MES handovers read-face guard', () => {
     mutations.notifyOperationFailure.mockReset()
   })
 
+  it('公开交接单号在列表、详情和接班确认可见，动作仍使用该身份和原范围', async () => {
+    const id = 'SHO-20261017-000011'
+    state.row.handoverId = id
+    state.detail.handoverId = id
+    mutations.acceptShiftHandover.mockResolvedValueOnce(acceptedResponse())
+    const wrapper = mountPage()
+    expect(readRowCell(wrapper, 'handoverId')).toBe(id)
+    await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
+    await flushPromises()
+    expect(detailFace.handoverId.value).toBe(id)
+    expect(readDetailSummary(wrapper)['交接单']).toBe(id)
+    await wrapper.get('[data-testid="accept-handover"]').trigger('click')
+    expect(wrapper.get('[data-testid="accept-handover-form"]').text()).toContain(id)
+    await wrapper.get('[data-testid="accept-handover-form"]').trigger('submit')
+    await flushPromises()
+    expect(mutations.acceptShiftHandover).toHaveBeenCalledWith(id, {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+  })
+
   it('shows the DTO team name and never exposes technical identifiers', () => {
     const wrapper = mountPage()
     const visibleText = wrapper.text()
@@ -411,7 +433,7 @@ describe('MES handovers read-face guard', () => {
     const wrapper = mountPage()
     const visibleText = wrapper.text()
 
-    expect(visibleText).toContain('—')
+    expect(readRowCell(wrapper, 'handoverId')).toBe('handover-001')
     expect(visibleText).toContain('未指派')
     expect(visibleText).not.toMatch(UUID_PATTERN)
     expect(visibleText).not.toMatch(TECHNICAL_USER_PATTERN)
