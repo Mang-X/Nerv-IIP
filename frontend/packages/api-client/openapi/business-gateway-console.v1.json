@@ -54517,6 +54517,16 @@
           "sourceNcrCode": {
             "type": "string",
             "nullable": true
+          },
+          "routingCode": {
+            "type": "string",
+            "description": "任务创建时保存的权威工艺路线号；无权威来源时为 null。",
+            "nullable": true
+          },
+          "routingRevision": {
+            "type": "string",
+            "description": "任务创建时保存的权威工艺路线修订；无权威来源时为 null。",
+            "nullable": true
           }
         }
       },

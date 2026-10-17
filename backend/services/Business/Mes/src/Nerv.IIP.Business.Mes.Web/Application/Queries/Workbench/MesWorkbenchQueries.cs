@@ -895,6 +895,12 @@ public sealed record MesOperationTaskRow(
     public string? SourceNcrId { get; init; }
 
     public string? SourceNcrCode { get; init; }
+
+    [Description("任务创建时保存的权威工艺路线号；无权威来源时为 null。")]
+    public string? RoutingCode { get; init; }
+
+    [Description("任务创建时保存的权威工艺路线修订；无权威来源时为 null。")]
+    public string? RoutingRevision { get; init; }
 }
 
 internal sealed record MesWorkOrderAuthority(
@@ -1128,7 +1134,11 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                     ? new MesActualHours(
                         x.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
                         x.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
-                    : null));
+                    : null)
+            {
+                RoutingCode = x.RoutingCode,
+                RoutingRevision = x.RoutingRevision,
+            });
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -1288,6 +1298,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                     task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
                 : null)
         {
+            RoutingCode = task.RoutingCode,
+            RoutingRevision = task.RoutingRevision,
             AllowedActions = readiness.AllowedActions,
             BlockReasons = readiness.BlockReasons,
             EvaluatedAtUtc = readiness.EvaluatedAtUtc,
