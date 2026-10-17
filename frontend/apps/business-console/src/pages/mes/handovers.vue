@@ -189,9 +189,9 @@ const columns: NvDataTableColumn<HandoverRow>[] = [
   {
     key: 'handoverId',
     header: '交接单',
-    width: 'w-28',
-    cellClass: 'font-medium',
-    accessor: () => '—',
+    width: 'w-56',
+    cellClass: 'font-medium whitespace-normal break-all',
+    accessor: (r) => r.handoverId?.trim() || '未提供标识',
   },
   {
     key: 'shiftId',
@@ -626,6 +626,16 @@ function formatDateTime(value?: string | null) {
       @retry="refreshHandovers"
       @row-click="openDetail"
     >
+      <template #cell-handoverId="{ row }">
+        <button
+          type="button"
+          class="text-brand whitespace-normal break-all text-left underline-offset-4 hover:underline"
+          :title="row.handoverId"
+          @click.stop="openDetail(row)"
+        >
+          {{ row.handoverId?.trim() || '未提供标识' }}
+        </button>
+      </template>
       <template #cell-handoverStatus="{ row }">
         <NvStatusBadge
           :value="row.handoverStatus"
@@ -705,6 +715,12 @@ function formatDateTime(value?: string | null) {
 
           <template v-if="handoverDetail">
             <dl class="grid gap-3 @md:grid-cols-2">
+              <div class="rounded-lg border bg-card p-3">
+                <dt class="text-xs text-muted-foreground">交接单</dt>
+                <dd class="mt-1 break-all text-sm" :title="handoverDetail.handoverId">
+                  {{ handoverDetail.handoverId?.trim() || '未提供标识' }}
+                </dd>
+              </div>
               <div class="rounded-lg border bg-card p-3">
                 <dt class="text-xs text-muted-foreground">状态</dt>
                 <dd class="mt-1">
@@ -924,6 +940,12 @@ function formatDateTime(value?: string | null) {
         </NvDialogHeader>
         <form class="grid gap-4" data-testid="accept-handover-form" @submit.prevent="submitAccept">
           <dl class="grid gap-2 text-sm">
+            <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-4">
+              <dt class="text-muted-foreground">交接单</dt>
+              <dd class="break-all text-right font-medium" :title="acceptTarget?.handoverId">
+                {{ acceptTarget?.handoverId?.trim() || '未提供标识' }}
+              </dd>
+            </div>
             <div class="flex justify-between gap-4">
               <dt class="text-muted-foreground">班次</dt>
               <dd class="font-medium">{{ acceptTargetShiftLabel }}</dd>

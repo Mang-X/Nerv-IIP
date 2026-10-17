@@ -81,6 +81,8 @@ import {
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { operationTaskLabel } from '@/utils/mesTaskIdentity'
+
 definePage({
   meta: {
     requiresAuth: true,
@@ -222,7 +224,7 @@ const columns: NvDataTableColumn<Row>[] = [
     header: '工序任务',
     width: 'w-64',
     cellClass: 'font-medium whitespace-normal break-all',
-    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号',
+    accessor: (r) => operationTaskLabel(r),
   },
   {
     key: 'workOrderId',
@@ -666,6 +668,11 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       "
       @retry="refreshOperationTasks"
     >
+      <template #cell-operationTaskId="{ row }">
+        <span class="whitespace-normal break-all" :title="row.operationTaskId">{{
+          operationTaskLabel(row)
+        }}</span>
+      </template>
       <template #cell-operationSequence="{ row }">
         <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>
       </template>
