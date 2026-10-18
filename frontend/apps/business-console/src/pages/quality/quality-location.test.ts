@@ -6,6 +6,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import InspectionsPage from './inspections.vue'
 import NcrsPage from './ncrs.vue'
+import NcrEvidenceUpload from '@/components/quality/NcrEvidenceUpload.vue'
+import { FileUpload } from '@nerv-iip/ui'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
@@ -87,6 +89,13 @@ const taskActionSpies = vi.hoisted(() => ({
 }))
 const createRecordSpy = vi.hoisted(() => vi.fn())
 const qualityTaskRead = vi.hoisted(() => vi.fn())
+const evidenceApi = vi.hoisted(() => ({
+  create: vi.fn(),
+  head: vi.fn(),
+  patch: vi.fn(),
+  complete: vi.fn(),
+  read: vi.fn(),
+}))
 const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
 vi.mock('@/utils/notify', async (importOriginal) => ({
@@ -105,6 +114,13 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
 vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
   listBusinessConsoleQualityInspectionTasks: qualityTaskRead,
+  createBusinessConsoleQualityEvidenceUploadSession: evidenceApi.create,
+  getBusinessConsoleQualityEvidenceTusOffset: evidenceApi.head,
+  patchBusinessConsoleQualityEvidenceTusUpload: evidenceApi.patch,
+  completeBusinessConsoleQualityEvidenceUpload: evidenceApi.complete,
+  getBusinessConsoleQualityNcrQueryOptions: (options: unknown) => ({
+    query: () => evidenceApi.read(options),
+  }),
 }))
 
 const operationContextState = vi.hoisted(() => ({
@@ -462,6 +478,36 @@ function mountQualityPage(component: unknown) {
 
 describe('quality route location behavior', () => {
   beforeEach(() => {
+    evidenceApi.create.mockReset().mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          uploadSessionId: 'session-1',
+          fileId: 'reserved-file',
+          expiresAtUtc: '2099-01-01T00:00:00Z',
+          uploadUrl: '/api/business-console/v1/files/quality-evidence/tus/session-1',
+          uploadHeaders: {},
+        },
+      },
+    })
+    evidenceApi.head
+      .mockReset()
+      .mockResolvedValue({ response: new Response(null, { headers: { 'Upload-Offset': '0' } }) })
+    evidenceApi.patch
+      .mockReset()
+      .mockResolvedValue({ response: new Response(null, { status: 204 }) })
+    evidenceApi.complete
+      .mockReset()
+      .mockResolvedValue({ data: { success: true, data: { fileId: 'completed-file' } } })
+    evidenceApi.read.mockReset().mockResolvedValue({
+      success: true,
+      data: {
+        id: 'NCR-001',
+        code: 'NCR-001',
+        status: 'disposition-in-progress',
+        attachmentFileIds: ['completed-file'],
+      },
+    })
     setActivePinia(createPinia())
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
@@ -885,7 +931,8 @@ describe('quality route location behavior', () => {
         canCloseNcr: boolean
         canSubmitDisposition: boolean
         closeForm: { reason: string }
-        dispositionForm: { dispositionType: string; attachmentFileIds: string }
+        dispositionForm: { dispositionType: string }
+        evidenceFiles: Array<{ fileId: string; fileName: string }>
         openNcr: (ncr: Record<string, unknown>) => void
         submitCloseNcr: () => Promise<void>
         submitNcrDisposition: () => Promise<void>
@@ -895,8 +942,8 @@ describe('quality route location behavior', () => {
       // 本用例只考察业务范围这一维门禁：选一个不需要 MRB 评审 / 中央审批链的处置类型，
       // 免得把 #1327 新增的处置前置条件混进来。
       vm.dispositionForm.dispositionType = 'sort-and-screen'
-      vm.dispositionForm.attachmentFileIds = 'file-001'
       await nextRenderTick()
+      vm.evidenceFiles = [{ fileId: 'completed-file', fileName: '尺寸复检.txt' }]
 
       expect(vm.canSubmitDisposition).toBe(false)
       expect(vm.canCloseNcr).toBe(false)
@@ -918,11 +965,106 @@ describe('quality route location behavior', () => {
       qualityState.ncrFilters![missingField] =
         missingField === 'organizationId' ? 'org-001' : 'env-dev'
       await nextRenderTick()
+      await wrapper
+        .findComponent(FileUpload)
+        .vm.addFiles([new File(['inspection'], '尺寸复检.txt', { type: 'text/plain' })])
+      await nextRenderTick()
 
       expect(vm.canSubmitDisposition).toBe(true)
       expect(vm.canCloseNcr).toBe(false)
       expect(dispositionButton?.attributes('disabled')).toBeUndefined()
       expect(closeButton?.attributes('disabled')).toBeDefined()
+    },
+  )
+
+  it('preserves disposition input after an upload failure and submits completed evidence after retry with public readback', async () => {
+    evidenceApi.patch.mockRejectedValueOnce(new Error('上传中断'))
+    const wrapper = mountQualityPage(NcrsPage)
+    const vm = wrapper.vm as unknown as {
+      dispositionForm: { dispositionType: string; mrbComment: string }
+      canSubmitDisposition: boolean
+      selectedNcr: BusinessConsoleQualityNcrItem
+      openNcr: (ncr: BusinessConsoleQualityNcrItem) => void
+      submitNcrDisposition: () => Promise<void>
+    }
+    vm.openNcr(qualityState.ncrs[0]!)
+    vm.dispositionForm.dispositionType = 'sort-and-screen'
+    vm.dispositionForm.mrbComment = '保留尺寸复检说明'
+    await nextRenderTick()
+    const upload = wrapper.findComponent(FileUpload)
+    await upload.vm.addFiles([new File(['inspection'], '尺寸复检.txt', { type: 'text/plain' })])
+    await nextRenderTick()
+    expect(vm.dispositionForm).toMatchObject({
+      dispositionType: 'sort-and-screen',
+      mrbComment: '保留尺寸复检说明',
+    })
+    expect(vm.canSubmitDisposition).toBe(false)
+    expect(ncrActionSpies.submitDisposition).not.toHaveBeenCalled()
+    await upload.vm.retryFailed()
+    await nextRenderTick()
+    expect(vm.canSubmitDisposition).toBe(true)
+    await vm.submitNcrDisposition()
+    await nextRenderTick()
+    expect(ncrActionSpies.submitDisposition).toHaveBeenCalledWith(
+      'NCR-001',
+      expect.objectContaining({
+        dispositionType: 'sort-and-screen',
+        attachmentFileIds: ['completed-file'],
+        mrbReviews: undefined,
+      }),
+    )
+    expect(evidenceApi.read).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { ncrId: 'NCR-001' },
+        query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      }),
+    )
+    expect(vm.selectedNcr).toMatchObject({
+      id: 'NCR-001',
+      status: 'disposition-in-progress',
+      attachmentFileIds: ['completed-file'],
+    })
+    expect(wrapper.text()).toContain('已关联证据')
+    expect(wrapper.text()).toContain('1 个')
+  })
+
+  it.each(['close', 'switch'] as const)(
+    'discards late upload results after dialog %s',
+    async (action) => {
+      let finish!: (value: unknown) => void
+      evidenceApi.complete.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+      )
+      const wrapper = mountQualityPage(NcrsPage)
+      const vm = wrapper.vm as unknown as {
+        detailOpen: boolean
+        evidenceFiles: Array<{ fileId: string }>
+        dispositionForm: { dispositionType: string }
+        canSubmitDisposition: boolean
+        openNcr: (ncr: BusinessConsoleQualityNcrItem) => void
+      }
+      vm.openNcr(qualityState.ncrs[0]!)
+      vm.dispositionForm.dispositionType = 'sort-and-screen'
+      await nextRenderTick()
+      const pending = wrapper
+        .findComponent(FileUpload)
+        .vm.addFiles([new File(['inspection'], '尺寸复检.txt', { type: 'text/plain' })])
+      await flushPromises()
+      expect(evidenceApi.complete).toHaveBeenCalledTimes(1)
+      if (action === 'close') {
+        vm.detailOpen = false
+        await nextRenderTick()
+      }
+      vm.openNcr({ id: 'NCR-002', code: 'NCR-002', status: 'open' })
+      await nextRenderTick()
+      finish({ data: { success: true, data: { fileId: 'old-file' } } })
+      await pending
+      await nextRenderTick()
+      expect(wrapper.findComponent(NcrEvidenceUpload).props('ncrId')).toBe('NCR-002')
+      expect(vm.evidenceFiles).toEqual([])
+      expect(vm.canSubmitDisposition).toBe(false)
     },
   )
 
