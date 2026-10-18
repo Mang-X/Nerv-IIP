@@ -48,6 +48,7 @@ import {
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
   listBusinessConsoleMesReceivableProducedLotsQueryOptions,
+  listBusinessConsoleMesHistoricalProducedLotsQueryOptions,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
@@ -95,6 +96,8 @@ import {
   type BusinessConsoleMesProductionReportListEnvelope,
   type BusinessConsoleMesReceivableProducedLotListEnvelope,
   type BusinessConsoleMesReceivableProducedLotRow,
+  type BusinessConsoleMesHistoricalProducedLotRow,
+  type BusinessConsoleMesHistoricalProducedLotListEnvelope,
   type BusinessConsoleMesProductionReportDetailEnvelope,
   type BusinessConsoleMesProductionReportDetailResponse,
   type BusinessConsoleMesProductionReportRow,
@@ -2867,6 +2870,38 @@ export interface MesWorkOrderProducedLot {
   // 剩余可入库量（读面已过滤耗尽批次）：Console 据此提示并按剩余限制登记数量。
   remainingQuantity: number
   serialNo?: string
+}
+
+// 追溯目录读取历史产出事实，不按剩余可入库量筛选；入库表单继续使用下方候选查询。
+export function useMesWorkOrderHistoricalProducedLots(workOrderId: () => string) {
+  const filters = defaultFilters()
+  const enabled = () => hasBusinessContext(filters) && isNonEmpty(workOrderId().trim())
+  const query = useQuery(() => ({
+    ...listBusinessConsoleMesHistoricalProducedLotsQueryOptions({
+      path: { workOrderId: workOrderId().trim() },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    }),
+    enabled: enabled(),
+  }))
+  const producedLotsState = businessReadState(query, enabled)
+  const producedLots = computed(() =>
+    producedLotsState.value === 'ready'
+      ? envelopeItems<
+          BusinessConsoleMesHistoricalProducedLotRow,
+          BusinessConsoleMesHistoricalProducedLotListEnvelope
+        >(query.data.value)
+      : [],
+  )
+  return {
+    producedLots,
+    producedLotsState,
+    producedLotsError: query.error,
+    producedLotsPending: query.isLoading,
+    refreshProducedLots: () => refetchWithBusinessContext(filters, query),
+  }
 }
 
 // 工单的真实产出批次来源：完工入库创建端点强制引用 MES 已生成的产出批次

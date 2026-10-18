@@ -3,7 +3,7 @@ import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@
 import {
   useMesTraceability,
   useMesWorkOrders,
-  useMesWorkOrderProducedLots,
+  useMesWorkOrderHistoricalProducedLots,
 } from '@/composables/useBusinessMes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { buildWorkOrderPickerOptions } from '@/composables/mes/workOrderPickerOptions'
@@ -33,7 +33,7 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { traceWorkOrderTarget } from '@/composables/mes/traceWorkOrderLink'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-import { inlineErrorMessage } from '@/utils/notify'
+import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -181,17 +181,25 @@ const workOrderModel = computed({
 
 // 批次/序列号没有通用目录读面，只有「某工单的产出批次」这一条权威来源；
 // 因此选了工单才能挑批次，没选工单时如实保留手工录入。
-const { producedLots, producedLotsPending } = useMesWorkOrderProducedLots(() => filters.workOrderId)
+const {
+  producedLots,
+  producedLotsPending,
+  producedLotsError,
+  producedLotsState,
+  refreshProducedLots,
+} = useMesWorkOrderHistoricalProducedLots(() => filters.workOrderId)
+const producedLotsForbidden = computed(() => isForbiddenError(producedLotsError.value))
 const producedLotOptions = computed<EntityPickerOption[]>(() =>
-  producedLots.value.map((lot) => {
+  producedLots.value.flatMap((lot) => {
+    if (!lot.producedLotNo) return []
     const hint = [
       lot.serialNo ? `序列号 ${lot.serialNo}` : '',
       lot.reportNo ? `报工 ${lot.reportNo}` : '',
-      `剩余 ${lot.remainingQuantity}`,
+      `产出 ${lot.quantity ?? 0}`,
     ]
       .filter(Boolean)
       .join(' · ')
-    return { value: lot.producedLotNo, label: lot.producedLotNo, hint }
+    return [{ value: lot.producedLotNo, label: lot.producedLotNo, hint }]
   }),
 )
 const hasWorkOrderScope = computed(() => filters.workOrderId.trim().length > 0)
@@ -296,17 +304,27 @@ function firstQuery(value: unknown) {
           aria-label="工单号"
         />
         <NvEntityPicker
-          v-if="hasWorkOrderScope"
+          v-if="hasWorkOrderScope && producedLotsState !== 'error'"
           v-model="batchModel"
           class="w-56"
           :options="producedLotOptions"
           title="选择产出批次"
+          variant="dialog"
           placeholder="选择产出批次"
           empty-text="该工单还没有产出批次"
           :loading="producedLotsPending"
           clearable
           aria-label="批次或物料批"
         />
+        <span v-else-if="hasWorkOrderScope" role="alert" class="text-sm text-muted-foreground">
+          <template v-if="producedLotsForbidden"
+            >缺少追溯读取权限，无法读取产出批次，请联系管理员。</template
+          >
+          <template v-else>
+            {{ inlineErrorMessage(producedLotsError, '产出批次加载失败，请重试。') }}
+            <NvButton variant="outline" size="sm" @click="refreshProducedLots">重试</NvButton>
+          </template>
+        </span>
         <NvInput
           v-else
           v-model="batchModel"

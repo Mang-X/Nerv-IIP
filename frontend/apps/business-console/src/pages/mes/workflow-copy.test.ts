@@ -157,6 +157,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     return [...seen.values()]
   },
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  useMesWorkOrderHistoricalProducedLots: () => ({
+    producedLots: ref([{ producedLotNo: 'LOT-WO-001', reportNo: 'PRPT-1', quantity: 10 }]),
+    producedLotsError: ref(undefined),
+    producedLotsPending: ref(false),
+    producedLotsState: ref('ready'),
+    refreshProducedLots: vi.fn(),
+  }),
   useMesWorkOrderProducedLots: () => ({
     // 单一产出批次自动选中，使完工入库提交用例可通过 canCreate（后端强制引用真实产出批次）。
     producedLots: ref([
