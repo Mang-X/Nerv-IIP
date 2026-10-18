@@ -14,6 +14,50 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesFinishedGoodsReceiptClosureTests
 {
+    // DomainInvariant / Regression: #4498、#4461 spec r1，历史身份不随入库占用量消失。
+    [Fact]
+    public async Task Historical_lot_remains_readable_before_partial_and_full_receipt_while_candidates_are_exhausted()
+    {
+        await using var db = CreateDbContext(nameof(Historical_lot_remains_readable_before_partial_and_full_receipt_while_candidates_are_exhausted));
+        var now = DateTimeOffset.Parse("2026-10-18T08:00:00Z");
+        var order = WorkOrder.Create("org-001", "env-dev", "WO-HISTORY", "SKU-FG", "PV-001", 10m, 10, now.AddHours(8), "PCS");
+        order.MarkReleased();
+        order.Start(now);
+        order.RecordProductionProgress(10m, 0m, now);
+        db.WorkOrders.Add(order);
+        db.OutputLotGenealogies.Add(OutputLotGenealogy.Create("org-001", "env-dev", "WO-HISTORY", "OP-10", "REPORT-HISTORY", "LOT-HISTORY", "LEGACY-SN", 10m, now));
+        var report = ProductionReport.Record("org-001", "env-dev", "REPORT-HISTORY", "WO-HISTORY", "OP-10", 10m, 0m, true, now, producedLotNo: "LOT-HISTORY");
+        db.ProductionReports.Add(report);
+        db.ProductionReportSerialNumbers.AddRange(ProductionReportSerialNumber.CreateForReport(report, ["SN-B", "SN-A"]));
+        await db.SaveChangesAsync();
+        var history = new ListHistoricalProducedLotsQueryHandler(db);
+        var candidates = new ListReceivableProducedLotsQueryHandler(db);
+        var create = new CreateFinishedGoodsReceiptRequestCommandHandler(db, new MesCodingService());
+
+        foreach (var received in new[] { 0m, 4m, 10m })
+        {
+            if (received > 0m)
+            {
+                await create.Handle(new CreateFinishedGoodsReceiptRequestCommand(
+                    "org-001", "env-dev", "WO-HISTORY", "SKU-FG", received == 4m ? 4m : 6m, "PCS", now,
+                    1m, $"history-receipt-{received}", "LOT-HISTORY", "LEGACY-SN"), CancellationToken.None);
+                await db.SaveChangesAsync();
+            }
+
+            var lot = Assert.Single((await history.Handle(new("org-001", "env-dev", "WO-HISTORY"), CancellationToken.None)).Items);
+            Assert.Equal(new HistoricalProducedLotFact("LOT-HISTORY", "REPORT-HISTORY", "OP-10", 10m, now, "LEGACY-SN", lot.SerialNumbers), lot);
+            Assert.Equal(new[] { "SN-B", "SN-A" }, lot.SerialNumbers);
+            var remaining = (await candidates.Handle(new("org-001", "env-dev", "WO-HISTORY"), CancellationToken.None)).Items;
+            if (received == 10m)
+                Assert.Empty(remaining);
+            else
+                Assert.Equal(10m - received, Assert.Single(remaining).RemainingQuantity);
+        }
+
+        await Assert.ThrowsAsync<KnownException>(() => create.Handle(new CreateFinishedGoodsReceiptRequestCommand(
+            "org-001", "env-dev", "WO-HISTORY", "SKU-FG", 1m, "PCS", now, 1m, "history-over-limit", "LOT-HISTORY", "LEGACY-SN"), CancellationToken.None));
+    }
+
     [Fact]
     public async Task Create_finished_goods_receipt_request_rejects_cumulative_quantity_above_completed_quantity()
     {
