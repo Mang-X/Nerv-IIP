@@ -25,8 +25,8 @@ describe('SOP download composed with the real PDA timeout fetch', () => {
     const started = new Promise<void>((resolve) => {
       bodyStarted = resolve
     })
-    const baseFetch: typeof fetch = async (input) => {
-      const request = input as Request
+    const baseFetch: typeof fetch = async (input, init) => {
+      const request = new Request(input, init)
       return new Response(
         new ReadableStream({
           start(controller) {
@@ -45,10 +45,12 @@ describe('SOP download composed with the real PDA timeout fetch', () => {
       { organizationId: 'org-001', environmentId: 'env-dev' },
       { timeoutMs: 50 },
     )
-    const assertion = expect(pending).rejects.toThrow('网络超时')
+    const settled = vi.fn()
+    void pending.then(settled, settled)
     // Advance past the download's own 50ms ceiling → outer abort must reach the native body.
     await started
     await vi.advanceTimersByTimeAsync(50)
-    await assertion
+    expect(settled).toHaveBeenCalledOnce()
+    await expect(pending).rejects.toThrow('网络超时')
   })
 })
