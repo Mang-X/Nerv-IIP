@@ -373,7 +373,8 @@ async function submitNcrDisposition() {
       }
     } catch (error) {
       notifyOperationFailure('处置已提交，详情读取失败', error, '请刷新核实处置状态与已关联证据。')
-      detailOpen.value = false
+      if (dispositionOpening.value === opening && selectedNcrId.value === ncrId)
+        detailOpen.value = false
     }
     return
   }

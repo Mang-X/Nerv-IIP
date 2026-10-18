@@ -155,3 +155,25 @@ it('aborts the old NCR upload when its dialog closes or its keyed scope is repla
   expect(api.complete.mock.calls[0]![0].body.ncrId).toBe('ncr-1')
   next.unmount()
 })
+
+it('does not count reserved file ids when completion fails and can retry completion without resending bytes', async () => {
+  api.complete.mockRejectedValueOnce(new Error('完成确认失败'))
+  const wrapper = mount(NcrEvidenceUpload, { props: scope })
+  const upload = wrapper.findComponent(FileUpload)
+  await upload.vm.addFiles([file()])
+  await flushPromises()
+  expect(wrapper.emitted('completed')).toBeUndefined()
+  expect(wrapper.text()).toContain('完成确认失败')
+  api.head.mockResolvedValue({
+    response: new Response(null, { headers: { 'Upload-Offset': '10' } }),
+  })
+  await upload.vm.retryFailed()
+  await flushPromises()
+  expect(api.create).toHaveBeenCalledTimes(1)
+  expect(api.patch).toHaveBeenCalledTimes(1)
+  expect(api.complete).toHaveBeenCalledTimes(2)
+  expect(wrapper.emitted('completed')?.at(-1)?.[0]).toEqual([
+    { fileId: 'completed-file', fileName: '尺寸复检.txt' },
+  ])
+  wrapper.unmount()
+})
