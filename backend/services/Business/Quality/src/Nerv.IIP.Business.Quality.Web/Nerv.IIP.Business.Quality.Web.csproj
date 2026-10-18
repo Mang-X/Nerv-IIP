@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../../../../common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\DistributedLocking\Nerv.IIP.DistributedLocking\Nerv.IIP.DistributedLocking.csproj" />
     <PackageReference Include="DotNetCore.CAP.Dashboard" />
     <PackageReference Include="DotNetCore.CAP.PostgreSql" />

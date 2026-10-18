@@ -2950,6 +2950,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     dispositionApprovalChainId?: string | null;
     closeReason?: string | null;
     reworkWorkOrderId?: string | null;
+    attachmentFileIds?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {
@@ -8018,6 +8019,50 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     environmentId: string;
     checksum: string;
     sizeBytes?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceUploadSessionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadProtocol?: string;
+    expiresAtUtc?: string;
+    uploadUrl?: string;
+    uploadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityEvidenceUploadSessionRequest = {
+    organizationId: string;
+    environmentId: string;
+    ncrId: string;
+    fileName: string;
+    contentType: string;
+    expectedSizeBytes?: number;
+    checksum?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceFile = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceFile | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceFile = {
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityEvidenceUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    ncrId: string;
+    checksum?: string | null;
+    sizeBytes?: number | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -23336,6 +23381,130 @@ export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses = {
 };
 
 export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponse = PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses[keyof PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses];
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityEvidenceUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/upload-sessions';
+};
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionError = CreateBusinessConsoleQualityEvidenceUploadSessionErrors[keyof CreateBusinessConsoleQualityEvidenceUploadSessionErrors];
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionResponse = CreateBusinessConsoleQualityEvidenceUploadSessionResponses[keyof CreateBusinessConsoleQualityEvidenceUploadSessionResponses];
+
+export type CompleteBusinessConsoleQualityEvidenceUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityEvidenceUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleQualityEvidenceUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleQualityEvidenceUploadError = CompleteBusinessConsoleQualityEvidenceUploadErrors[keyof CompleteBusinessConsoleQualityEvidenceUploadErrors];
+
+export type CompleteBusinessConsoleQualityEvidenceUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceFile;
+};
+
+export type CompleteBusinessConsoleQualityEvidenceUploadResponse = CompleteBusinessConsoleQualityEvidenceUploadResponses[keyof CompleteBusinessConsoleQualityEvidenceUploadResponses];
+
+export type GetBusinessConsoleQualityEvidenceTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleQualityEvidenceTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleQualityEvidenceTusOffsetResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadData = {
+    body: Blob | File;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadResponse = PatchBusinessConsoleQualityEvidenceTusUploadResponses[keyof PatchBusinessConsoleQualityEvidenceTusUploadResponses];
 
 export type CreateBusinessConsoleSopFileUploadSessionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileUploadSessionRequest;

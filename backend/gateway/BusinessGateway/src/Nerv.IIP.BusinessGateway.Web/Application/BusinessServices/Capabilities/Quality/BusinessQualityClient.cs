@@ -556,7 +556,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.DispositionType,
             response.DispositionApprovalChainId,
             response.CloseReason,
-            response.ReworkWorkOrderId);
+            response.ReworkWorkOrderId,
+            response.AttachmentFileIds ?? []);
     }
 
     public async Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
@@ -1243,7 +1244,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? DispositionType = null,
         string? DispositionApprovalChainId = null,
         string? CloseReason = null,
-        string? ReworkWorkOrderId = null);
+        string? ReworkWorkOrderId = null,
+        IReadOnlyCollection<string>? AttachmentFileIds = null);
 
     private sealed record DownstreamSubmitNcrDispositionRequest(
         string NcrId,

@@ -1058,7 +1058,8 @@ public sealed class QualityInspectionEndpointContractTests
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
             new NoopCapaAutomationService(),
-            dbContext);
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -1101,7 +1102,8 @@ public sealed class QualityInspectionEndpointContractTests
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
             new NoopCapaAutomationService(),
-            dbContext);
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -1146,7 +1148,8 @@ public sealed class QualityInspectionEndpointContractTests
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
             new NoopCapaAutomationService(),
-            dbContext);
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -1189,7 +1192,8 @@ public sealed class QualityInspectionEndpointContractTests
             new NonconformanceReportRepository(dbContext),
             approvalStatusClient,
             new NoopCapaAutomationService(),
-            dbContext);
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(

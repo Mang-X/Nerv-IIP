@@ -163,7 +163,8 @@ public sealed class QualityCapaAutomationTests
                     OwnerUserId = "qa-manager-001",
                     DueDays = 14,
                 })),
-            db);
+            db,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -218,7 +219,8 @@ public sealed class QualityCapaAutomationTests
                     OwnerUserId = "qa-manager-001",
                     DueDays = 14,
                 })),
-            db);
+            db,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(

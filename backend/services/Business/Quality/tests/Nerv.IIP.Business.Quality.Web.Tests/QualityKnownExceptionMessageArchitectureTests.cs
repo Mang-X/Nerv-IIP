@@ -37,7 +37,7 @@ public sealed class QualityKnownExceptionMessageArchitectureTests
         Target($"{QualityWebRoot}/Application/Commands/MeasuringDevices/MeasuringDeviceCommands.cs", "ChangeMeasuringDeviceStatusCommandHandler", "Handle", 2),
         Target($"{QualityWebRoot}/Application/Commands/NonconformanceReports/CloseNonconformanceReportCommand.cs", "CloseNonconformanceReportCommandHandler", "Handle", 4),
         Target($"{QualityWebRoot}/Application/Commands/NonconformanceReports/CreateNonconformanceReportCommand.cs", "CreateNonconformanceReportCommandHandler", "Handle", 1),
-        Target($"{QualityWebRoot}/Application/Commands/NonconformanceReports/SubmitNonconformanceReportDispositionCommand.cs", "SubmitNonconformanceReportDispositionCommandHandler", "Handle", 4),
+        Target($"{QualityWebRoot}/Application/Commands/NonconformanceReports/SubmitNonconformanceReportDispositionCommand.cs", "SubmitNonconformanceReportDispositionCommandHandler", "Handle", 5),
         Target($"{QualityWebRoot}/Application/Commands/QualityReasons/QualityReasonCommands.cs", "CreateQualityReasonCommandHandler", "Handle", 2),
         Target($"{QualityWebRoot}/Application/Commands/QualityReasons/QualityReasonCommands.cs", "UpdateQualityReasonCommandHandler", "FindAsync", 1),
 

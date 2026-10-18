@@ -18952,6 +18952,13 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
 
 internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageClient
 {
+        public Task<BusinessConsoleQualityEvidenceUploadSessionResponse> CreateQualityEvidenceUploadSessionAsync(
+            string token, string ncrId, BusinessConsoleCreateQualityEvidenceUploadSessionRequest request,
+            CancellationToken ct) => throw new NotSupportedException();
+        public Task<BusinessConsoleQualityEvidenceFile> CompleteQualityEvidenceUploadAsync(
+            string token, string sessionId, BusinessConsoleCompleteQualityEvidenceUploadRequest request,
+            CancellationToken ct) => throw new NotSupportedException();
+
     public string? LastInternalToken { get; private set; }
 
     public string? LastFileId { get; private set; }

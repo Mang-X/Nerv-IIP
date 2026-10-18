@@ -198,7 +198,8 @@ public sealed class QualityLifecycleConflictTests
             new NonconformanceReportRepository(dbContext),
             approval,
             automation,
-            dbContext);
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
@@ -229,7 +230,8 @@ public sealed class QualityLifecycleConflictTests
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
             new RecordingCapaAutomationService(),
-            dbContext);
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
@@ -259,7 +261,8 @@ public sealed class QualityLifecycleConflictTests
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
             new RecordingCapaAutomationService(),
-            dbContext);
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(

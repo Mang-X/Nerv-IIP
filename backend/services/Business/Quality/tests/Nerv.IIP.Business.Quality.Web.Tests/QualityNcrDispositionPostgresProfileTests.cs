@@ -1,4 +1,6 @@
 using FluentValidation;
+using Nerv.IIP.Sdk.FileStorage;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,8 +33,9 @@ public sealed class QualityNcrDispositionPostgresProfileTests
         var approval = new ControlledApprovalClient();
         var automation = new RecordingCapaAutomationService();
         var integrationEvents = new RecordingIntegrationEventPublisher();
-        await using var firstProvider = CreateProvider(lockStore, approval, automation, integrationEvents);
-        await using var secondProvider = CreateProvider(lockStore, approval, automation, integrationEvents);
+        var files = new QualityEvidenceTestFiles();
+        await using var firstProvider = CreateProvider(lockStore, approval, automation, integrationEvents, files.CreateClient());
+        await using var secondProvider = CreateProvider(lockStore, approval, automation, integrationEvents, files.CreateClient());
         NonconformanceReportId firstNcrId;
         NonconformanceReportId secondNcrId;
 
@@ -47,6 +50,8 @@ public sealed class QualityNcrDispositionPostgresProfileTests
             await db.SaveChangesAsync();
             firstNcrId = first.Id;
             secondNcrId = second.Id;
+            files.Files.Add("evidence-file-001", QualityEvidenceTestFiles.Metadata(first, "evidence-file-001"));
+            files.Files.Add("evidence-file-tenant-b", QualityEvidenceTestFiles.Metadata(second, "evidence-file-tenant-b"));
         }
 
         var reviewedAtUtc = DateTimeOffset.Parse("2026-08-29T10:00:00Z");
@@ -89,7 +94,8 @@ public sealed class QualityNcrDispositionPostgresProfileTests
             firstProvider,
             firstCommand with { IdempotencyKey = "quality-rework-other-001" }));
 
-        var secondCommand = ReworkCommand(secondNcrId, "org-b", "env-b", reviewedAtUtc);
+        var secondCommand = ReworkCommand(secondNcrId, "org-b", "env-b", reviewedAtUtc)
+            with { AttachmentFileIds = ["evidence-file-tenant-b"] };
         await SendInNewScopeAsync(secondProvider, secondCommand);
 
         var tenantMismatch = await Assert.ThrowsAsync<QualityAuthorizationException>(() => SendInNewScopeAsync(
@@ -128,16 +134,22 @@ public sealed class QualityNcrDispositionPostgresProfileTests
         Assert.Contains(
             $"business-quality:ncr-disposition:org-b:env-b:{secondNcrId}",
             lockStore.AcquiredKeys);
+
+        // 同一受治理 lane 的真实迁移/mediator/UoW 接缝：新增证据合同不新增 lane 或测试注册机制。
+        await AssertSortAndScreenEvidencePersistenceAsync(firstProvider, files);
+        Assert.Equal(2, approval.NcrCalls);
     }
 
     private static ServiceProvider CreateProvider(
         ObservedRedisCommandLockStore lockStore,
         ControlledApprovalClient approval,
         RecordingCapaAutomationService automation,
-        RecordingIntegrationEventPublisher integrationEvents)
+        RecordingIntegrationEventPublisher integrationEvents,
+        IFileStorageClient files)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(files);
         services.AddValidatorsFromAssembly(typeof(Program).Assembly);
         services.AddMediatR(configuration =>
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
@@ -158,6 +170,45 @@ public sealed class QualityNcrDispositionPostgresProfileTests
         services.AddSingleton<ICapaAutomationService>(automation);
         services.AddSingleton<IDistributedLock>(new RedisCommandDistributedLock(lockStore, TimeProvider.System));
         return services.BuildServiceProvider();
+    }
+
+    private static async Task AssertSortAndScreenEvidencePersistenceAsync(
+        IServiceProvider provider, QualityEvidenceTestFiles files)
+    {
+        NonconformanceReportId acceptedId;
+        NonconformanceReportId rejectedId;
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            var accepted = NewNcr("org-a", "env-a", "NCR-SORT-PG", ["sort-existing"]);
+            var rejected = NewNcr("org-a", "env-a", "NCR-INVALID-EVIDENCE-PG", ["invalid-existing"]);
+            db.NonconformanceReports.AddRange(accepted, rejected);
+            await db.SaveChangesAsync();
+            acceptedId = accepted.Id;
+            rejectedId = rejected.Id;
+            foreach (var id in new[] { "sort-existing", "sort-new" })
+                files.Files.Add(id, QualityEvidenceTestFiles.Metadata(accepted, id));
+            files.Files.Add("invalid-existing", QualityEvidenceTestFiles.Metadata(rejected, "invalid-existing")
+                with { FilePurpose = "engineering-document" });
+        }
+
+        await SendInNewScopeAsync(provider, new(acceptedId, "org-a", "env-a", "sort-and-screen", null, ["sort-new"], []));
+        await Assert.ThrowsAsync<KnownException>(() => SendInNewScopeAsync(provider,
+            new(rejectedId, "org-a", "env-a", "sort-and-screen", null, ["sort-new"], [])));
+        using (var scope = provider.CreateScope())
+        {
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            var accepted = await sender.Send(new GetNonconformanceReportQuery(acceptedId, "org-a", "env-a"));
+            Assert.Equal("disposition-in-progress", accepted.Status);
+            Assert.Equal("sort-and-screen", accepted.DispositionType);
+            Assert.Null(accepted.DispositionApprovalChainId);
+            Assert.Equal(new[] { "sort-existing", "sort-new" }, accepted.AttachmentFileIds);
+            var rejected = await sender.Send(new GetNonconformanceReportQuery(rejectedId, "org-a", "env-a"));
+            Assert.Equal("open", rejected.Status);
+            Assert.Null(rejected.DispositionType);
+            Assert.Equal(new[] { "invalid-existing" }, rejected.AttachmentFileIds);
+        }
     }
 
     private static async Task SendInNewScopeAsync(
@@ -183,7 +234,8 @@ public sealed class QualityNcrDispositionPostgresProfileTests
             [MrbReviewInput.Approve("qa-manager-001", "approved", reviewedAtUtc)],
             SharedIdempotencyKey);
 
-    private static NonconformanceReport NewNcr(string organizationId, string environmentId, string ncrCode) =>
+    private static NonconformanceReport NewNcr(string organizationId, string environmentId, string ncrCode,
+        IReadOnlyCollection<string>? attachments = null) =>
         NonconformanceReport.Open(
             organizationId,
             environmentId,
@@ -195,7 +247,7 @@ public sealed class QualityNcrDispositionPostgresProfileTests
             "dimension-out-of-spec",
             null,
             null,
-            []);
+            attachments ?? []);
 
     private sealed class ControlledApprovalClient : IApprovalChainStatusClient
     {

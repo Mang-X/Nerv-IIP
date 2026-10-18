@@ -2168,7 +2168,8 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? DispositionType = null,
     string? DispositionApprovalChainId = null,
     string? CloseReason = null,
-    string? ReworkWorkOrderId = null);
+    string? ReworkWorkOrderId = null,
+    IReadOnlyCollection<string>? AttachmentFileIds = null);
 
 /// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
