@@ -977,8 +977,8 @@ describe('quality route location behavior', () => {
     },
   )
 
-  it('preserves disposition input after an upload failure and submits completed evidence after retry with public readback', async () => {
-    evidenceApi.patch.mockRejectedValueOnce(new Error('上传中断'))
+  it('preserves disposition input after a lost final PATCH response and recovers HEAD 404 evidence with public readback', async () => {
+    evidenceApi.patch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     const wrapper = mountQualityPage(NcrsPage)
     const vm = wrapper.vm as unknown as {
       dispositionForm: { dispositionType: string; mrbComment: string }
@@ -1000,8 +1000,22 @@ describe('quality route location behavior', () => {
     })
     expect(vm.canSubmitDisposition).toBe(false)
     expect(ncrActionSpies.submitDisposition).not.toHaveBeenCalled()
+    const actual =
+      await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+    evidenceApi.head.mockImplementationOnce((options) =>
+      actual.getBusinessConsoleQualityEvidenceTusOffset({
+        ...options,
+        baseUrl: 'http://quality.invalid',
+        fetch: async () => new Response(null, { status: 404 }),
+      }),
+    )
     await upload.vm.retryFailed()
     await nextRenderTick()
+    expect(evidenceApi.create).toHaveBeenCalledTimes(1)
+    expect(evidenceApi.patch).toHaveBeenCalledTimes(1)
+    expect(evidenceApi.complete).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { uploadSessionId: 'session-1' } }),
+    )
     expect(vm.canSubmitDisposition).toBe(true)
     await vm.submitNcrDisposition()
     await nextRenderTick()
@@ -1029,8 +1043,17 @@ describe('quality route location behavior', () => {
   })
 
   it.each(['close', 'switch'] as const)(
-    'discards late upload results after dialog %s',
+    'discards late HEAD 404 recovery results after dialog %s',
     async (action) => {
+      const actual =
+        await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+      evidenceApi.head.mockImplementationOnce((options) =>
+        actual.getBusinessConsoleQualityEvidenceTusOffset({
+          ...options,
+          baseUrl: 'http://quality.invalid',
+          fetch: async () => new Response(null, { status: 404 }),
+        }),
+      )
       let finish!: (value: unknown) => void
       evidenceApi.complete.mockReturnValueOnce(
         new Promise((resolve) => {
