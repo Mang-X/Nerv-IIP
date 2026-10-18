@@ -9,5 +9,8 @@
   "scripts": {
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "test": "vp test run src"
+  },
+  "dependencies": {
+    "@nerv-iip/api-client": "workspace:*"
   }
 }
