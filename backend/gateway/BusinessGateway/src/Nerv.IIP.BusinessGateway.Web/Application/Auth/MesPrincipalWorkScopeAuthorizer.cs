@@ -44,6 +44,41 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
         }
     }
 
+    // 历史目录没有显式范围选择；复用工单列表的授权并集验证目标工单成员关系。
+    // 相邻详情和写入口仍保留 EnsureWorkOrderAccessAsync 的单范围语义。
+    public async Task EnsureWorkOrderAccessAcrossAuthorizedScopesAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveWorkOrderListAsync(
+            authorization,
+            organizationId,
+            environmentId,
+            permissionCode,
+            null,
+            null,
+            cancellationToken);
+        var response = await mes.ListWorkOrdersAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesWorkOrderListRequest(
+                organizationId,
+                environmentId,
+                Take: 1,
+                WorkOrderId: workOrderId,
+                AuthorizedAssignedUserIds: Join(scope.AssignedUserIds),
+                AuthorizedTeamIds: Join(scope.TeamIds),
+                AuthorizedWorkCenterIds: Join(scope.WorkCenterIds)),
+            cancellationToken);
+        if (!response.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
+        {
+            throw Forbidden();
+        }
+    }
+
     public async Task<BusinessConsoleMesOperationTaskRow> EnsureOperationTaskAccessAsync(
         BusinessGatewayAuthorizationResult? authorization,
         string organizationId,

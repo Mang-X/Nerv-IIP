@@ -12,22 +12,37 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
 public sealed class ListBusinessConsoleMesHistoricalProducedLotsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesTraceabilityByWorkOrderRequest, BusinessConsoleMesHistoricalProducedLotListResponse>(
         auth,
         BusinessGatewayPermissions.MesTraceabilityRead)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesHistoricalProducedLotListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesHistoricalProducedLotListResponse> ForwardAsync(
         BusinessConsoleMesTraceabilityByWorkOrderRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListHistoricalProducedLotsAsync(
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAcrossAuthorizedScopesAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesTraceabilityRead,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.ListHistoricalProducedLotsAsync(
             tokenProvider.BearerToken,
             request.WorkOrderId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
+    }
 }
