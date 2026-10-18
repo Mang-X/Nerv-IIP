@@ -44,7 +44,7 @@ function blobText(blob: Blob): Promise<string> {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   api.create.mockResolvedValue({
     data: {
       success: true,
@@ -118,6 +118,114 @@ it('keeps failed evidence out of attachments and retries the same session from i
   expect(wrapper.emitted('completed')?.at(-1)?.[0]).toEqual([
     { fileId: 'completed-file', fileName: '尺寸复检.txt' },
   ])
+  wrapper.unmount()
+})
+
+// Regression: #4505. A final PATCH closes the real tus session before its response reaches the client.
+it('recovers a lost final PATCH response through HEAD 404 and same-session completion', async () => {
+  api.patch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  const wrapper = mount(NcrEvidenceUpload, { props: scope })
+  await wrapper.findComponent(FileUpload).vm.addFiles([file()])
+  await flushPromises()
+  expect(wrapper.emitted('completed')).toBeUndefined()
+  expect(api.complete).not.toHaveBeenCalled()
+
+  const actual =
+    await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+  api.head.mockImplementationOnce((options) =>
+    actual.getBusinessConsoleQualityEvidenceTusOffset({
+      ...options,
+      baseUrl: 'http://quality.invalid',
+      fetch: async () => new Response(null, { status: 404 }),
+    }),
+  )
+  const finish = deferred<typeof completed>()
+  api.complete.mockReturnValueOnce(finish.promise)
+  await wrapper.get('button[aria-label="重试 尺寸复检.txt"]').trigger('click')
+  await flushPromises()
+  expect(api.complete).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: { uploadSessionId: 'session-1' },
+      body: { ...scope, checksum: null, sizeBytes: 10 },
+    }),
+  )
+  expect(wrapper.emitted('completed')).toBeUndefined()
+  expect(wrapper.text()).toContain('上传中')
+  finish.resolve(completed)
+  await flushPromises()
+  expect(api.create).toHaveBeenCalledTimes(1)
+  expect(api.patch).toHaveBeenCalledTimes(1)
+  expect(wrapper.emitted('completed')).toEqual([
+    [[{ fileId: 'completed-file', fileName: '尺寸复检.txt' }]],
+  ])
+  wrapper.unmount()
+})
+
+it.each([400, 403, 404])(
+  'keeps HEAD 404 evidence failed when completion rejects with %s',
+  async (status) => {
+    const actual =
+      await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+    api.head.mockImplementationOnce((options) =>
+      actual.getBusinessConsoleQualityEvidenceTusOffset({
+        ...options,
+        baseUrl: 'http://quality.invalid',
+        fetch: async () => new Response(null, { status: 404 }),
+      }),
+    )
+    const reason = '当前会话不能作为本 NCR 的处置证据。'
+    api.complete.mockRejectedValueOnce({ status, detail: reason })
+    const wrapper = mount(NcrEvidenceUpload, { props: scope })
+    await wrapper.findComponent(FileUpload).vm.addFiles([file()])
+    await flushPromises()
+    expect(api.complete).toHaveBeenCalledTimes(1)
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(wrapper.emitted('completed')).toBeUndefined()
+    expect(wrapper.text()).toContain(reason)
+    wrapper.unmount()
+  },
+)
+
+it.each([403, 500])('does not try completion after HEAD %s', async (status) => {
+  const actual =
+    await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+  const reason = '无法读取当前上传会话。'
+  api.head.mockImplementationOnce((options) =>
+    actual.getBusinessConsoleQualityEvidenceTusOffset({
+      ...options,
+      baseUrl: 'http://quality.invalid',
+      fetch: async () => Response.json({ status, detail: reason }, { status }),
+    }),
+  )
+  const wrapper = mount(NcrEvidenceUpload, { props: scope })
+  await wrapper.findComponent(FileUpload).vm.addFiles([file()])
+  await flushPromises()
+  expect(api.patch).not.toHaveBeenCalled()
+  expect(api.complete).not.toHaveBeenCalled()
+  expect(wrapper.emitted('completed')).toBeUndefined()
+  expect(wrapper.text()).toContain(reason)
+  wrapper.unmount()
+})
+
+it('does not try completion when HEAD fails without an HTTP response', async () => {
+  const actual =
+    await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+  api.head.mockImplementationOnce((options) =>
+    actual.getBusinessConsoleQualityEvidenceTusOffset({
+      ...options,
+      baseUrl: 'http://quality.invalid',
+      fetch: async () => {
+        throw new TypeError('Failed to fetch')
+      },
+    }),
+  )
+  const wrapper = mount(NcrEvidenceUpload, { props: scope })
+  await wrapper.findComponent(FileUpload).vm.addFiles([file()])
+  await flushPromises()
+  expect(api.patch).not.toHaveBeenCalled()
+  expect(api.complete).not.toHaveBeenCalled()
+  expect(wrapper.emitted('completed')).toBeUndefined()
+  expect(wrapper.text()).toContain('网络异常')
   wrapper.unmount()
 })
 
@@ -207,7 +315,16 @@ it('keeps an aborted transfer paused without failure feedback and can resume it'
   wrapper.unmount()
 })
 
-it('does not count a late complete after cancellation', async () => {
+it('does not count a late HEAD 404 recovery after cancellation', async () => {
+  const actual =
+    await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+  api.head.mockImplementationOnce((options) =>
+    actual.getBusinessConsoleQualityEvidenceTusOffset({
+      ...options,
+      baseUrl: 'http://quality.invalid',
+      fetch: async () => new Response(null, { status: 404 }),
+    }),
+  )
   const finish = deferred<typeof completed>()
   api.complete.mockReturnValue(finish.promise)
   const wrapper = mount(NcrEvidenceUpload, { props: scope })

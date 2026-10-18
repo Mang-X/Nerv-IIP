@@ -108,8 +108,12 @@ const transport: FileUploadTransport = ({ file, session, signal, onProgress }) =
       path,
       headers,
       signal,
-      throwOnError: true,
+      throwOnError: false,
     })
+    // Final PATCH closes tus before its response arrives. Let complete verify this session;
+    // FileUpload still requires its successful fileId before publishing any attachment.
+    if (head.response?.status === 404) return
+    if (head.error) throw head.error
     const raw = head.response.headers.get('Upload-Offset')
     const offset = raw !== null && /^\d+$/.test(raw) ? Number(raw) : NaN
     if (!Number.isSafeInteger(offset) || offset > file.size)
