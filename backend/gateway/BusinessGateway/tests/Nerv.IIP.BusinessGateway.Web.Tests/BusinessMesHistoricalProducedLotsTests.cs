@@ -93,7 +93,7 @@ public sealed class BusinessMesHistoricalProducedLotsTests
 
         Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(allowed ? 2 : 1, mes.Paths.Count);
-        Assert.Contains("assignedUserIds=user-admin", mes.Paths[0]);
+        Assert.Contains("authorizedAssignedUserIds=user-admin", mes.Paths[0]);
         Assert.Contains("workOrderId=WO-HISTORY", mes.Paths[0]);
         Assert.True(Assert.Single(auth.Requirements).IncludePrincipalContext);
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
@@ -102,6 +102,60 @@ public sealed class BusinessMesHistoricalProducedLotsTests
             using var body = JsonDocument.Parse(payload);
             var lot = Assert.Single(body.RootElement.GetProperty("data").GetProperty("items").EnumerateArray());
             Assert.Equal("LOT-HISTORY", lot.GetProperty("producedLotNo").GetString());
+            Assert.Equal(10m, lot.GetProperty("quantity").GetDecimal());
+        }
+        else
+        {
+            using var body = JsonDocument.Parse(payload);
+            Assert.Equal("work-scope-not-authorized", body.RootElement.GetProperty("message").GetString());
+            Assert.DoesNotContain("LOT-HISTORY", payload);
+            Assert.DoesNotContain("REPORT-HISTORY", payload);
+            Assert.DoesNotContain("OP-10", payload);
+            Assert.DoesNotContain("quantity", payload);
+            Assert.DoesNotContain(mes.Paths, path => path.Contains("produced-lots", StringComparison.Ordinal));
+        }
+    }
+
+    [Theory]
+    [InlineData("user-admin", "team-other", true, true)]
+    [InlineData("user-other", "team-review", true, true)]
+    [InlineData("user-other", "team-other", true, false)]
+    [InlineData("user-other", "team-review", false, false)]
+    public async Task Multi_scope_reader_reads_only_work_orders_in_current_permission_grants(
+        string assignedUserId, string teamId, bool teamHasTraceabilityRead, bool allowed)
+    {
+        var auth = new FakeBusinessGatewayAuthorizationClient(
+            requirement => requirement.PermissionCode == BusinessGatewayPermissions.MesTraceabilityRead,
+            scopeGrants:
+            [
+                new AuthorizationScopeGrant("membership", "trace-self", "self", "user-admin",
+                    [BusinessGatewayPermissions.MesTraceabilityRead]),
+                new AuthorizationScopeGrant("role", "trace-team", "team", "team-review",
+                    [teamHasTraceabilityRead ? BusinessGatewayPermissions.MesTraceabilityRead : BusinessGatewayPermissions.MesWorkOrdersRead]),
+            ]);
+        var mes = new MesHandler(assignedUserId, teamId);
+        await using var lease = Lease(auth, mes);
+        using var client = lease.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken("org-history", "env-history"));
+
+        using var response = await client.GetAsync(Url("org-history", "env-history"));
+        var payload = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(allowed ? 2 : 1, mes.Paths.Count);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri("http://mes.local" + mes.Paths[0]).Query);
+        Assert.Equal("user-admin", query["authorizedAssignedUserIds"]);
+        Assert.Equal(teamHasTraceabilityRead ? "team-review" : "", query.GetValueOrDefault("authorizedTeamIds").ToString());
+        Assert.False(query.ContainsKey("assignedUserIds"));
+        Assert.False(query.ContainsKey("teamIds"));
+        Assert.False(query.ContainsKey("authorizedWorkCenterIds"));
+        Assert.Equal("WO-HISTORY", query["workOrderId"]);
+        if (allowed)
+        {
+            using var body = JsonDocument.Parse(payload);
+            var lot = Assert.Single(body.RootElement.GetProperty("data").GetProperty("items").EnumerateArray());
+            Assert.Equal("LOT-HISTORY", lot.GetProperty("producedLotNo").GetString());
+            Assert.Equal("REPORT-HISTORY", lot.GetProperty("reportNo").GetString());
             Assert.Equal(10m, lot.GetProperty("quantity").GetDecimal());
         }
         else
@@ -133,8 +187,9 @@ public sealed class BusinessMesHistoricalProducedLotsTests
                 PrincipalWorkContext = new BusinessMasterDataPrincipalWorkContextResponse(
                     "resolved", null, [], [], [], [], [],
                     [new("self", "user-admin", "当前用户", "worker", []),
-                     new("organization", "org-history", "当前组织", "organization", [])],
-                    ["self", "organization"], []),
+                     new("organization", "org-history", "当前组织", "organization", []),
+                     new("team", "team-review", "当前班组", "team-member", [])],
+                    ["self", "organization", "team"], []),
             });
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(new HttpBusinessMesClient(new HttpClient(mes) { BaseAddress = new Uri("http://mes.local") }));
@@ -142,7 +197,7 @@ public sealed class BusinessMesHistoricalProducedLotsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-token"));
         });
 
-    private sealed class MesHandler(string assignedUserId = "user-other") : HttpMessageHandler
+    private sealed class MesHandler(string assignedUserId = "user-other", string teamId = "team-other") : HttpMessageHandler
     {
         public List<string> Paths { get; } = [];
 
@@ -155,7 +210,14 @@ public sealed class BusinessMesHistoricalProducedLotsTests
             {
                 var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri.Query);
                 Assert.Equal("WO-HISTORY", query["workOrderId"]);
-                var visible = !query.TryGetValue("assignedUserIds", out var users) || users == assignedUserId;
+                Assert.False(query.ContainsKey("assignedUserIds"));
+                Assert.False(query.ContainsKey("teamIds"));
+                var visible = true;
+                if (query.ContainsKey("authorizedAssignedUserIds") || query.ContainsKey("authorizedTeamIds") || query.ContainsKey("authorizedWorkCenterIds"))
+                {
+                    visible = query["authorizedAssignedUserIds"].ToString().Split(',').Contains(assignedUserId)
+                        || query.GetValueOrDefault("authorizedTeamIds").ToString().Split(',').Contains(teamId);
+                }
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(visible

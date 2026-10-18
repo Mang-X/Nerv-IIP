@@ -32,13 +32,11 @@ public sealed class ListBusinessConsoleMesHistoricalProducedLotsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+        await workScopeAuthorizer.EnsureWorkOrderAccessAcrossAuthorizedScopesAsync(
             AuthorizationResult,
             request.OrganizationId,
             request.EnvironmentId,
             BusinessGatewayPermissions.MesTraceabilityRead,
-            null,
-            null,
             request.WorkOrderId,
             cancellationToken);
         return await mes.ListHistoricalProducedLotsAsync(
