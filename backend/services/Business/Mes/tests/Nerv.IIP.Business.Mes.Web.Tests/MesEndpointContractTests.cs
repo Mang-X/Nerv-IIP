@@ -37,6 +37,58 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesEndpointContractTests
 {
+    // PublicContract / DomainInvariant: #4498 的服务入口；最终用户 IAM 授权由 #4499 的 Gateway 承接。
+    [Fact]
+    public async Task Historical_produced_lots_requires_internal_authentication_and_isolates_tenant_and_work_order_facts()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IHostedService>();
+                var databaseName = $"mes-historical-lots-{Guid.NewGuid():N}";
+                services.RemoveAll<DbContextOptions<Infrastructure.ApplicationDbContext>>();
+                services.RemoveAll<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptionsConfiguration<Infrastructure.ApplicationDbContext>>();
+                services.AddDbContext<Infrastructure.ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            });
+        });
+        using var client = factory.CreateClient();
+        const string route = "/api/business/v1/mes/traceability/work-orders/WO-HISTORY/produced-lots?organizationId=org-history&environmentId=env-history";
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(route)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+            var now = DateTimeOffset.Parse("2026-10-18T08:00:00Z");
+            db.OutputLotGenealogies.AddRange(
+                OutputLotGenealogy.Create("org-history", "env-history", "WO-HISTORY", "OP-10", "REPORT-1", "LOT-OWN", null, 5m, now),
+                OutputLotGenealogy.Create("other-org", "env-history", "WO-HISTORY", "OP-10", "REPORT-1", "LOT-OTHER-ORG", null, 5m, now),
+                OutputLotGenealogy.Create("org-history", "other-env", "WO-HISTORY", "OP-10", "REPORT-1", "LOT-OTHER-ENV", null, 5m, now),
+                OutputLotGenealogy.Create("org-history", "env-history", "WO-OTHER", "OP-10", "REPORT-OTHER", "LOT-OTHER-WO", null, 5m, now));
+            foreach (var (org, env, serial) in new[] { ("org-history", "env-history", "SN-OWN"), ("other-org", "env-history", "SN-OTHER-ORG"), ("org-history", "other-env", "SN-OTHER-ENV") })
+            {
+                var report = ProductionReport.Record(org, env, "REPORT-1", "WO-HISTORY", "OP-10", 5m, 0m, true, now);
+                db.ProductionReports.Add(report);
+                db.ProductionReportSerialNumbers.AddRange(ProductionReportSerialNumber.CreateForReport(report, [serial]));
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync(route);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var data = await response.Content.ReadFromJsonAsync<ListHistoricalProducedLotsResponse>();
+        var lot = Assert.Single(data!.Items);
+        Assert.Equal("LOT-OWN", lot.ProducedLotNo);
+        Assert.Equal(new[] { "SN-OWN" }, lot.SerialNumbers);
+        Assert.Null(lot.SerialNo);
+        Assert.Empty((await client.GetFromJsonAsync<ListHistoricalProducedLotsResponse>(route.Replace("WO-HISTORY", "MISSING")))!.Items);
+
+        var contract = MesEndpointContracts.Get<ListHistoricalProducedLotsEndpoint>();
+        Assert.Equal(MesPermissionCodes.TraceabilityRead, contract.PermissionCode);
+    }
+
     // HttpApi / DomainInvariant: #4132 bulk assembly lookup preserves MES source and tenant semantics.
     [Fact]
     public async Task Batch_assembly_children_returns_scoped_relations_and_enforces_request_capacity()
@@ -1100,7 +1152,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposePlanningAndRushOrderRoutes()
     {
-        Assert.Equal(76, MesEndpointContracts.All.Count);
+        Assert.Equal(77, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"

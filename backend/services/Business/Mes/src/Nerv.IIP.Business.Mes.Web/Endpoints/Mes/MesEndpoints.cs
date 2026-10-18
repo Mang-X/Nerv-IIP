@@ -2029,6 +2029,19 @@ public sealed class AcceptShiftHandoverEndpoint(ISender sender, TimeProvider tim
     }
 }
 
+public sealed class ListHistoricalProducedLotsEndpoint(ISender sender)
+    : MesEndpoint<TraceabilityWorkOrderRequest, ListHistoricalProducedLotsResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListHistoricalProducedLotsEndpoint>());
+
+    public override async Task HandleAsync(TraceabilityWorkOrderRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new ListHistoricalProducedLotsQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetWorkOrderTraceabilityEndpoint(ISender sender)
     : MesEndpoint<TraceabilityWorkOrderRequest, MesTraceabilityResponse>
 {
@@ -2169,6 +2182,7 @@ public static class MesEndpointContracts
         new(typeof(GetShiftHandoverEndpoint), "GET", "/api/business/v1/mes/shift-handovers/{handoverId}", MesPermissionCodes.HandoversRead, "getBusinessMesShiftHandover"),
         new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers", MesPermissionCodes.HandoversManage, "createBusinessMesShiftHandover"),
         new(typeof(AcceptShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-handovers/{handoverId}/accept", MesPermissionCodes.HandoversManage, "acceptBusinessMesShiftHandover"),
+        new(typeof(ListHistoricalProducedLotsEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}/produced-lots", MesPermissionCodes.TraceabilityRead, "listBusinessMesHistoricalProducedLots"),
         new(typeof(GetWorkOrderTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}", MesPermissionCodes.TraceabilityRead, "getBusinessMesWorkOrderTraceability"),
         new(typeof(GetBatchTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/batches/{batchOrSerial}", MesPermissionCodes.TraceabilityRead, "getBusinessMesBatchTraceability"),
         new(typeof(GetMaterialLotTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/material-lots/{materialLotId}", MesPermissionCodes.TraceabilityRead, "getBusinessMesMaterialLotTraceability"),
