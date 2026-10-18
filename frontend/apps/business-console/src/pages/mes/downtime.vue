@@ -80,6 +80,7 @@ const {
   recoverDowntimeEventPending,
   refreshDowntimeWriteScope,
   refreshDowntimeEvents,
+  setDowntimeWindow,
 } = useMesDowntimeEvents()
 const {
   operationTasks,
@@ -165,8 +166,10 @@ const windowRange = computed<DateRange>({
     end: toInclusiveEndDateInput(filters.windowEndUtc),
   }),
   set: (range) => {
-    if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
-    if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
+    setDowntimeWindow({
+      windowStartUtc: range.start ? fromDateInput(range.start, 0) : filters.windowStartUtc,
+      windowEndUtc: range.end ? fromDateInput(range.end, 1) : filters.windowEndUtc,
+    })
   },
 })
 

@@ -3232,10 +3232,13 @@ export const useMesRelatedQualityItems = useMesQualityContext
 
 export function useMesDowntimeEvents() {
   const filters = defaultFilters()
-  const windowEnd = new Date()
-  const windowStart = new Date(windowEnd.getTime() - 30 * 24 * 60 * 60 * 1000)
-  filters.windowStartUtc = windowStart.toISOString()
-  filters.windowEndUtc = windowEnd.toISOString()
+  let usesCurrentWindow = true
+  function updateCurrentWindow() {
+    const windowEnd = new Date()
+    filters.windowStartUtc = new Date(windowEnd.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    filters.windowEndUtc = windowEnd.toISOString()
+  }
+  updateCurrentWindow()
   const queryCache = useQueryCache()
   const downtimeWriteScope = useMesPrincipalWorkScope(filters, 'business.mes.downtime.manage')
   const downtimeQuery = useQuery(() =>
@@ -3372,7 +3375,14 @@ export function useMesDowntimeEvents() {
       }),
     recoverDowntimeEventPending: recoverMutation.isLoading,
     refreshDowntimeWriteScope: downtimeWriteScope.refreshScope,
-    refreshDowntimeEvents: () => refetchWithBusinessContext(filters, downtimeQuery),
+    setDowntimeWindow: (window: Pick<MesListFilters, 'windowStartUtc' | 'windowEndUtc'>) => {
+      usesCurrentWindow = false
+      Object.assign(filters, window)
+    },
+    refreshDowntimeEvents: () => {
+      if (usesCurrentWindow) updateCurrentWindow()
+      return refetchWithBusinessContext(filters, downtimeQuery)
+    },
   }
 }
 

@@ -157,6 +157,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     recoverDowntimeEventPending: ref(false),
     refreshDowntimeWriteScope,
     refreshDowntimeEvents,
+    setDowntimeWindow: (window: Partial<typeof filters>) => Object.assign(filters, window),
   }),
   useMesOperationTasks: () => ({
     operationTasks,
