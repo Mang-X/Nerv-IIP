@@ -214,30 +214,53 @@ const canConfirmAdjustment = computed(
 
 type CountTaskRow = BusinessConsoleInventoryCountTaskLineResponse
 const columns: NvDataTableColumn<CountTaskRow>[] = [
-  { key: 'countTaskCode', header: '任务号', cellClass: 'font-medium' },
+  {
+    key: 'countTaskCode',
+    header: '任务号',
+    width: 'w-56',
+    cellClass: 'font-medium whitespace-normal break-all',
+  },
   // 物料 / 库位读面只回编码，名称在主数据里，按编码 join 出中文名。
-  { key: 'skuCode', header: '物料', accessor: (r) => skuText(r.skuCode) },
+  {
+    key: 'skuCode',
+    header: '物料',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => skuText(r.skuCode),
+  },
   {
     key: 'location',
     header: '库位',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => locationLabel(r.siteCode, r.locationCode),
   },
-  { key: 'lotNo', header: '批次', accessor: (r) => r.lotNo || '—' },
+  {
+    key: 'lotNo',
+    header: '批次',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.lotNo || '—',
+  },
   {
     key: 'countedQuantity',
     header: '实盘',
+    width: 'w-28',
     align: 'end',
     accessor: (r) => formatQuantity(r.countedQuantity),
   },
   {
     key: 'varianceQuantity',
     header: '差异',
+    width: 'w-28',
     align: 'end',
     accessor: (r) => formatSignedQuantity(r.varianceQuantity),
   },
   {
     key: 'approvalChainId',
     header: '审批链',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => approvalChainByCountTaskCode.value[r.countTaskCode ?? ''] ?? '—',
   },
   { key: 'status', header: '状态', width: 'w-24', accessor: (r) => statusLabel(r.status) },
