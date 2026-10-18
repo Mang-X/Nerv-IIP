@@ -1,0 +1,202 @@
+{
+  "sourceSha": "c968944b0b49555ab81c697c71ecb66fb92c8fed",
+  "date": "2026-10-18",
+  "kind": "diagnostic-fixture-not-acceptance",
+  "provider": "EF Core InMemory 10.0.8; synthetic HttpMessageHandler; NoopMediator",
+  "command": "dotnet run --project artifacts/issue-4466/probe/Probe.csproj",
+  "exitCode": 0,
+  "sourceHashes": {
+    "Program.cs.txt": "1ea03a16885da2fdd1bde46fe6c87dcb81ff47f2b52521b95c0c0b7d40ebc066",
+    "Probe.csproj.txt": "1edd7260061e5b01cd3b361d7af0fb4aaea070704df3e12e8989941145a76b06"
+  },
+  "cases": [
+    {
+      "scenario": "resolved",
+      "masterDataRequestCount": 3,
+      "snapshotStatus": "resolved",
+      "snapshotReason": null,
+      "snapshotTimezone": "Asia/Shanghai",
+      "eventTimezone": "Asia/Shanghai",
+      "buckets": {
+        "Day": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "WorkCenter": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "Sku": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        }
+      }
+    },
+    {
+      "scenario": "device-missing",
+      "masterDataRequestCount": 0,
+      "snapshotStatus": "degraded",
+      "snapshotReason": "device-missing",
+      "snapshotTimezone": null,
+      "eventTimezone": null,
+      "buckets": {
+        "Day": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "deviceMissing"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "WorkCenter": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "deviceMissing"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "Sku": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        }
+      }
+    },
+    {
+      "scenario": "device-not-found",
+      "masterDataRequestCount": 1,
+      "snapshotStatus": "degraded",
+      "snapshotReason": "not-found",
+      "snapshotTimezone": null,
+      "eventTimezone": null,
+      "buckets": {
+        "Day": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalTimezoneMissing"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "WorkCenter": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalDimensionSnapshotDegraded"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "Sku": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        }
+      }
+    },
+    {
+      "scenario": "site-timezone-missing",
+      "masterDataRequestCount": 2,
+      "snapshotStatus": "degraded",
+      "snapshotReason": "site-timezone-missing",
+      "snapshotTimezone": null,
+      "eventTimezone": null,
+      "buckets": {
+        "Day": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalTimezoneMissing"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "WorkCenter": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalDimensionSnapshotDegraded"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "Sku": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        }
+      }
+    },
+    {
+      "scenario": "shift-not-found",
+      "masterDataRequestCount": 3,
+      "snapshotStatus": "degraded",
+      "snapshotReason": "shift-not-found",
+      "snapshotTimezone": null,
+      "eventTimezone": null,
+      "buckets": {
+        "Day": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalTimezoneMissing"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "WorkCenter": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalDimensionSnapshotDegraded"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "Sku": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        }
+      }
+    },
+    {
+      "scenario": "legacy",
+      "masterDataRequestCount": 0,
+      "snapshotStatus": null,
+      "snapshotReason": null,
+      "snapshotTimezone": null,
+      "eventTimezone": null,
+      "buckets": {
+        "Day": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalDimensionLegacyUnresolved"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "WorkCenter": {
+          "ResolutionStatus": "degraded",
+          "DegradedReasons": [
+            "historicalDimensionLegacyUnresolved"
+          ],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        },
+        "Sku": {
+          "ResolutionStatus": "resolved",
+          "DegradedReasons": [],
+          "TotalOutputQuantity": 2,
+          "ProductionReportCount": 1
+        }
+      }
+    }
+  ]
+}
