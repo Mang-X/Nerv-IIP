@@ -88,6 +88,7 @@ public sealed class WorkOrderReleaseProjectionBackfillRedisCapTransportTests
             ["InternalService:BearerToken"] = "test-internal-token",
             ["Approval:BaseUrl"] = "https://approval.test",
             ["Erp:BaseUrl"] = "https://erp.test",
+            ["FileStorage:BaseUrl"] = "https://filestorage.test",
         };
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {

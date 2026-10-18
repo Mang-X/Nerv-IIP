@@ -203,6 +203,10 @@ internal static class VocabularyDriftExemptions
         ..Group("available", "同值不同义：ERP 工单成本与期间制造费用核对读面的可计算状态，非设备运行态或 MES 成品收货成本权威状态。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Finance/WorkOrderCostVarianceQueries.cs",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Finance/MachineOverheadReadStatus.cs"),
+        // #4491：FileStorage 完成上传后写入 FileStorageFileStatus.Available，元数据响应原样返回；
+        // Contracts/SDK 未导出该状态常量，不能借用设备或 MES 成本领域的同值词表。
+        ..Group("available", "同值不同义：FileMetadataResponse.Status 的文件可用状态（来源 FileStorageFileStatus.Available），非设备运行态或 MES 成品收货成本权威状态。",
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/NonconformanceReports/SubmitNonconformanceReportDispositionCommand.cs"),
         ..Group("stopped", "同值不同义：AppHub 连接器上报状态，非设备运行态。",
             "services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Connectors/ConnectorCollectionHealthEvaluator.cs"),
 

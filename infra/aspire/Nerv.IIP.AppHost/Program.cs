@@ -472,6 +472,9 @@ if (rabbitmq is not null)
 }
 
 var businessQuality = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality")))
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
+    .WithReference(fileStorage)
+    .WaitFor(fileStorage)
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5110, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)

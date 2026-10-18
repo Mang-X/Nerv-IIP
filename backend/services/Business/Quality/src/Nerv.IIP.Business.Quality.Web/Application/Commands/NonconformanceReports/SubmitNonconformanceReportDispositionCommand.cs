@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Nerv.IIP.Sdk.FileStorage;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -61,7 +62,8 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     INonconformanceReportRepository repository,
     IApprovalChainStatusClient approvalChainStatusClient,
     ICapaAutomationService capaAutomationService,
-    ApplicationDbContext dbContext)
+    ApplicationDbContext dbContext,
+    IFileStorageClient files)
     : ICommandHandler<SubmitNonconformanceReportDispositionCommand>
 {
     private const string ReworkDispositionRuleKey = "ncr-rework-disposition";
@@ -110,6 +112,21 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
             if (!isApproved)
             {
                 throw new KnownException($"不合格报告 {ncr.NcrCode} 的处置审批链 {request.DispositionApprovalChainId} 尚未批准，请在审批页面完成审批后再提交处置。");
+            }
+        }
+
+        // 既存附件同样参与领域证据判定，必须与本次引用一起在写入前验证。
+        foreach (var fileId in ncr.AttachmentFileIds.Concat(request.AttachmentFileIds)
+            .Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var file = await files.GetFileMetadataAsync(fileId, cancellationToken);
+            if (file.FileId != fileId || file.Status != "available"
+                || file.FilePurpose != QualityNcrEvidence.FilePurpose
+                || file.OrganizationId != ncr.OrganizationId || file.EnvironmentId != ncr.EnvironmentId
+                || file.Owner.OwnerService != QualityNcrEvidence.OwnerService
+                || file.Owner.OwnerType != QualityNcrEvidence.OwnerType || file.Owner.OwnerId != ncr.Id.ToString())
+            {
+                throw new KnownException("处置附件必须是当前不合格报告已完成上传的合法证据，请重新上传后再提交。");
             }
         }
 

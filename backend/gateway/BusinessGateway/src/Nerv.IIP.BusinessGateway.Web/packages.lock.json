@@ -586,6 +586,12 @@
       "nerv.iip.contracts.notification": {
         "type": "Project"
       },
+      "nerv.iip.contracts.quality": {
+        "type": "Project",
+        "dependencies": {
+          "Nerv.IIP.Contracts.IntegrationEvents": "[1.0.0, )"
+        }
+      },
       "nerv.iip.contracts.scheduling": {
         "type": "Project",
         "dependencies": {

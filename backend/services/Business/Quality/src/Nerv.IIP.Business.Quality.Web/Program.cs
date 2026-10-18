@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Net.Http.Headers;
+using Nerv.IIP.Sdk.FileStorage;
 using Nerv.IIP.Business.Quality.Web;
 using System.Text.Json;
 using DotNetCore.CAP;
@@ -62,6 +64,15 @@ try
     builder.Services.AddHttpClient<IErpPurchaseReceiptFactClient, HttpErpPurchaseReceiptFactClient>(client =>
     {
         client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+
+    var fileStorageBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+        builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
+    builder.Services.AddHttpClient<IFileStorageClient, HttpFileStorageClient>((services, client) =>
+    {
+        client.BaseAddress = fileStorageBaseAddress;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken);
     }).UseHttpClientMetrics();
 
     if (isTesting)

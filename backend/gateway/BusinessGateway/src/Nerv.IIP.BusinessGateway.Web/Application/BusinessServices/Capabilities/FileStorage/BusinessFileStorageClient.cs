@@ -1,11 +1,24 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Nerv.IIP.Contracts.FileStorage;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public interface IBusinessFileStorageClient
 {
+    Task<BusinessConsoleQualityEvidenceUploadSessionResponse> CreateQualityEvidenceUploadSessionAsync(
+        string internalBearerToken,
+        string ncrId,
+        BusinessConsoleCreateQualityEvidenceUploadSessionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityEvidenceFile> CompleteQualityEvidenceUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteQualityEvidenceUploadRequest request,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// 工程 SOP 文件下载的**唯一**授权入口：复核用途、签发 download grant、校验下游 URL 可代理，
     /// 返回只在网关进程内流转的取字节凭据。调用方全程拿不到 downloadGrantId（#3314）。
@@ -131,6 +144,55 @@ public sealed class HttpBusinessFileStorageClient(HttpClient httpClient)
     // FileStorage 的错误载体是裸 FileStorageError{Code,Message}，不套平台 ResponseData envelope。
     // 不声明的话，非 400 响应的 code 与 message 会双双落空（#3096 审核阻断 A）。
     protected override bool AcceptsBareDownstreamErrorPayload => true;
+
+    public async Task<BusinessConsoleQualityEvidenceUploadSessionResponse> CreateQualityEvidenceUploadSessionAsync(
+        string internalBearerToken,
+        string ncrId,
+        BusinessConsoleCreateQualityEvidenceUploadSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var session = await SendAsync<CreateUploadSessionResponse>(
+            internalBearerToken, HttpMethod.Post, "/api/files/v1/upload-sessions",
+            new CreateUploadSessionRequest(
+                request.OrganizationId, request.EnvironmentId,
+                new OwnerReference(QualityNcrEvidence.OwnerService, QualityNcrEvidence.OwnerType, ncrId),
+                QualityNcrEvidence.FilePurpose, request.FileName, request.ContentType,
+                request.ExpectedSizeBytes, request.Checksum), cancellationToken);
+        if (session.Provider != "tus")
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.BadGateway, "filestorage-upload-protocol-unsupported");
+        }
+
+        return new BusinessConsoleQualityEvidenceUploadSessionResponse(
+            session.UploadSessionId, session.FileId, "tus", session.ExpiresAtUtc,
+            FileStorageRoutes.RewriteProxiedUrl(session.Upload.Url,
+                FileStorageRoutes.DownstreamTusPrefix, FileStorageRoutes.ConsoleQualityEvidenceTusPrefix),
+            session.Upload.Headers);
+    }
+
+    public async Task<BusinessConsoleQualityEvidenceFile> CompleteQualityEvidenceUploadAsync(
+        string internalBearerToken,
+        string uploadSessionId,
+        BusinessConsoleCompleteQualityEvidenceUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        var file = await SendAsync<FileMetadataResponse>(
+            internalBearerToken, HttpMethod.Post,
+            $"/api/files/v1/upload-sessions/{Uri.EscapeDataString(uploadSessionId)}/complete",
+            new CompleteUploadSessionRequest(request.OrganizationId, request.EnvironmentId,
+                QualityNcrEvidence.FilePurpose, request.Checksum, request.SizeBytes), cancellationToken);
+        if (file.OrganizationId != request.OrganizationId || file.EnvironmentId != request.EnvironmentId
+            || file.FilePurpose != QualityNcrEvidence.FilePurpose || file.Status != "available"
+            || file.Owner.OwnerService != QualityNcrEvidence.OwnerService
+            || file.Owner.OwnerType != QualityNcrEvidence.OwnerType || file.Owner.OwnerId != request.NcrId)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.NotFound, "该文件不是当前不合格报告的可用证据。");
+        }
+
+        return new BusinessConsoleQualityEvidenceFile(file.FileId, file.FileName, file.ContentType, file.SizeBytes);
+    }
 
     public Task<BusinessFileDownloadTicket> AuthorizeSopFileDownloadAsync(
         string internalBearerToken,
@@ -474,6 +536,7 @@ public static class FileStorageRoutes
     public const string DownstreamDownloadGrantPrefix = "/api/files/v1/download-grants/";
 
     public const string ConsoleSopTusPrefix = "/api/business-console/v1/files/sop-documents/tus/";
+    public const string ConsoleQualityEvidenceTusPrefix = "/api/business-console/v1/files/quality-evidence/tus/";
     public const string ConsoleShiftHandoverTusPrefix = "/api/business-console/v1/files/shift-handover-attachments/tus/";
     public const string ConsoleBarcodeTemplateAssetTusPrefix = "/api/business-console/v1/files/barcode-template-assets/tus/";
 
