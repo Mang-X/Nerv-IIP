@@ -191,11 +191,12 @@ public sealed class QualityNcrDispositionPostgresProfileTests
                 files.Files.Add(id, QualityEvidenceTestFiles.Metadata(accepted, id));
             files.Files.Add("invalid-existing", QualityEvidenceTestFiles.Metadata(rejected, "invalid-existing")
                 with { FilePurpose = "engineering-document" });
+            files.Files.Add("rejected-new", QualityEvidenceTestFiles.Metadata(rejected, "rejected-new"));
         }
 
         await SendInNewScopeAsync(provider, new(acceptedId, "org-a", "env-a", "sort-and-screen", null, ["sort-new"], []));
         await Assert.ThrowsAsync<KnownException>(() => SendInNewScopeAsync(provider,
-            new(rejectedId, "org-a", "env-a", "sort-and-screen", null, ["sort-new"], [])));
+            new(rejectedId, "org-a", "env-a", "sort-and-screen", null, ["rejected-new"], [])));
         using (var scope = provider.CreateScope())
         {
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();

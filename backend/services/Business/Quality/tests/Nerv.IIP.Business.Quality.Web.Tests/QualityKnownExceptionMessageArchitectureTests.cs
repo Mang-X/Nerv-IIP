@@ -62,8 +62,8 @@ public sealed class QualityKnownExceptionMessageArchitectureTests
             string.IsNullOrWhiteSpace(document.Text),
             $"Quality 源文件缺失或为空：{document.Path}"));
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(66, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(66, ExpectedSites
+        Assert.Equal(67, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(67, ExpectedSites
             .Where(site => site.Kind == QualityKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(0, ExpectedSites
