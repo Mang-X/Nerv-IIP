@@ -3,10 +3,14 @@ import { createPinia } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { BusinessConsoleMesHistoricalProducedLotRow } from '@nerv-iip/api-client'
 import { useAuthStore } from '@/stores/auth'
 import TraceabilityPage from './traceability.vue'
 
 const state = vi.hoisted(() => ({
+  lots: [] as BusinessConsoleMesHistoricalProducedLotRow[],
+  lotsError: undefined as unknown,
+  retry: vi.fn(),
   nodes: [
     { nodeId: 'WO-20261014-000001', nodeType: 'WorkOrder', displayName: '制管工单' },
     { nodeId: 'task-20', nodeType: 'OperationTask', displayName: 'WO-20261014-000001-OP-20' },
@@ -34,7 +38,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     workOrdersPending: ref(false),
     workOrdersTotal: ref(0),
   }),
-  useMesWorkOrderProducedLots: () => ({ producedLots: ref([]), producedLotsPending: ref(false) }),
+  useMesWorkOrderHistoricalProducedLots: () => ({
+    producedLots: computed(() => state.lots),
+    producedLotsPending: ref(false),
+    producedLotsError: computed(() => state.lotsError),
+    producedLotsState: computed(() => (state.lotsError ? 'error' : 'ready')),
+    refreshProducedLots: state.retry,
+  }),
 }))
 vi.mock('@/composables/mes/useMesReferenceLabels', () => ({
   useMesReferenceLabels: () => ({ statusLabel: (value: string) => value }),
@@ -79,10 +89,11 @@ async function mountTrace(
         NvPageHeader: { template: '<header><slot name="actions" /></header>' },
         NvToolbar: { template: '<div><slot name="filters" /></div>' },
         NvEntityPicker: {
-          props: ['modelValue'],
+          inheritAttrs: false,
+          props: ['modelValue', 'options', 'emptyText'],
           emits: ['update:modelValue'],
           template:
-            '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+            '<div><span v-for="option in options">{{ option.label }} {{ option.hint }}</span><span v-if="!options?.length">{{ emptyText }}</span><input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" /></div>',
         },
         NvInput: {
           props: ['modelValue'],
@@ -254,5 +265,67 @@ describe('追溯页面报工入口', () => {
       state.nodes = savedNodes
       state.edges = savedEdges
     }
+  })
+})
+
+describe('追溯历史产出选择器', () => {
+  beforeEach(() => {
+    state.lots = []
+    state.lotsError = undefined
+    state.retry.mockClear()
+  })
+
+  it('历史目录展示实际产出并保留选择的 lot 与详情返回身份', async () => {
+    state.lots = [
+      { producedLotNo: 'LOT-20261018-01', reportNo: 'PRPT-900', quantity: 12, serialNo: 'SN-1002' },
+    ]
+    const { wrapper, router } = await mountTrace('?mode=batch&workOrderId=WO-20261014-000001')
+    expect(wrapper.text()).toContain('LOT-20261018-01')
+    expect(wrapper.text()).toContain('报工 PRPT-900')
+    expect(wrapper.text()).toContain('产出 12')
+    expect(wrapper.text()).not.toContain('剩余')
+    await wrapper.get('input[aria-label="批次或物料批"]').setValue('LOT-20261018-01')
+    await nodeLink(wrapper, 'WO-20261014-000001').trigger('click')
+    await flushPromises()
+    const returnTo = router.currentRoute.value.query.traceReturn as string
+    await router.push(returnTo)
+    expect(router.currentRoute.value.query).toMatchObject({
+      mode: 'batch',
+      workOrderId: 'WO-20261014-000001',
+      batchOrSerial: 'LOT-20261018-01',
+    })
+    wrapper.unmount()
+  })
+
+  it('仅工单读取权限收到目录403时解释拒绝，不显示无产出或重试', async () => {
+    state.lotsError = { status: 403 }
+    const { wrapper } = await mountTrace('?mode=batch&workOrderId=WO-20261014-000001', [
+      'business.mes.work-orders.read',
+    ])
+    expect(wrapper.text()).toContain('缺少追溯读取权限')
+    expect(wrapper.text()).not.toContain('该工单还没有产出批次')
+    expect(wrapper.text()).not.toContain('重试')
+    expect(wrapper.find('input[aria-label="批次或物料批"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('目录失败展示错误并可重试，不伪装为空目录', async () => {
+    state.lotsError = new Error('历史产出服务暂不可用')
+    const { wrapper } = await mountTrace('?mode=batch&workOrderId=WO-20261014-000001')
+    expect(wrapper.text()).toContain('历史产出服务暂不可用')
+    expect(wrapper.text()).not.toContain('该工单还没有产出批次')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '重试')!
+      .trigger('click')
+    expect(state.retry).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('成功的空历史目录才说明没有产出', async () => {
+    const { wrapper } = await mountTrace('?mode=batch&workOrderId=WO-20261014-000001')
+    expect(wrapper.text()).toContain('该工单还没有产出批次')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })
