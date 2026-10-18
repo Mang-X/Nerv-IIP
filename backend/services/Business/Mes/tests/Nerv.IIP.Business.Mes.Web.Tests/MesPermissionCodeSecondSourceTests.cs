@@ -100,6 +100,7 @@ public sealed class MesPermissionCodeSecondSourceTests
             ["getBusinessMesShiftHandover"] = "business.mes.handovers.read", // GET /api/business/v1/mes/shift-handovers/{handoverId}
             ["createBusinessMesShiftHandover"] = "business.mes.handovers.manage", // POST /api/business/v1/mes/shift-handovers
             ["acceptBusinessMesShiftHandover"] = "business.mes.handovers.manage", // POST /api/business/v1/mes/shift-handovers/{handoverId}/accept
+            ["listBusinessMesHistoricalProducedLots"] = "business.mes.traceability.read", // GET /api/business/v1/mes/traceability/work-orders/{workOrderId}/produced-lots
             ["getBusinessMesWorkOrderTraceability"] = "business.mes.traceability.read", // GET /api/business/v1/mes/traceability/work-orders/{workOrderId}
             ["getBusinessMesBatchTraceability"] = "business.mes.traceability.read", // GET /api/business/v1/mes/traceability/batches/{batchOrSerial}
             ["getBusinessMesMaterialLotTraceability"] = "business.mes.traceability.read", // GET /api/business/v1/mes/traceability/material-lots/{materialLotId}
