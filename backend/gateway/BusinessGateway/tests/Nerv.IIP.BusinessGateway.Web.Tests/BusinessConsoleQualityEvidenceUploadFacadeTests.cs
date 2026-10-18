@@ -142,6 +142,8 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
     [Theory]
     [InlineData("purpose")]
     [InlineData("owner")]
+    [InlineData("owner-service")]
+    [InlineData("owner-type")]
     [InlineData("organization")]
     [InlineData("environment")]
     [InlineData("unavailable")]
@@ -272,6 +274,8 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
                 {
                     "purpose" => file with { FilePurpose = "engineering-document" },
                     "owner" => file with { Owner = file.Owner with { OwnerId = "other-ncr" } },
+                    "owner-service" => file with { Owner = file.Owner with { OwnerService = "business-mes" } },
+                    "owner-type" => file with { Owner = file.Owner with { OwnerType = "shift-handover" } },
                     "organization" => file with { OrganizationId = "other-org" },
                     "environment" => file with { EnvironmentId = "other-env" },
                     "unavailable" => file with { Status = "uploading" },

@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { expect, it } from 'vitest'
 import {
   createBusinessConsoleQualityEvidenceUploadSession,
@@ -54,7 +56,7 @@ it('uploads NCR evidence with raw tus bytes and scoped completion through the st
       data: { fileId: 'file-1', fileName: 'evidence.png', contentType: 'image/png', sizeBytes: 8 },
     })
   }
-  const options = { baseUrl: 'https://gateway.example.test', fetch }
+  const options = { baseUrl: 'https://gateway.example.test', fetch, throwOnError: true as const }
   const session = await createBusinessConsoleQualityEvidenceUploadSession({ ...options, body })
   expect(session.data?.data?.uploadUrl).toBe(tus)
   const path = { uploadSessionId: 'session-1' }
@@ -65,12 +67,13 @@ it('uploads NCR evidence with raw tus bytes and scoped completion through the st
   }
   const offset = await getBusinessConsoleQualityEvidenceTusOffset({ ...options, path, headers })
   expect(offset.response?.headers.get('Upload-Offset')).toBe('0')
-  await patchBusinessConsoleQualityEvidenceTusUpload({
+  const patched = await patchBusinessConsoleQualityEvidenceTusUpload({
     ...options,
     path,
     body: bytes,
     headers: { ...headers, 'Upload-Offset': '0' },
   })
+  expect(patched.response.status).toBe(204)
   const completed = await completeBusinessConsoleQualityEvidenceUpload({
     ...options,
     path,
