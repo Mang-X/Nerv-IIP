@@ -6223,6 +6223,24 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesHistoricalProducedLotListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotRow>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotRow = {
+    producedLotNo?: string;
+    reportNo?: string;
+    operationTaskId?: string;
+    quantity?: number;
+    createdAtUtc?: string;
+    serialNo?: string | null;
+    serialNumbers?: Array<string>;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleResourceListResponse | null;
 };
@@ -20060,6 +20078,38 @@ export type GetBusinessConsoleMesWorkOrderTransformationResponses = {
 };
 
 export type GetBusinessConsoleMesWorkOrderTransformationResponse = GetBusinessConsoleMesWorkOrderTransformationResponses[keyof GetBusinessConsoleMesWorkOrderTransformationResponses];
+
+export type ListBusinessConsoleMesHistoricalProducedLotsData = {
+    body?: never;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/traceability/work-orders/{workOrderId}/produced-lots';
+};
+
+export type ListBusinessConsoleMesHistoricalProducedLotsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesHistoricalProducedLotsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesHistoricalProducedLotListResponse;
+};
+
+export type ListBusinessConsoleMesHistoricalProducedLotsResponse = ListBusinessConsoleMesHistoricalProducedLotsResponses[keyof ListBusinessConsoleMesHistoricalProducedLotsResponses];
 
 export type ListBusinessConsoleMasterDataResourcesData = {
     body?: never;
