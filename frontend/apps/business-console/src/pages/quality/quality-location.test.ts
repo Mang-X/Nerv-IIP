@@ -1057,7 +1057,12 @@ describe('quality route location behavior', () => {
         vm.detailOpen = false
         await nextRenderTick()
       }
-      vm.openNcr({ id: 'NCR-002', code: 'NCR-002', status: 'open' })
+      vm.openNcr({
+        id: 'NCR-002',
+        code: 'NCR-002',
+        status: 'open',
+        reworkWorkOrderCreationStatus: 'not-requested',
+      })
       await nextRenderTick()
       finish({ data: { success: true, data: { fileId: 'old-file' } } })
       await pending
