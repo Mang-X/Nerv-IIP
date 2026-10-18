@@ -3260,8 +3260,13 @@
       "method": "GET",
       "route": "/api/business/v1/mes/traceability/work-orders/{workOrderId}/produced-lots",
       "operationId": "listBusinessMesHistoricalProducedLots",
-      "classification": "deferred",
-      "followUp": "#4499：按 #4461 获批 spec r1 暴露追溯历史产出目录及生成客户端。"
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesHistoricalProducedLots"
+      ]
     },
     {
       "service": "Mes",
