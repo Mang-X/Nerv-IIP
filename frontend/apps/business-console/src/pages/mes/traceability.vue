@@ -309,6 +309,7 @@ function firstQuery(value: unknown) {
           class="w-56"
           :options="producedLotOptions"
           title="选择产出批次"
+          variant="dialog"
           placeholder="选择产出批次"
           empty-text="该工单还没有产出批次"
           :loading="producedLotsPending"
