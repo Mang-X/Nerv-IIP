@@ -1466,6 +1466,56 @@ describe('business MES composables', () => {
     vi.useRealTimers()
   })
 
+  it('advances the default downtime window on every refresh so newly started events fall inside it', async () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    try {
+      const downtime = useMesDowntimeEvents()
+      const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+      const startedAtUtc = '2026-08-30T08:01:00.000Z'
+
+      for (const now of ['2026-08-30T08:01:05.000Z', '2026-08-30T08:02:00.000Z']) {
+        vi.setSystemTime(now)
+        await downtime.refreshDowntimeEvents()
+        coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+        const query = listOptions.mock.calls.at(-1)![0]!.query!
+        expect(query.windowEndUtc).toBe(now)
+        expect(query.windowStartUtc).toBe(now.replace('2026-08-30', '2026-07-31'))
+        expect(Date.parse(startedAtUtc)).toBeGreaterThanOrEqual(Date.parse(query.windowStartUtc!))
+        expect(Date.parse(startedAtUtc)).toBeLessThan(Date.parse(query.windowEndUtc!))
+      }
+      expect(
+        coladaState.queryRefetchById.get('listBusinessConsoleMesDowntimeEvents'),
+      ).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps an explicitly selected historical downtime window unchanged on refresh', async () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    try {
+      const downtime = useMesDowntimeEvents()
+      const window = {
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-15T00:00:00.000Z',
+      }
+      downtime.setDowntimeWindow(window)
+      vi.setSystemTime('2026-08-31T09:00:00.000Z')
+      await downtime.refreshDowntimeEvents()
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+      expect(
+        vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions).mock.calls.at(-1)![0]!.query,
+      ).toMatchObject(window)
+      expect(
+        coladaState.queryRefetchById.get('listBusinessConsoleMesDowntimeEvents'),
+      ).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('forwards the selected downtime reason into the list query and leaves it out when unset', () => {
     const downtime = useMesDowntimeEvents()
     const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
