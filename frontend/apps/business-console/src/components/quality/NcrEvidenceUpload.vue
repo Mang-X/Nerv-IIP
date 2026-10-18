@@ -85,8 +85,8 @@ function createUploadSession(request: FileUploadCreateSessionRequest): Promise<F
 
 const transport: FileUploadTransport = ({ file, session, signal, onProgress }) =>
   pending(async () => {
-    signal?.throwIfAborted()
     signals.set(session.uploadSessionId, signal)
+    signal?.throwIfAborted()
     const path = { uploadSessionId: session.uploadSessionId }
     const headers = {
       ...session.upload.headers,

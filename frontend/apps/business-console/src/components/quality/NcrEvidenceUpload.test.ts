@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { FileUpload } from '@nerv-iip/ui'
 import NcrEvidenceUpload from './NcrEvidenceUpload.vue'
+import { notifyOperationFailure } from '@/utils/notify'
 
 const api = vi.hoisted(() => ({
   create: vi.fn(),
@@ -120,6 +121,7 @@ it('cancels a pending session before any bytes or completion can be sent', async
   expect(api.patch).not.toHaveBeenCalled()
   expect(api.complete).not.toHaveBeenCalled()
   expect(wrapper.emitted('completed')?.flat(2) ?? []).toEqual([])
+  expect(notifyOperationFailure).not.toHaveBeenCalled()
   wrapper.unmount()
 })
 
