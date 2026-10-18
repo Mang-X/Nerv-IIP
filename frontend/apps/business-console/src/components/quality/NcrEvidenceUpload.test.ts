@@ -161,6 +161,52 @@ it('cancels a pending session before any bytes or completion can be sent', async
   wrapper.unmount()
 })
 
+it('maps a network Error through the canonical feedback utility', async () => {
+  api.patch.mockRejectedValueOnce(new Error('Failed to fetch'))
+  const wrapper = mount(NcrEvidenceUpload, { props: scope })
+  await wrapper.findComponent(FileUpload).vm.addFiles([file()])
+  await flushPromises()
+  const message = '网络异常，操作结果可能尚未确认；请刷新列表核实后再重试。'
+  expect(wrapper.text()).toContain(message)
+  expect(wrapper.text()).not.toContain('Failed to fetch')
+  expect(notifyOperationFailure).toHaveBeenCalledWith(
+    '证据上传失败',
+    expect.objectContaining({ message }),
+    '请重试或移除后重新选择。',
+  )
+  expect(api.complete).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+it('keeps an aborted transfer paused without failure feedback and can resume it', async () => {
+  api.patch.mockImplementationOnce(
+    ({ signal }: { signal: AbortSignal }) =>
+      new Promise((_, reject) => {
+        signal.addEventListener('abort', () =>
+          reject(new DOMException('The operation was aborted.', 'AbortError')),
+        )
+      }),
+  )
+  const wrapper = mount(NcrEvidenceUpload, { props: scope })
+  const upload = wrapper.findComponent(FileUpload)
+  const pending = upload.vm.addFiles([file()])
+  await flushPromises()
+  upload.vm.pauseAll()
+  await pending
+  await flushPromises()
+  expect(wrapper.text()).toContain('已暂停')
+  expect(wrapper.text()).not.toContain('失败')
+  expect(notifyOperationFailure).not.toHaveBeenCalled()
+  expect(api.complete).not.toHaveBeenCalled()
+  await upload.vm.resumeAll()
+  await flushPromises()
+  expect(api.create).toHaveBeenCalledTimes(1)
+  expect(wrapper.emitted('completed')?.at(-1)?.[0]).toEqual([
+    { fileId: 'completed-file', fileName: '尺寸复检.txt' },
+  ])
+  wrapper.unmount()
+})
+
 it('does not count a late complete after cancellation', async () => {
   const finish = deferred<typeof completed>()
   api.complete.mockReturnValue(finish.promise)

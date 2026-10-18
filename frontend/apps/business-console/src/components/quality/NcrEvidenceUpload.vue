@@ -52,8 +52,15 @@ async function pending<T>(action: () => Promise<T>): Promise<T> {
   try {
     return await action()
   } catch (error) {
-    if (error instanceof Error) throw error
-    throw new Error(inlineErrorMessage(error, '上传失败，请重试。'))
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      error.name === 'AbortError'
+    ) {
+      throw error
+    }
+    throw new Error(inlineErrorMessage(error, '上传失败，请重试。'), { cause: error })
   } finally {
     pendingRequests.value--
     if (!disposed) emit('busy', pendingRequests.value > 0)
