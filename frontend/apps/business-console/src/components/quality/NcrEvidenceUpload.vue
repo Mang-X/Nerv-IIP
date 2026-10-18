@@ -16,7 +16,7 @@ import {
   type FileUploadTransport,
 } from '@nerv-iip/ui'
 import { onBeforeUnmount, shallowRef, useTemplateRef } from 'vue'
-import { notifyOperationFailure, notifyWarning } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifyWarning } from '@/utils/notify'
 
 // The page keys this component by dialog opening, NCR and business scope.
 const props = defineProps<{
@@ -51,6 +51,9 @@ async function pending<T>(action: () => Promise<T>): Promise<T> {
   emit('busy', true)
   try {
     return await action()
+  } catch (error) {
+    if (error instanceof Error) throw error
+    throw new Error(inlineErrorMessage(error, '上传失败，请重试。'))
   } finally {
     pendingRequests.value--
     if (!disposed) emit('busy', pendingRequests.value > 0)

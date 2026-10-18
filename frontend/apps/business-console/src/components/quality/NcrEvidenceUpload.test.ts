@@ -17,7 +17,11 @@ vi.mock('@nerv-iip/api-client', async (original) => ({
   patchBusinessConsoleQualityEvidenceTusUpload: api.patch,
   completeBusinessConsoleQualityEvidenceUpload: api.complete,
 }))
-vi.mock('@/utils/notify', () => ({ notifyOperationFailure: vi.fn(), notifyWarning: vi.fn() }))
+vi.mock('@/utils/notify', async (original) => ({
+  ...(await original<typeof import('@/utils/notify')>()),
+  notifyOperationFailure: vi.fn(),
+  notifyWarning: vi.fn(),
+}))
 
 const scope = { organizationId: 'org-001', environmentId: 'env-dev', ncrId: 'ncr-1' }
 function deferred<T>() {
@@ -29,6 +33,15 @@ function deferred<T>() {
 }
 const file = () => new File(['inspection'], '尺寸复检.txt', { type: 'text/plain' })
 const completed = { data: { success: true, data: { fileId: 'completed-file' } } }
+
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -69,6 +82,7 @@ it('counts only completed evidence and sends raw bytes with the current NCR scop
   })
   const patch = api.patch.mock.calls[0]![0]
   expect(patch.body.size).toBe(10)
+  expect(await blobText(patch.body)).toBe('inspection')
   expect(patch.headers).toMatchObject({
     'X-Organization-Id': scope.organizationId,
     'X-Environment-Id': scope.environmentId,
@@ -99,12 +113,34 @@ it('keeps failed evidence out of attachments and retries the same session from i
   await flushPromises()
   expect(api.create).toHaveBeenCalledTimes(1)
   expect(api.patch.mock.calls[1]![0].body.size).toBe(6)
+  expect(await blobText(api.patch.mock.calls[1]![0].body)).toBe('ection')
   expect(api.patch.mock.calls[1]![0].headers['Upload-Offset']).toBe('4')
   expect(wrapper.emitted('completed')?.at(-1)?.[0]).toEqual([
     { fileId: 'completed-file', fileName: '尺寸复检.txt' },
   ])
   wrapper.unmount()
 })
+
+it.each(['create', 'head', 'patch', 'complete'] as const)(
+  'preserves the domain rejection from a generated-client response object at %s',
+  async (operation) => {
+    const reason = '上传内容与声明的文件类型不匹配。'
+    api[operation].mockRejectedValueOnce({ detail: reason, status: 400 })
+    const wrapper = mount(NcrEvidenceUpload, { props: scope })
+    await wrapper
+      .findComponent(FileUpload)
+      .vm.addFiles([new File(['inspection'], '尺寸复检.pdf', { type: 'application/pdf' })])
+    await flushPromises()
+    expect(wrapper.text()).toContain(reason)
+    expect(notifyOperationFailure).toHaveBeenCalledWith(
+      '证据上传失败',
+      expect.objectContaining({ message: reason }),
+      '请重试或移除后重新选择。',
+    )
+    expect(wrapper.emitted('completed')).toBeUndefined()
+    wrapper.unmount()
+  },
+)
 
 it('cancels a pending session before any bytes or completion can be sent', async () => {
   const session = deferred<unknown>()
