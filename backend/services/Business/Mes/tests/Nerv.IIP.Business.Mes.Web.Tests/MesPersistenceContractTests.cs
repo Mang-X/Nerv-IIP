@@ -2530,6 +2530,55 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(traceability.Edges, x => x.RelationType == "consumed-by-report");
     }
 
+    // Regression: #2688 验收 1、2。同一物料批跨工序耗用时，三个读面都只发一个物料/批次节点，保留各次耗用关系。
+    // EF InMemory 仅证明读面响应装配，不声明真实数据库行为。
+    [Theory]
+    [InlineData("work-order")]
+    [InlineData("batch")]
+    [InlineData("material-lot")]
+    public async Task Traceability_deduplicates_material_consumed_by_multiple_operations(string readFace)
+    {
+        var services = CreateServices($"{nameof(Traceability_deduplicates_material_consumed_by_multiple_operations)}-{readFace}");
+        var now = DateTimeOffset.Parse("2026-05-30T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SeedTraceabilityWorkOrder(dbContext, "org-001", "WO-DEDUPE", now);
+            foreach (var sequence in new[] { 10, 20 })
+            {
+                SeedTraceabilityOperationReport(
+                    dbContext, "org-001", "WO-DEDUPE", $"OP-DEDUPE-{sequence}", $"PRPT-DEDUPE-{sequence}",
+                    now, "user-emp-010", "DEV-CNC-01", operationSequence: sequence);
+                dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(
+                    "org-001", "env-dev", $"PRPT-DEDUPE-{sequence}", "WO-DEDUPE", $"OP-DEDUPE-{sequence}",
+                    "MAT-OIL", "LOT-DEDUPE", "L", 2m, $"MIR-DEDUPE-{sequence}", "SITE-1", "LINE-SIDE"));
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var queryDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var traceability = readFace switch
+        {
+            "work-order" => await new GetWorkOrderTraceabilityQueryHandler(queryDbContext).Handle(
+                new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-DEDUPE"), CancellationToken.None),
+            "batch" => await new GetBatchTraceabilityQueryHandler(queryDbContext).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-DEDUPE"), CancellationToken.None),
+            _ => await new GetMaterialLotTraceabilityQueryHandler(queryDbContext).Handle(
+                new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-DEDUPE"), CancellationToken.None),
+        };
+
+        Assert.Single(traceability.Nodes, x => x.NodeId == "MAT-OIL" && x.NodeType == MesTraceabilityNodeType.Material);
+        Assert.Single(traceability.Nodes, x => x.NodeId == "LOT-DEDUPE" && x.NodeType == MesTraceabilityNodeType.MaterialLot);
+        Assert.Single(traceability.Edges, x => x.FromNodeId == "MAT-OIL" && x.ToNodeId == "LOT-DEDUPE" && x.RelationType == "has-lot");
+        foreach (var reportNo in new[] { "PRPT-DEDUPE-10", "PRPT-DEDUPE-20" })
+        {
+            Assert.Single(traceability.Edges, x => x.FromNodeId == "LOT-DEDUPE" && x.ToNodeId == reportNo && x.RelationType == "consumed-by-report");
+        }
+    }
+
     // 验收 2（#1948）：从成品序列号反查，追溯图必须同时给出人员、设备、时间与检验结论。
     [Fact]
     public async Task Serial_traceability_returns_operator_device_time_and_inspection_verdict()
@@ -2614,7 +2663,7 @@ public sealed class MesPersistenceContractTests
     }
 
     // 验收 2（#1948）：工单追溯读面与序列号读面共用同一份装配逻辑。本用例同时钉住两条：
-    // 同一操作人的多条报工只发一个人员节点（本读面末尾没有 DistinctBy，去重失效会让重复节点真的流到响应里）；
+    // 同一操作人的多条报工只发一个人员节点；
     // 不良只能扣到它自己那道工序头上（工单下有两道工序，不良只记在第一道）。
     [Fact]
     public async Task Work_order_traceability_attaches_each_inspection_to_its_own_operation_without_duplicating_shared_nodes()
