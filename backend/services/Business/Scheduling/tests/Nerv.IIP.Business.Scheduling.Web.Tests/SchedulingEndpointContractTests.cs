@@ -374,7 +374,7 @@ public sealed partial class SchedulingEndpointContractTests
                 new SchedulingWorkbenchProblemSourceOrder(new SchedulingProblemSourceOrder(
                     order.OrderId, order.SkuCode, order.Quantity, order.DueUtc, order.Priority, order.IsRush,
                     earliestStartFallbackUtc, "routing"), order.Operations.Select(operation =>
-                        new SchedulingWorkbenchOperationSource(operation.OperationId, operation.OperationSequence)).ToArray())).ToArray());
+                        new SchedulingWorkbenchOperationSource(operation.OperationId, operation.OperationSequence, "WC-001")).ToArray())).ToArray());
 
         public Task<SchedulingProblemContract> AssembleWorkbenchAsync(AssembleSchedulingWorkbenchProblemRequest request,
             CancellationToken cancellationToken) => Task.FromResult(problem with { ProblemId = request.ProblemId });

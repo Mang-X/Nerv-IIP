@@ -9,7 +9,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 
 public sealed record SchedulingWorkbenchOrderSelection(string WorkOrderId, int Priority, bool IsRush);
 
-public sealed record SchedulingWorkbenchOperationSource(string OperationTaskId, int OperationSequence);
+public sealed record SchedulingWorkbenchOperationSource(string OperationTaskId, int OperationSequence, string WorkCenterId);
 
 public sealed record SchedulingWorkbenchProblemSourceOrder(
     SchedulingProblemSourceOrder Order,
@@ -160,7 +160,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                     routing.RoutingVersionId,
                     BusinessReference: order.WorkOrderNo),
                 order.OperationTasks
-                    .Select(x => new SchedulingWorkbenchOperationSource(x.OperationTaskId, x.OperationSequence))
+                    .Select(x => new SchedulingWorkbenchOperationSource(x.OperationTaskId, x.OperationSequence, x.WorkCenterId))
                     .ToArray(),
                 assemblyChildrenByOrder[order.WorkOrderId]);
         }).ToArray();
@@ -303,5 +303,6 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
     private sealed record MesOperationTaskItem(
         string OperationTaskId,
         int OperationSequence,
+        string WorkCenterId,
         DateTimeOffset EarliestStartUtc);
 }

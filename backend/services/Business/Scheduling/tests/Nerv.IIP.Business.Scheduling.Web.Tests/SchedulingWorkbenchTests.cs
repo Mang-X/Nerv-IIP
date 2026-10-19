@@ -251,12 +251,14 @@ public sealed partial class SchedulingWorkbenchTests
                         {
                             operationTaskId = "MES-TASK-020",
                             operationSequence = 20,
+                            workCenterId = "WC-001",
                             earliestStartUtc = start,
                         },
                         new
                         {
                             operationTaskId = "MES-TASK-010",
                             operationSequence = 10,
+                            workCenterId = "WC-001",
                             earliestStartUtc = start,
                         },
                     },
@@ -765,7 +767,7 @@ public sealed partial class SchedulingWorkbenchTests
                     new SchedulingProblemSourceOrder(order.OrderId, order.SkuCode, order.Quantity,
                         order.DueUtc, order.Priority, order.IsRush, earliestStartFallbackUtc, "routing",
                         BusinessReference: order.BusinessReference),
-                    order.Operations.Select(x => new SchedulingWorkbenchOperationSource(x.OperationId, x.OperationSequence)).ToArray())).ToArray());
+                    order.Operations.Select(x => new SchedulingWorkbenchOperationSource(x.OperationId, x.OperationSequence, "WC-001")).ToArray())).ToArray());
     }
 
     private sealed class StaticWorkbenchProblemProducer(SchedulingProblemContract problem) : ISchedulingProblemProducer
@@ -886,6 +888,7 @@ public sealed partial class SchedulingWorkbenchTests
         dueUtc = start.AddDays(1),
         status,
         workOrderNo = workOrderId,
-        operationTasks = new[] { new { operationTaskId = $"{workOrderId}-OP10", operationSequence = 10, earliestStartUtc = start } },
+        operationTasks = new[] { new { operationTaskId = $"{workOrderId}-OP10", operationSequence = 10,
+            workCenterId = "WC-001", earliestStartUtc = start } },
     };
 }
