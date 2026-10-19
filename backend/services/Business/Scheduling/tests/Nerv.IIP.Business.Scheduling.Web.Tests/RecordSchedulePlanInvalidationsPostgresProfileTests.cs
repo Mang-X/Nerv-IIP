@@ -926,7 +926,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder> result = selections.Select(x =>
                 new SchedulingWorkbenchProblemSourceOrder(new SchedulingProblemSourceOrder(
                     x.WorkOrderId, "SKU-001", 1m, FixedNow.AddDays(1), 50, true, FixedNow, "ROUTE-001"),
-                    [new SchedulingWorkbenchOperationSource(x.WorkOrderId + "-OP", 10)])).ToArray();
+                    [new SchedulingWorkbenchOperationSource(x.WorkOrderId + "-OP", 10, "WC-001")])).ToArray();
             return Task.FromResult(result);
         }
     }

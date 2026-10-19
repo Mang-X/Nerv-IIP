@@ -55,7 +55,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Target($"{SchedulingWebRoot}/Application/IntegrationEventConverters/SchedulingIntegrationEventConverters.cs", "HttpSchedulingIntegrationEventContextAccessor", "ResolveActor", 1),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs", "HttpSchedulingWorkbenchSourceProvider", "ResolveOrdersAsync", 5),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs", "HttpSchedulingWorkbenchSourceProvider", "ReadMesWorkOrderListResponseAsync", 5),
-        Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "SchedulingProblemProducer", "AssembleWorkbenchAsync", 1),
+        Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "SchedulingProblemProducer", "AssembleWorkbenchAsync", 2),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "HttpSchedulingProblemProductEngineeringClient", "ParseVersionId", 1),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "HttpSchedulingProblemMasterDataClient", "GetWorkCenterAsync", 1),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "HttpSchedulingProblemMasterDataClient", "ListDeviceAssetsAsync", 1),
@@ -86,7 +86,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(52, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
+        Assert.Equal(53, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(12, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));

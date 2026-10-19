@@ -69,9 +69,9 @@ public sealed class SchedulingProblemProducer(
         AssembleSchedulingWorkbenchProblemRequest request,
         CancellationToken cancellationToken)
     {
-        var operationIds = request.Orders.ToDictionary(
+        var operationSources = request.Orders.ToDictionary(
             x => x.Order.OrderId,
-            x => x.Operations.ToDictionary(y => y.OperationSequence, y => y.OperationTaskId),
+            x => x.Operations.ToDictionary(y => y.OperationSequence),
             StringComparer.Ordinal);
         var problem = await AssembleAsync(
             new AssembleSchedulingProblemRequest(
@@ -83,14 +83,20 @@ public sealed class SchedulingProblemProducer(
                 request.Orders.Select(x => x.Order).ToArray()),
             (order, operation) =>
             {
-                if (!operationIds[order.OrderId].TryGetValue(operation.Sequence, out var operationTaskId) ||
-                    string.IsNullOrWhiteSpace(operationTaskId))
+                if (!operationSources[order.OrderId].TryGetValue(operation.Sequence, out var task) ||
+                    string.IsNullOrWhiteSpace(task.OperationTaskId))
                 {
                     throw new KnownException(
                         $"MES 工单 '{order.OrderId}' 缺少序号 '{operation.Sequence}' 的工序任务。");
                 }
 
-                return operationTaskId;
+                if (!string.Equals(task.WorkCenterId, operation.WorkCenterCode, StringComparison.Ordinal))
+                {
+                    throw new KnownException(
+                        $"工单{order.OrderId}序{operation.Sequence}中心{task.WorkCenterId}≠路线{operation.WorkCenterCode}；未恢复");
+                }
+
+                return task.OperationTaskId;
             },
             cancellationToken);
         return problem with
