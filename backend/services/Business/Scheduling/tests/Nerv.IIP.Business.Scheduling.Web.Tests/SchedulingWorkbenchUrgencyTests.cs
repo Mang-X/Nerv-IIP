@@ -101,7 +101,7 @@ public sealed partial class SchedulingWorkbenchTests
                 workOrderId = x.Id, skuId = "SKU-001", skuCode = "SKU-001", productionVersionId = "pv-001",
                 quantity = 1, priority = x.Priority, isRush = x.IsRush, dueUtc = x.DueUtc, status = "released",
                 workOrderNo = $"MO-{x.Id}",
-                operationTasks = new[] { new { operationTaskId = $"{x.Id}-TASK", operationSequence = 10, earliestStartUtc = start } },
+                operationTasks = new[] { new { operationTaskId = $"{x.Id}-TASK", operationSequence = 10, workCenterId = "WC-001", earliestStartUtc = start } },
             }).ToArray(),
             total = readSaved().Length,
         }))) { BaseAddress = new Uri("http://mes") };
