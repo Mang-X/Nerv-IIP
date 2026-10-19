@@ -41,7 +41,7 @@ const DEGRADATION_LABELS: Record<BusinessConsoleMesProductionStatisticsDegradedR
   historicalReportOutsideShiftWindow: '历史报工不在班次窗口内',
   historicalLocalTimeInvalid: '历史本地时间无效',
   historicalLocalTimeAmbiguous: '历史本地时间存在歧义',
-  historicalDimensionSnapshotDegraded: '历史维度快照不完整',
+  historicalDimensionSnapshotDegraded: '报工维度快照不完整',
   workCenterMissing: '工作中心缺失',
   nonPositiveTotalOutput: '总产出非正，质量比率缺失',
 }

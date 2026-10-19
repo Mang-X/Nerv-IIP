@@ -1,3 +1,5 @@
+import type { BusinessConsoleMesProductionStatisticsDegradedReason } from '@nerv-iip/api-client'
+import { createProductionStatisticsCsv } from '@/features/mes-production-report/productionStatisticsCsv'
 import { mount } from '@vue/test-utils'
 import { computed, nextTick, reactive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -62,6 +64,37 @@ describe('生产日报班次名称', () => {
     expect(wrapper.text()).toContain('85')
     expect(wrapper.text()).toContain('7')
     expect(wrapper.findAll('tbody tr')).toHaveLength(3)
+  })
+  it('当前快照不完整、历史无快照及原诊断在表格和 CSV 中一致，数量不变', () => {
+    const reasons: BusinessConsoleMesProductionStatisticsDegradedReason[] = [
+      'historicalDimensionSnapshotDegraded',
+      'historicalDimensionLegacyUnresolved',
+      'deviceMissing',
+      'historicalTimezoneMissing',
+    ]
+    const rows = reasons.map((reason) => ({
+      ...row('NIGHT', 2),
+      resolutionStatus: 'degraded' as const,
+      degradedReasons: [reason],
+    }))
+    const wrapper = mount(MesProductionStatisticsTable, {
+      props: { rows, total: 4, page: 1, pageSize: '20', pending: false },
+    })
+    const csv = createProductionStatisticsCsv(rows)
+    const renderedRows = wrapper.findAll('tbody tr')
+    expect(renderedRows).toHaveLength(4)
+    for (const [index, label] of [
+      '报工维度快照不完整',
+      '历史维度无法解析',
+      '报工缺设备，实绩维度快照未取得',
+      '历史站点时区缺失',
+    ].entries()) {
+      expect(renderedRows[index]!.text()).toContain(label)
+      expect(renderedRows[index]!.text()).toContain('数据不完整')
+      expect(csv).toContain(`,2,2,1,0,0,0,0,2,数据不完整,${label}`)
+    }
+    expect(renderedRows[0]!.text()).not.toContain('历史')
+    expect(rows.reduce((sum, item) => sum + item.totalOutputQuantity, 0)).toBe(8)
   })
   it('目录名称变化立即更新展示，不使用硬编码翻译', async () => {
     const wrapper = mountTable()

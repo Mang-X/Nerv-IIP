@@ -2,6 +2,7 @@ import type { BusinessConsoleMesProductionStatisticsBucket } from '@nerv-iip/api
 import { describe, expect, it } from 'vitest'
 import {
   createProductionStatisticsCsv,
+  describeProductionStatisticsDegradation,
   productionStatisticsCsvFilename,
 } from './productionStatisticsCsv'
 import { presentProductionStatisticsRow } from './productionStatisticsPresentation'
@@ -26,6 +27,19 @@ const bucket: BusinessConsoleMesProductionStatisticsBucket = {
 }
 
 describe('production statistics CSV', () => {
+  it('labels current incomplete snapshots without implying history and preserves exported quantities', () => {
+    const row = presentProductionStatisticsRow({
+      ...bucket,
+      degradedReasons: ['historicalDimensionSnapshotDegraded'],
+    })
+    expect(describeProductionStatisticsDegradation('historicalDimensionSnapshotDegraded')).toBe(
+      '报工维度快照不完整',
+    )
+    const csv = createProductionStatisticsCsv([row])
+    expect(csv).toContain(',100,96.5,0.965,2,0.02,1.5,0.015,7,数据不完整,报工维度快照不完整')
+    expect(csv).not.toContain('历史')
+  })
+
   it('distinguishes missing device at reporting from legacy snapshots in page labels and CSV', () => {
     const csv = createProductionStatisticsCsv([
       presentProductionStatisticsRow({ ...bucket, degradedReasons: ['deviceMissing'] }),

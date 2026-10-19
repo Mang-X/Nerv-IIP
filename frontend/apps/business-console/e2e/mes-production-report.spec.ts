@@ -189,6 +189,60 @@ test('生产日报呈现跨源上下文、服务端第二页并导出当前筛�
   ).toBe(true)
 })
 
+test('日报与下载 CSV 区分当前不完整和历史快照并保留数量', async ({ page }, testInfo) => {
+  const reasons = [
+    'historicalDimensionSnapshotDegraded',
+    'historicalDimensionLegacyUnresolved',
+    'deviceMissing',
+  ]
+  const routeApi = async (route: Route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/console/v1/auth/refresh') return fulfill(route, envelope(session))
+    if (url.pathname === '/api/console/v1/auth/me') return fulfill(route, envelope(principal))
+    if (url.pathname === '/api/business-console/v1/mes/production-statistics') {
+      const items = reasons.map((reason, index) => ({
+        dimension: 'day',
+        dimensionValue: `2026-10-${17 + index}`,
+        businessDate: `2026-10-${17 + index}`,
+        shiftCode: null,
+        workCenterId: null,
+        skuId: null,
+        totalOutputQuantity: 2,
+        goodQuantity: 2,
+        scrapQuantity: 0,
+        reworkQuantity: 0,
+        goodRate: 1,
+        scrapRate: 0,
+        reworkRate: 0,
+        productionReportCount: 1,
+        resolutionStatus: 'degraded',
+        degradedReasons: [reason],
+      }))
+      return fulfill(route, envelope({ items, totalCount: 3, skip: 0, take: 500 }))
+    }
+    return fulfill(route, envelope({ items: [], total: 0 }))
+  }
+  await page.route('**/api/console/v1/**', routeApi)
+  await page.route('**/api/business-console/v1/**', routeApi)
+  await page.goto('/mes/reports', { waitUntil: 'domcontentloaded' })
+  const labels = ['报工维度快照不完整', '历史维度无法解析', '报工缺设备，实绩维度快照未取得']
+  for (const label of labels) await expect(page.getByText(label, { exact: true })).toBeVisible()
+  await expect(page.getByText('历史站点时区缺失', { exact: true })).toBeHidden()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出 CSV' }).click()
+  const download = await downloadPromise
+  const stream = await download.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk))
+  const csv = Buffer.concat(chunks).toString('utf8')
+  for (const label of labels) expect(csv).toContain(`,2,2,1,0,0,0,0,1,数据不完整,${label}`)
+  expect(csv).not.toContain('历史站点时区缺失')
+  await page.screenshot({
+    path: testInfo.outputPath('issue-4515-daily-classification.png'),
+    fullPage: true,
+  })
+})
+
 test('生产统计业务失败时呈现错误而不是空态', async ({ page }, testInfo) => {
   const routeApi = async (route: Route) => {
     const url = new URL(route.request().url())
