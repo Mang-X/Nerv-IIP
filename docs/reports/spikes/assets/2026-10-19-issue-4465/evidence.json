@@ -1,0 +1,1374 @@
+{
+  "sourceSha": "ee3b1388d331ebd25a62a6ed30db1297a0306033",
+  "sessionId": "nerv-4465-261019",
+  "scope": {
+    "organizationId": "org-001",
+    "environmentId": "env-dev",
+    "role": "admin; not least-privilege acceptance",
+    "providers": {
+      "persistence": "PostgreSQL",
+      "messaging": "Redis"
+    },
+    "workOrderId": "WO-20261019-000001",
+    "operationTaskId": "WO-20261019-000001-OP-10"
+  },
+  "form": {
+    "skuId": "SF-ROD-01",
+    "productionVersionId": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+    "quantity": 1,
+    "workCenterId": "WC-ROD-01",
+    "operationSequence": 10,
+    "durationMinutes": 60,
+    "dueLocal": "2026-10-20T09:59",
+    "provenance": "real UI inputs; form screenshot; not captured POST body"
+  },
+  "engineering": {
+    "routingCode": "ROUTING-SF-ROD-01",
+    "revision": "1",
+    "skuCode": "SF-ROD-01",
+    "status": "Published",
+    "effectiveDate": "2026-01-05",
+    "operations": [
+      {
+        "sequence": 10,
+        "workCenterCode": "WC-TUB-01",
+        "operationCode": "OP-WB-CUT",
+        "operationName": "下料",
+        "standardMinutes": 22,
+        "interruptible": false
+      },
+      {
+        "sequence": 20,
+        "workCenterCode": "WC-ROD-01",
+        "operationCode": "OP-WB-CNC",
+        "operationName": "CNC 精车",
+        "standardMinutes": 31,
+        "interruptible": false
+      },
+      {
+        "sequence": 30,
+        "workCenterCode": "WC-GRD-01",
+        "operationCode": "OP-WB-GRD",
+        "operationName": "精磨",
+        "standardMinutes": 20,
+        "interruptible": false
+      }
+    ]
+  },
+  "states": [
+    {
+      "stage": "created",
+      "databaseReadAtUtc": "2026-10-19T02:02:21.227218+00:00",
+      "databaseQuery": "select json_agg(x) from (select work_order_id,operation_task_id,operation_sequence,status,work_center_id,alternative_work_center_ids,duration_ticks,earliest_start_utc,existing_start_utc,existing_end_utc,device_asset_id,schedule_plan_id,schedule_release_revision,scheduled_at_utc,schedule_invalidation_reason_code,routing_code,routing_revision,routing_source_production_version_id,routing_version_id,row_version from mes.operation_tasks where organization_id='org-001' and environment_id='env-dev' and work_order_id='WO-20261019-000001' order by operation_sequence)x",
+      "tasks": [
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-10",
+          "operation_sequence": 10,
+          "status": "Queued",
+          "work_center_id": "WC-ROD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 36000000000,
+          "earliest_start_utc": "2026-10-19T02:01:16.794691+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 0
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-20",
+          "operation_sequence": 20,
+          "status": "Queued",
+          "work_center_id": "WC-ROD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 18600000000,
+          "earliest_start_utc": "2026-10-19T02:01:16.794691+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 0
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-30",
+          "operation_sequence": 30,
+          "status": "Queued",
+          "work_center_id": "WC-GRD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 12000000000,
+          "earliest_start_utc": "2026-10-19T02:01:16.794691+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 0
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:02:20.814161+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/mes/work-orders/WO-20261019-000001?organizationId=org-001&environmentId=env-dev",
+        "status": 200,
+        "correlationId": "issue4465-7f40bdc3c8bb47bba0c0cb955033e734",
+        "responseCorrelationId": "issue4465-7f40bdc3c8bb47bba0c0cb955033e734",
+        "tasks": [
+          {
+            "operationTaskId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "workCenterId": "WC-GRD-01",
+            "status": "Queued",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "generated",
+      "databaseReadAtUtc": "2026-10-19T02:03:28.676346+00:00",
+      "databaseQuery": "select json_agg(x) from (select work_order_id,operation_task_id,operation_sequence,status,work_center_id,alternative_work_center_ids,duration_ticks,earliest_start_utc,existing_start_utc,existing_end_utc,device_asset_id,schedule_plan_id,schedule_release_revision,scheduled_at_utc,schedule_invalidation_reason_code,routing_code,routing_revision,routing_source_production_version_id,routing_version_id,row_version from mes.operation_tasks where organization_id='org-001' and environment_id='env-dev' and work_order_id='WO-20261019-000001' order by operation_sequence)x",
+      "tasks": [
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-10",
+          "operation_sequence": 10,
+          "status": "Queued",
+          "work_center_id": "WC-ROD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 36000000000,
+          "earliest_start_utc": "2026-10-19T02:01:16.794691+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 0
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-20",
+          "operation_sequence": 20,
+          "status": "Queued",
+          "work_center_id": "WC-ROD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 18600000000,
+          "earliest_start_utc": "2026-10-19T02:01:16.794691+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 0
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-30",
+          "operation_sequence": 30,
+          "status": "Queued",
+          "work_center_id": "WC-GRD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 12000000000,
+          "earliest_start_utc": "2026-10-19T02:01:16.794691+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 0
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:03:27.683536+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/mes/work-orders/WO-20261019-000001?organizationId=org-001&environmentId=env-dev",
+        "status": 200,
+        "correlationId": "issue4465-66fa71b15aad469eaf150f8f795e9d41",
+        "responseCorrelationId": "issue4465-66fa71b15aad469eaf150f8f795e9d41",
+        "tasks": [
+          {
+            "operationTaskId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "workCenterId": "WC-GRD-01",
+            "status": "Queued",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "released",
+      "databaseReadAtUtc": "2026-10-19T02:04:16.592288+00:00",
+      "databaseQuery": "select json_agg(x) from (select work_order_id,operation_task_id,operation_sequence,status,work_center_id,alternative_work_center_ids,duration_ticks,earliest_start_utc,existing_start_utc,existing_end_utc,device_asset_id,schedule_plan_id,schedule_release_revision,scheduled_at_utc,schedule_invalidation_reason_code,routing_code,routing_revision,routing_source_production_version_id,routing_version_id,row_version from mes.operation_tasks where organization_id='org-001' and environment_id='env-dev' and work_order_id='WO-20261019-000001' order by operation_sequence)x",
+      "tasks": [
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-10",
+          "operation_sequence": 10,
+          "status": "Queued",
+          "work_center_id": "WC-TUB-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 4200000000,
+          "earliest_start_utc": "2026-10-19T08:00:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": "WC-TUB-01",
+          "schedule_plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "schedule_release_revision": 1,
+          "scheduled_at_utc": "2026-10-19T02:04:09.045739+00:00",
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 1
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-20",
+          "operation_sequence": 20,
+          "status": "Queued",
+          "work_center_id": "WC-ROD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 6600000000,
+          "earliest_start_utc": "2026-10-19T08:07:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": "WC-ROD-01",
+          "schedule_plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "schedule_release_revision": 1,
+          "scheduled_at_utc": "2026-10-19T02:04:09.045739+00:00",
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 1
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-30",
+          "operation_sequence": 30,
+          "status": "Queued",
+          "work_center_id": "WC-GRD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 4800000000,
+          "earliest_start_utc": "2026-10-19T08:18:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": "WC-GRD-01",
+          "schedule_plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "schedule_release_revision": 1,
+          "scheduled_at_utc": "2026-10-19T02:04:09.045739+00:00",
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 1
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:04:16.439214+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/mes/work-orders/WO-20261019-000001?organizationId=org-001&environmentId=env-dev",
+        "status": 200,
+        "correlationId": "issue4465-526a51f96c72461eb0fe7d59cfbd7291",
+        "responseCorrelationId": "issue4465-526a51f96c72461eb0fe7d59cfbd7291",
+        "tasks": [
+          {
+            "operationTaskId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "workCenterId": "WC-TUB-01",
+            "status": "Queued",
+            "scheduledAtUtc": "2026-10-19T02:04:09.045739+00:00",
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "scheduledAtUtc": "2026-10-19T02:04:09.045739+00:00",
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "workCenterId": "WC-GRD-01",
+            "status": "Queued",
+            "scheduledAtUtc": "2026-10-19T02:04:09.045739+00:00",
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "revoked",
+      "databaseReadAtUtc": "2026-10-19T02:04:39.822037+00:00",
+      "databaseQuery": "select json_agg(x) from (select work_order_id,operation_task_id,operation_sequence,status,work_center_id,alternative_work_center_ids,duration_ticks,earliest_start_utc,existing_start_utc,existing_end_utc,device_asset_id,schedule_plan_id,schedule_release_revision,scheduled_at_utc,schedule_invalidation_reason_code,routing_code,routing_revision,routing_source_production_version_id,routing_version_id,row_version from mes.operation_tasks where organization_id='org-001' and environment_id='env-dev' and work_order_id='WO-20261019-000001' order by operation_sequence)x",
+      "tasks": [
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-10",
+          "operation_sequence": 10,
+          "status": "Queued",
+          "work_center_id": "WC-TUB-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 4200000000,
+          "earliest_start_utc": "2026-10-19T08:00:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": "WC-TUB-01",
+          "schedule_plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "schedule_release_revision": 1,
+          "scheduled_at_utc": "2026-10-19T02:04:09.045739+00:00",
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 1
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-20",
+          "operation_sequence": 20,
+          "status": "Queued",
+          "work_center_id": "WC-ROD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 6600000000,
+          "earliest_start_utc": "2026-10-19T08:07:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": "WC-ROD-01",
+          "schedule_plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "schedule_release_revision": 1,
+          "scheduled_at_utc": "2026-10-19T02:04:09.045739+00:00",
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 1
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-30",
+          "operation_sequence": 30,
+          "status": "Queued",
+          "work_center_id": "WC-GRD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 4800000000,
+          "earliest_start_utc": "2026-10-19T08:18:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": "WC-GRD-01",
+          "schedule_plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "schedule_release_revision": 1,
+          "scheduled_at_utc": "2026-10-19T02:04:09.045739+00:00",
+          "schedule_invalidation_reason_code": null,
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 1
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:04:38.193247+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/mes/work-orders/WO-20261019-000001?organizationId=org-001&environmentId=env-dev",
+        "status": 200,
+        "correlationId": "issue4465-fbe266afce554c90aefef14dc53c102e",
+        "responseCorrelationId": "issue4465-fbe266afce554c90aefef14dc53c102e",
+        "tasks": [
+          {
+            "operationTaskId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "workCenterId": "WC-TUB-01",
+            "status": "Queued",
+            "scheduledAtUtc": "2026-10-19T02:04:09.045739+00:00",
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "workCenterId": "WC-ROD-01",
+            "status": "Queued",
+            "scheduledAtUtc": "2026-10-19T02:04:09.045739+00:00",
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "workCenterId": "WC-GRD-01",
+            "status": "Queued",
+            "scheduledAtUtc": "2026-10-19T02:04:09.045739+00:00",
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "revoked-settled",
+      "databaseReadAtUtc": "2026-10-19T02:05:05.293560+00:00",
+      "databaseQuery": "select json_agg(x) from (select work_order_id,operation_task_id,operation_sequence,status,work_center_id,alternative_work_center_ids,duration_ticks,earliest_start_utc,existing_start_utc,existing_end_utc,device_asset_id,schedule_plan_id,schedule_release_revision,scheduled_at_utc,schedule_invalidation_reason_code,routing_code,routing_revision,routing_source_production_version_id,routing_version_id,row_version from mes.operation_tasks where organization_id='org-001' and environment_id='env-dev' and work_order_id='WO-20261019-000001' order by operation_sequence)x",
+      "tasks": [
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-10",
+          "operation_sequence": 10,
+          "status": "ScheduleInvalidated",
+          "work_center_id": "WC-TUB-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 4200000000,
+          "earliest_start_utc": "2026-10-19T08:00:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": "explicit",
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 2
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-20",
+          "operation_sequence": 20,
+          "status": "ScheduleInvalidated",
+          "work_center_id": "WC-ROD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 6600000000,
+          "earliest_start_utc": "2026-10-19T08:07:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": "explicit",
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 2
+        },
+        {
+          "work_order_id": "WO-20261019-000001",
+          "operation_task_id": "WO-20261019-000001-OP-30",
+          "operation_sequence": 30,
+          "status": "ScheduleInvalidated",
+          "work_center_id": "WC-GRD-01",
+          "alternative_work_center_ids": "",
+          "duration_ticks": 4800000000,
+          "earliest_start_utc": "2026-10-19T08:18:00+00:00",
+          "existing_start_utc": null,
+          "existing_end_utc": null,
+          "device_asset_id": null,
+          "schedule_plan_id": null,
+          "schedule_release_revision": null,
+          "scheduled_at_utc": null,
+          "schedule_invalidation_reason_code": "explicit",
+          "routing_code": "ROUTING-SF-ROD-01",
+          "routing_revision": "1",
+          "routing_source_production_version_id": "01a151e0-bc75-73a1-9f4b-c8e377b6f0ce",
+          "routing_version_id": "ROUTING-SF-ROD-01:1",
+          "row_version": 2
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:05:03.017222+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/mes/work-orders/WO-20261019-000001?organizationId=org-001&environmentId=env-dev",
+        "status": 200,
+        "correlationId": "issue4465-eeb19cb3a49f4c46a4500ea4357c19a3",
+        "responseCorrelationId": "issue4465-eeb19cb3a49f4c46a4500ea4357c19a3",
+        "tasks": [
+          {
+            "operationTaskId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "workCenterId": "WC-TUB-01",
+            "status": "ScheduleInvalidated",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "workCenterId": "WC-ROD-01",
+            "status": "ScheduleInvalidated",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          },
+          {
+            "operationTaskId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "workCenterId": "WC-GRD-01",
+            "status": "ScheduleInvalidated",
+            "scheduledAtUtc": null,
+            "routingCode": "ROUTING-SF-ROD-01",
+            "routingRevision": "1"
+          }
+        ]
+      }
+    }
+  ],
+  "schedulingInput": {
+    "problem_id": "workbench-01a151e5d71f7da1acf680d7fa96df45",
+    "problem_fingerprint": "662d623bbe62a54e0e1842942dc46e35e391d43d5441575f57c92b780332b2eb",
+    "captured_at_utc": "2026-10-19T02:03:02.208376+00:00",
+    "order": {
+      "dueUtc": "2026-10-20T01:59:00+00:00",
+      "isRush": true,
+      "orderId": "WO-20261019-000001",
+      "skuCode": "SF-ROD-01",
+      "priority": 1000,
+      "quantity": 1.0,
+      "operations": [
+        {
+          "dueUtc": "2026-10-20T01:59:00+00:00",
+          "isRush": true,
+          "priority": 0,
+          "changeovers": [
+            {
+              "fromSkuCode": "SF-ROD-01",
+              "setupMinutes": 15,
+              "toolingAvailable": true,
+              "requiredToolingIds": []
+            }
+          ],
+          "operationId": "WO-20261019-000001-OP-10",
+          "splitPolicy": "nonSplittable",
+          "setupMinutes": 15,
+          "durationMinutes": 7,
+          "sourceReference": "product-engineering:routing:ROUTING-SF-ROD-01:1:OP-WB-CUT",
+          "earliestStartUtc": "2026-10-19T02:01:16.794691+00:00",
+          "materialReadyUtc": null,
+          "toolingAvailable": true,
+          "operationSequence": 10,
+          "primaryResourceId": "WC-TUB-01",
+          "qualityBlockReason": null,
+          "requiredSkillCodes": [],
+          "requiredToolingIds": [],
+          "eligibleResourceIds": [
+            "WC-TUB-01"
+          ],
+          "requiredCapabilityCode": "OP-WB-CUT",
+          "predecessorOperationIds": []
+        },
+        {
+          "dueUtc": "2026-10-20T01:59:00+00:00",
+          "isRush": true,
+          "priority": 0,
+          "changeovers": [
+            {
+              "fromSkuCode": "SF-ROD-01",
+              "setupMinutes": 20,
+              "toolingAvailable": true,
+              "requiredToolingIds": []
+            }
+          ],
+          "operationId": "WO-20261019-000001-OP-20",
+          "splitPolicy": "nonSplittable",
+          "setupMinutes": 20,
+          "durationMinutes": 11,
+          "sourceReference": "product-engineering:routing:ROUTING-SF-ROD-01:1:OP-WB-CNC",
+          "earliestStartUtc": "2026-10-19T02:01:16.794691+00:00",
+          "materialReadyUtc": null,
+          "toolingAvailable": true,
+          "operationSequence": 20,
+          "primaryResourceId": "WC-ROD-01",
+          "qualityBlockReason": null,
+          "requiredSkillCodes": [],
+          "requiredToolingIds": [],
+          "eligibleResourceIds": [
+            "WC-ROD-01"
+          ],
+          "requiredCapabilityCode": "OP-WB-CNC",
+          "predecessorOperationIds": [
+            "WO-20261019-000001-OP-10"
+          ]
+        },
+        {
+          "dueUtc": "2026-10-20T01:59:00+00:00",
+          "isRush": true,
+          "priority": 0,
+          "changeovers": [
+            {
+              "fromSkuCode": "SF-ROD-01",
+              "setupMinutes": 12,
+              "toolingAvailable": true,
+              "requiredToolingIds": []
+            }
+          ],
+          "operationId": "WO-20261019-000001-OP-30",
+          "splitPolicy": "nonSplittable",
+          "setupMinutes": 12,
+          "durationMinutes": 8,
+          "sourceReference": "product-engineering:routing:ROUTING-SF-ROD-01:1:OP-WB-GRD",
+          "earliestStartUtc": "2026-10-19T02:01:16.794691+00:00",
+          "materialReadyUtc": null,
+          "toolingAvailable": true,
+          "operationSequence": 30,
+          "primaryResourceId": "WC-GRD-01",
+          "qualityBlockReason": null,
+          "requiredSkillCodes": [],
+          "requiredToolingIds": [],
+          "eligibleResourceIds": [
+            "WC-GRD-01"
+          ],
+          "requiredCapabilityCode": "OP-WB-GRD",
+          "predecessorOperationIds": [
+            "WO-20261019-000001-OP-20"
+          ]
+        }
+      ],
+      "businessReference": "WO-20261019-000001"
+    },
+    "resources": [
+      {
+        "resourceId": "WC-GRD-01",
+        "workCenterId": "WC-GRD-01",
+        "capabilityCodes": [
+          "OP-WB-GRD",
+          "WC-GRD-01"
+        ]
+      },
+      {
+        "resourceId": "WC-ROD-01",
+        "workCenterId": "WC-ROD-01",
+        "capabilityCodes": [
+          "OP-WB-CNC",
+          "WC-ROD-01"
+        ]
+      },
+      {
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "capabilityCodes": [
+          "OP-WB-CUT",
+          "WC-TUB-01"
+        ]
+      }
+    ]
+  },
+  "planStates": [
+    {
+      "stage": "generated",
+      "readAtUtc": "2026-10-19T02:03:14.840813+00:00",
+      "plans": [
+        {
+          "plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "problem_id": "workbench-01a151e5d71f7da1acf680d7fa96df45",
+          "problem_fingerprint": "662d623bbe62a54e0e1842942dc46e35e391d43d5441575f57c92b780332b2eb",
+          "algorithm_version": "aps-lite-v1",
+          "contract_version": 1,
+          "status": "Generated",
+          "generated_at_utc": "2026-10-19T02:03:02.208376+00:00",
+          "released_at_utc": null,
+          "release_revision": null,
+          "revoked_at_utc": null,
+          "revocation_reason": null,
+          "scheduled_operation_count": 3,
+          "unscheduled_operation_count": 0
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:03:14.562661+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920?organizationId=org-001&environmentId=env-dev",
+        "status": "generated",
+        "correlationId": "issue4465-2f64654853e7448b87578db7ea7ed0a1",
+        "responseCorrelationId": "issue4465-2f64654853e7448b87578db7ea7ed0a1",
+        "planId": "plan-01a151e5e0c0785ca461b1ebacd11920",
+        "problemId": "workbench-01a151e5d71f7da1acf680d7fa96df45",
+        "problemFingerprint": "662d623bbe62a54e0e1842942dc46e35e391d43d5441575f57c92b780332b2eb",
+        "assignments": [
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-10",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "resourceId": "WC-TUB-01",
+            "workCenterId": "WC-TUB-01",
+            "startUtc": "2026-10-19T08:00:00+00:00",
+            "endUtc": "2026-10-19T08:07:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-CUT",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:03:14.761434+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          },
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-20",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "resourceId": "WC-ROD-01",
+            "workCenterId": "WC-ROD-01",
+            "startUtc": "2026-10-19T08:07:00+00:00",
+            "endUtc": "2026-10-19T08:18:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-CNC",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:03:14.761434+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          },
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-30",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "resourceId": "WC-GRD-01",
+            "workCenterId": "WC-GRD-01",
+            "startUtc": "2026-10-19T08:18:00+00:00",
+            "endUtc": "2026-10-19T08:26:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-GRD",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:03:14.761434+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "released",
+      "readAtUtc": "2026-10-19T02:04:17.875031+00:00",
+      "plans": [
+        {
+          "plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "problem_id": "workbench-01a151e5d71f7da1acf680d7fa96df45",
+          "problem_fingerprint": "662d623bbe62a54e0e1842942dc46e35e391d43d5441575f57c92b780332b2eb",
+          "algorithm_version": "aps-lite-v1",
+          "contract_version": 1,
+          "status": "Released",
+          "generated_at_utc": "2026-10-19T02:03:02.208376+00:00",
+          "released_at_utc": "2026-10-19T02:04:09.035666+00:00",
+          "release_revision": 1,
+          "revoked_at_utc": null,
+          "revocation_reason": null,
+          "scheduled_operation_count": 3,
+          "unscheduled_operation_count": 0
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:04:16.750790+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920?organizationId=org-001&environmentId=env-dev",
+        "status": "released",
+        "correlationId": "issue4465-0a21c554878f4a6e9e6179b3603a5eaa",
+        "responseCorrelationId": "issue4465-0a21c554878f4a6e9e6179b3603a5eaa",
+        "planId": "plan-01a151e5e0c0785ca461b1ebacd11920",
+        "problemId": "workbench-01a151e5d71f7da1acf680d7fa96df45",
+        "problemFingerprint": "662d623bbe62a54e0e1842942dc46e35e391d43d5441575f57c92b780332b2eb",
+        "assignments": [
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-10",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "resourceId": "WC-TUB-01",
+            "workCenterId": "WC-TUB-01",
+            "startUtc": "2026-10-19T08:00:00+00:00",
+            "endUtc": "2026-10-19T08:07:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-CUT",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:04:16.776536+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          },
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-20",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "resourceId": "WC-ROD-01",
+            "workCenterId": "WC-ROD-01",
+            "startUtc": "2026-10-19T08:07:00+00:00",
+            "endUtc": "2026-10-19T08:18:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-CNC",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:04:16.776536+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          },
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-30",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "resourceId": "WC-GRD-01",
+            "workCenterId": "WC-GRD-01",
+            "startUtc": "2026-10-19T08:18:00+00:00",
+            "endUtc": "2026-10-19T08:26:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-GRD",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:04:16.776536+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "revoked-settled",
+      "readAtUtc": "2026-10-19T02:05:05.498194+00:00",
+      "plans": [
+        {
+          "plan_id": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "problem_id": "workbench-01a151e5d71f7da1acf680d7fa96df45",
+          "problem_fingerprint": "662d623bbe62a54e0e1842942dc46e35e391d43d5441575f57c92b780332b2eb",
+          "algorithm_version": "aps-lite-v1",
+          "contract_version": 1,
+          "status": "Revoked",
+          "generated_at_utc": "2026-10-19T02:03:02.208376+00:00",
+          "released_at_utc": "2026-10-19T02:04:09.035666+00:00",
+          "release_revision": 1,
+          "revoked_at_utc": "2026-10-19T02:04:39.139038+00:00",
+          "revocation_reason": "Explicit",
+          "scheduled_operation_count": 3,
+          "unscheduled_operation_count": 0
+        }
+      ],
+      "public": {
+        "atUtc": "2026-10-19T02:05:05.441617+00:00",
+        "method": "GET",
+        "path": "/api/business-console/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920?organizationId=org-001&environmentId=env-dev",
+        "status": "revoked",
+        "correlationId": "issue4465-8d742c09820c472bb83bb21c0285a759",
+        "responseCorrelationId": "issue4465-8d742c09820c472bb83bb21c0285a759",
+        "planId": "plan-01a151e5e0c0785ca461b1ebacd11920",
+        "problemId": "workbench-01a151e5d71f7da1acf680d7fa96df45",
+        "problemFingerprint": "662d623bbe62a54e0e1842942dc46e35e391d43d5441575f57c92b780332b2eb",
+        "assignments": [
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-10",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-10",
+            "operationSequence": 10,
+            "resourceId": "WC-TUB-01",
+            "workCenterId": "WC-TUB-01",
+            "startUtc": "2026-10-19T08:00:00+00:00",
+            "endUtc": "2026-10-19T08:07:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-CUT",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:05:05.467188+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          },
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-20",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-20",
+            "operationSequence": 20,
+            "resourceId": "WC-ROD-01",
+            "workCenterId": "WC-ROD-01",
+            "startUtc": "2026-10-19T08:07:00+00:00",
+            "endUtc": "2026-10-19T08:18:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-CNC",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:05:05.467188+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          },
+          {
+            "assignmentId": "assign-WO-20261019-000001-WO-20261019-000001-OP-30",
+            "orderId": "WO-20261019-000001",
+            "operationId": "WO-20261019-000001-OP-30",
+            "operationSequence": 30,
+            "resourceId": "WC-GRD-01",
+            "workCenterId": "WC-GRD-01",
+            "startUtc": "2026-10-19T08:18:00+00:00",
+            "endUtc": "2026-10-19T08:26:00+00:00",
+            "isLocked": false,
+            "explanationCode": "scheduled",
+            "standardOperationCode": "OP-WB-GRD",
+            "segments": null,
+            "currentExecution": {
+              "observedAtUtc": "2026-10-19T02:05:05.467188+00:00",
+              "workOrderProgress": {
+                "completedQuantity": 0.0,
+                "plannedQuantity": 1.0
+              },
+              "materialReadyUtc": null,
+              "isMaterialReady": false,
+              "equipmentState": null,
+              "equipmentStateOccurredAtUtc": null,
+              "isEquipmentSourceFresh": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "uiWrites": [
+    {
+      "atUtc": "2026-10-19T02:04:09.055Z",
+      "url": "http://localhost:55275/api/business-console/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920/release?organizationId=org-001&environmentId=env-dev",
+      "method": "POST",
+      "request": null,
+      "status": 200,
+      "response": {
+        "data": {
+          "planId": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "status": "released",
+          "releasedAtUtc": "2026-10-19T02:04:09.035666+00:00",
+          "releaseRevision": 1
+        },
+        "success": true,
+        "message": "",
+        "code": 0,
+        "errorData": []
+      },
+      "correlationId": "61787154cdb74d9b89b7100174dd8f57"
+    },
+    {
+      "atUtc": "2026-10-19T02:04:39.927Z",
+      "url": "http://localhost:55275/api/business-console/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920/revoke?organizationId=org-001&environmentId=env-dev",
+      "method": "POST",
+      "request": null,
+      "status": 200,
+      "response": {
+        "data": {
+          "planId": "plan-01a151e5e0c0785ca461b1ebacd11920",
+          "status": "revoked",
+          "releaseRevision": 1,
+          "revokedAtUtc": "2026-10-19T02:04:39.139038+00:00",
+          "reason": "explicit",
+          "supersededByPlanId": null
+        },
+        "success": true,
+        "message": "",
+        "code": 0,
+        "errorData": []
+      },
+      "correlationId": "514bfd26c3264a66ad475a9d6f01b0f7"
+    }
+  ],
+  "processedIntegrationEvents": {
+    "query": "select json_agg(x) from (select \"ConsumerName\",\"EventId\",\"EventType\",\"SourceService\",\"IdempotencyKey\",\"ProcessedAtUtc\" from mes.processed_integration_events order by \"ProcessedAtUtc\")x",
+    "rows": [
+      {
+        "ConsumerName": "business-mes.schedule-plan-released-dispatch",
+        "EventId": "evt-01a151e6e5d57e42b2bcff4ac0c9188d",
+        "EventType": "scheduling.SchedulePlanReleased",
+        "SourceService": "business-scheduling",
+        "IdempotencyKey": "scheduling:schedule-plan-released:org-001:env-dev:plan-01a151e5e0c0785ca461b1ebacd11920",
+        "ProcessedAtUtc": "2026-10-19T02:04:09.89692+00:00"
+      },
+      {
+        "ConsumerName": "business-mes.schedule-plan-revoked-withdraw-dispatch",
+        "EventId": "evt-01a151e75b8c7369890edd1e2a115db3",
+        "EventType": "scheduling.SchedulePlanRevoked",
+        "SourceService": "business-scheduling",
+        "IdempotencyKey": "scheduling:schedule-plan-revoked:org-001:env-dev:plan-01a151e5e0c0785ca461b1ebacd11920:1:explicit",
+        "ProcessedAtUtc": "2026-10-19T02:04:40.004482+00:00"
+      }
+    ]
+  },
+  "serviceLogProjection": [
+    {
+      "service": "BusinessGateway",
+      "at": "2026-10-19T10:01:24.8457780+08:00",
+      "traceId": "e5eba4292c9f37e039ce50910a8c1812",
+      "spanId": "04f80b6cc9d0775c",
+      "Method": "POST",
+      "Path": "/api/business-console/v1/mes/work-orders/rush",
+      "QueryString": "",
+      "StatusCode": 200
+    },
+    {
+      "service": "BusinessGateway",
+      "at": "2026-10-19T10:03:03.6660230+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "cd93a1482e6fa96c",
+      "Method": "POST",
+      "Path": "/api/business-console/v1/scheduling/workbench/plans",
+      "QueryString": "",
+      "StatusCode": 200
+    },
+    {
+      "service": "BusinessGateway",
+      "at": "2026-10-19T10:04:09.0551430+08:00",
+      "traceId": "3c830939496f0f45b0027cef0e3abc23",
+      "spanId": "2738fd99d18b1d14",
+      "Method": "POST",
+      "Path": "/api/business-console/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920/release",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "BusinessGateway",
+      "at": "2026-10-19T10:04:39.9254050+08:00",
+      "traceId": "099eadbdbbab3853191a6527b3f98ee3",
+      "spanId": "2c1ac8a81d37ca20",
+      "Method": "POST",
+      "Path": "/api/business-console/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920/revoke",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:01:24.8312200+08:00",
+      "traceId": "e5eba4292c9f37e039ce50910a8c1812",
+      "spanId": "090a03f1b0f1db91",
+      "Method": "POST",
+      "Path": "/api/business/v1/mes/work-orders/rush",
+      "QueryString": "",
+      "StatusCode": 200
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:02:59.6891570+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "ecd36670349172f1",
+      "Method": "GET",
+      "Path": "/api/business/v1/mes/work-orders",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev&statuses=created%2Creleased%2Cstarted%2Chold&skip=0&take=500",
+      "StatusCode": 200
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:02:59.7394080+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "ebe54c6591b2d0ca",
+      "Method": "POST",
+      "Path": "/api/business/v1/mes/work-orders/assembly-children/batch",
+      "QueryString": "",
+      "StatusCode": 200
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:03:02.1664120+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "95eaa769906bb5cd",
+      "Method": "POST",
+      "Path": "/api/business/v1/mes/work-orders/material-readiness/batch",
+      "QueryString": "",
+      "StatusCode": 200
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:03:03.4093610+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "1a6c7336d3bf0fe3",
+      "Method": "POST",
+      "Path": "/api/business/v1/mes/work-orders/material-readiness/batch",
+      "QueryString": "",
+      "StatusCode": 200
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:03:03.4118420+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "d0d371d59168ffd2",
+      "Method": "GET",
+      "Path": "/api/business/v1/mes/work-orders/WO-20261019-000001",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:04:09.9612090+08:00",
+      "event": "subscriber completed",
+      "consumer": "release-dispatch",
+      "traceId": null
+    },
+    {
+      "service": "MES",
+      "at": "2026-10-19T10:04:40.0281860+08:00",
+      "event": "subscriber completed",
+      "consumer": "revoke-withdraw-dispatch",
+      "traceId": null
+    },
+    {
+      "service": "Scheduling",
+      "at": "2026-10-19T10:03:03.6243250+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "128bed63661c6167",
+      "Method": "POST",
+      "Path": "/api/business/v1/scheduling/workbench/plans",
+      "QueryString": "",
+      "StatusCode": 200
+    },
+    {
+      "service": "Scheduling",
+      "at": "2026-10-19T10:04:09.0527870+08:00",
+      "traceId": "3c830939496f0f45b0027cef0e3abc23",
+      "spanId": "68ae160a9f1c5399",
+      "Method": "POST",
+      "Path": "/api/business/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920/release",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "Scheduling",
+      "at": "2026-10-19T10:04:39.9224090+08:00",
+      "traceId": "099eadbdbbab3853191a6527b3f98ee3",
+      "spanId": "4a9d15129a5cb7e2",
+      "Method": "POST",
+      "Path": "/api/business/v1/scheduling/plans/plan-01a151e5e0c0785ca461b1ebacd11920/revoke",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "ProductEngineering",
+      "at": "2026-10-19T10:01:19.9066580+08:00",
+      "traceId": "e5eba4292c9f37e039ce50910a8c1812",
+      "spanId": "8d0ef7e5b98c5d49",
+      "Method": "GET",
+      "Path": "/api/business/v1/engineering/production-versions/01a151e0-bc75-73a1-9f4b-c8e377b6f0ce/routing-snapshot",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "ProductEngineering",
+      "at": "2026-10-19T10:01:20.8048600+08:00",
+      "traceId": "e5eba4292c9f37e039ce50910a8c1812",
+      "spanId": "21abc6ce3cfdcb74",
+      "Method": "GET",
+      "Path": "/api/business/v1/engineering/production-versions/resolve",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev&skuCode=SF-ROD-01&effectiveDate=2026-10-19&lotSize=1",
+      "StatusCode": 200
+    },
+    {
+      "service": "ProductEngineering",
+      "at": "2026-10-19T10:01:20.8388390+08:00",
+      "traceId": "e5eba4292c9f37e039ce50910a8c1812",
+      "spanId": "2f6c2b348d6493d0",
+      "Method": "GET",
+      "Path": "/api/business/v1/engineering/manufacturing-boms/MBOM-SF-ROD-01/1",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "ProductEngineering",
+      "at": "2026-10-19T10:02:59.7386220+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "58e761d4ae9fe0e0",
+      "Method": "GET",
+      "Path": "/api/business/v1/engineering/production-versions/01a151e0-bc75-73a1-9f4b-c8e377b6f0ce/routing-snapshot",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    },
+    {
+      "service": "ProductEngineering",
+      "at": "2026-10-19T10:02:59.7575710+08:00",
+      "traceId": "191f220c256c7ddc6535e04a2f9d2a08",
+      "spanId": "cf4296fc90c95520",
+      "Method": "GET",
+      "Path": "/api/business/v1/engineering/routings/ROUTING-SF-ROD-01/1",
+      "QueryString": "?organizationId=org-001&environmentId=env-dev",
+      "StatusCode": 200
+    }
+  ],
+  "collectionLimits": [
+    "Original UI create POST body was not captured; form screenshot and paired gateway/MES HTTP200 plus persisted tasks retained.",
+    "No business-gateway CorrelationId structured property; matching cross-service traceId retained; UI release/revoke response correlation IDs retained separately.",
+    "aspire otel logs --trace-id returned empty arrays; console logs supply cross-service trace joins.",
+    "Raw CAP envelope was not retained; processed integration-event IDs and plan/revision business state retained. CAP message tables queried returned no rows.",
+    "First revoke read raced asynchronous consumption and still had release revision 1; both early and settled snapshots retained.",
+    "Initial API read with JSON content type and no body returned400; removed content type for GET. Initial private psql attempt had no password and failed before query."
+  ],
+  "cleanup": {
+    "state": "Stopped",
+    "cleanup": {
+      "completedAtUtc": "2026-10-19T02:09:10.8912210+00:00",
+      "remaining": [],
+      "errors": []
+    },
+    "checkedClosedPorts": [
+      55272,
+      55247,
+      55248,
+      55275,
+      55270,
+      18465
+    ],
+    "credentialBridgeStopped": true,
+    "privateCredentialFileRemoved": true
+  }
+}
