@@ -279,6 +279,53 @@ public sealed class MesProductionStatisticsPostgresTests
         Assert.Contains(
             ProductionStatisticsDegradedReason.HistoricalDimensionLegacyUnresolved,
             bucket.DegradedReasons);
+
+        // #4515：同一天的来源标记决定分类；不以报工日期推断历史。
+        foreach (var (suffix, snapshot, reason) in new[]
+        {
+            ("DEVICE-FAILURE", ProductionReportOeeDimensionSnapshot.Degraded("DEV-RAW", "WC-CURRENT", "not-found"),
+                ProductionStatisticsDegradedReason.HistoricalDimensionSnapshotDegraded),
+            ("SHIFT-FAILURE", ProductionReportOeeDimensionSnapshot.Degraded("DEV-RAW", "WC-CURRENT", "shift-definition-invalid"),
+                ProductionStatisticsDegradedReason.HistoricalDimensionSnapshotDegraded),
+            ("RESOLVED-MISSING-TIMEZONE", ProductionReportOeeDimensionSnapshot.Resolved(
+                "DEV-RAW", "WC-CURRENT", "SITE-SH", null, null, null, null, null, null, null, null, null),
+                ProductionStatisticsDegradedReason.HistoricalTimezoneMissing),
+        })
+        {
+            AddReportWithSnapshot(db, "org-001", "env-dev", suffix, $"SKU-{suffix}",
+                reportedAtUtc, 2m, 1m, 1m, snapshot);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+            foreach (var dimension in new[] { ProductionStatisticsDimension.Day, ProductionStatisticsDimension.Shift })
+            {
+                var result = await handler.Handle(new QueryProductionStatisticsQuery(
+                    "org-001", "env-dev", dimension, reportedAtUtc.AddMinutes(-30), reportedAtUtc.AddMinutes(30),
+                    SkuId: $"SKU-{suffix}"), CancellationToken.None);
+                var item = Assert.Single(result.Items);
+                Assert.Equal(new DateOnly(2026, 8, 29), item.BusinessDate);
+                Assert.Equal(2m, item.GoodQuantity);
+                Assert.Equal(1m, item.ScrapQuantity);
+                Assert.Equal(1m, item.ReworkQuantity);
+                Assert.Equal(4m, item.TotalOutputQuantity);
+                Assert.Equal(ProductionStatisticsResolutionStatus.Degraded, item.ResolutionStatus);
+                Assert.Equal([reason], item.DegradedReasons);
+            }
+            var saved = await db.ProductionReports.AsNoTracking().SingleAsync(x => x.ReportNo == $"PR-{suffix}");
+            Assert.Equal(snapshot.ResolutionStatus, saved.OeeDimensionResolutionStatus);
+            Assert.Equal(snapshot.DegradedReason, saved.OeeDimensionDegradedReason);
+            Assert.Equal(snapshot.DeviceAssetId, saved.OeeDeviceAssetId);
+            Assert.Null(saved.OeeSiteTimezone);
+            Assert.Null(saved.OeeShiftCode);
+            Assert.Equal(snapshot.SiteCode, saved.OeeSiteCode);
+            Assert.Equal(2m, saved.GoodQuantity);
+            Assert.Equal(1m, saved.ScrapQuantity);
+            Assert.Equal(1m, saved.ReworkQuantity);
+        }
+        var legacy = await db.ProductionReports.AsNoTracking().SingleAsync(x => x.ReportNo == "PR-LEGACY");
+        Assert.Null(legacy.OeeDimensionResolutionStatus);
+        Assert.Null(legacy.OeeDimensionDegradedReason);
+        Assert.Null(legacy.OeeSiteTimezone);
+
     }
 
     [MesRealPostgresFact]

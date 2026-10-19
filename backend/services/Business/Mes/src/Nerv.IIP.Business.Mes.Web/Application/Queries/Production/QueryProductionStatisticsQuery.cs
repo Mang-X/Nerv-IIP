@@ -228,6 +228,12 @@ public sealed class QueryProductionStatisticsQueryHandler(ApplicationDbContext d
                 row, effectiveReportedAtUtc, DefaultFactoryTimezone, ProductionStatisticsDegradedReason.DeviceMissing);
         }
 
+        if (string.Equals(row.DimensionResolutionStatus, "degraded", StringComparison.OrdinalIgnoreCase))
+        {
+            return CalendarDayFallback(
+                row, effectiveReportedAtUtc, DefaultFactoryTimezone, ProductionStatisticsDegradedReason.HistoricalDimensionSnapshotDegraded);
+        }
+
         if (row.SiteTimezone is null)
         {
             return CalendarDayFallback(
