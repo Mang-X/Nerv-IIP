@@ -93,7 +93,7 @@ public sealed class SchedulingProblemProducer(
                 if (!string.Equals(task.WorkCenterId, operation.WorkCenterCode, StringComparison.Ordinal))
                 {
                     throw new KnownException(
-                        $"工单{order.OrderId}/{operation.Sequence}中心{task.WorkCenterId}≠路线{operation.WorkCenterCode}；未恢复");
+                        $"工单{order.OrderId}序{operation.Sequence}中心{task.WorkCenterId}≠路线{operation.WorkCenterCode}；未恢复");
                 }
 
                 return task.OperationTaskId;
