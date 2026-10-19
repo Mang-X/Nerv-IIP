@@ -52,6 +52,9 @@ export function describeScheduleInvalidationReason(reasonCode?: string | null): 
 /** 失效行的完整引导文案（tooltip/说明用）。 */
 export function scheduleInvalidationHint(reasonCode?: string | null): string {
   const raw = (reasonCode ?? '').trim()
+  if (raw.toLowerCase() === 'qualityreleased') {
+    return '排程已失效：质量放行。请将原工单、当前工序和失效原因交给计划员；计划员在排产工作台核对原方案、已执行事实及剩余任务，保留必要锁定，锁定重预览、查看对比后显式发布新版；发布后，操作员刷新同一个后续任务，确认开工条件后继续。无需重复报检或另建工单，刷新不会自动重排或发布。'
+  }
   return raw
     ? `排程已失效：${describeScheduleInvalidationReason(raw)}，需重新排程。`
     : '排程已失效，需重新排程。'

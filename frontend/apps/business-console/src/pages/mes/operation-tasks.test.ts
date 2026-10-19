@@ -252,6 +252,7 @@ function mountPage(realQuickView = false) {
               <div v-for="row in rows" :key="row.operationTaskId" data-testid="operation-row">
                 <slot name="cell-operationTaskId" :row="row" />
                 <slot name="cell-workOrderId" :row="row" />
+                <slot name="cell-scheduleStatus" :row="row" />
                 <slot name="cell-actualHours" :row="row" />
                 <slot name="cell-actions" :row="row" />
               </div>
@@ -272,6 +273,38 @@ describe('operation-tasks 排程已失效 quick filter', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     state.operationRows = []
+  })
+
+  // DomainInvariant：#4513 / 父 #4454 r1，质量放行后沿原单人工交接。
+  it('质量放行失效任务说明岗位接续并保留原工单工序入口', async () => {
+    state.operationRows = [
+      {
+        operationTaskId: 'OP-80',
+        workOrderId: 'WO-A',
+        workOrderNo: 'WO-20261019-008',
+        status: 'ScheduleInvalidated',
+        scheduleInvalidationReasonCode: 'qualityReleased',
+      },
+    ]
+    const wrapper = mountPage(true)
+    await flushPromises()
+    const row = wrapper.get('[data-testid="operation-row"]')
+    expect(row.get('[title^="排程已失效：质量放行"]').attributes('title')).toBe(
+      '排程已失效：质量放行。请将原工单、当前工序和失效原因交给计划员；计划员在排产工作台核对原方案、已执行事实及剩余任务，保留必要锁定，锁定重预览、查看对比后显式发布新版；发布后，操作员刷新同一个后续任务，确认开工条件后继续。无需重复报检或另建工单，刷新不会自动重排或发布。',
+    )
+    await row.get('button').trigger('click')
+    await flushPromises()
+    const openFull = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.includes('打开完整详情'),
+    )!
+    expect(openFull).toBeTruthy()
+    openFull.click()
+    await flushPromises()
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/mes/work-orders/WO-A',
+      query: { operationTaskId: 'OP-80' },
+    })
+    wrapper.unmount()
   })
 
   it('执行列表在公开身份为 UUID 时展示真实序号并保留完整身份查看', () => {
