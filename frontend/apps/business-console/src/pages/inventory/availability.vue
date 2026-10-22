@@ -326,31 +326,42 @@ const siteStockCoverageText = computed(() => {
 
 /**
  * 主要列只留下仓管真正据以决策的字段；单位、生产日期、保质期、效期来源
- * 收进对应单元格的第二行，避免十五列表格逼出横向滚动。
+ * 收进对应单元格的第二行；窄屏沿用表格横向滚动，保留各列可读宽度。
  */
 const columns: NvDataTableColumn<DisplayLine>[] = [
   {
     key: 'skuCode',
     header: '物料',
+    width: 'w-52',
+    cellClass: 'whitespace-normal break-all',
     // 排序/导出取「名称 编码」，界面上名称在上、编码在下。
     accessor: (r) => skuLabelOf(r),
   },
   {
     key: 'locationCode',
     header: '库位',
-    cellClass: 'font-medium',
+    width: 'w-40',
+    cellClass: 'font-medium whitespace-normal break-all',
     accessor: (r) => locationLabelOf(r),
   },
-  { key: 'lot', header: '批次/序列号' },
+  { key: 'lot', header: '批次/序列号', width: 'w-44', cellClass: 'whitespace-normal break-all' },
   {
     key: 'expiryDate',
     header: '效期',
+    width: 'w-52',
+    cellClass: 'whitespace-normal break-all',
     headerTitle: 'FEFO：预留与拣货建议优先选择更早到期的批次。',
     accessor: (r) => formatInventoryExpiryDate(r.expiryDate),
   },
-  { key: 'expiryStatus', header: '效期状态' },
+  { key: 'expiryStatus', header: '效期状态', width: 'w-28' },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
-  { key: 'owner', header: '货主', accessor: (r) => ownerLabel(r.ownerType, r.ownerId) },
+  {
+    key: 'owner',
+    header: '货主',
+    width: 'w-36',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => ownerLabel(r.ownerType, r.ownerId),
+  },
   { key: 'onHandQuantity', header: '现存量', align: 'end', width: 'w-24' },
   { key: 'availableQuantity', header: '可用量', align: 'end', width: 'w-24' },
   {
@@ -360,7 +371,7 @@ const columns: NvDataTableColumn<DisplayLine>[] = [
     width: 'w-24',
     accessor: (r) => lineFrozen(r.onHandQuantity, r.availableQuantity),
   },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-56', cellClass: 'whitespace-normal' },
 ]
 
 function lineKey(line: DisplayLine) {
