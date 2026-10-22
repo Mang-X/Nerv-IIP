@@ -8,6 +8,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
+import type { BusinessConsoleWmsCountExecutionItem } from '@nerv-iip/api-client'
 
 const push = vi.fn()
 const authPermissionCodes = ref(['business.inventory.counts.manage'])
@@ -80,7 +81,7 @@ const wmsState = vi.hoisted(() => ({
       status: 'Completed',
       createdAtUtc: '2026-06-11T09:00:00Z',
     },
-  ],
+  ] as BusinessConsoleWmsCountExecutionItem[],
   completeCount: vi.fn(
     (
       _countExecutionId: string,
@@ -177,6 +178,53 @@ async function enterCount(wrapper: VueWrapper, value: string) {
 
 describe('WMS 盘点', () => {
   beforeEach(() => resetState())
+
+  // DomainInvariant / PublicContract：#4522 与父 #1146 r1，批次来自公开响应且绑定所选任务。
+  it('同物料同库位的两个批次分别展示，切换任务后完成上下文与提交仍属于所选任务', async () => {
+    wmsState.executions = ['LOT-4522-A', 'LOT-4522-B'].map((lotNo, index) => ({
+      ...wmsState.executions[0]!,
+      countExecutionId: `count-${index}`,
+      countNo: `CT-4522-${index}`,
+      lotNo,
+      expectedQuantity: 15,
+    }))
+    const wrapper = mount(CountPage, { attachTo: document.body })
+    const rows = wrapper.findAll('[data-row]')
+    expect(rows[0]!.text()).toContain('批次 LOT-4522-A')
+    expect(rows[0]!.text()).not.toContain('LOT-4522-B')
+    expect(rows[1]!.text()).toContain('批次 LOT-4522-B')
+
+    await rows[0]!.trigger('click')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('LOT-4522-A')
+    wrapper.getComponent(NvBottomSheet).vm.$emit('update:open', false)
+    await wrapper.vm.$nextTick()
+    await rows[1]!.trigger('click')
+    const sheet = () => document.querySelector('[role="dialog"]')?.textContent
+    expect(sheet()).toContain('CT-4522-1')
+    expect(sheet()).toContain('LOT-4522-B')
+    expect(sheet()).not.toContain('LOT-4522-A')
+    await enterCount(wrapper, '14')
+    expect(sheet()).toContain('差异 -1')
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    expect(wmsState.completeCount).toHaveBeenCalledWith(
+      'count-1',
+      { countedQuantity: 14, idempotencyKey: expect.any(String) },
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+  })
+
+  it.each([undefined, null, ''])(
+    '响应批次为 %s 时列表和操作上下文如实显示无批次',
+    async (lotNo) => {
+      wmsState.executions[0]!.lotNo = lotNo
+      const wrapper = mount(CountPage, { attachTo: document.body })
+      const row = wrapper.findAll('[data-row]')[0]!
+      expect(row.text()).toContain('批次 无批次')
+      await row.trigger('click')
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain('无批次')
+    },
+  )
 
   it('渲染盘点号、SKU、库位、预期数与中文状态（不出现原始状态码或 GUID）', () => {
     const wrapper = mount(CountPage)

@@ -25,7 +25,7 @@ import {
   NvMobileToast,
   NvNumberKeyboard,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -98,6 +98,7 @@ function restoreTaskListState(state: { filters: Record<string, unknown> }) {
 // 选中的盘点号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedExecutionId = ref('')
 const selectedCountNo = ref('')
+const selectedLotNo = shallowRef('')
 const expectedQuantity = ref(0)
 const sheetOpen = ref(false)
 const completed = ref(false)
@@ -176,11 +177,13 @@ function selectExecution(
   countNo: string | undefined,
   expected: number | undefined,
   status?: string,
+  lotNo?: string | null,
 ) {
   if (!countExecutionId) return
   if (!canComplete(status)) return
   selectedExecutionId.value = countExecutionId
   selectedCountNo.value = countNo ?? ''
+  selectedLotNo.value = lotNo ?? ''
   expectedQuantity.value = expected ?? 0
   countedQuantityText.value = ''
   // 新操作开始：换一把新幂等键。
@@ -245,6 +248,7 @@ function resetFlow() {
   completed.value = false
   selectedExecutionId.value = ''
   selectedCountNo.value = ''
+  selectedLotNo.value = ''
   expectedQuantity.value = 0
   countedQuantityText.value = ''
   // 清空操作键：下次点任务会铸新键，保证新操作 ≠ 旧键。
@@ -339,7 +343,7 @@ function goHome() {
               v-for="execution in executions"
               :key="execution.countExecutionId"
               :title="`盘点 ${execution.countNo ?? ''}`"
-              :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
+              :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 批次 ${execution.lotNo || '无批次'} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
               :interactive="canComplete(execution.status)"
               @select="
                 selectExecution(
@@ -347,6 +351,7 @@ function goHome() {
                   execution.countNo,
                   execution.expectedQuantity,
                   execution.status,
+                  execution.lotNo,
                 )
               "
             />
@@ -364,6 +369,7 @@ function goHome() {
         <p class="text-xs text-muted-foreground">{{ countStepHint }}</p>
 
         <div class="overflow-hidden rounded-xl border border-border">
+          <NvCell title="批次" :value="selectedLotNo || '无批次'" />
           <NvCell data-testid="expected-quantity" title="预期数量" :value="expectedQuantity" />
           <NvCell
             data-testid="counted-quantity"
