@@ -1290,7 +1290,8 @@ public sealed record CountExecutionFact(
     string? InventoryMovementId = null,
     string? AssignedOperatorUserId = null,
     string? AssignedPoolCode = null,
-    long Version = 0);
+    long Version = 0,
+    string? LotNo = null);
 
 public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCountExecutionsQuery, ListCountExecutionsResponse>
@@ -1382,7 +1383,8 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 null,
                 x.AssignedOperatorUserId,
                 x.AssignedPoolCode,
-                x.Version))
+                x.Version,
+                x.LotNo))
             .ToArrayAsync(cancellationToken);
         var countNumbers = items.Select(x => x.CountNo).ToArray();
         var movementRequests = await dbContext.InventoryMovementRequests

@@ -179,6 +179,7 @@ const createForm = reactive({
   uomCode: '',
   siteCode: '',
   locationCode: '',
+  lotNo: '',
   expectedQuantity: '',
 })
 // 单位随物料的基本单位带出，不给手输：盘点单位写错就核不上账。
@@ -242,33 +243,47 @@ const columns: NvDataTableColumn<CountRow>[] = [
   {
     key: 'countNo',
     header: '盘点单号',
-    cellClass: 'font-medium',
+    width: 'w-56',
+    cellClass: 'font-medium whitespace-normal break-all',
     accessor: (r) => r.countNo ?? MISSING_COUNT_NO,
   },
   {
     key: 'location',
     header: '库位',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => locationLabel(r),
   },
   {
     key: 'skuCode',
     header: '物料',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => skuText(r.skuCode),
   },
-  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
+  {
+    key: 'lotNo',
+    header: '批次',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.lotNo || '无批次',
+  },
+  { key: 'inventoryContext', header: '库存上下文', width: 'w-72', cellClass: 'whitespace-normal' },
   {
     key: 'expectedQuantity',
     header: '账面',
+    width: 'w-20',
     align: 'end',
     accessor: (r) => formatQuantity(r.expectedQuantity),
   },
   {
     key: 'countedQuantity',
     header: '实盘',
+    width: 'w-20',
     align: 'end',
     accessor: (r) => formatQuantity(r.countedQuantity),
   },
-  { key: 'varianceQuantity', header: '差异', align: 'end' },
+  { key: 'varianceQuantity', header: '差异', width: 'w-20', align: 'end' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
@@ -296,6 +311,7 @@ function openCreate() {
   createForm.uomCode = ''
   createForm.siteCode = ''
   createForm.locationCode = ''
+  createForm.lotNo = ''
   createForm.expectedQuantity = ''
   createError.value = ''
   createOpen.value = true
@@ -328,6 +344,7 @@ async function submitCreate() {
     uomCode: createForm.uomCode.trim(),
     siteCode: createForm.siteCode.trim(),
     locationCode: createForm.locationCode.trim(),
+    lotNo: createForm.lotNo || undefined,
     expectedQuantity: expected,
   }
   try {
@@ -367,6 +384,7 @@ const completeContextItems = computed(() => {
   return [
     { label: '盘点单号', value: row.countNo ?? MISSING_COUNT_NO },
     { label: '库位', value: locationLabel(row) },
+    { label: '批次', value: row.lotNo || '无批次' },
     {
       label: '物料',
       value: skuText(row.skuCode),
@@ -577,6 +595,7 @@ function refreshAll() {
           :uom-code="row.uomCode"
           :site-code="row.siteCode"
           :location-code="row.locationCode"
+          :lot-no="row.lotNo"
           source-workflow="inventory.count"
           source-label="扫码记录"
           :source-document-id="row.countNo ?? row.countExecutionId"
@@ -682,6 +701,19 @@ function refreshAll() {
               >
             </NvField>
             <NvField>
+              <NvFieldLabel for="cnt-lot">批次</NvFieldLabel>
+              <DirectoryPicker
+                id="cnt-lot"
+                v-model="createForm.lotNo"
+                directory-type="batch"
+                :form-site-code="createForm.siteCode"
+                title="选择批次"
+                placeholder="选择批次"
+                clearable
+                aria-label="批次"
+              />
+            </NvField>
+            <NvField>
               <NvFieldLabel for="cnt-expected">账面数量</NvFieldLabel>
               <NvInput
                 :disabled="createIntentLocked"
@@ -692,7 +724,7 @@ function refreshAll() {
                 step="any"
               />
               <!-- 非显而易见的业务口径：留空的取值来源。 -->
-              <NvFieldDescription>留空则按库存台账取账面数量。</NvFieldDescription>
+              <NvFieldDescription>按目标批次填写账面数量。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
 

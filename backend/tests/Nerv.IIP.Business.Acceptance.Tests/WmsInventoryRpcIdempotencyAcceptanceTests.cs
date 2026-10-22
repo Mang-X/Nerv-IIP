@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using MediatR;
@@ -220,6 +221,44 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         Assert.Equal(recoveredCountId, count.Id);
         Assert.Equal(inventoryTask.Id.ToString(), count.InventoryCountTaskId);
         Assert.True(inventoryDb.StockLedgers.Single().IsFrozenForCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("LOT-COUNT-01")]
+    public async Task Count_completion_adjusts_only_the_saved_lot(string? lotNo)
+    {
+        await using var wmsDb = CreateWmsContext();
+        await using var inventoryDb = CreateInventoryContext();
+        await SeedInventoryAsync(inventoryDb, "SKU-FG-1000", "LOC-A-01", lotNo, 15m, "count-target", ownerId: null);
+        // Same SKU and location, distinct lot: it must neither freeze nor adjust.
+        await new PostStockMovementCommandHandler(inventoryDb).Handle(
+            new PostStockMovementCommand("org-001", "env-dev", "inbound", "wms", "SEED", "other", "count-other",
+                "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", "LOT-OTHER", null, "qualified", "company", null, 20m),
+            CancellationToken.None);
+        await inventoryDb.SaveChangesAsync();
+        var client = new TimeoutAfterInventoryCommitClient(inventoryDb);
+        var id = await new CreateCountExecutionCommandHandler(wmsDb, client).Handle(
+            new CreateCountExecutionCommand("org-001", "env-dev", "COUNT-LOT-01", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 15m, LotNo: lotNo),
+            CancellationToken.None);
+        await wmsDb.SaveChangesAsync();
+        wmsDb.ChangeTracker.Clear();
+        var count = await wmsDb.CountExecutions.SingleAsync(x => x.Id == id);
+        Assert.Equal(lotNo, count.LotNo);
+        count.AssignWorkPool("POOL-COUNT", null, count.Version);
+        await wmsDb.SaveChangesAsync();
+        var complete = new CompleteCountExecutionCommand(id, 14m, "complete-count-lot",
+            "org-001", "env-dev", "warehouse-user", ["SITE-01"], "site", "SITE-01", count.Version);
+        var handler = new CompleteCountExecutionCommandHandler(wmsDb, client);
+        var result = await handler.Handle(complete, CancellationToken.None);
+        await wmsDb.SaveChangesAsync();
+        Assert.Equal(result, await handler.Handle(complete, CancellationToken.None));
+        Assert.Equal(-1m, count.VarianceQuantity);
+        Assert.Equal(14m, (await inventoryDb.StockLedgers.SingleAsync(x => x.LotNo == lotNo)).OnHandQuantity);
+        var other = await inventoryDb.StockLedgers.SingleAsync(x => x.LotNo == "LOT-OTHER");
+        Assert.Equal(20m, other.OnHandQuantity);
+        Assert.False(other.IsFrozenForCount);
+        Assert.Equal(lotNo, (await inventoryDb.StockCountTasks.SingleAsync()).LotNo);
     }
 
     [RealPostgresFact]
@@ -568,12 +607,23 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             return new WmsInventoryCountTaskResult(result.CountTaskId.ToString(), result.ExpectedLedgerVersion);
         }
 
-        public Task<WmsInventoryCountAdjustmentResult> ConfirmCountAdjustmentAsync(
+        public async Task<WmsInventoryCountAdjustmentResult> ConfirmCountAdjustmentAsync(
             WmsInventoryCountAdjustmentRequest request,
             CancellationToken cancellationToken)
         {
-            throw new NotSupportedException("This test does not confirm count adjustments.");
+            var result = await new ConfirmStockCountAdjustmentCommandHandler(inventoryDb,
+                new UnexpectedCountApprovalClient()).Handle(
+                    new ConfirmStockCountAdjustmentCommand(new StockCountTaskId(Guid.Parse(request.CountTaskId)),
+                        request.CountedQuantity, request.IdempotencyKey), cancellationToken);
+            await inventoryDb.SaveChangesAsync(cancellationToken);
+            return new WmsInventoryCountAdjustmentResult(result.MovementId!.ToString(), result.VarianceQuantity, result.OnHandQuantity);
         }
+    }
+
+    private sealed class UnexpectedCountApprovalClient : IStockCountApprovalClient
+    {
+        public Task<StockCountApprovalResult> StartApprovalAsync(StockCountApprovalRequest request, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("A one-unit variance must not require approval.");
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

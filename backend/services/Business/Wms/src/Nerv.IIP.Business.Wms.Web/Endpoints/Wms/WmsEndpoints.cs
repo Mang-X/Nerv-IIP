@@ -263,7 +263,8 @@ public sealed record CreateCountExecutionRequest(
     string SiteCode,
     string LocationCode,
     decimal ExpectedQuantity,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? LotNo = null);
 public sealed record CreateCountExecutionResponse(CountExecutionId CountExecutionId);
 public sealed record AssignCountExecutionRequest(
     CountExecutionId CountExecutionId,
@@ -1271,7 +1272,8 @@ public sealed class CreateCountExecutionEndpoint(ISender sender) : WmsEndpoint<C
             req.SiteCode,
             req.LocationCode,
             req.ExpectedQuantity,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.LotNo), ct);
         await Send.OkAsync(new CreateCountExecutionResponse(id).AsResponseData(), cancellation: ct);
     }
 }

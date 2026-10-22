@@ -26,7 +26,8 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string locationCode,
         decimal expectedQuantity,
         string? assignedOperatorUserId,
-        string? assignedPoolCode)
+        string? assignedPoolCode,
+        string? lotNo)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -35,6 +36,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         UomCode = WmsText.Required(uomCode, nameof(uomCode));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         LocationCode = WmsText.Required(locationCode, nameof(locationCode));
+        LotNo = WmsText.Optional(lotNo);
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
         AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         ExpectedQuantity = expectedQuantity;
@@ -50,6 +52,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
     public string UomCode { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
     public string LocationCode { get; private set; } = string.Empty;
+    public string? LotNo { get; private set; }
     public string? AssignedOperatorUserId { get; private set; }
     public string? AssignedPoolCode { get; private set; }
     public decimal ExpectedQuantity { get; private set; }
@@ -71,7 +74,8 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string locationCode,
         decimal expectedQuantity,
         string? assignedOperatorUserId = null,
-        string? assignedPoolCode = null)
+        string? assignedPoolCode = null,
+        string? lotNo = null)
     {
         return new CountExecution(
             organizationId,
@@ -83,7 +87,8 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
             locationCode,
             expectedQuantity,
             assignedOperatorUserId,
-            assignedPoolCode);
+            assignedPoolCode,
+            lotNo);
     }
 
     public void AssignWorkPool(

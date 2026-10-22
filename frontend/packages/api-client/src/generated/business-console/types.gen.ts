@@ -516,6 +516,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     locationCode: string;
     expectedQuantity?: number;
     idempotencyKey: string;
+    lotNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsCountExecutionListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -549,6 +550,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     assignedOperatorUserId?: string | null;
     assignedPoolCode?: string | null;
     version?: number;
+    lotNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsCountExecutionListRequest = {

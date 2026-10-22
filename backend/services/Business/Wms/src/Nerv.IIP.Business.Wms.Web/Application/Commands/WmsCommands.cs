@@ -2116,7 +2116,8 @@ public sealed record CreateCountExecutionCommand(
     string SiteCode,
     string LocationCode,
     decimal ExpectedQuantity,
-    string? IdempotencyKey = null) : ICommand<CountExecutionId>;
+    string? IdempotencyKey = null,
+    string? LotNo = null) : ICommand<CountExecutionId>;
 
 public sealed class CreateCountExecutionCommandHandler(
     ApplicationDbContext dbContext,
@@ -2134,12 +2135,12 @@ public sealed class CreateCountExecutionCommandHandler(
             WmsCodeRules.CountExecution,
             request.CountNo,
             request.IdempotencyKey,
-            WmsCodingService.Fingerprint(
-                request.SkuCode,
-                request.UomCode,
-                request.SiteCode,
-                request.LocationCode,
-                request.ExpectedQuantity),
+            // Preserve existing unbatched idempotency bindings across this additive upgrade.
+            WmsText.Optional(request.LotNo) is { } lotNo
+                ? WmsCodingService.Fingerprint(request.SkuCode, request.UomCode, request.SiteCode,
+                    request.LocationCode, request.ExpectedQuantity, lotNo)
+                : WmsCodingService.Fingerprint(request.SkuCode, request.UomCode, request.SiteCode,
+                    request.LocationCode, request.ExpectedQuantity),
             cancellationToken);
         var replayed = await dbContext.CountExecutions.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
@@ -2159,7 +2160,8 @@ public sealed class CreateCountExecutionCommandHandler(
             request.UomCode,
             request.SiteCode,
             request.LocationCode,
-            request.ExpectedQuantity);
+            request.ExpectedQuantity,
+            lotNo: request.LotNo);
         if (inventoryReservationClient is not null)
         {
             var countTask = await inventoryReservationClient.CreateCountTaskAsync(ToInventoryCountTaskRequest(count), cancellationToken);
@@ -2181,7 +2183,7 @@ public sealed class CreateCountExecutionCommandHandler(
             count.UomCode,
             count.SiteCode,
             count.LocationCode,
-            null,
+            count.LotNo,
             null,
             WmsReceivingQualityStatuses.Qualified,
             "company",
@@ -2349,7 +2351,8 @@ public sealed class CompleteCountExecutionCommandHandler
                 "company",
                 count.VarianceQuantity
                     ?? throw new KnownException("未计算盘点执行差异。"),
-                adjustment.MovementId);
+                adjustment.MovementId,
+                lotNo: count.LotNo);
             dbContext.InventoryMovementRequests.Add(postedReceipt);
             return new CompleteWmsMovementResult(postedReceipt.Id, adjustment.MovementId);
         }
@@ -2380,7 +2383,7 @@ public sealed class CompleteCountExecutionCommandHandler
             count.UomCode,
             count.SiteCode,
             count.LocationCode,
-            null,
+            count.LotNo,
             null,
             WmsReceivingQualityStatuses.Qualified,
             "company",

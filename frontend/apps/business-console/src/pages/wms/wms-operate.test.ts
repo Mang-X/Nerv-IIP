@@ -64,6 +64,7 @@ const wms = vi.hoisted(() => ({
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
+  createCountExecution: vi.fn(),
   failWcs: vi.fn(),
   dispatchWcs: vi.fn(),
   completeWcs: vi.fn(),
@@ -214,6 +215,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
       {
         countExecutionId: 'count-1',
         countNo: 'CNT-1',
+        lotNo: 'LOT-COUNT-01',
         skuCode: 'SKU-001',
         uomCode: 'pcs',
         siteCode: 'SITE-001',
@@ -664,6 +666,7 @@ describe('WMS operate actions', () => {
     completeItem!.click()
     await flushPromises()
 
+    expect(document.body.textContent).toContain('LOT-COUNT-01')
     const input = document.body.querySelector<HTMLInputElement>('#cnt-counted')!
     input.value = '8'
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -749,6 +752,7 @@ describe('WMS operate actions', () => {
     ['出库单 · 批次', OutboundPage, '新建出库单', '#wms-out-site', '[aria-label="第 1 行批次"]'],
     ['入库单 · 批次建议', InboundPage, '新建入库单', '#wms-in-site', '[aria-label="第 1 行批次"]'],
     ['WMS 盘点', CountsPage, '新建盘点单', '#cnt-site', '#cnt-location'],
+    ['WMS 盘点批次', CountsPage, '新建盘点单', '#cnt-site', '#cnt-lot'],
   ])(
     '%s的库位选择器拿到表单工厂',
     async (_name, Page, createLabel, siteSelector, locationSelector) => {
@@ -768,6 +772,33 @@ describe('WMS operate actions', () => {
       )
     },
   )
+
+  it('creates a count for the selected lot and shows that lot in the list', async () => {
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('LOT-COUNT-01')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建盘点单'))!
+      .trigger('click')
+    await flushPromises()
+    setInput('#cnt-sku', 'SKU-001')
+    setInput('#cnt-site', 'SITE-001')
+    setInput('#cnt-location', 'RACK-A-01')
+    setInput('#cnt-lot', 'LOT-COUNT-01')
+    setInput('#cnt-expected', '15')
+    await flushPromises()
+    document.body
+      .querySelector<HTMLFormElement>('form:has(#cnt-expected)')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wms.createCountExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lotNo: 'LOT-COUNT-01',
+        expectedQuantity: 15,
+      }),
+    )
+  })
 
   it('creates an inbound order with a line item', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
