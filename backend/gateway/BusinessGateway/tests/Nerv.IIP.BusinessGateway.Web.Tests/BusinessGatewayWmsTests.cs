@@ -406,6 +406,8 @@ public sealed partial class BusinessGatewayWmsTests
         Assert.Equal("complete-in-001", handler.Requests[2].Headers.GetValues("Idempotency-Key").Single());
         Assert.Equal("complete-out-001", handler.Requests[5].Headers.GetValues("Idempotency-Key").Single());
         Assert.Equal("complete-count-001", handler.Requests[8].Headers.GetValues("Idempotency-Key").Single());
+        using var countBody = JsonDocument.Parse(await handler.Requests[7].Content!.ReadAsStringAsync());
+        Assert.Equal("LOT-COUNT-01", countBody.RootElement.GetProperty("lotNo").GetString());
         Assert.Equal("request-in-http", completedInbound.RequestId);
         Assert.Equal("complete-in-001", completedInbound.OperationReceipt?.IdempotencyKey);
         Assert.True(completedInbound.OperationReceipt?.ReadbackRequired);
@@ -817,6 +819,7 @@ public sealed partial class BusinessGatewayWmsTests
             organizationId = "org-001",
             environmentId = "env-dev",
             idempotencyKey = "COUNT-001",
+            lotNo = "LOT-COUNT-01",
             skuCode = "SKU-001",
             uomCode = "EA",
             siteCode = "S1",
@@ -868,6 +871,7 @@ public sealed partial class BusinessGatewayWmsTests
         Assert.Equal(new DateOnly(2026, 1, 16), completeInboundLine.ProductionDate);
         Assert.Equal(new DateOnly(2027, 1, 16), completeInboundLine.ExpiryDate);
         Assert.Equal("COUNT-001", wms.LastCreateCountRequest!.IdempotencyKey);
+        Assert.Equal("LOT-COUNT-01", wms.LastCreateCountRequest.LotNo);
         Assert.Equal("count-execution-001", wms.LastCompleteCountRequest!.CountExecutionId);
         Assert.Equal("user-admin", wms.LastCompleteCountRequest.ActorPrincipalId);
         Assert.Equal(["S1"], wms.LastCompleteCountRequest.AuthorizedSiteCodes);
@@ -2182,6 +2186,7 @@ public sealed partial class BusinessGatewayWmsTests
         Assert.Equal("COUNT-001", countDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("countNo").GetString());
         var countItem = countDocument.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("Failed", countItem.GetProperty("inventoryPostingStatus").GetString());
+        Assert.Equal("LOT-COUNT-01", countItem.GetProperty("lotNo").GetString());
         Assert.Equal("NEGATIVE_ON_HAND", countItem.GetProperty("inventoryPostingFailureCode").GetString());
         Assert.Equal(
             "Stock movement would make on-hand quantity negative.",
@@ -3074,7 +3079,7 @@ public sealed partial class BusinessGatewayWmsTests
         new("outbound-order-001", "org-001", "env-dev", "retry-out-001");
 
     private static BusinessConsoleCreateWmsCountExecutionRequest ValidCreateCountRequest() =>
-        new("org-001", "env-dev", "SKU-001", "EA", "S1", "BIN-01", 1, "create-count-001");
+        new("org-001", "env-dev", "SKU-001", "EA", "S1", "BIN-01", 1, "create-count-001", LotNo: "LOT-COUNT-01");
 
     private static BusinessWmsCompleteCountExecutionRequest ValidCompleteCountRequest() =>
         new(
@@ -3747,7 +3752,8 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 "Failed",
                 "NEGATIVE_ON_HAND",
                 "Stock movement would make on-hand quantity negative.",
-                null),
+                null,
+                LotNo: "LOT-COUNT-01"),
         ],
         17));
     }

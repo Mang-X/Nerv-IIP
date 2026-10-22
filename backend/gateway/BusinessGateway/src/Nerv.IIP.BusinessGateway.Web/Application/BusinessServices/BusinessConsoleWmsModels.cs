@@ -315,7 +315,8 @@ public sealed record BusinessConsoleCreateWmsCountExecutionRequest(
     string SiteCode,
     string LocationCode,
     decimal ExpectedQuantity,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? LotNo = null);
 
 public sealed record BusinessConsoleCreateWmsCountExecutionResponse(string CountExecutionId);
 
@@ -669,7 +670,8 @@ public sealed record BusinessConsoleWmsCountExecutionItem(
     string? InventoryMovementId = null,
     string? AssignedOperatorUserId = null,
     string? AssignedPoolCode = null,
-    long Version = 0);
+    long Version = 0,
+    string? LotNo = null);
 
 public sealed record BusinessConsoleWmsWcsTaskListRequest(
     string OrganizationId,

@@ -204,6 +204,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("location_code")
                         .HasComment("Counted warehouse location.");
 
+                    b.Property<string>("LotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lot_no")
+                        .HasComment("Counted lot; null identifies an unbatched ledger, including historical executions.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)

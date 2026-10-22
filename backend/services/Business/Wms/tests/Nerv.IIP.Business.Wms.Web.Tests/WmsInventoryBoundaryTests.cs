@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using System.Net;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -1894,8 +1895,34 @@ public sealed class WmsInventoryBoundaryTests
                 CancellationToken.None));
     }
 
-    [Fact]
-    public async Task Complete_count_execution_confirms_inventory_count_task_without_external_count_adjustment_request()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("LOT-COUNT-01")]
+    public async Task Count_creation_replays_same_lot_and_rejects_changed_lot(string? lotNo)
+    {
+        await using var dbContext = CreateContext();
+        var inventory = new FakeWmsInventoryReservationClient("res-unused");
+        var handler = new CreateCountExecutionCommandHandler(dbContext, inventory);
+        var command = new CreateCountExecutionCommand("org-001", "env-dev", null,
+            "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 15m, "count-lot-intent", lotNo);
+        var id = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        Assert.Equal(id, await handler.Handle(command, CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(command with { LotNo = "LOT-OTHER" }, CancellationToken.None));
+        Assert.Single(inventory.CountTaskRequests);
+        var response = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery("org-001", "env-dev", SiteCodes: ["SITE-01"], SiteWideScope: true),
+            CancellationToken.None);
+        Assert.Equal(lotNo, Assert.Single(response.Items).LotNo);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("LOT-COUNT-01")]
+    public async Task Complete_count_execution_confirms_inventory_count_task_without_external_count_adjustment_request(string? lotNo)
     {
         await using var dbContext = CreateContext();
         var inventory = new FakeWmsInventoryReservationClient("res-unused")
@@ -1905,10 +1932,12 @@ public sealed class WmsInventoryBoundaryTests
         };
 
         var countId = await new CreateCountExecutionCommandHandler(dbContext, inventory).Handle(
-            new CreateCountExecutionCommand("org-001", "env-dev", "COUNT-FREEZE-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m),
+            new CreateCountExecutionCommand("org-001", "env-dev", "COUNT-FREEZE-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m, LotNo: lotNo),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
         var count = await dbContext.CountExecutions.SingleAsync(x => x.Id == countId);
+        Assert.Equal(lotNo, count.LotNo);
         var result = await new CompleteCountExecutionCommandHandler(dbContext, inventory).Handle(
             new CompleteCountExecutionCommand(countId, 7.5m, "idem-count-freeze-001")
                 .TrustedFor(dbContext, count),
@@ -1917,10 +1946,12 @@ public sealed class WmsInventoryBoundaryTests
         var receipt = Assert.Single(dbContext.InventoryMovementRequests.Local);
         Assert.Equal(InventoryMovementRequestStatus.Posted, receipt.Status);
         Assert.Equal(result.RequestId, receipt.Id);
+        Assert.Equal(lotNo, receipt.LotNo);
         Assert.Equal("22222222-2222-7222-8222-222222222222", result.InventoryMovementId);
         Assert.Collection(inventory.CountTaskRequests, request =>
         {
             Assert.Equal("COUNT-FREEZE-001", request.CountTaskCode);
+            Assert.Equal(lotNo, request.LotNo);
             Assert.Equal("LOC-A-01", request.LocationCode);
             Assert.StartsWith("wms-count-freeze:", request.IdempotencyKey, StringComparison.Ordinal);
         });
