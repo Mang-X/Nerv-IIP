@@ -67,6 +67,9 @@ const wmsState = vi.hoisted(() => ({
   refreshPickingTasks: vi.fn(async () => undefined),
 }))
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
 
 vi.mock('vue-router', () => ({
   RouterLink: {
@@ -74,7 +77,9 @@ vi.mock('vue-router', () => ({
     template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
   },
   useRoute: () => routeState,
-  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
 }))
 
 vi.mock('@/composables/usePagedList', async () => {
@@ -211,6 +216,7 @@ describe('WMS picking route context', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     routeState.query = {}
+    routeGuardState.guard = undefined
     wmsState.filters = undefined
     wmsState.taskQuantities = {}
     let keyIndex = 0
@@ -252,6 +258,8 @@ describe('WMS picking route context', () => {
       await flushPromises()
     }
     await submit()
+    // #3943：未知结果离页会丢失内存中的提交身份，须阻止；明确拒绝则允许离开。
+    expect(routeGuardState.guard?.()).toBe(!unknown)
     const original = wmsState.createPicking.mock.calls[0]
     await submit()
     expect(wmsState.createPicking.mock.calls[1]).toEqual(original)
@@ -270,6 +278,7 @@ describe('WMS picking route context', () => {
     wmsState.createPicking.mockResolvedValue(undefined)
     await submit()
     expect(wmsState.createPicking.mock.calls[4]).toEqual(edited)
+    expect(routeGuardState.guard?.()).toBe(true)
     wrapper.unmount()
   })
 
