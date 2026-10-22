@@ -98,7 +98,6 @@ const { formatUom, resolveLocation } = useMasterDataDisplayNames({ locations: tr
 const { resolvePartner } = useBusinessPartnerNames()
 // 选物料之前先给一块跨物料的真实事实：全厂效期风险（库存域唯一只要工厂就能出行的读面）。
 const {
-  overviewError,
   overviewExpiredCount,
   overviewNearExpiryCount,
   overviewPending,
