@@ -406,7 +406,7 @@ public sealed partial class BusinessGatewayWmsTests
         Assert.Equal("complete-in-001", handler.Requests[2].Headers.GetValues("Idempotency-Key").Single());
         Assert.Equal("complete-out-001", handler.Requests[5].Headers.GetValues("Idempotency-Key").Single());
         Assert.Equal("complete-count-001", handler.Requests[8].Headers.GetValues("Idempotency-Key").Single());
-        using var countBody = JsonDocument.Parse(await handler.Requests[7].Content!.ReadAsStringAsync());
+        using var countBody = JsonDocument.Parse(handler.RequestBodies[7]!);
         Assert.Equal("LOT-COUNT-01", countBody.RootElement.GetProperty("lotNo").GetString());
         Assert.Equal("request-in-http", completedInbound.RequestId);
         Assert.Equal("complete-in-001", completedInbound.OperationReceipt?.IdempotencyKey);
