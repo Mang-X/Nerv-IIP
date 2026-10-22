@@ -196,3 +196,101 @@ test('home wall → 收货入库 navigates to /wms/inbound', async ({ page }) =>
 
   await expect(page).toHaveURL('/wms/inbound')
 })
+
+// #4522 / S1：DOM含有批次不代表窄屏能读全；用真实浏览器字形边界验证可见性。
+for (const status of ['Open', 'Completed']) {
+  test(`盘点批次在390px的${status}列表完整可辨，长批次换行且不溢出`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const lots = ['LOT-4522-A', 'LOT-4522-B', `LOT-4522-${'1234567890'.repeat(6)}-A`]
+    await page.route('**/api/business-console/v1/wms/count-executions?*', async (route) => {
+      const selectedStatus = new URL(route.request().url()).searchParams.get('status')
+      const items =
+        selectedStatus === status
+          ? lots.map((lotNo, index) => ({
+              countExecutionId: `count-4522-${index}`,
+              countNo: `CNT-20261022-00000${index + 1}`,
+              skuCode: 'RM-ACC-07',
+              uomCode: 'pcs',
+              siteCode: 'SITE-001',
+              locationCode: 'loc-line-01',
+              lotNo,
+              expectedQuantity: 15,
+              status,
+              version: 1,
+            }))
+          : []
+      await route.fulfill({ json: { success: true, data: { items, total: items.length } } })
+    })
+    await page.goto('/wms/count')
+    if (status === 'Completed') {
+      await page.getByRole('button', { name: '待盘点', exact: true }).click()
+      await page.getByRole('button', { name: '已完成', exact: true }).click()
+    }
+    const layout = []
+    for (const lot of lots) {
+      const row = page.locator('[data-row]').filter({ hasText: lot })
+      await expect(row).toBeVisible()
+      const measured = await row.evaluate((element, value) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+        let node = walker.nextNode()
+        while (node && !node.textContent?.includes(value)) node = walker.nextNode()
+        if (!node) throw new Error(`Missing lot text: ${value}`)
+        const start = node.textContent!.indexOf(value)
+        const range = document.createRange()
+        range.setStart(node, start)
+        range.setEnd(node, start + value.length)
+        const glyphs = Array.from(range.getClientRects(), (rect) => ({
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        }))
+        const bounds = element.getBoundingClientRect()
+        const visible = {
+          left: bounds.left,
+          right: bounds.right,
+          top: bounds.top,
+          bottom: bounds.bottom,
+        }
+        for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+          const style = getComputedStyle(parent)
+          const rect = parent.getBoundingClientRect()
+          if (style.overflowX !== 'visible') {
+            visible.left = Math.max(visible.left, rect.left)
+            visible.right = Math.min(visible.right, rect.right)
+          }
+          if (style.overflowY !== 'visible') {
+            visible.top = Math.max(visible.top, rect.top)
+            visible.bottom = Math.min(visible.bottom, rect.bottom)
+          }
+        }
+        return {
+          lot: value,
+          glyphs,
+          visible,
+          viewport: { width: innerWidth, height: innerHeight },
+          scrollWidth: document.documentElement.scrollWidth,
+        }
+      }, lot)
+      layout.push(measured)
+      expect(measured.glyphs.length).toBeGreaterThan(0)
+      for (const rect of measured.glyphs) {
+        expect(rect.left).toBeGreaterThanOrEqual(measured.visible.left - 0.5)
+        expect(rect.right).toBeLessThanOrEqual(measured.visible.right + 0.5)
+        expect(rect.top).toBeGreaterThanOrEqual(measured.visible.top - 0.5)
+        expect(rect.bottom).toBeLessThanOrEqual(measured.visible.bottom + 0.5)
+      }
+      expect(measured.viewport).toEqual({ width: 390, height: 844 })
+      expect(measured.scrollWidth).toBeLessThanOrEqual(390)
+    }
+    await testInfo.attach('lot-layout.json', {
+      body: JSON.stringify(layout, null, 2),
+      contentType: 'application/json',
+    })
+    await page.screenshot({
+      path: testInfo.outputPath(`count-lots-${status}.png`),
+      fullPage: true,
+      animations: 'disabled',
+    })
+  })
+}
