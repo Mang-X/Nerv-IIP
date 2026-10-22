@@ -31,6 +31,7 @@ import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useWmsCreateIntent } from '@/composables/useWmsCreateIntent'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -169,8 +170,9 @@ const varianceCardNote = computed(() => {
 })
 
 const createOpen = shallowRef(false)
-// 盘点单号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键。
-const createIdempotencyKey = shallowRef('')
+const createIntent =
+  useWmsCreateIntent<Omit<BusinessConsoleCreateWmsCountExecutionRequest, 'idempotencyKey'>>()
+const createIntentLocked = createIntent.locked
 const createForm = reactive({
   skuCode: '',
   // 单位跟随物料主档带出，不预填假单位：写死通用单位会让后端单位换算直接失败。
@@ -193,7 +195,7 @@ const completeError = shallowRef('')
 const completeIntentKey = shallowRef('')
 const completeIntentAttempted = shallowRef(false)
 const completeIntentLocked = shallowRef(false)
-usePendingWriteLeaveGuard(completeIntentLocked)
+usePendingWriteLeaveGuard(() => createIntentLocked.value || completeIntentLocked.value)
 const completeFrozenPayload = shallowRef<{ countedQuantity: number }>()
 watch(
   () => completeForm.countedQuantity,
@@ -287,8 +289,9 @@ function varianceLabel(value?: number | null) {
 }
 
 function openCreate() {
+  if (createIntentLocked.value) return
   if (!canManageCounts.value) return
-  createIdempotencyKey.value = createWmsIdempotencyKey()
+  createIntent.reset()
   createForm.skuCode = ''
   createForm.uomCode = ''
   createForm.siteCode = ''
@@ -296,6 +299,10 @@ function openCreate() {
   createForm.expectedQuantity = ''
   createError.value = ''
   createOpen.value = true
+}
+function onCreateOpenChange(open: boolean) {
+  if (!open && createIntentLocked.value) return
+  createOpen.value = open
 }
 async function submitCreate() {
   if (!canManageCounts.value) return
@@ -314,7 +321,7 @@ async function submitCreate() {
     createError.value = '账面数量需为非负数。'
     return
   }
-  const body: BusinessConsoleCreateWmsCountExecutionRequest = {
+  const payload: Omit<BusinessConsoleCreateWmsCountExecutionRequest, 'idempotencyKey'> = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     skuCode: createForm.skuCode.trim(),
@@ -322,13 +329,15 @@ async function submitCreate() {
     siteCode: createForm.siteCode.trim(),
     locationCode: createForm.locationCode.trim(),
     expectedQuantity: expected,
-    idempotencyKey: createIdempotencyKey.value,
   }
   try {
-    await createCountExecution(body)
+    const intent = createIntent.acquire(payload)
+    await createCountExecution({ ...intent.payload, idempotencyKey: intent.idempotencyKey })
+    createIntent.reset()
     createOpen.value = false
     notifySuccess('盘点单已创建，单号由系统生成')
   } catch (error) {
+    createIntent.recordFailure(error)
     notifyOperationFailure('创建盘点单失败', error, '创建盘点单失败，请稍后重试。')
   }
 }
@@ -613,7 +622,7 @@ function refreshAll() {
       @assigned="refreshCountExecutions"
     />
 
-    <NvDialog v-if="canManageCounts" v-model:open="createOpen">
+    <NvDialog v-if="canManageCounts" :open="createOpen" @update:open="onCreateOpenChange">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建盘点单</NvDialogTitle>
@@ -625,6 +634,7 @@ function refreshAll() {
             <NvField>
               <NvFieldLabel for="cnt-sku">物料</NvFieldLabel>
               <DirectoryPicker
+                :disabled="createIntentLocked"
                 id="cnt-sku"
                 v-model="createForm.skuCode"
                 directory-type="material"
@@ -635,6 +645,7 @@ function refreshAll() {
             <NvField>
               <NvFieldLabel for="cnt-site">工厂</NvFieldLabel>
               <NvEntityPicker
+                :disabled="createIntentLocked"
                 id="cnt-site"
                 v-model="createForm.siteCode"
                 :options="siteOptions"
@@ -649,6 +660,7 @@ function refreshAll() {
             <NvField>
               <NvFieldLabel for="cnt-location">库位</NvFieldLabel>
               <DirectoryPicker
+                :disabled="createIntentLocked"
                 id="cnt-location"
                 v-model="createForm.locationCode"
                 directory-type="location"
@@ -672,12 +684,12 @@ function refreshAll() {
             <NvField>
               <NvFieldLabel for="cnt-expected">账面数量</NvFieldLabel>
               <NvInput
+                :disabled="createIntentLocked"
                 id="cnt-expected"
                 v-model="createForm.expectedQuantity"
                 type="number"
                 min="0"
                 step="any"
-                :disabled="completeIntentLocked"
               />
               <!-- 非显而易见的业务口径：留空的取值来源。 -->
               <NvFieldDescription>留空则按库存台账取账面数量。</NvFieldDescription>
@@ -688,7 +700,9 @@ function refreshAll() {
 
           <NvDialogFooter>
             <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
+              <NvButton type="button" variant="outline" :disabled="createIntentLocked"
+                >取消</NvButton
+              >
             </NvDialogClose>
             <NvButton type="submit" :disabled="createCountExecutionPending">
               <NvSpinner v-if="createCountExecutionPending" aria-hidden="true" />

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleCreateWmsPickingTaskRequest,
+  BusinessConsoleWmsWarehouseTaskItem,
+} from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
@@ -7,11 +10,7 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import {
-  createWmsIdempotencyKey,
-  useWmsOutboundOrders,
-  useWmsPickingTasks,
-} from '@/composables/useBusinessWms'
+import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
@@ -24,6 +23,8 @@ import {
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useWmsCreateIntent } from '@/composables/useWmsCreateIntent'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import {
   inlineErrorMessage,
   notifyError,
@@ -180,8 +181,11 @@ watch(
 // 拣货任务挂在出库单下（领料齐套 → 出库拣货扣减）。创建需绑定出库单与单行任务。
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
-// 拣货任务号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键。
-const createIdempotencyKey = shallowRef('')
+const createIntent = useWmsCreateIntent<
+  { outboundOrderId: string } & Omit<BusinessConsoleCreateWmsPickingTaskRequest, 'idempotencyKey'>
+>()
+const createIntentLocked = createIntent.locked
+usePendingWriteLeaveGuard(createIntentLocked)
 const createForm = reactive({
   outboundOrderId: '',
   lineNo: '',
@@ -215,14 +219,19 @@ watch(outboundLineOptions, (options) => {
 })
 
 function openCreate() {
+  if (createIntentLocked.value) return
   createForm.outboundOrderId = ''
-  createIdempotencyKey.value = createWmsIdempotencyKey()
+  createIntent.reset()
   createForm.lineNo = ''
   createForm.fromLocationCode = ''
   createForm.toLocationCode = ''
   createForm.quantity = ''
   createError.value = ''
   createOpen.value = true
+}
+function onCreateOpenChange(open: boolean) {
+  if (!open && createIntentLocked.value) return
+  createOpen.value = open
 }
 async function submitCreate() {
   if (
@@ -239,16 +248,20 @@ async function submitCreate() {
     return
   }
   try {
-    await createPicking(createForm.outboundOrderId.trim(), {
+    const intent = createIntent.acquire({
+      outboundOrderId: createForm.outboundOrderId.trim(),
       lineNo: createForm.lineNo.trim(),
       fromLocationCode: createForm.fromLocationCode.trim(),
       toLocationCode: createForm.toLocationCode.trim(),
       quantity: createForm.quantity === '' ? undefined : Number(createForm.quantity),
-      idempotencyKey: createIdempotencyKey.value,
     })
+    const { outboundOrderId, ...body } = intent.payload
+    await createPicking(outboundOrderId, { ...body, idempotencyKey: intent.idempotencyKey })
+    createIntent.reset()
     createOpen.value = false
     notifySuccess('拣货任务已创建，任务号由系统生成')
   } catch (error) {
+    createIntent.recordFailure(error)
     notifyOperationFailure('创建拣货任务失败', error, '创建拣货任务失败，请稍后重试。')
   }
 }
@@ -691,7 +704,7 @@ function firstQuery(value: unknown) {
       </NvDialogContent>
     </NvDialog>
 
-    <NvDialog v-model:open="createOpen">
+    <NvDialog :open="createOpen" @update:open="onCreateOpenChange">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>新建拣货任务</NvDialogTitle>
@@ -703,6 +716,7 @@ function firstQuery(value: unknown) {
             <NvField class="sm:col-span-2">
               <NvFieldLabel for="wms-picking-outbound">出库单</NvFieldLabel>
               <NvEntityPicker
+                :disabled="createIntentLocked"
                 id="wms-picking-outbound"
                 v-model="outboundOrderSelection"
                 :options="outboundOrderOptions"
@@ -721,7 +735,7 @@ function firstQuery(value: unknown) {
                 v-model="createForm.lineNo"
                 :options="outboundLineOptions"
                 :show-code="false"
-                :disabled="!createForm.outboundOrderId"
+                :disabled="createIntentLocked || !createForm.outboundOrderId"
                 title="选择出库单行"
                 :placeholder="createForm.outboundOrderId ? '选择出库单行' : '先选出库单'"
                 empty-text="该出库单没有明细行"
@@ -732,6 +746,7 @@ function firstQuery(value: unknown) {
             <NvField>
               <NvFieldLabel for="wms-picking-from">拣货库位</NvFieldLabel>
               <DirectoryPicker
+                :disabled="createIntentLocked"
                 id="wms-picking-from"
                 v-model="createForm.fromLocationCode"
                 directory-type="location"
@@ -747,6 +762,7 @@ function firstQuery(value: unknown) {
             <NvField>
               <NvFieldLabel for="wms-picking-to">目标库位</NvFieldLabel>
               <DirectoryPicker
+                :disabled="createIntentLocked"
                 id="wms-picking-to"
                 v-model="createForm.toLocationCode"
                 directory-type="location"
@@ -762,6 +778,7 @@ function firstQuery(value: unknown) {
             <NvField>
               <NvFieldLabel for="wms-picking-qty">拣货数量（可选）</NvFieldLabel>
               <NvInput
+                :disabled="createIntentLocked"
                 id="wms-picking-qty"
                 v-model="createForm.quantity"
                 type="number"
@@ -776,7 +793,9 @@ function firstQuery(value: unknown) {
 
           <NvDialogFooter>
             <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
+              <NvButton type="button" variant="outline" :disabled="createIntentLocked"
+                >取消</NvButton
+              >
             </NvDialogClose>
             <NvButton type="submit" :disabled="createPickingPending">创建拣货任务</NvButton>
           </NvDialogFooter>

@@ -1,3 +1,4 @@
+import type { BusinessConsoleCreateWmsPickingTaskRequest } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { computed, reactive, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -60,7 +61,9 @@ const wmsState = vi.hoisted(() => ({
   taskQuantities: {} as { plannedQuantity?: number; executedQuantity?: number; uomCode?: string },
   filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
   completePicking: vi.fn(async () => undefined),
-  createPicking: vi.fn(async () => undefined),
+  createPicking:
+    vi.fn<(id: string, body: BusinessConsoleCreateWmsPickingTaskRequest) => Promise<undefined>>(),
+  key: vi.fn(),
   refreshPickingTasks: vi.fn(async () => undefined),
 }))
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
@@ -71,6 +74,7 @@ vi.mock('vue-router', () => ({
     template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
   },
   useRoute: () => routeState,
+  onBeforeRouteLeave: vi.fn(),
 }))
 
 vi.mock('@/composables/usePagedList', async () => {
@@ -102,7 +106,7 @@ vi.mock('@/composables/useWmsWorkScope', () => ({
 }))
 
 vi.mock('@/composables/useBusinessWms', () => ({
-  createWmsIdempotencyKey: () => 'picking-intent-key',
+  createWmsIdempotencyKey: () => wmsState.key(),
   // 拣货任务必须挂在已存在的出库单下：出库单选择器的目录来源。
   useWmsOutboundOrders: () => ({
     filters: reactive({ skip: 0, take: 200 }),
@@ -209,6 +213,64 @@ describe('WMS picking route context', () => {
     routeState.query = {}
     wmsState.filters = undefined
     wmsState.taskQuantities = {}
+    let keyIndex = 0
+    wmsState.key.mockImplementation(() => `picking-intent-${++keyIndex}`)
+    wmsState.createPicking.mockReset().mockResolvedValue(undefined)
+  })
+
+  it.each([
+    ['确定性拒绝', { status: 400 }, false],
+    ['网络中断', new TypeError('Failed to fetch'), true],
+    ['服务端失败', { status: 503 }, true],
+    ['请求超时', { status: 408 }, true],
+  ])('拣货创建：%s 后同载荷沿用键，编辑后仅确定失败才换键', async (_label, error, unknown) => {
+    wmsState.createPicking.mockRejectedValue(error)
+    const wrapper = mount(PickingPage, {
+      global: {
+        stubs: {
+          ...uiStubs,
+          NvEntityPicker: {
+            props: ['modelValue', 'options', 'id'],
+            emits: ['update:modelValue'],
+            template:
+              '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+        },
+      },
+    })
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '新建拣货任务')!
+      .trigger('click')
+    await wrapper.get('#wms-picking-outbound').setValue('OB-001')
+    await wrapper.get('#wms-picking-from').setValue('A-01')
+    await wrapper.get('#wms-picking-to').setValue('STAGE-01')
+    await wrapper.get('#wms-picking-qty').setValue('5')
+    const form = wrapper.get('#wms-picking-qty').element.closest('form')!
+    const submit = async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await flushPromises()
+    }
+    await submit()
+    const original = wmsState.createPicking.mock.calls[0]
+    await submit()
+    expect(wmsState.createPicking.mock.calls[1]).toEqual(original)
+    await wrapper.get('#wms-picking-qty').setValue('5.0')
+    await submit()
+    expect(wmsState.createPicking.mock.calls[2]).toEqual(original)
+    await wrapper.get('#wms-picking-qty').setValue('6')
+    await submit()
+    const edited = wmsState.createPicking.mock.calls[3]!
+    if (unknown) {
+      expect(edited).toEqual(original)
+    } else {
+      expect(edited[1].quantity).toBe(6)
+      expect(edited[1].idempotencyKey).not.toBe(original![1].idempotencyKey)
+    }
+    wmsState.createPicking.mockResolvedValue(undefined)
+    await submit()
+    expect(wmsState.createPicking.mock.calls[4]).toEqual(edited)
+    wrapper.unmount()
   })
 
   it.each([
