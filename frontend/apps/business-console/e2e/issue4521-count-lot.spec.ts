@@ -78,11 +78,19 @@ test('仓储盘点展示目标批次并在实盘操作中保留上下文', async
   })
   await page.goto('/wms/counts')
   await expect(page.getByRole('cell', { name: 'LOT-20261023-01', exact: true })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('count-list.png'), fullPage: true })
+  await page.screenshot({
+    path: testInfo.outputPath('count-list.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
   await page.getByRole('button', { name: '盘点操作 CNT-20261023-000001' }).click()
   await page.getByRole('menuitem', { name: '完成盘点' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('LOT-20261023-01', { exact: true })).toBeVisible()
   await expect(dialog.getByLabel('实盘数量')).toHaveValue('15')
-  await page.screenshot({ path: testInfo.outputPath('count-complete.png'), fullPage: true })
+  await page.screenshot({
+    path: testInfo.outputPath('count-complete.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
 })
