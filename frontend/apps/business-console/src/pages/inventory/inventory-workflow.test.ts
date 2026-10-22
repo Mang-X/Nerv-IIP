@@ -22,6 +22,8 @@ const inventoryState = vi.hoisted(() => ({
   expiryPageSize: undefined as { value: number } | undefined,
   expiryFilters: undefined as Record<string, string | undefined> | undefined,
   availabilityError: undefined as { value: unknown } | undefined,
+  availabilityQuantity: undefined as { value: number } | undefined,
+  availabilityPending: undefined as { value: boolean } | undefined,
   availabilityRows: undefined as { value: Array<Record<string, unknown>> } | undefined,
   // 未选物料 = 全厂库存总览态，选了物料 = 该物料台账明细态；测试要能切这两态。
   initialSkuCode: 'SKU-001',
@@ -87,10 +89,12 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     }
     inventoryState.availabilityFilters = filters
 
+    const quantity = ref(7)
+    inventoryState.availabilityQuantity = quantity
     return {
       availability: computed(() => ({
         onHandQuantity: 10,
-        availableQuantity: 7,
+        availableQuantity: quantity.value,
         reservedQuantity: 2,
       })),
       availabilityError: (inventoryState.availabilityError = ref(undefined)),
@@ -119,7 +123,7 @@ vi.mock('@/composables/useBusinessInventory', () => ({
             },
           ])).value,
       ),
-      availabilityPending: ref(false),
+      availabilityPending: (inventoryState.availabilityPending = ref(false)),
       filters,
       refreshAvailability: vi.fn(),
     }
@@ -552,6 +556,49 @@ describe('inventory workflow pages', () => {
     siteStockState.refresh.mockReset()
     if (siteStockState.hasMore) siteStockState.hasMore.value = true
     if (siteStockState.scanning) siteStockState.scanning.value = false
+  })
+
+  it('shows current availability without inventing history when quantity changes or is zero', async () => {
+    const wrapper = mountInventoryPage(AvailabilityPage)
+    const metric = () =>
+      wrapper
+        .findAllComponents({ name: 'NvMetricCard' })
+        .find((card) => card.props('label') === '可用量')!
+
+    for (const quantity of [7, 14, 0]) {
+      inventoryState.availabilityQuantity!.value = quantity
+      await nextTick()
+      expect(metric().props('value')).toBe(String(quantity))
+      expect(metric().props('trend')).toBeUndefined()
+      expect(metric().props('series')).toBeUndefined()
+      expect(wrapper.text()).not.toMatch(/近\s*14\s*日|较\s*14\s*日前/)
+    }
+
+    inventoryState.availabilityPending!.value = true
+    await nextTick()
+    expect(metric().props('value')).toBe('—')
+    expect(wrapper.find('[data-page-count]').text()).toBe('加载中')
+    inventoryState.availabilityPending!.value = false
+    inventoryState.availabilityError!.value = new Error('unavailable')
+    await nextTick()
+    expect(wrapper.find('[data-page-count]').text()).toBe('读取失败')
+    expect(wrapper.find('[data-ui-table]').attributes('data-has-error')).toBe('true')
+    expect(metric().props('trend')).toBeUndefined()
+    expect(metric().props('series')).toBeUndefined()
+  })
+
+  it('shows current expiry risk counts without a synthetic period change', () => {
+    inventoryState.initialSkuCode = ''
+    const wrapper = mountInventoryPage(AvailabilityPage)
+    const metric = wrapper
+      .findAllComponents({ name: 'NvMetricCard' })
+      .find((card) => card.props('label') === '全厂效期风险批次')!
+
+    expect(metric.props('value')).toBe(51)
+    expect(metric.props('trend')).toBeUndefined()
+    expect(wrapper.text()).toContain('已过期')
+    expect(wrapper.text()).toContain('30天内到期')
+    expect(wrapper.text()).not.toMatch(/近\s*14\s*日|较\s*14\s*日前/)
   })
 
   it('availability read-face guard：目录可解析时显示货主名称和工单号', () => {
