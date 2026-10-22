@@ -343,7 +343,7 @@ function goHome() {
               v-for="execution in executions"
               :key="execution.countExecutionId"
               :title="`盘点 ${execution.countNo ?? ''}`"
-              :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 批次 ${execution.lotNo || '无批次'} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
+              :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${displayCountStatus(execution.status)}`"
               :interactive="canComplete(execution.status)"
               @select="
                 selectExecution(
@@ -354,7 +354,13 @@ function goHome() {
                   execution.lotNo,
                 )
               "
-            />
+            >
+              <template #meta>
+                <p class="mt-1 break-all text-sm text-foreground">
+                  批次 {{ execution.lotNo || '无批次' }}
+                </p>
+              </template>
+            </NvListRow>
           </div>
         </div>
       </WmsPagedListFrame>
