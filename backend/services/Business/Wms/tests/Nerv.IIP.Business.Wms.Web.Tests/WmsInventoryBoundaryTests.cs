@@ -1895,6 +1895,35 @@ public sealed class WmsInventoryBoundaryTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Unbatched_count_creation_recovers_the_preupgrade_five_part_binding()
+    {
+        await using var dbContext = CreateContext();
+        var coding = new WmsCodingService();
+        // #4521 / ADR 0019: allocation can survive a timeout before the local count is saved.
+        // The pre-upgrade payload has five parts; it must not gain a null sixth part.
+        var previousCode = await coding.AllocateAsync(
+            "org-001", "env-dev", WmsCodeRules.CountExecution, null, "legacy-count-intent",
+            WmsCodingService.Fingerprint("SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 15m),
+            CancellationToken.None);
+        Assert.Empty(dbContext.CountExecutions);
+        var inventory = new FakeWmsInventoryReservationClient("res-unused");
+        var handler = new CreateCountExecutionCommandHandler(dbContext, inventory, coding);
+        var command = new CreateCountExecutionCommand("org-001", "env-dev", null,
+            "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 15m, "legacy-count-intent");
+
+        var id = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var count = await dbContext.CountExecutions.SingleAsync(x => x.Id == id);
+        Assert.Equal(previousCode, count.CountNo);
+        Assert.Null(count.LotNo);
+        Assert.Null(Assert.Single(inventory.CountTaskRequests).LotNo);
+        Assert.Equal(id, await handler.Handle(command, CancellationToken.None));
+        Assert.Single(inventory.CountTaskRequests);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("LOT-COUNT-01")]
