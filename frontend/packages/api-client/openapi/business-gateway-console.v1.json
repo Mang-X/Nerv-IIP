@@ -38516,6 +38516,10 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": false
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -38637,6 +38641,10 @@
           "version": {
             "type": "integer",
             "format": "int64"
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -307,6 +307,7 @@ public sealed class CountExecutionEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.AssignedOperatorUserId).HasColumnName("assigned_operator_user_id").HasMaxLength(150).HasComment("Optional operator assignment snapshot captured when the count execution is created.");
         builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the count execution is created.");
         builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Counted warehouse location.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Counted lot; null identifies an unbatched ledger, including historical executions.");
         builder.Property(x => x.ExpectedQuantity).HasColumnName("expected_quantity").IsRequired().HasPrecision(18, 6).HasComment("Expected count quantity provided by upstream boundary.");
         builder.Property(x => x.CountedQuantity).HasColumnName("counted_quantity").HasPrecision(18, 6).HasComment("Actual counted quantity.");
         builder.Property(x => x.VarianceQuantity).HasColumnName("variance_quantity").HasPrecision(18, 6).HasComment("Counted quantity minus expected quantity.");

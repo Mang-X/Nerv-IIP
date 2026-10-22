@@ -157,7 +157,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string qualityStatus,
         string ownerType,
         decimal quantity,
-        string inventoryMovementId)
+        string inventoryMovementId,
+        string? lotNo = null)
     {
         var receipt = new InventoryMovementRequest(
             organizationId,
@@ -170,7 +171,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             uomCode,
             siteCode,
             locationCode,
-            null,
+            lotNo,
             null,
             qualityStatus,
             ownerType,
